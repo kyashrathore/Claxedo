@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createEffect, createMemo, createSignal, startTransition, type Accessor } from "solid-js"
+import { batch, createEffect, createMemo, startTransition, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { queryOptions, skipToken, useQuery } from "@tanstack/solid-query"
 import { settledQueryData } from "@/platform/query/settled-query-data"

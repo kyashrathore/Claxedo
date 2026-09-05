@@ -52,7 +52,6 @@ import {
   openContextWorkspaceTab,
   openFileWorkspaceTab,
   openProcessWorkspaceTab,
-  processTabId,
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"

@@ -23,7 +23,6 @@ import {
   usageFactFilterOptions,
   usageFactMatches,
   usageFactDimension,
-  usageLocation,
   usageModelKey,
   usageDateFormatter,
   type UsageFilters,
@@ -115,6 +114,28 @@ function validTimeZone(timeZone: string) {
   } catch {
     return false
   }
+}
+
+function parseUsageQuery(query: (name: string) => string | undefined) {
+  const since = Number(query("since"))
+  const until = Number(query("until"))
+  const timeZone = query("timezone") || "UTC"
+  if (!validRange(since, until)) return { error: "invalid_usage_range" } as const
+  if (!validTimeZone(timeZone)) return { error: "invalid_timezone" } as const
+  const group = query("group")
+  if (group && !dimensions.has(group as UsageFilterDimension)) return { error: "invalid_usage_group" } as const
+  const metric = query("metric") || "tokens"
+  if (metric !== "tokens" && metric !== "cost") return { error: "invalid_usage_metric" } as const
+  const requestedLimit = query("limit") === undefined ? undefined : Number(query("limit"))
+  if (
+    requestedLimit !== undefined &&
+    (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100)
+  ) {
+    return { error: "invalid_usage_limit" } as const
+  }
+  const view = query("view") || "claxedo"
+  if (view !== "quota" && view !== "claxedo" && view !== "total") return { error: "invalid_usage_view" } as const
+  return { value: { since, until, timeZone, group, metric, requestedLimit, view } } as const
 }
 
 const emptyCost = (): CostWithDaily => ({
@@ -413,6 +434,13 @@ function chartRowsFromFacts(
   }))
 }
 
+function externalUsageDimension(row: ExternalUsageBucket, dimension: string) {
+  if (dimension === "app") return row.app
+  if (dimension === "provider") return row.provider
+  if (dimension === "model") return usageModelKey(row.provider, row.model)
+  return dimension === "location" ? "local" : "unavailable"
+}
+
 function chartRowsFromExternal(
   rows: LocalHistorySnapshot["rows"],
   dimension: "app" | "provider" | "model" | "location",
@@ -422,13 +450,7 @@ function chartRowsFromExternal(
   return rows.map((row) => ({
     date: formatDate.format(new Date(row.bucketStart)),
     value:
-      dimension === "app"
-        ? row.app
-        : dimension === "provider"
-          ? row.provider
-          : dimension === "model"
-            ? usageModelKey(row.provider, row.model)
-            : "local",
+      externalUsageDimension(row, dimension),
     input: row.tokens.input ?? 0,
     output: row.tokens.output ?? 0,
     reasoning: row.tokens.reasoning ?? 0,
@@ -759,33 +781,18 @@ export function UsageRoutes(input: {
       if (auth.mode !== "signed" || !auth.user.orgId) {
         return c.json({ error: "signed_org_required", message: "A signed organization session is required" }, 401)
       }
-      const since = Number(c.req.query("since"))
-      const until = Number(c.req.query("until"))
-      const timeZone = c.req.query("timezone") || "UTC"
-      if (!validRange(since, until)) {
-        return c.json(
-          { error: "invalid_usage_range", message: "since and until must define a range of at most 90 days" },
-          400,
-        )
+      const parsed = parseUsageQuery((name) => c.req.query(name))
+      if (parsed.error) {
+        const messages: Partial<Record<typeof parsed.error, string>> = {
+          invalid_usage_range: "since and until must define a range of at most 90 days",
+          invalid_usage_group: "group is invalid",
+          invalid_usage_limit: "limit must be between 1 and 100",
+        }
+        const message = messages[parsed.error]
+        return c.json({ error: parsed.error, ...(message ? { message } : {}) }, 400)
       }
-      if (!validTimeZone(timeZone)) return c.json({ error: "invalid_timezone" }, 400)
-      const group = c.req.query("group")
-      if (group && !dimensions.has(group as never)) {
-        return c.json({ error: "invalid_usage_group", message: "group is invalid" }, 400)
-      }
-      const metric = c.req.query("metric") || "tokens"
-      if (metric !== "tokens" && metric !== "cost") return c.json({ error: "invalid_usage_metric" }, 400)
-      const requestedLimit = c.req.query("limit") === undefined ? undefined : Number(c.req.query("limit"))
-      if (
-        requestedLimit !== undefined &&
-        (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100)
-      ) {
-        return c.json({ error: "invalid_usage_limit", message: "limit must be between 1 and 100" }, 400)
-      }
+      const { since, until, timeZone, group, metric, requestedLimit, view } = parsed.value
       const identity = { org_id: auth.user.orgId, user_id: auth.user.subject }
-      const view = c.req.query("view") || "claxedo"
-      if (view !== "quota" && view !== "claxedo" && view !== "total")
-        return c.json({ error: "invalid_usage_view" }, 400)
       if (view === "quota") {
         const series = usageSeriesFromFacts({ facts: [], since, until, timeZone })
         captureUsage(input.telemetry, {
@@ -946,6 +953,170 @@ export function UsageRoutes(input: {
   return app
 }
 
+async function localUsageBreakdowns(input: {
+  central: unknown
+  centralFactsAvailable: boolean
+  localFacts: TurnUsageRevision[]
+  totalRows: ExternalUsageBucket[]
+  claxedoSeries: UsageSeries
+  includeClaxedo: boolean
+  group: string | undefined
+  view: "quota" | "claxedo" | "total"
+  metric: "tokens" | "cost"
+  timeZone: string
+  requestedLimit: number | undefined
+  after: string | undefined
+  modelAfter: string | undefined
+}) {
+  const {
+    central,
+    centralFactsAvailable,
+    localFacts,
+    totalRows,
+    claxedoSeries,
+    includeClaxedo,
+    group,
+    view,
+    metric,
+    timeZone,
+    requestedLimit,
+    after,
+    modelAfter,
+  } = input
+  const centralSource = central as
+    | {
+        breakdown?: unknown
+        breakdownModels?: Array<Record<string, unknown>>
+        models?: Array<Record<string, unknown>>
+        dailyBreakdown?: unknown
+      }
+    | undefined
+  const aggregateCentralSource = centralFactsAvailable ? undefined : centralSource
+  let breakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
+  let modelBreakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
+  if (group && dimensions.has(group as never)) {
+    const dimension =
+      group === "app" ? undefined : (group as "provider" | "harness" | "model" | "location" | "session" | "workspace")
+    const localHistoryBreakdownRows =
+      view === "total"
+        ? totalRows.map((row) => ({
+            value: externalUsageDimension(row, group),
+            turnCount: row.turnCount,
+            ...row.tokens,
+            unknownCategories: [
+              row.tokens.input,
+              row.tokens.output,
+              row.tokens.reasoning,
+              row.tokens.cacheRead,
+              row.tokens.cacheWrite,
+            ].filter((value) => value === null).length,
+          }))
+        : []
+    const rows =
+      view === "total"
+        ? mergeBreakdownRows(localHistoryBreakdownRows)
+        : group === "app"
+          ? mergeBreakdownRows(includeClaxedo ? [appBreakdownRow(claxedoSeries)] : [])
+          : mergeBreakdownRows(
+              includeClaxedo ? aggregateCentralSource?.breakdown : [],
+              includeClaxedo && dimension ? groupUsageFacts(localFacts, dimension) : [],
+            )
+    const centralModelRows =
+      group === "app"
+        ? (aggregateCentralSource?.models ?? []).map((row) => ({ ...row, group: "Claxedo" }))
+        : (aggregateCentralSource?.breakdownModels ?? [])
+    const localModelRows =
+      group === "app"
+        ? localFacts.map((fact) => ({
+            group: "Claxedo",
+            value: usageModelKey(fact.providerId, fact.modelId),
+            input_tokens: fact.tokens.input ?? 0,
+            output_tokens: fact.tokens.output ?? 0,
+            reasoning_tokens: fact.tokens.reasoning ?? 0,
+            cache_read_tokens: fact.tokens.cache.read ?? 0,
+            cache_write_tokens: fact.tokens.cache.write ?? 0,
+          }))
+        : dimension
+          ? modelBreakdownFromFacts(localFacts, dimension)
+          : []
+    const localHistoryModelRows =
+      view === "total"
+        ? totalRows.map((row) => ({
+            group: externalUsageDimension(row, group),
+            value: usageModelKey(row.provider, row.model),
+            input_tokens: row.tokens.input ?? 0,
+            output_tokens: row.tokens.output ?? 0,
+            reasoning_tokens: row.tokens.reasoning ?? 0,
+            cache_read_tokens: row.tokens.cacheRead ?? 0,
+            cache_write_tokens: row.tokens.cacheWrite ?? 0,
+          }))
+        : []
+    breakdown = await canonicalBreakdownPage({
+      dimension: group as UsageFilterDimension,
+      rows,
+      modelRows: view === "total" ? localHistoryModelRows : [...centralModelRows, ...localModelRows],
+      metric,
+      ...(after ? { after: after } : {}),
+      ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
+    })
+    const localHistoryModels =
+      view === "total"
+        ? totalRows.map((row) => ({
+            value: usageModelKey(row.provider, row.model),
+            turnCount: row.turnCount,
+            ...row.tokens,
+            unknownCategories: [
+              row.tokens.input,
+              row.tokens.output,
+              row.tokens.reasoning,
+              row.tokens.cacheRead,
+              row.tokens.cacheWrite,
+            ].filter((value) => value === null).length,
+          }))
+        : []
+    modelBreakdown = await canonicalBreakdownPage({
+      dimension: "model",
+      rows:
+        view === "total"
+          ? mergeBreakdownRows(localHistoryModels)
+          : mergeBreakdownRows(
+              includeClaxedo ? aggregateCentralSource?.models : [],
+              includeClaxedo ? groupUsageFacts(localFacts, "model") : [],
+            ),
+      metric,
+      ...(modelAfter ? { after: modelAfter } : {}),
+      ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
+    })
+  }
+  const chart = group
+    ? view === "total"
+      ? mergeChartSeries(
+          group,
+          group === "app" || group === "provider" || group === "model" || group === "location"
+            ? chartRowsFromExternal(totalRows, group, timeZone)
+            : [],
+        )
+      : mergeChartSeries(
+          group,
+          group === "app"
+            ? includeClaxedo
+              ? chartRowsFromSeries("Claxedo", claxedoSeries)
+              : []
+            : includeClaxedo
+              ? aggregateCentralSource?.dailyBreakdown
+              : [],
+          group !== "app" && includeClaxedo
+            ? chartRowsFromFacts(
+                localFacts,
+                group as "provider" | "harness" | "model" | "location" | "session" | "workspace",
+                timeZone,
+              )
+            : [],
+        )
+    : undefined
+  return { breakdown, modelBreakdown, chart }
+}
+
 export function LocalUsageRoutes(input: {
   local: SqliteUsageLedger
   central?: UsageLedger
@@ -1007,26 +1178,9 @@ export function LocalUsageRoutes(input: {
   })
   app.get("/", async (c) => {
     const startedAt = Date.now()
-    const since = Number(c.req.query("since"))
-    const until = Number(c.req.query("until"))
-    const timeZone = c.req.query("timezone") || "UTC"
-    if (!validRange(since, until)) {
-      return c.json({ error: "invalid_usage_range" }, 400)
-    }
-    if (!validTimeZone(timeZone)) return c.json({ error: "invalid_timezone" }, 400)
-    const group = c.req.query("group")
-    if (group && !dimensions.has(group as never)) return c.json({ error: "invalid_usage_group" }, 400)
-    const metric = c.req.query("metric") || "tokens"
-    if (metric !== "tokens" && metric !== "cost") return c.json({ error: "invalid_usage_metric" }, 400)
-    const requestedLimit = c.req.query("limit") === undefined ? undefined : Number(c.req.query("limit"))
-    if (
-      requestedLimit !== undefined &&
-      (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100)
-    ) {
-      return c.json({ error: "invalid_usage_limit" }, 400)
-    }
-    const view = c.req.query("view") || "claxedo"
-    if (view !== "quota" && view !== "claxedo" && view !== "total") return c.json({ error: "invalid_usage_view" }, 400)
+    const parsed = parseUsageQuery((name) => c.req.query(name))
+    if (parsed.error) return c.json({ error: parsed.error }, 400)
+    const { since, until, timeZone, group, metric, requestedLimit, view } = parsed.value
     const filters = filtersFromQuery((name) => c.req.query(name))
     const refresh = consumeRefreshNonce(c.req.query("refresh_nonce"))
     if (refresh === undefined) return c.json({ error: "invalid_refresh_nonce" }, 400)
@@ -1225,155 +1379,11 @@ export function LocalUsageRoutes(input: {
     const externalCost = await priceExternal(externalRows, timeZone)
     const totalSeries = usageSeriesFromExternal({ rows: totalRows, since, until, timeZone })
     const totalCost = await priceExternal(totalRows, timeZone)
-    const centralSource = central as
-      | {
-          breakdown?: unknown
-          breakdownModels?: Array<Record<string, unknown>>
-          models?: Array<Record<string, unknown>>
-          dailyBreakdown?: unknown
-        }
-      | undefined
-    const aggregateCentralSource = centralFactProjection.available ? undefined : centralSource
-    let breakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
-    let modelBreakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
-    if (group && dimensions.has(group as never)) {
-      const dimension =
-        group === "app" ? undefined : (group as "provider" | "harness" | "model" | "location" | "session" | "workspace")
-      const localHistoryBreakdownRows =
-        view === "total"
-          ? totalRows.map((row) => ({
-              value:
-                group === "app"
-                  ? row.app
-                  : group === "provider"
-                    ? row.provider
-                    : group === "model"
-                      ? usageModelKey(row.provider, row.model)
-                      : group === "location"
-                        ? "local"
-                        : "unavailable",
-              turnCount: row.turnCount,
-              ...row.tokens,
-              unknownCategories: [
-                row.tokens.input,
-                row.tokens.output,
-                row.tokens.reasoning,
-                row.tokens.cacheRead,
-                row.tokens.cacheWrite,
-              ].filter((value) => value === null).length,
-            }))
-          : []
-      const rows =
-        view === "total"
-          ? mergeBreakdownRows(localHistoryBreakdownRows)
-          : group === "app"
-            ? mergeBreakdownRows(includeClaxedo ? [appBreakdownRow(claxedoSeries)] : [])
-            : mergeBreakdownRows(
-                includeClaxedo ? aggregateCentralSource?.breakdown : [],
-                includeClaxedo && dimension ? groupUsageFacts(localFacts, dimension) : [],
-              )
-      const centralModelRows =
-        group === "app"
-          ? (aggregateCentralSource?.models ?? []).map((row) => ({ ...row, group: "Claxedo" }))
-          : (aggregateCentralSource?.breakdownModels ?? [])
-      const localModelRows =
-        group === "app"
-          ? localFacts.map((fact) => ({
-              group: "Claxedo",
-              value: usageModelKey(fact.providerId, fact.modelId),
-              input_tokens: fact.tokens.input ?? 0,
-              output_tokens: fact.tokens.output ?? 0,
-              reasoning_tokens: fact.tokens.reasoning ?? 0,
-              cache_read_tokens: fact.tokens.cache.read ?? 0,
-              cache_write_tokens: fact.tokens.cache.write ?? 0,
-            }))
-          : dimension
-            ? modelBreakdownFromFacts(localFacts, dimension)
-            : []
-      const localHistoryModelRows =
-        view === "total"
-          ? totalRows.map((row) => ({
-              group:
-                group === "app"
-                  ? row.app
-                  : group === "provider"
-                    ? row.provider
-                    : group === "model"
-                      ? usageModelKey(row.provider, row.model)
-                      : group === "location"
-                        ? "local"
-                        : "unavailable",
-              value: usageModelKey(row.provider, row.model),
-              input_tokens: row.tokens.input ?? 0,
-              output_tokens: row.tokens.output ?? 0,
-              reasoning_tokens: row.tokens.reasoning ?? 0,
-              cache_read_tokens: row.tokens.cacheRead ?? 0,
-              cache_write_tokens: row.tokens.cacheWrite ?? 0,
-            }))
-          : []
-      breakdown = await canonicalBreakdownPage({
-        dimension: group as UsageFilterDimension,
-        rows,
-        modelRows: view === "total" ? localHistoryModelRows : [...centralModelRows, ...localModelRows],
-        metric,
-        ...(c.req.query("after") ? { after: c.req.query("after") } : {}),
-        ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
-      })
-      const localHistoryModels =
-        view === "total"
-          ? totalRows.map((row) => ({
-              value: usageModelKey(row.provider, row.model),
-              turnCount: row.turnCount,
-              ...row.tokens,
-              unknownCategories: [
-                row.tokens.input,
-                row.tokens.output,
-                row.tokens.reasoning,
-                row.tokens.cacheRead,
-                row.tokens.cacheWrite,
-              ].filter((value) => value === null).length,
-            }))
-          : []
-      modelBreakdown = await canonicalBreakdownPage({
-        dimension: "model",
-        rows:
-          view === "total"
-            ? mergeBreakdownRows(localHistoryModels)
-            : mergeBreakdownRows(
-                includeClaxedo ? aggregateCentralSource?.models : [],
-                includeClaxedo ? groupUsageFacts(localFacts, "model") : [],
-              ),
-        metric,
-        ...(c.req.query("model_after") ? { after: c.req.query("model_after") } : {}),
-        ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
-      })
-    }
-    const chart = group
-      ? view === "total"
-        ? mergeChartSeries(
-            group,
-            group === "app" || group === "provider" || group === "model" || group === "location"
-              ? chartRowsFromExternal(totalRows, group, timeZone)
-              : [],
-          )
-        : mergeChartSeries(
-            group,
-            group === "app"
-              ? includeClaxedo
-                ? chartRowsFromSeries("Claxedo", claxedoSeries)
-                : []
-              : includeClaxedo
-                ? aggregateCentralSource?.dailyBreakdown
-                : [],
-            group !== "app" && includeClaxedo
-              ? chartRowsFromFacts(
-                  localFacts,
-                  group as "provider" | "harness" | "model" | "location" | "session" | "workspace",
-                  timeZone,
-                )
-              : [],
-          )
-      : undefined
+    const { breakdown, modelBreakdown, chart } = await localUsageBreakdowns({
+      central, centralFactsAvailable: centralFactProjection.available, localFacts, totalRows,
+      claxedoSeries, includeClaxedo, group, view, metric, timeZone, requestedLimit,
+      after: c.req.query("after"), modelAfter: c.req.query("model_after"),
+    })
     const response: UnifiedUsageResponse = {
       version: 1,
       range: { since, until, timeZone },

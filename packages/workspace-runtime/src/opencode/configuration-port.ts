@@ -21,14 +21,6 @@ function data(response: unknown): unknown {
   return response
 }
 
-function record(response: unknown): Readonly<Record<string, unknown>> {
-  const value = data(response)
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("OpenCode returned an invalid object response")
-  }
-  return value as Readonly<Record<string, unknown>>
-}
-
 export function createConfigurationPort(host: OpenCodeHost): OpenCodeConfigurationPort {
   return {
     async integrations() {

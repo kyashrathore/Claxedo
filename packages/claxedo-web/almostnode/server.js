@@ -1,6 +1,5 @@
 const http = require('http');
 const https = require('https');
-const url = require('url');
 
 const UPSTREAM = 'https://app.opencode.ai';
 

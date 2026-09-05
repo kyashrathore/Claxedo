@@ -14,7 +14,6 @@ import type {
   AgentSession,
   HarnessCapabilities,
   PromptInput,
-  PromptModel,
   RuntimeDirectory,
   SessionConfig,
   SessionConfigUpdate,
@@ -27,8 +26,7 @@ import { GoalCapabilityError, hasAdapterCapability, requireGoalAction, type Goal
 import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
-import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
-import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
+import { createRuntimeEventHub } from "./runtime-event-hub"
 import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
 import { resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
@@ -84,11 +82,9 @@ import type {
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
   CreateAgentRuntimeInput,
-  AgentHarnessFactoryContext,
   InternalAgentHarnessFactory,
   RuntimeStoreInternal,
 } from "./runtime/contracts"
-
 
 export type AgentRuntime = ReturnType<typeof createAgentRuntime>
 
@@ -137,11 +133,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       .finally(() => resolvingAdapters.delete(harnessKey))
     resolvingAdapters.set(harnessKey, resolution)
     return await resolution
-  }
-
-  const sessionDirectory = (sessionId: string): RuntimeDirectory => {
-    const session = store.getSession(sessionId) as { directory?: string } | null
-    return session?.directory ?? undefined
   }
 
   const runtimeForSession = async (

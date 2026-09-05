@@ -48,26 +48,6 @@ const managedPolicy = (authorize: SessionAccessPolicy["authorize"]): SessionAcce
   registerSession: () => ({ allowed: true }),
 })
 
-function managedMount(authorize: SessionAccessPolicy["authorize"] = () => ({ allowed: true })) {
-  const app = new Hono()
-  const hub = createRuntimeEventHub()
-  app.use("*", async (c, next) => {
-    ;(c as any).set("relayHostAuth", {
-      actor_id: "actor_1",
-      actor_kind: "human",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      host_id: "host_1",
-      role: "editor",
-    })
-    await next()
-  })
-  app.get("/runtime-events", runtimeEventsHandler(hub, {
-    sessionAccessPolicy: managedPolicy(authorize),
-  }))
-  return { app, hub }
-}
-
 async function readUntil(response: Response, value: string) {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()

@@ -441,6 +441,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     const adapter = await connect({ descriptor: descriptor("https://opencode.example.test") })
     await expect(adapter.getSession(binding({ directory: "/local/other" }))).rejects.toMatchObject({ code: "invalid_directory" })
     await expect(adapter.getSession(binding({ connectionId: "connection:other" }))).rejects.toMatchObject({ code: "invalid_binding" })
+    // @ts-expect-error Exercise runtime rejection of the retired execution scope.
     await expect(adapter.getSession({ scope: "central", directory: "", sessionId: "central", connectionId: "connection:external-opencode", upstreamSessionId: "ses_upstream" })).rejects.toMatchObject({ code: "invalid_binding" })
     await expect(adapter.getSessionConfig(binding())).rejects.toMatchObject({ code: "unsupported_operation" })
     await expect(adapter.updateSessionConfig(binding(), { agent: "build" })).rejects.toMatchObject({ code: "unsupported_operation" })

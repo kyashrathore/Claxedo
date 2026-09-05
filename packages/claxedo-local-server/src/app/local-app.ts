@@ -40,7 +40,6 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
-import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeProxyOptions } from "../workspace/runtime-dispatch/internals"
 import { createWorkspaceRuntimeProxy } from "../workspace/runtime-dispatch/middleware"
 import { sessionMetaProjectionTap } from "../session/session-meta-tap"

@@ -639,7 +639,7 @@ globalThis.fetch = vi.fn((url: string | URL | Request) => {
 // ── Import module under test (after mocks) ───────────────────────────────
 
 const supervisor = await import("./index")
-const testSupervisor = await import("./test-helper")
+await import("./test-helper")
 
 // ── Tests ────────────────────────────────────────────────────────────────
 

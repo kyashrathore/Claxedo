@@ -3,7 +3,7 @@ import type {
   SandboxDriverEnsureInput,
   SandboxTarget,
 } from ".."
-import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
+import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
@@ -60,12 +60,7 @@ export type ModalSandboxDriverOptions = {
   runtimeCommand?: string
   workspaceDir?: string
   runner?: string
-  controlEnv?: {
-    relayJwksUrl?: string
-    relayVerifyPem?: string
-    managementJwksUrl?: string
-    sessionAuthorityUrl?: string
-  }
+  controlEnv?: WorkspaceRuntimeControlEnv
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   timeoutMs?: number
   idleTimeoutMs?: number
@@ -132,23 +127,17 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
   }
 
   function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Record<string, string> {
-    const env: Record<string, string> = {
-      ...workspaceRuntimeTargetEnv({
-        workspaceId: input.workspaceId,
-        hostId,
-        directory: workspaceDirectory(input),
-        port: runtimePort,
-        host: "0.0.0.0",
-      }),
-      ...workspaceRuntimeSourceEnv({ source: input.source }),
-      ...input.env,
-    }
-    if (options.runner) env.WORKSPACE_RUNTIME_RUNNER = options.runner
-    if (options.controlEnv?.relayJwksUrl) env.WORKSPACE_RUNTIME_RELAY_JWKS_URL = options.controlEnv.relayJwksUrl
-    if (options.controlEnv?.relayVerifyPem) env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM = options.controlEnv.relayVerifyPem
-    if (options.controlEnv?.managementJwksUrl) env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL = options.controlEnv.managementJwksUrl
-    if (options.controlEnv?.sessionAuthorityUrl) env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = options.controlEnv.sessionAuthorityUrl
-    return env
+    return workspaceRuntimeBootEnv({
+      workspaceId: input.workspaceId,
+      hostId,
+      directory: workspaceDirectory(input),
+      port: runtimePort,
+      host: "0.0.0.0",
+      source: input.source,
+      env: input.env,
+      runner: options.runner,
+      controlEnv: options.controlEnv,
+    })
   }
 
   async function image(client: ModalClientLike, input: SandboxDriverEnsureInput) {

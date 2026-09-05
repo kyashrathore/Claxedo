@@ -5,7 +5,6 @@ import path from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   AgentPluginActivationStoreError,
-  type AgentPluginArtifactPin,
   type MutateSignedOrganizationDefault,
   type MutateSignedUserActivation,
   type SignedActivationSnapshot,

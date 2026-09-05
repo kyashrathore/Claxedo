@@ -20,6 +20,7 @@ describe("provider-neutral private-session authority contract", () => {
   test("publishes one exact adapter method inventory", () => {
     expect(PRIVATE_SESSION_AUTHORITY_METHODS).toEqual([
       "reserveSession",
+      "reserveRuntimeSession",
       "registerRuntimeSession",
       "markSessionRegistrationAmbiguous",
       "beginSessionCompensation",

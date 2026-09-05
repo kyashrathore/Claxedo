@@ -132,7 +132,6 @@ export async function materializeClaxedoPublicCorpus(input: {
   const materializedSessions: MaterializedSession[] = []
   let expectedMessageCount = 0
   let expectedTranscriptBytes = 0
-  const baseTime = 1_700_000_000_000
 
   // Serial titles + created stamps are per-workspace, not global corpus index.
   // A global index left workspace-a as 53…42 then a gap to 21…1 under created_desc.
@@ -260,10 +259,6 @@ async function materializeSession(input: {
         throw new Error("Claxedo received an invalid completed part")
       }
       const { id, sessionID: _, messageID: __, ...data } = part
-      const updatedAt =
-        typeof event.data.time === "number"
-          ? event.data.time
-          : (currentMessage.time.completed ?? currentMessage.time.created)
       input.database.setPart(id, currentMessage.id, expectedSequence, data)
       transcriptBytes += partPayloadBytes(part)
       if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {

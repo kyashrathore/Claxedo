@@ -1,8 +1,4 @@
 /** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
-import {
-  CLAXEDO_ALLOW_SAFE_ID,
-  CLAXEDO_ASK_ALWAYS_ID,
-} from "../../src/features/session/permission/modes"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
@@ -819,15 +815,6 @@ async function createHarnessSession(
   return (await response.json()) as { id: string }
 }
 
-async function updateSessionConfig(dir: string, sessionID: string, config: unknown) {
-  const response = await fetch(
-    `${BACKEND_URL}/session/${encodeURIComponent(sessionID)}/config?directory=${encodeURIComponent(dir)}`,
-    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(config) },
-  )
-  if (!response.ok)
-    throw new Error(`GATING: failed to update session config (${response.status}): ${await response.text()}`)
-}
-
 async function createPiSession(dir: string) {
   const workspaceResponse = await fetch(
     `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`,
@@ -1496,14 +1483,13 @@ test.describe("real harness journeys @core @tier-real", () => {
       JSON.parse(sessionStorage.getItem("tier-real:permission-mode-history") ?? "[]") as string[]
     )
     expect(permissionModes).toContain("workspace-write")
-    // End-state oracle: after the Codex approval journey, the visible trigger
-    // must advertise a Codex mode. History may still include transient Claxedo
-    // ids from the pi-workspace placeholder before hydration; the settled control
-    // is the user-visible contract this scenario owns.
+    // Both hydration and the settled control must use runtime-reported modes.
+    expect(permissionModes).not.toContain("claxedo-allow-safe")
+    expect(permissionModes).not.toContain("claxedo-ask-always")
     const settledMode = page.locator('[data-action="prompt-permission-mode"]').filter({ visible: true }).last()
     await expect(settledMode).toHaveAttribute("data-mode", "workspace-write")
-    await expect(settledMode).not.toHaveAttribute("data-mode", CLAXEDO_ALLOW_SAFE_ID)
-    await expect(settledMode).not.toHaveAttribute("data-mode", CLAXEDO_ASK_ALWAYS_ID)
+    await expect(settledMode).not.toHaveAttribute("data-mode", "claxedo-allow-safe")
+    await expect(settledMode).not.toHaveAttribute("data-mode", "claxedo-ask-always")
   })
 
   test("codex native SDK runs a provider-issued spawn_agent call as an openable subagent", async ({ page }) => {

@@ -5,15 +5,12 @@ import {
   setSessionPermissionModeByTransport,
 } from "@/features/session/store/session-transport"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
-import { harnessUsesClaxedoPermissionPicker } from "@/features/session/permission/mechanisms"
 import { applyPermissionMode } from "@/features/session/permission/apply"
 import { createComposerAutoAccept } from "./auto-accept"
 import { createComposerPermissionMode } from "./permission-mode"
 import type { HarnessId } from "@/platform/identity/session-ref"
 import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import {
-  CLAXEDO_ALLOW_SAFE_ID,
-  CLAXEDO_ASK_ALWAYS_ID,
   type HarnessModeReport,
   type PermissionSelection,
 } from "@/features/session/permission/modes"
@@ -230,49 +227,10 @@ export function createComposerPermissionModeWiring(input: {
     })
   }
 
-  /**
-   * Which mode the picker should show as chosen, and where that answer lives.
-   *
-   * TWO stores, split by who actually holds the state. Where the harness has its
-   * own modes the HARNESS is the store — it reports `currentModeId`, and on a
-   * resumed session that is the mode genuinely in force, which no local copy
-   * could know. Returning undefined lets the picker derive it from the report;
-   * `pending` only covers the in-flight gap.
-   *
-   * Where Claxedo owns the behaviour (local answering), the
-   * existing per-scope auto-accept preference stays the store, so a session's
-   * saved choice carries over untouched.
-   */
-  const selection = (autoAcceptActive: boolean): PermissionSelection | undefined => {
-    const harness = input.harness()
-    // Unidentified harness: let `createComposerPermissionMode` derive the safe
-    // default. Mapping auto-accept here produced `claxedo-ask-always` on every
-    // draft whose harness had not resolved yet, which tier-real behavior 13 records
-    // as a permission-mode flash via `[data-action="prompt-permission-mode"]`.
-    if (!harness) return undefined
-    const current = report()
-    // `Array.isArray` for the same reason as `harnessPermissionModes`: a 200
-    // that is not a mode report would otherwise throw here during render.
-    if (current && Array.isArray(current.modes) && current.modes.length > 0) return pending()
-    if (!harnessUsesClaxedoPermissionPicker(harness as HarnessId)) return pending()
-    return { kind: "claxedo", modeId: autoAcceptActive ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID }
-  }
-
-  /** Route a new choice to whichever store owns it. */
-  const onSelectionChange = (
-    next: PermissionSelection,
-    autoAccept: { currentlyActive(): boolean; toggle(): void },
-  ) => {
-    if (next.kind === "harness") {
-      setPending(next)
-      return
-    }
-    const wantAllow = next.modeId === CLAXEDO_ALLOW_SAFE_ID
-    // Read the store directly, not the `active` memo — same race `toggle` avoids.
-    // After a Claxedo pick the memo can still read the pre-flip value for a frame,
-    // which made "Ask for everything" a no-op while the trigger still read Auto.
-    if (wantAllow === autoAccept.currentlyActive()) return
-    autoAccept.toggle()
+  // The harness owns the active mode. Pending only bridges an in-flight write.
+  const selection = (): PermissionSelection | undefined => input.harness() ? pending() : undefined
+  const onSelectionChange = (next: PermissionSelection) => {
+    if (next.kind === "harness") setPending(next)
   }
 
   return { report, pending, setPending, writer, reportError, selection, onSelectionChange,
@@ -318,45 +276,17 @@ export function createComposerPermissionSurface(input: {
     sessionId: input.sessionId,
     directory: input.directory,
   })
-  // The permission-mode picker. Replaces the binary "Approve for me" switch: it is a
-  // superset, because Claxedo's Manual mode IS the switch's off state, expressed as a
-  // mode. Selection lives in the same per-scope store the switch used, so a session's
-  // existing preference carries over rather than resetting.
   const permissionMode = createComposerPermissionMode({
     harness: input.harness,
-    // The selection IS the auto-accept boolean, not a parallel store. Claxedo offers
-    // exactly two selectable modes today — Auto and Manual — and they are precisely
-    // this switch's on and off, so deriving avoids a second source of truth that
-    // could disagree with the one the permission provider already persists per scope.
-    // A session's existing preference therefore carries straight over.
-    //
-    // WHEN HARNESS MODES BECOME DELIVERABLE this stops being sufficient: a boolean
-    // cannot hold "Claude: plan". At that point the selection needs real per-scope
-    // storage, and `permissionModeDeliverable` returning true for a harness delivery
-    // is the signal that the day has come.
     report: permissionModeWiring.report,
     unavailable: permissionModeWiring.harnessUnavailable,
-    // Selection routing lives in the wiring: which store owns a choice depends on
-    // whether the harness has modes of its own.
-    selection: () => permissionModeWiring.selection(autoAccept.active()),
-    onSelectionChange: (next) =>
-      permissionModeWiring.onSelectionChange(next, {
-        currentlyActive: autoAccept.currentlyActive,
-        toggle: autoAccept.toggle,
-      }),
-    // HARNESS deliveries only: `autoAccept.toggle` below already writes Claxedo's
-    // own options, so delivering them here too issues two PATCHes per selection.
+    selection: permissionModeWiring.selection,
+    onSelectionChange: permissionModeWiring.onSelectionChange,
     deliver: async ({ option, sessionID }) =>
-      option.origin === "harness"
-        ? applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() })
-        : { kind: "answered-locally" },
+      applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() }),
     // Drops the optimistic value as well as toasting — see `reportError`.
     onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
     sessionId: input.resolvedSessionId,
-    // No `deliver` here ON PURPOSE. `autoAccept.toggle` already performs exactly the
-    // right write for both modes — the Auto ruleset when enabling, the withdrawal
-    // ruleset when disabling — and routing the picker through it keeps ONE writer.
-    // Passing a deliverer here as well would issue two PATCHes per selection.
   })
 
   return { permissionModeWiring, autoAccept, permissionMode }

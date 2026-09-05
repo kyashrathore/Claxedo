@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { execFileSync } from "child_process"
 import { tmpdir } from "os"
 import path from "path"

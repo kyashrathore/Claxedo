@@ -14,11 +14,11 @@ import type { PermissionModeOption } from "@/features/session/permission/modes"
 function row(option: Partial<PermissionModeOption>, extra: Partial<PermissionModeRow> = {}): PermissionModeRow {
   return {
     option: {
-      id: "claxedo-allow-safe",
+      id: "auto",
       name: "Allow reads and edits",
       description: "Reads and in-project edits run without asking",
-      origin: "claxedo",
-      delivery: { kind: "claxedo-auto-answer", autoAnswer: [], respondWith: "once" },
+      origin: "harness",
+      delivery: { kind: "harness-permission-mode", modeId: "auto", appliesFrom: "next-turn" },
       ...option,
     } as PermissionModeOption,
     selectable: true,

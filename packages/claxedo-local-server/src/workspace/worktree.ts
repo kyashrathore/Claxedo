@@ -1,6 +1,5 @@
 import path from "node:path"
 import fs from "node:fs/promises"
-import { createHash } from "node:crypto"
 import { deleteWorkspaceByDirectory, ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { gitRun } from "../shell/git"
 

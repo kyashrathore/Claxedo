@@ -13,7 +13,7 @@
 
 import * as fs from "fs"
 import * as path from "path"
-import { CLAXEDO_DIR, BIN_DIR, BASH_DIR, SHELL_DIR, SHELL_MARKER, SHIMMED_BINARIES } from "./constants"
+import { CLAXEDO_DIR, BIN_DIR, BASH_DIR, SHELL_DIR, SHELL_MARKER } from "./constants"
 import { loadTemplate, shellQuote } from "./utils"
 
 // ── Env save/restore snippets ──────────────────────────────────────────────
@@ -67,24 +67,6 @@ _claxedo_ensure_path() {
 
 function escapeFishDoubleQuoted(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$")
-}
-
-function buildFishManagedPrelude(binDir: string): string {
-  const escaped = escapeFishDoubleQuoted(binDir)
-  return [...SHIMMED_BINARIES]
-    .map(
-      (name) =>
-        `functions -q ${name}; and functions -e ${name}
-function ${name}
-  set -l _claxedo_wrapper "${escaped}/${name}"
-  if test -x "$_claxedo_wrapper"; and not test -d "$_claxedo_wrapper"
-    "$_claxedo_wrapper" $argv
-  else
-    command ${name} $argv
-  end
-end`,
-    )
-    .join("\n")
 }
 
 // ── Shell config generators ────────────────────────────────────────────────

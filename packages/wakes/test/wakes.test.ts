@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect } from "vitest"
 import { createWakes, BudgetError, type Wakes, type WakeResult, type Actor, type Budgets } from "../src/index"
 import { SqliteWakeStore } from "../src/sqlite"
 

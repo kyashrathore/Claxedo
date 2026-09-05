@@ -10,14 +10,7 @@ import type { Context } from "hono"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import {
-  embedded,
-  ensureCloudRuntime,
-  noWr,
-  proxy,
-  requireRuntimeProxyActor,
-  type RuntimeProxyOptions,
-} from "./internals"
+import { embedded, ensureCloudRuntime, noWr, proxy, type RuntimeProxyOptions } from "./internals"
 
 const DEFAULT_REMOTE_DIRECTORY = "/workspace"
 

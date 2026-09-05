@@ -74,10 +74,13 @@ export function createChannelCore(input: {
    * reply to a stranger, which would only amplify.
    */
   budget?: (envelope: InboundEnvelope) => Promise<{ ok: true } | { ok: false; message: string }>
-  authorize?: (input: InboundEnvelope, context?: {
-    existingSession?: Awaited<ReturnType<SessionResolver["get"]>>
-    action: "message" | "approval" | "cancel"
-  }) => Promise<{ ok: true } | { ok: false; message: string }>
+  authorize?: (
+    input: InboundEnvelope,
+    context?: {
+      existingSession?: Awaited<ReturnType<SessionResolver["get"]>>
+      action: "message" | "approval" | "cancel"
+    },
+  ) => Promise<{ ok: true } | { ok: false; message: string }>
   /**
    * Reads a free-text reply against the pending prompt and returns
    * approved / denied / unclear. Absent → free text never decides an approval;
@@ -98,129 +101,303 @@ export function createChannelCore(input: {
   }) => Promise<readonly ApprovalJudgeTurn[]>
 }): ChannelCore {
   const approvals = input.approvals
+
+  async function admitSender(envelope: InboundEnvelope, handlers: Parameters<ChannelCore["handleInbound"]>[1]) {
+    // 1. ACCESS GATE — before any other work (dedup/session/LLM). A refused
+    //    stranger costs at most one throttled pairing reply; denials go to
+    //    the owner audit, not back to the sender (anti-amplification).
+    //    Trusted local injection (loopback fake transport) bypasses it.
+    if (input.access && !envelope.trustedSource) {
+      const decision = await input.access.gate(envelope)
+      if (decision.admission === "drop") {
+        await input.onDenial?.(envelope, decision.reason)
+        if (decision.reply) await handlers.reply({ kind: "text", text: decision.reply, final: true })
+        return false
+      }
+    }
+
+    // 2. PER-SENDER RATE LIMIT — an allowed-but-abusive sender is still
+    //    bounded before reaching a session/turn. Silent drop (no reply) so
+    //    the limiter itself can't be turned into an outbound amplifier.
+    //    Deliberately NOT passed `envelope.receivedAt`: that is the sender's
+    //    CLAIMED time, copied straight out of the provider webhook payload,
+    //    and the sliding window ages hits out relative to whatever it is
+    //    given — so one forged future timestamp would empty the bucket and
+    //    hand the flooder a fresh budget. The window must advance on the
+    //    server clock only.
+    if (input.rateLimiter && !envelope.trustedSource) {
+      const rl = input.rateLimiter.check(rateLimitKey(envelope.channel, envelope.externalUserId))
+      if (!rl.allowed) {
+        await input.onDenial?.(envelope, "rate_limited")
+        return false
+      }
+    }
+    return true
+  }
+
+  async function handleSessionlessCommand(
+    envelope: InboundEnvelope,
+    handlers: Parameters<ChannelCore["handleInbound"]>[1],
+  ) {
+    // 3. IDENTITY / LIFECYCLE COMMANDS that need no session.
+    const intent = envelope.intent
+    if (intent?.kind === "whoami") {
+      await handlers.reply({
+        kind: "text",
+        text: `Your sender id is ${envelope.channel}:${envelope.externalUserId}. An owner allowlists this exact id.`,
+        final: true,
+      })
+      return true
+    }
+    if (intent?.kind === "pairing_list" || intent?.kind === "pairing_approve") {
+      const isAdmin = input.canAdminister ? await input.canAdminister(envelope) : false
+      if (!isAdmin || !input.access) {
+        await handlers.reply({
+          kind: "text",
+          text: "Pairing administration is not available from this chat.",
+          final: true,
+        })
+        return true
+      }
+      if (intent.kind === "pairing_list") {
+        const pending = await input.access.listPending(envelope.channel)
+        await handlers.reply({
+          kind: "text",
+          text: pending.length
+            ? `Pending pairings:\n${pending.map((p) => `- ${p.code} (${p.channel}:${p.externalUserId})`).join("\n")}`
+            : "No pending pairing requests.",
+          final: true,
+        })
+        return true
+      }
+      const approved = await input.access.approve(intent.code, `${envelope.channel}:${envelope.externalUserId}`)
+      await handlers.reply({
+        kind: "text",
+        text: approved.ok
+          ? `Approved ${approved.channel}:${approved.externalUserId}. They can now message the bot.`
+          : approved.message,
+        final: true,
+      })
+      return true
+    }
+    if (intent?.kind === "list_sessions") {
+      const sessions = input.listSessions
+        ? await input.listSessions({ channel: envelope.channel, externalUserId: envelope.externalUserId })
+        : []
+      await handlers.reply({
+        kind: "text",
+        text: sessions.length
+          ? `Your sessions:\n${sessions.map((s) => `- ${s.title ?? s.sessionId}${s.appUrl ? ` — ${s.appUrl}` : ""}`).join("\n")}`
+          : "No sessions yet. Send a message to start one.",
+        final: true,
+      })
+      return true
+    }
+    return false
+  }
+
+  async function handleSessionCommand(
+    envelope: InboundEnvelope,
+    handlers: Parameters<ChannelCore["handleInbound"]>[1],
+    existingRef: Awaited<ReturnType<SessionResolver["get"]>>,
+  ) {
+    const intent = envelope.intent
+    if (intent?.kind === "status") {
+      await handlers.reply({
+        kind: "text",
+        text: existingRef
+          ? `Session ${existingRef.sessionId}${existingRef.appUrl ? ` — ${existingRef.appUrl}` : ""}.`
+          : "No active session in this thread. Send a message to start one.",
+        final: true,
+      })
+      return true
+    }
+
+    if (intent?.kind === "new_session") {
+      // Preempt, don't enqueue: a recovery command that queues behind a
+      // wedged turn never runs. Abort any active turn, then drop the binding
+      // so the NEXT message opens a fresh session.
+      if (existingRef) await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey }).catch(() => undefined)
+      await input.resetSession?.(envelope.threadKey)
+      await handlers.reply({
+        kind: "text",
+        text: "Started a fresh session. Your next message begins a new conversation.",
+        final: true,
+      })
+      return true
+    }
+    return false
+  }
+
+  async function handleStructuredApproval(
+    envelope: InboundEnvelope,
+    handlers: Parameters<ChannelCore["handleInbound"]>[1],
+  ) {
+    // STRUCTURED approval — a button press, carrying the token or call id it
+    // was rendered with. No interpretation needed.
+    if (envelope.intent?.kind === "approval_reply") {
+      if (!approvals) {
+        await handlers.reply({ kind: "text", text: "Approval replies are not enabled for this channel.", final: true })
+        return true
+      }
+      const resolved = envelope.intent.callId
+        ? { ok: true as const, callId: envelope.intent.callId }
+        : envelope.intent.token
+          ? await approvals.resolveToken({ token: envelope.intent.token, threadKey: envelope.threadKey })
+          : { ok: false as const, message: "Approval reply is missing a prompt token." }
+      if (resolved.ok === false) {
+        await handlers.reply({ kind: "text", text: resolved.message, final: true })
+        return true
+      }
+      const decision = await approvals.decide({
+        callId: resolved.callId,
+        approved: envelope.intent.approved,
+        actorExternalUserId: envelope.externalUserId,
+        threadKey: envelope.threadKey,
+      })
+      await handlers.reply({
+        kind: "text",
+        text: decision.ok === true ? "Approval recorded." : decision.message,
+        final: true,
+      })
+      return true
+    }
+    return false
+  }
+
+  async function handleJudgedApproval(
+    envelope: InboundEnvelope,
+    handlers: Parameters<ChannelCore["handleInbound"]>[1],
+    pendingApproval: ApprovalRequest | undefined,
+  ) {
+    // JUDGED approval — free text arriving while a prompt is pending. The
+    // judge reads it in the context of the prompt and the conversation and
+    // says yes / no / unclear. Unclear re-asks rather than guessing: a wrong
+    // "yes" executes something irreversible, a re-ask costs one message.
+    if (pendingApproval && input.judge && approvals) {
+      const verdict = await runApprovalJudge({
+        judge: input.judge,
+        request: pendingApproval,
+        text: envelope.text,
+        ...(await approvalHistory(input, envelope, pendingApproval)),
+        ...(input.judgeTimeoutMs === undefined ? {} : { timeoutMs: input.judgeTimeoutMs }),
+      })
+      if (verdict.decision === "unclear") {
+        await handlers.reply({
+          kind: "text",
+          text: verdict.question ?? APPROVAL_UNCLEAR_REPLY,
+          final: true,
+        })
+        return true
+      }
+      const decision = await approvals.decide({
+        callId: pendingApproval.callId,
+        approved: verdict.decision === "approved",
+        actorExternalUserId: envelope.externalUserId,
+        threadKey: envelope.threadKey,
+      })
+      await handlers.reply({
+        kind: "text",
+        text: decision.ok === true ? (verdict.decision === "approved" ? "Approved." : "Denied.") : decision.message,
+        final: true,
+      })
+      return true
+    }
+    return false
+  }
+
+  async function handleCancel(
+    envelope: InboundEnvelope,
+    handlers: Parameters<ChannelCore["handleInbound"]>[1],
+    existingRef: Awaited<ReturnType<SessionResolver["get"]>>,
+  ) {
+    if (envelope.intent?.kind === "cancel") {
+      if (!existingRef) {
+        await handlers.reply({ kind: "text", text: "No active channel session to cancel.", final: true })
+        return true
+      }
+      if (envelope.intent.sessionId && envelope.intent.sessionId !== existingRef.sessionId) {
+        await handlers.reply({ kind: "text", text: "Session id does not match this channel thread.", final: true })
+        return true
+      }
+      const result = await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey })
+      await handlers.reply({
+        kind: "text",
+        text: result.ok ? `Session ${result.status}.` : (result.message ?? "Unable to cancel session."),
+        final: true,
+      })
+      return true
+    }
+    return false
+  }
+
+  async function dispatchMessage(envelope: InboundEnvelope, handlers: Parameters<ChannelCore["handleInbound"]>[1]) {
+    const ref = await input.sessions.resolve(envelope).catch(async (error: unknown) => {
+      await input.dedup.release(envelope)
+      if (error instanceof ChannelSessionResolutionError) return error
+      throw error
+    })
+    if (ref instanceof ChannelSessionResolutionError) {
+      await handlers.reply({ kind: "text", text: ref.message, final: true })
+      return
+    }
+    await input.dedup.rememberSession(envelope, ref.sessionId, { sessionCreate: ref.created === true })
+
+    await handlers.reply({
+      kind: "status",
+      phase: "creating",
+      sessionId: ref.sessionId,
+      ...(ref.appUrl ? { appUrl: ref.appUrl } : {}),
+    })
+    if (ref.workspaceId && ref.workspaceRef) {
+      await handlers.reply({
+        kind: "text",
+        text: `Using workspace ${ref.workspaceId} at ${ref.workspaceRef}.`,
+        final: false,
+      })
+    }
+    await streamRuntimeReplies({
+      sessionId: ref.sessionId,
+      threadKey: envelope.threadKey,
+      requestee: envelope.externalUserId,
+      appUrl: ref.appUrl,
+      reply: handlers.reply,
+      approvals,
+      events: input.runtime.sendMessage({
+        sessionId: ref.sessionId,
+        text: envelope.text,
+        threadKey: envelope.threadKey,
+        channel: envelope.channel,
+        externalUserId: envelope.externalUserId,
+      }),
+    })
+  }
+
   return {
     async handleInbound(envelope, handlers) {
-      // 1. ACCESS GATE — before any other work (dedup/session/LLM). A refused
-      //    stranger costs at most one throttled pairing reply; denials go to
-      //    the owner audit, not back to the sender (anti-amplification).
-      //    Trusted local injection (loopback fake transport) bypasses it.
-      if (input.access && !envelope.trustedSource) {
-        const decision = await input.access.gate(envelope)
-        if (decision.admission === "drop") {
-          await input.onDenial?.(envelope, decision.reason)
-          if (decision.reply) await handlers.reply({ kind: "text", text: decision.reply, final: true })
-          return
-        }
-      }
+      if (!(await admitSender(envelope, handlers))) return
 
-      // 2. PER-SENDER RATE LIMIT — an allowed-but-abusive sender is still
-      //    bounded before reaching a session/turn. Silent drop (no reply) so
-      //    the limiter itself can't be turned into an outbound amplifier.
-      //    Deliberately NOT passed `envelope.receivedAt`: that is the sender's
-      //    CLAIMED time, copied straight out of the provider webhook payload,
-      //    and the sliding window ages hits out relative to whatever it is
-      //    given — so one forged future timestamp would empty the bucket and
-      //    hand the flooder a fresh budget. The window must advance on the
-      //    server clock only.
-      if (input.rateLimiter && !envelope.trustedSource) {
-        const rl = input.rateLimiter.check(rateLimitKey(envelope.channel, envelope.externalUserId))
-        if (!rl.allowed) {
-          await input.onDenial?.(envelope, "rate_limited")
-          return
-        }
-      }
-
-      // 3. IDENTITY / LIFECYCLE COMMANDS that need no session.
-      const intent = envelope.intent
-      if (intent?.kind === "whoami") {
-        await handlers.reply({
-          kind: "text",
-          text: `Your sender id is ${envelope.channel}:${envelope.externalUserId}. An owner allowlists this exact id.`,
-          final: true,
-        })
-        return
-      }
-      if (intent?.kind === "pairing_list" || intent?.kind === "pairing_approve") {
-        const isAdmin = input.canAdminister ? await input.canAdminister(envelope) : false
-        if (!isAdmin || !input.access) {
-          await handlers.reply({ kind: "text", text: "Pairing administration is not available from this chat.", final: true })
-          return
-        }
-        if (intent.kind === "pairing_list") {
-          const pending = await input.access.listPending(envelope.channel)
-          await handlers.reply({
-            kind: "text",
-            text: pending.length
-              ? `Pending pairings:\n${pending.map((p) => `- ${p.code} (${p.channel}:${p.externalUserId})`).join("\n")}`
-              : "No pending pairing requests.",
-            final: true,
-          })
-          return
-        }
-        const approved = await input.access.approve(intent.code, `${envelope.channel}:${envelope.externalUserId}`)
-        await handlers.reply({
-          kind: "text",
-          text: approved.ok
-            ? `Approved ${approved.channel}:${approved.externalUserId}. They can now message the bot.`
-            : approved.message,
-          final: true,
-        })
-        return
-      }
-      if (intent?.kind === "list_sessions") {
-        const sessions = input.listSessions
-          ? await input.listSessions({ channel: envelope.channel, externalUserId: envelope.externalUserId })
-          : []
-        await handlers.reply({
-          kind: "text",
-          text: sessions.length
-            ? `Your sessions:\n${sessions.map((s) => `- ${s.title ?? s.sessionId}${s.appUrl ? ` — ${s.appUrl}` : ""}`).join("\n")}`
-            : "No sessions yet. Send a message to start one.",
-          final: true,
-        })
-        return
-      }
+      if (await handleSessionlessCommand(envelope, handlers)) return
 
       const existingRef = await input.sessions.get(envelope.threadKey)
 
-      if (intent?.kind === "status") {
-        await handlers.reply({
-          kind: "text",
-          text: existingRef
-            ? `Session ${existingRef.sessionId}${existingRef.appUrl ? ` — ${existingRef.appUrl}` : ""}.`
-            : "No active session in this thread. Send a message to start one.",
-          final: true,
-        })
-        return
-      }
-
-      if (intent?.kind === "new_session") {
-        // Preempt, don't enqueue: a recovery command that queues behind a
-        // wedged turn never runs. Abort any active turn, then drop the binding
-        // so the NEXT message opens a fresh session.
-        if (existingRef) await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey }).catch(() => undefined)
-        await input.resetSession?.(envelope.threadKey)
-        await handlers.reply({
-          kind: "text",
-          text: "Started a fresh session. Your next message begins a new conversation.",
-          final: true,
-        })
-        return
-      }
+      if (await handleSessionCommand(envelope, handlers, existingRef)) return
 
       // A plain message arriving while a prompt is pending in this thread is a
       // candidate approval reply — the judge decides below whether it actually
       // is one. Resolved HERE so it can classify the turn as an approval for
       // `authorize` and the budget veto, exactly like a button press.
-      const pendingApproval = input.judge && approvals && (envelope.intent?.kind ?? "message") === "message"
-        ? (await approvals.pendingForThread(envelope.threadKey).catch(() => []))[0]
-        : undefined
+      const pendingApproval =
+        input.judge && approvals && (envelope.intent?.kind ?? "message") === "message"
+          ? (await approvals.pendingForThread(envelope.threadKey).catch(() => []))[0]
+          : undefined
 
-      const action = envelope.intent?.kind === "approval_reply" || pendingApproval
-        ? "approval"
-        : envelope.intent?.kind === "cancel"
-          ? "cancel"
-          : "message"
+      const action =
+        envelope.intent?.kind === "approval_reply" || pendingApproval
+          ? "approval"
+          : envelope.intent?.kind === "cancel"
+            ? "cancel"
+            : "message"
       const auth = await input.authorize?.(envelope, { existingSession: existingRef, action })
       if (auth?.ok === false) {
         await handlers.reply({ kind: "text", text: auth.message, final: true })
@@ -253,129 +430,13 @@ export function createChannelCore(input: {
         return
       }
 
-      // STRUCTURED approval — a button press, carrying the token or call id it
-      // was rendered with. No interpretation needed.
-      if (envelope.intent?.kind === "approval_reply") {
-        if (!approvals) {
-          await handlers.reply({ kind: "text", text: "Approval replies are not enabled for this channel.", final: true })
-          return
-        }
-        const resolved = envelope.intent.callId
-          ? { ok: true as const, callId: envelope.intent.callId }
-          : envelope.intent.token
-            ? await approvals.resolveToken({ token: envelope.intent.token, threadKey: envelope.threadKey })
-            : { ok: false as const, message: "Approval reply is missing a prompt token." }
-        if (resolved.ok === false) {
-          await handlers.reply({ kind: "text", text: resolved.message, final: true })
-          return
-        }
-        const decision = await approvals.decide({
-          callId: resolved.callId,
-          approved: envelope.intent.approved,
-          actorExternalUserId: envelope.externalUserId,
-          threadKey: envelope.threadKey,
-        })
-        await handlers.reply({
-          kind: "text",
-          text: decision.ok === true ? "Approval recorded." : decision.message,
-          final: true,
-        })
-        return
-      }
+      if (await handleStructuredApproval(envelope, handlers)) return
 
-      // JUDGED approval — free text arriving while a prompt is pending. The
-      // judge reads it in the context of the prompt and the conversation and
-      // says yes / no / unclear. Unclear re-asks rather than guessing: a wrong
-      // "yes" executes something irreversible, a re-ask costs one message.
-      if (pendingApproval && input.judge && approvals) {
-        const verdict = await runApprovalJudge({
-          judge: input.judge,
-          request: pendingApproval,
-          text: envelope.text,
-          ...(await approvalHistory(input, envelope, pendingApproval)),
-          ...(input.judgeTimeoutMs === undefined ? {} : { timeoutMs: input.judgeTimeoutMs }),
-        })
-        if (verdict.decision === "unclear") {
-          await handlers.reply({
-            kind: "text",
-            text: verdict.question ?? APPROVAL_UNCLEAR_REPLY,
-            final: true,
-          })
-          return
-        }
-        const decision = await approvals.decide({
-          callId: pendingApproval.callId,
-          approved: verdict.decision === "approved",
-          actorExternalUserId: envelope.externalUserId,
-          threadKey: envelope.threadKey,
-        })
-        await handlers.reply({
-          kind: "text",
-          text: decision.ok === true
-            ? verdict.decision === "approved" ? "Approved." : "Denied."
-            : decision.message,
-          final: true,
-        })
-        return
-      }
+      if (await handleJudgedApproval(envelope, handlers, pendingApproval)) return
 
-      if (envelope.intent?.kind === "cancel") {
-        if (!existingRef) {
-          await handlers.reply({ kind: "text", text: "No active channel session to cancel.", final: true })
-          return
-        }
-        if (envelope.intent.sessionId && envelope.intent.sessionId !== existingRef.sessionId) {
-          await handlers.reply({ kind: "text", text: "Session id does not match this channel thread.", final: true })
-          return
-        }
-        const result = await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey })
-        await handlers.reply({
-          kind: "text",
-          text: result.ok ? `Session ${result.status}.` : result.message ?? "Unable to cancel session.",
-          final: true,
-        })
-        return
-      }
+      if (await handleCancel(envelope, handlers, existingRef)) return
 
-      const ref = await input.sessions.resolve(envelope).catch(async (error: unknown) => {
-        await input.dedup.release(envelope)
-        if (error instanceof ChannelSessionResolutionError) return error
-        throw error
-      })
-      if (ref instanceof ChannelSessionResolutionError) {
-        await handlers.reply({ kind: "text", text: ref.message, final: true })
-        return
-      }
-      await input.dedup.rememberSession(envelope, ref.sessionId, { sessionCreate: ref.created === true })
-
-      await handlers.reply({
-        kind: "status",
-        phase: "creating",
-        sessionId: ref.sessionId,
-        ...(ref.appUrl ? { appUrl: ref.appUrl } : {}),
-      })
-      if (ref.workspaceId && ref.workspaceRef) {
-        await handlers.reply({
-          kind: "text",
-          text: `Using workspace ${ref.workspaceId} at ${ref.workspaceRef}.`,
-          final: false,
-        })
-      }
-      await streamRuntimeReplies({
-        sessionId: ref.sessionId,
-        threadKey: envelope.threadKey,
-        requestee: envelope.externalUserId,
-        appUrl: ref.appUrl,
-        reply: handlers.reply,
-        approvals,
-        events: input.runtime.sendMessage({
-          sessionId: ref.sessionId,
-          text: envelope.text,
-          threadKey: envelope.threadKey,
-          channel: envelope.channel,
-          externalUserId: envelope.externalUserId,
-        }),
-      })
+      await dispatchMessage(envelope, handlers)
     },
     async onApproval(decision) {
       if (!approvals) return { ok: false, message: "Approval bridge is not configured" }

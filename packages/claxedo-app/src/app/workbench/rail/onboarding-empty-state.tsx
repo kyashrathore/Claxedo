@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
@@ -30,11 +29,9 @@ import {
   type AIConnectView,
   type CodeHostRequest,
   type OnboardingGoFurtherCardId,
-  type OnboardingStepAction,
   type OnboardingStepId,
   type OnboardingDestination,
   type SetupPageStep,
-  type SetupStepSubmit,
 } from "@/features/onboarding"
 import { useLocalWorkspaceAutoShareStatus } from "@/features/workspaces/data/auto-share-local-workspaces"
 import { invalidateSharedWorkspaces } from "@/features/workspaces/data/shared-workspaces"
@@ -57,7 +54,6 @@ export function OnboardingEmptyState(props: {
   const globalSDK = useGlobalSDK()
   const config = useConfigOptional()
   const productUi = createMemo(() => resolveProductUiFlags(config))
-  const dialog = useDialog()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -191,17 +187,6 @@ export function OnboardingEmptyState(props: {
   })
   const visible = createMemo(() => setup().mode !== "hidden")
 
-  // Credentials this machine holds that the cloud cannot reach yet.
-  const shareCandidates = createMemo(() => state().localOnlyCredentials)
-  const unshareableCredentials = createMemo(() => state().unshareableCredentials)
-  const sharedCredentials = createMemo(() =>
-    (credentialsQuery.data ?? []).filter((credential) => credential.scope === "shared"),
-  )
-  // Each step's body registers how its primary action behaves; the action bar
-  // reads it. Signals, not plain refs — the label carries a live count
-  // ("Save 2 connections") that has to track selection.
-  const [aiSubmit, setAISubmit] = createSignal<SetupStepSubmit>()
-
   createEffect(() => {
     const view = setup()
     if (visible() && !emitted.has("setup_form_shown")) {
@@ -238,10 +223,6 @@ export function OnboardingEmptyState(props: {
     const step = activeStep()
     if (step && !step.done) setPassedOver((current) => [...new Set([...current, step.id])])
     goTo(undefined)
-  }
-
-  function runAction(action: OnboardingStepAction) {
-    if (action === "open-project" || action === "pick-repository") props.onNewProject?.()
   }
 
   /**
@@ -495,7 +476,6 @@ export function OnboardingEmptyState(props: {
           deviceLoginConfigured={remoteAccess.status.data?.deviceLoginConfigured === true}
           view={aiView()}
           onViewChange={setAIView}
-          registerSubmit={(submit) => setAISubmit(() => submit)}
           onLocalHarnessesDetected={setRunnableHarnesses}
           onConnected={() => goTo(undefined)}
           emit={funnel().emit}

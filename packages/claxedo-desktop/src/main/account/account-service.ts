@@ -15,9 +15,9 @@
  * the ones that matter, because they only run once a session has been open long
  * enough for nobody to be watching — would never be tested at all.
  *
- * A 401 is NOT a renewal trigger. Renewal happens ahead of expiry, off
- * `shouldRefresh`; a 401 arriving despite that is the server saying this
- * session is over, and the disposition for it is sign-out. See `run()`.
+ * Requests renew ahead of expiry and recover one server-rejected token by
+ * renewing and retrying once. Unary calls and stream opens share that policy;
+ * a retry rejected with 401 ends the session.
  */
 
 import { DesktopAuthDescriptorError, type BoundDesktopCredential } from "./auth-descriptor"
@@ -461,6 +461,34 @@ export function createAccountService(options: AccountServiceOptions) {
     })
   }
 
+  async function recoverAccountResponse(
+    response: Response,
+    held: StoredDesktopCredential,
+    startedIn: number,
+    issue: (token: string) => Promise<Response>,
+  ): Promise<Response> {
+    if (startedIn !== era) throw new Error("not signed in")
+    if (response.status !== 401) return response
+    const body = await response.json().catch(() => undefined) as {
+      error?: { code?: string; message?: string }
+    } | undefined
+    if (startedIn !== era) throw new Error("not signed in")
+    // Missing credentials are a client error. Rejected credentials, including
+    // invalid_bearer_token, may have been retired before their local expiry.
+    if (body?.error?.code === "missing_bearer_token") {
+      throw new Error(body.error.message ?? "The account request carried no credential.")
+    }
+    const renewed = await renew(held)
+    if (startedIn !== era) throw new Error("not signed in")
+    if (renewed.ok) {
+      const retried = await issue(renewed.token)
+      if (startedIn !== era) throw new Error("not signed in")
+      if (retried.status !== 401) return retried
+    }
+    invalidate("the server rejected this session")
+    throw new Error("session rejected")
+  }
+
   return {
     state: () => state,
 
@@ -651,53 +679,7 @@ export function createAccountService(options: AccountServiceOptions) {
         ms: accountPerfNow() - fetchStarted,
         status: response.status,
       })
-      if (startedIn !== era) throw new Error("not signed in")
-      if (response.status === 401) {
-        const body = await response.json().catch(() => undefined) as {
-          error?: { code?: string; message?: string }
-        } | undefined
-        const code = body?.error?.code
-        // `missing_bearer_token` means WE sent no credential — a client bug,
-        // not a statement about the session, so it must not wipe it.
-        //
-        // `invalid_bearer_token` used to be treated the same way, on the
-        // earlier assumption that it only ever meant a wrong-SHAPED token
-        // (JWKS refusing an opaque one) and therefore a misconfiguration no
-        // amount of renewing could fix. This deployment returns that exact
-        // code for an ordinary rejected token — expired, retired, unknown —
-        // which wedged the desktop completely: no renewal (this branch
-        // returned first), no invalidation, so the account read "Signed in"
-        // while every operation 401'd and remote access could not start.
-        // Verified against the live control plane: a junk bearer answers
-        // {"error":{"code":"invalid_bearer_token", ...}}.
-        //
-        // So it falls through to renew-once-and-retry below, which resolves
-        // both readings: a renewable session recovers, and one that is truly
-        // unusable fails its retry and reaches the honest sign-out.
-        if (code === "missing_bearer_token") {
-          throw new Error(body?.error?.message ?? "The account request carried no credential.")
-        }
-        // Renewal ahead of expiry covers a token that aged out, but not one
-        // the server retired EARLY — a refresh-family rotation revokes the
-        // access tokens minted before it, so a desktop holding a
-        // locally-unexpired token 401s forever while its refresh grant is
-        // perfectly alive. Observed live: every operation 401'd, remote access
-        // could not start, and the panel showed a signed-in account with no
-        // explanation.
-        //
-        // So: renew ONCE and re-issue. This is not the retry loop the previous
-        // comment warned about — a genuinely revoked session fails its
-        // renewal, or answers 401 again, and both land on the invalidate
-        // below. One attempt, then the honest sign-out.
-        const renewed = await renew(held)
-        if (startedIn !== era) throw new Error("not signed in")
-        const recovered = renewed.ok && (response = await issue(renewed.token)).status !== 401
-        if (!recovered) {
-          invalidate("the server rejected this session")
-          throw new Error("session rejected")
-        }
-        // Recovered: fall through to the normal response handling below.
-      }
+      response = await recoverAccountResponse(response, held, startedIn, issue)
       if (request.response === "http") {
         // Some reviewed operations have expected non-2xx outcomes (OAuth
         // replacement confirmation, optimistic revision conflict). Preserve
@@ -779,17 +761,16 @@ export function createAccountService(options: AccountServiceOptions) {
       let firstChunk = true
       let httpOkAt: number | undefined
       try {
-        // The SSE open is one bounded attempt, like every other hosted call —
-        // see hosted-transport.ts. The read loop below still uses
+        // Each SSE HTTP attempt is bounded by hosted-transport.ts. The read loop uses
         // `controller`, which stays registered for logout/caller aborts for
         // the stream's whole life.
-        const response = await fetchHosted(
+        const issue = (token: string) => fetchHosted(
           options.fetch,
           `${held.binding.controlPlaneOrigin}${request.path}`,
           {
             method: request.method,
             headers: {
-              authorization: `Bearer ${access.token}`,
+              authorization: `Bearer ${token}`,
               Accept: "text/event-stream",
               ...(request.headers ?? {}),
             },
@@ -800,22 +781,7 @@ export function createAccountService(options: AccountServiceOptions) {
           },
           controller.signal,
         )
-        if (startedIn !== era) throw new Error("not signed in")
-        if (response.status === 401) {
-          // Same code split as `run()`: a bearer-shaped rejection is not a
-          // revoked session, and a stream that invalidated on it signed the
-          // user out for a transport-level token problem `run()` deliberately
-          // survives. Only the remaining 401s mean revocation.
-          const body = await response.json().catch(() => undefined) as {
-            error?: { code?: string; message?: string }
-          } | undefined
-          const code = body?.error?.code
-          if (code === "invalid_bearer_token" || code === "missing_bearer_token") {
-            throw new Error(body?.error?.message ?? "Control plane rejected the account token")
-          }
-          invalidate("the server rejected this session")
-          throw new Error("session rejected")
-        }
+        const response = await recoverAccountResponse(await issue(access.token), held, startedIn, issue)
         if (!response.ok || !response.body) {
           const detail = (await response.text().catch(() => "")).trim()
           throw new Error(

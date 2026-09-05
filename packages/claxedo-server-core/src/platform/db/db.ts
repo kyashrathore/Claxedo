@@ -44,7 +44,6 @@ export function configureClaxedoMigrations(dir: string) {
 const log = Log.create({ service: "claxedo-db" })
 const require = createRequire(import.meta.url)
 
-type Sqlite = InstanceType<typeof Database>
 type BunSqliteModule = {
   Database: new (file: string) => CompatibleSqlite
 }

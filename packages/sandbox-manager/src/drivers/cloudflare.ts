@@ -30,7 +30,7 @@ import type {
   SandboxTarget,
 } from ".."
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
-import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
+import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 
 export type CloudflareSandboxDriverOptions = {
   /** Base URL of the deployed Cloudflare Sandbox Worker (e.g. https://sbx.example.com). */
@@ -51,12 +51,7 @@ export type CloudflareSandboxDriverOptions = {
  *   relayVerifyPem   → WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM (fallback to JWKS)
  *   managementJwksUrl → WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL (config apply)
    */
-  controlEnv?: {
-    relayJwksUrl?: string
-    relayVerifyPem?: string
-    managementJwksUrl?: string
-    sessionAuthorityUrl?: string
-  }
+  controlEnv?: WorkspaceRuntimeControlEnv
   /** Default runner injected as WORKSPACE_RUNTIME_RUNNER, for example "opencode". */
   runner?: string
   /** Dynamic runtime env that needs the sandbox id or current lease. */
@@ -181,26 +176,22 @@ export function createCloudflareSandboxDriver(
   // Cloudflare's built-in setEnvVars. hostId MUST equal the value stored on the
   // lease so the relay routes (`target.hostId === args.hostId`).
   async function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Promise<Record<string, string>> {
-    const env: Record<string, string> = {
-      ...workspaceRuntimeTargetEnv({
-        workspaceId: input.workspaceId,
-        hostId,
-        directory: workspaceDirectory(input),
-        port: runtimePort,
-        host: "0.0.0.0",
-      }),
-      ...workspaceRuntimeSourceEnv({ source: input.source }),
-      // Must match RUNTIME_DATA_DIR's capture set below — see its comment.
-      CLAXEDO_DATA_DIR: RUNTIME_DATA_DIR,
-      ...input.env,
-      ...await options.env?.(input, { id: hostId }),
-    }
-    if (options.runner) env.WORKSPACE_RUNTIME_RUNNER = options.runner
-    if (options.controlEnv?.relayJwksUrl) env.WORKSPACE_RUNTIME_RELAY_JWKS_URL = options.controlEnv.relayJwksUrl
-    if (options.controlEnv?.relayVerifyPem) env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM = options.controlEnv.relayVerifyPem
-    if (options.controlEnv?.managementJwksUrl) env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL = options.controlEnv.managementJwksUrl
-    if (options.controlEnv?.sessionAuthorityUrl) env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = options.controlEnv.sessionAuthorityUrl
-    return env
+    return workspaceRuntimeBootEnv({
+      workspaceId: input.workspaceId,
+      hostId,
+      directory: workspaceDirectory(input),
+      port: runtimePort,
+      host: "0.0.0.0",
+      source: input.source,
+      env: {
+        // Must match the checkpoint capture set below.
+        CLAXEDO_DATA_DIR: RUNTIME_DATA_DIR,
+        ...input.env,
+        ...await options.env?.(input, { id: hostId }),
+      },
+      runner: options.runner,
+      controlEnv: options.controlEnv,
+    })
   }
 
   // Brokered secrets travel server-to-server to the Worker (API_TOKEN-gated),

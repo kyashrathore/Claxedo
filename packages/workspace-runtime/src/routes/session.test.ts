@@ -923,7 +923,7 @@ describe("session prompt route", () => {
         },
       })
     } finally {
-
+      unsub()
     }
   })
 

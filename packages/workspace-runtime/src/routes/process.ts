@@ -5,7 +5,6 @@
  */
 
 import { Hono, type Context } from "hono"
-import z from "zod/v3"
 import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
@@ -38,10 +37,6 @@ function processLogTargetRequired() {
 
 function processLogNotFound(message: string, details?: Record<string, unknown>) {
   return errorBody("process_log_target_not_found", message, details)
-}
-
-function processLogPrivate() {
-  return errorBody("process_log_private", "Terminal logs require their creator or a workspace administrator")
 }
 
 export type CreateProcessRoutesDeps = {

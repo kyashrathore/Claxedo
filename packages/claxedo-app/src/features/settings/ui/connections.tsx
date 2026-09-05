@@ -3,7 +3,7 @@
 // connect/reconnect/disconnect/re-verify actions, and the connect dialog.
 // The token endpoint under this route family is host-internal and is never
 // called from the UI.
-import { createMemo, createSignal, For, onMount, Show, type Component, type JSX } from "solid-js"
+import { createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"

@@ -19,7 +19,6 @@ import {
   type HarnessScopeInput,
 } from "./store-policy"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
-import { harnessSelectionId } from "./profile"
 
 type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>
 

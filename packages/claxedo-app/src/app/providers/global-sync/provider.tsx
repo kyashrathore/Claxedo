@@ -14,7 +14,11 @@ import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-man
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
 import { clearSessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
-import type { ProjectMeta, SessionInventoryRow, SessionCacheValue, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
+import type {
+  SessionInventoryRow,
+  SessionCacheValue,
+  WorkspaceGroup,
+} from "@/features/session/data/sync/global-sync-types"
 import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -22,16 +26,12 @@ import { type SessionInventoryStoredValue, type SessionInventoryValue } from "..
 import {
   applySessionInventoryLifecycle,
   createSessionInventorySnapshotValue,
-  mergeSessionInventoryProjectPage,
-  mergeSessionInventoryWorkspaceGroups,
   readSessionInventoryQueryData,
   removeSessionInventoryRow,
-  replaceSessionInventoryWorkspaceGroups,
   replaceSessionInventoryWorkspaceRows,
   setSessionInventoryQueryData,
   updateSessionInventoryQueryData,
 } from "../../../features/session/data/sync/inventory-writers"
-import { removeSessionIdentity } from "@/platform/sync/global-session-identity"
 import {
   applyWorkspaceCatalog,
   readWorkspaceCatalog,
@@ -43,7 +43,6 @@ import {
   clearGlobalSyncServerClientsForDirectory,
   clearGlobalSyncServerClientsForOwner,
 } from "@/platform/sync/global-sync-sdk-client-cache"
-import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { principalDataScope, principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
@@ -51,7 +50,12 @@ import { useAccountPort } from "@/platform/account/account-provider"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
-import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
+import {
+  bootstrapRequestPrefix,
+  createBootstrapOrchestrator,
+  globalBootstrapFreshKey,
+  sessionLoadRequestKey,
+} from "../../boot/data/bootstrap-orchestrator"
 import {
   createGlobalSyncEventIngress,
   createSessionAccessRevocationChannel,
@@ -160,7 +164,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       sessionWorkspaceRuntimeRef({ directory })?.workspaceId ??
       directory
   }
-
 
   const signedInventorySource = createSignedInventorySource({
     queryClient,
@@ -486,14 +489,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       : bootstrap())
     onCleanup(scheduleMarkdownPrewarm())
   })
-
-  function projectMeta(directory: string, patch: ProjectMeta) {
-    children.projectMeta(directory, patch)
-  }
-
-  function projectIcon(directory: string, value: string | undefined) {
-    children.projectIcon(directory, value)
-  }
 
   /**
    * What is left of the session inventory: the one snapshot that seeds which

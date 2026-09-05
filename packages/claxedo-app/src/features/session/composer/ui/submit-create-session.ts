@@ -21,10 +21,7 @@ import {
   type ProjectCatalogItem,
   type RuntimeWorkspaceRef,
 } from "../workspace-resolver"
-import {
-  reservePrivateSession,
-  type PrivateSessionReservation,
-} from "@/platform/runtime/private-session-reservation"
+import { reservePrivateSession } from "@/platform/runtime/private-session-reservation"
 import { holdSessionEventScope } from "@/platform/runtime/session-event-scope"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull

@@ -1304,7 +1304,7 @@ describe("workspace relay server", () => {
       })
       const originalFetch = globalThis.fetch
       globalThis.fetch = ((url, init) => {
-        const request = new Request(url, init)
+        new Request(url, init)
         return Promise.resolve(new Response("ok", { status: 200 }))
       }) as typeof fetch
       try {

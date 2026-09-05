@@ -1,3 +1,4 @@
+import { object } from "../value"
 import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
 import type { ToolIntent as AcpIntent } from "../../contracts/agent-runtime-event"
 import type { ToolView } from "./state"
@@ -9,11 +10,6 @@ export type AcpToolClassification =
   | { kind: "switch_mode"; payload: ToolView }
   | { kind: "mcp"; payload: ToolView }
   | { kind: "generic"; payload: ToolView }
-
-function object(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
-}
 
 export function acpIntent(metadata: Record<string, unknown>): AcpIntent | undefined {
   const acp = object(metadata.acp)

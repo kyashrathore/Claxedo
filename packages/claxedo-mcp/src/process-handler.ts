@@ -213,6 +213,20 @@ export const launch = (id: string, out: LaunchResult, ok: string, fail: string) 
 // Exported handler
 // ---------------------------------------------------------------------------
 
+function processConfigOptions(args: ProcessInput) {
+  const body: Record<string, unknown> = {}
+  if (args.args) body.args = args.args
+  if (args.cwd) body.cwd = args.cwd
+  if (args.env) body.env = args.env
+  if (args.autoStart !== undefined) body.autoStart = args.autoStart
+  if (args.restartPolicy) body.restartPolicy = args.restartPolicy
+  if (args.maxRestarts !== undefined) body.maxRestarts = args.maxRestarts
+  if (args.color) body.color = args.color
+  if (args.dependsOn) body.dependsOn = args.dependsOn
+  if (args.port) body.port = args.port
+  return body
+}
+
 export async function handleProcess(
   args: ProcessInput,
   http: HttpFn,
@@ -235,11 +249,12 @@ export async function handleProcess(
       return textResult(lines.join("\n\n"))
     }
 
-    case "start": {
+    case "start":
+    case "restart": {
       const id = clean(args.id)
-      if (!id) return errorResult('action "start" requires "id" (process config ID).')
-      const out = await proc(directory).start(id)
-      const result = launch(id, out, "started", "start")
+      if (!id) return errorResult(`action "${action}" requires "id" (process config ID).`)
+      const out = await proc(directory)[action](id)
+      const result = launch(id, out, action === "start" ? "started" : "restarted", action)
       return result.isError ? errorResult(result.text) : textResult(result.text)
     }
 
@@ -250,29 +265,13 @@ export async function handleProcess(
       return textResult(`Process ${id} stopped.`)
     }
 
-    case "restart": {
-      const id = clean(args.id)
-      if (!id) return errorResult('action "restart" requires "id" (process config ID).')
-      const out = await proc(directory).restart(id)
-      const result = launch(id, out, "restarted", "restart")
-      return result.isError ? errorResult(result.text) : textResult(result.text)
-    }
-
     case "add": {
       const name = clean(args.name)
       const command = clean(args.command)
       if (!name) return errorResult('action "add" requires "name".')
       if (!command) return errorResult('action "add" requires "command".')
       const body: Record<string, unknown> = { id: clean(args.id) || createProcessId(), name, command }
-      if (args.args) body.args = args.args
-      if (args.cwd) body.cwd = args.cwd
-      if (args.env) body.env = args.env
-      if (args.autoStart !== undefined) body.autoStart = args.autoStart
-      if (args.restartPolicy) body.restartPolicy = args.restartPolicy
-      if (args.maxRestarts !== undefined) body.maxRestarts = args.maxRestarts
-      if (args.color) body.color = args.color
-      if (args.dependsOn) body.dependsOn = args.dependsOn
-      if (args.port) body.port = args.port
+      Object.assign(body, processConfigOptions(args))
       const config = configRow(await http(
         PROCESS_PATH,
         { method: "POST", body: JSON.stringify(body) },
@@ -288,15 +287,7 @@ export async function handleProcess(
       const body: Record<string, unknown> = {}
       if (args.name) body.name = args.name
       if (args.command) body.command = args.command
-      if (args.args) body.args = args.args
-      if (args.cwd) body.cwd = args.cwd
-      if (args.env) body.env = args.env
-      if (args.autoStart !== undefined) body.autoStart = args.autoStart
-      if (args.restartPolicy) body.restartPolicy = args.restartPolicy
-      if (args.maxRestarts !== undefined) body.maxRestarts = args.maxRestarts
-      if (args.color) body.color = args.color
-      if (args.dependsOn) body.dependsOn = args.dependsOn
-      if (args.port) body.port = args.port
+      Object.assign(body, processConfigOptions(args))
       const config = configRow(await http(
         `${PROCESS_PATH}/${encodeURIComponent(id)}`,
         { method: "PUT", body: JSON.stringify(body) },

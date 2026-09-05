@@ -12,7 +12,7 @@
 //                         review. The screenshot is evidence, not proof — see doctrine.
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { mkdirSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 
 export const SELECTORS = {
   assistantContent: '[data-slot="session-turn-assistant-content"]',

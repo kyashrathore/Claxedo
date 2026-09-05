@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import { createEffect, createSignal, type Accessor } from "solid-js"
 
 import {
   shouldRetargetWorkspacePanelForFocusedPane,

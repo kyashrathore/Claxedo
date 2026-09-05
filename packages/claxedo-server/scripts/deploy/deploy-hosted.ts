@@ -6,7 +6,6 @@ import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-sh
 import { betterAuthD1ReleaseInputs } from "./release-better-auth-d1"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
-const repoRoot = path.resolve(serverRoot, "../..")
 const sandboxScriptsRoot = path.join(serverRoot, "scripts/sandbox")
 const cloudflareSandboxRoot = path.join(sandboxScriptsRoot, "cloudflare-worker")
 

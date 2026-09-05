@@ -14,7 +14,6 @@ import { parse as parseJsonc } from "jsonc-parser"
 import path from "path"
 import fs from "fs/promises"
 import { realpathSync, watch, type FSWatcher } from "node:fs"
-import z from "zod/v3"
 import { zodToJsonSchema } from "zod-to-json-schema"
 import { buildSafeEnv } from "../pty/env"
 import { runGit } from "../git"
@@ -920,6 +919,67 @@ export async function start(
   return await flight
 }
 
+/** Dependencies must become ready before this process reserves its port or PTY. */
+async function startDependencies(directory: string, configId: string, s: State) {
+  try {
+    const depOrder = resolveDependencyOrder(directory, configId)
+    for (const depId of depOrder) {
+      const depProc = s.processes.get(depId)
+      if (depProc && (depProc.status === "running" || depProc.status === "starting")) continue
+      const depConfig = s.configs.get(depId)
+      log.info("auto-starting dependency", { configId, dependency: depConfig?.name ?? depId })
+      const started = await start(directory, depId, { portConflict: "pick-new" })
+      if (started.kind !== "started" && started.kind !== "already_running") {
+        log.error("dependency failed to start", {
+          configId,
+          dependency: depConfig?.name ?? depId,
+          kind: started.kind,
+          error: "error" in started ? started.error : undefined,
+        })
+        return fail(`Dependency failed to start: ${depConfig?.name ?? depId}`)
+      }
+      if (!(await ready(directory, depId))) {
+        log.error("dependency did not become ready", { configId, dependency: depConfig?.name ?? depId })
+        return fail(`Dependency did not become ready: ${depConfig?.name ?? depId}`)
+      }
+    }
+  } catch (err) {
+    log.error("dependency resolution failed", { configId, err: String(err) })
+    return fail(`Dependency resolution failed: ${String(err)}`)
+  }
+}
+
+function processEnvironment(config: Process.ProcessConfig, ports: Record<string, number>, workspaceId: string, configId: string) {
+  return {
+    ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
+    // Operator-configured process env: explicit (see SafeEnvSource).
+    ...buildSafeEnv(resolvePortTemplates(config.env || {}, ports), { customPrefix: "CLAXEDO", source: "explicit" }),
+    CLAXEDO_TERMINAL: "1",
+    CLAXEDO_PROCESS: config.name,
+    CLAXEDO_PROCESS_ID: configId,
+    CLAXEDO_WORKSPACE_ID: workspaceId,
+  }
+}
+
+function processCommand(config: Process.ProcessConfig, assignedPort: number | undefined) {
+  const env: Record<string, string> = {}
+  let fullCommand = config.args?.length ? [config.command, ...config.args].join(" ") : config.command
+
+  if (config.port && assignedPort !== undefined) {
+    env.CLAXEDO_PORT = String(assignedPort)
+    if (isFlag(config.port.inject)) {
+      fullCommand = `${fullCommand} ${config.port.inject} ${assignedPort}`
+    } else {
+      Object.assign(
+        env,
+        buildSafeEnv({ [config.port.inject]: String(assignedPort) }, { customPrefix: "CLAXEDO", source: "explicit" }),
+      )
+    }
+  }
+
+  return { command: fullCommand, env }
+}
+
 async function startOnce(
   directory: string,
   configId: string,
@@ -958,33 +1018,8 @@ async function startOnce(
     await stop(directory, configId)
   }
 
-  // --- Auto-start dependencies ---
-  try {
-    const depOrder = resolveDependencyOrder(directory, configId)
-    for (const depId of depOrder) {
-      const depProc = s.processes.get(depId)
-      if (depProc && (depProc.status === "running" || depProc.status === "starting")) continue
-      const depConfig = s.configs.get(depId)
-      log.info("auto-starting dependency", { configId, dependency: depConfig?.name ?? depId })
-      const started = await start(directory, depId, { portConflict: "pick-new" })
-      if (started.kind !== "started" && started.kind !== "already_running") {
-        log.error("dependency failed to start", {
-          configId,
-          dependency: depConfig?.name ?? depId,
-          kind: started.kind,
-          error: "error" in started ? started.error : undefined,
-        })
-        return fail(`Dependency failed to start: ${depConfig?.name ?? depId}`)
-      }
-      if (!(await ready(directory, depId))) {
-        log.error("dependency did not become ready", { configId, dependency: depConfig?.name ?? depId })
-        return fail(`Dependency did not become ready: ${depConfig?.name ?? depId}`)
-      }
-    }
-  } catch (err) {
-    log.error("dependency resolution failed", { configId, err: String(err) })
-    return fail(`Dependency resolution failed: ${String(err)}`)
-  }
+  const dependencyFailure = await startDependencies(directory, configId, s)
+  if (dependencyFailure) return dependencyFailure
 
   // --- Port assignment ---
   let assignedPort: number | undefined
@@ -1017,15 +1052,7 @@ async function startOnce(
     pm[config.port.name] = assignedPort
   }
 
-  const env: Record<string, string> = {
-    ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
-    // Operator-configured process env: explicit (see SafeEnvSource).
-    ...buildSafeEnv(resolvePortTemplates(config.env || {}, pm), { customPrefix: "CLAXEDO", source: "explicit" }),
-    CLAXEDO_TERMINAL: "1",
-    CLAXEDO_PROCESS: config.name,
-    CLAXEDO_PROCESS_ID: configId,
-    CLAXEDO_WORKSPACE_ID: workspace(directory),
-  }
+  const env = processEnvironment(config, pm, workspace(directory), configId)
 
   const proc: Process.ManagedProcess = {
     configId,
@@ -1045,18 +1072,8 @@ async function startOnce(
   let registeredPort = false
   try {
     const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/sh")
-    let fullCommand = config.args?.length
-      ? [config.command, ...config.args].join(" ")
-      : config.command
-
-    if (config.port && assignedPort !== undefined) {
-      env.CLAXEDO_PORT = String(assignedPort)
-      if (isFlag(config.port.inject)) {
-        fullCommand = `${fullCommand} ${config.port.inject} ${assignedPort}`
-      } else {
-        Object.assign(env, buildSafeEnv({ [config.port.inject]: String(assignedPort) }, { customPrefix: "CLAXEDO", source: "explicit" }))
-      }
-    }
+    const launch = processCommand(config, assignedPort)
+    Object.assign(env, launch.env)
 
     const processObserver = processObserverMap.get(real(directory))
     const info = await Pty.create(
@@ -1065,7 +1082,7 @@ async function startOnce(
         args: [],
         cwd,
         title: config.name,
-        initialCommand: fullCommand + "; printf '\\033]777;process-exit;%d\\007' $?",
+        initialCommand: launch.command + "; printf '\\033]777;process-exit;%d\\007' $?",
         env,
         managed: true,
       },

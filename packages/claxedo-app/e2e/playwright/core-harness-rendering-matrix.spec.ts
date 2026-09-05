@@ -664,7 +664,7 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("renderer-only canonical fixture — todowrite never renders a tool row — behavior 9", async ({ page }) => {
-    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"]').count()
 
@@ -681,7 +681,7 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("renderer-only canonical fixture — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
-    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
     const content = page.locator(assistantContent())
 
@@ -709,7 +709,7 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
-    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"], [data-component="text-part"], [data-component="reasoning-part"]').count()
 
@@ -1131,7 +1131,7 @@ test.describe("core harness rendering matrix @core", () => {
   // DOM. Fixed by registering `FilePartDisplay` (image inline + preview, audio player,
   // resource-link row) and adding "file" to the renderable set.
   test("assistant file-type parts (image/audio/resource-link) render — behavior 6", async ({ page }) => {
-    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const sessionID = "ses_harness_matrix_opencode"
     const filePart = (id: string, mime: string, url: string, filename: string, source?: unknown) =>
       mock.emit(

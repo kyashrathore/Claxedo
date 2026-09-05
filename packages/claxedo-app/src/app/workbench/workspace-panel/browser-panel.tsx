@@ -1,20 +1,3 @@
-/**
- * WorkspaceBrowserPanel
- *
- * Workspace-panel host for the agentic browser tab. Mounts the BrowserPane
- * component (live <webview> + react-grab in-page comment popover) and routes
- * comment payloads up to the focused session's prompt.context.
- *
- * Replaces the deleted multi-pane integration: in the old layout, a "browser"
- * tab type lived alongside session/terminal/file tabs and used pane-bus to
- * route comments to a sibling session pane. In the workspace-panel model the
- * browser is a singleton panel rendered next to whatever surface is focused;
- * routing is implicit (panel → focused session) with no binding step.
- *
- * The browser now lives as a tab inside ReviewWorkspace.
- */
-
-import { useBrowserHistory } from "@/features/browser"
 import { useBrowserComments } from "@/features/browser"
 import { BrowserPane, type BrowserPaneCommentPayload } from "@/features/browser"
 import { usePrompt, type ImageAttachmentPart } from "@/features/session/providers/prompt"
@@ -72,13 +55,6 @@ export function WorkspaceBrowserPanel(props: WorkspaceBrowserPanelProps) {
     comments = useBrowserComments()
   } catch {
     comments = undefined
-  }
-
-  let history: ReturnType<typeof useBrowserHistory> | undefined
-  try {
-    history = useBrowserHistory()
-  } catch {
-    history = undefined
   }
 
   const handlePageComment = (payload: BrowserPaneCommentPayload): boolean => {

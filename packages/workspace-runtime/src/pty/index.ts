@@ -19,14 +19,7 @@ import { buildSafeEnv, getLocale } from "./env"
 import { resolveCwd } from "./resolve-cwd"
 import { workspaceId as runtimeWorkspaceId } from "../target"
 import { terminalHookWorkspaceId } from "./hook-workspace-id"
-import { disposeMode } from "./dispose-mode"
-import {
-  type QueuedOperation,
-  type WriteQueueSession,
-  operationBytes,
-  enqueueWrite,
-  flushWriteQueue,
-} from "./write-queue"
+import { type QueuedOperation, enqueueWrite, flushWriteQueue } from "./write-queue"
 import { decodeInput } from "./decode-input"
 import { sendWebSocketWithBackpressure, type WebSocketBackpressureSocket } from "./websocket-backpressure"
 import { safeChunkEnd, safeStartIndex } from "./safe-slice"
@@ -36,7 +29,7 @@ import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity
 import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
 import { createModeTracker, type ModeTracker } from "./mode-tracker"
 import { sanitizeReplay } from "./replay-sanitize"
-import { workspaceRuntimeBus, type PtyInfo } from "../bus"
+import { workspaceRuntimeBus } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
 import type {
@@ -157,12 +150,6 @@ export namespace Pty {
   }
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
-  const sample = (value: string) =>
-    value
-      .replaceAll("\r", "\\r")
-      .replaceAll("\n", "\\n")
-      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "<esc>")
-      .slice(0, 80)
   const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
   const agentInitialCommand = (value: string) => {
     const match = value.match(/^(\s*)(claude|codex|gemini|cursor)(?=\s|$)(.*)$/)

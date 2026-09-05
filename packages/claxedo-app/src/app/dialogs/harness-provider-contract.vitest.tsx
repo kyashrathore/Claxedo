@@ -1,5 +1,5 @@
 /** Renderer-only provider rows and dialog handoff; real transport tests live with useProviders. */
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 const PI_PROVIDER_IDS = ["anthropic", "openai", "openai-codex"]
 

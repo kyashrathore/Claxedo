@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
+import { loadExistingSubmitConfig, parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
 
 describe("existing session configuration", () => {
   test("structurally equal connection selections do not trigger a config write", () => {
@@ -24,5 +24,17 @@ describe("existing session configuration", () => {
     expect(parseExistingSessionConfig({})).toBeUndefined()
     expect(parseExistingSessionConfig({ harness: { id: "legacy-engine", access: "native" } })).toBeUndefined()
     expect(parseExistingSessionConfig({ harness: { id: "claude", access: "acp" } })).toBeUndefined()
+  })
+
+  test("an unreadable existing binding stops submission and reports the original failure", async () => {
+    const failure = new Error("Session unavailable")
+    const errors: unknown[] = []
+    expect(await loadExistingSubmitConfig(async () => { throw failure }, (error) => errors.push(error))).toBeUndefined()
+    expect(errors).toEqual([failure])
+    expect(await loadExistingSubmitConfig(
+      async () => ({ harness: { id: "pi", access: "native" } }),
+      (error) => errors.push(error),
+    )).toBeUndefined()
+    expect(errors[1]).toEqual(new Error("The session configuration is not available yet. Try again after it loads."))
   })
 })

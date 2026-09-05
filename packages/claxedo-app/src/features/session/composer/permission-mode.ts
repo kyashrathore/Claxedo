@@ -1,9 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
 import { harnessDisplayLabel } from "@/ui/harness-display"
-import { harnessUsesClaxedoPermissionPicker } from "@/features/session/permission/mechanisms"
 import {
-  CLAXEDO_ALLOW_SAFE_ID,
   defaultPermissionSelection,
   findPermissionModeOption,
   permissionModeOptions,
@@ -31,7 +29,6 @@ export type PermissionModeRow = {
 }
 
 export type PermissionModeGroups = {
-  claxedo: readonly PermissionModeRow[]
   harness: {
     label: string
     rows: readonly PermissionModeRow[]
@@ -94,41 +91,17 @@ export function createComposerPermissionMode(input: {
     const harness = input.harness()
     if (!harness) return undefined
     const report = input.report?.()
-    if (!harnessUsesClaxedoPermissionPicker(harness)) {
-      if (!report || !Array.isArray(report.modes) || report.modes.length === 0) return undefined
-    }
+    if (!report || !Array.isArray(report.modes) || report.modes.length === 0) return undefined
     return defaultPermissionSelection({ harness, report })
   })
 
   const groups = createMemo<PermissionModeGroups | undefined>(() => {
     const harness = input.harness()
-    /*
-     * A harness that could not start gets the REASON and nothing else.
-     *
-     * Not even Claxedo's own two options. They are offered everywhere else
-     * precisely because they work everywhere — but "works everywhere" assumes
-     * there is a turn to apply them to, and here the agent never came up. An
-     * "Auto" row under a failed ACP connection is choosable, looks applied,
-     * and changes nothing; showing the error alone is the only honest state.
-     *
-     * Deliberately checked BEFORE the unidentified-harness branch below: that
-     * one is about not yet KNOWING the harness, which is a different and
-     * recoverable situation.
-     */
+    // A failed harness exposes its failure, with no selectable permission modes.
     const unavailable = input.unavailable?.()
     if (unavailable) {
-      return { claxedo: [], harness: { label: harness ? harnessGroupLabel(harness) : "Harness", rows: [], unavailable } }
+      return { harness: { label: harness ? harnessGroupLabel(harness) : "Harness", rows: [], unavailable } }
     }
-    // An UNIDENTIFIED harness still gets Claxedo's own modes. Auto and Manual are
-    // ours and work everywhere — only their delivery differs — so withholding them
-    // would leave the user with no permission control at all on a session whose
-    // harness we merely failed to name. They are locally-answered, so neither can
-    // produce a ruleset write to the wrong engine.
-    //
-    // This used to be spelled `permissionModeOptions({ harness: "pi" })`, pi being
-    // the one harness that then fell to local answering. That coupling broke when
-    // pi stopped offering options at all — and it was always indirect: the case
-    // wants the rung that assumes nothing about the harness, not whatever pi does.
     if (!harness) {
       return undefined
     }
@@ -142,7 +115,6 @@ export function createComposerPermissionMode(input: {
       hasSession: !!input.sessionId(),
     })
     return {
-      claxedo: options.claxedo.map(row),
       harness: {
         label: harnessGroupLabel(harness),
         rows: options.harness.modes.map(row),
@@ -191,7 +163,7 @@ export function createComposerPermissionMode(input: {
 
   const select = (option: PermissionModeOption) => {
     if (!permissionModeDeliverable(option.delivery.kind)) return
-    const next: PermissionSelection = { kind: option.origin === "claxedo" ? "claxedo" : "harness", modeId: option.id }
+    const next: PermissionSelection = { kind: "harness", modeId: option.id }
     input.onSelectionChange(next)
 
     const deliver = input.deliver

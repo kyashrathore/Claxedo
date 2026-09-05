@@ -15,7 +15,7 @@ import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import { createEffect, createMemo, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { AgentFileContent, AgentReviewFileDiff, AgentSnapshotFileDiff } from "@claxedo/agent-runtime-contract"
+import { agentReviewFileDiffList, type AgentFileContent, type AgentReviewFileDiff, type AgentSnapshotFileDiff } from "@claxedo/agent-runtime-contract"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { type SelectedLineRange } from "@pierre/diffs"
 import { Dynamic } from "solid-js/web"
@@ -69,27 +69,6 @@ type RawReviewDiff = AgentSnapshotFileDiff & {
 }
 type ReviewDiff = AgentReviewFileDiff & {
   preloaded?: PreloadMultiFileDiffResult<any>
-}
-type Item = ViewDiff & { preloaded?: PreloadMultiFileDiffResult<any> }
-
-function diff(value: unknown): value is ReviewDiff {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  if (!("file" in value) || typeof value.file !== "string") return false
-  if (!("additions" in value) || typeof value.additions !== "number") return false
-  if (!("deletions" in value) || typeof value.deletions !== "number") return false
-  if ("patch" in value && value.patch !== undefined && typeof value.patch !== "string") return false
-  if ("before" in value && value.before !== undefined && typeof value.before !== "string") return false
-  if ("after" in value && value.after !== undefined && typeof value.after !== "string") return false
-  if (!("status" in value) || value.status === undefined) return true
-  return value.status === "added" || value.status === "deleted" || value.status === "modified"
-}
-
-function list(value: unknown): ReviewDiff[] {
-  if (Array.isArray(value) && value.every(diff)) return value
-  if (Array.isArray(value)) return value.filter(diff)
-  if (diff(value)) return [value]
-  if (!value || typeof value !== "object") return []
-  return Object.values(value).filter(diff)
 }
 
 export interface SessionReviewProps {
@@ -185,7 +164,7 @@ export const SessionReview = (props: SessionReviewProps) => {
 
   const open = () => props.open ?? store.open
   const itemsMap = createMemo(() =>
-    Object.fromEntries(list(props.diffs).map((diff) => [diff.file, { ...normalize(diff), preloaded: diff.preloaded }])),
+    Object.fromEntries(agentReviewFileDiffList(props.diffs).map((diff: ReviewDiff) => [diff.file, { ...normalize(diff), preloaded: diff.preloaded }])),
   )
   const files = createMemo(() => props.diffs.map((diff) => diff.file!))
   const grouped = createMemo(() => {

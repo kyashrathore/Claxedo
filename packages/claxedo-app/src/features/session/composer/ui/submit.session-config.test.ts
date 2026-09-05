@@ -3,15 +3,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import * as h from "./submit.harness.test"
 
-const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
-} = h
+const { createSubmit, submitEvent, promptValue, state, calls, unsignedCalls, transportPromptAsyncCalls } = h
 
 beforeAll(async () => {
   await h.installSubmitMocks(mock)

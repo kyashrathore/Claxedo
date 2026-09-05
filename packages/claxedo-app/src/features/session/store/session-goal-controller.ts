@@ -11,7 +11,6 @@ import {
   type SessionGoalData,
   type SessionGoalMutation,
 } from "./session-goal-query"
-import type { SessionGoalTransportScope } from "./session-transport"
 
 export function createSessionGoalController(input: {
   active: Accessor<boolean>

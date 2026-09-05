@@ -62,14 +62,12 @@ export function TabPage(props: TabPageProps) {
           </div>
         </Match>
         <Match when={error()}>
-          {(next) => (
-            <DocumentRecoveryState
-              kind={recoveryKind()}
-              message={errorMessage()}
-              onBack={props.onBackToIndex}
-              onRetry={() => void load(props.pageId)}
-            />
-          )}
+          <DocumentRecoveryState
+            kind={recoveryKind()}
+            message={errorMessage()}
+            onBack={props.onBackToIndex}
+            onRetry={() => void load(props.pageId)}
+          />
         </Match>
         <Match when={document()}>
           {(next) => (

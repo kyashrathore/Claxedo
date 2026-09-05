@@ -7,7 +7,6 @@ import {
   type AgentQuestion,
   type SessionHarness,
   type AgentSession,
-  type PromptInput,
   type SessionConfig,
   type SessionConfigRequestUpdate,
 } from "@claxedo/agent-sdk-runtime"
@@ -17,11 +16,9 @@ import {
   type AgentHarnessAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { workspaceRuntimeBus } from "../bus"
-import { withDir } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
-import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"

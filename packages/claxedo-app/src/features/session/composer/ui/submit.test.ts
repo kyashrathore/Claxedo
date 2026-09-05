@@ -44,7 +44,7 @@ describe("submit.ts architecture contract", () => {
     const composer = await Bun.file(new URL("../composer.tsx", import.meta.url)).text()
 
     expect(composer).toContain("conversationDirectory: resolvedSessionDirectory")
-    expect(submit).toContain("mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory")
+    expect(submit).toContain("capturePromptSubmitScope(input, sdk.directory)")
     expect(normal).toContain("sessionDirectory: input.conversationDirectory")
     expect(normal).toContain("directory: input.conversationDirectory")
     expect(normal).toContain("directory: input.sessionDirectory")

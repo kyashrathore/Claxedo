@@ -1,7 +1,4 @@
-import {
-  REVIEW_ESTIMATED_ROW_HEIGHT,
-  reviewWindowRowBudget,
-} from "../../src/features/review/ui/review-window"
+import { reviewWindowRowBudget } from "../../src/features/review/ui/review-window"
 
 export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
   "src/generated/file-7.ts",

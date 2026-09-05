@@ -164,7 +164,7 @@ describe("descriptor fetch resilience", () => {
   function flakyHarness(failure: unknown, failures = 1) {
     const descriptorCalls: string[] = []
     let remaining = failures
-    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = (async (url: string | URL | Request) => {
       if (String(url) === `${CORE}/api/claxedo/auth/descriptor`) {
         descriptorCalls.push(String(url))
         if (remaining > 0) {

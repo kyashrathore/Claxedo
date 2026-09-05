@@ -63,7 +63,7 @@ function harness(input: {
 }
 
 const rowFor = (control: ReturnType<typeof createComposerPermissionMode>, id: string) =>
-  [...(control.groups()?.claxedo ?? []), ...(control.groups()?.harness.rows ?? [])].find(
+  (control.groups()?.harness.rows ?? []).find(
     (row) => row.option.id === id,
   )
 
@@ -71,7 +71,7 @@ describe("what the picker offers", () => {
   test("a reporting harness contributes its own rows, and Claxedo none", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "acp:claude", report: REPORTED })
-      expect(control.groups()!.claxedo).toEqual([])
+      expect(control.groups()).not.toHaveProperty("claxedo")
       expect(control.groups()!.harness.rows.map((row) => row.option.name)).toEqual([
         "Default",
         "Auto-review",
@@ -102,7 +102,7 @@ describe("what the picker offers", () => {
   test("an empty ACP report does not invent local permission modes", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "acp:generic", report: { modes: [], appliesFrom: "next-turn" } })
-      expect(control.groups()!.claxedo).toEqual([])
+      expect(control.groups()).not.toHaveProperty("claxedo")
       expect(control.groups()!.harness.rows).toEqual([])
       expect(control.current()).toBeUndefined()
       dispose()
@@ -127,7 +127,7 @@ describe("what the picker offers", () => {
   test("before the fetch lands the harness group reads as loading", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "acp:claude" })
-      expect(control.groups()!.claxedo).toEqual([])
+      expect(control.groups()).not.toHaveProperty("claxedo")
       expect(control.groups()!.harness.rows).toEqual([])
       expect(control.groups()!.harness.unavailable).toMatch(/loading/i)
       expect(control.current()).toBeUndefined()

@@ -29,7 +29,6 @@ import type {
   DocumentWorkspace,
   SnapshotID,
   SnapshotRef,
-  SnapshotRequest,
   WriteResult,
 } from "../../port"
 import { documentVersionsMatch, localDocumentVersion } from "../../version"

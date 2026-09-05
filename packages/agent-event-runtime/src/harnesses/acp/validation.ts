@@ -1,11 +1,6 @@
+import { object } from "../value"
 import type { ToolCallContent } from "./types"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
-
-function rawRecord(value: unknown) {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
 
 type ValidationContext = { diagnostics: AcpDiagnostics; toolCallId?: string; title?: string; kind?: string }
 
@@ -19,7 +14,7 @@ function details(ctx: ValidationContext) {
 
 export function safeMeta(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return
-  const row = rawRecord(value)
+  const row = object(value)
   if (row) return row
   diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
     ...details(ctx),
@@ -30,7 +25,7 @@ export function safeMeta(value: unknown, ctx: ValidationContext) {
 
 export function safeRawInput(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
-  const row = rawRecord(value)
+  const row = object(value)
   if (row) return row
   diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
     ...details(ctx),
@@ -64,7 +59,7 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
     return null
   }
   const out = value.flatMap((item) => {
-    const row = rawRecord(item)
+    const row = object(item)
     if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
       return [{ path: row.path, ...(row.line !== undefined ? { line: row.line as number | null } : {}) }]
     }
@@ -89,7 +84,7 @@ export function safeContent(value: unknown, ctx: ValidationContext) {
     return null
   }
   return value.flatMap((item) => {
-    const row = rawRecord(item)
+    const row = object(item)
     if (typeof row?.type === "string") return [row as ToolCallContent]
     diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
       ...details(ctx),

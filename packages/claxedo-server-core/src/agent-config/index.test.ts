@@ -26,10 +26,6 @@ function cfgFile() {
   return path.join(root, "user-agent-config.json")
 }
 
-function cmdDir() {
-  return path.join(root, "opencode-config", "command")
-}
-
 function trustedConnection(overrides: Partial<HarnessConnectionDescriptor> = {}): HarnessConnectionDescriptor {
   return {
     connectionId: "conn-primary",

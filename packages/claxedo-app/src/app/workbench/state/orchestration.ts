@@ -25,8 +25,6 @@ import {
 } from "@/platform/identity/session-ref"
 import { markRouteIntentClosed } from "./route-bridge-resolution"
 
-type WorkspaceDirectoryRef = string
-
 export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
 export type CleanupHook = (id: string, meta: ContentMeta | undefined, reason: ContentCloseReason) => void

@@ -5,7 +5,6 @@ import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-wo
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 type ProjectClient = {
   project: {
@@ -30,7 +29,6 @@ function agentListFromUnknown(data: unknown) {
     ? data.filter((item): item is Agent => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
     : []
 }
-
 
 export function projectCurrentQuery(input: {
   baseUrl?: string

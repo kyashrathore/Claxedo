@@ -35,7 +35,6 @@ import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
 import { harnessModesUnavailable, promptDesignPlaceholder } from "@/features/session/composer/role-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
-import { queryClient } from "@/platform/query/query-client"
 import { commandListQuery } from "../data/query/shell"
 import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
 import { directorySessionCacheQueryOptions } from "../data/sync/queries"
@@ -48,12 +47,10 @@ import { PROMPT_EXAMPLES } from "./examples"
 import { composerModeSnapshot } from "./mode-snapshot"
 import { createComposerHarnessMode } from "./harness-mode-helpers"
 import { showToast } from "@opencode-ai/ui/toast"
-import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createPromptToolbarState } from "./toolbar-state"
 import { composerUsesSignedTransport, selectedNewSessionWorkspace, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
-import { firstConnectedModel } from "./model-strategy"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
@@ -293,13 +290,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return promptSessionStatusStage(resolvedSessionId())
   })
   const canAbort = createMemo(() => props.canAbort?.() ?? true)
-  const {
-    setBoot,
-    booting,
-    busy,
-    stoppable,
-    bootText,
-  } = createPromptInputBootState({
+  const { setBoot, booting, stoppable, bootText } = createPromptInputBootState({
     working,
     canAbort,
   })

@@ -423,7 +423,6 @@ function isTerminalSdkStatus(status: Extract<SDKMessage, { type: "status" }>["st
 
 function localRunTerminalEvents(
   row: Exclude<LocalRunStreamEvent, { type: "sdk_message" }>,
-  context: HarnessEventAdapterContext,
 ): AgentRuntimeEvent[] {
   switch (row.type) {
     case "result": {
@@ -476,7 +475,7 @@ export function cursorSdkAdapter(): HarnessEventAdapter<CursorSdkAdapterState> {
             return translateSdkMessage({ state, event, context, message: stream.message })
           case "result":
           case "done":
-            return { state: pruneTurnState(), events: localRunTerminalEvents(stream, context) }
+            return { state: pruneTurnState(), events: localRunTerminalEvents(stream) }
           default:
             return assertNever(stream)
         }

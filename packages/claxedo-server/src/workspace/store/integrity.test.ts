@@ -39,31 +39,6 @@ function cloudRuntimeDirectory(_id: string) {
   return "/workspace"
 }
 
-async function saved() {
-  return JSON.parse(await fs.readFile(path.join(root, "workspaces.json"), "utf-8")) as {
-    version: number
-    workspaces: Array<{
-      id: string
-      project_id?: string
-      project_name?: string
-      workspace_name?: string
-      directory: string
-      kind: string
-      driver?: string
-      repo_key?: string
-      repo_root?: string
-      repo_name?: string
-      git_branch?: string
-      git_remote?: string
-      remote_directory?: string
-      sandbox_id?: string
-      status?: string
-      created_at: number
-      updated_at: number
-    }>
-  }
-}
-
 /** Create a real git repo with a worktree (sandbox) for realistic tests */
 async function repo(name: string) {
   const dir = path.join(root, "repos", name)
@@ -103,7 +78,7 @@ describe("workspace store integrity", () => {
     test("ensureWorkspace rejects /workspace as a local workspace", async () => {
       // /workspace is the WORKSPACE_DIR inside cloud containers.
       // It must not be stored as a local workspace on the host.
-      const ws = await mod.ensureWorkspace({ directory: "/workspace" })
+      await mod.ensureWorkspace({ directory: "/workspace" })
       // The store should either reject this entirely or mark it non-local.
       // A local entry for a container-only path is always wrong.
       const all = await mod.listWorkspaces()
@@ -112,7 +87,7 @@ describe("workspace store integrity", () => {
     })
 
     test("resolveWorkspace with create=true rejects /workspace", async () => {
-      const ws = await mod.resolveWorkspace({
+      await mod.resolveWorkspace({
         directory: "/workspace",
         create: true,
       })
@@ -178,7 +153,7 @@ describe("workspace store integrity", () => {
     test("ensureWorkspace rejects __pages__ directory", async () => {
       // __pages__ is a frontend sentinel, not a real directory.
       // It must never create a workspace entry.
-      const before = await mod.listWorkspaces()
+      await mod.listWorkspaces()
       try {
         await mod.ensureWorkspace({ directory: "__pages__" })
       } catch {
@@ -190,7 +165,7 @@ describe("workspace store integrity", () => {
     })
 
     test("resolveWorkspace with create=true rejects __pages__", async () => {
-      const ws = await mod.resolveWorkspace({
+      await mod.resolveWorkspace({
         directory: "__pages__",
         create: true,
       })

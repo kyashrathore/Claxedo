@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import type { Process } from "@/features/processes/data"
 import { createProcessEventHandlers, type ProcessEventDeps, type ProcessPaneStore } from "./process-pane-events"
-
-type ManagedProcess = Process.ManagedProcess
 
 let store: ProcessPaneStore
 let calls: {

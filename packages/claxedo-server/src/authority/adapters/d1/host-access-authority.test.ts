@@ -783,13 +783,3 @@ describe("D1 host access and workspace sharing authority", () => {
     `).run()).rejects.toThrow(/runtime access token intent is immutable/)
   })
 })
-
-function malleateP256Signature(input: string) {
-  const value = Buffer.from(input, "base64url")
-  if (value.byteLength !== 64) throw new Error("expected a raw P-256 signature")
-  const order = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
-  const s = BigInt(`0x${value.subarray(32).toString("hex")}`)
-  const replacement = (order - s).toString(16).padStart(64, "0")
-  Buffer.from(replacement, "hex").copy(value, 32)
-  return value.toString("base64url")
-}

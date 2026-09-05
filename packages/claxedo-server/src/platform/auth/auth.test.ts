@@ -10,7 +10,6 @@ import {
   localOnlyAuthAdapter,
 } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
-import { isCliAccessTokenCandidate } from "@claxedo/server-core/platform/auth/cli-session-token"
 import {
   deploymentMode,
   unsignedLocalRequestGuard,

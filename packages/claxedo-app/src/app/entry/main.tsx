@@ -226,7 +226,6 @@ const platform: Platform = {
 }
 
 async function startApp() {
-  if (import.meta.env.DEV) console.log("[claxedo:boot]", "start", window.location.href)
   // In demo mode, start MSW to mock server responses before rendering
   if (isDemoMode()) {
     for (const key of Object.keys(localStorage)) {
@@ -377,7 +376,6 @@ async function startApp() {
   }
 
   // Render the standard app with cloud extensions active
-  if (import.meta.env.DEV) console.log("[claxedo:boot]", "before-render", { hasRoot: root instanceof HTMLElement })
   render(
     () => (
       <ConfigProvider config={config}>
@@ -390,10 +388,6 @@ async function startApp() {
     ),
     root!,
   )
-  if (import.meta.env.DEV)
-    console.log("[claxedo:boot]", "after-render", {
-      rootChildren: root?.childElementCount ?? null,
-    })
 }
 
 /**

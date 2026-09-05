@@ -250,7 +250,6 @@ function ReviewToolbarControls(props: {
 }
 
 function ReviewToolbarBody(props: ReviewToolbarProps) {
-  const language = useLanguage()
   const [modeSelectorOpen, setModeSelectorOpen] = createSignal(false)
   const [pendingMode, setPendingMode] = createSignal<ReviewMode>(props.mode)
   const [pendingFromRef, setPendingFromRef] = createSignal(props.fromRef)

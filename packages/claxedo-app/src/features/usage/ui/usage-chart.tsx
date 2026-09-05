@@ -126,7 +126,7 @@ export function UsageChart(props: {
     const cumulative = new Map(dates().map((date) => [date, 0]))
     return rows().map((series) => {
       const values = new Map(series.daily.map((point) => [point.date, point.value]))
-      const points = dates().map((date, index) => {
+      const points = dates().map((date) => {
         const value = values.get(date) ?? 0
         const bottom = cumulative.get(date) ?? 0
         const top = bottom + value

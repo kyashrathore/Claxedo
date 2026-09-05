@@ -1,5 +1,5 @@
 import { streamSSE } from "hono/streaming"
-import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import type { RuntimeEventEnvelope, RuntimeEventHub } from "../runtime-event-hub"
 import type { Context } from "hono"

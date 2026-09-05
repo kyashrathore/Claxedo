@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { serveDriver, type DriverHandlers } from "agent-app-benchmark/driver-sdk"
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
-import { measureSessionActivation, type SessionReadinessTarget } from "./agent-browser-observer"
+import { measureSessionActivation } from "./agent-browser-observer"
 import { launchPackagedClaxedo, type ClaxedoLaunch } from "./agent-claxedo-launcher"
 import { materializeClaxedoPublicCorpus, type ClaxedoPublicMaterialization } from "./public-corpus-materializer"
 import {

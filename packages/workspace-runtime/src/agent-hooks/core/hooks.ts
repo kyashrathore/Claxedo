@@ -4,10 +4,7 @@
  * Notify script, hook bridge generators, and hook config generation.
  */
 
-import {
-  CLAXEDO_DIR,
-  NOTIFY_MARKER,
-} from "./constants"
+import { NOTIFY_MARKER } from "./constants"
 import {
   loadTemplate,
   shellQuote,
@@ -15,7 +12,7 @@ import {
 
 // ── Notify script ───────────────────────────────────────────────────────────
 
-export function generateNotifyScript(port: number, root = CLAXEDO_DIR): string {
+export function generateNotifyScript(port: number): string {
   return loadTemplate("notify.template.sh", {
     MARKER: NOTIFY_MARKER,
     PORT: String(port),

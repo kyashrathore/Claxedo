@@ -3,7 +3,6 @@ import { createStore } from "solid-js/store"
 import { PromptInputV2, type PromptInputV2PersistedState, type PromptInputV2Suggestion } from "."
 import { createPromptInputV2Controller } from "./interaction"
 import { createPromptInputV2Store } from "./store"
-import { createEffect } from "solid-js"
 
 const agents = [
   { id: "build", label: "Build" },

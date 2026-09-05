@@ -1,9 +1,7 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { Show } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { useTheme } from "@opencode-ai/ui/theme"
-import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 
 export type WorkspaceBarItem = {
   id: string
@@ -25,12 +23,6 @@ export type WorkspaceBarProject = {
   workspaces: WorkspaceBarItem[]
 }
 
-type WorkspaceBarProps = {
-  projects: WorkspaceBarProject[]
-}
-
-
-
 type WorkspaceScopeButtonsProps = {
   global?: boolean
   /** Role permits starting terminals. NOT a surface check — see the creator. */
@@ -42,15 +34,6 @@ type WorkspaceScopeButtonsProps = {
   canUseDocuments?: boolean
   onSettings?: () => void
   class?: string
-}
-
-function workspaceScopeCommands() {
-  const stored = getTerminalCommands()
-  return {
-    claude: stored.claude,
-    codex: stored.codex,
-    custom: stored.custom,
-  }
 }
 
 export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {

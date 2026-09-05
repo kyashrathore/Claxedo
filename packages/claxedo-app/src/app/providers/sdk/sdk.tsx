@@ -2,7 +2,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createWorkspaceRuntimeClient, type WorkspaceRuntimeRequestOptions } from "@claxedo/workspace-runtime/client"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { useQuery } from "@tanstack/solid-query"
-import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { type Accessor, createEffect, createMemo } from "solid-js"
 import { useGlobalSDK, type GlobalSdkEvent } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { cachedSdkRuntimeRequest, sdkWorkspaceTransport } from "./runtime-request"
@@ -36,7 +36,6 @@ const sDKContextInput = {
     const queryOptions = useQueryOptions()
     const projectsQuery = useQuery(() => queryOptions.projects())
     const platform = usePlatform()
-    const inst = Math.random().toString(36).slice(2, 7)
 
     const directory = createMemo(() => (typeof props.directory === "function" ? props.directory() : props.directory))
     const projects = () => projectsQuery.data ?? []
@@ -204,24 +203,12 @@ const sDKContextInput = {
     )
 
     const emitter = createGlobalEmitter<SDKEventMap>()
-    const snap = () => ({
-      inst,
-      dir: directory() || null,
-      url: globalSDK.url,
-    })
-
-    onMount(() => {})
-
-    onCleanup(() => {
-      queueMicrotask(() => {})
-    })
 
     createEffect(() => {
       const dir = directory()
-      const unsub = globalSDK.event.on(dir, (event) => {
+      globalSDK.event.on(dir, (event) => {
         emitter.emit(event.type, event)
       })
-      onCleanup(() => {})
     })
 
     return {

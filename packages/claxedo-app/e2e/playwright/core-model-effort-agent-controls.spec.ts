@@ -524,7 +524,6 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           } catch {
             return null
           }
-          return false
         }),
         { timeout: 10_000 },
       )

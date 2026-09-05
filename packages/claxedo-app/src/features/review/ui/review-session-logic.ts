@@ -1,3 +1,9 @@
+import type { AgentReviewFileDiff as ReviewDiffShape } from "@claxedo/agent-runtime-contract"
+export {
+  type AgentReviewFileDiff as ReviewDiffShape,
+  isAgentReviewFileDiff as isReviewDiff,
+  agentReviewFileDiffList as reviewDiffList,
+} from "@claxedo/agent-runtime-contract"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 
 // Pure decision/derivation helpers for the session review surface (the one
@@ -22,38 +28,6 @@ export function sameReviewList<T>(left: readonly T[], right: readonly T[]): bool
   if (left.length !== right.length) return false
   for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false
   return true
-}
-
-export type ReviewDiffShape = {
-  file: string
-  additions: number
-  deletions: number
-  patch?: string
-  before?: string
-  after?: string
-  status?: "added" | "deleted" | "modified"
-}
-
-/** Structural guard: is `value` a well-formed review diff record? */
-export function isReviewDiff(value: unknown): value is ReviewDiffShape {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  if (!("file" in value) || typeof value.file !== "string") return false
-  if (!("additions" in value) || typeof value.additions !== "number") return false
-  if (!("deletions" in value) || typeof value.deletions !== "number") return false
-  if ("patch" in value && value.patch !== undefined && typeof value.patch !== "string") return false
-  if ("before" in value && value.before !== undefined && typeof value.before !== "string") return false
-  if ("after" in value && value.after !== undefined && typeof value.after !== "string") return false
-  if (!("status" in value) || value.status === undefined) return true
-  return value.status === "added" || value.status === "deleted" || value.status === "modified"
-}
-
-/** Coerce an unknown payload (array, single diff, or keyed object) into a diff list. */
-export function reviewDiffList(value: unknown): ReviewDiffShape[] {
-  if (Array.isArray(value) && value.every(isReviewDiff)) return value
-  if (Array.isArray(value)) return value.filter(isReviewDiff)
-  if (isReviewDiff(value)) return [value]
-  if (!value || typeof value !== "object") return []
-  return Object.values(value).filter(isReviewDiff)
 }
 
 /** Does the diff carry renderable content (a patch or before/after text)? */

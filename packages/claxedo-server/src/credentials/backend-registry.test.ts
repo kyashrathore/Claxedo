@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { describe, expect, test, afterAll } from "vitest"
 import { realpathSync, mkdirSync } from "fs"
 import fs from "fs/promises"
 import os from "os"

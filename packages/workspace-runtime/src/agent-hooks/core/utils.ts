@@ -34,7 +34,7 @@ export async function writeIfChanged(filePath: string, content: string, mode: nu
 
     try {
       await fs.promises.rename(tempPath, filePath)
-    } catch (renameError) {
+    } catch {
       await fs.promises.copyFile(tempPath, filePath)
       await fs.promises.unlink(tempPath)
       await fs.promises.chmod(filePath, mode)

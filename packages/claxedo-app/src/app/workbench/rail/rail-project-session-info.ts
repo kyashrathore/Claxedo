@@ -171,7 +171,7 @@ export function railProjectWorkspaces(project: ProjectItem, mainIsCloud: boolean
       workspaceId: cloud ? (info?.workspaceId ?? info?.id ?? workspacePath) : undefined,
       workspaceName: info?.workspace_name ?? undefined,
       directory: info?.directory ?? workspacePath,
-      name: workspaceDisplayName(project, workspacePath, { cloud }),
+      name: workspaceDisplayName(project, workspacePath),
       isMain: main,
       projectWorktree: project.worktree,
       isCloud: cloud,

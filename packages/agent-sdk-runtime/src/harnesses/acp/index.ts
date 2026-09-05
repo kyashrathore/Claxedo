@@ -53,7 +53,7 @@ import type {
   AgentConfigOptions,
   AgentPermissionModeState,
 } from "../../adapter-contract"
-import { goalCapabilities, harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
+import { goalCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { draftPermissionModes, extractAgents, rememberLiveModes } from "./session"
 import { permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
@@ -79,7 +79,7 @@ import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
 import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
-import { acceptedSessionConfig, acceptedSessionUpdate } from "../shared/accepted-session-mutation"
+import { acceptedSessionConfig } from "../shared/accepted-session-mutation"
 
 const log = Log.create({ service: "acp-adapter" })
 

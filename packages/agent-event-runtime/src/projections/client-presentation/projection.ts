@@ -24,7 +24,6 @@ import type {
   EventSessionUpdated,
   EventSessionUsage,
   EventTodoUpdated,
-  ClientPresentationConfigOption,
   ClientPresentationPart,
   ClientPresentationSession,
   ClientPresentationSnapshotFileDiff,

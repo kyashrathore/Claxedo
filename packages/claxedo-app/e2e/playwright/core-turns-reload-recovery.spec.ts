@@ -143,7 +143,7 @@
  *   `/session/:id/message` response can reach; true server-cursor pagination would need a
  *   spec-owned mock extension and is left as a finding.
  */
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
@@ -240,11 +240,6 @@ async function sendAndProve(page: Page, text: string, replyText: string) {
 
 function sessionUrlPattern(sessionId: string) {
   return new RegExp(`(?:/s/${sessionId}|/w/[^/]+/session/${sessionId})$`)
-}
-
-async function composerCleanText(page: Page) {
-  const raw = (await composer(page).textContent()) ?? ""
-  return raw.replace(/​/g, "").trim()
 }
 
 test.describe("core turns, reload recovery, history & send-failure recovery (local) @core", () => {

@@ -7,8 +7,6 @@ import {
   mintRelayHostToken,
   validateRuntimeAccessTokenClaims,
   verifyRuntimeAccessToken,
-  type RelayAccess,
-  type RelayBacking,
   type RelayClaimPair,
   type RelayJwtAlgorithm,
   type RelayKey,

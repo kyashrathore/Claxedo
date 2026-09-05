@@ -16,7 +16,6 @@
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
     "postinstall": "bun script/apply-dependency-patches.ts && bun script/fix-node-pty.ts",
     "prepare": "husky",
-    "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=opencode --no-browser",
     "test": "echo 'do not run tests from root' && exit 1",
     "docs:check-links": "bun ./script/check-doc-links.ts",

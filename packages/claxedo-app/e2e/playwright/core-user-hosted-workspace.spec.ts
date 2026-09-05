@@ -417,7 +417,6 @@ async function installUserHostedRuntimeMock(
       ]
       : []
   let promptCount = 0
-  let runtimeEventOrdinal = 0
   let healthAttempt = 0
   const requests = {
     createSessionCount: 0,

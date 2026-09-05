@@ -1,7 +1,8 @@
+import { object, text as str } from "../value"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "../../contracts/agent-runtime-event"
 import type { ToolIntent } from "../../contracts/agent-runtime-event"
-import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
+import { diagnoseTranslation, type AcpDiagnostics } from "./diagnostics"
 
 type Spot = { path: string; line?: number | null }
 type ToolStatus = RuntimeToolStatus
@@ -44,22 +45,6 @@ export type ToolView = {
   input?: Record<string, unknown>
   display: ToolDisplay
   metadata: Record<string, unknown>
-}
-
-function object(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
-}
-
-function str(value: unknown) {
-  if (typeof value !== "string") return
-  if (!value) return
-  return value
-}
-
-function list(value: unknown) {
-  if (!Array.isArray(value)) return []
-  return value
 }
 
 function parsed(raw: unknown) {
@@ -397,60 +382,44 @@ function pick(state: ToolState) {
   if (nextIntent === "edit") short = "edit"
   if (nextIntent === "fetch" && modeValue === "web") short = "webfetch"
 
-  const input = merge(raw, {
-    summary: title,
+  const details = {
     kind: kind ?? "other",
     intent: nextIntent,
+    summary: title,
     ...(modeValue ? { mode: modeValue } : {}),
-    ...(cmd ? { command: cmd, description: cmd } : {}),
+    ...(cmd ? { command: cmd } : {}),
     ...(query ? { query } : {}),
     ...(pattern ? { pattern } : {}),
     ...(urlValue ? { url: urlValue } : {}),
     ...(path ? { path } : {}),
     ...(filePath ? { filePath } : {}),
-    ...(sourcePath && nextIntent === "move" ? { sourcePath, filePath: sourcePath } : {}),
     ...(targetPath ? { targetPath } : {}),
-    ...(diffValue && nextIntent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
     ...(all.length ? { files: all } : {}),
+  }
+  const presentation = {
+    ...details,
+    ...(sourcePath ? { sourcePath } : {}),
+    ...(state.locations.length ? { locations: toolLocations(state.locations) } : {}),
+  }
+  const input = merge(raw, {
+    ...details,
+    ...(cmd ? { description: cmd } : {}),
+    ...(sourcePath && nextIntent === "move" ? { sourcePath, filePath: sourcePath } : {}),
+    ...(diffValue && nextIntent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
   })
   const display = {
-    kind: kind ?? "other",
-    intent: nextIntent,
-    summary: title,
-    ...(modeValue ? { mode: modeValue } : {}),
-    ...(cmd ? { command: cmd, description: cmd } : {}),
-    ...(query ? { query } : {}),
-    ...(pattern ? { pattern } : {}),
-    ...(urlValue ? { url: urlValue } : {}),
-    ...(path ? { path } : {}),
-    ...(filePath ? { filePath } : {}),
-    ...(sourcePath ? { sourcePath } : {}),
-    ...(targetPath ? { targetPath } : {}),
-    ...(all.length ? { files: all } : {}),
-    ...(state.locations.length ? { locations: toolLocations(state.locations) } : {}),
+    ...presentation,
+    ...(cmd ? { description: cmd } : {}),
     ...(raw !== undefined ? { input: raw } : {}),
   } satisfies ToolDisplay
   const metadata = {
     ...(diffValue ? { filediff: diffValue } : {}),
     ...(patchValue.length > 0 ? { files: patchValue } : {}),
     acp: {
+      ...presentation,
       client: state.client,
-      kind: kind ?? "other",
-      intent: nextIntent,
       status: state.status,
       title,
-      summary: title,
-      ...(modeValue ? { mode: modeValue } : {}),
-      ...(cmd ? { command: cmd } : {}),
-      ...(query ? { query } : {}),
-      ...(pattern ? { pattern } : {}),
-      ...(urlValue ? { url: urlValue } : {}),
-      ...(path ? { path } : {}),
-      ...(filePath ? { filePath } : {}),
-      ...(sourcePath ? { sourcePath } : {}),
-      ...(targetPath ? { targetPath } : {}),
-      ...(all.length ? { files: all } : {}),
-      ...(state.locations.length ? { locations: toolLocations(state.locations) } : {}),
       ...(state.terminalId ? { terminalId: state.terminalId } : {}),
       ...(hasDiff ? { hasDiff } : {}),
       ...(diffValue ? { filediff: diffValue } : {}),

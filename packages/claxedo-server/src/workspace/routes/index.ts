@@ -11,7 +11,6 @@ import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { type ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { workspaceBacking } from "@claxedo/server-core/workspace/store/backing"
 import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import {
   deleteWorkspace,
@@ -32,7 +31,7 @@ import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { apiError, captureWorkspaceTelemetry, parsedBody, rec, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
 import { controlPlaneRateLimitError } from "../runtime-token-guards"
-import { addWorktree, cloneRepo, repoNameFromUrl } from "../git"
+import { repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/sandbox-driver-routes"

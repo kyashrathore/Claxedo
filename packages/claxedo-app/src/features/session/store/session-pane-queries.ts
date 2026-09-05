@@ -12,7 +12,6 @@ import {
 } from "../data/sync/queries"
 import type { SessionTransportCapabilities } from "./session-transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { paneQueryOptions, parkedPaneQueryOptions } from "./pane-query-observer"
 import { sessionGoalKey, type SessionGoalData } from "./session-goal-query"
 import { queryKeys } from "@/platform/query/keys"

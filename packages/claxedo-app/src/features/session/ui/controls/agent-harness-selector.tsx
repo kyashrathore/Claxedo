@@ -416,11 +416,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   }))
 
   const harnessDisabled = createMemo(() => isPolling() || harnessSwitching())
-  const harnessTriggerStyle = createMemo(() => {
-    const disabled = harnessDisabled()
-    const next = style(disabled)
-    return next
-  })
   const modelLoading = createMemo(() => harness() && isCatalogHarness(harness()!) ? catalogProviders.loading() : optionsLoading())
   const hasModelOptions = createMemo(() => {
     return rows().length > 0
@@ -464,10 +459,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (!hasModelOptions()) return isCatalogHarness(harness()!) ? `No ${harnessDisplayLabel(harnessSelectionId(harness()!))} models available` : "Select model"
     return selection().selectedModel || "Select model"
   })
-  const modelTriggerStyle = createMemo(() => {
-    const next = style(modelDisabled())
-    return next
-  })
   // Soft, non-actionable reasons the control itself is inert. These stay ON the
   // control they explain instead of becoming a fifth widget beside it — and they
   // never escalate to the notice row, which is reserved for things that broke.
@@ -475,24 +466,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (managedDefaultModel() && harness()) return `Model is managed by ${harnessOptionLabel(harness()!)}`
     if (isStale() && !modelOptionsFailed()) return "Model list may be outdated"
   })
-  const modelTriggerProps = createMemo(() => ({
-    variant: "ghost" as const,
-    size: "normal" as const,
-    disabled: modelDisabled(),
-    style: modelTriggerStyle(),
-    // `composer-harness-model` is styling from the icon work; the modelHint
-    // aria-label/title are the concurrent session's — it names WHICH model, which
-    // is strictly better than the bare label, so both sides are kept.
-    class: "composer-harness-model min-w-0 max-w-[160px] max-md:max-w-[104px] text-13-regular group",
-    "aria-label": modelHint() ? `Select harness model — ${modelHint()}` : "Select harness model",
-    ...(modelHint() ? { title: modelHint()! } : {}),
-    "data-action": "prompt-harness-model",
-    "data-harness": selection().harness ? harnessSelectionId(selection().harness!) : undefined,
-    "data-model": selection().selectedModel,
-    "data-provider": selection().selectedModelProvider,
-    "data-readiness": selection().readiness,
-    "data-ready-for-submit": selection().selectedModelKey ? "true" : "false",
-  }))
 
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
   const needsProviderSetup = createMemo(() => {

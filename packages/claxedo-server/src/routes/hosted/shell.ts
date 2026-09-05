@@ -35,7 +35,6 @@ import {
   controlPlaneAuthErrorBody,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
-  type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -307,10 +306,6 @@ function harnessWorkspaceId(directory: string) {
   return HARNESS_WORKSPACE_ID.test(candidate) ? candidate : undefined
 }
 
-function runtimeHealthPath(sessionId?: string) {
-  return sessionId ? `/api/wr/health?${new URLSearchParams({ sessionId })}` : "/api/wr/health"
-}
-
 function relayRoleOf(input: unknown): RelayRole | undefined {
   return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
 }
@@ -522,7 +517,6 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
     return authErrorResponse(c, err)
   }
 }
-
 
 async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
   if (options.authentication) {

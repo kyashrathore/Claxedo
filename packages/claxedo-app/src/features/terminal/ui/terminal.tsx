@@ -37,7 +37,7 @@ import { classifyTerminalClose } from "./close"
 import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
 import { scheduleFontSettleRefit } from "../core/font-settle"
 import { terminalBenchmarkBackendObservers } from "../core/benchmark-observer"
-import { resolveTerminalColors, type TerminalColors } from "./terminal-colors"
+import { resolveTerminalColors } from "./terminal-colors"
 import { createPtySnapshot } from "./terminal-pty-snapshot"
 import { MAX_BATCH_BYTES, MAX_BATCH_ITEMS, MAX_DROPPED_CHUNKS, MAX_PENDING_BYTES, MAX_STREAM_BYTES, OPEN_RESIZE_SETTLE_MS } from "./terminal-limits"
 export interface TerminalProps extends ComponentProps<"div"> {
@@ -53,8 +53,6 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onSplitHorizontal?: () => void
   onFileLinkOpen?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
 }
-
-
 
 // Tuned for vtebench full profile (ramp stage 6: 1 MiB samples, max-secs=10,
 // max-samples=200) so heavy TUI output can complete without early throttling.
@@ -133,7 +131,6 @@ export const Terminal = (props: TerminalProps) => {
   let disposed = false
   let cleaned = false
   let isBufferRestored = !props.pty.buffer
-  const hasBuffer = !!(props.pty.buffer && props.pty.buffer.length > 0)
   let cursor =
     typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : 0
 
@@ -178,7 +175,7 @@ export const Terminal = (props: TerminalProps) => {
     backend.focus()
   }
 
-  const refreshTerminal = (reason: string) => {
+  const refreshTerminal = () => {
     if (!backend) return
     try {
       backend.fit()
@@ -204,7 +201,7 @@ export const Terminal = (props: TerminalProps) => {
     queueMicrotask(() => {
       if (disposed) return
       if (container.getClientRects().length === 0) return
-      refreshTerminal("auto-focus")
+      refreshTerminal()
       focusTerminal()
     })
   })
@@ -279,7 +276,7 @@ export const Terminal = (props: TerminalProps) => {
         queueMicrotask(() => {
           if (disposed) return
           if (container.getClientRects().length === 0) return
-          refreshTerminal("auto-focus")
+          refreshTerminal()
           focusTerminal()
         })
       }
@@ -338,7 +335,7 @@ export const Terminal = (props: TerminalProps) => {
       const reloadKey = terminalReloadStorageKey(local.pty.id)
       const isReload = resolveTerminalReloadFlag(localStorage, local.pty.id)
 
-      const persistSnapshot = (reason: string) => {
+      const persistSnapshot = () => {
         if (!backend) return
         const buffer = (() => {
           try {
@@ -385,13 +382,13 @@ export const Terminal = (props: TerminalProps) => {
       const markReload = () => {
         // Persist a final snapshot before the document tears down. Solid cleanup
         // callbacks are not guaranteed to run on a hard reload.
-        persistSnapshot("beforeunload")
+        persistSnapshot()
         try {
           localStorage.setItem(reloadKey, "1")
         } catch {}
       }
       window.addEventListener("beforeunload", markReload)
-      const handlePageHide = () => persistSnapshot("pagehide")
+      const handlePageHide = () => persistSnapshot()
       window.addEventListener("pagehide", handlePageHide)
       cleanups.push(() => {
         window.removeEventListener("beforeunload", markReload)
@@ -435,9 +432,6 @@ export const Terminal = (props: TerminalProps) => {
         snapshotWasAltScreen: snapshotWasAltScreen === true,
         snapshotCursor,
       })
-      const hasPersistedBuffer = snapshotHasBuffer
-      const useLiveTailCursor = plan.useLiveTailCursor
-      const cursorStart = plan.cursorStart
       const launch = initialDelay({ likelyTui })
       const { command: initialCmd, clearStored: clearStoredInitialCmd } = resolveInitialCommand(local.pty.initialCommand)
       if (clearStoredInitialCmd) props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })

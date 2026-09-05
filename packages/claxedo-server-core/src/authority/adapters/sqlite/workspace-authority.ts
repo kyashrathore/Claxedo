@@ -98,26 +98,6 @@ function requiredText(value: unknown, name: string) {
   return value.trim()
 }
 
-function roleAction(value: "viewer" | "editor" | "admin" | "owner") {
-  return value === "viewer" ? "read" as const : value === "editor" ? "write" as const : value
-}
-
-function sqliteShareTarget(target: WorkspaceShareTarget): {
-  tokenIdentifier: string | null
-  orgId: string | null
-} {
-  if (target.kind === "actor") {
-    if (!target.actorId.trim()) throw new Error("Share actor id is required")
-    return { tokenIdentifier: target.actorId, orgId: null }
-  }
-  if (target.kind === "user") {
-    if (!target.userId.trim()) throw new Error("Share user id is required")
-    return { tokenIdentifier: target.userId, orgId: null }
-  }
-  if (!target.orgId.trim()) throw new Error("Share organization id is required")
-  return { tokenIdentifier: null, orgId: target.orgId }
-}
-
 function base64url(bytes: Uint8Array) {
   return Buffer.from(bytes).toString("base64url")
 }
@@ -287,14 +267,6 @@ function denied(): never {
   throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority denied workspace access")
 }
 
-function object(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
-
-function txt(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
-
 type ShareTarget = {
   primaryKey: string
   activeKeys: string[]
@@ -398,55 +370,6 @@ function jsonText(input: unknown) {
     return JSON.stringify(input) ?? "null"
   } catch {
     return "null"
-  }
-}
-
-function producerAuthorTokenIdentifier(
-  db: SqliteAuthorityDb,
-  message: unknown,
-  expectedTokenIdentifier: string,
-) {
-  const row = object(message)
-  const info = object(row?.info)
-  const claxedo = object(info?.claxedo)
-  const author = object(claxedo?.author)
-  const publicId = txt(author?.id)
-  if (!publicId) return
-  const tokenIdentifier = (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(publicId) as {
-    token_identifier: string
-  } | undefined)?.token_identifier
-  return tokenIdentifier === expectedTokenIdentifier ? tokenIdentifier : undefined
-}
-
-function messageWithPublicAuthor(input: unknown, user?: {
-  public_id: string | null
-  name: string | null
-  image_url: string | null
-  kind: string | null
-}) {
-  const row = object(input)
-  const info = object(row?.info)
-  if (!row || !info || info.role !== "user") return input
-  const claxedo = object(info.claxedo) ?? {}
-  const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
-  const { claxedo: _untrustedClaxedo, ...safeInfo } = info
-  const canonicalClaxedo = user?.public_id
-    ? {
-        ...safeClaxedo,
-        author: {
-          id: user.public_id,
-          name: user.name ?? (user.kind === "agent" ? "Agent" : "User"),
-          kind: user.kind === "agent" ? "agent" : "human",
-          ...(user.image_url ? { avatarUrl: user.image_url } : {}),
-        },
-      }
-    : safeClaxedo
-  return {
-    ...row,
-    info: {
-      ...safeInfo,
-      ...(Object.keys(canonicalClaxedo).length > 0 ? { claxedo: canonicalClaxedo } : {}),
-    },
   }
 }
 
@@ -568,18 +491,6 @@ export function createSqliteWorkspaceAuthority(
     if (participant && !participant.revoked_at) return workspaceRole
     if (sessionShareAllowsUser(db, who, session.session_id)) return workspaceRole
     if (isOrgAdmin ?? orgAdminForUser(db, who, workspace.org_id)) return workspaceRole
-  }
-
-  const sessionRole = (
-    db: SqliteAuthorityDb,
-    workspace: WorkspaceRow,
-    session: SessionRow,
-    who: AuthorityUser,
-    action: WorkspaceAction,
-  ) => {
-    const workspaceRole = authorizeWorkspaceForUser(db, workspace, who, action)
-    if (!workspaceRole) return
-    return sessionRoleForWorkspaceUser(db, workspace, session, who, workspaceRole)
   }
 
   const sessionShareAllowsUser = (db: SqliteAuthorityDb, who: AuthorityUser, sessionId: string) => {

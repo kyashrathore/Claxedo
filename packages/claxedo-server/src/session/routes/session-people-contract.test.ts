@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { localOnlyAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type {
   OrgId,
   WorkspaceAuthority,

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 
-import { FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS } from "@/features/session/store/first-fold-prefetch"
 import { createSessionMountSettle } from "./session-mount-settle"
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))

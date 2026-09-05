@@ -174,7 +174,6 @@ const fileContextInput = {
 
       const runtime = requestRuntime()
       const runtimeKey = fileRequestRuntimeKey(runtime)
-      const directory = runtime.directory
       ensure(file)
 
       const current = store.file[file]

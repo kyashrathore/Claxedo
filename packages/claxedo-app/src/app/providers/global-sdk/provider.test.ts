@@ -29,8 +29,6 @@ import {
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
-import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { sessionGoalKey, type SessionGoalData } from "@/features/session/store/session-goal-query"
 
 afterEach(() => {

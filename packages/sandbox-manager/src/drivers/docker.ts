@@ -8,7 +8,7 @@ import type {
   SandboxDriverEnsureInput,
   SandboxTarget,
 } from ".."
-import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
+import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
@@ -210,19 +210,16 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
   }
 
   function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Record<string, string> {
-    const env: Record<string, string> = {
-      ...workspaceRuntimeTargetEnv({
-        workspaceId: input.workspaceId,
-        hostId,
-        directory: workspaceDirectory(input),
-        port: runtimePort(input),
-        host: "0.0.0.0",
-      }),
-      ...workspaceRuntimeSourceEnv({ source: input.source }),
-      ...input.env,
-    }
-    if (options.runner) env.WORKSPACE_RUNTIME_RUNNER = options.runner
-    return env
+    return workspaceRuntimeBootEnv({
+      workspaceId: input.workspaceId,
+      hostId,
+      directory: workspaceDirectory(input),
+      port: runtimePort(input),
+      host: "0.0.0.0",
+      source: input.source,
+      env: input.env,
+      runner: options.runner,
+    })
   }
 
   async function readyTarget(input: SandboxDriverEnsureInput, sandboxId: string, hostId: string): Promise<SandboxTarget> {

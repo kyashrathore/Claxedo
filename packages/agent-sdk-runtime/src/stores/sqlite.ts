@@ -495,16 +495,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
 }
 
-function groupRows(rows: Array<{ directory: string; data_json: string }>) {
-  const grouped = new Map<string, unknown[]>()
-  for (const row of rows) {
-    const values = grouped.get(row.directory) ?? []
-    values.push(JSON.parse(row.data_json))
-    grouped.set(row.directory, values)
-  }
-  return [...grouped].map(([directory, values]) => ({ directory, rows: values }))
-}
-
 export function createSqliteRuntimeStore(options: SqliteRuntimeStoreOptions): AgentRuntimeStore {
   return new SqliteRuntimeStore(options) as unknown as AgentRuntimeStore
 }

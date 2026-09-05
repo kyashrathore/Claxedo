@@ -97,7 +97,6 @@ const platform: Platform = {
 }
 
 function startApp() {
-  if (import.meta.env.DEV) console.log("[claxedo:boot]", "local", window.location.href)
   render(
     () => (
       <PlatformProvider value={platform}>

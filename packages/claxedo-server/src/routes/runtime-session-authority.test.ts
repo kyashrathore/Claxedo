@@ -272,6 +272,21 @@ describe("runtime private-session authority oracle", () => {
       fencingToken: 4,
     })).status).toBe(200)
 
+    for (const mismatch of [
+      { sessionId: "ses_other" },
+      { turnId: "msg_other" },
+      { fencingToken: 5 },
+    ]) {
+      const calls = renewSessionTurn.mock.calls.length
+      const denied = await request(target, undefined, {
+        sessionId: "ses_private", action: "turn_renew", turnId: "msg_1",
+        leaseId: acquiredBody.leaseId, fencingToken: 4, ...mismatch,
+      })
+      expect(denied.status).toBe(401)
+      expect(await denied.json()).toMatchObject({ error: { code: "session_turn_lease_invalid" } })
+      expect(renewSessionTurn).toHaveBeenCalledTimes(calls)
+    }
+
     acquireSessionTurn.mockRejectedValueOnce(new SessionTurnConflictError("ses_private", 999))
     const conflict = await request(target, token, {
       sessionId: "ses_private",

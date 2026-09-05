@@ -38,8 +38,8 @@ import {
   type CompatEnvelope,
 } from "../compat-events"
 import { recovering } from "@claxedo/agent-sdk-runtime/status"
-import { isAgentRuntimeGoalError, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
-import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { isAgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
+import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import {
   compatScope,
   runRuntimePromptTurn,
@@ -331,7 +331,6 @@ async function applyTurnPermissionMode(input: {
     // reports invalid mode changes synchronously.
   }
 }
-
 
 export function parseDraftId(raw: string | null | undefined): string | undefined {
   if (raw === null || raw === undefined) return undefined
@@ -695,19 +694,6 @@ function unsupportedLiveAgentListError(error: unknown) {
     || error.message.includes("did not return live agent options")
 }
 
-async function unsupportedIfDisabled(
-  c: Ctx,
-  adapter: AgentHarnessAdapter,
-  directory: RuntimeDirectory,
-  key: CapabilityKey,
-  operation: string = key,
-  sessionId?: string,
-) {
-  const caps = await adapter.readHarnessCapabilities(directory, sessionId ? { sessionId } : undefined)
-  if (caps[key]) return
-  return unsupportedOperation(c, caps, operation, { capability: key })
-}
-
 async function unsupportedIfUnavailable(
   c: Ctx,
   adapter: AgentHarnessAdapter,
@@ -1009,7 +995,6 @@ export function createSessionRoutes(opts: Opts) {
   app
     .get("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const roots = c.req.query("roots") === "true" || c.req.query("roots") === "1"
       const sessions = opts.listSessions
         ? await opts.listSessions(c, directory)
         : []

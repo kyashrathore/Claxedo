@@ -106,7 +106,7 @@ export async function writeStatusHooksArtifacts(
   await fs.promises.mkdir(manifest.dirs.shell, { recursive: true, mode: 0o755 })
   await fs.promises.mkdir(manifest.dirs.bash, { recursive: true, mode: 0o755 })
 
-  await writeIfChanged(manifest.files.notify, generateNotifyScript(port, manifest.dirs.root), 0o755, force)
+  await writeIfChanged(manifest.files.notify, generateNotifyScript(port), 0o755, force)
   if (!codexNativeHooks) {
     await writeIfChanged(manifest.files.codexWatcher, generateCodexLogWatcher(manifest.files.notify), 0o755, force)
     await writeIfChanged(

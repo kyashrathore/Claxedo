@@ -4,12 +4,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { afterAll, beforeEach, describe, expect, test } from "bun:test"
-import {
-  loadManagedMcpState,
-  mcpControl,
-  resolveEffectiveMcp,
-  harnessAgent,
-} from "./mcp-resolver"
+import { loadManagedMcpState, resolveEffectiveMcp, harnessAgent } from "./mcp-resolver"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-sdk-mcp-resolver-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR

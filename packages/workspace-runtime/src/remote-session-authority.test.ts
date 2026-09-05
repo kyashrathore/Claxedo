@@ -109,3 +109,31 @@ describe("remote workspace session authority", () => {
     })
   })
 })
+
+test("turn lease responses are validated and renewals send only the bound lease proof", async () => {
+  const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = []
+  const lease = { turnId: "turn_1", leaseId: "signed-lease", fencingToken: 3, acquiredAt: 100, expiresAt: 200 }
+  const policy = remoteWorkspaceSessionAccessPolicy({
+    url: "https://control.test/authorize",
+    fetch: async (_url, init) => {
+      const body = JSON.parse(String(init?.body))
+      requests.push({ headers: new Headers(init?.headers), body })
+      return Response.json(body.action === "turn_release" ? { released: true } : lease)
+    },
+  })
+  const turn = { ...input, operation: "prompt" as const, turnId: "turn_1" }
+  expect(await policy.acquireTurn!(turn)).toEqual({ allowed: true, ...lease })
+  expect(await policy.renewTurn!({ ...turn, leaseId: lease.leaseId, fencingToken: 3 })).toEqual({ allowed: true, ...lease })
+  expect(await policy.releaseTurn!({ ...turn, leaseId: lease.leaseId, fencingToken: 3 })).toEqual({ released: true })
+  expect(requests.map((request) => request.headers.get("authorization"))).toEqual(["Bearer signed-rht", null, null])
+  expect(requests[1]!.body).toEqual({
+    sessionId: "ses_private", action: "turn_renew", turnId: "turn_1", leaseId: "signed-lease", fencingToken: 3,
+  })
+
+  for (const body of [{}, { ...lease, fencingToken: 0 }, { ...lease, expiresAt: 99 }, { ...lease, leaseId: 1 }]) {
+    const invalid = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize", fetch: async () => Response.json(body),
+    })
+    expect(await invalid.acquireTurn!(turn)).toMatchObject({ allowed: false, code: "session_authority_invalid_response" })
+  }
+})

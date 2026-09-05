@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import { createHash } from "node:crypto"
 import { Hono } from "hono"
-import { SignJWT, exportJWK, exportSPKI, generateKeyPair } from "jose"
+import { exportJWK, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import {
   createRelayHostAuthMiddleware,

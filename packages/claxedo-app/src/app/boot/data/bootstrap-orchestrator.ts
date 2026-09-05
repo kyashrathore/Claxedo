@@ -8,7 +8,6 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { isCancelledError } from "@tanstack/solid-query"
 import { queryClient } from "@/platform/query/query-client"
-import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { agentListQuery, pathQuery } from "../../../features/session/data/query/directory"
 import { providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
@@ -17,7 +16,11 @@ import { mapInventoryToSessions } from "../../../features/session/data/query/inv
 import { cleanupDroppedSessionCaches } from "../../../features/session/data/sync/session-cache-cleanup"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/platform/sync/session-load"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "./bootstrap"
-import type { SessionCacheValue, SessionInventoryRow, WorkspaceGroup } from "../../../features/session/data/sync/global-sync-types"
+import type {
+  SessionCacheValue,
+  SessionInventoryRow,
+  WorkspaceGroup,
+} from "../../../features/session/data/sync/global-sync-types"
 import { SESSION_RECENT_LIMIT } from "../../../features/session/data/sync/global-sync-types"
 import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"

@@ -2,7 +2,6 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import {
   DEFAULT_HARNESS_MODEL,
   HARNESS_DISPLAY_NAMES,
-  effectiveHarnessModel,
   harnessDisplayLabel,
   harnessSelectionId,
   isCatalogHarness,

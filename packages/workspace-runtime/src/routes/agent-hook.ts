@@ -197,18 +197,6 @@ const resolveTerminalId = (input: { terminalId?: string; tabId?: string }) => {
   return clean(input.terminalId)
 }
 
-const toOptionalText = (value: unknown) => {
-  const next = clean(value)
-  if (!next) return undefined
-  return next
-}
-
-const toOptionalEventType = (value: unknown): AgentEventType | undefined => {
-  const parsed = AgentEventType.safeParse(value)
-  if (!parsed.success) return undefined
-  return parsed.data
-}
-
 const pruneTerminalSessions = () => {
   const now = Date.now()
   for (const [terminalId, session] of terminalSessions.entries()) {

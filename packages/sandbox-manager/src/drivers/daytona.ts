@@ -5,7 +5,7 @@ import type {
   SandboxTarget,
 } from ".."
 import { formatDaytonaAllowList, formatDaytonaDomainAllowList } from "../daytona-allow-list"
-import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
+import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { sandboxDriverCatalog } from "../driver-catalog"
@@ -116,12 +116,7 @@ export type DaytonaSandboxDriverOptions = {
   /** Default runner injected as WORKSPACE_RUNTIME_RUNNER. */
   runner?: string
   /** Static control-plane config injected so the runtime verifies relay-proxied requests. */
-  controlEnv?: {
-    relayJwksUrl?: string
-    relayVerifyPem?: string
-    managementJwksUrl?: string
-    sessionAuthorityUrl?: string
-  }
+  controlEnv?: WorkspaceRuntimeControlEnv
   /** Dynamic runtime env that needs the acquired sandbox id or current lease. */
   env?: (input: SandboxDriverEnsureInput, sandbox: DaytonaSandboxLike) => Record<string, string> | Promise<Record<string, string>>
   /** Auto-stop / auto-delete policy, in minutes. */
@@ -223,22 +218,16 @@ export function createDaytonaSandboxDriver(
   }
 
   function staticBootEnv(input: SandboxDriverEnsureInput, hostId: string, directory: string): Record<string, string> {
-    const env: Record<string, string> = {
-      ...workspaceRuntimeTargetEnv({
-        workspaceId: input.workspaceId,
-        hostId,
-        directory,
-        port: runtimePort,
-      }),
-      ...workspaceRuntimeSourceEnv({ source: input.source }),
-      ...input.env,
-    }
-    if (options.runner) env.WORKSPACE_RUNTIME_RUNNER = options.runner
-    if (options.controlEnv?.relayJwksUrl) env.WORKSPACE_RUNTIME_RELAY_JWKS_URL = options.controlEnv.relayJwksUrl
-    if (options.controlEnv?.relayVerifyPem) env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM = options.controlEnv.relayVerifyPem
-    if (options.controlEnv?.managementJwksUrl) env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL = options.controlEnv.managementJwksUrl
-    if (options.controlEnv?.sessionAuthorityUrl) env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = options.controlEnv.sessionAuthorityUrl
-    return env
+    return workspaceRuntimeBootEnv({
+      workspaceId: input.workspaceId,
+      hostId,
+      directory: directory,
+      port: runtimePort,
+      source: input.source,
+      env: input.env,
+      runner: options.runner,
+      controlEnv: options.controlEnv,
+    })
   }
 
   async function bootEnv(input: SandboxDriverEnsureInput, sandbox: DaytonaSandboxLike, hostId: string) {

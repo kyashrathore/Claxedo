@@ -169,7 +169,7 @@ function TerminalContentInner(props: {
   const title = () => props.meta.content?.title || "Terminal"
   const terminalId = () => props.meta.terminalId ?? props.meta.content?.terminalId
   const command = () => props.meta.content?.command
-  const replaceTerminalRoute = (oldId: string, newId: string, dir: string) => {
+  const replaceTerminalRoute = (oldId: string, newId: string) => {
     const workspaceId = props.meta.content?.workspaceRouteId ?? sdk.workspaceId
     if (!workspaceId || location.pathname !== workspaceTerminalRoute(workspaceId, oldId)) return
     const next = workspaceTerminalRoute(workspaceId, newId)
@@ -210,7 +210,7 @@ function TerminalContentInner(props: {
         title: title(),
       },
     })
-    replaceTerminalRoute(oldId, newId, dir)
+    replaceTerminalRoute(oldId, newId)
     requestTerminalFitOnPaneChange()
   }
   const [createError, setCreateError] = createSignal<string | undefined>()
@@ -325,7 +325,7 @@ function TerminalContentInner(props: {
         },
       })
       if (disposed) return
-      replaceTerminalRoute(pendingId, createdId, dir)
+      replaceTerminalRoute(pendingId, createdId)
       setRealPtyId(createdId)
     })
     if (!disposed) requestTerminalFitOnPaneChange()

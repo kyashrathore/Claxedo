@@ -1,8 +1,5 @@
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
-import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "@claxedo/server-core/credentials/types"
-import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "@claxedo/server-core/credentials/operations/discovery"
-import { localOnlyAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 import type { ProjectionStore } from "./projection-store"
@@ -19,7 +16,6 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { ClaxedoRegion, ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
-import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 
 export type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 
