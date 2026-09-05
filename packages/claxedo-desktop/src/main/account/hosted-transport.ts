@@ -17,8 +17,8 @@
  * so a retried mutation risks applying twice. A bounded deadline is the safe
  * half of that: the caller gets a clear, terminal error instead of a hang.
  *
- * Full incident history for why a retry used to live here:
- * docs/handoffs/cloudflare-multiplayer-migration.md.
+ * A retry used to live here; the Cloudflare multiplayer migration removed it
+ * after a mutation applied twice across a slow edge.
  */
 
 export type BoundedFetch = (

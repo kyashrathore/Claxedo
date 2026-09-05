@@ -5,7 +5,7 @@ import path from "node:path"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const THIS_FILE = "script/agent-plugins-retirement.test.ts"
-const EXPECTED_ROOTS = [".github", "convex", "packages", "script", "public-docs"] as const
+const EXPECTED_ROOTS = [".github", "packages", "script", "public-docs"] as const
 const TEXT_EXTENSIONS = new Set([".json", ".md", ".yml", ".yaml", ".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".sh", ".ps1"])
 const ROOT_TEXT_FILES = new Set([".dockerignore", ".gitignore", "README.md"])
 

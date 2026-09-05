@@ -1,8 +1,5 @@
 import {
-  EMPTY_SERVICE_CATALOG,
-  requireServiceCatalog,
   requireServiceDescriptor,
-  type FirstPartyServiceCatalog,
   type FirstPartyServiceDescriptor,
   type FirstPartyServiceId,
   type InstalledServiceState,
@@ -103,9 +100,4 @@ export function requireDescriptorForIdentity(
     throw new ServiceInstallationError("probe_required", "a service must be probed through its installed binding after registration")
   }
   return normalized
-}
-
-export function enabledServiceCatalog(rows: readonly InstallationRevision[]): FirstPartyServiceCatalog {
-  if (!rows.length) return EMPTY_SERVICE_CATALOG
-  return requireServiceCatalog(rows.filter((row) => row.descriptor.state === "enabled").map((row) => row.descriptor))
 }

@@ -1,6 +1,5 @@
 import type { AgentPluginHarnessId } from "../runtime/harness-registry"
 
-export type PluginInstanceId = string & { readonly __pluginInstanceId: unique symbol }
 export type ArtifactDigest = `sha256:${string}`
 
 export type ActivationIdentity = {

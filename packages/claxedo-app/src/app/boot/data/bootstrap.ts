@@ -73,7 +73,7 @@ function normalizedServerUrl(serverUrl: string | undefined) {
   return normalizeUrl(serverUrl) ?? getClaxedoServerUrl()
 }
 
-function isLoopbackServer(serverUrl: string | undefined) {
+export function isLoopbackServer(serverUrl: string | undefined) {
   return centralTransportForServer(serverUrl) === "loopback"
 }
 

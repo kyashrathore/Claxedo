@@ -1075,7 +1075,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
   // `/api/workspace/resolve` in mock-runtime.ts answers `local-${sessionId}`
   // (kind:"local") for EVERY directory, which contradicts the cloud inventory
   // this test registers. The app stamps the resolve result into the route key,
-  // so `activeWorkspaceId` — which a NEW terminal inherits as its directory
+  // so `activeDirectory` — which a NEW terminal inherits as its directory
   // (rail-header-actions.ts → rail-sidebar-selection.ts `sidebarDir`) — became
   // that `local-…` id instead of `WORKSPACE_ID`. The terminal's SessionPaneScope
   // then resolved `local` (no relay backing) and its WorkspaceGate was a no-op,
@@ -1138,7 +1138,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // The default mock `/api/workspace/resolve` (mock-runtime.ts) answers
     // `local-${sessionId}` for EVERY directory — correct for the local lane, but
     // it contradicts the cloud inventory this test registers above. The app
-    // stamps the resolve result into the route key, so `activeWorkspaceId`
+    // stamps the resolve result into the route key, so `activeDirectory`
     // (which new terminals/sessions inherit as their directory) becomes that
     // `local-…` id instead of the relay-backed `WORKSPACE_ID`. A secondary
     // surface then resolves `local` and never joins the shared connection. In

@@ -25,10 +25,6 @@ export function configureLocalWorkspaceRuntime(port: LocalWorkspaceRuntimePort |
   installed = port
 }
 
-export function localWorkspaceRuntimeInstalled() {
-  return installed !== undefined
-}
-
 export function localWorkspaceRuntime(): LocalWorkspaceRuntimePort {
   if (!installed) {
     throw new Error(

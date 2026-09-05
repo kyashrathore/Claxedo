@@ -1,7 +1,7 @@
 import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
 
 type HarnessDirectory = string
-type HarnessConfigResource = "harness" | "harness/model" | "harness/options"
+type HarnessConfigResource = "harness" | "harness/options"
 type HarnessSessionResource = "session" | "messages" | "todo" | "capabilities" | "config"
 
 function harnessConfigPath(input: {

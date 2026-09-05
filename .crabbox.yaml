@@ -190,15 +190,6 @@ jobs:
     command: bash script/cbx-ci-remote.sh e2e-tier-real
     stop: auto
 
-  pr-docs-links-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh docs-links
-    stop: auto
-
   pr-packages-dry-run-linux:
     provider: hetzner
     target: linux
@@ -305,9 +296,6 @@ jobs:
   focus-e2e-tier-real-web-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real-web
-  pr-docs-links-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh docs-links
   pr-packages-dry-run-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh packages-dry-run

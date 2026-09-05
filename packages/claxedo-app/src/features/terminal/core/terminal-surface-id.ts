@@ -16,10 +16,3 @@
 export const NEW_TERMINAL_ID = "new"
 
 export const PENDING_TERMINAL_PREFIX = "pending-"
-
-/** True when `terminalId` names a real pty rather than a placeholder. */
-export function isLiveTerminalId(terminalId: string | undefined): terminalId is string {
-  if (!terminalId) return false
-  if (terminalId === NEW_TERMINAL_ID) return false
-  return !terminalId.startsWith(PENDING_TERMINAL_PREFIX)
-}

@@ -249,30 +249,6 @@ export function parseSessionPermissionRequest(rawBody: unknown, url: string): Pe
  */
 export const QUESTION_SESSION_ID_QUERY_PARAM = "sessionId"
 
-/**
- * Reads the `sessionId` query param the way the route does, returning `undefined` for
- * both "absent" and "empty string" because the server collapses them identically
- * (`?? ""` then a truthiness test at :849).
- *
- * Returns which server branch this request will take, so a spec can assert on it rather
- * than assume.
- */
-export function parseQuestionSessionIdQuery(url: string): {
-  sessionId: string | undefined
-  /** true when the route will run `sessionOperationGuard`; false when it is bypassed (:849). */
-  guarded: boolean
-  /** true when the route will scan `listQuestions` to recover the session id (:854). */
-  resolvesSessionByLookup: boolean
-} {
-  const raw = new URL(url, "http://mock.invalid").searchParams.get(QUESTION_SESSION_ID_QUERY_PARAM)
-  const sessionId = raw === null || raw.length === 0 ? undefined : raw
-  return {
-    sessionId,
-    guarded: sessionId !== undefined,
-    resolvesSessionByLookup: sessionId === undefined,
-  }
-}
-
 export class QuestionReplyContractError extends Error {
   constructor(url: string, problems: string[]) {
     super(
@@ -410,19 +386,3 @@ export const SESSION_INTERACTION_UNSUPPORTED_ERROR_CODE = "unsupported_operation
  * cannot drift into inventing a richer body (e.g. echoing the decision) that specs then
  * assert on and production never sends.
  */
-export function assertInteractionOkResponse(body: unknown, url: string): void {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new QuestionReplyContractError(url, [`response must be the object {"ok":true}, got ${typeOf(body)}`])
-  }
-  const keys = Object.keys(body as object)
-  const problems: string[] = []
-  if ((body as Record<string, unknown>).ok !== true) problems.push(`response.ok must be exactly true`)
-  for (const key of keys) {
-    if (key === "ok") continue
-    problems.push(
-      `response field "${key}" — the real routes return the literal { ok: true } and nothing else `
-        + `(:845, :869, :893). A spec asserting on this field would be asserting on the fixture.`,
-    )
-  }
-  if (problems.length > 0) throw new QuestionReplyContractError(url, problems)
-}

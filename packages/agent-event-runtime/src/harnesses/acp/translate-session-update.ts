@@ -29,10 +29,6 @@ export interface TranslatorContext {
   preserveUserMessageChunks?: boolean
 }
 
-export function createTranslatorContext(client?: string): TranslatorContext {
-  return { state: createAcpTranslatorState(client), diagnostics: createAcpDiagnostics() }
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

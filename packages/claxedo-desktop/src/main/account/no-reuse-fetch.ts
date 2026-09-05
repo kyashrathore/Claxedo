@@ -12,8 +12,8 @@
  * the response. Control-plane traffic is low-rate, so the extra handshake is
  * an acceptable price for removing the poisoned-pool failure class outright,
  * rather than compensating for it with a retry each caller would otherwise
- * need to implement. Full incident history:
- * docs/handoffs/cloudflare-multiplayer-migration.md.
+ * need to implement. The poisoned pool was first observed during the Cloudflare
+ * multiplayer migration.
  */
 
 import { request as httpsRequest } from "node:https"

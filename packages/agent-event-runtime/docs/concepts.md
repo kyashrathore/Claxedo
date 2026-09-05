@@ -252,7 +252,7 @@ events the source of truth for a new system.
 | Translate Claude SDK frames | harness event adapter (`HarnessEventAdapter`) |
 | Translate ACP `session/update` frames | harness event adapter (`HarnessEventAdapter`) |
 | Convert canonical events to UI rows | projection or host projection |
-| Convert canonical events to OpenCode events | `opencode-compat` projection |
+| Convert canonical events to client rows | `client-presentation` projection |
 | Store events in Postgres/SQLite/Supabase | host |
 | Authorize users | host |
 | Start/stop agent processes | host or SDK runtime |

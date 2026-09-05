@@ -68,9 +68,6 @@ export function initializeTimeoutMs() {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : newSessionTimeoutMs()
 }
 
-/** JSON-RPC reserved code for a server-side internal error. */
-export const JSON_RPC_INTERNAL_ERROR = -32603
-
 /**
  * The JSON-RPC `code` of an agent-side failure, when it carries one.
  *

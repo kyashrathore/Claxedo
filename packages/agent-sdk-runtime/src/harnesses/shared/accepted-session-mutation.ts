@@ -36,17 +36,3 @@ export function acceptedSessionConfig(
       : { handoff: update.handoff }),
   }
 }
-
-export function completeSessionConfigUpdate(
-  current: SessionConfig,
-  update: SessionConfigUpdate,
-): SessionConfigUpdate {
-  const desired = acceptedSessionConfig(current, update)
-  return {
-    harness: desired.harness,
-    model: desired.model ?? null,
-    variant: desired.variant ?? null,
-    agent: desired.agent ?? null,
-    handoff: desired.handoff ?? null,
-  }
-}

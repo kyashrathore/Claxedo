@@ -246,28 +246,6 @@ export async function openRecordedPage(browser: Browser, dir: string) {
   return { context, page }
 }
 
-export async function grantSessionShareTeam(
-  fixture: RunningRelayFixture,
-  webApp: RunningWebApp,
-  sessionId: string,
-  teamId: string,
-) {
-  const url = new URL(
-    `/api/control/sessions/${encodeURIComponent(sessionId)}/shares`,
-    fixture.info.backendUrl,
-  )
-  const response = await fetch(url, {
-    method: "POST",
-    headers: controlHeaders(fixture.info.controlPlaneToken, fixture, webApp),
-    body: JSON.stringify({
-      workspaceId: fixture.info.workspaceId,
-      grantedToTeamId: teamId,
-    }),
-  })
-  const raw = await response.text()
-  expect(response.ok, `grant team session share failed: ${response.status} ${raw}`).toBe(true)
-  return JSON.parse(raw) as { grant_id?: string }
-}
 
 export async function shareSessionWithTeamViaPeopleUi(page: Page, teamId: string) {
   await expect(page.getByText("Reconnecting…")).toHaveCount(0, { timeout: 60_000 }).catch(() => undefined)

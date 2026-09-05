@@ -131,7 +131,7 @@ function workspaceBuildInputClosure(packageDirs: string[], root: string): string
       ...manifest.optionalDependencies,
       ...manifest.peerDependencies,
       // Repository-owned build scripts may import workspace tools declared as
-      // dev dependencies (OpenCode's node build imports @opencode-ai/script).
+      // dev dependencies (package build scripts import @opencode-ai/script).
       ...(manifest as WorkspaceManifest & { devDependencies?: Record<string, string> }).devDependencies,
     })) {
       const dependency = byName.get(name)

@@ -57,5 +57,3 @@ export type BillingStore = {
     Array<{ org_id: string; polar_customer_id: string; polar_subscription_id: string }>
   >
 }
-
-export type BillingStoreEnv = Record<string, string | undefined>

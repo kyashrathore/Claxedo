@@ -170,8 +170,6 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
   return { configured: true as const, service, ready }
 }
 
-export type AccountAssembly = ReturnType<typeof createAccountAssembly>
-
 export function setupAccount(input: AccountAssemblyInput) {
   const account = createAccountAssembly(input)
   const { channels } = registerAccountIpc({ ipcMain: input.ipcMain, service: account.service })

@@ -192,9 +192,3 @@ function isAllowedSrc(raw: string): boolean {
     return false
   }
 }
-
-export const __testing = {
-  DANGEROUS_WEBPREF_TOKENS,
-  DANGEROUS_PARAM_KEYS,
-  ALLOWED_SRC_SCHEMES,
-}

@@ -1,4 +1,3 @@
-import { decode64 } from "@/lib/base64"
 import {
   createClaxedoServerClient,
   type CreateClaxedoServerClientOptions,
@@ -9,16 +8,6 @@ export function authTokenFromCredentials(input: { username?: string; password: s
   return btoa(`${input.username ?? ""}:${input.password}`)
 }
 
-export function authFromToken(token: string | null) {
-  const decoded = decode64(token ?? undefined)
-  if (!decoded) return
-  const separator = decoded.indexOf(":")
-  if (separator === -1) return
-  return {
-    username: decoded.slice(0, separator),
-    password: decoded.slice(separator + 1),
-  }
-}
 
 export function createServerClient({
   server,

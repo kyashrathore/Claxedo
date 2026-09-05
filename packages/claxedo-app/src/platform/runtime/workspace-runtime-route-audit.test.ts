@@ -1705,11 +1705,8 @@ describe("workspace runtime route audit", () => {
     expect(command).toMatch(/legacyCommandTrigger/)
     expect(command).toMatch(/serverCommandTriggerFromEvent/)
     expect(command).toMatch(/agentCommandFromEvent/)
-    expect(command).toMatch(/trustedAgentContributionBundleFromEvent/)
-    expect(command).toMatch(/contentSurfaceRegistry\.addTrustedAgentContributions/)
     expect(command).toMatch(/remote-agent\.command\.execute/)
     expect(command).toMatch(/voice-agent\.command\.execute/)
-    expect(command).toMatch(/trusted-agent\.contributions\.register/)
     expect(command).toMatch(/tui\.command\.execute/)
     expect(command).toMatch(/useGlobalSDK/)
     // 007 Tier E: upstream command definitions are now vendored in-repo as

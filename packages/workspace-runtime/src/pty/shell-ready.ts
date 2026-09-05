@@ -10,6 +10,3 @@
  * timer — slow, but invisible, which is why it needs a guard).
  */
 export const SHELL_READY_MARKER = "claxedo-shell-ready"
-
-/** Full OSC form, for tests and for anything matching the complete sequence. */
-export const SHELL_READY_SEQUENCE = `\x1b]777;${SHELL_READY_MARKER}\x07`

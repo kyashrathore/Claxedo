@@ -44,7 +44,7 @@ export type ProviderConnectFormProps = {
   hideHeading?: boolean
 }
 
-export function useProviderConnectForm(props: ProviderConnectFormProps) {
+function useProviderConnectForm(props: ProviderConnectFormProps) {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const providers = useProviders(() => props.harness, () => props.workspaceScope)

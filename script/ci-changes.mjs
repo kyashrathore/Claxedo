@@ -108,7 +108,6 @@ function isOnboardingRelevant(file) {
     "packages/claxedo-app/e2e/playwright/onboarding",
     "packages/claxedo-app/src/features/onboarding/",
     "packages/claxedo-app/src/features/session/onboarding/",
-    "packages/claxedo-app/src/features/workspaces/ui/dialogs/create-cloud-project",
   ])
 }
 

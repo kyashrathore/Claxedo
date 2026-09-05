@@ -287,11 +287,6 @@ export function rememberLiveModes(harness: string, state: AgentPermissionModeSta
   liveModesSeen.set(harness, state.modes)
 }
 
-/** Test seam — the map is process-global, so suites must be able to reset it. */
-export function forgetLiveModes() {
-  liveModesSeen.clear()
-}
-
 /**
  * Returns the modes observed from live sessions for use in session drafts.
  *

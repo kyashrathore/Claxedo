@@ -9,16 +9,6 @@
 export const CLEAR_SCROLLBACK = "\x1b[3J"
 
 /**
- * Single-chunk check. Callers that see the PTY stream chunk by chunk should use
- * a `createMarkerScanner(CLEAR_SCROLLBACK)` instead — a read boundary landing
- * inside the four-byte sequence makes this return false for a clear that did
- * happen. Kept for callers holding a complete buffer.
- */
-export function containsClearScrollbackSequence(data: string) {
-  return data.includes(CLEAR_SCROLLBACK)
-}
-
-/**
  * The content after the LAST clear in `data` — what survives the erase.
  *
  * When the sequence was split across chunks the caller has already been told a

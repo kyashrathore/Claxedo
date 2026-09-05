@@ -64,8 +64,8 @@ export type AgentHarnessDefinition = (typeof AGENT_HARNESS_DEFINITIONS)[number]
 export type AgentHarnessTransport = "stdio" | "streamable-http" | "websocket"
 
 /**
- * Open ACP connection ids are stable lowercase slugs: they become the logical
- * harness identity (`acp:<id>`), directory-safe store keys, and query values.
+ * Open ACP connection ids are stable lowercase slugs: they become
+ * directory-safe store keys and query values.
  * The finite built-in ids all match this shape too, which keeps one grammar.
  */
 export const ACP_CONNECTION_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/

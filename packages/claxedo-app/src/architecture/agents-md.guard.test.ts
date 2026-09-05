@@ -14,7 +14,6 @@ type AgentsContract = {
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const srcRoot = path.join(appRoot, "src")
-const legacyRequiredDirs: string[] = []
 const finalOwnerDirs = [...new Set(
   walk(srcRoot)
     .map((file) => path.relative(srcRoot, file).split(path.sep).join("/"))
@@ -24,7 +23,7 @@ const finalOwnerDirs = [...new Set(
       return [owner]
     }),
 )].sort()
-const requiredDirs = [...legacyRequiredDirs, ...finalOwnerDirs]
+const requiredDirs = finalOwnerDirs
 const writerFamilies = new Set((writers as { families: Array<{ family: string }> }).families.map((family) => family.family))
 
 describe("per-directory AGENTS.md contracts", () => {

@@ -1,8 +1,8 @@
 # Agent Event Runtime
 
 `@claxedo/agent-event-runtime` normalizes raw harness events into a canonical
-`AgentRuntimeEvent` stream. It also provides projections, including OpenCode
-compatibility events.
+`AgentRuntimeEvent` stream. It also provides projections, including the
+client-presentation projection that turns events into the rows a client renders.
 
 An agent harness is the agent application/control surface that executes a turn.
 This package does not launch harnesses. It translates events emitted by a host,
@@ -44,18 +44,18 @@ for (const event of result.events) {
 }
 ```
 
-## OpenCode Compatibility Projection
+## Client Presentation Projection
 
 ```ts
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
 
-const compat = createOpencodeCompatProjection({
+const presentation = createClientPresentationProjection({
   sessionId: "session-1",
   directory: process.cwd(),
   assistantMessageId: "assistant-1",
 })
 
-const opencodeEvents = result.events.flatMap((event) => compat.ingest(event))
+const clientEvents = result.events.flatMap((event) => presentation.ingest(event))
 ```
 
 ## Root Vs Subpath Imports
@@ -64,7 +64,7 @@ Use root imports (`@claxedo/agent-event-runtime`) for canonical contracts and
 harness-agnostic runtime primitives such as `createAgentEventRuntime`. Use
 subpaths for harness adapters and projections, for example
 `@claxedo/agent-event-runtime/harnesses/acp` and
-`@claxedo/agent-event-runtime/projections/opencode-compat`. Harness adapters
+`@claxedo/agent-event-runtime/projections/client-presentation`. Harness adapters
 and projections are not root exports.
 
 ## Determinism And Restore
@@ -74,8 +74,8 @@ timestamps and fallback ids are minted through those injected functions. If
 omitted, the runtime uses `systemClock` (`Date.now`) and a local sequential id
 factory starting at `0`.
 
-`createOpencodeCompatProjection()` accepts its own `clock` option for
-compatibility event timestamps such as tool card times and session title update
+`createClientPresentationProjection()` accepts its own `clock` option for
+presentation event timestamps such as tool card times and session title update
 times. If omitted, this projection uses `Date.now` at the projection boundary.
 
 Runtime snapshots persist adapter state, but they do not persist the default
@@ -95,7 +95,7 @@ projections:
 - `harnesses/codex`
 - `harnesses/cursor`
 - `projections/debug-trace`
-- `projections/opencode-compat`
+- `projections/client-presentation`
 
 `debug-trace` is a projection for diagnostics. It produces a compact,
 human-readable trace of canonical runtime events so hosts can inspect ordering,

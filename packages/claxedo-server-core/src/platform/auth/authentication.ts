@@ -14,7 +14,6 @@ export const AUTHENTICATION_EVIDENCE_METHODS = [
 ] as const
 
 export type AuthAdapterId = (typeof AUTH_ADAPTERS)[number]
-export type AuthClientKind = (typeof AUTH_CLIENT_KINDS)[number]
 export type AuthAssurance = (typeof AUTH_ASSURANCE_LEVELS)[number]
 export type InteractiveAuthMethod = (typeof INTERACTIVE_AUTH_METHODS)[number]
 export type AuthenticationEvidenceMethod = (typeof AUTHENTICATION_EVIDENCE_METHODS)[number]
@@ -215,15 +214,6 @@ export type RequestAuthenticationAdapter = {
 export type RequestIdentityVerificationAdapter = {
   descriptor: AuthAdapterDescriptor
   verifyIdentity(request: Request): Promise<AuthIdentity>
-}
-
-export type HostedAuthAdapter = RequestAuthenticationAdapter & {
-  reauthentication(input: {
-    principal: ControlPlanePrincipal
-    requiredAssurance: Exclude<AuthAssurance, "insufficient">
-  }): Promise<ReauthenticationChallenge>
-  native: NativeAuthorizationPort
-  accounts: AuthAccountLifecycle
 }
 
 export class AuthenticationError extends Error {

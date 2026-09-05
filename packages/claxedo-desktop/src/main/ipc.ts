@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
+import { BrowserWindow, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
 import type {
@@ -194,10 +194,6 @@ export function registerIpcHandlers(deps: Deps) {
     return true
   })
 
-  ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
-    new Notification({ title, body }).show()
-  })
-
   ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     return win?.isFocused() ?? false
@@ -235,7 +231,6 @@ export function registerIpcHandlers(deps: Deps) {
     app.quit()
   })
 
-  ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())
   ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => event.sender.setZoomFactor(factor))
 
   ipcMain.on("set-native-theme", (_event: IpcMainEvent, theme: "light" | "dark" | "system") => {

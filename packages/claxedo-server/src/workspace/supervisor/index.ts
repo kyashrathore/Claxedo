@@ -232,10 +232,6 @@ export function getSandboxLease(workspaceId: string) {
   return getSupervisorSandboxLease(workspaceId)
 }
 
-export function listSandboxLeases() {
-  return listSupervisorSandboxLeases()
-}
-
 export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
   return {
     async ensure(workspaceId, input) {

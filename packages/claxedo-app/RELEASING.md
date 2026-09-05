@@ -8,26 +8,12 @@ This package owns the Claxedo web app and the shared renderer used by the Electr
 - [ ] `bun run build` passes in `packages/claxedo-app`
 - [ ] `bun run build` passes in `packages/claxedo-desktop`
 - [ ] `bun run package:mac` or the platform package command passes in `packages/claxedo-desktop`
-- [ ] `CHANGELOG.md` is updated
 
 ## Versioning
 
-Use the release script from `packages/claxedo-app`:
-
-```bash
-cd packages/claxedo-app
-
-bun ./scripts/release.ts patch
-bun ./scripts/release.ts minor
-bun ./scripts/release.ts major
-bun ./scripts/release.ts patch --dry-run
-```
-
-The script updates:
-
-1. `packages/claxedo-app/package.json`
-2. `packages/claxedo-desktop/package.json`
-3. `packages/claxedo-app/CHANGELOG.md`
+Bump the version in `packages/claxedo-app/package.json` and
+`packages/claxedo-desktop/package.json` together; the desktop release
+workflow (`.github/workflows/release-claxedo.yml`) reads the desktop version.
 
 ## Desktop Packaging
 

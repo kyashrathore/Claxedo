@@ -10,8 +10,6 @@ export const AGENT_RUNTIME_ERROR_CODES = [
   "invalid_execution_binding",
 ] as const
 
-export type AgentRuntimeErrorCode = (typeof AGENT_RUNTIME_ERROR_CODES)[number]
-
 export type AgentRuntimeError =
   | { code: "selection_required"; message: string; selection: "harness" | "model" }
   | { code: "harness_unavailable"; message: string; connectionId: string }

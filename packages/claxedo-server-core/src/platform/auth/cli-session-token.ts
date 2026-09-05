@@ -2,7 +2,6 @@ import { ClaxedoError } from "../errors/base"
 import { decodeJwt, exportJWK, importPKCS8, importSPKI, jwtVerify, SignJWT, type JWTPayload } from "jose"
 import { randomToken, sha256Hex16 } from "./web-crypto"
 import type {
-  AdapterNativeSessionAuthPort,
   AdapterNativeSessionTokenSet,
   SignedControlPlaneAuth,
   VerifiedControlPlaneAuth,
@@ -278,10 +277,6 @@ export function isCliAccessTokenCandidate(input: string) {
   } catch {
     return false
   }
-}
-
-export function isCliAccessAuth(input: SignedControlPlaneAuth) {
-  return input.tokenKind === "cli"
 }
 
 /**
@@ -564,22 +559,4 @@ export async function revokeCliSessionCredential(
     throw new CliSessionTokenError("cli_session_token_revoked", "CLI session token could not be revoked")
   }
   return { revokedAt: Date.now() }
-}
-
-/** Native-session issuer/verifier composition (Claxedo-issued CLI token sets). */
-export function createNativeSessionAuthPort(input: {
-  env?: Env
-  registry?: CliSessionTokenRegistry
-} = {}): AdapterNativeSessionAuthPort {
-  const env = input.env ?? process.env
-  const options = input.registry ? { registry: input.registry } : {}
-  return {
-    adapter: "custom",
-    acceptsAccessToken: isCliAccessTokenCandidate,
-    acceptsRefreshToken: isCliRefreshToken,
-    issue: (auth) => mintCliSessionTokens(auth, env, options),
-    refresh: (token) => refreshCliSessionTokens(token, env, options),
-    authenticate: (token) => verifyCliAccessBearer(token, env, options),
-    revoke: (token) => revokeCliSessionCredential(token, env, options),
-  }
 }

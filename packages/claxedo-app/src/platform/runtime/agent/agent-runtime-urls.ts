@@ -28,28 +28,6 @@ export function agentRuntimeSessionListUrl(input: { serverUrl?: string; scope?: 
   return url
 }
 
-export function agentRuntimeEventsUrl(input: {
-  serverUrl?: string
-  workspaceId?: string
-  scope?: string
-  sessionID?: string
-}) {
-  const sessionID = input.sessionID?.trim()
-  if (input.workspaceId) {
-    const url = new URL(`/workspaces/${encodeURIComponent(input.workspaceId)}/api/wr/events`, agentRuntimeBaseUrl(input.serverUrl))
-    if (sessionID) url.searchParams.set("sessionID", sessionID)
-    return url
-  }
-  const url = new URL("/api/wr/events", agentRuntimeBaseUrl(input.serverUrl))
-  if (input.scope) url.searchParams.set("directory", input.scope)
-  if (sessionID) url.searchParams.set("sessionID", sessionID)
-  return url
-}
-
-export function centralClaxedoEventsUrl(input: { serverUrl?: string }) {
-  return new URL("/api/claxedo/events", agentRuntimeBaseUrl(input.serverUrl))
-}
-
 export function agentRuntimeSessionResourceUrl(input: {
   serverUrl?: string
   sessionID: string

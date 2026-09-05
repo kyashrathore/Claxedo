@@ -39,10 +39,6 @@ export function permissionAutoAcceptVersion(sessionID: string, directory?: strin
   return queryClient.getQueryData<number>(permissionAutoAcceptVersionQueryKey(sessionID, directory)) ?? 0
 }
 
-export function clearPermissionAutoResponseCache() {
-  queryClient.removeQueries({ queryKey: ["shell", "permission-auto-respond"] })
-}
-
 function prunePermissionAutoResponded(now: number) {
   const entries = respondedPermissionQueries()
 

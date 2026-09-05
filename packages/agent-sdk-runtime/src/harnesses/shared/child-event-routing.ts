@@ -237,8 +237,6 @@ export function createChildEventRouter(options: {
   }
 }
 
-export type ChildEventRouter = ReturnType<typeof createChildEventRouter>
-
 function sameTarget(left: ChildProjectionTarget, right: ChildProjectionTarget) {
   return left.sessionId === right.sessionId &&
     left.assistantMessageId === right.assistantMessageId &&

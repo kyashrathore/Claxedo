@@ -218,17 +218,6 @@ function rowToHold(row: typeof ClaxedoWorkspaceHoldTable.$inferSelect): SandboxH
   }
 }
 
-export function getHold(holdId: string): SandboxHoldRow | undefined {
-  return ClaxedoDB.use((db) => {
-    const row = db
-      .select()
-      .from(ClaxedoWorkspaceHoldTable)
-      .where(eq(ClaxedoWorkspaceHoldTable.hold_id, holdId))
-      .get()
-    return row ? rowToHold(row) : undefined
-  })
-}
-
 export function getHoldsByWorkspace(workspaceId: string): SandboxHoldRow[] {
   return ClaxedoDB.use((db) => {
     return db

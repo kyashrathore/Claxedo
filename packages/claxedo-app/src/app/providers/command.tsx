@@ -14,8 +14,6 @@ import {
   type CommandTriggerCompatSource,
   type LegacyCommandTriggerCommand,
 } from "@/app/integrations/compat-command-trigger"
-import { trustedAgentContributionBundleFromEvent } from "@/app/integrations/registry"
-import { contentSurfaceRegistry } from "@/app/integrations/first-party-content-surfaces"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 
 export * from "./command-palette"
@@ -26,9 +24,7 @@ export function CommandProvider(props: { children: JSX.Element }): JSX.Element {
       <UpstreamCommandProvider>
         <LegacyCommandBusBridge>
           <ServerCommandBusBridge>
-            <TrustedAgentContributionBridge>
-              {props.children}
-            </TrustedAgentContributionBridge>
+            {props.children}
           </ServerCommandBusBridge>
         </LegacyCommandBusBridge>
       </UpstreamCommandProvider>
@@ -89,20 +85,6 @@ function ServerCommandBusBridge(props: { children: JSX.Element }): JSX.Element {
       unsubscribeRemoteAgent()
       unsubscribeVoiceAgent()
     })
-  })
-  return props.children
-}
-
-function TrustedAgentContributionBridge(props: { children: JSX.Element }): JSX.Element {
-  const globalSDK = useGlobalSDK()
-  createEffect(() => {
-    const dispatch = (event: unknown) => {
-      const bundle = trustedAgentContributionBundleFromEvent(event)
-      if (!bundle) return
-      contentSurfaceRegistry.addTrustedAgentContributions(bundle)
-    }
-    const unsubscribe = globalSDK.event.on("trusted-agent.contributions.register", dispatch)
-    onCleanup(unsubscribe)
   })
   return props.children
 }

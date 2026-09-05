@@ -64,9 +64,6 @@ export type CompatTokens = {
  * `activated` reports the idempotent first-ok-turn check-and-set, which is what
  * lets `user_activated` fire exactly once per user for all time.
  */
-/** Raw ops-plane sink, for the emission points that hold no signed tenant. */
-export type SystemCaptureSink = ProductCaptureSink
-
 function count(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
 }

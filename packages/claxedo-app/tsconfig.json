@@ -25,5 +25,5 @@
     }
   },
   "include": ["src", "vite.cloud.config.ts", "vitest.config.ts", "vitest.setup.ts"],
-  "exclude": ["dist", "node_modules", "src/opencode-patches", "src/opencode-extensions", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
 }

@@ -8,7 +8,7 @@
  * a strict allow-list: same-origin, the known marketing origins, and — only in
  * local dev (loopback app) — a loopback parent.
  */
-export const TRUSTED_TOUR_ORIGINS = ["https://claxedo.com", "https://www.claxedo.com"] as const
+const TRUSTED_TOUR_ORIGINS = ["https://claxedo.com", "https://www.claxedo.com"] as const
 
 function isLoopbackOrigin(origin: string): boolean {
   try {

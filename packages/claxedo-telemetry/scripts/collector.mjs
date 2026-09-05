@@ -10,9 +10,8 @@
  * Point any service at it:
  *   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
  *
- * It speaks the same OTLP/HTTP JSON the engine's exporter
- * (`packages/core/src/observability/otlp.ts`) speaks, so the agent engine can
- * report to it too and its spans join the same trees.
+ * It speaks OTLP/HTTP JSON, so any OTel-instrumented agent harness can report
+ * to it too and its spans join the same trees.
  *
  *   node scripts/collector.mjs [--port 4318] [--quiet]
  */

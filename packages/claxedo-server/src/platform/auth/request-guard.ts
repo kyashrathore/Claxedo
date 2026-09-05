@@ -55,9 +55,6 @@ import type { LayeredRateLimiter } from "./rate-limit"
  */
 export const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
 
-/** Default ceiling: requests per minute per client, above every route limiter. */
-export const DEFAULT_RATE_LIMIT = 600
-
 export type RouteGuardExemption = {
   /**
    * Path PREFIX this exemption covers, matched against the mounted route path.

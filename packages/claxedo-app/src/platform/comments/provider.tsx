@@ -174,11 +174,6 @@ function createCommentSessionState(store: Store<CommentStore>, setStore: SetStor
   }
 }
 
-export function createCommentSessionForTest(comments: Record<string, LineComment[]> = {}) {
-  const [store, setStore] = createStore<CommentStore>({ comments })
-  return createCommentSessionState(store, setStore)
-}
-
 function createCommentSession(dir: string, id: string | undefined) {
   const legacy = `${dir}/comments${id ? "/" + id : ""}.v1`
 

@@ -3,9 +3,9 @@
  *
  * The chain crosses four runtimes (browser, Cloudflare Worker, Durable Object,
  * Node) and one non-HTTP transport (the host tunnel's WebSocket frames). No
- * OpenTelemetry SDK spans all of those: the engine's SDK
- * (`packages/core/src/observability/otlp.ts`) is Effect + Node + AsyncLocalStorage,
- * which does not exist in a Worker or a browser. What DOES travel everywhere is
+ * OpenTelemetry SDK spans all of those: the Node SDK leans on
+ * AsyncLocalStorage, which does not exist in a Worker or a browser. What DOES
+ * travel everywhere is
  * this: a 55-character string.
  *
  * So propagation is implemented here from the spec rather than imported, and

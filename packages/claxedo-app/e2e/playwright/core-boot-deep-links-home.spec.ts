@@ -70,7 +70,7 @@
  *     the existing `handleNewProject`. With ≥1 project registered,
  *     `useRailEmptyDraftController`'s `emptyDraftDirectory` memo
  *     (`src/app/workbench/rail/rail-empty-draft-controller.ts:40`) resolves to
- *     `activeWorkspaceId() ?? projects()[0]?.worktree`, so the canvas instead renders a
+ *     `activeDirectory() ?? projects()[0]?.worktree`, so the canvas instead renders a
  *     live `EmptyDraftSessionComposer` for that project (and `shouldOpenEmptyDraftSession`
  *     can auto-navigate away from `/` entirely). Tests below assert against that
  *     visible workbench surface.

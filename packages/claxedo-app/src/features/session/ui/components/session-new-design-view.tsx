@@ -62,8 +62,7 @@ type ProjectInventoryItem = NewSessionProjectSelection & {
 }
 
 /**
- * Mirrors `app/workbench/titlebar/project.ts` (which `features/session` may not
- * import) minus its hardcoded opencode.ai favicon. A `color` means "render the
+ * Resolves the project avatar source. A `color` means "render the
  * monogram square", so it must beat an inherited `url` — otherwise a project that
  * was deliberately given a colour would still show a stale favicon.
  */

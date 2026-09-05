@@ -88,16 +88,6 @@ export type AgentTurnOutcome = (
   | { status: "cancelled"; completedAt: number; reason?: string }
 ) & { assistantMessageId?: string }
 
-export type AgentPageRequest = {
-  limit: number
-  cursor?: string
-}
-
-export type AgentPage<T> = {
-  items: T[]
-  nextCursor?: string
-}
-
 export type PromptModel = {
   providerID: string
   modelID: string

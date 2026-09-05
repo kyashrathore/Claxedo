@@ -15,8 +15,7 @@ Clone the repo and run the desktop app or the engine directly:
 git clone https://github.com/kyashrathore/Claxedo.git
 cd Claxedo
 bun install
-bun run dev             # OpenCode engine (CLI/server)
-bun run dev:desktop     # desktop app (Electron shell)
+bun run dev             # desktop app (Electron shell)
 bun typecheck           # turbo typecheck across the workspace
 ```
 
@@ -30,16 +29,18 @@ Most full products start with `@claxedo/workspace-runtime`; the package table be
 
 ## Packages
 
-All 11 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=%40claxedo):
+All 12 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=%40claxedo):
 
 
 | Package                                                                                                | Description                                                                                                                             |
 | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@claxedo/workspace-runtime`](https://www.npmjs.com/package/@claxedo/workspace-runtime)               | Per-workspace host runtime for agent sessions, terminals, processes, files, diffs, and relay attachment                                 |
+| [`@claxedo/agent-runtime-contract`](https://www.npmjs.com/package/@claxedo/agent-runtime-contract)     | Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events                                  |
 | [`@claxedo/agent-sdk-runtime`](https://www.npmjs.com/package/@claxedo/agent-sdk-runtime)               | Runtime facade over coding-agent harnesses (Claude, Codex, Cursor, OpenCode, Pi): sessions, turns, SSE routes, pluggable stores         |
 | [`@claxedo/agent-event-runtime`](https://www.npmjs.com/package/@claxedo/agent-event-runtime)           | Canonical agent event contracts and harness adapters normalizing Claude SDK, Codex, Cursor, and ACP event streams into one event model  |
 | [`@claxedo/workspace-relay`](https://www.npmjs.com/package/@claxedo/workspace-relay)                   | Relay/tunnel server that routes authenticated traffic to workspace runtimes, with Bun and Cloudflare adapters                           |
 | [`@claxedo/workspace-relay-protocol`](https://www.npmjs.com/package/@claxedo/workspace-relay-protocol) | Wire types, message validation, and token verifier interfaces for the workspace relay tunnel protocol                                   |
+| [`@claxedo/sandbox-contract`](https://www.npmjs.com/package/@claxedo/sandbox-contract)                 | Dependency-neutral sandbox driver identity and credential configuration contracts                                                       |
 | [`@claxedo/sandbox-manager`](https://www.npmjs.com/package/@claxedo/sandbox-manager)                   | Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker |
 | [`@claxedo/channels`](https://www.npmjs.com/package/@claxedo/channels)                                 | Channel ingress routing GitHub, Slack, Telegram, Discord, and WhatsApp messages into Claxedo runtimes                                   |
 | [`@claxedo/connections`](https://www.npmjs.com/package/@claxedo/connections)                           | Integration registry, credential store ports, OAuth attempt machine, and token service for linking external accounts                    |
@@ -62,7 +63,7 @@ Claxedo is a hard fork of [OpenCode](https://github.com/anomalyco/opencode). Ses
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Security issues go through [SECURITY.md](./SECURITY.md), not a public issue.
+Security issues go through [SECURITY.md](./SECURITY.md), not a public issue.
 
 ## License
 

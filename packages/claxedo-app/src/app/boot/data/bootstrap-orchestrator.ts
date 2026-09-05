@@ -4,7 +4,6 @@ import { getFilename } from "@opencode-ai/ui/utils/path"
 import { formatServerError } from "@/lib/server-errors"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { authFetch } from "@/platform/api/api"
-import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { isCancelledError } from "@tanstack/solid-query"
 import { queryClient } from "@/platform/query/query-client"
@@ -15,7 +14,7 @@ import { workspaceCatalogQuery } from "@/features/workspaces/data/workspace-cata
 import { mapInventoryToSessions } from "../../../features/session/data/query/inventory"
 import { cleanupDroppedSessionCaches } from "../../../features/session/data/sync/session-cache-cleanup"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/platform/sync/session-load"
-import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "./bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, isLoopbackServer, type GlobalBootstrapState } from "./bootstrap"
 import type {
   SessionCacheValue,
   SessionInventoryRow,
@@ -231,10 +230,6 @@ export function shouldUseSignedRouteBootstrap(input: {
   if (!input.signedRoute) return false
   if (isLoopbackServer(input.baseUrl)) return false
   return !!input.platformFetch
-}
-
-function isLoopbackServer(baseUrl: string) {
-  return centralTransportForServer(baseUrl) === "loopback"
 }
 
 function shouldUseLocalSessionListClient(input: { baseUrl: string; directory: DirectoryRef }) {

@@ -2,7 +2,6 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs/promises"
-import * as os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { SELECTORS as RAIL_SELECTORS } from "./rail-oracle"
@@ -801,12 +800,6 @@ export async function createShellTerminal(page: Page) {
     }
     await page.waitForTimeout(200)
   }
-}
-
-/** A scratch git worktree — same shape `desktop-unsigned-embedded.spec.ts`'s `makeScratchWorkspace` uses, kept here only for callers that need a real directory alongside the fixture's own (currently unused by either spec but kept available for a future scenario that needs a SECOND workspace). */
-export async function makeScratchGitDir(label: string): Promise<string> {
-  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-web-signed-${label}-`)))
-  return dir
 }
 
 const execFileAsync = promisify(execFile)

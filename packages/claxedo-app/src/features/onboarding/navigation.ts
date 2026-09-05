@@ -39,11 +39,6 @@ export function setupStepLocation(step: OnboardingStepId): SetupLocation {
   return { kind: "step", step }
 }
 
-export function isSameLocation(a: SetupLocation, b: SetupLocation) {
-  if (a.kind === "done" || b.kind === "done") return a.kind === b.kind
-  return a.step === b.step
-}
-
 /**
  * Steps shown in the rail and counted in "Step N of M" — everything that
  * applies, including steps still locked behind an earlier one.

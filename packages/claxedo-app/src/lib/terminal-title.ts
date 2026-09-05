@@ -11,10 +11,6 @@ const numbered = [
   "終端機 {{number}}",
 ]
 
-export function defaultTitle(number: number) {
-  return template.replace("{{number}}", String(number))
-}
-
 export function isDefaultTitle(title: string, number: number) {
   return numbered.some((text) => title === text.replace("{{number}}", String(number)))
 }

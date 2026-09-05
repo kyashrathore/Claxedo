@@ -74,7 +74,3 @@ export async function removeHostRecord(input: { workspaceId?: string; directory?
     ),
   )
 }
-
-export async function ensureStateDir() {
-  await fs.mkdir(config().stateDir, { recursive: true, mode: 0o700 })
-}

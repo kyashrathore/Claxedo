@@ -384,38 +384,3 @@ export function sessionConfigPatchHarnessSwitchBody(input: {
     },
   } as const
 }
-
-/**
- * Asserts a failure payload matches the server's envelope. Use this on any 4xx a
- * fixture invents for this route, so a spec asserting on `error.code` cannot be
- * satisfied by a made-up shape like `{ error: "could not save session config" }`.
- */
-export function assertSessionConfigPatchFailureResponse(body: unknown, status: number, url: string): void {
-  const problems: string[] = []
-  if (status !== SESSION_CONFIG_PATCH_HARNESS_SWITCH_STATUS) {
-    problems.push(
-      `status ${status} is not a status this route produces. The only failure the handler itself `
-        + `returns is ${SESSION_CONFIG_PATCH_HARNESS_SWITCH_STATUS} (harness switch, session-core.ts:559-566); `
-        + `an adapter throw surfaces as Hono's generic 500 with a TEXT body, not as JSON. A JSON 500 `
-        + `here is a fixture invention.`,
-    )
-  }
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    problems.push(`failure body must be an object, got ${typeOf(body)}`)
-  } else {
-    const row = body as Record<string, unknown>
-    if (row.ok !== false) problems.push("failure body must carry `ok: false` (session-core.ts:323)")
-    const error = row.error
-    if (!error || typeof error !== "object" || Array.isArray(error)) {
-      problems.push("failure body must carry an `error` OBJECT, not an error string (session-core.ts:324-332)")
-    } else {
-      const detail = error as Record<string, unknown>
-      for (const key of ["code", "operation", "capability", "harness", "transport", "reason", "message"]) {
-        if (typeof detail[key] !== "string") {
-          problems.push(`failure error.${key} must be a string (session-core.ts:325-331)`)
-        }
-      }
-    }
-  }
-  if (problems.length > 0) throw new SessionConfigPatchContractError(url, problems)
-}

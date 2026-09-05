@@ -22,7 +22,7 @@ mistake that has actually bitten this repo.
 |---|---|---|---|
 | runtime | `agent-runtime-contract`, `agent-event-runtime`, `agent-sdk-runtime`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.6.0 | **0.7.0** |
 | apps | `channels`, `connections`, `mcp` | 0.3.0 | **0.4.0** |
-| wakes | `wakes` | 0.2.0 | **0.3.0** |
+| wakes | `wakes` | 0.3.0 | **0.4.0** |
 
 Each track moved a **minor** because at least one package on it added public
 API since the previous publish:
@@ -140,6 +140,7 @@ release.
 
 ```bash
 for name in \
+  @claxedo/agent-runtime-contract \
   @claxedo/agent-event-runtime \
   @claxedo/agent-sdk-runtime \
   @claxedo/sandbox-contract \

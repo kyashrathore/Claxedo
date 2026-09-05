@@ -558,8 +558,7 @@ test.describe("core busy / abort / errors @core", () => {
     })
     mock.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
 
-    // The redesigned timeline (dev-docs/CODEX_TIMELINE_DESIGN.md §3.6,
-    // CLAXEDO_ERROR_PROPOSAL.md) renders the interrupted-turn divider — a
+    // The redesigned timeline renders the interrupted-turn divider — a
     // `TimelineRow.TurnDivider` with `label: "interrupted"`
     // (message-timeline.data.ts:355-359) — using the duration-aware copy
     // "You stopped after {duration}" (`ui.message.interruptedDuration`,

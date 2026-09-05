@@ -881,7 +881,7 @@ function createLayoutContextValue() {
     }
 }
 
-export const LayoutContext = createContext<ReturnType<typeof createLayoutContextValue>>()
+const LayoutContext = createContext<ReturnType<typeof createLayoutContextValue>>()
 
 export function useLayout() {
   const value = useContext(LayoutContext)

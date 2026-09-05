@@ -92,8 +92,6 @@ Start here before making a nontrivial change in this package:
   current (unenforced) import-direction reality including the confirmed
   `context/`↔`shell/` and `components/`↔`claxedo-ui/components/` cycles, and
   "where do I add X" for the five commonest contribution types.
-- `src/components/README.md` — the `components/` vs `claxedo-ui/components/`
-  layering question specifically (they are layers, not duplicates).
 - `CONTRIBUTING.md`'s "History: the override system" section — why there is
   no `packages/app` and no override scanner post-hard-fork (the former
   `src/overrides/` tombstone directory was deleted; that history now lives

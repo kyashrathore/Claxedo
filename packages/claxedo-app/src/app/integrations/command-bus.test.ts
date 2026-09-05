@@ -50,7 +50,7 @@ describe("command bus and contribution registry", () => {
 
     expect(registry.all().surfaces.map((item) => item.id)).toEqual(["workbench.session"])
     expect(registry.all().renderers.map((item) => item.id)).toEqual(["renderer.markdown"])
-    expect(registry.trustedAgentCommands().map((item) => item.id)).toEqual(["agent.review"])
+    expect(registry.command("agent.review")?.tier).toBe("lease-bound-agent")
     await registry.command("agent.review")?.handler({
       type: "agent.review",
       payload: { sessionId: "ses_1" },

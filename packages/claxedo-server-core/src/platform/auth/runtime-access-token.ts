@@ -5,7 +5,6 @@ import { randomToken, sha256Hex16 } from "@claxedo/server-core/platform/auth/web
 type ExportableKey = Parameters<typeof exportJWK>[0]
 // jose's jwtVerify is overloaded — the static-key form accepts any of these.
 type VerifyKey = CryptoKey | import("jose").KeyObject | import("jose").JWK | Uint8Array
-export type SupervisorBackplaneVerifierKey = VerifyKey
 import {
   hostTunnelTokenAudience,
   runtimeAccessTokenAudience,

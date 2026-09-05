@@ -41,5 +41,3 @@ export function createAgentSessionIndex() {
     },
   }
 }
-
-export type AgentSessionIndex = ReturnType<typeof createAgentSessionIndex>

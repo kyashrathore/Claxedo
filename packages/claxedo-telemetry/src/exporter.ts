@@ -82,9 +82,9 @@ export function createOtlpExporter(options: ExporterOptions): SpanExporter {
 }
 
 /**
- * Read the standard OTel environment, the same names the engine's exporter
- * uses (`packages/core/src/observability/otlp.ts`), so one collector
- * configuration serves the agent engine and this chain and their spans join.
+ * Read the standard OTel environment (`OTEL_EXPORTER_OTLP_*`), so one
+ * collector configuration serves the agent harnesses and this chain and their
+ * spans join.
  *
  * Returns undefined when no endpoint is set, which is what turns tracing off.
  */

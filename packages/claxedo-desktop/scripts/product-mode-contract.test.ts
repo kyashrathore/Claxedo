@@ -7,18 +7,7 @@ import { localServerPackageDir, resolveLocalServerEntry } from "./local-server"
 /**
  * Desktop product-mode contract.
  *
- * The split introduces a distinction the desktop has never had to state: where
- * IDENTITY lives versus where COMPUTE runs. Four modes come out of that, and
- * they are easy to conflate in review because three of them look like "the
- * desktop app" from the outside.
- *
- * Recording the matrix is not documentation for its own sake. Unit 6 makes
- * Electron main the sole account-credential owner and Unit 11 rewires the
- * renderer onto it; both units are judged against these rows. A change that
- * makes unsigned launch require an account, or lets an unsigned desktop
- * provision a cloud VM, is a change to this table and has to say so.
- *
- * The second half pins the LAUNCH WIRING. Desktop used to resolve its server
+ * This pins the LAUNCH WIRING. Desktop used to resolve its server
  * in four independent places — the child entry module, `predev`, `prebuild`,
  * and the boot smoke — and three out of four leaves a repository where
  * development works and the packaged build boots the other composition, or
@@ -45,125 +34,6 @@ const DESKTOP_SERVER_ENTRY = "@claxedo/local-server/self-hosted-execution"
 
 /** The package directory whose sources feed the bundled desktop server. */
 const DESKTOP_SERVER_PACKAGE_DIR = "../claxedo-local-server"
-
-type ProductMode = {
-  mode: string
-  /** Where the account credential lives, or `none`. */
-  identity: "none" | "electron-main" | "browser"
-  /** Where the agent actually executes. */
-  compute: "laptop" | "cloud-vm"
-  /** Whether the laptop must stay awake for the workspace to be reachable. */
-  requiresLaptop: boolean
-  /** Processes beyond Electron + renderer + local-server. */
-  extraProcesses: string[]
-  reachableFrom: string[]
-}
-
-/**
- * The supported product modes after the split.
- *
- * Note what is NOT here: an unsigned desktop that provisions a sandbox VM. That
- * combination is deliberately outside the product contract — Create Cloud
- * Workspace begins sign-in instead — and its absence from this list is the
- * assertion.
- */
-const PRODUCT_MODES: ProductMode[] = [
-  {
-    mode: "unsigned-local",
-    identity: "none",
-    compute: "laptop",
-    requiresLaptop: true,
-    extraProcesses: [],
-    reachableFrom: ["this-desktop"],
-  },
-  {
-    mode: "signed-local",
-    identity: "electron-main",
-    compute: "laptop",
-    requiresLaptop: true,
-    extraProcesses: [],
-    reachableFrom: ["this-desktop"],
-  },
-  {
-    mode: "linked-host",
-    identity: "electron-main",
-    compute: "laptop",
-    requiresLaptop: true,
-    extraProcesses: ["host-connector"],
-    reachableFrom: ["this-desktop", "signed-browser", "signed-mobile", "other-signed-desktop"],
-  },
-  {
-    mode: "signed-cloud",
-    identity: "electron-main",
-    compute: "cloud-vm",
-    requiresLaptop: false,
-    extraProcesses: [],
-    reachableFrom: ["this-desktop", "signed-browser", "signed-mobile", "other-signed-desktop"],
-  },
-]
-
-/**
- * NOT A BEHAVIOUR TEST, and marked so it cannot be mistaken for one.
- *
- * `PRODUCT_MODES` is declared in this file and nothing in `src/` reads it, so
- * the assertions below check the table against itself. A review flagged them as
- * self-fulfilling and was right: they can only catch someone editing this
- * fixture inconsistently, never a regression in the product.
- *
- * The table is kept because Units 6 and 11 are judged against these rows and a
- * change to unsigned-launch or cloud-provisioning behaviour has to show up as a
- * change here. It becomes a real test the moment a production module owns the
- * matrix — at which point these should assert against THAT, and this block
- * should be un-skipped.
- *
- * The launch-wiring block below is a genuine test: it reads real files.
- */
-describe.skip("desktop product modes (fixture, not behaviour — see note above)", () => {
-  test("every mode has a distinct name", () => {
-    const names = PRODUCT_MODES.map((mode) => mode.mode)
-    expect(names).toEqual([...new Set(names)])
-  })
-
-  test("only the unsigned mode runs without an account credential", () => {
-    expect(PRODUCT_MODES.filter((mode) => mode.identity === "none").map((mode) => mode.mode)).toEqual([
-      "unsigned-local",
-    ])
-  })
-
-  test("no supported mode places the account credential in the desktop renderer", () => {
-    // K6. `browser` identity belongs to cloud-app, never to a desktop mode; a
-    // renderer-owned session is exactly the design Unit 6 replaces.
-    expect(PRODUCT_MODES.filter((mode) => mode.identity === "browser")).toEqual([])
-  })
-
-  test("cloud compute requires identity, and unsigned never provisions a VM", () => {
-    for (const mode of PRODUCT_MODES) {
-      if (mode.compute !== "cloud-vm") continue
-      expect(mode.identity, `${mode.mode} runs on a cloud VM`).not.toBe("none")
-    }
-    expect(PRODUCT_MODES.some((mode) => mode.identity === "none" && mode.compute === "cloud-vm")).toBe(false)
-  })
-
-  test("only laptop compute depends on the laptop staying awake", () => {
-    for (const mode of PRODUCT_MODES) {
-      expect(mode.requiresLaptop, `${mode.mode}`).toBe(mode.compute === "laptop")
-    }
-  })
-
-  test("only the linked-host mode starts Host Connector", () => {
-    expect(
-      PRODUCT_MODES.filter((mode) => mode.extraProcesses.includes("host-connector")).map((mode) => mode.mode),
-    ).toEqual(["linked-host"])
-  })
-
-  test("remote clients reach a workspace only in linked-host or cloud mode", () => {
-    for (const mode of PRODUCT_MODES) {
-      const remote = mode.reachableFrom.filter((client) => client !== "this-desktop")
-      const expectRemote = mode.mode === "linked-host" || mode.mode === "signed-cloud"
-      expect(remote.length > 0, `${mode.mode}`).toBe(expectRemote)
-    }
-  })
-})
 
 describe("desktop server launch wiring", () => {
   test("the server child imports the declared server entry", () => {

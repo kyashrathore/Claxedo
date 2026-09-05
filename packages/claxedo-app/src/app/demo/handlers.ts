@@ -867,9 +867,6 @@ export async function createHandlers() {
     http.get(`${DEMO_BASE}/api/claxedo/agent-config/harness/options`, () => {
       return HttpResponse.json({ options: [], source: "empty", stale: false })
     }),
-    http.post(`${DEMO_BASE}/api/claxedo/agent-config/harness/model`, () => {
-      return HttpResponse.json({ success: true })
-    }),
     http.post(`${DEMO_BASE}/api/claxedo/agent-config/harness`, () => {
       return HttpResponse.json({ success: true })
     }),

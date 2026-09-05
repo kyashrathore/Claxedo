@@ -37,5 +37,3 @@ export function createMarkerScanner(needle: string) {
     },
   }
 }
-
-export type MarkerScanner = ReturnType<typeof createMarkerScanner>

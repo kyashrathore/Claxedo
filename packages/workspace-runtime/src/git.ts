@@ -94,11 +94,3 @@ export async function optionalGit(args: string[], cwd: string) {
     return ""
   }
 }
-
-export async function boundedGitExecFile(file: string, args: string[], options?: { cwd?: string }) {
-  if (file !== "git") throw new Error(`Unsupported bounded execFile binary: ${file}`)
-  return {
-    stdout: await runGit(args, options?.cwd ?? process.cwd()),
-    stderr: "",
-  }
-}

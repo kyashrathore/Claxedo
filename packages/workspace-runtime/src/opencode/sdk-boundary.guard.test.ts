@@ -70,11 +70,8 @@ describe("public SDK boundary", () => {
   })
 
   test("nothing pulls EmbeddedHost out of the public SDK", () => {
-    // Scoped deliberately. The vendored `sdk-next` exports its own unrelated
-    // `EmbeddedHost`/`createEmbeddedHost`, and `claxedo-server-core`'s
-    // engine.ts still uses THAT one — a pending-deletion path, not the public
-    // SDK's raw-fetch host. Matching the bare word would conflate two
-    // different symbols and make this gate cry wolf until Unit 8 lands.
+    // Scoped to the SDK import forms deliberately: matching the bare word
+    // would flag any unrelated `EmbeddedHost` symbol and make this gate cry wolf.
     const hits = [
       ...search('EmbeddedHost } from "@opencode-ai/sdk'),
       ...search('EmbeddedHost from "@opencode-ai/sdk'),

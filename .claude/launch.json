@@ -54,24 +54,6 @@
       "port": 2593
     },
     {
-      "name": "claxedo-web-local",
-      "runtimeExecutable": "bun",
-      "runtimeArgs": [
-        "run",
-        "web:dev:local"
-      ],
-      "port": 4444
-    },
-    {
-      "name": "opencode-engine",
-      "runtimeExecutable": "bun",
-      "runtimeArgs": [
-        "run",
-        "dev"
-      ],
-      "port": 4096
-    },
-    {
       "name": "claxedo-web-astro",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
@@ -94,19 +76,6 @@
       ],
       "cwd": "packages/claxedo-web",
       "port": 4612
-    },
-    {
-      "name": "claxedo-docs",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "--yes",
-        "mintlify@latest",
-        "dev",
-        "--port",
-        "3333"
-      ],
-      "cwd": "packages/claxedo-docs",
-      "port": 3333
     },
     {
       "name": "claxedo-app-local-plugins",

@@ -63,6 +63,3 @@ export default function ErrorPageHarness() {
     </div>
   )
 }
-
-/** The variant keys this harness understands, exported for spec assertions. */
-export const ERROR_PAGE_HARNESS_VARIANTS = Object.keys(VARIANTS)

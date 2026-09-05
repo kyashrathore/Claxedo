@@ -25,7 +25,7 @@ export function legacyCommandTrigger(id: string, legacySource?: CommandTriggerCo
   }
 }
 
-export function serverCommandTrigger(id: string, eventId?: string): LegacyCommandTriggerCommand {
+function serverCommandTrigger(id: string, eventId?: string): LegacyCommandTriggerCommand {
   return {
     type: legacyCommandTriggerType,
     payload: { id },

@@ -18,7 +18,7 @@ export function soundSrc(id: string | undefined): string | undefined {
   return SOUND_OPTIONS.find((sound) => sound.id === id)?.src
 }
 
-export function playSound(src: string | undefined): VoidFunction | undefined {
+function playSound(src: string | undefined): VoidFunction | undefined {
   if (typeof Audio === "undefined") return undefined
   if (!src) return undefined
   const audio = new Audio(src)

@@ -28,7 +28,6 @@ export default defineMain({
   stories: [
     "../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
     "../../session-ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
-    "../../claxedo-app/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
   ],
   async viteFinal(config) {
     const { mergeConfig, searchForWorkspaceRoot } = await import("vite")
@@ -38,23 +37,6 @@ export default defineMain({
         dedupe: ["solid-js", "solid-js/web", "@solidjs/meta"],
         alias: [
           { find: "@solidjs/router", replacement: path.resolve(mocks, "solid-router.tsx") },
-          { find: /^@\/context\/local$/, replacement: path.resolve(mocks, "app/context/local.ts") },
-          { find: /^@\/context\/file$/, replacement: path.resolve(mocks, "app/context/file.ts") },
-          { find: /^@\/context\/prompt$/, replacement: path.resolve(mocks, "app/context/prompt.ts") },
-          { find: /^@\/context\/layout$/, replacement: path.resolve(mocks, "app/context/layout.ts") },
-          { find: /^@\/context\/sdk$/, replacement: path.resolve(mocks, "app/context/sdk.ts") },
-          { find: /^@\/context\/sync$/, replacement: path.resolve(mocks, "app/context/sync.ts") },
-          { find: /^@\/context\/comments$/, replacement: path.resolve(mocks, "app/context/comments.ts") },
-          { find: /^@\/context\/command$/, replacement: path.resolve(mocks, "app/context/command.ts") },
-          { find: /^@\/context\/permission$/, replacement: path.resolve(mocks, "app/context/permission.ts") },
-          { find: /^@\/context\/language$/, replacement: path.resolve(mocks, "app/context/language.ts") },
-          { find: /^@\/context\/platform$/, replacement: path.resolve(mocks, "app/context/platform.ts") },
-          { find: /^@\/context\/global-sync$/, replacement: path.resolve(mocks, "app/context/global-sync.ts") },
-          { find: /^@\/hooks\/use-providers$/, replacement: path.resolve(mocks, "app/hooks/use-providers.ts") },
-          {
-            find: /^@\/components\/dialog-select-model$/,
-            replacement: path.resolve(mocks, "app/components/dialog-select-model.tsx"),
-          },
           { find: "@", replacement: app },
         ],
       },

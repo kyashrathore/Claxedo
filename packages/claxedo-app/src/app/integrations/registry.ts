@@ -84,36 +84,6 @@ export type ContributionRegistry = {
   settings: SettingsContribution[]
 }
 
-export type TrustedAgentContributionBundle = {
-  lease: AgentContributionLease
-  surfaces?: Array<Omit<SurfaceContribution, "tier" | "lease">>
-  commands?: Array<Omit<CommandContribution, "tier" | "lease">>
-  toolbar?: Array<Omit<ToolbarContribution, "tier" | "lease">>
-  menus?: Array<Omit<MenuContribution, "tier" | "lease">>
-  renderers?: Array<Omit<RendererContribution, "tier" | "lease">>
-  settings?: Array<Omit<SettingsContribution, "tier" | "lease">>
-}
-
-export function trustedAgentContributionBundleFromEvent(event: unknown): TrustedAgentContributionBundle | undefined {
-  if (!event || typeof event !== "object") return
-  const item = event as { type?: unknown; properties?: unknown }
-  if (item.type !== "trusted-agent.contributions.register") return
-  const properties = item.properties
-  if (!properties || typeof properties !== "object") return
-  const bundle = properties as Record<string, unknown>
-  const lease = agentContributionLease(bundle.lease)
-  if (!lease) return
-  return {
-    lease,
-    surfaces: contributionItems(bundle.surfaces, surfaceContribution),
-    commands: contributionItems(bundle.commands, commandContribution),
-    toolbar: contributionItems(bundle.toolbar, toolbarContribution),
-    menus: contributionItems(bundle.menus, menuContribution),
-    renderers: contributionItems(bundle.renderers, rendererContribution),
-    settings: contributionItems(bundle.settings, settingsContribution),
-  }
-}
-
 export function createContributionRegistry(seed: Partial<ContributionRegistry> = {}) {
   const registry: ContributionRegistry = {
     surfaces: [...(seed.surfaces ?? [])],
@@ -133,9 +103,8 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
    * activation arrive too late to matter and sign-out leave hosted UI mounted.
    *
    * Invalidation lives HERE rather than at the register/unregister helpers in
-   * `first-party-content-surfaces.tsx` because this module owns every mutator —
-   * `addTrustedAgentContributions` reaches the same arrays without going
-   * through those helpers — and because bumping at the mutation site leaves
+   * `first-party-content-surfaces.tsx` because this module owns every mutator
+   * and because bumping at the mutation site leaves
    * every reader reactive without a single consumer change. Same version-signal
    * shape the metadata slice already uses for `meta.ids()`.
    *
@@ -181,30 +150,6 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
     addSettings(contribution: SettingsContribution) {
       if (upsert(registry.settings, contribution)) changed()
     },
-    addTrustedAgentContributions(bundle: TrustedAgentContributionBundle) {
-      // One bump for the whole bundle: a lease installs its contributions as a
-      // unit, and readers should see the unit, not each intermediate list.
-      let mutated = false
-      for (const contribution of bundle.surfaces ?? []) {
-        mutated = upsert(registry.surfaces, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
-      }
-      for (const contribution of bundle.commands ?? []) {
-        mutated = upsert(registry.commands, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
-      }
-      for (const contribution of bundle.toolbar ?? []) {
-        mutated = upsert(registry.toolbar, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
-      }
-      for (const contribution of bundle.menus ?? []) {
-        mutated = upsert(registry.menus, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
-      }
-      for (const contribution of bundle.renderers ?? []) {
-        mutated = upsert(registry.renderers, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
-      }
-      for (const contribution of bundle.settings ?? []) {
-        mutated = upsert(registry.settings, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
-      }
-      if (mutated) changed()
-    },
     command(id: string) {
       track()
       return registry.commands.find((command) => command.id === id)
@@ -216,21 +161,6 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
     visibleCommands(context: ContributionGateContext) {
       track()
       return registry.commands.filter((command) => contributionGateAllows(command.gate, context))
-    },
-    trustedAgentCommands() {
-      track()
-      return registry.commands.filter((command) => command.tier === "lease-bound-agent")
-    },
-    trustedAgentContributions() {
-      track()
-      return {
-        surfaces: registry.surfaces.filter(leaseBoundAgent),
-        commands: registry.commands.filter(leaseBoundAgent),
-        toolbar: registry.toolbar.filter(leaseBoundAgent),
-        menus: registry.menus.filter(leaseBoundAgent),
-        renderers: registry.renderers.filter(leaseBoundAgent),
-        settings: registry.settings.filter(leaseBoundAgent),
-      }
     },
   }
 }
@@ -269,105 +199,4 @@ function remove<T extends { id: string }>(items: T[], id: string) {
   if (index === -1) return false
   items.splice(index, 1)
   return true
-}
-
-function leaseBoundAgent<T extends { tier: ContributionTier }>(contribution: T) {
-  return contribution.tier === "lease-bound-agent"
-}
-
-function agentContributionLease(input: unknown): AgentContributionLease | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.leaseId !== "string" || item.leaseId.length === 0) return
-  if (typeof item.agentId !== "string" || item.agentId.length === 0) return
-  return {
-    leaseId: item.leaseId,
-    agentId: item.agentId,
-    ...(typeof item.expiresAt === "number" ? { expiresAt: item.expiresAt } : {}),
-  }
-}
-
-function contributionItems<T>(input: unknown, decode: (input: unknown) => T | undefined) {
-  return Array.isArray(input) ? input.flatMap((item) => {
-    const decoded = decode(item)
-    return decoded ? [decoded] : []
-  }) : undefined
-}
-
-function contributionGate(input: unknown): ContributionGate | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  return {
-    ...(typeof item.workspaceId === "string" ? { workspaceId: item.workspaceId } : {}),
-    ...(item.role === "owner" || item.role === "admin" || item.role === "editor" || item.role === "viewer" ? { role: item.role } : {}),
-    ...(item.hosting === "central" || item.hosting === "workspace" ? { hosting: item.hosting } : {}),
-    ...(item.backing === "real" || item.backing === "none" ? { backing: item.backing } : {}),
-  }
-}
-
-function surfaceContribution(input: unknown): Omit<SurfaceContribution, "tier" | "lease"> | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.id !== "string" || typeof item.surface !== "string") return
-  return {
-    id: item.id,
-    surface: item.surface,
-    ...(typeof item.slot === "string" ? { slot: item.slot } : {}),
-    ...(contributionGate(item.gate) ? { gate: contributionGate(item.gate) } : {}),
-  }
-}
-
-function commandContribution(input: unknown): Omit<CommandContribution, "tier" | "lease"> | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.id !== "string" || typeof item.title !== "string") return
-  return {
-    id: item.id,
-    title: item.title,
-    ...(typeof item.category === "string" ? { category: item.category } : {}),
-    ...(contributionGate(item.gate) ? { gate: contributionGate(item.gate) } : {}),
-    handler: () => undefined,
-  }
-}
-
-function toolbarContribution(input: unknown): Omit<ToolbarContribution, "tier" | "lease"> | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.id !== "string" || typeof item.command !== "string" || typeof item.slot !== "string") return
-  return {
-    id: item.id,
-    command: item.command,
-    slot: item.slot,
-    ...(contributionGate(item.gate) ? { gate: contributionGate(item.gate) } : {}),
-  }
-}
-
-function menuContribution(input: unknown): Omit<MenuContribution, "tier" | "lease"> | undefined {
-  const toolbar = toolbarContribution(input)
-  if (!toolbar || !input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.menu !== "string") return
-  return { ...toolbar, menu: item.menu }
-}
-
-function rendererContribution(input: unknown): Omit<RendererContribution, "tier" | "lease"> | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.id !== "string" || typeof item.kind !== "string") return
-  return {
-    id: item.id,
-    kind: item.kind,
-    ...(contributionGate(item.gate) ? { gate: contributionGate(item.gate) } : {}),
-  }
-}
-
-function settingsContribution(input: unknown): Omit<SettingsContribution, "tier" | "lease"> | undefined {
-  if (!input || typeof input !== "object") return
-  const item = input as Record<string, unknown>
-  if (typeof item.id !== "string" || typeof item.section !== "string") return
-  return {
-    id: item.id,
-    section: item.section,
-    ...(contributionGate(item.gate) ? { gate: contributionGate(item.gate) } : {}),
-  }
 }

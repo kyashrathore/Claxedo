@@ -1,6 +1,5 @@
 import type {
   SandboxCheckpointCaptureInput,
-  SandboxCheckpointReference,
   SandboxCheckpointRestoreInput,
   SandboxCheckpointRuntime,
   SandboxManager,
@@ -102,8 +101,4 @@ export function createWorkspaceCheckpointService(input: {
       return input.sandboxManager.destroy(workspaceId)
     },
   }
-}
-
-export function latestWorkspaceCheckpoint(input: Awaited<ReturnType<WorkspaceCheckpointService["inspect"]>>) {
-  return input.checkpoint as SandboxCheckpointReference | undefined
 }

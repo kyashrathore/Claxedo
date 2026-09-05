@@ -6,9 +6,9 @@
  * enters the relay, crosses a WebSocket, and is answered by a laptop), so the
  * thing that models it has to survive being a value.
  *
- * The encoding is OTLP/HTTP JSON — the same protocol the engine's exporter
- * speaks (`packages/core/src/observability/otlp.ts`) — so both land in one
- * collector and a trace that spans the app and the agent engine stays whole.
+ * The encoding is OTLP/HTTP JSON — the protocol every OpenTelemetry collector
+ * accepts — so agent-harness spans and these land in one collector and a
+ * trace that spans the app and the agent engine stays whole.
  */
 
 import type { TraceContext } from "./trace-context"

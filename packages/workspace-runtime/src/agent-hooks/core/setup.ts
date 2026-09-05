@@ -218,7 +218,3 @@ export function isStatusHooksSetupComplete(): boolean {
   ]
   return required.every((file) => fs.existsSync(file))
 }
-
-export async function cleanupStatusHooks(): Promise<void> {
-  await fs.promises.rm(CLAXEDO_DIR, { recursive: true, force: true })
-}

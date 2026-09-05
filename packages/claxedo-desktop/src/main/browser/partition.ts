@@ -17,7 +17,7 @@
  * any prior registration.
  */
 
-import { app, session as sessionModule } from "electron"
+import { session as sessionModule } from "electron"
 import type { Session, WebContents } from "electron"
 
 import { AGENT_BROWSER_PARTITION } from "./will-attach-webview"
@@ -93,16 +93,4 @@ export function isAllowedNavigationUrl(urlString: string): boolean {
   } catch {
     return false
   }
-}
-
-/** Test helper: reset the idempotency flag so tests can re-run the setup. */
-export function __resetForTests(): void {
-  configured = false
-}
-
-/** Ensure electron `app` reference is retained so tree-shaking does not drop it.
- * The real use site in `index.ts` calls `configureAgentBrowserPartition` inside
- * `app.whenReady()`; exporting this helper keeps the import wiring stable. */
-export function ensureAppReady(): Promise<void> {
-  return app.whenReady().then(() => {})
 }

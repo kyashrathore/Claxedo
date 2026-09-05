@@ -14,15 +14,6 @@ export type PrivateSessionRuntimePrincipal =
   | { principalKind: "user"; actorId: string; actorKind: "human" }
   | { principalKind: "service"; actorId: string; actorKind: "agent" }
 
-/** Display metadata is optional presentation data, never session authority. */
-export type PrivateSessionDisplayAuthor = {
-  id: string
-  kind: "human" | "agent"
-  publicId?: string
-  name?: string
-  avatarUrl?: string
-}
-
 export type PrivateSessionRegistrationState =
   "reserved" | "registered" | "reconciliation_required" | "compensation_pending" | "compensated"
 
