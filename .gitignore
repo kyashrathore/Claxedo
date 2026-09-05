@@ -8,7 +8,6 @@ packages/session-ui/script/.mermaid-wiring/
 packages/claxedo-server/src/cloud/cloudflare-worker/.sandbox-build/
 .worktrees
 .claude/worktrees/
-.sst
 .env
 .env.local
 .idea

@@ -3,7 +3,7 @@ import type { HarnessReadiness } from "@/features/session/harness/selection"
 /**
  * The single, priority-ordered vocabulary for "why is Send blocked?".
  *
- * T5 (CLAXEDO_ERROR_PROPOSAL §B2/§T5): the composer used to derive `submitDisabled`
+ * T5 (error proposal §B2/§T5): the composer used to derive `submitDisabled`
  * from six independent booleans, none of which could name the reason. This is the one
  * ordered source of truth. `submitDisabled` and the explain-on-intent copy both derive
  * from `submitBlockReason` — they never diverge.

@@ -69,6 +69,11 @@ import {
 } from "./isolated-interaction"
 import { seedForScenario } from "./seed"
 import {
+  openFilesNavigator as openFilesNavigatorShared,
+  openWorkspaceFileTab as openWorkspaceFileTabShared,
+  waitForWorkspaceReviewContent as waitForWorkspaceReviewContentShared,
+} from "./review-probe-helpers"
+import {
   WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS,
@@ -367,67 +372,13 @@ const observeReviewInteraction = async (params: {
 const round = (value: number) => Math.round(value * 100) / 100
 const ms = (value: number | undefined) => (value === undefined ? "n/a" : `${round(value)}ms`)
 
-async function waitForWorkspaceReviewContent(page: Page, expectedTotal: number) {
-  await page.waitForFunction((expectedTotal) => {
-    const visible = (element: Element) => {
-      if (element.closest("[aria-hidden='true']")) return false
-      const rect = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-    }
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    if (!shell || !visible(shell) || shell.getBoundingClientRect().width <= 120) return false
-    const root = Array.from(shell.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
-    if (!root) return false
-    const corpus = root.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
-    if (!corpus || Number(corpus.dataset.reviewTotalFiles ?? "0") !== expectedTotal) return false
-    if (!Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]")).some(visible)) return false
-    return !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
-  }, expectedTotal, { timeout: 25_000 })
-}
-
-/**
- * The files navigator lives behind the panel's "Open Files" control; the
- * driver reaches it the same way before opening a file tab.
- */
-async function openFilesNavigator(page: Page) {
-  await page.evaluate(() => {
-    const visible = (element: Element) => {
-      if (element.closest("[aria-hidden='true']")) return false
-      const rect = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" &&
-        style.pointerEvents !== "none"
-    }
-    const control = Array.from(document.querySelectorAll<HTMLElement>(
-      "button[aria-label='Open Files'], [role='button'][aria-label='Open Files']",
-    )).find(visible)
-    if (!control) throw new Error("no visible 'Open Files' control on the workspace panel")
-    control.click()
-  })
-  await page.waitForFunction(() => {
-    const navigator = document.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")
-    if (!navigator) return false
-    return navigator.getAttribute("data-file-tree-data-ready") === "true" ||
-      !!navigator.querySelector("[data-file-tree-path]")
-  }, undefined, { timeout: 15_000 })
-}
-
-async function openWorkspaceFileTab(page: Page, filePath: string) {
-  const navigator = page.locator("[data-testid='workspace-files-navigator'][data-mode='files']").last()
-  const search = navigator.locator("input[placeholder='Search files...']").first()
-  await search.waitFor({ state: "visible", timeout: 10_000 })
-  await search.fill(filePath)
-  const row = navigator.locator(`[data-file-tree-path="${filePath}"]`).first()
-  await row.waitFor({ state: "visible", timeout: 10_000 })
-  await row.click({ timeout: 10_000 })
-  await page.waitForFunction((filePath) => {
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    return !!shell?.querySelector(
-      `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(filePath)}"][data-tab-file-state='ready']`,
-    )
-  }, filePath, { timeout: 20_000 })
-}
+// This probe drives the 500-file corpus and waits longer than the session-switch
+// probes for the same surfaces; the shared helpers take those as parameters.
+const waitForWorkspaceReviewContent = (page: Page, expectedTotal: number) =>
+  waitForWorkspaceReviewContentShared(page, expectedTotal, { timeout: 25_000 })
+const openFilesNavigator = (page: Page) => openFilesNavigatorShared(page, { timeout: 15_000, requireOverlayOpen: false })
+const openWorkspaceFileTab = (page: Page, filePath: string) =>
+  openWorkspaceFileTabShared(page, filePath, { openNavigator: false, searchTimeout: 10_000, readyTimeout: 20_000 })
 
 const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))

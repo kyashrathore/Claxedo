@@ -1,8 +1,7 @@
 /**
  * ClaxedoDB — Singleton for the claxedo.db SQLite database.
  *
- * Mirrors the upstream Database pattern (packages/opencode/src/storage/db.ts)
- * but manages a separate `claxedo.db` file for claxedo-specific tables:
+ * Mirrors the upstream OpenCode Database singleton pattern but manages a separate `claxedo.db` file for claxedo-specific tables:
  * pages, arena, terminal-session, sessions, etc.
  */
 

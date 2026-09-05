@@ -15,7 +15,6 @@ const GLOBAL_WORKFLOWS = [".github/workflows/test.yml", ".github/workflows/typec
 
 const DOC_PREFIXES = [
   ".github/ISSUE_TEMPLATE/",
-  ".github/PULL_REQUEST_TEMPLATE/",
   "docs/",
   "public-docs/",
 ]

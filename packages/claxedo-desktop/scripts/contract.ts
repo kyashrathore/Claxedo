@@ -110,7 +110,6 @@ export function spec(root = ROOT): Spec {
     "scripts/bundle-claxedo-server.ts",
     "scripts/claxedo-server-entry.ts",
     "scripts/claxedo-server-startup.ts",
-    "scripts/copy-bundles.ts",
     "scripts/contract.ts",
     "scripts/finalize-latest-yml.ts",
     "scripts/bundle-host-connector.ts",

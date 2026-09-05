@@ -41,8 +41,8 @@
  * `directory`/`sessionID` strings `identity()` bakes into every envelope) is a
  * TRACE FAMILY NAME, not a harness identity. `claude-acp` here means "the trace
  * recorded from Claude over ACP"; the identity the app and the runtime speak for
- * that harness is `acp:claude` (`normalizeHarnessIdentity`,
- * agent-sdk-runtime/src/harness-types.ts). The rendering-matrix spec maps between
+ * that harness is the connection id the mock runtime derives from it
+ * (`connectionIdFor` in e2e/helpers/mock-runtime.ts). The rendering-matrix spec maps between
  * the two (`HARNESS_IDENTITY_BY_FIXTURE`) so the committed traces stay byte-stable
  * while the harness vocabulary moves.
  *

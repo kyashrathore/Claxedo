@@ -104,35 +104,23 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "Переключить все модели {{provider}}",
 
 
-  "dialog.provider.viewAll": "Показать больше провайдеров",
 
   "provider.connect.title": "Подключить {{provider}}",
-  "provider.connect.title.anthropicProMax": "Войти с помощью Claude Pro/Max",
   "provider.connect.selectMethod": "Выберите способ входа для {{provider}}.",
   "provider.connect.method.apiKey": "API ключ",
   "provider.connect.status.inProgress": "Авторизация...",
   "provider.connect.status.waiting": "Ожидание авторизации...",
-  "provider.connect.status.failed": "Ошибка авторизации: {{error}}",
   "provider.connect.apiKey.description":
     "Введите ваш API ключ {{provider}} для подключения аккаунта и использования моделей {{provider}} в OpenCode.",
   "provider.connect.apiKey.label": "{{provider}} API ключ",
   "provider.connect.apiKey.placeholder": "API ключ",
   "provider.connect.apiKey.required": "API ключ обязателен",
-  "provider.connect.opencodeZen.line1":
-    "OpenCode Zen даёт вам доступ к отобранным надёжным оптимизированным моделям для агентов программирования.",
-  "provider.connect.opencodeZen.line2":
-    "С одним API ключом вы получите доступ к таким моделям как Claude, GPT, Gemini, GLM и другим.",
-  "provider.connect.opencodeZen.visit.prefix": "Посетите ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
-  "provider.connect.opencodeZen.visit.suffix": " чтобы получить ваш API ключ.",
   "provider.connect.oauth.code.visit.prefix": "Посетите ",
   "provider.connect.oauth.code.visit.link": "эту ссылку",
   "provider.connect.oauth.code.visit.suffix":
     " чтобы получить код авторизации для подключения аккаунта и использования моделей {{provider}} в OpenCode.",
   "provider.connect.oauth.code.label": "{{method}} код авторизации",
   "provider.connect.oauth.code.placeholder": "Код авторизации",
-  "provider.connect.oauth.code.required": "Код авторизации обязателен",
-  "provider.connect.oauth.code.invalid": "Неверный код авторизации",
   "provider.connect.oauth.auto.visit.prefix": "Посетите ",
   "provider.connect.oauth.auto.visit.link": "эту ссылку",
   "provider.connect.oauth.auto.visit.suffix":
@@ -183,7 +171,6 @@ export const dict = {
   "prompt.placeholder.summarizeComment": "Суммировать комментарий…",
   "prompt.mode.shell": "Оболочка",
   "prompt.mode.normal": "Промпт",
-  "prompt.mode.shell.exit": "esc для выхода",
 
   "session.child.promptDisabled": "Сессиям субагента нельзя отправлять запросы.",
   "session.child.backToParent": "Вернуться к основной сессии.",
@@ -222,9 +209,6 @@ export const dict = {
   "prompt.slash.badge.custom": "своё",
   "prompt.slash.badge.skill": "навык",
   "prompt.slash.badge.mcp": "mcp",
-  "prompt.context.active": "активно",
-  "prompt.context.includeActiveFile": "Включить активный файл",
-  "prompt.context.removeActiveFile": "Удалить активный файл из контекста",
   "prompt.context.removeFile": "Удалить файл из контекста",
   "prompt.action.attachFile": "Прикрепить файл",
   "prompt.action.add": "Добавить",
@@ -245,24 +229,11 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Выберите агента и модель перед отправкой запроса.",
   "prompt.toast.worktreeCreateFailed.title": "Не удалось создать worktree",
   "prompt.toast.sessionCreateFailed.title": "Не удалось создать сессию",
-  "prompt.toast.shellSendFailed.title": "Не удалось отправить команду оболочки",
-  "prompt.toast.commandSendFailed.title": "Не удалось отправить команду",
   "prompt.toast.promptSendFailed.title": "Не удалось отправить запрос",
-  "prompt.toast.promptSendFailed.description": "Не удалось получить сессию",
 
   "prompt.toast.sessionConfigSaveFailed.title": "Не удалось сохранить конфигурацию сессии",
-  "dialog.mcp.title": "MCP",
-  "dialog.mcp.description": "{{enabled}} из {{total}} включено",
-  "dialog.mcp.empty": "MCP не настроены",
 
-  "dialog.lsp.empty": "LSP автоматически обнаружены по типам файлов",
-  "dialog.plugins.empty": "Плагины настроены в opencode.json",
 
-  "mcp.status.connected": "подключено",
-  "mcp.status.failed": "ошибка",
-  "mcp.status.needs_auth": "требуется авторизация",
-  "mcp.auth.clickToAuthenticate": "Нажмите, чтобы авторизоваться",
-  "mcp.status.disabled": "отключено",
 
   "dialog.fork.empty": "Нет сообщений для ответвления",
 
@@ -314,11 +285,6 @@ export const dict = {
   "context.stats.sessionCreated": "Сессия создана",
   "context.stats.lastActivity": "Последняя активность",
 
-  "context.usage.tokens": "Токены",
-  "context.usage.usage": "Использование",
-  "context.usage.cost": "Стоимость",
-  "context.usage.clickToView": "Нажмите для просмотра контекста",
-  "context.usage.view": "Показать использование контекста",
 
   "language.en": "English",
   "language.zh": "简体中文",
@@ -367,9 +333,6 @@ export const dict = {
   "error.page.description": "Произошла ошибка при загрузке приложения.",
   "error.page.details.label": "Детали ошибки",
   "error.page.action.restart": "Перезапустить",
-  "error.page.action.report": "Сообщить об ошибке",
-  "error.page.action.reported": "Об ошибке сообщено",
-  "error.page.action.exportLogs": "Экспортировать логи",
   "error.page.action.checking": "Проверка...",
   "error.page.action.checkUpdates": "Проверить обновления",
   "error.page.action.updateTo": "Обновить до {{version}}",
@@ -407,10 +370,6 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Конфигурационный файл по адресу {{path}} невалиден: {{message}}",
 
   "notification.permission.title": "Требуется разрешение",
-  "notification.permission.description": "{{sessionTitle}} в {{projectName}} требуется разрешение",
-  "notification.question.title": "Вопрос",
-  "notification.question.description": "У {{sessionTitle}} в {{projectName}} есть вопрос",
-  "notification.action.goToSession": "Перейти к сессии",
 
   "notification.session.responseReady.title": "Ответ готов",
   "notification.session.error.title": "Ошибка сессии",
@@ -421,13 +380,6 @@ export const dict = {
   "home.empty.description": "Начните с открытия локального проекта",
 
   "home.title": "Главная",
-  "home.projects": "Проекты",
-  "home.project.add": "Добавить проект",
-  "home.sessions.search.placeholder": "Поиск сессий",
-  "home.sessions.empty": "Сессии не найдены",
-  "home.sessions.group.today": "Сегодня",
-  "home.sessions.group.yesterday": "Вчера",
-  "home.sessions.group.older": "Ранее",
   "session.timeline.scrollToBottom": "Прокрутить к последнему сообщению",
   "session.tab.review": "Обзор",
   "session.tab.context": "Контекст",
@@ -457,34 +409,21 @@ export const dict = {
   "session.header.search.placeholder": "Поиск {{project}}",
   "session.header.searchFiles": "Поиск файлов",
 
-  "status.popover.trigger": "Статус",
-  "status.popover.ariaLabel": "Настройки серверов",
-  "status.popover.tab.servers": "Серверы",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
-  "status.popover.tab.plugins": "Плагины",
-  "status.popover.action.manageServers": "Управлять серверами",
 
 
-  "lsp.tooltip.none": "Нет LSP серверов",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Загрузка запроса...",
-  "terminal.loading": "Загрузка терминала...",
   "terminal.title": "Терминал",
   "terminal.title.numbered": "Терминал {{number}}",
-  "terminal.close": "Закрыть терминал",
   "terminal.connectionLost.title": "Соединение потеряно",
   "terminal.connectionLost.description":
     "Соединение с терминалом прервано. Это может произойти при перезапуске сервера.",
 
-  "common.closeTab": "Закрыть вкладку",
   "common.dismiss": "Закрыть",
   "common.requestFailed": "Запрос не выполнен",
   "common.moreOptions": "Дополнительные опции",
   "common.learnMore": "Подробнее",
   "common.rename": "Переименовать",
-  "common.reset": "Сбросить",
   "common.archive": "Архивировать",
   "common.delete": "Удалить",
   "common.close": "Закрыть",
@@ -492,7 +431,6 @@ export const dict = {
   "common.loadMore": "Загрузить ещё",
   "common.key.esc": "ESC",
 
-  "sidebar.menu.toggle": "Переключить меню",
   "sidebar.nav.projectsAndSessions": "Проекты и сессии",
   "sidebar.settings": "Настройки",
   "sidebar.help": "Помощь",
@@ -502,19 +440,7 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Хост не в сети",
   "sidebar.workspace.sharedWithYou": "Открыт вам доступ",
   "sidebar.workspace.publishedByThisMachine": "Опубликовано с этого компьютера",
-  "sidebar.workspaces.enable": "Включить рабочие пространства",
-  "sidebar.workspaces.disable": "Отключить рабочие пространства",
-  "sidebar.gettingStarted.title": "Начало работы",
-  "sidebar.gettingStarted.line1": "OpenCode включает бесплатные модели, чтобы вы могли начать сразу.",
-  "sidebar.gettingStarted.line2":
-    "Подключите любого провайдера для использования моделей, включая Claude, GPT, Gemini и др.",
-  "sidebar.project.recentSessions": "Недавние сессии",
-  "sidebar.project.viewAllSessions": "Посмотреть все сессии",
-  "sidebar.project.clearNotifications": "Очистить уведомления",
 
-  "sidebar.empty.title": "Нет открытых проектов",
-  "sidebar.empty.description": "Откройте проект, чтобы начать",
-  "app.name.desktop": "OpenCode Desktop",
   "settings.section.desktop": "Приложение",
   "settings.section.workspace": "Рабочее пространство",
   "settings.section.account": "Аккаунт",
@@ -527,27 +453,14 @@ export const dict = {
   "settings.providers.catalog.error": "{{harness}} не смог ответить для {{workspace}}: {{reason}}",
   "settings.tab.general": "Основные",
   "settings.tab.shortcuts": "Горячие клавиши",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "Интеграция с WSL",
-  "settings.desktop.wsl.description": "Запускать сервер OpenCode внутри WSL на Windows.",
 
   "settings.general.section.appearance": "Внешний вид",
-  "settings.general.section.advanced": "Дополнительно",
   "settings.general.section.notifications": "Системные уведомления",
   "settings.general.section.updates": "Обновления",
   "settings.general.section.sounds": "Звуковые эффекты",
-  "settings.general.section.feed": "Лента",
-  "settings.general.section.display": "Дисплей",
 
   "settings.general.row.language.title": "Язык",
   "settings.general.row.language.description": "Изменить язык отображения OpenCode",
-  "settings.general.row.shell.title": "Оболочка терминала",
-  "settings.general.row.shell.description":
-    "Выберите оболочку, используемую для терминала. Совместимые оболочки также используются для вызовов инструментов агента.",
-  "settings.general.row.shell.autoDefault": "Авто (По умолчанию)",
-  "settings.general.row.shell.terminalOnly": "только терминал",
-  "settings.general.row.appearance.title": "Внешний вид",
-  "settings.general.row.appearance.description": "Настройте как OpenCode выглядит на вашем устройстве",
   "settings.general.row.colorScheme.title": "Цветовая схема",
   "settings.general.row.colorScheme.description": "Выберите, следует ли OpenCode системной, светлой или тёмной теме",
   "settings.general.row.theme.title": "Тема",
@@ -566,21 +479,6 @@ export const dict = {
     "Выберите, отправлять ли уточняющие вопросы сразу или помещать их в очередь",
   "settings.general.row.followup.option.queue": "Очередь",
   "settings.general.row.followup.option.steer": "Направлять",
-  "settings.general.row.showFileTree.title": "Дерево файлов",
-  "settings.general.row.showFileTree.description":
-    "Показывать переключатель и панель дерева файлов в сессиях рабочего стола",
-  "settings.general.row.showNavigation.title": "Элементы навигации",
-  "settings.general.row.showNavigation.description":
-    "Показывать кнопки назад и вперёд на панели заголовка рабочего стола",
-  "settings.general.row.showSearch.title": "Палитра команд",
-  "settings.general.row.showSearch.description":
-    "Показывать кнопку поиска и палитры команд на панели заголовка рабочего стола",
-  "settings.general.row.showTerminal.title": "Терминал",
-  "settings.general.row.showTerminal.description":
-    "Показывать кнопку терминала на панели заголовка рабочего стола",
-  "settings.general.row.showStatus.title": "Статус сервера",
-  "settings.general.row.showStatus.description":
-    "Показывать кнопку статуса сервера на панели заголовка рабочего стола",
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 
@@ -590,16 +488,6 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.title": "Разворачивать элементы инструмента edit",
   "settings.general.row.editToolPartsExpanded.description":
     "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
-  "settings.general.row.showSessionProgressBar.title": "Показывать индикатор прогресса сессии",
-  "settings.general.row.showSessionProgressBar.description":
-    "Показывать анимированный индикатор прогресса вверху сессии, когда агент работает",
-  "settings.general.row.pinchZoom.title": "Масштабирование щипком",
-  "settings.general.row.pinchZoom.description":
-    "Разрешить жесты щипка на трекпаде и Ctrl-прокрутку для масштабирования",
-  "settings.general.row.wayland.title": "Использовать нативный Wayland",
-  "settings.general.row.wayland.description": "Отключить X11 fallback на Wayland. Требуется перезапуск.",
-  "settings.general.row.wayland.tooltip":
-    "На Linux с мониторами разной частоты обновления нативный Wayland может быть стабильнее.",
 
   "settings.general.row.releaseNotes.title": "Примечания к выпуску",
   "settings.general.row.releaseNotes.description": 'Показывать всплывающие окна "Что нового" после обновлений',
@@ -656,12 +544,6 @@ export const dict = {
   "settings.providers.tag.other": "Другое",
   "settings.models.title": "Модели",
   "settings.models.description": "Настройки моделей будут доступны здесь.",
-  "settings.agents.title": "Агенты",
-  "settings.agents.description": "Настройки агентов будут доступны здесь.",
-  "settings.commands.title": "Команды",
-  "settings.commands.description": "Настройки команд будут доступны здесь.",
-  "settings.mcp.title": "MCP",
-  "settings.mcp.description": "Настройки MCP будут доступны здесь.",
 
 
 
@@ -682,14 +564,12 @@ export const dict = {
   "workspace.delete.title": "Удалить рабочее пространство",
   "workspace.delete.confirm": 'Удалить рабочее пространство "{{name}}"?',
   "workspace.delete.button": "Удалить рабочее пространство",
-  "common.open": "Открыть",
   "dialog.releaseNotes.action.getStarted": "Начать",
   "dialog.releaseNotes.action.next": "Далее",
   "dialog.releaseNotes.action.hideFuture": "Больше не показывать",
   "dialog.releaseNotes.media.alt": "Превью релиза",
   "dialog.releaseNotes.media.pause": "Приостановить видео",
   "dialog.releaseNotes.media.play": "Воспроизвести видео",
-  "error.server.invalidConfiguration": "Недопустимая конфигурация",
   "common.moreCountSuffix": " (ещё {{count}})",
   "common.time.justNow": "Только что",
   "common.time.minutesAgo.short": "{{count}} мин назад",
@@ -697,9 +577,6 @@ export const dict = {
   "common.time.daysAgo.short": "{{count}} д назад",
   "settings.providers.connected.environmentDescription": "Подключено из ваших переменных окружения",
 
-  "app.server.unreachable": "Не удалось связаться с {{server}}",
-  "app.server.retrying": "Автоматическая повторная попытка...",
-  "app.server.otherServers": "Другие серверы",
   "session.todo.progress": "Выполнено {{done}} из {{total}} задач",
   "session.question.progress": "{{current}} из {{total}} вопросов",
   "common.key.ctrl": "Ctrl",
@@ -716,15 +593,9 @@ export const dict = {
   "common.key.pageUp": "Page Up",
   "common.key.pageDown": "Page Down",
   "common.key.insert": "Insert",
-  "common.unknown": "неизвестно",
-  "error.page.circular": "[Циклично]",
   "error.globalSDK.noServerAvailable": "Нет доступного сервера",
   "error.globalSDK.serverNotAvailable": "Сервер недоступен",
-  "error.childStore.persistedCacheCreateFailed": "Не удалось создать постоянный кэш",
-  "error.childStore.persistedProjectMetadataCreateFailed": "Не удалось создать постоянные метаданные проекта",
-  "error.childStore.persistedProjectIconCreateFailed": "Не удалось создать постоянный значок проекта",
   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
-  "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
   "prompt.action.goal": "Цель",
   "prompt.action.clearGoal": "Очистить цель",
   "prompt.goal.placeholder": "Опишите результат, которого должна достичь эта цель",

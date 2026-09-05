@@ -320,7 +320,7 @@
  *       nowhere else: turning a toggle ON calls
  *       `requestNotificationPermission()` (`src/utils/notification-permission.ts`)
  *       at most once (a no-op once permission is no longer "default"); turn
- *       completion (`platform.notify`, `src/main.tsx`) NEVER calls
+ *       completion (`platform.notify`, `src/app/entry/main.tsx`) NEVER calls
  *       `Notification.requestPermission()` itself — it only reads the current
  *       `Notification.permission` and silently no-ops unless it is already
  *       "granted". With the Agent toggle off, a completed turn issues zero
@@ -371,7 +371,7 @@
  *       different reason (authEnabled baked false at the time). The signed
  *       authentication lane owns that negative contract.
  *     - `platform.checkUpdate` is only implemented by the desktop platform
- *       object; the web platform built in `src/main.tsx` never defines it, so
+ *       object; the web platform built in `src/app/entry/main.tsx` never defines it, so
  *       every update-check affordance is permanently disabled here (behavior
  *       8) and the error page's update button never renders (behavior 31).
  *     - `getDefaultBaseUrl()` (unlike `getClaxedoServerUrl()`) DOES read
@@ -1236,7 +1236,7 @@ test.describe("core settings + auth @core", () => {
       // A second, fully-completed turn with notifications now enabled must
       // NOT request permission again — this is the actual BUG A regression:
       // the browser's permission prompt used to reappear on every single
-      // turn completion because `platform.notify` (src/main.tsx) called
+      // turn completion because `platform.notify` (src/app/entry/main.tsx) called
       // `Notification.requestPermission()` itself whenever permission was
       // still "default".
       await driveOneTurn(page, "notification setting on turn")

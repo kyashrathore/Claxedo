@@ -116,7 +116,7 @@
  *       oracle-proven.
  *   19. Context chips linked to a code-review comment (`item.comment` truthy) are hidden
  *       while shell mode is active (`composer.tsx`'s `contextItems` memo). NOT COVERED
- *       here: the test was deleted (not fixme'd) per docs/e2e-decisions.md #15 — see the
+ *       here: the test was deleted (not fixme'd) per e2e/e2e-decisions.md #15 — see the
  *       standing comment where it used to live, below behavior 18's test.
  *   20. Composer draft text, an inline pill, and an image attachment together survive a
  *       full page reload.
@@ -571,7 +571,7 @@ test.describe("core composer modes @core", () => {
   })
 
   // "comment-linked context chips are hidden while shell mode is active — behavior 19"
-  // — DELETED per docs/e2e-decisions.md #15 (2026-07-20), downgraded from rec A to rec
+  // — DELETED per e2e/e2e-decisions.md #15 (2026-07-20), downgraded from rec A to rec
   // C: rec A's target (a file/diff spec with a real line-comment surface) does not
   // exist — confirmed via `grep -rln "tab-file\|review-tab\|createLineCommentController"
   // e2e/playwright/*.spec.ts`, zero hits outside this file's own (now-deleted) fixme

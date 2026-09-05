@@ -141,10 +141,10 @@ function nonBackgroundNoiseConsole(entries: string[]) {
  *     `e2e/fixtures/harness-traces/` and is baked into that trace's `directory`
  *     and `sessionID` strings — regenerating is the only way to change it, and
  *     the committed traces are the frozen evidence these tests replay;
- *   - the harness IDENTITY the mock runtime is installed with, which must be a
- *     string `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts)
- *     accepts, because the real server runs that same validator. Open ACP
- *     connections are `acp:<slug>`.
+ *   - the harness IDENTITY the mock runtime is installed with, which is the
+ *     mock runtime's fixture key (`connectionIdFor` in e2e/helpers/mock-runtime.ts
+ *     maps it to a connection id). The real validator, `normalizeHarnessIdentity`
+ *     (agent-sdk-runtime/src/harness-types.ts), does not accept colon-form ids.
  *
  * Only the identity moves here. Fixture names, directories, and session ids are
  * unchanged, so every replayed trace and every assertion is the same one.

@@ -144,7 +144,7 @@ jobs:
             fi
             echo "health attempt $attempt failed; retrying in 10s"; sleep 10
           done
-          [ -n "$ok" ] || { echo "::error::relay /health did not recover after deploy — roll back: see public-docs/deploy-runbook.md"; exit 1; }
+          [ -n "$ok" ] || { echo "::error::relay /health did not recover after deploy — roll back: see public-docs/relay-and-deployment.md"; exit 1; }
 
       # Reconvergence per ADR §2.4: hosts reconnect on their own after the
       # tunnel drop; assert activeHostCount recovers to >= 80% of the

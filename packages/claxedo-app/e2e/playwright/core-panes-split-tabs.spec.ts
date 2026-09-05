@@ -181,7 +181,7 @@
  *      — see INVARIANTS #2 — this test pins the OBSERVABLE outcome).
  *   6. `mod+w` on the LAST remaining pane, on the desktop platform, opens the "Quit
  *      Claxedo?" confirmation dialog instead of closing anything. NOT reachable from
- *      this spec's web target: the scenario was DELETED (docs/e2e-decisions.md #37,
+ *      this spec's web target: the scenario was DELETED (e2e/e2e-decisions.md #37,
  *      2026-07-20); see HARNESS NOTES.
  *   7. `mod+\\` / `mod+shift+\\` (the Workbench's own built-in split shortcuts)
  *      split the focused pane by revealing the most-recently-used HIDDEN
@@ -313,12 +313,12 @@
  *
  * HARNESS NOTES —
  *   - This Playwright target always serves the WEB/cloud entry point
- *     (`src/main.tsx`), which hardcodes `platform: "web"` with no `quit` handler —
+ *     (`src/app/entry/main.tsx`), which hardcodes `platform: "web"` with no `quit` handler —
  *     there is no override seam (no query param, no injectable global). The desktop
  *     Electron entry point that sets `platform: "desktop"` and wires a real `quit()`
  *     is a SEPARATE build (`claxedo-desktop`) never exercised by this suite, so
  *     behavior 6 (Quit dialog) is permanently unreachable here — DELETED per
- *     docs/e2e-decisions.md #37 (2026-07-20); verification belongs to a future
+ *     e2e/e2e-decisions.md #37 (2026-07-20); verification belongs to a future
  *     Electron smoke tier, not this spec.
  *   - The real terminal PTY create route is `/api/wr/pty` (`terminal-connection.ts`'s
  *     `terminalPtyApiPath`), NOT `/api/claxedo/pty` (a stale path used by the
@@ -715,7 +715,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
   })
 
   // "mod+w on the last remaining pane opens the desktop Quit dialog — behavior 6" —
-  // DELETED per docs/e2e-decisions.md #37 (2026-07-20): desktop-only, no web-tier
+  // DELETED per e2e/e2e-decisions.md #37 (2026-07-20): desktop-only, no web-tier
   // impact; desktop behavior moves to a future Electron smoke tier.
 
   test("mod+\\ splits the focused pane by revealing the MRU hidden surface — behavior 7", async ({ page }) => {

@@ -321,7 +321,7 @@ describe("createProjectActions New Project", () => {
 
 describe("createProjectActions", () => {
   // NOTE: handleNewWorkspace (the Local/Cloud picker behind onNewWorkspace) was
-  // deleted as dead code — see docs/e2e-decisions.md #16. It had zero reachable
+  // deleted as dead code — see e2e/e2e-decisions.md #16. It had zero reachable
   // UI trigger; the live workspace-creation surface is
   // handleNewLocalWorkspace/handleNewCloudWorkspace below, exercised by the
   // session composer's environment selector (see core-cloud-provisioning.spec.ts

@@ -88,9 +88,7 @@ Start here before making a nontrivial change in this package:
 - `src/VOCABULARY.md` — canonical noun list (session, host, toolSandbox,
   harness, the five senses of "workspace", directory, project, pane/tab/
   panel/group, `opencode`). Read this before naming anything.
-- `src/ARCHITECTURE.md` — charter for every top-level `src/` directory,
-  current (unenforced) import-direction reality including the confirmed
-  `context/`↔`shell/` and `components/`↔`claxedo-ui/components/` cycles, and
+- `src/ARCHITECTURE.md` — charter for every top-level `src/` directory and
   "where do I add X" for the five commonest contribution types.
 - `CONTRIBUTING.md`'s "History: the override system" section — why there is
   no `packages/app` and no override scanner post-hard-fork (the former
@@ -103,7 +101,8 @@ Start here before making a nontrivial change in this package:
   retired experiment logs.
 - Per-directory `AGENTS.md` notes — several source directories carry their
   own scoped `AGENTS.md` with local rules (`src/architecture/`,
-  `src/agent-runtime/`, `src/browser/`, `src/cloud/`, `src/demo/`,
-  `src/extensions/`, `src/marketplace/`, `src/pane/`, `src/process/`, and
-  `src/shell/{auth,data,identity,layout}/`). Read the one covering the
+  `src/app/demo/`, `src/features/browser/`, `src/features/extensions/`,
+  `src/features/processes/`, `src/platform/runtime/agent/`,
+  `src/platform/runtime/cloud/`, and most other `features/*` and `platform/*`
+  roots — `find src -name AGENTS.md` lists them). Read the one covering the
   directory you are editing before changing files there.

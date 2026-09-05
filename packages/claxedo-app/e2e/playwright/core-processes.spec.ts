@@ -185,7 +185,7 @@
  *     — this is real claxedo-server worktree-sharing + OS-port-allocation behavior that
  *     a mocked HTTP layer cannot meaningfully exercise; it is covered live by
  *     `e2e-legacy/process-project-shared.spec.ts` (`CLAXEDO_PROCESS_PROJECT_SHARED_LIVE=1`,
- *     real backend + real worktrees) — DELETED per docs/e2e-decisions.md #25
+ *     real backend + real worktrees) — DELETED per e2e/e2e-decisions.md #25
  *     (2026-07-20); the mocked duplicate here can't assert the real invariant.
  *   - Real `.claxedo/processes.jsonc` file writes/reads — Tier L concern; behavior 16
  *     above only proves the CLIENT's reload-recovery contract against the mocked
@@ -1311,7 +1311,7 @@ test.describe("core processes @core", () => {
 
   // "viewer role hides Add/Start/Stop/Restart/Edit controls — behavior 18 (read-only
   // half)" — FOLDED into core-cloud-offline-roles' existing viewer-role fixture per
-  // docs/e2e-decisions.md #24 (2026-07-20): see
+  // e2e/e2e-decisions.md #24 (2026-07-20): see
   // core-cloud-offline-roles.spec.ts's "viewer role locks the composer ... and hides
   // mutation controls — behavior 8" test, which asserts the Processes panel's "Add
   // process" control is hidden under the SAME `canMutateProcesses()` gate that governs
@@ -1319,7 +1319,7 @@ test.describe("core processes @core", () => {
   // control proves the shared gate, no need to duplicate the relay/role fixture here.
 
   // "project-shared process config is visible across two local workspaces, no leaks
-  // after stop" — DELETED per docs/e2e-decisions.md #25 (2026-07-20): duplicated a
+  // after stop" — DELETED per e2e/e2e-decisions.md #25 (2026-07-20): duplicated a
   // live spec and couldn't assert the real invariant with a mocked HTTP layer. Source
   // of truth: e2e-legacy/process-project-shared.spec.ts
   // (CLAXEDO_PROCESS_PROJECT_SHARED_LIVE=1, real backend/worktrees/child processes).

@@ -194,8 +194,8 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `documents.fromRepo` | `features/documents/data/documents-api.ts` | `POST /documents/from-repo` | unary | unsafe | |
 | `documents.snapshots` | `features/documents/data/documents-api.ts` | `GET /documents/:id/snapshots` | unary | safe | |
 | `documents.snapshots.restore` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/restore` | unary | unsafe | |
-| `documents.workSource` | `features/documents/data/documents-api.ts` | `POST /documents/:id/work-source` | unary | safe | |
-| `documents.workSourcePin` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/work-source-pin` | unary | safe | |
+| `documents.workSource` | `features/documents/data/documents-api.ts` | `POST /documents/:id/work-source` | unary | safe | Declared for the desktop hosted-operation table; the app has no client builder for it today. |
+| `documents.workSourcePin` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/work-source-pin` | unary | safe | Declared for the desktop hosted-operation table; the app has no client builder for it today. |
 | `documents.statuses` | `features/documents/data/documents-api.ts` | `GET /documents/statuses` | unary | safe | |
 
 ### Connections and integrations

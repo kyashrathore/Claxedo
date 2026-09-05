@@ -1202,7 +1202,7 @@ test.describe("core terminal panel @core", () => {
   })
 
   // "a stale process-owned terminal tab is pruned instead of resurrected on reload —
-  // behavior 12" — MOVED to core-processes.spec.ts per docs/e2e-decisions.md #40
+  // behavior 12" — MOVED to core-processes.spec.ts per e2e/e2e-decisions.md #40
   // (2026-07-20): the pruning only runs when the Process feature's data loads, which
   // needs the Process panel mocks that live in core-processes, not here.
 })

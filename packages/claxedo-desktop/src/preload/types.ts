@@ -7,8 +7,6 @@ export type ServerReadyData = {
   password: string | null
 }
 
-export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { type: "Done" }
-
 export type WslConfig = { enabled: boolean }
 
 export type LinuxDisplayBackend = "wayland" | "auto"
@@ -162,7 +160,6 @@ export type ElectronAPI = {
   storeKeys: (name: string) => Promise<string[]>
   storeLength: (name: string) => Promise<number>
 
-  onSqliteMigrationProgress: (cb: (progress: SqliteMigrationProgress) => void) => () => void
   onMenuCommand: (cb: (id: string) => void) => () => void
   onDeepLink: (cb: (urls: string[]) => void) => () => void
   onFullscreenChange: (cb: (isFullscreen: boolean) => void) => () => void

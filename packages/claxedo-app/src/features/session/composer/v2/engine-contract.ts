@@ -156,7 +156,7 @@ export type ComposerEngineKind = "legacy" | "controller"
 /**
  * Per-browser override, read once per composer mount. Set it from the devtools
  * console (`localStorage.setItem("claxedo.composer.engine", "controller")`) and
- * reload; e2e sets `VITE_CLAXEDO_COMPOSER_ENGINE` on the dev server instead.
+ * reload. `VITE_CLAXEDO_COMPOSER_ENGINE` selects the engine at build time.
  */
 export const COMPOSER_ENGINE_STORAGE_KEY = "claxedo.composer.engine"
 

@@ -46,7 +46,7 @@
 // Run (about 25s, of which ~15s is the deliberate staleness idle below):
 //   cd packages/claxedo-app/perf-harness
 //   CLAXEDO_PERF_SKIP_BUILD=1 CLAXEDO_PERF_MOCK_PORT=46087 \
-//     bun src/debug-session-switch-probe.ts
+//     bun src/debug-review-revive-probe.ts
 // Add PROBE_SKIP_STALE_IDLE=1 for an ~11s run that measures the switch but
 // cannot see stability gate (a).
 //
@@ -85,93 +85,13 @@ import {
 } from "./browser-runner"
 import { environmentProfile } from "./environment-profile"
 import { seedForScenario } from "./seed"
+import { openWorkspaceFileTab, syntheticVisibleClick, waitForWorkspaceReviewContent } from "./review-probe-helpers"
 import { SESSION_SWITCH_SUBSTANTIAL_FILE_PATH } from "./session-switch-workspace-contract"
 
 const SCENARIO = "session-switch-workspace" as const
 const WORKSPACE_PANEL_TOGGLE_SELECTOR = "[data-testid='workspace-panel-toggle']"
 const REVIEW_TAB_SELECTOR =
   "[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='review'] > button"
-
-async function syntheticVisibleClick(page: Page, selector: string) {
-  await page.evaluate((selector) => {
-    const visible = (element: Element) => {
-      if (element.closest("[aria-hidden='true']")) return false
-      const rect = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-    }
-    const target = Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(visible).at(-1)
-    if (!target) throw new Error(`No visible element for synthetic click: ${selector}`)
-    target.click()
-  }, selector)
-}
-
-async function waitForWorkspaceReviewContent(page: Page, expectedTotal: number) {
-  await page.waitForFunction((expectedTotal) => {
-    const visible = (element: Element) => {
-      if (element.closest("[aria-hidden='true']")) return false
-      const rect = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-    }
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    if (!shell || !visible(shell) || shell.getBoundingClientRect().width <= 120) return false
-    const root = Array.from(shell.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
-    if (!root) return false
-    const corpus = root.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
-    if (!corpus || Number(corpus.dataset.reviewTotalFiles ?? "0") !== expectedTotal) return false
-    if (!Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]")).some(visible)) return false
-    return !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
-  }, expectedTotal, { timeout: 20_000 })
-}
-
-/**
- * The files navigator lives behind the panel's "Open Files" control (inside
- * `[data-testid='workspace-navigator-overlay']`), which the driver reaches via
- * measureWorkspaceFiles before it opens a file tab.
- */
-async function openFilesNavigator(page: Page) {
-  await page.evaluate(() => {
-    const visible = (element: Element) => {
-      if (element.closest("[aria-hidden='true']")) return false
-      const rect = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" &&
-        style.pointerEvents !== "none"
-    }
-    const control = Array.from(document.querySelectorAll<HTMLElement>(
-      "button[aria-label='Open Files'], [role='button'][aria-label='Open Files']",
-    )).find(visible)
-    if (!control) throw new Error("no visible 'Open Files' control on the workspace panel")
-    control.click()
-  })
-  await page.waitForFunction(() => {
-    const navigator = document.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")
-    if (!navigator) return false
-    const overlay = navigator.closest<HTMLElement>("[data-testid='workspace-navigator-overlay']")
-    if (overlay && (overlay.dataset.open !== "true" || overlay.getAttribute("aria-hidden") === "true")) return false
-    return navigator.getAttribute("data-file-tree-data-ready") === "true" ||
-      !!navigator.querySelector("[data-file-tree-path]")
-  }, undefined, { timeout: 10_000 })
-}
-
-/** Same precondition the driver's Block B establishes: one substantial file tab open. */
-async function openWorkspaceFileTab(page: Page, filePath: string) {
-  await openFilesNavigator(page)
-  const navigator = page.locator("[data-testid='workspace-files-navigator'][data-mode='files']").last()
-  const search = navigator.locator("input[placeholder='Search files...']").first()
-  await search.waitFor({ state: "visible", timeout: 5_000 })
-  await search.fill(filePath)
-  const row = navigator.locator(`[data-file-tree-path="${filePath}"]`).first()
-  await row.waitFor({ state: "visible", timeout: 5_000 })
-  await row.click({ timeout: 5_000 })
-  await page.waitForFunction((filePath) => {
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    return !!shell?.querySelector(
-      `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(filePath)}"][data-tab-file-state='ready']`,
-    )
-  }, filePath, { timeout: 10_000 })
-}
 
 const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))

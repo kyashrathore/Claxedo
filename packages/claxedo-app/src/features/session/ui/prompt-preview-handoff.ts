@@ -10,11 +10,9 @@ const MAX = 40
 
 export const sessionHandoffQueryRoot = ["shell", "session-handoff"] as const
 
-export const sessionHandoffQueryKey = (key: string) => [...sessionHandoffQueryRoot, "session", key] as const
-export const terminalHandoffQueryKey = (key: string) => [...sessionHandoffQueryRoot, "terminal", key] as const
+const sessionHandoffQueryKey = (key: string) => [...sessionHandoffQueryRoot, "session", key] as const
 
 const sessionHandoffIndexKey = [...sessionHandoffQueryRoot, "session-index"] as const
-const terminalHandoffIndexKey = [...sessionHandoffQueryRoot, "terminal-index"] as const
 
 function cloneSessionHandoff(input: HandoffSession | undefined): HandoffSession | undefined {
   if (!input) return undefined
@@ -51,22 +49,6 @@ function touchSession(key: string, value: HandoffSession) {
   touchIndex(sessionHandoffIndexKey, key, sessionHandoffQueryKey(key))
 }
 
-function touchTerminal(key: string, value: string[]) {
-  queryClient.setQueryData(terminalHandoffQueryKey(key), value.slice())
-  touchIndex(terminalHandoffIndexKey, key, terminalHandoffQueryKey(key))
-}
-
-export function clearSessionHandoffCache() {
-  queryClient.removeQueries({ queryKey: sessionHandoffQueryRoot })
-}
-
-export function sessionHandoffKeys() {
-  return {
-    session: queryClient.getQueryData<string[]>(sessionHandoffIndexKey) ?? [],
-    terminal: queryClient.getQueryData<string[]>(terminalHandoffIndexKey) ?? [],
-  }
-}
-
 export const setSessionHandoff = (key: string, patch: Partial<HandoffSession>) => {
   const prev = getSessionHandoff(key) ?? { prompt: "", files: {} }
   touchSession(key, {
@@ -78,9 +60,3 @@ export const setSessionHandoff = (key: string, patch: Partial<HandoffSession>) =
 
 export const getSessionHandoff = (key: string) =>
   cloneSessionHandoff(queryClient.getQueryData<HandoffSession>(sessionHandoffQueryKey(key)))
-
-export const setTerminalHandoff = (key: string, value: string[]) => {
-  touchTerminal(key, value)
-}
-
-export const getTerminalHandoff = (key: string) => queryClient.getQueryData<string[]>(terminalHandoffQueryKey(key))?.slice()

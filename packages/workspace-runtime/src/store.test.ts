@@ -313,7 +313,7 @@ describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
-    // The upstream engine owns this child, so the runtime's only row for it is
+    // A delegating harness owns this child, so the runtime's only row for it is
     // the placeholder a session-scoped read binds. Admission is where the
     // parent link enters this store, and `GET /session/:id` answers from here.
     store.bindSession({ sessionId: "child", directory: "/work", agentSessionId: "child", createdAt: 2 })
@@ -321,12 +321,12 @@ describe("RuntimeStore", () => {
     store.admit({
       parentSessionId: "parent",
       observation: {
-        observationId: "opencode:task:tool-1",
+        observationId: "harness:task:tool-1",
         harnessExecutionId: "run",
         toolCallId: "tool-1",
         toolCallRole: "spawn",
         status: "running",
-        providerKind: "opencode-task",
+        providerKind: "harness-task",
         childSessionId: "child",
         transcript: { kind: "messages" },
       },
@@ -351,12 +351,12 @@ describe("RuntimeStore", () => {
     store.admit({
       parentSessionId: "parent",
       observation: {
-        observationId: "opencode:task:tool-2",
+        observationId: "harness:task:tool-2",
         harnessExecutionId: "run",
         toolCallId: "tool-2",
         toolCallRole: "spawn",
         status: "running",
-        providerKind: "opencode-task",
+        providerKind: "harness-task",
         childSessionId: "unseen-child",
         transcript: { kind: "messages" },
       },

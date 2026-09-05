@@ -34,7 +34,7 @@ Inherited operating principles (inlined; `docs/plans/goal.md` does not exist on 
 | **Product plane** | feature events, funnel, `$exception`, metering events | `distinct_id = user_id`, `$groups.org = org_id` | required properties `org_id`, `user_id`, `surface`, `deployment_mode` enforced at the wrapper type (spec §4.1) |
 | **Ops plane** | operational monitors (`distinct_id: "system"`) | none, by design | content-free boundary of `deploy-runbook.md:258` — bounded counts, durations, status classes; **no org/user identifiers, no content** |
 
-Per-runtime transport (the Worker constraint is documented law — `posthog-node` is on the Worker's forbidden-import list, `public-docs/hosted-control-plane-worker.md:214`):
+Per-runtime transport (the Worker constraint is documented law — `posthog-node` is on the Worker's forbidden-import list, the worker's forbidden-import list in `packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts`):
 
 | Runtime | Analytics transport | Error transport |
 |---|---|---|

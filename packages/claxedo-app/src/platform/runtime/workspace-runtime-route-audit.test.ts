@@ -2283,7 +2283,6 @@ describe("workspace runtime route audit", () => {
     const sessionPage = await Bun.file(path.join(root, "features/session/ui/session-screen.tsx")).text()
     const promptInputSource = await Bun.file(path.join(root, promptInput)).text()
     const promptSubmitSource = await Bun.file(path.join(root, promptSubmit)).text()
-    expect(sessionPage).toMatch(/terminalScopeKey\(routeDirectory\(\)\)/)
     expect(sessionPage).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(sessionPage).not.toMatch(/workspaceIdFromDirectoryRef/)
     expect(sessionPage).not.toMatch(/dirEncoded/)

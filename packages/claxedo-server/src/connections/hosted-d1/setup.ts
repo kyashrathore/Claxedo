@@ -1,7 +1,6 @@
 /**
  * The hosted Connections composition on Better Auth + D1.
  *
- * This is the port of the Convex/Clerk-era `hosts/workgraph/hosted/connections-setup.ts`.
  * Everything the kit deliberately refuses to decide is decided here:
  *
  *   - WHO the caller is: an injected `authenticate` seam (production:

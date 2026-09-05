@@ -6,9 +6,8 @@ import { httpMachineRemoteAccess } from "./http-machine-remote-access"
  *
  * `deployments/self-hosted-node/app.ts` still mounts `RemoteAccessRoutes` at
  * `/api/claxedo/remote-access`, so this implementation must keep reaching those
- * exact paths and verbs. Moved here with the module from
- * `features/onboarding/remote-access-api.test.ts`; the funnel assertions went
- * with the events, to the controller that now owns them.
+ * exact paths and verbs. The funnel assertions went with the events, to the
+ * controller that now owns them.
  */
 function scripted(responses: Array<{ status: number; body: unknown }>) {
   const calls: Array<{ path: string; method: string; body?: string }> = []

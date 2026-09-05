@@ -13,7 +13,6 @@ import {
   type BrowserBridgeApi,
   type BrowserNodeSelectedPayload,
 } from "../store/browser-pane-context"
-import { useBrowserHistory, type BrowserHistoryState } from "../store/browser-history"
 import { browserToolbarSlot } from "@/ui/controls/portal-slot"
 import { normalizeAddressBarInput } from "./browser-url"
 import { syncBrowserPaneUrl } from "./browser-pane-navigation"
@@ -161,15 +160,6 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
 
   const showWebview = () => enabled() === true && !!api
 
-  // History is optional: outside the provider (tests, cloud builds) we simply
-  // skip recording without breaking the pane.
-  let history: BrowserHistoryState | undefined
-  try {
-    history = useBrowserHistory()
-  } catch {
-    history = undefined
-  }
-
   // React-grab now owns the entire in-page comment UX — hover overlay,
   // selection label, and the floating "Add a comment…" popover. The old
   // bottom composer dock has been removed to match the reference design
@@ -188,7 +178,7 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
     <BrowserPaneProvider paneId={props.paneId} bridge={api} initialUrl={props.initialUrl}>
       <BrowserPaneKeyboardHandlers />
       <div class="flex h-full w-full flex-col bg-background-base text-text-base">
-        <BrowserPaneToolbar initialUrl={props.initialUrl} browserId={props.browserId} history={history} api={showWebview() ? api : undefined} />
+        <BrowserPaneToolbar initialUrl={props.initialUrl} browserId={props.browserId} api={showWebview() ? api : undefined} />
         <div class="relative flex-1">
           <div
             data-testid="browser-pane-webview-host"
@@ -211,7 +201,6 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
                   navigationVersion={props.navigationVersion}
                   api={apiAccessor()}
                   browserId={props.browserId}
-                  history={history}
                   onNavigationChange={props.onNavigationChange}
                   onPageComment={props.onPageComment}
                 />
@@ -263,7 +252,6 @@ function BrowserPaneKeyboardHandlers() {
 function BrowserPaneToolbar(props: {
   initialUrl?: string
   browserId?: string
-  history?: BrowserHistoryState
   api?: BrowserBridgeApi
 }) {
   const ctx = useBrowserPane()
@@ -363,7 +351,7 @@ function BrowserPaneToolbar(props: {
           />
         </Tooltip>
       </div>
-      <BrowserAddressBar initialUrl={props.initialUrl} api={props.api} history={props.history} />
+      <BrowserAddressBar initialUrl={props.initialUrl} api={props.api} />
       {/* Right cluster: inspect + overflow. Every control is a 24px ghost
           icon button (the app-wide toolbar standard) so size, radius, and
           hover-background read identically. Inspect is an on/off toggle so it
@@ -448,15 +436,10 @@ function BrowserPaneToolbar(props: {
 }
 
 /**
- * Address bar with a simple autocomplete popover backed by the
- * `useBrowserHistory` recent-URL list. Uses substring + prefix matching
- * (see `matchRecent` in the history store). No fuzzy library is available
- * in the repo and plan permits substring matching for v1.
- *
- * Styled to match the rest of the chrome — flat input with a focus ring
+ * Address bar. Styled to match the rest of the chrome — flat input with a focus ring
  * rather than the raw `<input>` border that shipped in Unit 7.
  */
-function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi; history?: BrowserHistoryState }) {
+function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi }) {
   const ctx = useBrowserPane()
   const visibleUrl = (url: string | undefined) => (!url || url === "about:blank" ? "" : url)
   const [draft, setDraft] = createSignal(visibleUrl(props.initialUrl))
@@ -467,15 +450,6 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
   createEffect(() => {
     const live = ctx.currentUrl()
     if (!focused() && live !== undefined) setDraft(visibleUrl(live))
-  })
-
-  const suggestions = createMemo(() => {
-    const h = props.history
-    if (!h) return []
-    const q = draft()
-    const matches = h.matchRecent(q, 8)
-    const current = ctx.currentUrl()
-    return matches.filter((m) => m.url !== current)
   })
 
   const commit = (url: string) => {
@@ -549,32 +523,6 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
           data-testid="browser-pane-address-bar"
         />
       </div>
-      <Show when={focused() && suggestions().length > 0}>
-        <ul
-          class="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-border-weak-base bg-background-base py-1 text-12-regular shadow-lg"
-          data-testid="browser-pane-address-bar-suggestions"
-        >
-          <For each={suggestions()}>
-            {(entry) => (
-              <li
-                class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-surface-base-hover"
-                onMouseDown={(e) => {
-                  // Use onMouseDown so this fires before the input's blur.
-                  e.preventDefault()
-                  commit(entry.url)
-                }}
-                data-testid="browser-pane-address-bar-suggestion"
-              >
-                <Icon name="magnifying-glass" size="small" class="shrink-0 text-text-weak" />
-                <span class="truncate text-text-base">{entry.url}</span>
-                <Show when={entry.title}>
-                  <span class="ml-auto shrink-0 text-12-regular text-text-weak">{entry.title}</span>
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
     </div>
   )
 }
@@ -710,7 +658,6 @@ type WebviewHostProps = {
   navigationVersion?: number
   api: BrowserBridgeApi
   browserId?: string
-  history?: BrowserHistoryState
   onNavigationChange?: (patch: { currentUrl?: string; pageTitle?: string }) => void
   onPageComment?: (payload: BrowserPaneCommentPayload) => boolean
 }
@@ -785,9 +732,6 @@ function WebviewHost(props: WebviewHostProps) {
   const handleDidNavigate = (e: Event & { url?: string }) => {
     const url = e.url
     ctx.setCurrentUrl(url)
-    if (url && props.browserId && props.history) {
-      props.history.visit({ browserId: props.browserId, url })
-    }
     if (url && props.onNavigationChange) {
       props.onNavigationChange({ currentUrl: url })
     }
@@ -801,10 +745,6 @@ function WebviewHost(props: WebviewHostProps) {
 
   const handlePageTitleUpdated = (e: Event & { title?: string }) => {
     const title = e.title
-    const url = ctx.currentUrl()
-    if (title && url && props.browserId && props.history) {
-      props.history.visit({ browserId: props.browserId, url, title })
-    }
     if (title && props.onNavigationChange) {
       props.onNavigationChange({ pageTitle: title })
     }

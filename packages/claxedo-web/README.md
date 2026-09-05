@@ -14,7 +14,6 @@ bun run dev
 ```sh
 bun test test
 bun run build
-bunx playwright test
 ```
 
 ## Content contracts

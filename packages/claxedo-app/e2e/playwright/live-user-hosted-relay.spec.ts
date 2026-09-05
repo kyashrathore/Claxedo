@@ -306,7 +306,6 @@
  */
 import { expect, test, type Page, type Request } from "@playwright/test"
 import { spawn } from "node:child_process"
-import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { e2eAppViteEnvironment } from "../auth-mode"
@@ -321,6 +320,7 @@ import {
 // so an id that does not sort before the engine's generated reply id never
 // satisfies that comparison and the engine re-prompts the model forever.
 import { Identifier } from "../../src/lib/id"
+import { freePort } from "../helpers/free-port"
 
 const LIVE = process.env.CLAXEDO_E2E_LIVE === "1"
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
@@ -375,22 +375,6 @@ type RunningFixture = {
 type RunningFrontend = {
   url: string
   close: () => Promise<void>
-}
-
-async function freePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const srv = net.createServer()
-    srv.on("error", reject)
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address()
-      if (!address || typeof address === "string") {
-        reject(new Error("could not allocate a free port"))
-        return
-      }
-      const port = address.port
-      srv.close(() => resolve(port))
-    })
-  })
 }
 
 /**

@@ -125,12 +125,9 @@ create in their own account, so allowlisting one hands back exactly the
 exfiltration channel the policy exists to close.
 
 A deployment that genuinely needs one adds it as an explicit and auditable
-decision, by setting `CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS` on the hosted control
-plane to a comma-separated list of hostnames:
-
-```sh
-CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS=npm.acme.internal,models.acme.internal
-```
+decision in its product composition: the `sandboxEgressExtraHosts` option of
+the hosted workspace routes (`packages/claxedo-server/src/routes/hosted/workspace.ts`)
+takes the extra hostnames. There is no environment variable for it.
 
 That is the operator-facing name for the route option `sandboxEgressExtraHosts`
 (`HostedWorkspaceRouteOptions`), which a custom composition can also set
@@ -186,9 +183,5 @@ that a deployment is uncontained *before* its first workspace exists.
 ## Related
 
 - [User-Deployed Cloudflare](./user-deployed-cloudflare.md) — deploy order and required bindings.
-- [Hosted Control Plane Worker](./hosted-control-plane-worker.md) —
-  `CLAXEDO_SANDBOX_DRIVER` and per-driver credentials.
-- [Production Environment Runbook](./production-environment-runbook.md) —
-  what fails closed at boot and what does not.
 - `packages/sandbox-manager/README.md` — brokered secrets, the *other*
   sandbox credential control.

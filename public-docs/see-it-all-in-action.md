@@ -130,7 +130,7 @@ you can run `bun run --cwd packages/claxedo-mcp start` instead):
   "command": "npx",
   "args": ["-y", "@claxedo/mcp"],
   "env": {
-    "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+    "CLAXEDO_SERVER_URL": "http://127.0.0.1:2593"
   }
 }
 ```
@@ -138,15 +138,15 @@ you can run `bun run --cwd packages/claxedo-mcp start` instead):
 You do not execute that JSON in a terminal. Put it in the MCP client's server
 configuration file or settings UI. If the client has fields instead of raw JSON,
 enter `npx` as the command, `-y` and `@claxedo/mcp` as args, and
-`CLAXEDO_SERVER_URL=http://127.0.0.1:3001` as an environment variable. Note the
+`CLAXEDO_SERVER_URL=http://127.0.0.1:2593` as an environment variable. Note the
 port: the bridge targets the Claxedo control-plane server (default
-`http://127.0.0.1:3001`), not the raw workspace runtime started on `4096`
+`http://127.0.0.1:2593`), not the raw workspace runtime started on `4096`
 above.
 
 For a quick manual smoke test only, the equivalent shell command is:
 
 ```sh
-CLAXEDO_SERVER_URL=http://127.0.0.1:3001 npx -y @claxedo/mcp
+CLAXEDO_SERVER_URL=http://127.0.0.1:2593 npx -y @claxedo/mcp
 ```
 
 What happens after the client reads that config:
@@ -159,7 +159,7 @@ What happens after the client reads that config:
    makes an HTTP request to `CLAXEDO_SERVER_URL` (or, for browser tools, to
    the desktop bridge — see below).
 4. `CLAXEDO_SERVER_URL` points at the Claxedo server fronting the workspace.
-   By default that is the control plane on `http://127.0.0.1:3001`, which
+   By default that is the control plane on `http://127.0.0.1:2593`, which
    proxies workspace calls to the runtime — not the runtime port `4096`
    directly.
 
@@ -376,7 +376,7 @@ can also point at the local server with:
   "command": "npx",
   "args": ["-y", "@claxedo/mcp"],
   "env": {
-    "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+    "CLAXEDO_SERVER_URL": "http://127.0.0.1:2593"
   }
 }
 ```

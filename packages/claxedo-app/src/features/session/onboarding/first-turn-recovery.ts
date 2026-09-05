@@ -35,8 +35,8 @@ export function nextHarnessRecoveryModel(
 }
 
 // Copy is position-independent — descriptions must not reference "first turn".
-// User-facing text says "agent", never "harness"/"ACP"/"adapter". Kept in sync
-// with the §5 copy table in dev-docs/CLAXEDO_ERROR_PROPOSAL.md.
+// User-facing text says "agent", never "harness"/"ACP"/"adapter". The
+// `recoveries` table below is the copy table; the proposal it came from is retired.
 const recoveries = {
   credential: { kind: "credential", title: "Reconnect your AI provider", description: "The provider rejected the credential for this workspace.", label: "Reconnect and resend" },
   harness: { kind: "harness", title: "The agent isn't responding", description: "The agent process stopped or couldn't run this turn.", label: "Resend last prompt" },

@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process"
+import { freePort } from "./free-port"
+import { waitForHealth } from "./wait-for-health"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
-import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -16,30 +17,6 @@ import {
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
 const SERVER_DIR = path.join(REPO_ROOT, "packages/claxedo-server")
-
-async function freePort(requested = 0) {
-  const server = net.createServer()
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(requested, "127.0.0.1", () => resolve())
-  })
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error("could not reserve a Tier R server port")
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-  return address.port
-}
-
-async function waitForHealth(url: string, child: ChildProcess, log: () => string) {
-  const deadline = Date.now() + 90_000
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`GATING: real server exited ${child.exitCode}\n${log()}`)
-    if (await fetch(`${url}/api/claxedo/health`, { signal: AbortSignal.timeout(2_000) })
-      .then((response) => response.ok)
-      .catch(() => false)) return
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  throw new Error(`GATING: real server did not become healthy\n${log().split("\n").slice(-80).join("\n")}`)
-}
 
 async function stopChild(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode) return
@@ -125,7 +102,7 @@ export async function startRealLocalServer(label: string, options: { port?: numb
   child.stdout?.on("data", (chunk) => (output += chunk.toString()))
   child.stderr?.on("data", (chunk) => (output += chunk.toString()))
   try {
-    await waitForHealth(url, child, () => output)
+    await waitForHealth(`${url}/api/claxedo/health`, { label: "real server", log: () => output, child, requestTimeoutMs: 2_000 })
     await configureScriptedPi(url)
   } catch (error) {
     await stopChild(child)

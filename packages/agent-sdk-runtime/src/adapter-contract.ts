@@ -1,7 +1,6 @@
 import type { CompatEvent } from "./compat-events"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import type { StatusChunk } from "./status"
 import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
 import type { AgentProcessObserver } from "./process-observer"
@@ -386,5 +385,3 @@ export type AgentHarnessAdapter =
   & Partial<SupportsRuntimeConfig>
   & Partial<SupportsConfigOptions>
   & Partial<SupportsGoals>
-
-export type AgentRuntimeStatusChunk = StatusChunk

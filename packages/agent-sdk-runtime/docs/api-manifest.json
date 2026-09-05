@@ -93,24 +93,24 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "f4062ab50525a422e7b016e9b92935d6b1766a3ed86d3ad072ab5ac0d356b8e3",
+    "@claxedo/agent-sdk-runtime": "37516b2aaa30801f094935efb4e6db7c5081caac4779faef01a153a9a89b021d",
     "@claxedo/agent-sdk-runtime/compat-events": "249c82ecd76368f43830fd415d244b06bb54cd798e155181f42ff7675278ad2c",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
-    "@claxedo/agent-sdk-runtime/capabilities": "c1d12e7e7ce597ebfa324184889a70023585c19b09a25fe4d5de25e03a06d34f",
+    "@claxedo/agent-sdk-runtime/capabilities": "9ec52dd8e7dfd34f453ecf61acacf308659ccfa672045dd3ca9cdbb726907c74",
     "@claxedo/agent-sdk-runtime/runtime-event-hub": "fe78c092061dca900542af9c27afb862a44c980c625f15aabedc60df5b7c300b",
     "@claxedo/agent-sdk-runtime/sse": "bbb71767f0a9f6a46336f5f11ddafc79b94eb8302460681d26c1f3f5028b9757",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "bab027282963a8bb9a8b379122b0164f6d42c58509c8f63c4eee7f47959ef6e4",
     "@claxedo/agent-sdk-runtime/subagent-admission": "fa6c050e07f8eee32decc98140c764669181e3429ccad8be98e3bbfd03a2d284",
-    "@claxedo/agent-sdk-runtime/harnesses": "a41cf584922e300e5060104331c22f8d3861f8fda6d520571fa020939788e925",
-    "@claxedo/agent-sdk-runtime/harnesses/acp": "b55f7df11e9dda8a6b73870841e8ee5b3b2c0ecffca33bca104e7df6e94defe6",
-    "@claxedo/agent-sdk-runtime/harnesses/claude": "974f9f8e3e4503b77c3336703f14dc8aadc9ac5cfc81276921a392fe807e0d0e",
-    "@claxedo/agent-sdk-runtime/harnesses/codex": "aabb5c181ba37f1ca353c8fd6c5a163684deb7c80c4f6de280e01476d2d455d8",
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": "84bc5cf4525a76a011f72bce3964b229af0b3cbe9be3964b20d4e75bbe2d138e",
-    "@claxedo/agent-sdk-runtime/harnesses/pi": "6c5ce8ae3fb9d464ce072518d83e1d31e26f48229322b739b30786f6753d8116",
-    "@claxedo/agent-sdk-runtime/adapters": "8aca6f3fbe40de282a0ea658770dc49c16375b0f55980bd80718a894798a6b4c",
-    "@claxedo/agent-sdk-runtime/message-page": "f4062ab50525a422e7b016e9b92935d6b1766a3ed86d3ad072ab5ac0d356b8e3",
-    "@claxedo/agent-sdk-runtime/stores/memory": "ae5068febb130a9a20c83aca8ddd89031569638e68ce076f6316fdfee5f47f8d",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "f1253dcda5152439251e6351a4e435d9d43a76e8f133b7b3fa7629f2853ae759"
+    "@claxedo/agent-sdk-runtime/harnesses": "f66aedcccaf920cf7dddc8f023aa0da88ed0a45e48a430eb11a28dede9040abc",
+    "@claxedo/agent-sdk-runtime/harnesses/acp": "f2e5cbf52cc0f009009cbbc3303f2e67f1944a35ecd5a41bc83bea43d76fbd7f",
+    "@claxedo/agent-sdk-runtime/harnesses/claude": "173db693682fdc0f5a57664da0a8e5a985626f7a81dc883bfe2826749ea38a99",
+    "@claxedo/agent-sdk-runtime/harnesses/codex": "6109608b9d8f11ab54409ecbddc2ae3358c74e2d89d91f9673289ea9a97a6040",
+    "@claxedo/agent-sdk-runtime/harnesses/cursor": "ba1fbe64909c7a2051fae6ebb157cd122331b363accee26898c328cbf2e530ea",
+    "@claxedo/agent-sdk-runtime/harnesses/pi": "17b7aa423bef284a08222846098b765dda6acef8dc63279cf77c3498be36a257",
+    "@claxedo/agent-sdk-runtime/adapters": "440d8dc0aef4568f974271f5d5ec9eb8abfd6856fd3e9c2489b2d3357ee84654",
+    "@claxedo/agent-sdk-runtime/message-page": "37516b2aaa30801f094935efb4e6db7c5081caac4779faef01a153a9a89b021d",
+    "@claxedo/agent-sdk-runtime/stores/memory": "8f57ca2443011948c3c8d4d65f753cbe191a12f4e4a6ccd27504466e4d56c70b",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "b9433665ada2b2b1764aeeaba19c5f7625d29d6dae064b8836b1e44c68594a7a"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

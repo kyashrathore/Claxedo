@@ -11,8 +11,6 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 
 /** Claxedo-owned client-presentation contract; it contains no provider SDK aliases. */
-export type ClientPresentationEnvelope<Event extends ClientPresentationEvent = ClientPresentationEvent> = AgentEventEnvelope<Event>
-export type ClientPresentationRecoveringStatus = Extract<AgentRuntimeStatus, { type: "recovering" }>
 export type ClientPresentationStatus = AgentRuntimeStatus
 export type ClientPresentationPart = AgentContentPart
 export type ClientPresentationEvent = Exclude<AgentPresentationEvent, { type: "server.heartbeat" }>

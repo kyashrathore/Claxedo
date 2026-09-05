@@ -10,8 +10,6 @@ import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapt
 import { toolDisplayFromInput } from "../tool-display"
 import { number, object, text } from "../value"
 
-export type CursorSdkMessage = SDKMessage
-
 export type CursorSdkAdapterState = {
   assistantTextByRunId: Record<string, string>
   thinkingTextByRunId: Record<string, string>

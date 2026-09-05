@@ -804,7 +804,7 @@ This sequencing keeps the new generic path independently testable before packagi
 - `packages/claxedo-app/src/features/session/harness/harness-hydrator.ts`
 - `packages/claxedo-app/src/features/session/ui/controls/agent-harness-selector.tsx`
 - `packages/claxedo-desktop/scripts/prebuild.ts`
-- `docs/e2e-decisions.md`
+- `packages/claxedo-app/e2e/e2e-decisions.md`
 - Local prior art reviewed from the sibling Paseo checkout (not a repository dependency): `../paseo/packages/protocol/src/provider-config.ts`
 - Local prior art: `../paseo/packages/server/src/server/agent/provider-registry.ts`
 - Local prior art: `../paseo/packages/server/src/server/agent/providers/generic-acp-agent.ts`

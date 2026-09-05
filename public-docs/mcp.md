@@ -31,7 +31,7 @@ UI:
   "command": "npx",
   "args": ["-y", "@claxedo/mcp"],
   "env": {
-    "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+    "CLAXEDO_SERVER_URL": "http://127.0.0.1:2593"
   }
 }
 ```
@@ -41,13 +41,13 @@ This mirrors the package's bundled `mcp.json`. Where it is used:
 | Place | What to do |
 | --- | --- |
 | MCP client config file | Add this JSON as one MCP server entry, using whatever wrapper shape that client expects. |
-| MCP client settings UI | Put `npx` in the command field, `-y` and `@claxedo/mcp` in the args field, and `CLAXEDO_SERVER_URL=http://127.0.0.1:3001` in env. |
+| MCP client settings UI | Put `npx` in the command field, `-y` and `@claxedo/mcp` in the args field, and `CLAXEDO_SERVER_URL=http://127.0.0.1:2593` in env. |
 | Terminal | Do not paste the JSON. Use the debug command below instead. |
 
 Equivalent terminal command for debugging:
 
 ```sh
-CLAXEDO_SERVER_URL=http://127.0.0.1:3001 npx -y @claxedo/mcp
+CLAXEDO_SERVER_URL=http://127.0.0.1:2593 npx -y @claxedo/mcp
 ```
 
 In normal usage, you do not run that terminal command yourself. The MCP client
@@ -67,7 +67,7 @@ After the MCP client starts this subprocess, the flow is:
 agent in MCP client
   -> calls MCP tool, for example process(action: "list")
   -> @claxedo/mcp receives the tool call over stdio
-  -> @claxedo/mcp calls http://127.0.0.1:3001/api/wr/process
+  -> @claxedo/mcp calls http://127.0.0.1:2593/api/wr/process
   -> Claxedo runtime/server performs the workspace action
   -> result goes back to the MCP client
 ```
@@ -107,12 +107,12 @@ Tools use one of two request scopes:
 ## Environment Variables
 
 Local use needs none of these — the server URL defaults to loopback
-(`http://127.0.0.1:3001`). These knobs exist for non-default directories,
+(`http://127.0.0.1:2593`). These knobs exist for non-default directories,
 workspaces, signed remote servers, and desktop-hosted browser tools.
 
 | Env var | Purpose |
 | --- | --- |
-| `CLAXEDO_SERVER_URL` | Base URL for the Claxedo server. Defaults to `http://127.0.0.1:3001`. |
+| `CLAXEDO_SERVER_URL` | Base URL for the Claxedo server. Defaults to `http://127.0.0.1:2593`. |
 | `CLAXEDO_AUTH_TOKEN` | Optional bearer token sent as `Authorization: Bearer …` on every server request. Set only when pointing the MCP at a signed remote Claxedo server. |
 | `CLAXEDO_API_DIR` | Default local project directory for workspace-scoped requests. |
 | `CLAXEDO_WORKSPACE_ID` | Default workspace id for Docker/cloud workspace requests. |

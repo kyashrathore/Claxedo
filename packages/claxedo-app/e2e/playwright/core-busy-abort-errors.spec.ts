@@ -726,7 +726,7 @@ test.describe("core busy / abort / errors @core", () => {
 
     await sendPrompt(page, input, "trigger a mid-turn error")
 
-    // The redesigned session-error surface (dev-docs/CLAXEDO_ERROR_PROPOSAL.md T1:
+    // The redesigned session-error surface (error proposal T1:
     // "Un-gate the recovery card from turn 0") renders EVERY non-abort turn error as
     // the FirstTurnRecoveryCard, not the legacy bare `.error-card` (which is now only
     // a dead fallback at message-timeline.tsx:1577, unreachable because

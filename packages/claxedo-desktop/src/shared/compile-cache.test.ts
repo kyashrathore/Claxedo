@@ -16,10 +16,8 @@ import {
 } from "./compile-cache"
 
 /**
- * The end-to-end proof that the seeded cache is actually READ lives in
- * scripts/claxedo-compile-cache-boot.test.ts, which asserts the runtime's own
- * HIT/MISS verdict. These tests pin the two things that must not drift
- * underneath it: the key derivation, and the failure behaviour.
+ * These tests pin the two things the seeded cache depends on: the key
+ * derivation, and the failure behaviour.
  */
 
 describe("compile cache key derivation", () => {
@@ -31,7 +29,7 @@ describe("compile cache key derivation", () => {
    * name), so it is pinned against the producer rather than against itself.
    *
    * The build regenerates this agreement on every run and fails loudly if node
-   * changes the scheme; see scripts/build-opencode-compile-cache.ts.
+   * changes the scheme; see scripts/build-compile-cache.ts.
    *
    * The `name` strings are VERBATIM recorded paths and are hashed as-is —
    * including the historical worktree directory names in them. Editing one

@@ -7,7 +7,7 @@ import type { LocalDiagnostics } from "../data/local-diagnostics"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { buildDiagnosticsModel, ownerGroup } from "./diagnostics/model"
-import { DiagnosticsTimeline, formatTime } from "./diagnostics/timeline"
+import { DiagnosticsTimeline, formatDuration, formatTime } from "./diagnostics/timeline"
 
 const TABS = [
   { id: "activity", label: "Activity" },
@@ -734,11 +734,6 @@ function formatBytes(value: number | undefined) {
 function formatDelta(value: number | undefined) {
   if (value === undefined) return "Unavailable"
   return `${value >= 0 ? "+" : "−"}${formatBytes(Math.abs(value))}`
-}
-
-function formatDuration(value: number) {
-  if (value < 1_000) return `${value} ms`
-  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`
 }
 
 function message(cause: unknown) {

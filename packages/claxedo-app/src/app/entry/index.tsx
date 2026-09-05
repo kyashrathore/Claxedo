@@ -45,8 +45,6 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
   sandboxEnabled?: boolean
   /** Show Global Chat sections in the rail (default: false) */
   globalChatEnabled?: boolean
-  /** Direct Daytona API key for no-auth sandbox mode */
-  daytonaApiKey?: string
   /** URL for the standalone claxedo-server (PTY, events, agent hooks) */
   claxedoServerUrl?: string
   /** Hosted product-owned implementation; absent from an unsigned artifact. */
@@ -65,7 +63,6 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
  * - authEnabled: Better Auth + claxedo server
  * - sandboxEnabled: Cloud sandbox workspace creation
  * - globalChatEnabled: Global Chat rail sections
- * - daytonaApiKey: Direct Daytona API key for no-auth sandbox mode
  *
  * @example
  * ```tsx
@@ -157,7 +154,6 @@ export function getDefaultConfig(): ClaxedoConfig {
     sandboxEnabled: import.meta.env.VITE_SANDBOX_ENABLED === "true",
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
     ...productUiFlagConfigFromEnv(import.meta.env),
-    daytonaApiKey: envString(import.meta.env.VITE_DAYTONA_API_KEY),
     claxedoServerUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? DEFAULT_LOCAL_CLAXEDO_SERVER_URL,
   }
 }

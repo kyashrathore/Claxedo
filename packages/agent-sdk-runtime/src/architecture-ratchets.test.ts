@@ -26,11 +26,13 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // Re-measured for the turn author travelling with its prompt and the
       // turn message-id owner: the runtime hands the harness the turn's author
       // and mints the reply id through agent-event-runtime's convention.
-      "runtime.ts": 992,
+      // Re-measured after the native-Pi cutover and the Tier B dead-code sweep:
+      // exact line counts, no headroom, per the ratchet policy.
+      "runtime.ts": 980,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 755,
-      "harnesses/shared/sdk-runtime-adapter.ts": 890,
-      "harnesses/pi/index.ts": 988,
+      "harnesses/codex/driver.ts": 658,
+      "harnesses/shared/sdk-runtime-adapter.ts": 874,
+      "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
       const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length - 1

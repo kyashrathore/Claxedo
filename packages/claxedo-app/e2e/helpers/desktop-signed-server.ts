@@ -20,11 +20,11 @@
  * docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md, Phase 4.
  */
 import { spawn, type ChildProcess } from "node:child_process"
-import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Page } from "@playwright/test"
 import { e2eAppViteEnvironment } from "../auth-mode"
+import { freePort } from "./free-port"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const APP_DIR = path.resolve(HERE, "..", "..")
@@ -61,19 +61,6 @@ export type SignedFixtureInfo = {
   controlPlaneToken: string
   controlPlaneIssuer: string
   desktopRefreshToken: string
-}
-
-async function freePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const srv = net.createServer()
-    srv.on("error", reject)
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address()
-      if (!address || typeof address === "string") return reject(new Error("could not allocate a port"))
-      const { port } = address
-      srv.close(() => resolve(port))
-    })
-  })
 }
 
 export async function stopChild(child: ChildProcess | undefined) {
@@ -260,92 +247,4 @@ export async function startForwardedForProxy(backendUrl: string): Promise<{ url:
   }
 
   return { url, close: () => stopChild(child) }
-}
-
-/**
- * Seeds the PACKAGED app's real persistence bridge (`window.api.storeSet`,
- * IPC into electron-store — the desktop analogue of
- * `real-cloud-relay.spec.ts`'s `localStorage.setItem`, per
- * `desktop-unsigned-embedded.spec.ts`'s `openWorkspaceProject` doc on
- * `persist.ts`'s `isDesktop` branch) with the fixture's workspace as a
- * `workspace:<id>` ref, so the rail resolves it as the real relay-backed
- * kind rather than defaulting through the Local/Cloud draft picker. Same
- * `sandboxes`/`workspaces` shape `real-cloud-relay.spec.ts`'s `seedWorkspace`
- * uses, chosen for the SAME two reasons documented there: `workspaceIdFromRef`
- * only matches `workspace:`/`ws_` shapes (a bare path never reaches the
- * workspace runtime transport at all), and the fixture's worktree sits under
- * a symlinked `/var` alias that a path-keyed resolve would miss or duplicate.
- *
- * MUST reload after seeding — same reason `openWorkspaceProject` reloads:
- * the renderer's store already hydrated once at boot, before this call.
- */
-export async function seedDesktopSignedWorkspace(
-  page: Page,
-  info: Pick<SignedFixtureInfo, "workspaceId" | "directory">,
-  kind: "user-hosted" | "cloud",
-) {
-  await page.evaluate(
-    async (seed: { workspaceId: string; directory: string; kind: string }) => {
-      const ref = `workspace:${seed.workspaceId}`
-      const api = (window as unknown as { api: { storeSet(n: string, k: string, v: string): Promise<void> } }).api
-      await api.storeSet(
-        "claxedo.global.dat",
-        "server",
-        JSON.stringify({
-          list: [],
-          projects: { local: [{ worktree: ref, expanded: true, sandboxes: [seed.workspaceId] }] },
-          lastProject: {},
-          workspaceServer: {},
-          closedProjects: {},
-        }),
-      )
-      await api.storeSet(
-        "claxedo.global.dat",
-        "globalSync.project",
-        JSON.stringify({
-          value: [
-            {
-              id: "proj_desktop_signed",
-              name: "Desktop Signed",
-              worktree: ref,
-              sandboxes: [seed.workspaceId],
-              workspaces: {
-                [ref]: { id: seed.workspaceId, kind: seed.kind, workspace_name: "Desktop Signed", directory: seed.directory },
-                [seed.directory]: {
-                  id: seed.workspaceId,
-                  kind: seed.kind,
-                  workspace_name: "Desktop Signed",
-                  directory: seed.directory,
-                },
-              },
-            },
-          ],
-        }),
-      )
-    },
-    { workspaceId: info.workspaceId, directory: info.directory, kind },
-  )
-  await page.reload()
-  await page.waitForLoadState("domcontentloaded")
-}
-
-/**
- * Seeds `window.__CLAXEDO_TEST_AUTH_TOKEN__` / `__CLAXEDO_TEST_AUTH_USER__`
- * via `addInitScript`, so it re-fires on every navigation including
- * `page.reload()`. Documented as CURRENTLY INERT against the shared
- * `--dir` build (see `SignedFixtureInfo.controlPlaneToken`'s doc for the
- * asar-verified proof) — kept as a real, correct call for the day a
- * `VITE_CLAXEDO_E2E=1` desktop build flavour exists, and so any spec using
- * this helper is truthful about having ATTEMPTED authentication rather than
- * silently skipping it.
- */
-export async function seedDesktopTestAuth(page: Page, info: Pick<SignedFixtureInfo, "controlPlaneToken">) {
-  await page.addInitScript((token: string) => {
-    const w = window as typeof window & {
-      __CLAXEDO_TEST_AUTH_TOKEN__?: string
-      __CLAXEDO_TEST_AUTH_USER__?: { id: string }
-    }
-    w.__CLAXEDO_TEST_AUTH_TOKEN__ = token
-    w.__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }
-  }, info.controlPlaneToken)
 }

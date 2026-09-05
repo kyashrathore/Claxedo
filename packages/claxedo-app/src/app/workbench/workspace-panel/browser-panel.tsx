@@ -41,8 +41,8 @@ export type WorkspaceBrowserPanelProps = {
 
 export function WorkspaceBrowserPanel(props: WorkspaceBrowserPanelProps) {
   // The PromptProvider is in scope here (DirectoryScope mounts it). For
-  // tests / cloud builds where it's missing, the optional try/catch
-  // mirrors the pattern in browser-pane.tsx for useBrowserHistory.
+  // tests / cloud builds where it's missing, the optional try/catch keeps
+  // the panel mountable.
   let prompt: ReturnType<typeof usePrompt> | undefined
   try {
     prompt = usePrompt()

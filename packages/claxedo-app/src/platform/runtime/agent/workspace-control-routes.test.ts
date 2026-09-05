@@ -110,7 +110,7 @@ describe("workspace control routes", () => {
 
   test("workspace create surfaces do not import RuntimeGateway for stable route helpers", async () => {
     // DialogCreateCloudWorkspace (the dead New-workspace Local/Cloud dialog) was
-    // deleted — see docs/e2e-decisions.md #16. project-actions.tsx remains the
+    // deleted — see e2e/e2e-decisions.md #16. project-actions.tsx remains the
     // live surface this guard protects.
     expect(await Bun.file(new URL("../../../features/workspaces/actions/project-actions.tsx", import.meta.url)).text())
       .not.toContain("RuntimeGateway")

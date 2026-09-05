@@ -202,7 +202,7 @@ export const appLocal: Policy = {
   // rule (`features/workspaces/actions/new-project-flow.ts`) and can reach the
   // folder-versus-cloud chooser (`ui/dialogs/new-project-kind.tsx`); the local
   // product opens the folder picker, the chooser only appears once signed.
-  ceilings: { modules: 973, packages: 37 },
+  ceilings: { modules: 956, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

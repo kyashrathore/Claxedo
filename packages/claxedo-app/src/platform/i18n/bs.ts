@@ -104,35 +104,23 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "Uključi/isključi sve {{provider}} modele",
 
 
-  "dialog.provider.viewAll": "Prikaži više provajdera",
 
   "provider.connect.title": "Poveži {{provider}}",
-  "provider.connect.title.anthropicProMax": "Prijavi se putem Claude Pro/Max",
   "provider.connect.selectMethod": "Odaberi način prijave za {{provider}}.",
   "provider.connect.method.apiKey": "API ključ",
   "provider.connect.status.inProgress": "Autorizacija je u toku...",
   "provider.connect.status.waiting": "Čekanje na autorizaciju...",
-  "provider.connect.status.failed": "Autorizacija nije uspjela: {{error}}",
   "provider.connect.apiKey.description":
     "Unesi svoj {{provider}} API ključ da povežeš račun i koristiš {{provider}} modele u OpenCode-u.",
   "provider.connect.apiKey.label": "{{provider}} API ključ",
   "provider.connect.apiKey.placeholder": "API ključ",
   "provider.connect.apiKey.required": "API ključ je obavezan",
-  "provider.connect.opencodeZen.line1":
-    "OpenCode Zen ti daje pristup kuriranom skupu pouzdanih, optimizovanih modela za coding agente.",
-  "provider.connect.opencodeZen.line2":
-    "Sa jednim API ključem dobijaš pristup modelima kao što su Claude, GPT, Gemini, GLM i drugi.",
-  "provider.connect.opencodeZen.visit.prefix": "Posjeti ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
-  "provider.connect.opencodeZen.visit.suffix": " da preuzmeš svoj API ključ.",
   "provider.connect.oauth.code.visit.prefix": "Posjeti ",
   "provider.connect.oauth.code.visit.link": "ovaj link",
   "provider.connect.oauth.code.visit.suffix":
     " da preuzmeš autorizacijski kod i povežeš račun te koristiš {{provider}} modele u OpenCode-u.",
   "provider.connect.oauth.code.label": "{{method}} autorizacijski kod",
   "provider.connect.oauth.code.placeholder": "Autorizacijski kod",
-  "provider.connect.oauth.code.required": "Autorizacijski kod je obavezan",
-  "provider.connect.oauth.code.invalid": "Nevažeći autorizacijski kod",
   "provider.connect.oauth.auto.visit.prefix": "Posjeti ",
   "provider.connect.oauth.auto.visit.link": "ovaj link",
   "provider.connect.oauth.auto.visit.suffix":
@@ -184,7 +172,6 @@ export const dict = {
   "prompt.placeholder.summarizeComment": "Sažmi komentar…",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
-  "prompt.mode.shell.exit": "esc za izlaz",
 
   "session.child.promptDisabled": "Sesije podagenta se ne mogu upitati.",
   "session.child.backToParent": "Nazad na glavnu sesiju.",
@@ -223,9 +210,6 @@ export const dict = {
   "prompt.slash.badge.custom": "prilagođeno",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
-  "prompt.context.active": "aktivno",
-  "prompt.context.includeActiveFile": "Uključi aktivnu datoteku",
-  "prompt.context.removeActiveFile": "Ukloni aktivnu datoteku iz konteksta",
   "prompt.context.removeFile": "Ukloni datoteku iz konteksta",
   "prompt.action.attachFile": "Priloži datoteku",
   "prompt.action.add": "Dodaj",
@@ -246,24 +230,11 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Odaberi agenta i model prije slanja upita.",
   "prompt.toast.worktreeCreateFailed.title": "Neuspješno kreiranje worktree-a",
   "prompt.toast.sessionCreateFailed.title": "Neuspješno kreiranje sesije",
-  "prompt.toast.shellSendFailed.title": "Neuspješno slanje shell naredbe",
-  "prompt.toast.commandSendFailed.title": "Neuspješno slanje komande",
   "prompt.toast.promptSendFailed.title": "Neuspješno slanje upita",
-  "prompt.toast.promptSendFailed.description": "Nije moguće dohvatiti sesiju",
 
   "prompt.toast.sessionConfigSaveFailed.title": "Nije moguće sačuvati konfiguraciju sesije",
-  "dialog.mcp.title": "MCP-ovi",
-  "dialog.mcp.description": "{{enabled}} od {{total}} omogućeno",
-  "dialog.mcp.empty": "Nema konfigurisnih MCP-ova",
 
-  "dialog.lsp.empty": "LSP-ovi se automatski otkrivaju prema tipu datoteke",
-  "dialog.plugins.empty": "Plugini su konfigurisani u opencode.json",
 
-  "mcp.status.connected": "povezano",
-  "mcp.status.failed": "neuspjelo",
-  "mcp.status.needs_auth": "potrebna autentifikacija",
-  "mcp.auth.clickToAuthenticate": "Kliknite za autentifikaciju",
-  "mcp.status.disabled": "onemogućeno",
 
   "dialog.fork.empty": "Nema poruka za fork",
 
@@ -314,11 +285,6 @@ export const dict = {
   "context.stats.sessionCreated": "Sesija kreirana",
   "context.stats.lastActivity": "Posljednja aktivnost",
 
-  "context.usage.tokens": "Tokeni",
-  "context.usage.usage": "Korištenje",
-  "context.usage.cost": "Trošak",
-  "context.usage.clickToView": "Klikni da vidiš kontekst",
-  "context.usage.view": "Prikaži korištenje konteksta",
 
   "language.en": "English",
   "language.zh": "简体中文",
@@ -368,9 +334,6 @@ export const dict = {
   "error.page.description": "Došlo je do greške prilikom učitavanja aplikacije.",
   "error.page.details.label": "Detalji greške",
   "error.page.action.restart": "Restartuj",
-  "error.page.action.report": "Prijavi grešku",
-  "error.page.action.reported": "Greška prijavljena",
-  "error.page.action.exportLogs": "Izvezi zapisnike",
   "error.page.action.checking": "Provjera...",
   "error.page.action.checkUpdates": "Provjeri ažuriranja",
   "error.page.action.updateTo": "Ažuriraj na {{version}}",
@@ -406,10 +369,6 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Konfiguracijska datoteka na {{path}} nije ispravna: {{message}}",
 
   "notification.permission.title": "Potrebna dozvola",
-  "notification.permission.description": "{{sessionTitle}} u {{projectName}} traži dozvolu",
-  "notification.question.title": "Pitanje",
-  "notification.question.description": "{{sessionTitle}} u {{projectName}} ima pitanje",
-  "notification.action.goToSession": "Idi na sesiju",
 
   "notification.session.responseReady.title": "Odgovor je spreman",
   "notification.session.error.title": "Greška sesije",
@@ -420,13 +379,6 @@ export const dict = {
   "home.empty.description": "Kreni tako što ćeš otvoriti lokalni projekat",
 
   "home.title": "Početna",
-  "home.projects": "Projekti",
-  "home.project.add": "Dodaj projekat",
-  "home.sessions.search.placeholder": "Pretraži sesije",
-  "home.sessions.empty": "Nema pronađenih sesija",
-  "home.sessions.group.today": "Danas",
-  "home.sessions.group.yesterday": "Juče",
-  "home.sessions.group.older": "Starije",
   "session.timeline.scrollToBottom": "Pomjeri na najnoviju poruku",
   "session.tab.review": "Pregled",
   "session.tab.context": "Kontekst",
@@ -458,34 +410,21 @@ export const dict = {
   "session.header.search.placeholder": "Pretraži {{project}}",
   "session.header.searchFiles": "Pretraži datoteke",
 
-  "status.popover.trigger": "Status",
-  "status.popover.ariaLabel": "Konfiguracije servera",
-  "status.popover.tab.servers": "Serveri",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
-  "status.popover.tab.plugins": "Plugini",
-  "status.popover.action.manageServers": "Upravljaj serverima",
 
 
-  "lsp.tooltip.none": "Nema LSP servera",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Učitavanje upita...",
-  "terminal.loading": "Učitavanje terminala...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
-  "terminal.close": "Zatvori terminal",
   "terminal.connectionLost.title": "Veza prekinuta",
   "terminal.connectionLost.description":
     "Veza s terminalom je prekinuta. Ovo se može desiti kada se server restartuje.",
 
-  "common.closeTab": "Zatvori karticu",
   "common.dismiss": "Odbaci",
   "common.requestFailed": "Zahtjev nije uspio",
   "common.moreOptions": "Više opcija",
   "common.learnMore": "Saznaj više",
   "common.rename": "Preimenuj",
-  "common.reset": "Resetuj",
   "common.archive": "Arhiviraj",
   "common.delete": "Izbriši",
   "common.close": "Zatvori",
@@ -493,7 +432,6 @@ export const dict = {
   "common.loadMore": "Učitaj još",
   "common.key.esc": "ESC",
 
-  "sidebar.menu.toggle": "Prikaži/sakrij meni",
   "sidebar.nav.projectsAndSessions": "Projekti i sesije",
   "sidebar.settings": "Postavke",
   "sidebar.help": "Pomoć",
@@ -503,18 +441,7 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Domaćin je offline",
   "sidebar.workspace.sharedWithYou": "Podijeljeno s vama",
   "sidebar.workspace.publishedByThisMachine": "Objavljeno s ovog uređaja",
-  "sidebar.workspaces.enable": "Omogući radne prostore",
-  "sidebar.workspaces.disable": "Onemogući radne prostore",
-  "sidebar.gettingStarted.title": "Početak",
-  "sidebar.gettingStarted.line1": "OpenCode uključuje besplatne modele, tako da možeš odmah početi.",
-  "sidebar.gettingStarted.line2": "Poveži bilo kojeg provajdera da koristiš modele, npr. Claude, GPT, Gemini itd.",
-  "sidebar.project.recentSessions": "Nedavne sesije",
-  "sidebar.project.viewAllSessions": "Prikaži sve sesije",
-  "sidebar.project.clearNotifications": "Očisti obavijesti",
 
-  "sidebar.empty.title": "Nema otvorenih projekata",
-  "sidebar.empty.description": "Otvori projekat da započneš",
-  "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Radni prostor",
@@ -528,27 +455,14 @@ export const dict = {
   "settings.providers.catalog.error": "{{harness}} nije mogao odgovoriti za {{workspace}}: {{reason}}",
   "settings.tab.general": "Opšte",
   "settings.tab.shortcuts": "Prečice",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL integracija",
-  "settings.desktop.wsl.description": "Pokreni Claxedo server unutar WSL-a na Windowsu.",
 
   "settings.general.section.appearance": "Izgled",
-  "settings.general.section.advanced": "Napredno",
   "settings.general.section.notifications": "Sistemske obavijesti",
   "settings.general.section.updates": "Ažuriranja",
   "settings.general.section.sounds": "Zvučni efekti",
-  "settings.general.section.feed": "Feed",
-  "settings.general.section.display": "Prikaz",
 
   "settings.general.row.language.title": "Jezik",
   "settings.general.row.language.description": "Promijeni jezik prikaza u OpenCode-u",
-  "settings.general.row.shell.title": "Terminal shell",
-  "settings.general.row.shell.description":
-    "Odaberi shell koji se koristi za tvoj terminal. Kompatibilni shell-ovi se također koriste za pozive agent alata.",
-  "settings.general.row.shell.autoDefault": "Automatski (podrazumijevano)",
-  "settings.general.row.shell.terminalOnly": "samo terminal",
-  "settings.general.row.appearance.title": "Izgled",
-  "settings.general.row.appearance.description": "Prilagodi kako OpenCode izgleda na tvom uređaju",
   "settings.general.row.colorScheme.title": "Šema boja",
   "settings.general.row.colorScheme.description": "Odaberi da li OpenCode prati sistemsku, svijetlu ili tamnu temu",
   "settings.general.row.theme.title": "Tema",
@@ -566,21 +480,6 @@ export const dict = {
   "settings.general.row.followup.description": "Odaberi da li upiti nadovezivanja usmjeravaju odmah ili čekaju u redu",
   "settings.general.row.followup.option.queue": "Red čekanja",
   "settings.general.row.followup.option.steer": "Usmjeri",
-  "settings.general.row.showFileTree.title": "Stablo datoteka",
-  "settings.general.row.showFileTree.description":
-    "Prikaži prekidač i panel stabla datoteka u desktop sesijama",
-  "settings.general.row.showNavigation.title": "Kontrole navigacije",
-  "settings.general.row.showNavigation.description":
-    "Prikaži dugmad naprijed i nazad u traci naslova desktop aplikacije",
-  "settings.general.row.showSearch.title": "Paleta komandi",
-  "settings.general.row.showSearch.description":
-    "Prikaži dugme za pretragu i paletu komandi u traci naslova desktop aplikacije",
-  "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Prikaži dugme terminala u traci naslova desktop aplikacije",
-  "settings.general.row.showStatus.title": "Status servera",
-  "settings.general.row.showStatus.description":
-    "Prikaži dugme statusa servera u traci naslova desktop aplikacije",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 
@@ -590,16 +489,6 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.title": "Proširi dijelove alata za uređivanje",
   "settings.general.row.editToolPartsExpanded.description":
     "Prikaži dijelove alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
-  "settings.general.row.showSessionProgressBar.title": "Prikaži traku napretka sesije",
-  "settings.general.row.showSessionProgressBar.description":
-    "Prikaži animiranu traku napretka na vrhu sesije kada agent radi",
-  "settings.general.row.pinchZoom.title": "Zumiranje štipanjem",
-  "settings.general.row.pinchZoom.description":
-    "Dozvoli gestove štipanja na touchpadu i Ctrl-skrolanje za zumiranje",
-  "settings.general.row.wayland.title": "Koristi nativni Wayland",
-  "settings.general.row.wayland.description": "Onemogući X11 fallback na Waylandu. Zahtijeva restart.",
-  "settings.general.row.wayland.tooltip":
-    "Na Linuxu sa monitorima miješanih stopa osvježavanja, nativni Wayland može biti stabilniji.",
 
   "settings.general.row.releaseNotes.title": "Bilješke o izdanju",
   "settings.general.row.releaseNotes.description": 'Prikaži iskačuće prozore "Šta je novo" nakon ažuriranja',
@@ -655,12 +544,6 @@ export const dict = {
   "settings.providers.tag.other": "Ostalo",
   "settings.models.title": "Modeli",
   "settings.models.description": "Postavke modela će se ovdje moći podešavati.",
-  "settings.agents.title": "Agenti",
-  "settings.agents.description": "Postavke agenata će se ovdje moći podešavati.",
-  "settings.commands.title": "Komande",
-  "settings.commands.description": "Postavke komandi će se ovdje moći podešavati.",
-  "settings.mcp.title": "MCP",
-  "settings.mcp.description": "MCP postavke će se ovdje moći podešavati.",
 
 
 
@@ -681,14 +564,12 @@ export const dict = {
   "workspace.delete.title": "Izbriši radni prostor",
   "workspace.delete.confirm": 'Izbriši radni prostor "{{name}}"?',
   "workspace.delete.button": "Izbriši radni prostor",
-  "common.open": "Otvori",
   "dialog.releaseNotes.action.getStarted": "Započni",
   "dialog.releaseNotes.action.next": "Sljedeće",
   "dialog.releaseNotes.action.hideFuture": "Ne prikazuj ovo u budućnosti",
   "dialog.releaseNotes.media.alt": "Pregled izdanja",
   "dialog.releaseNotes.media.pause": "Pauziraj video",
   "dialog.releaseNotes.media.play": "Pokreni video",
-  "error.server.invalidConfiguration": "Nevažeća konfiguracija",
   "common.moreCountSuffix": " (+{{count}} više)",
   "common.time.justNow": "Upravo sada",
   "common.time.minutesAgo.short": "prije {{count}} min",
@@ -696,9 +577,6 @@ export const dict = {
   "common.time.daysAgo.short": "prije {{count}} d",
   "settings.providers.connected.environmentDescription": "Povezano sa vašim varijablama okruženja",
 
-  "app.server.unreachable": "Nije moguće pristupiti {{server}}",
-  "app.server.retrying": "Automatski ponovni pokušaj...",
-  "app.server.otherServers": "Drugi serveri",
   "session.todo.progress": "{{done}} od {{total}} zadataka završeno",
   "session.question.progress": "{{current}} od {{total}} pitanja",
   "common.key.ctrl": "Ctrl",
@@ -715,15 +593,9 @@ export const dict = {
   "common.key.pageUp": "Page Up",
   "common.key.pageDown": "Page Down",
   "common.key.insert": "Insert",
-  "common.unknown": "nepoznato",
-  "error.page.circular": "[Kružno]",
   "error.globalSDK.noServerAvailable": "Nema dostupnog servera",
   "error.globalSDK.serverNotAvailable": "Server nije dostupan",
-  "error.childStore.persistedCacheCreateFailed": "Nije uspjelo kreiranje trajnog keša",
-  "error.childStore.persistedProjectMetadataCreateFailed": "Nije uspjelo kreiranje trajnih metapodataka projekta",
-  "error.childStore.persistedProjectIconCreateFailed": "Nije uspjelo kreiranje trajne ikone projekta",
   "error.childStore.storeCreateFailed": "Nije uspjelo kreiranje skladišta",
-  "terminal.connectionLost.abnormalClose": "WebSocket zatvoren nenormalno: {{code}}",
   "prompt.action.goal": "Cilj",
   "prompt.action.clearGoal": "Očisti cilj",
   "prompt.goal.placeholder": "Opišite ishod koji ovaj cilj treba postići",

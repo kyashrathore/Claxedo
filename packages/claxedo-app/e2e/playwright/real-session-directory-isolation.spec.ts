@@ -28,11 +28,12 @@
  */
 import { expect, test } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import { createServer } from "node:net"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
+import { freePort } from "../helpers/free-port"
+import { waitForHealth } from "../helpers/wait-for-health"
 
 const execFileAsync = promisify(execFile)
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
@@ -45,29 +46,6 @@ let serverUrl = ""
 let root = ""
 let workspaceA = ""
 let workspaceB = ""
-
-async function availablePort() {
-  const probe = createServer()
-  await new Promise<void>((resolve, reject) => {
-    probe.once("error", reject)
-    probe.listen(0, "127.0.0.1", resolve)
-  })
-  const address = probe.address()
-  if (!address || typeof address === "string") throw new Error("could not reserve a Tier R server port")
-  await new Promise<void>((resolve) => probe.close(() => resolve()))
-  return address.port
-}
-
-async function waitForHealth(url: string) {
-  const deadline = Date.now() + 90_000
-  while (Date.now() < deadline) {
-    if (await fetch(`${url}/api/wr/health`, { signal: AbortSignal.timeout(3_000) })
-      .then((response) => response.ok)
-      .catch(() => false)) return
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  throw new Error(`GATING: session-isolation server did not boot. Log tail:\n${serverLog.split("\n").slice(-80).join("\n")}`)
-}
 
 async function gitWorkspace(name: string) {
   const directory = await fs.mkdtemp(path.join(root, `${name}-`))
@@ -103,7 +81,7 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
   test.beforeAll(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-session-isolation-"))
     const dataDir = path.join(root, "data")
-    const port = await availablePort()
+    const port = await freePort()
     serverUrl = `http://127.0.0.1:${port}`
     workspaceA = await gitWorkspace("workspace-a")
     server = spawn("node", ["--import", "./src/text-imports.mjs", "--import", "tsx", "src/cli.ts"], {
@@ -121,7 +99,7 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
     })
     server.stdout?.on("data", (chunk) => (serverLog += chunk.toString()))
     server.stderr?.on("data", (chunk) => (serverLog += chunk.toString()))
-    await waitForHealth(serverUrl)
+    await waitForHealth(`${serverUrl}/api/wr/health`, { label: "session-isolation server", log: () => serverLog, requestTimeoutMs: 3_000 })
     workspaceB = await runtimeWorktree(workspaceA)
   })
 

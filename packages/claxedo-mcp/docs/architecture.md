@@ -15,7 +15,7 @@ subprocess. It builds a `McpServer` from `@modelcontextprotocol/sdk`, calls
 transport (`httpRequest`, built on `fetch`), registers the process/logs/session
 tools inline, calls `registerBrowserTools` for the desktop-bridge tools, and
 connects a `StdioServerTransport`. Every call this process makes crosses an
-HTTP boundary to `CLAXEDO_SERVER_URL` (default `http://127.0.0.1:3001`); there
+HTTP boundary to `CLAXEDO_SERVER_URL` (default `http://127.0.0.1:2593`); there
 is no in-process access to Claxedo Server's services. `server.ts` also doubles
 as the `claxedo-mcp documents ...` CLI entry point: when `process.argv[2] ===
 "documents"`, it runs `runDocumentsCli` instead of connecting the MCP
@@ -31,7 +31,7 @@ Two distinct HTTP clients live in this package, with two distinct trust
 boundaries:
 
 - **`httpRequest`** (`src/server.ts`) talks to Claxedo Server itself
-  (`CLAXEDO_SERVER_URL`, default `http://127.0.0.1:3001`). It attaches
+  (`CLAXEDO_SERVER_URL`, default `http://127.0.0.1:2593`). It attaches
   `Authorization: Bearer ${CLAXEDO_AUTH_TOKEN}` when that env var is set, plus
   scope headers from `claxedoRequestScope` (`src/request-scope.ts`): a
   `directory`/`workspaceId` query string and `x-claxedo-directory` /

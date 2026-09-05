@@ -310,7 +310,7 @@ export const desktopRendererUnsigned: Policy = {
   // +2 modules (2026-09-05): the New Project flow rule and the
   // folder-versus-cloud chooser reached through the shared project actions
   // (see app-local.ts for the owner).
-  ceilings: { modules: 1023, packages: 56 },
+  ceilings: { modules: 1006, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -376,7 +376,7 @@ export const desktopHostedContribution: Policy = {
   // The 43rd module is `platform/identity/harness-selection.ts`, reached from
   // `agent-runtime-client.ts` since the generic-harness cutover made the
   // selection (native harness vs configured connection) a typed value.
-  ceilings: { modules: 43, packages: 1 },
+  ceilings: { modules: 42, packages: 1 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 4,

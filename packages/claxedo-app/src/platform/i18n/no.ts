@@ -107,35 +107,23 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "Veksle alle {{provider}}-modeller",
 
 
-  "dialog.provider.viewAll": "Vis flere leverandører",
 
   "provider.connect.title": "Koble til {{provider}}",
-  "provider.connect.title.anthropicProMax": "Logg inn med Claude Pro/Max",
   "provider.connect.selectMethod": "Velg innloggingsmetode for {{provider}}.",
   "provider.connect.method.apiKey": "API-nøkkel",
   "provider.connect.status.inProgress": "Autorisering pågår...",
   "provider.connect.status.waiting": "Venter på autorisering...",
-  "provider.connect.status.failed": "Autorisering mislyktes: {{error}}",
   "provider.connect.apiKey.description":
     "Skriv inn din {{provider}} API-nøkkel for å koble til kontoen din og bruke {{provider}}-modeller i OpenCode.",
   "provider.connect.apiKey.label": "{{provider}} API-nøkkel",
   "provider.connect.apiKey.placeholder": "API-nøkkel",
   "provider.connect.apiKey.required": "API-nøkkel er påkrevd",
-  "provider.connect.opencodeZen.line1":
-    "OpenCode Zen gir deg tilgang til et utvalg av pålitelige optimaliserte modeller for kodeagenter.",
-  "provider.connect.opencodeZen.line2":
-    "Med én enkelt API-nøkkel får du tilgang til modeller som Claude, GPT, Gemini, GLM og flere.",
-  "provider.connect.opencodeZen.visit.prefix": "Besøk ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
-  "provider.connect.opencodeZen.visit.suffix": " for å hente API-nøkkelen din.",
   "provider.connect.oauth.code.visit.prefix": "Besøk ",
   "provider.connect.oauth.code.visit.link": "denne lenken",
   "provider.connect.oauth.code.visit.suffix":
     " for å hente autorisasjonskoden din for å koble til kontoen din og bruke {{provider}}-modeller i OpenCode.",
   "provider.connect.oauth.code.label": "{{method}} autorisasjonskode",
   "provider.connect.oauth.code.placeholder": "Autorisasjonskode",
-  "provider.connect.oauth.code.required": "Autorisasjonskode er påkrevd",
-  "provider.connect.oauth.code.invalid": "Ugyldig autorisasjonskode",
   "provider.connect.oauth.auto.visit.prefix": "Besøk ",
   "provider.connect.oauth.auto.visit.link": "denne lenken",
   "provider.connect.oauth.auto.visit.suffix":
@@ -187,7 +175,6 @@ export const dict = {
   "prompt.placeholder.summarizeComment": "Oppsummer kommentar…",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
-  "prompt.mode.shell.exit": "ESC for å avslutte",
 
   "session.child.promptDisabled": "Underagent-økter kan ikke få instruksjoner.",
   "session.child.backToParent": "Tilbake til hovedøkten.",
@@ -226,9 +213,6 @@ export const dict = {
   "prompt.slash.badge.custom": "egendefinert",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
-  "prompt.context.active": "aktiv",
-  "prompt.context.includeActiveFile": "Inkluder aktiv fil",
-  "prompt.context.removeActiveFile": "Fjern aktiv fil fra kontekst",
   "prompt.context.removeFile": "Fjern fil fra kontekst",
   "prompt.action.attachFile": "Legg ved fil",
   "prompt.action.add": "Legg til",
@@ -249,24 +233,11 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Velg en agent og modell før du sender en forespørsel.",
   "prompt.toast.worktreeCreateFailed.title": "Kunne ikke opprette worktree",
   "prompt.toast.sessionCreateFailed.title": "Kunne ikke opprette sesjon",
-  "prompt.toast.shellSendFailed.title": "Kunne ikke sende shell-kommando",
-  "prompt.toast.commandSendFailed.title": "Kunne ikke sende kommando",
   "prompt.toast.promptSendFailed.title": "Kunne ikke sende forespørsel",
-  "prompt.toast.promptSendFailed.description": "Kunne ikke hente økt",
 
   "prompt.toast.sessionConfigSaveFailed.title": "Kunne ikke lagre øktkonfigurasjon",
-  "dialog.mcp.title": "MCP-er",
-  "dialog.mcp.description": "{{enabled}} av {{total}} aktivert",
-  "dialog.mcp.empty": "Ingen MCP-er konfigurert",
 
-  "dialog.lsp.empty": "LSP-er automatisk oppdaget fra filtyper",
-  "dialog.plugins.empty": "Plugins konfigurert i opencode.json",
 
-  "mcp.status.connected": "tilkoblet",
-  "mcp.status.failed": "mislyktes",
-  "mcp.status.needs_auth": "trenger autentisering",
-  "mcp.auth.clickToAuthenticate": "Klikk for å autentisere",
-  "mcp.status.disabled": "deaktivert",
 
   "dialog.fork.empty": "Ingen meldinger å forgrene fra",
 
@@ -316,11 +287,6 @@ export const dict = {
   "context.stats.sessionCreated": "Sesjon opprettet",
   "context.stats.lastActivity": "Siste aktivitet",
 
-  "context.usage.tokens": "Tokens",
-  "context.usage.usage": "Forbruk",
-  "context.usage.cost": "Kostnad",
-  "context.usage.clickToView": "Klikk for å se kontekst",
-  "context.usage.view": "Se kontekstforbruk",
 
   "language.en": "English",
   "language.zh": "简体中文",
@@ -370,9 +336,6 @@ export const dict = {
   "error.page.description": "Det oppstod en feil under lasting av applikasjonen.",
   "error.page.details.label": "Feildetaljer",
   "error.page.action.restart": "Start på nytt",
-  "error.page.action.report": "Rapporter feil",
-  "error.page.action.reported": "Feil rapportert",
-  "error.page.action.exportLogs": "Eksporter logger",
   "error.page.action.checking": "Sjekker...",
   "error.page.action.checkUpdates": "Se etter oppdateringer",
   "error.page.action.updateTo": "Oppdater til {{version}}",
@@ -408,10 +371,6 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Konfigurasjonsfilen på {{path}} er ugyldig: {{message}}",
 
   "notification.permission.title": "Tillatelse påkrevd",
-  "notification.permission.description": "{{sessionTitle}} i {{projectName}} trenger tillatelse",
-  "notification.question.title": "Spørsmål",
-  "notification.question.description": "{{sessionTitle}} i {{projectName}} har et spørsmål",
-  "notification.action.goToSession": "Gå til sesjon",
 
   "notification.session.responseReady.title": "Svar klart",
   "notification.session.error.title": "Sesjonsfeil",
@@ -422,13 +381,6 @@ export const dict = {
   "home.empty.description": "Kom i gang ved å åpne et lokalt prosjekt",
 
   "home.title": "Hjem",
-  "home.projects": "Prosjekter",
-  "home.project.add": "Legg til prosjekt",
-  "home.sessions.search.placeholder": "Søk i økter",
-  "home.sessions.empty": "Ingen økter funnet",
-  "home.sessions.group.today": "I dag",
-  "home.sessions.group.yesterday": "I går",
-  "home.sessions.group.older": "Eldre",
   "session.timeline.scrollToBottom": "Rull til siste melding",
   "session.tab.review": "Gjennomgang",
   "session.tab.context": "Kontekst",
@@ -460,34 +412,21 @@ export const dict = {
   "session.header.search.placeholder": "Søk i {{project}}",
   "session.header.searchFiles": "Søk etter filer",
 
-  "status.popover.trigger": "Status",
-  "status.popover.ariaLabel": "Serverkonfigurasjoner",
-  "status.popover.tab.servers": "Servere",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
-  "status.popover.tab.plugins": "Plugins",
-  "status.popover.action.manageServers": "Administrer servere",
 
 
-  "lsp.tooltip.none": "Ingen LSP-servere",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Laster prompt...",
-  "terminal.loading": "Laster terminal...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
-  "terminal.close": "Lukk terminal",
   "terminal.connectionLost.title": "Tilkobling mistet",
   "terminal.connectionLost.description":
     "Terminalforbindelsen ble avbrutt. Dette kan skje når serveren starter på nytt.",
 
-  "common.closeTab": "Lukk fane",
   "common.dismiss": "Avvis",
   "common.requestFailed": "Forespørsel mislyktes",
   "common.moreOptions": "Flere alternativer",
   "common.learnMore": "Lær mer",
   "common.rename": "Gi nytt navn",
-  "common.reset": "Tilbakestill",
   "common.archive": "Arkiver",
   "common.delete": "Slett",
   "common.close": "Lukk",
@@ -495,7 +434,6 @@ export const dict = {
   "common.loadMore": "Last flere",
   "common.key.esc": "ESC",
 
-  "sidebar.menu.toggle": "Veksle meny",
   "sidebar.nav.projectsAndSessions": "Prosjekter og sesjoner",
   "sidebar.settings": "Innstillinger",
   "sidebar.help": "Hjelp",
@@ -505,18 +443,7 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Vert frakoblet",
   "sidebar.workspace.sharedWithYou": "Delt med deg",
   "sidebar.workspace.publishedByThisMachine": "Publisert fra denne maskinen",
-  "sidebar.workspaces.enable": "Aktiver arbeidsområder",
-  "sidebar.workspaces.disable": "Deaktiver arbeidsområder",
-  "sidebar.gettingStarted.title": "Kom i gang",
-  "sidebar.gettingStarted.line1": "OpenCode inkluderer gratis modeller så du kan starte umiddelbart.",
-  "sidebar.gettingStarted.line2": "Koble til en leverandør for å bruke modeller, inkl. Claude, GPT, Gemini osv.",
-  "sidebar.project.recentSessions": "Nylige sesjoner",
-  "sidebar.project.viewAllSessions": "Vis alle sesjoner",
-  "sidebar.project.clearNotifications": "Fjern varsler",
 
-  "sidebar.empty.title": "Ingen prosjekter åpne",
-  "sidebar.empty.description": "Åpne et prosjekt for å komme i gang",
-  "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "Skrivebord",
   "settings.section.workspace": "Arbeidsområde",
@@ -530,27 +457,14 @@ export const dict = {
   "settings.providers.catalog.error": "{{harness}} kunne ikke svare for {{workspace}}: {{reason}}",
   "settings.tab.general": "Generelt",
   "settings.tab.shortcuts": "Snarveier",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL-integrasjon",
-  "settings.desktop.wsl.description": "Kjør OpenCode-serveren i WSL på Windows.",
 
   "settings.general.section.appearance": "Utseende",
-  "settings.general.section.advanced": "Avansert",
   "settings.general.section.notifications": "Systemvarsler",
   "settings.general.section.updates": "Oppdateringer",
   "settings.general.section.sounds": "Lydeffekter",
-  "settings.general.section.feed": "Feed",
-  "settings.general.section.display": "Skjerm",
 
   "settings.general.row.language.title": "Språk",
   "settings.general.row.language.description": "Endre visningsspråket for OpenCode",
-  "settings.general.row.shell.title": "Terminalskall",
-  "settings.general.row.shell.description":
-    "Velg skallet som brukes for terminalen din. Kompatible skall brukes også til agentens verktøykall.",
-  "settings.general.row.shell.autoDefault": "Auto (Standard)",
-  "settings.general.row.shell.terminalOnly": "kun terminal",
-  "settings.general.row.appearance.title": "Utseende",
-  "settings.general.row.appearance.description": "Tilpass hvordan OpenCode ser ut på enheten din",
   "settings.general.row.colorScheme.title": "Fargevalg",
   "settings.general.row.colorScheme.description": "Velg om OpenCode skal følge systemets, lyst eller mørkt tema",
   "settings.general.row.theme.title": "Tema",
@@ -567,21 +481,6 @@ export const dict = {
   "settings.general.row.followup.description": "Velg om oppfølgingsspørsmål skal kjøres umiddelbart eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
-  "settings.general.row.showFileTree.title": "Filstruktur",
-  "settings.general.row.showFileTree.description":
-    "Vis filstruktur-bryteren og panelet i skrivebordsøkter",
-  "settings.general.row.showNavigation.title": "Navigasjonskontroller",
-  "settings.general.row.showNavigation.description":
-    "Vis frem- og tilbake-knappene i tittellinjen på skrivebordet",
-  "settings.general.row.showSearch.title": "Kommandopalett",
-  "settings.general.row.showSearch.description":
-    "Vis søk- og kommandopalett-knappen i tittellinjen på skrivebordet",
-  "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Vis terminalknappen i tittellinjen på skrivebordet",
-  "settings.general.row.showStatus.title": "Serverstatus",
-  "settings.general.row.showStatus.description":
-    "Vis serverstatusknappen i tittellinjen på skrivebordet",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
@@ -589,16 +488,6 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.title": "Utvid edit-verktøydeler",
   "settings.general.row.editToolPartsExpanded.description":
     "Vis edit-, write- og patch-verktøydeler utvidet som standard i tidslinjen",
-  "settings.general.row.showSessionProgressBar.title": "Vis fremdriftslinje for sesjonen",
-  "settings.general.row.showSessionProgressBar.description":
-    "Vis den animerte fremdriftslinjen øverst i sesjonen når agenten jobber",
-  "settings.general.row.pinchZoom.title": "Klyp for å zoome",
-  "settings.general.row.pinchZoom.description":
-    "Tillat klype-bevegelser på styreflaten og Ctrl-rulling for å zoome",
-  "settings.general.row.wayland.title": "Bruk innebygd Wayland",
-  "settings.general.row.wayland.description": "Deaktiver X11-fallback på Wayland. Krever omstart.",
-  "settings.general.row.wayland.tooltip":
-    "På Linux med skjermer med blandet oppdateringsfrekvens kan innebygd Wayland være mer stabilt.",
 
   "settings.general.row.releaseNotes.title": "Utgivelsesnotater",
   "settings.general.row.releaseNotes.description": 'Vis "Hva er nytt"-vinduer etter oppdateringer',
@@ -654,12 +543,6 @@ export const dict = {
   "settings.providers.tag.other": "Annet",
   "settings.models.title": "Modeller",
   "settings.models.description": "Modellinnstillinger vil kunne konfigureres her.",
-  "settings.agents.title": "Agenter",
-  "settings.agents.description": "Agentinnstillinger vil kunne konfigureres her.",
-  "settings.commands.title": "Kommandoer",
-  "settings.commands.description": "Kommandoinnstillinger vil kunne konfigureres her.",
-  "settings.mcp.title": "MCP",
-  "settings.mcp.description": "MCP-innstillinger vil kunne konfigureres her.",
 
 
 
@@ -680,14 +563,12 @@ export const dict = {
   "workspace.delete.title": "Slett arbeidsområde",
   "workspace.delete.confirm": 'Slette arbeidsområdet "{{name}}"?',
   "workspace.delete.button": "Slett arbeidsområde",
-  "common.open": "Åpne",
   "dialog.releaseNotes.action.getStarted": "Kom i gang",
   "dialog.releaseNotes.action.next": "Neste",
   "dialog.releaseNotes.action.hideFuture": "Ikke vis disse igjen",
   "dialog.releaseNotes.media.alt": "Forhåndsvisning av utgivelse",
   "dialog.releaseNotes.media.pause": "Sett video på pause",
   "dialog.releaseNotes.media.play": "Spill av video",
-  "error.server.invalidConfiguration": "Ugyldig konfigurasjon",
   "common.moreCountSuffix": " (+{{count}} mer)",
   "common.time.justNow": "Akkurat nå",
   "common.time.minutesAgo.short": "{{count}} m siden",
@@ -695,9 +576,6 @@ export const dict = {
   "common.time.daysAgo.short": "{{count}} d siden",
   "settings.providers.connected.environmentDescription": "Koblet til fra miljøvariablene dine",
 
-  "app.server.unreachable": "Kunne ikke nå {{server}}",
-  "app.server.retrying": "Prøver på nytt automatisk...",
-  "app.server.otherServers": "Andre servere",
   "session.todo.progress": "{{done}} av {{total}} oppgaver fullført",
   "session.question.progress": "{{current}} av {{total}} spørsmål",
   "common.key.ctrl": "Ctrl",
@@ -714,15 +592,9 @@ export const dict = {
   "common.key.pageUp": "Page Up",
   "common.key.pageDown": "Page Down",
   "common.key.insert": "Insert",
-  "common.unknown": "ukjent",
-  "error.page.circular": "[Sirkulær]",
   "error.globalSDK.noServerAvailable": "Ingen server tilgjengelig",
   "error.globalSDK.serverNotAvailable": "Server ikke tilgjengelig",
-  "error.childStore.persistedCacheCreateFailed": "Kunne ikke opprette vedvarende hurtigbuffer",
-  "error.childStore.persistedProjectMetadataCreateFailed": "Kunne ikke opprette vedvarende prosjektmetadata",
-  "error.childStore.persistedProjectIconCreateFailed": "Kunne ikke opprette vedvarende prosjektikon",
   "error.childStore.storeCreateFailed": "Kunne ikke opprette lager",
-  "terminal.connectionLost.abnormalClose": "WebSocket lukket unormalt: {{code}}",
   "prompt.action.goal": "Mål",
   "prompt.action.clearGoal": "Fjern mål",
   "prompt.goal.placeholder": "Beskriv resultatet dette målet skal nå",

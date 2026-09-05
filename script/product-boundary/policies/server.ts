@@ -67,7 +67,7 @@ export const serverSelfHosted: Policy = {
   // composition for operator-configured external OpenCode connections; no
   // OpenCode engine is bundled. Re-measured after the generic-harness merge;
   // the values below are exact, not summed.
-  ceilings: { modules: 129, packages: 37 },
+  ceilings: { modules: 125, packages: 36 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -83,7 +83,6 @@ export const serverSelfHosted: Policy = {
   },
 
   isolation: {
-    additionalFiles: [".github/TEAM_MEMBERS"],
     buildPackages: [
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },

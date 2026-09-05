@@ -4,10 +4,12 @@
 > It exists for release, deployment, and package-maintenance workflows. What
 > reads this directory:
 >
-> - `deploy-claxedo-app.yml` and `deploy-relay.yml` cite
->   [`user-deployed-cloudflare.md`](./user-deployed-cloudflare.md) and
->   [`relay-and-deployment.md`](./relay-and-deployment.md) by path in their
->   rollback instructions.
+> - `deploy-relay.yml` cites [`relay-and-deployment.md`](./relay-and-deployment.md)
+>   by path in its policy and rollback instructions.
+> - `packages/claxedo-server/scripts/deploy/greenfield-user-deployed.ts` generates
+>   and staleness-gates [`user-deployed-cloudflare.md`](./user-deployed-cloudflare.md),
+>   and `packages/claxedo-web/test/deployment-prompt-drift.test.ts` asserts the
+>   site's deployment prompt names it.
 > - `packages/workspace-runtime/scripts/verify-publish.ts` gates publishing on the
 >   "Mounted Route Families" table in [`workspace-runtime.md`](./workspace-runtime.md)
 >   matching `docs/api-manifest.json`.

@@ -9,7 +9,6 @@ import type {
   BrowserScreenshotClip,
   InitStep,
   ServerReadyData,
-  SqliteMigrationProgress,
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
@@ -482,10 +481,6 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
       return handle.clearStorage(storages)
     },
   )
-}
-
-export function sendSqliteMigrationProgress(win: BrowserWindow, progress: SqliteMigrationProgress) {
-  win.webContents.send("sqlite-migration-progress", progress)
 }
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {

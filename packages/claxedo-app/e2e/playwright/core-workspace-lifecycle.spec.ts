@@ -120,19 +120,8 @@
  *     new worktree" re-runs worktree creation (`POST /experimental/worktree`) and waits
  *     for a `worktree.ready`/`worktree.failed` event on the central Claxedo event
  *     stream before opening the recovered session.
- *   `DialogNewProject` (`src/components/dialog-new-project.tsx`, title "New Workspace")
- *     — Local Worktree / Cloud Sandbox choice cards; Cloud is disabled unless
- *     `config.sandboxEnabled`. `DialogCreateCloudWorkspace`
- *     (`src/components/dialog-create-cloud-workspace.tsx`, title "Cloud Workspace") —
- *     provider radio cards (each a `button` with the provider label + "Ready"/"API key
- *     not configured"), a warning paragraph "Configure provider credentials in Settings
- *     before creating cloud workspaces." when zero providers are `configured`, an
- *     optional Name field (placeholder "feature-auth"), and Create/Cancel. On submit it
- *     switches to a 4-step pipeline view ("Acquiring sandbox", "Cloning repository",
- *     "Starting runtime", "Waiting for health check", then "Ready" / "Redirecting to
- *     new session..."), driven by `provision` events on the SAME central event stream;
- *     a `step: "error"` event shows a critical banner with "Retrying automatically..."
- *     and a "Back" button that returns to the form.
+ *   `DialogNewProject` and `DialogCreateCloudWorkspace` (formerly under
+ *     `src/components/`) were deleted as dead code — see item 8/9 below.
  *
  * BEHAVIORS —
  *   1. Selecting a directory-search result whose resolved absolute path fails
@@ -160,7 +149,7 @@
  *      `false` opens `DialogRecoverWorkspace` instead of a draft composer; confirming
  *      re-creates the worktree and opens a session at the recreated directory once a
  *      `worktree.ready` event names it.
- *   8/9. DELETED per docs/e2e-decisions.md #16 (2026-07-20): `DialogNewProject`'s
+ *   8/9. DELETED per e2e/e2e-decisions.md #16 (2026-07-20): `DialogNewProject`'s
  *      Local/Cloud picker, `DialogCreateCloudWorkspace`, `handleNewWorkspace` (and its
  *      hang-prone `onWorktreeCreated(..., wait=true)` branch), and the `onNewWorkspace`
  *      threading (`app-shell.tsx` → `rail-sidebar-shell.tsx` → `rail-sidebar.tsx`) were
@@ -639,7 +628,7 @@ test.describe("core workspace lifecycle @core", () => {
 
   // behaviors 8/9 (New workspace Local/Cloud dialog: dead trigger, hang-forever
   // wait=true branch, and the cloud create dialog reachable only through it) —
-  // DELETED per docs/e2e-decisions.md #16 (2026-07-20). The dead code itself
+  // DELETED per e2e/e2e-decisions.md #16 (2026-07-20). The dead code itself
   // (onNewWorkspace threading, handleNewWorkspace, DialogNewProject,
   // DialogCreateCloudWorkspace) was removed from src/. See this file's ANATOMY
   // header for what was there.

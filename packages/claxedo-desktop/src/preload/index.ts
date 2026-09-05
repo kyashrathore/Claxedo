@@ -16,7 +16,6 @@ import type {
   ElectronAPI,
   InitStep,
   ProcessDiagnosticsBridge,
-  SqliteMigrationProgress,
 } from "./types"
 
 if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
@@ -170,11 +169,6 @@ const api: ElectronAPI = {
   storeKeys: (name) => ipcRenderer.invoke("store-keys", name),
   storeLength: (name) => ipcRenderer.invoke("store-length", name),
 
-  onSqliteMigrationProgress: (cb) => {
-    const handler = (_: unknown, progress: SqliteMigrationProgress) => cb(progress)
-    ipcRenderer.on("sqlite-migration-progress", handler)
-    return () => ipcRenderer.removeListener("sqlite-migration-progress", handler)
-  },
   onMenuCommand: (cb) => {
     const handler = (_: unknown, id: string) => cb(id)
     ipcRenderer.on("menu-command", handler)

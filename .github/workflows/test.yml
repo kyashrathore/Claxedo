@@ -159,9 +159,8 @@ jobs:
       # packages/*/dist is gitignored and several @claxedo packages resolve each
       # other through their dist exports, so the suites that import them need
       # these built first. turbo.json's generic `test` task deliberately does
-      # NOT use `dependsOn: ["^build"]` to get this -- that edge reaches the
-      # repo-wide-broken `opencode#build` (see the comment in turbo.json) -- so
-      # the build is scoped explicitly here instead. Same list the e2e jobs
+      # NOT use `dependsOn: ["^build"]` to get this (see the comment in
+      # turbo.json), so the build is scoped explicitly here instead. Same list the e2e jobs
       # below use, plus typecheck.yml and release-claxedo.yml --
       # `grep -rn 'filter=@claxedo/agent-event-runtime' .github/workflows/`
       # finds every copy; keep them in sync.

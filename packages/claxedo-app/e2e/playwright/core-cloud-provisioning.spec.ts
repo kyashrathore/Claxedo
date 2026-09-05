@@ -12,7 +12,7 @@
  * shapes. It does NOT own the create-workspace DIALOG's own in-dialog pipeline UI —
  * that was a separate component, `DialogCreateCloudWorkspace`, with its own
  * `PROVISION_PIPELINE` const, reachable only through the dead New-workspace Local/Cloud
- * picker; DELETED as dead code per docs/e2e-decisions.md #16 (2026-07-20).
+ * picker; DELETED as dead code per e2e/e2e-decisions.md #16 (2026-07-20).
  *
  * STATE MODEL — the SINGLE connection authority is `workspaceConnection` (in-memory
  * Solid store, `src/shell/workspace/workspace-connection.ts`), keyed by `workspaceId`,

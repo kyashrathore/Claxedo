@@ -42,7 +42,7 @@ const workspaceIdFromDirectory = (directory: string) => /^workspace:([^/]+)$/.ex
 const requestDirectory = (args: { directory?: string; workspace_id?: string }) =>
   clean(args.directory) || (clean(args.workspace_id) ? workspaceRef(clean(args.workspace_id)) : DEFAULT_DIR)
 
-const ORIGIN = clean(process.env.CLAXEDO_SERVER_URL) || "http://127.0.0.1:3001"
+const ORIGIN = clean(process.env.CLAXEDO_SERVER_URL) || "http://127.0.0.1:2593"
 const DEFAULT_WORKSPACE_ID = clean(process.env.CLAXEDO_WORKSPACE_ID)
 const DEFAULT_DIR = clean(process.env.CLAXEDO_API_DIR) || (DEFAULT_WORKSPACE_ID ? workspaceRef(DEFAULT_WORKSPACE_ID) : process.cwd())
 const DEFAULT_SESSION_ID = clean(process.env.CLAXEDO_SESSION_ID)

@@ -159,7 +159,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { e2eAppViteEnvironment } from "../auth-mode"
 import { spawn, type ChildProcess } from "node:child_process"
-import net from "node:net"
 import path from "node:path"
 import {
   claudeScriptedEnv,
@@ -169,6 +168,7 @@ import {
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
 import { composeText, selectScriptedModel } from "../helpers/web-signed-relay-harness"
+import { freePort } from "../helpers/free-port"
 
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const APP_DIR = path.resolve(import.meta.dirname, "../..")
@@ -205,19 +205,6 @@ let frontend: ChildProcess | undefined
 let frontendLog = ""
 let info: FixtureInfo | undefined
 let frontendUrl = ""
-
-async function freePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const srv = net.createServer()
-    srv.on("error", reject)
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address()
-      if (!address || typeof address === "string") return reject(new Error("could not allocate a port"))
-      const { port } = address
-      srv.close(() => resolve(port))
-    })
-  })
-}
 
 /**
  * Boots the real fixture in cloud mode. Readiness is its single JSON stdout

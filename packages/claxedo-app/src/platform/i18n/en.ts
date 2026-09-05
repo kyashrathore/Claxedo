@@ -104,35 +104,23 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "Toggle all {{provider}} models",
 
 
-  "dialog.provider.viewAll": "Show more providers",
 
   "provider.connect.title": "Connect {{provider}}",
-  "provider.connect.title.anthropicProMax": "Login with Claude Pro/Max",
   "provider.connect.selectMethod": "Select login method for {{provider}}.",
   "provider.connect.method.apiKey": "API key",
   "provider.connect.status.inProgress": "Authorization in progress...",
   "provider.connect.status.waiting": "Waiting for authorization...",
-  "provider.connect.status.failed": "Authorization failed: {{error}}",
   "provider.connect.apiKey.description":
     "Enter your {{provider}} API key to connect your account and use {{provider}} models in OpenCode.",
   "provider.connect.apiKey.label": "{{provider}} API key",
   "provider.connect.apiKey.placeholder": "API key",
   "provider.connect.apiKey.required": "API key is required",
-  "provider.connect.opencodeZen.line1":
-    "OpenCode Zen gives you access to a curated set of reliable optimized models for coding agents.",
-  "provider.connect.opencodeZen.line2":
-    "With a single API key you'll get access to models such as Claude, GPT, Gemini, GLM and more.",
-  "provider.connect.opencodeZen.visit.prefix": "Visit ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
-  "provider.connect.opencodeZen.visit.suffix": " to collect your API key.",
   "provider.connect.oauth.code.visit.prefix": "Visit ",
   "provider.connect.oauth.code.visit.link": "this link",
   "provider.connect.oauth.code.visit.suffix":
     " to collect your authorization code to connect your account and use {{provider}} models in OpenCode.",
   "provider.connect.oauth.code.label": "{{method}} authorization code",
   "provider.connect.oauth.code.placeholder": "Authorization code",
-  "provider.connect.oauth.code.required": "Authorization code is required",
-  "provider.connect.oauth.code.invalid": "Invalid authorization code",
   "provider.connect.oauth.auto.visit.prefix": "Visit ",
   "provider.connect.oauth.auto.visit.link": "this link",
   "provider.connect.oauth.auto.visit.suffix":
@@ -168,7 +156,6 @@ export const dict = {
   "common.loading": "Loading",
   "common.loading.ellipsis": "...",
   "common.cancel": "Cancel",
-  "common.open": "Open",
   "common.connect": "Connect",
   "common.disconnect": "Disconnect",
   "common.continue": "Continue",
@@ -185,7 +172,6 @@ export const dict = {
   "prompt.placeholder.summarizeComment": "Summarize comment…",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
-  "prompt.mode.shell.exit": "esc to exit",
   "session.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "session.child.backToParent": "Back to main session.",
 
@@ -224,9 +210,6 @@ export const dict = {
   "prompt.slash.badge.custom": "custom",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
-  "prompt.context.active": "active",
-  "prompt.context.includeActiveFile": "Include active file",
-  "prompt.context.removeActiveFile": "Remove active file from context",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",
   "prompt.action.add": "Add",
@@ -247,34 +230,18 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Choose an agent and model before sending a prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Failed to create worktree",
   "prompt.toast.sessionCreateFailed.title": "Failed to create session",
-  "prompt.toast.shellSendFailed.title": "Failed to send shell command",
-  "prompt.toast.commandSendFailed.title": "Failed to send command",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
   "prompt.toast.goalStopFailed.title": "Could not stop Goal",
-  "prompt.toast.promptSendFailed.description": "Unable to retrieve session",
   "prompt.toast.sessionConfigSaveFailed.title": "Could not save session config",
 
-  "dialog.mcp.title": "MCPs",
-  "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
-  "dialog.mcp.empty": "No MCPs configured",
 
-  "dialog.lsp.empty": "LSPs auto-detected from file types",
-  "dialog.plugins.empty": "Plugins configured in opencode.json",
 
-  "mcp.status.connected": "connected",
-  "mcp.status.failed": "failed",
-  "mcp.status.needs_auth": "needs auth",
-  "mcp.status.disabled": "disabled",
-  "mcp.auth.clickToAuthenticate": "Click to authenticate",
 
   "dialog.fork.empty": "No messages to fork from",
 
   "dialog.directory.search.placeholder": "Search folders",
   "dialog.directory.empty": "No folders found",
 
-  "app.server.unreachable": "Could not reach {{server}}",
-  "app.server.retrying": "Retrying automatically...",
-  "app.server.otherServers": "Other servers",
 
   "dialog.server.add.error": "Could not connect to server",
 
@@ -326,11 +293,6 @@ export const dict = {
   "context.stats.sessionCreated": "Session Created",
   "context.stats.lastActivity": "Last Activity",
 
-  "context.usage.tokens": "Tokens",
-  "context.usage.usage": "Usage",
-  "context.usage.cost": "Cost",
-  "context.usage.clickToView": "Click to view context",
-  "context.usage.view": "View context usage",
 
   "language.en": "English",
   "language.zh": "简体中文",
@@ -380,13 +342,9 @@ export const dict = {
   "error.page.description": "An error occurred while loading the application.",
   "error.page.details.label": "Error Details",
   "error.page.action.restart": "Restart",
-  "error.page.action.report": "Report Error",
-  "error.page.action.reported": "Error Reported",
-  "error.page.action.exportLogs": "Export Logs",
   "error.page.action.checking": "Checking...",
   "error.page.action.checkUpdates": "Check for updates",
   "error.page.action.updateTo": "Update to {{version}}",
-  "error.page.circular": "[Circular]",
   "error.page.report.prefix": "Please report this error to the OpenCode team",
   "error.page.report.discord": "on Discord",
   "error.page.version": "Version: {{version}}",
@@ -397,14 +355,10 @@ export const dict = {
   "error.globalSync.connectFailed": "Could not connect to server. Is there a server running at `{{url}}`?",
   "error.globalSDK.noServerAvailable": "No server available",
   "error.globalSDK.serverNotAvailable": "Server not available",
-  "error.childStore.persistedCacheCreateFailed": "Failed to create persisted cache",
-  "error.childStore.persistedProjectMetadataCreateFailed": "Failed to create persisted project metadata",
-  "error.childStore.persistedProjectIconCreateFailed": "Failed to create persisted project icon",
   "error.childStore.storeCreateFailed": "Failed to create store",
   "directory.error.invalidUrl": "Invalid directory in URL.",
 
   "error.chain.unknown": "Unknown error",
-  "error.server.invalidConfiguration": "Invalid configuration",
   "error.chain.causedBy": "Caused by:",
   "error.chain.apiError": "API error",
   "error.chain.status": "Status: {{status}}",
@@ -426,10 +380,6 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "notification.permission.title": "Permission required",
-  "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
-  "notification.question.title": "Question",
-  "notification.question.description": "{{sessionTitle}} in {{projectName}} has a question",
-  "notification.action.goToSession": "Go to session",
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.error.title": "Session error",
@@ -439,13 +389,6 @@ export const dict = {
   "home.empty.title": "No recent projects",
   "home.empty.description": "Get started by opening a local project",
   "home.title": "Home",
-  "home.projects": "Projects",
-  "home.project.add": "Add project",
-  "home.sessions.search.placeholder": "Search sessions",
-  "home.sessions.empty": "No sessions found",
-  "home.sessions.group.today": "Today",
-  "home.sessions.group.yesterday": "Yesterday",
-  "home.sessions.group.older": "Older",
 
   "session.timeline.scrollToBottom": "Scroll to latest message",
   "session.tab.review": "Review",
@@ -484,36 +427,22 @@ export const dict = {
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
 
-  "status.popover.trigger": "Status",
-  "status.popover.ariaLabel": "Server configurations",
-  "status.popover.tab.servers": "Servers",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
-  "status.popover.tab.plugins": "Plugins",
-  "status.popover.action.manageServers": "Manage servers",
 
 
-  "lsp.tooltip.none": "No LSP servers",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Loading prompt...",
-  "terminal.loading": "Loading terminal...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
-  "terminal.close": "Close terminal",
   "terminal.connectionLost.title": "Connection Lost",
-  "terminal.connectionLost.abnormalClose": "WebSocket closed abnormally: {{code}}",
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",
 
-  "common.closeTab": "Close tab",
   "common.dismiss": "Dismiss",
   "common.moreCountSuffix": " (+{{count}} more)",
   "common.requestFailed": "Request failed",
   "common.moreOptions": "More options",
   "common.learnMore": "Learn more",
   "common.rename": "Rename",
-  "common.reset": "Reset",
   "common.archive": "Archive",
   "common.delete": "Delete",
   "common.close": "Close",
@@ -534,14 +463,12 @@ export const dict = {
   "common.key.pageUp": "Page Up",
   "common.key.pageDown": "Page Down",
   "common.key.insert": "Insert",
-  "common.unknown": "unknown",
 
   "common.time.justNow": "Just now",
   "common.time.minutesAgo.short": "{{count}}m ago",
   "common.time.hoursAgo.short": "{{count}}h ago",
   "common.time.daysAgo.short": "{{count}}d ago",
 
-  "sidebar.menu.toggle": "Toggle menu",
   "sidebar.nav.projectsAndSessions": "Projects and sessions",
   "sidebar.settings": "Settings",
   "sidebar.help": "Help",
@@ -551,19 +478,8 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Host offline",
   "sidebar.workspace.sharedWithYou": "Shared with you",
   "sidebar.workspace.publishedByThisMachine": "Published by this machine",
-  "sidebar.workspaces.enable": "Enable workspaces",
-  "sidebar.workspaces.disable": "Disable workspaces",
-  "sidebar.gettingStarted.title": "Getting started",
-  "sidebar.gettingStarted.line1": "OpenCode includes free models so you can start immediately.",
-  "sidebar.gettingStarted.line2": "Connect any provider to use models, inc. Claude, GPT, Gemini etc.",
-  "sidebar.project.recentSessions": "Recent sessions",
-  "sidebar.project.viewAllSessions": "View all sessions",
-  "sidebar.project.clearNotifications": "Clear notifications",
-  "sidebar.empty.title": "No projects open",
-  "sidebar.empty.description": "Open a project to get started",
 
 
-  "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Workspace",
@@ -578,27 +494,14 @@ export const dict = {
   "settings.providers.catalog.error": "{{harness}} could not answer for {{workspace}}: {{reason}}",
   "settings.tab.general": "General",
   "settings.tab.shortcuts": "Shortcuts",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL integration",
-  "settings.desktop.wsl.description": "Run the Claxedo server inside WSL on Windows.",
 
   "settings.general.section.appearance": "Appearance",
-  "settings.general.section.advanced": "Advanced",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.updates": "Updates",
   "settings.general.section.sounds": "Sound effects",
-  "settings.general.section.feed": "Feed",
-  "settings.general.section.display": "Display",
 
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the display language for OpenCode",
-  "settings.general.row.shell.title": "Terminal Shell",
-  "settings.general.row.shell.description":
-    "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
-  "settings.general.row.shell.autoDefault": "Auto (Default)",
-  "settings.general.row.shell.terminalOnly": "terminal only",
-  "settings.general.row.appearance.title": "Appearance",
-  "settings.general.row.appearance.description": "Customise how OpenCode looks on your device",
   "settings.general.row.colorScheme.title": "Color scheme",
   "settings.general.row.colorScheme.description": "Choose whether OpenCode follows the system, light, or dark theme",
   "settings.general.row.theme.title": "Theme",
@@ -615,16 +518,6 @@ export const dict = {
   "settings.general.row.followup.description": "Choose whether follow-up prompts steer immediately or wait in a queue",
   "settings.general.row.followup.option.queue": "Queue",
   "settings.general.row.followup.option.steer": "Steer",
-  "settings.general.row.showFileTree.title": "File tree",
-  "settings.general.row.showFileTree.description": "Show the file tree toggle and panel in desktop sessions",
-  "settings.general.row.showNavigation.title": "Navigation controls",
-  "settings.general.row.showNavigation.description": "Show the back and forward buttons in the desktop title bar",
-  "settings.general.row.showSearch.title": "Command palette",
-  "settings.general.row.showSearch.description": "Show the search and command palette button in the desktop title bar",
-  "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description": "Show the terminal button in the desktop title bar",
-  "settings.general.row.showStatus.title": "Server status",
-  "settings.general.row.showStatus.description": "Show the server status button in the desktop title bar",
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",
@@ -633,16 +526,7 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.title": "Expand edit tool parts",
   "settings.general.row.editToolPartsExpanded.description":
     "Show edit, write, and patch tool parts expanded by default in the timeline",
-  "settings.general.row.showSessionProgressBar.title": "Show session progress bar",
-  "settings.general.row.showSessionProgressBar.description":
-    "Display the animated progress bar at the top of the session when the agent is working",
-  "settings.general.row.pinchZoom.title": "Pinch to zoom",
-  "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 
-  "settings.general.row.wayland.title": "Use native Wayland",
-  "settings.general.row.wayland.description": "Disable X11 fallback on Wayland. Requires restart.",
-  "settings.general.row.wayland.tooltip":
-    "On Linux with mixed refresh-rate monitors, native Wayland can be more stable.",
 
   "settings.general.row.releaseNotes.title": "Release notes",
   "settings.general.row.releaseNotes.description": "Show What's New popups after updates",
@@ -710,12 +594,6 @@ export const dict = {
   "settings.models.providerSearch.hint": "Showing first {{shown}} of {{total}}. Search to find others.",
   "settings.models.providerSearch.empty": "No models match “{{query}}”.",
   "settings.providers.tag.apiKey": "API key",
-  "settings.agents.title": "Agents",
-  "settings.agents.description": "Agent settings will be configurable here.",
-  "settings.commands.title": "Commands",
-  "settings.commands.description": "Command settings will be configurable here.",
-  "settings.mcp.title": "MCP",
-  "settings.mcp.description": "MCP settings will be configurable here.",
 
 
 

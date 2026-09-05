@@ -19,12 +19,10 @@ import * as path from "node:path"
 const repoRoot = path.resolve(import.meta.dir, "../../../..")
 
 /**
- * Source trees still carrying the vendored runtime. They are deleted by
- * Unit 8; until then they are excluded rather than pretended clean.
+ * Source trees excluded from the scan. Empty since the vendored runtime was
+ * retired; kept so any future exclusion is an explicit, reviewed entry.
  */
-const PENDING_DELETION = [
-  "packages/ui",
-]
+const PENDING_DELETION: string[] = []
 
 /**
  * Directories that never contain first-party source. `patches/` matters here:

@@ -57,7 +57,7 @@ in-repo, so none of them get invented:
    (`@ai-sdk/openai-compatible`). Reference emitter:
    `packages/opencode/test/lib/llm-server.ts` (`TestLLMServer`).
 2. Anthropic Messages SSE + JSON — for claude. Reference:
-   `enforcement-probe.ts:148-181` (`message_start` / `content_block_*` /
+   the retired enforcement probe (`enforcement-probe.ts:148-181`, deleted in c8bb14606f) (`message_start` / `content_block_*` /
    `message_delta` / `message_stop`; the tool loop terminates once `"tool_result"`
    appears in messages).
 3. OpenAI Responses SSE — for codex (`wire_api="responses"`). Reference:
@@ -143,8 +143,8 @@ New `packages/claxedo-app/e2e/helpers/scripted-model-server.ts`: plain
       (the v1 provider-config shape, minus mcp and plugin) and `codexConfigJson(baseUrl)` (the `model_providers` block from
       `enforcement-probe.ts:225-234`, emitted as the `CODEX_CONFIG` JSON object).
       Progress:
-- [ ] W0 probe: `scripted-model-server.probe.ts` (runnable via bun, deliberately
-      NOT in CI) demonstrates one completed turn per harness path against the
+- [ ] W0 probe: `scripted-model-server.probe.ts` (removed as unreferenced on
+      2026-09-05; recreate it if this item is picked up) demonstrates one completed turn per harness path against the
       fixture on a real machine — proving the claude CLI honors
       `ANTHROPIC_BASE_URL`, codex honors `CODEX_CONFIG`, and the engine honors
       `OPENCODE_CONFIG_CONTENT`. Progress:

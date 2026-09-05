@@ -41,7 +41,7 @@ import { same } from "@/lib/same"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
-import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
+import { setSessionHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
 import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { MessageTimeline, PromptInput, SessionComposerRegion } from "@/features/session/ui/session-screen-lazy"
@@ -73,7 +73,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { placementFor } from "@/platform/runtime/placement"
 import { parseShellRoute, sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
-import { sessionViewKey, terminalScopeKey } from "@/platform/identity/session-view-key"
+import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
@@ -175,7 +175,6 @@ export default function SessionPage() {
   )
   const sessionID = createMemo(() => sessionIdentity().id)
   const routeDirectory = createMemo(() => sessionParams.directory())
-  const terminalHandoffKey = createMemo(() => terminalScopeKey(routeDirectory()))
   const sessionTitleTarget = createMemo(() => {
     const sessionId = sessionID()
     if (!sessionId) return
@@ -1145,23 +1144,6 @@ export default function SessionPage() {
     if (!paneActive()) return
     if (!prompt.ready()) return
     setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
-  })
-
-  createEffect(() => {
-    if (!paneActive()) return
-    if (!terminal.ready()) return
-    language.locale()
-
-    setTerminalHandoff(
-      terminalHandoffKey(),
-      terminal.all().map((pty) =>
-        terminalTabLabel({
-          title: pty.title,
-          titleNumber: pty.titleNumber,
-          t: language.t as (key: string, vars?: Record<string, string | number | boolean>) => string,
-        }),
-      ),
-    )
   })
 
   onCleanup(() => {

@@ -134,7 +134,7 @@
  *   `[role="textbox"]` composer editor — UNCONDITIONALLY `contenteditable="true"`, and
  *     never carries `aria-disabled`, polling or not
  *     (`src/features/session/composer/ui/frame.tsx:245` — the only `contenteditable`
- *     write in the file, a literal). Per T5 §4 (`dev-docs/CLAXEDO_ERROR_PROPOSAL.md`)
+ *     write in the file, a literal). Per T5 §4 of the retired error proposal
  *     the composer gates the SUBMIT, not the typing: a dead-looking box teaches nothing.
  *     The editor is therefore not a signal for `harnessPending()`; the submit control is.
  *   `[data-action="prompt-submit"]` — submit/stop control; `data-icon="stop"` only
@@ -873,7 +873,7 @@ test.describe("core harness ownership (local) @core", () => {
       // restates the error.
       await expect(page.locator('[data-action="prompt-harness-model"]')).not.toContainText("Unavailable")
 
-      // SPEC UPDATED (T5, dev-docs/CLAXEDO_ERROR_PROPOSAL.md §B3/§T5, submit-block-
+      // SPEC UPDATED (T5, error proposal §B3/§T5, submit-block-
       // reason.ts): "Blocked ≠ disabled" — actionable reasons (including
       // `harness-error`) are never hard-`disabled` anymore; they stay clickable but
       // dimmed (`opacity-50`) and explain their refusal on intent/hover instead of
@@ -924,7 +924,7 @@ test.describe("core harness ownership (local) @core", () => {
       })
 
       await seedOneProject(page, DIR)
-      // SPEC UPDATED (T5 §4, dev-docs/CLAXEDO_ERROR_PROPOSAL.md; frame.tsx:239-241):
+      // SPEC UPDATED (T5 §4 of the retired error proposal; frame.tsx:239-241):
       // "keep the editor editable while the harness polls — gate the submit, not
       // the typing." The editor is UNCONDITIONALLY `contenteditable="true"` now (no
       // `aria-disabled` is ever set on it) — a dead-looking box teaches nothing, so

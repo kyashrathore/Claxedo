@@ -247,6 +247,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
+import { waitForHealth } from "../helpers/wait-for-health"
 
 const execFileAsync = promisify(execFile)
 
@@ -266,19 +267,6 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-async function waitForHealth(url: string, timeoutMs = 60_000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const ok = await fetch(url).then((res) => res.ok).catch(() => false)
-    if (ok) return
-    await new Promise((resolve) => setTimeout(resolve, 300))
-  }
-  throw new Error(
-    `GATING: real claxedo-server did not become healthy at ${url} within ${timeoutMs}ms — this is a real setup ` +
-      `failure (CLAXEDO_E2E_LIVE=1), not a skip. Server log tail:\n${serverLog.split("\n").slice(-60).join("\n")}`,
-  )
-}
-
 async function startServer() {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-smoke-data-"))
   server = spawn("bun", ["run", "start"], {
@@ -292,7 +280,13 @@ async function startServer() {
   })
   server.stdout?.on("data", (chunk) => (serverLog += chunk.toString()))
   server.stderr?.on("data", (chunk) => (serverLog += chunk.toString()))
-  await waitForHealth(`${BACKEND_URL}/api/claxedo/health`)
+  await waitForHealth(`${BACKEND_URL}/api/claxedo/health`, {
+    label: "real claxedo-server (CLAXEDO_E2E_LIVE=1 — a real setup failure, not a skip)",
+    log: () => serverLog,
+    timeoutMs: 60_000,
+    intervalMs: 300,
+    tailLines: 60,
+  })
 }
 
 async function stopServer() {

@@ -13,6 +13,8 @@ Adaptations made during vendoring (2026-07-03):
   vendored code has zero dependencies.
 - `sendTokenRequest` / `sendTokenRevocationRequest` accept an injectable
   `fetch` implementation for tests.
+- `generateCodeVerifier` / `generateState` were dropped (2026-09-05); the
+  attempt machine mints its own state and verifier.
 
 Original MIT license:
 

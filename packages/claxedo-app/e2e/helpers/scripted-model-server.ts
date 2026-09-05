@@ -12,12 +12,12 @@
  *     which drove the real engine in Tier R for months.
  *   POST …/messages — Anthropic Messages, streaming SSE and non-stream JSON.
  *     The claude CLI (both ACP and native SDK modes) speaks this when
- *     ANTHROPIC_BASE_URL points here. Shape ported from
- *     `agent-sdk-runtime/script/enforcement-probe.ts`, verified against the
+ *     ANTHROPIC_BASE_URL points here. Shape ported from agent-sdk-runtime's
+ *     retired enforcement probe (deleted in c8bb14606f), verified against the
  *     real claude binary.
  *   POST …/responses — OpenAI Responses SSE. codex speaks this when its
  *     `model_providers.*` override (via CODEX_CONFIG) sets
- *     `wire_api="responses"`. Also from enforcement-probe, verified against
+ *     `wire_api="responses"`. Also from that probe, verified against
  *     the real codex binary.
  *
  * Behavior contract (same across dialects, so one spec journey drives all

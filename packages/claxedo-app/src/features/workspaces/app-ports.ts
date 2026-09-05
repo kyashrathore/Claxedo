@@ -9,7 +9,6 @@ import type * as DialogRecoverWorkspaceModule from "@/features/workspaces/ui/dia
 import type * as DialogDeleteWorkspaceModule from "@/features/workspaces/ui/dialogs/delete-workspace-dialog"
 import type * as DialogSettingsModule from "@/app/dialogs/settings"
 import type * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
-import type * as DialogConnectIntegrationModule from "@/app/dialogs/connect-integration"
 import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as SessionQueries from "@/features/session/data/sync/queries"
 import type * as State from "@/app/workbench/state"
@@ -29,10 +28,6 @@ export type WorkspacesAppPorts = {
   DialogDeleteWorkspace: typeof DialogDeleteWorkspaceModule.DialogDeleteWorkspace
   DialogSettings: typeof DialogSettingsModule.DialogSettings
   DialogSelectDirectory: typeof DialogSelectDirectoryModule.DialogSelectDirectory
-  // The create-cloud-project dialog offers "Connect GitHub" when the user has
-  // no connected repository yet, and reuses the SAME connect dialog Settings
-  // does rather than forking a second connect flow.
-  DialogConnectIntegration: typeof DialogConnectIntegrationModule.DialogConnectIntegration
   ensureDirectorySessionCache: typeof LayoutActions.ensureDirectorySessionCache
   findProjectForWorkspace: typeof LayoutActions.findProjectForWorkspace
   message: typeof LayoutActions.message
@@ -76,7 +71,6 @@ export const DialogRecoverWorkspace = bind("DialogRecoverWorkspace")
 export const DialogDeleteWorkspace = bind("DialogDeleteWorkspace")
 export const DialogSettings = bind("DialogSettings")
 export const DialogSelectDirectory = bind("DialogSelectDirectory")
-export const DialogConnectIntegration = bind("DialogConnectIntegration")
 export const ensureDirectorySessionCache = bind("ensureDirectorySessionCache")
 export const findProjectForWorkspace = bind("findProjectForWorkspace")
 export const message = bind("message")

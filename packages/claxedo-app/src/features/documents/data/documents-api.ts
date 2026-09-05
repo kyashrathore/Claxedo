@@ -92,20 +92,6 @@ function documentsUrl(input?: { id?: string; path?: string | string[]; query?: D
   return url
 }
 
-export function documentWorkSourceUrl(baseUrl: string, documentId: string) {
-  return new URL(
-    `/documents/${encodeURIComponent(documentId)}/work-source`,
-    normalizeUrl(baseUrl) ?? baseUrl,
-  ).toString()
-}
-
-export function documentWorkSourcePinUrl(baseUrl: string, documentId: string, snapshotId: string) {
-  return new URL(
-    `/documents/${encodeURIComponent(documentId)}/snapshots/${encodeURIComponent(snapshotId)}/work-source-pin`,
-    normalizeUrl(baseUrl) ?? baseUrl,
-  ).toString()
-}
-
 async function json<T>(response: Response): Promise<T> {
   const text = await response.text()
   if (response.ok) return JSON.parse(text) as T

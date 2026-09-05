@@ -212,26 +212,3 @@ export function requestName(url: string | URL): string {
     return String(url)
   }
 }
-
-/** Record one completed request span with the route it took. */
-export function recordRequest(input: {
-  name: string
-  url: string | URL
-  method?: string
-  via?: string
-  startedAt: number
-  status?: number
-  error?: unknown
-  attrs?: PerfAttributes
-}) {
-  const ms = Math.round((sessionPerf ? performance.now() - input.startedAt : 0) * 10) / 10
-  sessionPerf.event(`request.${input.name}`, {
-    url: requestName(input.url),
-    method: input.method ?? "GET",
-    ...(input.via ? { via: input.via } : {}),
-    ...(input.status !== undefined ? { status: input.status } : {}),
-    ...(input.error ? { ok: false, error: input.error instanceof Error ? input.error.message : String(input.error) } : {}),
-    ms,
-    ...input.attrs,
-  })
-}

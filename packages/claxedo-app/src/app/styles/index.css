@@ -243,16 +243,6 @@
   box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
 }
 
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact {
-  width: min(180px, calc(100vw - 24px));
-  min-width: 0;
-}
-
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness {
-  width: min(210px, calc(100vw - 24px));
-  min-width: 0;
-}
-
 /* The merged harness→model→effort picker. Narrower than the 360px default
    because it holds one list at a time, never a row of controls; the padding is
    a touch larger so the section headers do not sit on the surface edge. It
@@ -307,35 +297,6 @@
   .harness-picker-panel {
     animation: none;
   }
-}
-
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  .ui-select-select-content-list,
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  .ui-select-select-item,
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  .ui-select-select-content-list,
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  .ui-select-select-item {
-  /* Legacy Select applies the trigger's width utilities to every option. The
-     harness trigger is capped at 140px, while its menu is intentionally 210px. */
-  width: 100%;
-  max-width: none;
-}
-
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  .ui-select-select-item-label,
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  .ui-select-select-item-label {
-  min-width: 0;
-  flex: 1;
-}
-
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  .ui-select-select-item-indicator,
-.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  .ui-select-select-item-indicator {
-  margin-left: auto;
 }
 
 /* The dock is frequently narrower than the viewport because workspace panes

@@ -787,7 +787,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     // proved is unchanged — repository docs are metadata-only, edits land on the
     // real file, never a managed copy — but the entry point moved to the repo
     // file's own tab: open it, then use its "Add to Documents" icon
-    // (src/app/workbench/content/tab-file.tsx). See docs/e2e-decisions.md #5.
+    // (src/app/workbench/content/tab-file.tsx). See e2e/e2e-decisions.md #5.
     annotate(testInfo, "repository filesystem is simulated")
     const runtime = new DocumentRuntime()
     runtime.repositoryFiles.set("repository.md", "Heading\n=======\n\nrepository original\n")

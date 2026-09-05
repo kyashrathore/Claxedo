@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["-y", "@claxedo/mcp"],
       "env": {
-        "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+        "CLAXEDO_SERVER_URL": "http://127.0.0.1:2593"
       }
     }
   }

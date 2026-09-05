@@ -1,3 +1,4 @@
+import { isAbortError } from "@/lib/abort-error"
 import type {
   AgentPermission,
   AgentPresentationSession,
@@ -304,7 +305,4 @@ async function responseError(operation: string, response: Response) {
   const code = typeof nested.code === "string" ? nested.code : typeof row.code === "string" ? row.code : `http_${response.status}`
   const message = typeof nested.message === "string" ? nested.message : typeof row.message === "string" ? row.message : `Server request failed with status ${response.status}`
   return new ServerClientResponseError(operation, response.status, code, body, message)
-}
-function isAbortError(error: unknown) {
-  return error instanceof Error && error.name === "AbortError"
 }

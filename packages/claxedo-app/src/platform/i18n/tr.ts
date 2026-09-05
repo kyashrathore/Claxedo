@@ -108,35 +108,23 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "Tüm {{provider}} modellerini aç/kapat",
 
 
-  "dialog.provider.viewAll": "Daha fazla sağlayıcı göster",
 
   "provider.connect.title": "{{provider}} bağla",
-  "provider.connect.title.anthropicProMax": "Claude Pro/Max ile giriş yap",
   "provider.connect.selectMethod": "{{provider}} için giriş yöntemini seçin.",
   "provider.connect.method.apiKey": "API anahtarı",
   "provider.connect.status.inProgress": "Yetkilendirme devam ediyor...",
   "provider.connect.status.waiting": "Yetkilendirme bekleniyor...",
-  "provider.connect.status.failed": "Yetkilendirme başarısız: {{error}}",
   "provider.connect.apiKey.description":
     "{{provider}} hesabınızı bağlamak ve OpenCode'da {{provider}} modellerini kullanmak için {{provider}} API anahtarınızı girin.",
   "provider.connect.apiKey.label": "{{provider}} API anahtarı",
   "provider.connect.apiKey.placeholder": "API anahtarı",
   "provider.connect.apiKey.required": "API anahtarı gerekli",
-  "provider.connect.opencodeZen.line1":
-    "OpenCode Zen, kodlama ajanları için seçilmiş güvenilir optimize edilmiş modellere erişim sağlar.",
-  "provider.connect.opencodeZen.line2":
-    "Tek bir API anahtarıyla Claude, GPT, Gemini, GLM ve daha fazlası gibi modellere erişebilirsiniz.",
-  "provider.connect.opencodeZen.visit.prefix": "",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
-  "provider.connect.opencodeZen.visit.suffix": " adresini ziyaret ederek API anahtarınızı alın.",
   "provider.connect.oauth.code.visit.prefix":
     "Hesabınızı bağlamak ve OpenCode'da modelleri kullanmak için ",
   "provider.connect.oauth.code.visit.link": "bu bağlantıya",
   "provider.connect.oauth.code.visit.suffix": " tıklayarak {{provider}} yetkilendirme kodunuzu alın.",
   "provider.connect.oauth.code.label": "{{method}} yetkilendirme kodu",
   "provider.connect.oauth.code.placeholder": "Yetkilendirme kodu",
-  "provider.connect.oauth.code.required": "Yetkilendirme kodu gerekli",
-  "provider.connect.oauth.code.invalid": "Geçersiz yetkilendirme kodu",
   "provider.connect.oauth.auto.visit.prefix": "",
   "provider.connect.oauth.auto.visit.link": "Bu bağlantıya",
   "provider.connect.oauth.auto.visit.suffix":
@@ -188,7 +176,6 @@ export const dict = {
   "prompt.placeholder.summarizeComment": "Yorumu özetle…",
   "prompt.mode.shell": "Kabuk",
   "prompt.mode.normal": "Komut",
-  "prompt.mode.shell.exit": "çıkmak için esc",
 
   "session.child.promptDisabled": "Alt ajan oturumlarına komut gönderilemez.",
   "session.child.backToParent": "Ana oturuma dön.",
@@ -227,9 +214,6 @@ export const dict = {
   "prompt.slash.badge.custom": "özel",
   "prompt.slash.badge.skill": "beceri",
   "prompt.slash.badge.mcp": "mcp",
-  "prompt.context.active": "aktif",
-  "prompt.context.includeActiveFile": "Aktif dosyayı dahil et",
-  "prompt.context.removeActiveFile": "Aktif dosyayı bağlamdan çıkar",
   "prompt.context.removeFile": "Dosyayı bağlamdan çıkar",
   "prompt.action.attachFile": "Dosya ekle",
   "prompt.action.add": "Ekle",
@@ -250,24 +234,11 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Komut göndermeden önce bir ajan ve model seçin.",
   "prompt.toast.worktreeCreateFailed.title": "Çalışma ağacı oluşturulamadı",
   "prompt.toast.sessionCreateFailed.title": "Oturum oluşturulamadı",
-  "prompt.toast.shellSendFailed.title": "Kabuk komutu gönderilemedi",
-  "prompt.toast.commandSendFailed.title": "Komut gönderilemedi",
   "prompt.toast.promptSendFailed.title": "Komut gönderilemedi",
-  "prompt.toast.promptSendFailed.description": "Oturum alınamadı",
 
   "prompt.toast.sessionConfigSaveFailed.title": "Oturum yapılandırması kaydedilemedi",
-  "dialog.mcp.title": "MCP'ler",
-  "dialog.mcp.description": "{{total}} içerisinden {{enabled}} etkin",
-  "dialog.mcp.empty": "Yapılandırılmış MCP yok",
 
-  "dialog.lsp.empty": "LSP'ler dosya türlerinden otomatik algılanır",
-  "dialog.plugins.empty": "Eklentiler opencode.json içinde yapılandırılır",
 
-  "mcp.status.connected": "bağlı",
-  "mcp.status.failed": "başarısız",
-  "mcp.status.needs_auth": "kimlik doğrulama gerekli",
-  "mcp.auth.clickToAuthenticate": "Kimlik doğrulamak için tıklayın",
-  "mcp.status.disabled": "devre dışı",
 
   "dialog.fork.empty": "Dallandırılacak mesaj yok",
 
@@ -317,11 +288,6 @@ export const dict = {
   "context.stats.sessionCreated": "Oturum Oluşturulma",
   "context.stats.lastActivity": "Son Etkinlik",
 
-  "context.usage.tokens": "Tokenler",
-  "context.usage.usage": "Kullanım",
-  "context.usage.cost": "Maliyet",
-  "context.usage.clickToView": "Bağlamı görüntüle",
-  "context.usage.view": "Bağlam kullanımını görüntüle",
 
   "language.en": "English",
   "language.zh": "简体中文",
@@ -371,9 +337,6 @@ export const dict = {
   "error.page.description": "Uygulama yüklenirken bir hata oluştu.",
   "error.page.details.label": "Hata Detayları",
   "error.page.action.restart": "Yeniden Başlat",
-  "error.page.action.report": "Hatayı Bildir",
-  "error.page.action.reported": "Hata Bildirildi",
-  "error.page.action.exportLogs": "Günlükleri dışa aktar",
   "error.page.action.checking": "Kontrol ediliyor...",
   "error.page.action.checkUpdates": "Güncellemeleri kontrol et",
   "error.page.action.updateTo": "{{version}} sürümüne güncelle",
@@ -411,10 +374,6 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "{{path}} adresindeki yapılandırma dosyası geçersiz: {{message}}",
 
   "notification.permission.title": "İzin gerekli",
-  "notification.permission.description": "{{projectName}} içindeki {{sessionTitle}} izin gerektiriyor",
-  "notification.question.title": "Soru",
-  "notification.question.description": "{{projectName}} içindeki {{sessionTitle}} bir soru soruyor",
-  "notification.action.goToSession": "Oturuma git",
 
   "notification.session.responseReady.title": "Yanıt hazır",
   "notification.session.error.title": "Oturum hatası",
@@ -425,13 +384,6 @@ export const dict = {
   "home.empty.description": "Yerel bir proje açarak başlayın",
 
   "home.title": "Ana Sayfa",
-  "home.projects": "Projeler",
-  "home.project.add": "Proje ekle",
-  "home.sessions.search.placeholder": "Oturum ara",
-  "home.sessions.empty": "Oturum bulunamadı",
-  "home.sessions.group.today": "Bugün",
-  "home.sessions.group.yesterday": "Dün",
-  "home.sessions.group.older": "Daha eski",
   "session.timeline.scrollToBottom": "En son mesaja kaydır",
   "session.tab.review": "İnceleme",
   "session.tab.context": "Bağlam",
@@ -463,34 +415,21 @@ export const dict = {
   "session.header.search.placeholder": "{{project}} ara",
   "session.header.searchFiles": "Dosya ara",
 
-  "status.popover.trigger": "Durum",
-  "status.popover.ariaLabel": "Sunucu yapılandırmaları",
-  "status.popover.tab.servers": "Sunucular",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
-  "status.popover.tab.plugins": "Eklentiler",
-  "status.popover.action.manageServers": "Sunucuları yönet",
 
 
-  "lsp.tooltip.none": "LSP sunucusu yok",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Komut yükleniyor...",
-  "terminal.loading": "Terminal yükleniyor...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
-  "terminal.close": "Terminali kapat",
   "terminal.connectionLost.title": "Bağlantı Kesildi",
   "terminal.connectionLost.description":
     "Terminal bağlantısı kesildi. Bu durum sunucu yeniden başladığında oluşabilir.",
 
-  "common.closeTab": "Sekmeyi kapat",
   "common.dismiss": "Kapat",
   "common.requestFailed": "İstek başarısız",
   "common.moreOptions": "Daha fazla seçenek",
   "common.learnMore": "Daha fazla bilgi",
   "common.rename": "Yeniden adlandır",
-  "common.reset": "Sıfırla",
   "common.archive": "Arşivle",
   "common.delete": "Sil",
   "common.close": "Kapat",
@@ -498,7 +437,6 @@ export const dict = {
   "common.loadMore": "Daha fazla yükle",
   "common.key.esc": "ESC",
 
-  "sidebar.menu.toggle": "Menüyü aç/kapat",
   "sidebar.nav.projectsAndSessions": "Projeler ve oturumlar",
   "sidebar.settings": "Ayarlar",
   "sidebar.help": "Yardım",
@@ -508,18 +446,7 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Ana makine çevrimdışı",
   "sidebar.workspace.sharedWithYou": "Sizinle paylaşıldı",
   "sidebar.workspace.publishedByThisMachine": "Bu makineden yayınlandı",
-  "sidebar.workspaces.enable": "Çalışma alanlarını etkinleştir",
-  "sidebar.workspaces.disable": "Çalışma alanlarını devre dışı bırak",
-  "sidebar.gettingStarted.title": "Başlarken",
-  "sidebar.gettingStarted.line1": "OpenCode ücretsiz modeller içerir, böylece hemen başlayabilirsiniz.",
-  "sidebar.gettingStarted.line2": "Claude, GPT, Gemini vb. modelleri kullanmak için herhangi bir sağlayıcı bağlayın.",
-  "sidebar.project.recentSessions": "Son oturumlar",
-  "sidebar.project.viewAllSessions": "Tüm oturumları görüntüle",
-  "sidebar.project.clearNotifications": "Bildirimleri temizle",
 
-  "sidebar.empty.title": "Açık proje yok",
-  "sidebar.empty.description": "Başlamak için bir proje açın",
-  "app.name.desktop": "OpenCode Masaüstü",
 
   "settings.section.desktop": "Masaüstü",
   "settings.section.workspace": "Çalışma alanı",
@@ -533,27 +460,14 @@ export const dict = {
   "settings.providers.catalog.error": "{{harness}}, {{workspace}} için yanıt veremedi: {{reason}}",
   "settings.tab.general": "Genel",
   "settings.tab.shortcuts": "Kısayollar",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL entegrasyonu",
-  "settings.desktop.wsl.description": "OpenCode sunucusunu Windows'ta WSL içinde çalıştırın.",
 
   "settings.general.section.appearance": "Görünüm",
-  "settings.general.section.advanced": "Gelişmiş",
   "settings.general.section.notifications": "Sistem bildirimleri",
   "settings.general.section.updates": "Güncellemeler",
   "settings.general.section.sounds": "Ses efektleri",
-  "settings.general.section.feed": "Akış",
-  "settings.general.section.display": "Ekran",
 
   "settings.general.row.language.title": "Dil",
   "settings.general.row.language.description": "OpenCode'un görünüm dilini değiştirin",
-  "settings.general.row.shell.title": "Terminal Kabuğu",
-  "settings.general.row.shell.description":
-    "Terminaliniz için kullanılacak kabuğu seçin. Uyumlu kabuklar ajan araç çağrıları için de kullanılır.",
-  "settings.general.row.shell.autoDefault": "Otomatik (Varsayılan)",
-  "settings.general.row.shell.terminalOnly": "yalnızca terminal",
-  "settings.general.row.appearance.title": "Görünüm",
-  "settings.general.row.appearance.description": "OpenCode'un cihazınızdaki görünümünü özelleştirin",
   "settings.general.row.colorScheme.title": "Renk şeması",
   "settings.general.row.colorScheme.description":
     "OpenCode'un sistem, açık veya koyu temayı takip etip etmeyeceğini seçin",
@@ -573,21 +487,6 @@ export const dict = {
     "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
   "settings.general.row.followup.option.queue": "Sıra",
   "settings.general.row.followup.option.steer": "Yönlendir",
-  "settings.general.row.showFileTree.title": "Dosya ağacı",
-  "settings.general.row.showFileTree.description":
-    "Masaüstü oturumlarında dosya ağacı düğmesini ve panelini göster",
-  "settings.general.row.showNavigation.title": "Gezinme kontrolleri",
-  "settings.general.row.showNavigation.description":
-    "Masaüstü başlık çubuğunda ileri ve geri düğmelerini göster",
-  "settings.general.row.showSearch.title": "Komut paleti",
-  "settings.general.row.showSearch.description":
-    "Masaüstü başlık çubuğunda arama ve komut paleti düğmesini göster",
-  "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Masaüstü başlık çubuğunda terminal düğmesini göster",
-  "settings.general.row.showStatus.title": "Sunucu durumu",
-  "settings.general.row.showStatus.description":
-    "Masaüstü başlık çubuğunda sunucu durumu düğmesini göster",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
@@ -597,18 +496,7 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.description":
     "Zaman çizelgesinde düzenleme, yazma ve yama araç bileşenlerini varsayılan olarak genişletilmiş göster",
 
-  "settings.general.row.showSessionProgressBar.title": "Oturum ilerleme çubuğunu göster",
-  "settings.general.row.showSessionProgressBar.description":
-    "Ajan çalışırken oturumun üst kısmında animasyonlu ilerleme çubuğunu göster",
 
-  "settings.general.row.pinchZoom.title": "Yakınlaştırmak için sıkıştır",
-  "settings.general.row.pinchZoom.description":
-    "Yakınlaştırmak için trackpad sıkıştırma ve Ctrl-kaydırma hareketlerine izin ver",
-  "settings.general.row.wayland.title": "Yerel Wayland kullan",
-  "settings.general.row.wayland.description":
-    "Wayland'da X11 geri dönüşünü devre dışı bırak. Yeniden başlatma gerektirir.",
-  "settings.general.row.wayland.tooltip":
-    "Karışık yenileme hızlı monitörlere sahip Linux'ta yerel Wayland daha kararlı olabilir.",
 
   "settings.general.row.releaseNotes.title": "Sürüm notları",
   "settings.general.row.releaseNotes.description": "Güncellemelerden sonra Yenilikler bildirimlerini göster",
@@ -665,12 +553,6 @@ export const dict = {
   "settings.providers.tag.other": "Diğer",
   "settings.models.title": "Modeller",
   "settings.models.description": "Model ayarları burada yapılandırılabilecek.",
-  "settings.agents.title": "Ajanlar",
-  "settings.agents.description": "Ajan ayarları burada yapılandırılabilecek.",
-  "settings.commands.title": "Komutlar",
-  "settings.commands.description": "Komut ayarları burada yapılandırılabilecek.",
-  "settings.mcp.title": "MCP",
-  "settings.mcp.description": "MCP ayarları burada yapılandırılabilecek.",
 
 
 
@@ -691,14 +573,12 @@ export const dict = {
   "workspace.delete.title": "Çalışma alanını sil",
   "workspace.delete.confirm": '"{{name}}" çalışma alanı silinsin mi?',
   "workspace.delete.button": "Çalışma alanını sil",
-  "common.open": "Aç",
   "dialog.releaseNotes.action.getStarted": "Başla",
   "dialog.releaseNotes.action.next": "İleri",
   "dialog.releaseNotes.action.hideFuture": "Bunu gelecekte bir daha gösterme",
   "dialog.releaseNotes.media.alt": "Sürüm önizlemesi",
   "dialog.releaseNotes.media.pause": "Videoyu duraklat",
   "dialog.releaseNotes.media.play": "Videoyu oynat",
-  "error.server.invalidConfiguration": "Geçersiz yapılandırma",
   "common.moreCountSuffix": " (+{{count}} daha)",
   "common.time.justNow": "Şimdi",
   "common.time.minutesAgo.short": "{{count}}dk önce",
@@ -706,9 +586,6 @@ export const dict = {
   "common.time.daysAgo.short": "{{count}}g önce",
   "settings.providers.connected.environmentDescription": "Ortam değişkenlerinizden bağlandı",
 
-  "app.server.unreachable": "{{server}} sunucusuna ulaşılamadı",
-  "app.server.retrying": "Otomatik olarak tekrar deneniyor...",
-  "app.server.otherServers": "Diğer sunucular",
   "session.todo.progress": "{{total}} görevin {{done}} tanesi tamamlandı",
   "session.question.progress": "{{total}} sorunun {{current}} tanesi",
   "common.key.ctrl": "Ctrl",
@@ -725,15 +602,9 @@ export const dict = {
   "common.key.pageUp": "Page Up",
   "common.key.pageDown": "Page Down",
   "common.key.insert": "Insert",
-  "common.unknown": "bilinmiyor",
-  "error.page.circular": "[Döngüsel]",
   "error.globalSDK.noServerAvailable": "Sunucu yok",
   "error.globalSDK.serverNotAvailable": "Sunucu mevcut değil",
-  "error.childStore.persistedCacheCreateFailed": "Kalıcı önbellek oluşturulamadı",
-  "error.childStore.persistedProjectMetadataCreateFailed": "Kalıcı proje meta verileri oluşturulamadı",
-  "error.childStore.persistedProjectIconCreateFailed": "Kalıcı proje simgesi oluşturulamadı",
   "error.childStore.storeCreateFailed": "Depo oluşturulamadı",
-  "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
   "prompt.action.goal": "Hedef",
   "prompt.action.clearGoal": "Hedefi temizle",
   "prompt.goal.placeholder": "Bu hedefin ulaşması gereken sonucu açıklayın",

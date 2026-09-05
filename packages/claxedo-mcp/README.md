@@ -19,7 +19,7 @@ Point a stdio MCP client at it with a config block like:
       "command": "npx",
       "args": ["-y", "@claxedo/mcp"],
       "env": {
-        "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+        "CLAXEDO_SERVER_URL": "http://127.0.0.1:2593"
       }
     }
   }
@@ -47,7 +47,7 @@ Configure `CLAXEDO_AUTH_TOKEN` only when intentionally
 pointing this MCP at a signed remote Claxedo server.
 
 `CLAXEDO_SERVER_URL` should be a loopback URL such as
-`http://127.0.0.1:3001` for local use. Treat remote URLs as privileged: the MCP
+`http://127.0.0.1:2593` for local use. Treat remote URLs as privileged: the MCP
 will send log, process, session, and browser-control requests to that origin,
 plus any configured bearer token.
 
@@ -106,7 +106,7 @@ security audit trail.
 
 Supported environment:
 
-- `CLAXEDO_SERVER_URL`: Claxedo server URL. Defaults to `http://127.0.0.1:3001`.
+- `CLAXEDO_SERVER_URL`: Claxedo server URL. Defaults to `http://127.0.0.1:2593`.
 - `CLAXEDO_API_DIR`: default local project directory.
 - `CLAXEDO_WORKSPACE_ID`: default Docker/cloud workspace id.
 - `CLAXEDO_SESSION_ID`: optional current session id for document path grants.

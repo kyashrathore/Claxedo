@@ -1,3 +1,5 @@
+// `src/**/*.vitest.ts(x)` files are excluded from tsconfig.json, so this runner
+// is the only thing that ever compiles them; a type error there surfaces here.
 import { defineConfig } from "vitest/config"
 import type { UserConfig } from "vitest/config"
 import solid from "vite-plugin-solid"

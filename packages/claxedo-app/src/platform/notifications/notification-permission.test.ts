@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { notificationApiAvailable, requestNotificationPermission } from "./notification-permission"
 
 // Bug A: the browser's permission prompt was appearing on EVERY turn
-// completion because `platform.notify` (src/main.tsx) called
+// completion because `platform.notify` (src/app/entry/main.tsx) called
 // `Notification.requestPermission()` whenever `Notification.permission`
 // was still "default" — which stays "default" forever if the user never
 // answers the prompt, so it re-fired on every single call. These tests pin

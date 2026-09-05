@@ -26,8 +26,8 @@ export function lazyDialog<T extends Component<any>>(load: () => Promise<{ defau
 /**
  * Repairs the stacked-modal aria race the lazy chunk gap opens.
  *
- * When a modal dialog is pushed ON TOP of another (e.g. `create-cloud-project`
- * pushing `DialogConnectIntegration`), the DialogProvider appends the new
+ * When a modal dialog is pushed ON TOP of another (e.g. the Settings
+ * connections page pushing `DialogConnectIntegration`), the DialogProvider appends the new
  * Kobalte portal to `document.body` immediately, but a `lazyDialog` component
  * mounts its `Dialog.Content` only after the chunk resolves. In that gap the
  * OUTER modal's Kobalte `ariaHideOutside` MutationObserver

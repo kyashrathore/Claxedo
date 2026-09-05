@@ -5,8 +5,8 @@
 // read only `data.message`, so an owner staring at an expired key saw a bare
 // relay string and could not tell auth failure from gateway flake.
 //
-// This module splits that error in two, matching the §5 rule in
-// dev-docs/CLAXEDO_ERROR_PROPOSAL.md: `summary` is a sentence a human reads,
+// This module splits that error in two, matching the §5 rule of the retired
+// error proposal: `summary` is a sentence a human reads,
 // `detail` is the provider's own bytes, verbatim, for the collapsed disclosure.
 import { harnessDisplayLabel } from "@/ui/harness-display"
 

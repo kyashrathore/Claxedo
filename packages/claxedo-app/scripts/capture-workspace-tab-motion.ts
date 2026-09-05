@@ -1,5 +1,6 @@
-import { chromium, type BrowserContext, type Page } from "playwright-core"
+import { chromium, type Page } from "playwright-core"
 import path from "node:path"
+import { closeContextAndSaveVideo } from "./capture-video"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
@@ -189,7 +190,7 @@ try {
   artifact.consoleErrors = consoleErrors
   artifact.pageErrors = pageErrors
 } finally {
-  const videoPath = await closeContextAndSaveVideo(context, page)
+  const videoPath = await closeContextAndSaveVideo(context, page, path.join(RESULT_DIR, "workspace-tab-motion.webm"))
   artifact.video = videoPath
   await browser.close()
   await Bun.write(path.join(RESULT_DIR, "workspace-tab-motion-manifest.json"), JSON.stringify(artifact, null, 2) + "\n")
@@ -609,17 +610,6 @@ async function readWorkbenchTabs(page: Page): Promise<WorkbenchSnapshot[]> {
       text: node.textContent?.replace(/\s+/g, " ").trim() ?? "",
       selected: node.querySelector('button[aria-current="page"]') !== null,
     })))
-}
-
-async function closeContextAndSaveVideo(context: BrowserContext, page: Page) {
-  const video = page.video()
-  await page.close().catch(() => {})
-  await context.close().catch(() => {})
-  const raw = video ? await video.path().catch(() => undefined) : undefined
-  if (!raw) return undefined
-  const target = path.join(RESULT_DIR, "workspace-tab-motion.webm")
-  await Bun.$`mv ${raw} ${target}`
-  return target
 }
 
 async function waitForAnimationIdle(page: Page) {

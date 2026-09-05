@@ -50,12 +50,13 @@ All 12 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 
 ## Layout
 
-- `packages/claxedo-server` — control plane (embeds the OpenCode engine, runs local/cloud/hybrid sessions)
+- `packages/claxedo-server` — hosted control plane (runs local/cloud/hybrid sessions; embeds the published OpenCode SDK host via `@claxedo/workspace-runtime/opencode`)
+- `packages/claxedo-local-server` — the desktop's self-hosted server; `packages/claxedo-server-core` — storage- and vendor-agnostic core shared by both servers
 - `packages/claxedo-app` — web app (Solid); `packages/claxedo-desktop` — Electron shell
 - `packages/workspace-runtime`, `workspace-relay*`, `sandbox-manager` — session execution + routing
 - `packages/{channels,connections,wakes,mcp,agent-*}` — first-party `@claxedo/*` capabilities
 - `packages/{ui,session-ui}` — shared OpenCode UI used by the app and desktop
-- `packages/cli` — the `claxedo deploy` CLI (`lildax`)
+- `packages/cli` — the `lildax` CLI (`up`, `down`, `status`, `deploy`, `creds`, `logout`)
 
 ## OpenCode heritage
 

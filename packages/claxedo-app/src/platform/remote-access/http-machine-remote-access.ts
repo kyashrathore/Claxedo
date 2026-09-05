@@ -12,9 +12,9 @@ import type {
  * prefix, so the server on the other end of `request` publishes the machine it
  * is itself running on.
  *
- * Moved here from `features/onboarding/remote-access-api.ts`. It was shared app
- * code performing one product's transport, which is exactly why the desktop
- * kept calling routes its sidecar had stopped serving. A feature may not own a
+ * Shared app code used to perform this product's transport itself, which is
+ * exactly why the desktop kept calling routes its sidecar had stopped serving.
+ * A feature may not own a
  * platform mechanism; it names the operation and this layer decides the call.
  *
  * The funnel events that used to be emitted from inside `enable` and
