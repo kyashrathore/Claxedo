@@ -1,3 +1,4 @@
+import { isRecord } from "@/lib/record"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 
 export type PolicyKind = "host" | "domain" | "group"
@@ -82,10 +83,6 @@ export function policyEntryLabel(entry: PolicyEntry) {
   const parts = entry.constraints.source.split(":")
   if (parts.length <= 1) return entry.target
   return parts.slice(1).join(":")
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object"
 }
 
 function isPolicyKind(input: unknown): input is PolicyKind {

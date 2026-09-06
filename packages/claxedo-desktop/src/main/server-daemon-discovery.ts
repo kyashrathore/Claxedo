@@ -1,6 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
+import { nodeErrorCode } from "../shared/node-error"
+
 export const CLAXEDO_DAEMON_PROTOCOL = 1
 export const CLAXEDO_DAEMON_SERVICE = "claxedo-local-daemon" as const
 
@@ -19,12 +22,14 @@ export function claxedoDaemonDiscoveryPath(dataRoot: string) {
 }
 
 export function readClaxedoDaemonDiscovery(file: string): ClaxedoDaemonDiscovery | undefined {
+  let parsed: unknown
   try {
-    return parseDiscovery(JSON.parse(fs.readFileSync(file, "utf8")))
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if (isNodeError(error, "ENOENT") || error instanceof SyntaxError) return
+    if (nodeErrorCode(error) === "ENOENT" || error instanceof SyntaxError) return undefined
     throw error
   }
+  return isClaxedoDaemonDiscovery(parsed) ? parsed : undefined
 }
 
 export function writeClaxedoDaemonDiscovery(file: string, record: ClaxedoDaemonDiscovery) {
@@ -35,10 +40,13 @@ export function writeClaxedoDaemonDiscovery(file: string, record: ClaxedoDaemonD
     fs.renameSync(temporary, file)
     fs.chmodSync(file, 0o600)
   } finally {
+    // Best effort, and deliberately silent: a throw here would replace the
+    // write's own failure with a cleanup failure, and the caller would be told
+    // the wrong thing about why the discovery file is not there.
     try {
       fs.unlinkSync(temporary)
-    } catch (error) {
-      if (!isNodeError(error, "ENOENT")) throw error
+    } catch {
+      // The temp file is either already gone or not ours to remove.
     }
   }
 }
@@ -51,7 +59,7 @@ export function clearClaxedoDaemonDiscovery(file: string, owner: ClaxedoDaemonDi
   try {
     fs.unlinkSync(file)
   } catch (error) {
-    if (!isNodeError(error, "ENOENT")) throw error
+    if (nodeErrorCode(error) !== "ENOENT") throw error
   }
 }
 
@@ -65,35 +73,37 @@ export async function verifyClaxedoDaemonDiscovery(
       headers: { authorization: `Bearer ${record.token}` },
       signal: AbortSignal.timeout(1_500),
     })
-    if (!response.ok) return
-    const identity = await response.json() as Record<string, unknown>
+    if (!response.ok) return undefined
+    const identity: unknown = await response.json()
     if (
-      identity.service !== record.service ||
-      identity.protocol !== record.protocol ||
-      identity.generation !== record.generation ||
-      identity.pid !== record.pid
-    ) return
+      readUnknown(identity, "service") !== record.service ||
+      readUnknown(identity, "protocol") !== record.protocol ||
+      readUnknown(identity, "generation") !== record.generation ||
+      readUnknown(identity, "pid") !== record.pid
+    ) return undefined
     return url
   } catch {
-    return
+    return undefined
   }
 }
 
-function parseDiscovery(value: unknown): ClaxedoDaemonDiscovery | undefined {
-  if (!value || typeof value !== "object") return
-  const record = value as Record<string, unknown>
-  if (
-    record.service !== CLAXEDO_DAEMON_SERVICE ||
-    record.protocol !== CLAXEDO_DAEMON_PROTOCOL ||
-    typeof record.generation !== "string" || !record.generation ||
-    typeof record.token !== "string" || !record.token ||
-    typeof record.pid !== "number" || !Number.isSafeInteger(record.pid) || record.pid <= 0 ||
-    typeof record.port !== "number" || !Number.isSafeInteger(record.port) || record.port <= 0 || record.port > 65535 ||
-    typeof record.startedAt !== "string" || !record.startedAt
-  ) return
-  return record as ClaxedoDaemonDiscovery
+/**
+ * A type predicate rather than a parse-and-cast: the checks below are exactly
+ * the fields `ClaxedoDaemonDiscovery` declares, so stating them as the proof
+ * removes the assertion the old `return record as …` needed.
+ */
+function isClaxedoDaemonDiscovery(value: unknown): value is ClaxedoDaemonDiscovery {
+  const record = asRecord(value)
+  return (
+    !!record &&
+    record.service === CLAXEDO_DAEMON_SERVICE &&
+    record.protocol === CLAXEDO_DAEMON_PROTOCOL &&
+    isNonEmptyString(record.generation) &&
+    isNonEmptyString(record.token) &&
+    typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 &&
+    typeof record.port === "number" && Number.isSafeInteger(record.port) &&
+    record.port > 0 && record.port <= 65535 &&
+    isNonEmptyString(record.startedAt)
+  )
 }
 
-function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error && error.code === code
-}

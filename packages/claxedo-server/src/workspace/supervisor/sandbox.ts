@@ -56,6 +56,7 @@ import {
 } from "./runtime-env"
 import { now, runtimeBackoffMs, sleep } from "./clock"
 import type { WorkspaceRuntimeState } from "./store"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 
 const log = Log.create({ service: "workspace-supervisor" })
 
@@ -531,11 +532,15 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
 }
 
 function sandboxDriverId(state: WorkspaceRuntimeState): SandboxDriverID | undefined {
-  return (
-    (state.sandbox_target?.driver?.id as SandboxDriverID | undefined) ??
-    state.ws.driver ??
-    getSupervisorSandboxLease(state.ws.id)?.driver
-  )
+  // `SandboxTarget.driver.id` and the lease row's `driver` are both plain
+  // strings — the manager dispatches on whatever id a driver was registered
+  // under — so an unrecognized one falls through to the next source rather than
+  // being asserted into the catalog's union.
+  const targetDriver = state.sandbox_target?.driver?.id
+  if (isSandboxDriverID(targetDriver)) return targetDriver
+  if (state.ws.driver) return state.ws.driver
+  const leaseDriver = getSupervisorSandboxLease(state.ws.id)?.driver
+  return isSandboxDriverID(leaseDriver) ? leaseDriver : undefined
 }
 
 function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriverID, sandboxId: string) {
@@ -649,7 +654,7 @@ function startSandboxHealthMonitor(state: WorkspaceRuntimeState) {
 
     const lease = getSupervisorSandboxLease(state.ws.id)
     if (!lease) return
-    const action = decideSandboxHealthFailure(lease, sandboxDriverPlacement(lease.driver), now())
+    const action = decideSandboxHealthFailure(lease, now())
 
     if (action.action === "mark_failed") {
       markSupervisorSandboxLeaseFailed(state.ws.id, action.reason)

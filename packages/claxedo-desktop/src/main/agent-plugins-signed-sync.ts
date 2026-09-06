@@ -17,6 +17,9 @@
 
 const REFRESH_INTERVAL_MS = 10 * 60_000
 const REFRESH_LEAD_MS = 5 * 60_000
+import { readNumber, readString, readUnknown } from "../shared/json-read"
+import type { HostedOperationName } from "./account/hosted-operations"
+
 const RETRY_INTERVAL_MS = 60_000
 
 type AccountState = { status: string }
@@ -31,7 +34,7 @@ export type AgentPluginsSignedSync = {
 
 export function setupAgentPluginsSignedSync(input: {
   enabled: boolean
-  runAccountOperation: (name: string, params?: Record<string, unknown>) => Promise<unknown>
+  runAccountOperation: (name: HostedOperationName, params?: Record<string, unknown>) => Promise<unknown>
   serverUrl: () => Promise<string>
   request?: (url: string, init?: RequestInit) => Promise<Response>
   log: { info(message: string): void; warn(message: string): void }
@@ -66,16 +69,15 @@ export function setupAgentPluginsSignedSync(input: {
     if (!signed || stopped) return
     try {
       const result = await input.runAccountOperation("agentPlugins.runtimeSelf")
-      const answer = result && typeof result === "object" && !Array.isArray(result)
-        ? (result as { status?: unknown; body?: unknown })
-        : undefined
-      if (typeof answer?.status !== "number" || answer.status < 200 || answer.status >= 300) {
-        throw new Error(`control plane answered ${String(answer?.status)}`)
+      const status = readNumber(result, "status")
+      if (status === undefined || status < 200 || status >= 300) {
+        throw new Error(`control plane answered ${String(status)}`)
       }
-      const state = await push(answer.body)
-      const body = answer.body as { revision?: unknown; expiresAt?: unknown } | undefined
-      input.log.info(`[agent-plugins] signed world applied revision=${String(body?.revision)} -> ${state.slice(0, 120)}`)
-      const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
+      const answerBody = readUnknown(result, "body")
+      const state = await push(answerBody)
+      const revision = readString(answerBody, "revision")
+      input.log.info(`[agent-plugins] signed world applied revision=${String(revision)} -> ${state.slice(0, 120)}`)
+      const expiresAt = readNumber(answerBody, "expiresAt")
       const untilExpiry = expiresAt ? Math.max(RETRY_INTERVAL_MS, expiresAt - Date.now() - REFRESH_LEAD_MS) : REFRESH_INTERVAL_MS
       schedule(Math.min(REFRESH_INTERVAL_MS, untilExpiry))
     } catch (error) {

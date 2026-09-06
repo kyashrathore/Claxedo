@@ -1,4 +1,3 @@
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type {
   SandboxCheckpointReference,
   SandboxPersistenceCapabilities,
@@ -25,7 +24,17 @@ export type SandboxLeaseRow = {
   home_region?: string
   epoch: number
   status: SandboxLeaseRowStatus
-  driver: SandboxDriverID
+  /**
+   * The id the driver was registered with, which is any string: the manager
+   * dispatches on whatever a composition registers (`stores/d1.test.ts`
+   * provisions one called `"test-provider"`), and every other type this value
+   * flows between — `SandboxLease["driver"]`, `SandboxLeaseAcquireInput["driver"]`,
+   * `SandboxTarget["driver"]["id"]` — is already `string`. Typing the row as the
+   * closed `SandboxDriverID` made it the odd one out and forced every store to
+   * assert into it. Narrow with `isSandboxDriverID` where a CATALOG entry is
+   * needed, which is the only place the closed set is the right question.
+   */
+  driver: string
   driver_resource_id: string | null
   driver_snapshot_id: string | null
   sandbox_id: string | null

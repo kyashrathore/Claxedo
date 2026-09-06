@@ -16,7 +16,7 @@ const titles: Record<DialogId, string> = {
 export default function DialogMatrixHarness() {
   const dialog = useDialog()
   const open = (id: DialogId, mode: "show" | "push" = "show") => {
-    dialog[mode](() => <MatrixDialog id={id} open={open} />)
+    void dialog[mode](() => <MatrixDialog id={id} open={open} />)
   }
 
   window.__claxedoDialogMatrix = {

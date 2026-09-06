@@ -3,6 +3,7 @@ import { createRequire } from "node:module"
 import fsSync from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { rec, str } from "./json-value"
 
 export type TranscriptProvider = {
   root: string
@@ -61,12 +62,10 @@ export function createPersistentTranscriptHandleStore(input: {
 }): TranscriptHandleStore {
   const open = () => {
     fsSync.mkdirSync(path.dirname(input.file), { recursive: true, mode: 0o700 })
-    const requireDatabase = createRequire(import.meta.url)
-    const Database = process.versions.bun
-      ? (requireDatabase("bun:sqlite") as { Database: TranscriptDatabaseConstructor }).Database
-      : ((requireDatabase("better-sqlite3") as { default?: TranscriptDatabaseConstructor } | TranscriptDatabaseConstructor) as {
-          default?: TranscriptDatabaseConstructor
-        }).default ?? requireDatabase("better-sqlite3") as TranscriptDatabaseConstructor
+    const requireDatabase: (id: string) => unknown = createRequire(import.meta.url)
+    const Database = databaseConstructor(
+      process.versions.bun ? requireDatabase("bun:sqlite") : requireDatabase("better-sqlite3"),
+    )
     const database = new Database(input.file)
     fsSync.chmodSync(input.file, 0o600)
     database.exec("PRAGMA busy_timeout = 5000")
@@ -118,22 +117,28 @@ export function createPersistentTranscriptHandleStore(input: {
     get(handle) {
       const database = open()
       try {
-        const row = database.prepare(`
+        const row = rec(database.prepare(`
           SELECT workspace_id, parent_session_id, provider_kind, source_path,
             canonical_path, canonical_root, format, digest
           FROM transcript_handle
           WHERE handle = ?
-        `).get(handle) as TranscriptHandleRow | undefined
-        if (!row) return
+        `).get(handle))
+        if (!row) return undefined
+        // The columns are read individually rather than asserted as a row type:
+        // `format` in particular is a CHECK-constrained enum in the schema
+        // above, and a row written by an older schema must not slip through as
+        // one of its two values.
+        const format = row.format === "json" || row.format === "jsonl" ? row.format : undefined
+        if (format === undefined) return undefined
         return {
-          workspaceId: row.workspace_id,
-          parentSessionId: row.parent_session_id,
-          providerKind: row.provider_kind,
-          sourcePath: row.source_path,
-          canonicalPath: row.canonical_path,
-          canonicalRoot: row.canonical_root,
-          format: row.format,
-          digest: row.digest,
+          workspaceId: str(row.workspace_id) ?? "",
+          parentSessionId: str(row.parent_session_id) ?? "",
+          providerKind: str(row.provider_kind) ?? "",
+          sourcePath: str(row.source_path) ?? "",
+          canonicalPath: str(row.canonical_path) ?? "",
+          canonicalRoot: str(row.canonical_root) ?? "",
+          format,
+          digest: str(row.digest) ?? "",
         }
       } finally {
         database.close()
@@ -162,18 +167,27 @@ type TranscriptDatabase = {
   close(): unknown
 }
 
-type TranscriptDatabaseConstructor = new(file: string) => TranscriptDatabase
-
-type TranscriptHandleRow = {
-  workspace_id: string
-  parent_session_id: string
-  provider_kind: string
-  source_path: string
-  canonical_path: string
-  canonical_root: string
-  format: TranscriptProvider["format"]
-  digest: string
+/**
+ * Both SQLite drivers this runtime can load, reduced to the one constructor.
+ *
+ * `bun:sqlite` exports `{ Database }`; `better-sqlite3` exports the class as a
+ * CJS default. A predicate rather than an assertion — "is it constructible" is
+ * the only thing a dynamic require can actually be asked.
+ */
+function databaseConstructor(module: unknown): TranscriptDatabaseConstructor {
+  const exported = rec(module)
+  const candidate = exported?.Database ?? exported?.default ?? module
+  if (!isDatabaseConstructor(candidate)) {
+    throw new Error("SQLite driver did not export a Database constructor")
+  }
+  return candidate
 }
+
+function isDatabaseConstructor(value: unknown): value is TranscriptDatabaseConstructor {
+  return typeof value === "function"
+}
+
+type TranscriptDatabaseConstructor = new(file: string) => TranscriptDatabase
 
 export function createTranscriptResolver(options: {
   workspaceId: string

@@ -62,12 +62,12 @@ describe("machine session dispatch", () => {
       { actorId: actor.actorId, actorKind: "human", principalKind: "user" },
       expect.objectContaining({ sessionId: session.id, workspaceId: "ws" }),
     )
-    const [url, init] = mock.request.mock.calls[0]!
+    const [url, init] = mock.request.mock.calls[0]
     expect(url).toBe("/session?nativeHarness=pi")
     expect(init.headers["x-claxedo-session-registration-operation"]).toBe(
-      f.authority.reserveRuntimeSession.mock.calls[0]![1].operationId,
+      f.authority.reserveRuntimeSession.mock.calls[0][1].operationId,
     )
-    expect(mock.client.mock.calls[0]![0].options).toMatchObject({
+    expect(mock.client.mock.calls[0][0].options).toMatchObject({
       channelIdentity: identity,
       runtimeActor: { actorId: actor.actorId },
       role: "editor",

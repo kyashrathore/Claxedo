@@ -1,4 +1,5 @@
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { TURN_USAGE_LOCATIONS, TURN_USAGE_SETTLEMENTS, TURN_USAGE_STATUSES } from "./contracts"
 
 const usageColumns = () => ({
   host_id: text().notNull(),
@@ -9,9 +10,9 @@ const usageColumns = () => ({
   payload_hash: text().notNull(),
   observed_at: integer().notNull(),
   completed_at: integer(),
-  settlement: text().notNull(),
-  status: text().notNull(),
-  location: text().notNull(),
+  settlement: text({ enum: TURN_USAGE_SETTLEMENTS }).notNull(),
+  status: text({ enum: TURN_USAGE_STATUSES }).notNull(),
+  location: text({ enum: TURN_USAGE_LOCATIONS }).notNull(),
   harness: text().notNull(),
   provider_id: text().notNull(),
   model_id: text().notNull(),

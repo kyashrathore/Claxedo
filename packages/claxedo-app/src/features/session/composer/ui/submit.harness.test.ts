@@ -430,7 +430,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     fetchCalls.push({
       url: request.url,
       method: request.method,
-      body: init?.body ? String(init.body) : null,
+      body: typeof init?.body === "string" ? init.body : null,
     })
     // `workspaceResolveUrl` rewrites the control-plane spelling on loopback.
     // Keep both because this shared harness exercises both placements.
@@ -516,12 +516,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     apiCalls.push({
       url: request.url,
       method: request.method,
-      body: init?.body ? String(init.body) : null,
+      body: typeof init?.body === "string" ? init.body : null,
     })
     // The control plane's reservation answers with the exact immutable intent
     // it was asked to reserve, which the caller verifies before creating.
     if (new URL(request.url).pathname === "/api/control/session-registrations/reserve") {
-      const intent = JSON.parse(init?.body ? String(init.body) : "{}") as Record<string, unknown>
+      const intent = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>
       return new Response(JSON.stringify({
         operationId: intent.operationId,
         sessionId: intent.sessionId,
@@ -600,14 +600,14 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         url: request.url,
         method: request.method,
         authorization: request.headers.get("Authorization"),
-        body: init?.body ? String(init.body) : null,
+        body: typeof init?.body === "string" ? init.body : null,
       })
       if (/\/session\/[^/]+\/config$/.test(new URL(request.url).pathname)) {
         if (request.method === "PATCH" && state.sessionConfigSaveError) {
           return new Response(state.sessionConfigSaveError, { status: 500 })
         }
         if (request.method === "PATCH" && init?.body) {
-          state.localSessionConfig = canonicalSessionConfig(String(init.body))
+          if (typeof init.body === "string") state.localSessionConfig = canonicalSessionConfig(init.body)
         }
         return Response.json(state.localSessionConfig ?? { harness: { id: "pi", access: "native" } })
       }
@@ -627,7 +627,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         runtimeCalls.push({
           input: path,
           method: init?.method ?? "GET",
-          body: init?.body ? String(init.body) : null,
+          body: typeof init?.body === "string" ? init.body : null,
         })
         if (path.startsWith("/provider") && state.runtimeProviderResponse) {
           return new Response(JSON.stringify(state.runtimeProviderResponse), {

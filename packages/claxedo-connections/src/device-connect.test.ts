@@ -32,7 +32,7 @@ function harness(polls: DevicePoll[], options: { verifyLabel?: string } = {}) {
         }
       },
       async poll() {
-        return polls[Math.min(pollIndex++, polls.length - 1)]!
+        return polls[Math.min(pollIndex++, polls.length - 1)]
       },
     },
   }
@@ -93,11 +93,11 @@ describe("device-flow connect", () => {
 
     const rows = await connections.list()
     expect(rows.length).toBe(1)
-    expect(rows[0]!.integrationId).toBe("github")
-    expect(rows[0]!.accountLabel).toBe("octocat")
-    expect(rows[0]!.grantedCapabilities).toEqual(["code-host", "work-source"])
+    expect(rows[0].integrationId).toBe("github")
+    expect(rows[0].accountLabel).toBe("octocat")
+    expect(rows[0].grantedCapabilities).toEqual(["code-host", "work-source"])
 
-    const providerId = connectionProviderId(rows[0]!.id)
+    const providerId = connectionProviderId(rows[0].id)
     expect((await credentials.get(providerId))?.kind).toBe("oauth_token")
     const secret = JSON.parse((await credentials.readSecret(providerId))!)
     expect(secret).toEqual({ access: "ghu_access", refresh: "ghr_refresh" })
@@ -111,7 +111,7 @@ describe("device-flow connect", () => {
     await service.pollAttempt(result.attemptId)
 
     const rows = await service.list()
-    const token = await service.getToken(rows[0]!.id, "code-host")
+    const token = await service.getToken(rows[0].id, "code-host")
     expect(token).toEqual({ ok: true, response: { token: "ghu_access", tokenType: "bearer" } })
     await service.dispose()
   })
@@ -163,7 +163,7 @@ describe("device-flow connect", () => {
     await service.pollAttempt(result.attemptId)
 
     const rows = await connections.list()
-    expect(rows[0]!.owner).toBe("user-1")
+    expect(rows[0].owner).toBe("user-1")
     await service.dispose()
   })
 

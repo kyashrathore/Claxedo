@@ -1,6 +1,7 @@
 import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import { readString } from "../src/lib/record"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..")
@@ -55,8 +56,8 @@ await context.addInitScript((useTestAuth) => {
   }
   w.__claxedoSessionSwitchRequests = []
   const originalFetch = window.fetch.bind(window)
-  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = input instanceof Request ? input.url : String(input)
+  const logged: typeof window.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString()
     const start = w.__claxedoSessionSwitchStart
     if (start !== undefined) {
       w.__claxedoSessionSwitchRequests?.push({
@@ -65,7 +66,8 @@ await context.addInitScript((useTestAuth) => {
       })
     }
     return originalFetch(input, init)
-  }) as typeof fetch
+  }
+  window.fetch = logged
 }, Bun.env.CLAXEDO_SESSION_SWITCH_TEST_AUTH === "1")
 
 const page = await context.newPage()
@@ -92,7 +94,7 @@ try {
   const firstRows = await waitForSessionRows(page)
   if (firstRows.length < 2) throw new Error(`Need at least two visible session rows, found ${firstRows.length}`)
 
-  const initialActive = firstRows.find((row) => row.active) ?? firstRows[0]!
+  const initialActive = firstRows.find((row) => row.active) ?? firstRows[0]
   if (
     !initialActive.active ||
     !await hasVisibleSessionContent(page, initialActive.sessionId)
@@ -204,12 +206,12 @@ async function listBackendSessions(): Promise<BackendSession[]> {
   const url = `${serverURL}/session?directory=${encodeURIComponent(workspaceDirectory)}&roots=true&limit=55`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Failed to list backend sessions: ${res.status} ${await res.text().catch(() => "")}`)
-  const data = await res.json().catch(() => [])
-  return Array.isArray(data)
-    ? data.flatMap((item) => item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"
-      ? [{ id: (item as { id: string; title?: string }).id, title: (item as { title?: string }).title }]
-      : [])
-    : []
+  const data: unknown = await res.json().catch(() => [])
+  if (!Array.isArray(data)) return []
+  return data.flatMap((item) => {
+    const id = readString(item, "id")
+    return id ? [{ id, title: readString(item, "title") }] : []
+  })
 }
 
 async function createBackendSession(title: string): Promise<BackendSession> {

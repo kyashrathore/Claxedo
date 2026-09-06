@@ -16,8 +16,9 @@ import { createHostedDocumentIndex } from "./index"
 import type { DocumentIndexEntry } from "../../index-store"
 import { createHostedDocumentsBackend } from "./backend"
 import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { documentWorkspaceConformance } from "../../port-conformance"
-import type { DocumentEntry } from "../../port"
+import type { DocumentEntry, SnapshotID } from "../../port"
 import { MAX_SNAPSHOT_METADATA_BYTES } from "../../snapshot-pins"
 import { forgetHydratedSessionRuntime, hydrateSessionDocument, syncHydratedSessionDocuments } from "../../session-hydration"
 
@@ -58,6 +59,27 @@ function emulator() {
     },
   }
   return { store, objects, reads: () => reads }
+}
+
+/**
+ * The signed control-plane identity `agentOpen` seals into a document job.
+ *
+ * `isSealedControlPlaneAuth` in `backend.ts` re-checks `mode`, `subject`,
+ * `tokenIdentifier` and `issuer` when the job is reopened, because AES-GCM
+ * proves the bytes are ours but not that they came from a current build. A
+ * partial identity therefore does not fail at the call — it fails later, inside
+ * `runtimeWriteback`, as "Document job authority is corrupt".
+ */
+function signedAuth(): SignedControlPlaneAuth {
+  return {
+    mode: "signed",
+    token: "user-bearer",
+    user: {
+      subject: "user_1",
+      tokenIdentifier: "token_1",
+      issuer: "https://issuer.test",
+    },
+  }
 }
 
 function fixture() {
@@ -148,15 +170,15 @@ describe("hosted managed documents and session write-back", () => {
     const handle = await value.workspace.resolve(value.entry)
     const [snapshot] = await value.workspace.listSnapshots(handle)
     for (let index = 0; index < 200; index++) {
-      await value.workspace.pinSnapshot(handle, snapshot!.id, `lease:${Date.now() + 60_000 + index}:work-source`)
+      await value.workspace.pinSnapshot(handle, snapshot.id, `lease:${Date.now() + 60_000 + index}:work-source`)
     }
     expect(
-      (await value.workspace.listSnapshots(handle))[0]!.pins.filter((pin) => pin.startsWith("lease:")),
+      (await value.workspace.listSnapshots(handle))[0].pins.filter((pin) => pin.startsWith("lease:")),
     ).toHaveLength(1)
     for (let index = 0; index < 127; index++)
-      await value.workspace.pinSnapshot(handle, snapshot!.id, `permanent:${index}`)
-    await expect(value.workspace.pinSnapshot(handle, snapshot!.id, "permanent:overflow")).rejects.toThrow("pin limit")
-    expect((await value.workspace.listSnapshots(handle))[0]!.pins).toHaveLength(128)
+      await value.workspace.pinSnapshot(handle, snapshot.id, `permanent:${index}`)
+    await expect(value.workspace.pinSnapshot(handle, snapshot.id, "permanent:overflow")).rejects.toThrow("pin limit")
+    expect((await value.workspace.listSnapshots(handle))[0].pins).toHaveLength(128)
   })
 
   const roots: string[] = []
@@ -298,7 +320,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     await value.workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await value.workspace.resolve(value.entry)
-    const snapshot = (await value.workspace.listSnapshots(handle))[0]!
+    const snapshot = (await value.workspace.listSnapshots(handle))[0]
     const key = [...value.storage.objects.keys()].find(
       (candidate) => candidate.startsWith("document-history/") && candidate.endsWith(`${snapshot.id}.json`),
     )!
@@ -335,7 +357,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     await value.workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await value.workspace.resolve(value.entry)
-    const snapshot = (await value.workspace.listSnapshots(handle))[0]!
+    const snapshot = (await value.workspace.listSnapshots(handle))[0]
     const key = [...value.storage.objects.keys()].find(
       (candidate) => candidate.startsWith("document-history/") && candidate.endsWith(`${snapshot.id}.json`),
     )!
@@ -572,7 +594,7 @@ describe("hosted managed documents and session write-back", () => {
     const canonical = await workspace.read(handle)
     const snapshots = await workspace.listSnapshots(handle)
     expect(snapshots).toHaveLength(1)
-    expect((await workspace.readSnapshot(handle, snapshots[0]!.id)).markdown).toBe(canonical.markdown)
+    expect((await workspace.readSnapshot(handle, snapshots[0].id)).markdown).toBe(canonical.markdown)
   })
 
   test("a sequential duplicate create cannot publish or collect losing history", async () => {
@@ -587,7 +609,7 @@ describe("hosted managed documents and session write-back", () => {
     const handle = await value.workspace.resolve(value.entry)
     const snapshots = await value.workspace.listSnapshots(handle)
     expect(snapshots).toHaveLength(1)
-    expect((await value.workspace.readSnapshot(handle, snapshots[0]!.id)).markdown).toBe("winner")
+    expect((await value.workspace.readSnapshot(handle, snapshots[0].id)).markdown).toBe("winner")
   })
 
   test("snapshot collection cannot delete a snapshot pinned during its GC claim race", async () => {
@@ -600,7 +622,7 @@ describe("hosted managed documents and session write-back", () => {
     const collecting = new Promise<void>((resolve) => {
       reached = resolve
     })
-    let candidate: string | undefined
+    let candidate: SnapshotID | undefined
     const workspace = createHostedManagedDocumentWorkspace({
       store: storage.store,
       maxSnapshots: 1,
@@ -619,7 +641,10 @@ describe("hosted managed documents and session write-back", () => {
       actor: { type: "user", id: "user" },
     })
     await collecting
-    await workspace.pinSnapshot(handle, candidate as never, "keep")
+    // The GC claim hook is what makes this a race at all; without it the pin
+    // below would run against no candidate and the test would pass vacuously.
+    if (!candidate) throw new Error("the snapshot GC claim hook never ran")
+    await workspace.pinSnapshot(handle, candidate, "keep")
     release()
     await writing
     expect((await workspace.listSnapshots(handle)).find((snapshot) => snapshot.id === candidate)?.pins).toEqual([
@@ -639,7 +664,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     const created = await workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await workspace.resolve(value.entry)
-    const first = (await workspace.listSnapshots(handle))[0]!
+    const first = (await workspace.listSnapshots(handle))[0]
     await workspace.pinSnapshot(handle, first.id, "lease:1500:work-source")
     clock = 2_000
     await workspace.write(handle, {
@@ -667,7 +692,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     const created = await workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await workspace.resolve(value.entry)
-    const first = (await workspace.listSnapshots(handle))[0]!
+    const first = (await workspace.listSnapshots(handle))[0]
     await workspace.pinSnapshot(handle, first.id, "lease:1500:work-source")
     clock = 2_000
     await workspace.write(handle, {
@@ -730,7 +755,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     const created = await workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await workspace.resolve(value.entry)
-    const first = (await workspace.listSnapshots(handle))[0]!
+    const first = (await workspace.listSnapshots(handle))[0]
     const writing = workspace.write(handle, {
       markdown: "two",
       expectedVersion: created.version,
@@ -942,7 +967,7 @@ describe("hosted managed documents and session write-back", () => {
       env,
     )
     await backend.agentOpen!(indexed, "session_1", {
-      auth: { user: { subject: "user_1" } } as never,
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     await registerCapability!({ jti: capability.jti, jobExpiresAt })
@@ -1080,15 +1105,7 @@ describe("hosted managed documents and session write-back", () => {
       { markdown: "before", actor: { type: "user", id: "user" } },
     )
     await first.agentOpen!(entry, "session_1", {
-      auth: {
-        mode: "signed",
-        token: "user-bearer",
-        user: {
-          subject: "user_1",
-          tokenIdentifier: "token_1",
-          issuer: "https://issuer.test",
-        },
-      },
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     const second = createHostedDocumentsBackend(r2(storage), options)
@@ -1146,15 +1163,7 @@ describe("hosted managed documents and session write-back", () => {
     expect(new TextDecoder().decode(storage.objects.get(jobKey)!.body)).not.toContain("sealedAuth")
     vi.useRealTimers()
     await third.agentOpen!(entry, "session_dispose", {
-      auth: {
-        mode: "signed",
-        token: "user-bearer",
-        user: {
-          subject: "user_1",
-          tokenIdentifier: "token_1",
-          issuer: "https://issuer.test",
-        },
-      },
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     await third.runtimeDispose!(entry, {
@@ -1167,15 +1176,7 @@ describe("hosted managed documents and session write-back", () => {
     const disposed = [...storage.objects.entries()].find(([key]) => key.includes("session_dispose"))
     expect(new TextDecoder().decode(disposed![1].body)).not.toContain("sealedAuth")
     await third.agentOpen!(entry, "session_race", {
-      auth: {
-        mode: "signed",
-        token: "user-bearer",
-        user: {
-          subject: "user_1",
-          tokenIdentifier: "token_1",
-          issuer: "https://issuer.test",
-        },
-      },
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     const raceKey = [...storage.objects.keys()].find((key) => key.includes("session_race"))!

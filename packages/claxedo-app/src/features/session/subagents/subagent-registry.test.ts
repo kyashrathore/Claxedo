@@ -17,7 +17,7 @@ function comparable(entry: SubagentRegistryEntry | undefined) {
     providerKind: entry.providerKind,
     childSessionId: entry.childSessionId,
     transcript: entry.transcript,
-    toolCallEdges: [...entry.toolCallEdges.entries()].sort(),
+    toolCallEdges: [...entry.toolCallEdges.entries()].sort(([a], [b]) => a.localeCompare(b)),
     fieldRevisions: Object.fromEntries(Object.entries(entry.fieldRevisions).sort(([a], [b]) => a.localeCompare(b))),
   }
 }

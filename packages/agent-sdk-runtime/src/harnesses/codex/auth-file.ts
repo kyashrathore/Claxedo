@@ -14,32 +14,36 @@ export type CodexChatGptTokens = {
   planType?: string
 }
 
-export function sourceAuthValue(input: string | undefined) {
-  if (!input) return
+export function sourceAuthValue(input: string | undefined): string | undefined {
+  if (!input) return undefined
+  let value: JsonRecord | undefined
   try {
-    const value = JSON.parse(input) as JsonRecord
-    if (codexChatgptAuthTokens(value)) return
-    return text(value.OPENAI_API_KEY)
+    value = record(JSON.parse(input))
   } catch {
     return input
   }
+  if (!value || codexChatgptAuthTokens(value)) return undefined
+  return text(value.OPENAI_API_KEY)
 }
 
-export function sourceCodexAuthValue(input: string | undefined) {
-  if (!input) return
+export function sourceCodexAuthValue(input: string | undefined): JsonRecord | undefined {
+  if (!input) return undefined
+  let value: JsonRecord | undefined
   try {
-    const value = JSON.parse(input) as JsonRecord
-    if (value.type === "codex_auth" || value.auth_mode === "chatgpt" || codexChatgptAuthTokens(value)) return value
+    value = record(JSON.parse(input))
   } catch {
-    return
+    return undefined
   }
+  if (!value) return undefined
+  const chatgpt = value.type === "codex_auth" || value.auth_mode === "chatgpt" || !!codexChatgptAuthTokens(value)
+  return chatgpt ? value : undefined
 }
 
-export function readCodexAuthFile(home: string) {
+export function readCodexAuthFile(home: string): JsonRecord | undefined {
   try {
-    return JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")) as JsonRecord
+    return record(JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")))
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
     throw error
   }
 }
@@ -51,7 +55,7 @@ export async function writeCodexAuthFile(home: string, input: JsonRecord | undef
 }
 
 export function codexChatgptAuthTokens(input: JsonRecord | undefined): CodexChatGptTokens | undefined {
-  if (!input) return
+  if (!input) return undefined
   const tokens = record(input.tokens)
   const oauth = record(input.oauth)
   const access = text(input.access) ?? text(tokens?.access_token) ?? text(oauth?.access)
@@ -62,7 +66,7 @@ export function codexChatgptAuthTokens(input: JsonRecord | undefined): CodexChat
     ?? text(tokens?.account_id)
     ?? text(oauth?.account_id)
     ?? accountIdFromClaims(input)
-  if (!access || !accountId) return
+  if (!access || !accountId) return undefined
   const planType = text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type)
   return {
     access,
@@ -159,15 +163,15 @@ export function accountIdFromClaims(input: JsonRecord | undefined) {
     ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(record(input?.tokens)?.access_token))
 }
 
-function accountIdFromJwt(token: string | undefined) {
-  if (!token) return
+function accountIdFromJwt(token: string | undefined): string | undefined {
+  if (!token) return undefined
   const payload = token.split(".")[1]
-  if (!payload) return
+  if (!payload) return undefined
   try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as JsonRecord
-    const openai = record(claims["https://api.openai.com/auth"])
-    return text(claims.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
+    const claims = record(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
+    const openai = record(claims?.["https://api.openai.com/auth"])
+    return text(claims?.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
   } catch {
-    return
+    return undefined
   }
 }

@@ -39,8 +39,8 @@ function specifiers(source: string): string[] {
   const found: string[] = []
   const statics = /(?:^|[\s;}])(?:import|export)\s+(?:[^'"();]*?\sfrom\s*)?["']([^"']+)["']/g
   const dynamic = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g
-  for (const match of code.matchAll(statics)) found.push(match[1]!)
-  for (const match of code.matchAll(dynamic)) found.push(match[1]!)
+  for (const match of code.matchAll(statics)) found.push(match[1])
+  for (const match of code.matchAll(dynamic)) found.push(match[1])
   return found
 }
 

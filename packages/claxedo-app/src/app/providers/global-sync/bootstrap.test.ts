@@ -253,6 +253,54 @@ describe("bootstrapGlobal", () => {
     expect(queryClient.getQueryData(["global", "http://localhost:4096", "config"])).toBeUndefined()
   })
 
+  test("a boot whose aggregate carries a malformed path seeds the empty path, not the payload", async () => {
+    // `path` is the one field of the aggregate that boot writes straight into
+    // global state and the directory query cache, where every consumer reads
+    // `path.worktree` as a string without checking. The response is `unknown`,
+    // so a payload that types `worktree` as a number has to be rejected at the
+    // boundary — otherwise the number reaches those readers wearing the
+    // `Path` type and nothing downstream can notice.
+    const globalState: Partial<GlobalBootstrapState> = {
+      ready: false,
+      path: { state: "", config: "", worktree: "", directory: "", home: "" },
+      reload: undefined,
+    }
+
+    await bootstrapGlobal({
+      baseUrl: "http://localhost:4096",
+      globalSDK: globalSdk(),
+      fetch: (async () =>
+        new Response(
+          JSON.stringify({
+            healthy: true,
+            // `worktree` is a number and `home` is absent.
+            path: { state: "/state", config: "/config", worktree: 42, directory: "/tmp/ws" },
+          }),
+          { status: 200 },
+        )) as typeof globalThis.fetch,
+      connectErrorTitle: "",
+      connectErrorDescription: "",
+      requestFailedTitle: "",
+      translate: (key: string) => key,
+      formatMoreCount: (count: number) => String(count),
+      setGlobalState: (patch) => Object.assign(globalState, patch),
+      harnessType: "claude-acp",
+    })
+
+    // Boot still completes — a bad path is not a failed boot — but the partial
+    // record is dropped whole rather than merged, because a `Path` missing
+    // `home` is not a `Path` and half of one is harder to diagnose than none.
+    expect(globalState.ready).toBe(true)
+    expect(globalState.path).toEqual({ state: "", config: "", worktree: "", directory: "", home: "" })
+    expect(queryClient.getQueryData(queryKeys.directory.path("http://localhost:4096", ""))).toEqual({
+      state: "",
+      config: "",
+      worktree: "",
+      directory: "",
+      home: "",
+    })
+  })
+
   test("a non-loopback boot never requests the aggregate", async () => {
     const urls: string[] = []
     const globalState: Partial<GlobalBootstrapState> = { ready: false }

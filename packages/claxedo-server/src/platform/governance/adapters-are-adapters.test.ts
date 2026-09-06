@@ -36,7 +36,7 @@ function externalImportsIn(dir: string) {
     if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue
     for (const match of fs.readFileSync(file, "utf8").matchAll(EXTERNAL_IMPORT)) {
       // node: builtins are available everywhere and adapt nothing.
-      if (!match[1]!.startsWith("node:")) found.add(match[1]!)
+      if (!match[1].startsWith("node:")) found.add(match[1])
     }
   }
   return [...found]

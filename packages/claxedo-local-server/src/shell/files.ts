@@ -142,7 +142,7 @@ export async function gitListAll(root: string): Promise<string[] | undefined> {
     }
     return Array.from(out).sort()
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -217,7 +217,7 @@ export async function fileStatus(root: string) {
               status: "added" as const,
             }
           } catch {
-            return
+            return undefined
           }
         }),
     )

@@ -233,7 +233,8 @@ export function openMermaidViewer(
     else if (event.key === "ArrowRight") state.panX -= 32
     else if (event.key === "Tab") {
       const focusable: HTMLElement[] = [viewport, dragButton, zoomOut, zoomValue, zoomIn, closeButton]
-      const index = focusable.indexOf(document.activeElement as HTMLElement)
+      const active = document.activeElement
+      const index = focusable.findIndex((element) => element === active)
       const next = event.shiftKey ? (index - 1 + focusable.length) % focusable.length : (index + 1) % focusable.length
       event.preventDefault()
       focusable[next]?.focus({ preventScroll: true })

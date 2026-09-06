@@ -23,7 +23,8 @@ import { driverHello, type AgentDriverRequest } from "./agent-driver-contract";
 import { createAgentDriverRuntime } from "./agent-driver-runtime";
 import { startFakeEngine } from "./agent-fake-engine";
 import { runControlledStreamScenario } from "./agent-stream-scenario";
-import { runTerminalScenario } from "./agent-terminal-scenario";
+import { runTerminalScenario, type TerminalStream } from "./agent-terminal-scenario";
+import { numberField, recordsField, textField } from "./json-fields";
 import {
   driverClock,
   rawMetricSample,
@@ -153,7 +154,7 @@ export async function createClaxedoAgentDriver(input?: {
         : { terminated: [], survivors: [], forced: [] };
       launch = undefined;
       prepared = undefined;
-      fakeEngine?.close();
+      await fakeEngine?.close();
       fakeEngine = undefined;
       return result;
     },
@@ -674,19 +675,53 @@ function runnerOwnedResourceSample(
   });
 }
 
-function terminalStream(corpus: AgentAppCorpus) {
+/**
+ * Read the terminal stream the scenario replays out of the corpus.
+ *
+ * Corpus terminal streams are `Record<string, unknown>`. The old guard checked
+ * three of the eight fields the scenario reads and asserted the rest, so a
+ * corpus missing `columns` or `expectedSha256` failed mid-replay instead of
+ * here.
+ */
+function terminalStream(corpus: AgentAppCorpus): TerminalStream {
   const stream = corpus.sessions.toSorted(
     (left, right) => left.order - right.order,
   )[0]?.terminalStreams[0];
+  const invalid = () => new Error("terminal scenario requires a corpus terminal stream");
+  if (!stream) throw invalid();
+  const id = textField(stream, "id");
+  const expectedSha256 = textField(stream, "expectedSha256");
+  const columns = numberField(stream, "columns");
+  const rows = numberField(stream, "rows");
+  const expectedBytes = numberField(stream, "expectedBytes");
+  const rawChunks = recordsField(stream, "chunks");
+  const rawSentinels = stream.inputSentinels;
   if (
-    !stream ||
-    typeof stream.id !== "string" ||
-    !Array.isArray(stream.chunks) ||
-    !Array.isArray(stream.inputSentinels)
+    id === undefined ||
+    expectedSha256 === undefined ||
+    columns === undefined ||
+    rows === undefined ||
+    expectedBytes === undefined ||
+    !rawChunks ||
+    !Array.isArray(rawSentinels)
   ) {
-    throw new Error("terminal scenario requires a corpus terminal stream");
+    throw invalid();
   }
-  return stream as Parameters<typeof runTerminalScenario>[0]["stream"];
+  const chunks = rawChunks.map((chunk) => ({
+    sequence: numberField(chunk, "sequence") ?? -1,
+    atMs: numberField(chunk, "atMs") ?? -1,
+    bytesBase64: textField(chunk, "bytesBase64") ?? "",
+  }));
+  if (chunks.some((chunk) => chunk.sequence < 0 || chunk.atMs < 0 || chunk.bytesBase64 === "")) throw invalid();
+  return {
+    id,
+    chunks,
+    inputSentinels: rawSentinels.filter((entry) => typeof entry === "string"),
+    columns,
+    rows,
+    expectedBytes,
+    expectedSha256,
+  };
 }
 
 function seedNumber(seed: string) {

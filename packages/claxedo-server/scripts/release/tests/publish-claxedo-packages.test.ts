@@ -129,7 +129,7 @@ describe("publish-claxedo-packages", () => {
       }
       if (cmd === "npm" && args[0] === "pack") {
         // Build a genuine tarball with the same layout npm produces.
-        const dest = args[args.indexOf("--pack-destination") + 1]!
+        const dest = args[args.indexOf("--pack-destination") + 1]
         const stage = path.join(dest, "stage", "package")
         fs.mkdirSync(stage, { recursive: true })
         fs.copyFileSync(path.join(cwd!, "package.json"), path.join(stage, "package.json"))

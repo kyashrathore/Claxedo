@@ -13,6 +13,7 @@ import {
   setWorkspaceConnectionObserver,
   type WorkspaceConnectionInfo,
 } from "./workspace-relay-connection"
+import { requestUrl } from "@/lib/url"
 
 afterEach(() => {
   queryClient.clear()
@@ -41,12 +42,6 @@ function connection(input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConn
     tokenExpiresAt: Date.now() + 30 * 60_000,
     ...input,
   }
-}
-
-function requestUrl(input: string | URL | Request) {
-  if (input instanceof Request) return input.url
-  if (input instanceof URL) return input.href
-  return input
 }
 
 describe("workspace relay connection", () => {

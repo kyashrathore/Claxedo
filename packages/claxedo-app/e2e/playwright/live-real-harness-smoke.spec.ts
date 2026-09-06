@@ -1,243 +1,20 @@
 /**
- * SPEC: Live real-harness smoke (Tier L)
+ * Real per-turn latency, measured against this repo's live `claxedo-server` with
+ * `curl` and no browser overhead: `opencode`/`big-pickle` ~3s, `claude-sdk` ~6s,
+ * `codex-acp` ~12s, `claude-acp` ~15-20s. `turn-oracle.ts` hardcodes a 20s
+ * Playwright timeout per wait, which `claude-acp` turns approach once browser and
+ * SSE overhead is added on top — hence the one-token prompts and the 240s per-test
+ * timeout for 3 turns plus a reload.
  *
- * PURPOSE — every other spec in this suite (1-21) proves the UI against a mocked
- * `/global/event` stream (`installMockRuntime`); none of them ever exercise a real
- * `claxedo-server` process, a real embedded OpenCode engine, or a real
- * `claude`/`codex` binary. This spec is the one place that removes ALL mocking and
- * proves the full real stack end to end: a genuine `bun run start` claxedo-server
- * (embedded OpenCode engine, no `OPENCODE_URL` override — see
- * `packages/claxedo-server/src/deployments/local/main.ts:17` for the port and the "absent
- * OPENCODE_URL = embedded" contract from `project_embed_opencode_engine`), talking
- * to a real git worktree, driving real subprocess/native-SDK agent harnesses, and
- * replaying real persisted messages after a real page reload (no SSE mock replay).
- * It exists to catch the class of bug no mocked spec can: a genuine protocol
- * mismatch between our harness driver and an installed agent binary's real wire
- * format (see BEHAVIORS #5 / HARNESS NOTES for exactly such a bug this spec found).
+ * A real turn renders one assistant-content row per renderable part — a `reasoning`
+ * row plus a `text` row — where a mocked turn renders a single row, so settlement is
+ * proven here by an exact user-row count plus per-marker uniqueness rather than a
+ * total assistant-row count.
  *
- * STATE MODEL — identical client-side state machine to `core-first-prompt-local`
- * (draft -> optimistic user row -> `POST /session` -> `POST
- * /session/:id/prompt_async` (204, fire-and-forget) -> real `/global/event` SSE
- * delivers `session.status busy` -> `message.updated`(pending) ->
- * `message.part.delta`* -> `message.updated`(completed) -> `session.idle`) — the
- * DIFFERENCE from every Tier M spec is that every one of those events is produced
- * by the REAL server (`packages/claxedo-server`) driving a REAL harness backend
- * (`packages/agent-sdk-runtime`'s ACP/native-SDK drivers, or the embedded OpenCode
- * engine itself), not `e2e/helpers/mock-runtime.ts`'s staged `EventBus`. Harness
- * selection persists server-side per-directory (`GET/POST
- * /api/claxedo/agent-config/harness?directory=...`) — a directory that was
- * previously switched to a harness auto-hydrates a FRESH draft onto that harness on
- * next mount (see `core-harness-ownership-local`'s STATE MODEL path (b)); this spec
- * avoids that cross-test coupling by giving every scenario its own freshly
- * `git init`-ed scratch worktree (`makeWorkspace`) and driving the harness `<Select>`
- * explicitly (path (a)) rather than relying on hydration. Message persistence after
- * reload is backed by the real `workspace-runtime` `RuntimeStore` (SQLite journal
- * under `CLAXEDO_DATA_DIR`), not an in-memory mock array — reload in this spec
- * exercises the real message-replay read path.
- *
- * ANATOMY — reuses the exact selectors `core-first-prompt-local` and
- * `core-harness-ownership-local` document (this spec does not re-derive them, since
- * the DOM contract is identical against a real backend):
- *   `[data-claxedo]` — shell root, presence == app painted.
- *   `[role="textbox"][aria-label*="Ask anything"]` — composer editor.
- *   `[data-action="prompt-submit"]` — send/stop control (`turn-oracle.ts`'s
- *     `submitControlReady` asserts `data-icon !== "stop"` once settled).
- *   `[data-slot="session-turn-assistant-content"]` (not `aria-hidden="true"`) — the
- *     oracle's DOM-truth target (`e2e/helpers/turn-oracle.ts`).
- *   `[data-action="prompt-harness-model"]` — the unified harness/model picker,
- *     with ACP-before-native-SDK group ordering from `HARNESS_OPTIONS`. This spec only
- *     asserts it stops reading "Loading models"/"Select model" (real catalog
- *     resolution), never a specific model name — model catalogs are live data that
- *     can change server-side; asserting exact names is `core-harness-ownership-
- *     local`'s job against a pinned mock, not this smoke test's.
- *   `[data-slot="session-turn-message-content"]` — user turn row (see
- *     `expectLiveUserRowCount`'s exact-count check below); real turns can render
- *     MORE than one `session-turn-assistant-content` row per turn (see HARNESS
- *     NOTES), so this spec proves per-marker uniqueness there (post-reload, via
- *     `expectLiveTurnsSettledAfterReload`) instead of a fixed total row count.
- *
- * BEHAVIORS —
- *   1. The `opencode` harness (embedded engine, real `opencode`/`big-pickle`
- *      provider, no external binary) completes 3 real turns in one session, each
- *      proven by the full three-layer oracle, and a page reload re-renders all 3
- *      replies from the real persisted store with no duplication.
- *   2. The `claude-acp` harness (a genuinely spawned `claude-agent-acp` subprocess,
- *      `packages/agent-sdk-runtime/src/harnesses/acp/*`) completes the same 3-turn +
- *      reload journey, model resolved from the real
- *      `/api/claxedo/agent-config/harness/options` catalog (not a mock fixture).
- *   3. The `claude-sdk` harness (in-process `@anthropic-ai/claude-agent-sdk` driver,
- *      no subprocess) completes the same 3-turn + reload journey.
- *   4. The `codex-acp` harness (a genuinely spawned `codex-acp` subprocess) completes
- *      the same 3-turn + reload journey.
- *   5. The `codex-app-server` (native Codex SDK) harness completes the same 3-turn +
- *      reload journey. This was previously a `test.fixme` documenting a "REAL APP BUG"
- *      — `thread not found: <uuid>` on `turn/start` against codex-cli 0.143.0 — but
- *      that skew is resolved: the driver's two-step lifecycle plus its fresh-process
- *      `thread/resume` recovery (`startTurnWithThreadRecovery`) now complete real
- *      turns against BOTH codex-cli 0.143.0 and 0.144.x, verified 2026-07-20 at the
- *      driver level (real `CodexHarnessAdapter`, real ChatGPT auth) and from the
- *      published `@claxedo/agent-sdk-runtime@0.5.3` bundle. See HARNESS NOTES / the
- *      behavior-5 test comment for the evidence.
- *   6. Gating: with `CLAXEDO_E2E_LIVE` unset, every test in this file is skipped
- *      with a visible, human-readable reason (never a silent no-op — Playwright's
- *      HTML/line reporter shows the reason string). With `CLAXEDO_E2E_LIVE=1`: if
- *      `claxedo-server` itself cannot boot (the mandatory backbone every harness
- *      depends on), the whole file FAILS loudly in `beforeAll` with the server's own
- *      boot log tail in the error message — it is never silently skipped. If a
- *      specific OPTIONAL harness's binary (`claude`/`codex`) is genuinely absent
- *      from `PATH`, only THAT harness's test is skipped, with a visible reason
- *      naming the missing binary — see HARNESS NOTES for why this is a `test.skip`
- *      and not a hard failure.
- *   7. Harness selection is locked once a session exists, even against the real
- *      backend (same contract `core-harness-ownership-local` pins against the mock)
- *      — checked once per harness scenario as a cheap supplementary assertion, not
- *      re-derived in full here.
- *
- * INVARIANTS — completed assistant content is never hidden by stale busy state (#2
- *   in `e2e/INVARIANTS.md`) — every oracle call in this spec is proving that
- *   invariant against REAL busy/completed/idle timing, not staged mock timing.
- *   Harness ownership (#1): the selected harness is locked after creation (behavior
- *   7). Submit gating (#4): every wait is a deterministic DOM/request-count
- *   assertion; this spec adds zero new `waitForTimeout` sleeps as the sole guard of
- *   anything.
- *
- * HARNESS NOTES —
- *   - Workspace-registration race (real, verified against this repo's live server —
- *     see `registerWorkspace()`): the app's own bootstrap flow registers a directory
- *     as a local workspace via a fire-and-forget `GET /api/workspace/resolve?...&
- *     create=true` (`src/shell/data/bootstrap.ts`'s `postPaint` block ->
- *     `packages/claxedo-server/src/workspace/routes/index.ts:142` -> `ensureWorkspace()` in
- *     `packages/claxedo-server-core/src/workspace/store/index.ts:287`) that is not awaited
- *     before the composer becomes interactive. `POST /session` 404s for any
- *     directory that has not yet completed that registration (confirmed by direct
- *     `curl` reproduction: 404 before the `GET .../resolve...&create=true` call,
- *     201 immediately after). A real human always wins this race by the time they
- *     finish typing; this spec's synthetic compose-and-click speed does not always
- *     win it, especially under host CPU contention, so `makeWorkspace()` closes it
- *     deterministically by calling the same real endpoint before ever driving the
- *     UI (a test-setup precondition, not a mock — see `registerWorkspace()`'s own
- *     comment for the full trace).
- *   - Real multi-part assistant rows: unlike every Tier M mock's single fixed text
- *     part, a real turn from the `opencode`/`big-pickle` model in this environment
- *     renders BOTH a `reasoning` part and a `text` part as separate
- *     `session-turn-assistant-content` rows (`message-timeline.data.ts`'s
- *     `groupParts`, one row per renderable part — see `expectTurnCounts`'s own doc
- *     comment in `turn-oracle.ts` anticipating exactly this). This spec therefore
- *     asserts turn settlement via exact user-row count + (post-reload) per-marker
- *     "exactly one visible assistant row contains this turn's reply" — still a hard
- *     duplicate-render check, just correctly scoped against real, non-mocked output.
- *   - [REAL APP FINDING, not fixme'd — see rationale below] Mid-session assistant-
- *     part duplication: on some turns (observed from turn 2 onward, never turn 1;
- *     reproduced independently across multiple live runs against this repo's real
- *     server, both before AND — on one occasion — after `page.reload()`) a turn's
- *     reply text renders TWICE in two separate, simultaneously-visible
- *     `session-turn-assistant-content` rows with byte-identical text — confirmed by
- *     cross-checking that SAME turn's real `GET /session/:id/message` response at
- *     the SAME moment, which never contains more than one text part for that
- *     message (i.e. the server's canonical state is always correct; the duplicate
- *     is a client-only artifact). BELIEVED FIXED at both layers as of 2026-08-01,
- *     pending a Tier R scenario-1 green to confirm — the two layers, in the order
- *     a payload meets them:
- *       (1) `src/features/session/conversation/conversation-hydrator.ts`
- *           (`canonicalPartMessageIds` + `reconcileStoredParts` from
- *           `src/features/session/store/message-page.ts`). `mergeStoredItems` is a
- *           UNION: it adds ids and never removes one a later payload omits, so a
- *           transient streaming part id was entrenched for the page's lifetime.
- *           The hydrator now RECONCILES instead of unioning, but only where the
- *           payload is genuinely canonical — a replacing `rows` page (not
- *           `prepend`, not the prefetch seed) for a SETTLED assistant message.
- *           `mergeStoredItems` itself stays additive on purpose: its streaming and
- *           history-backfill callers each hold a fragment, and pruning against a
- *           fragment deletes content the server simply has not persisted yet.
- *       (2) `src/features/session/conversation/opencode-conversation.ts`
- *           (`mergeChatMessage`, commit `69c697775`, 2026-07-20) — a settled
- *           assistant snapshot's part list is authoritative, so chat-only parts
- *           are dropped rather than re-appended.
- *     These are COMPLEMENTARY, not redundant: (2) can only judge the part list it
- *     is handed, and before (1) the hydrator handed it a union that already
- *     contained the stale id, leaving its prune nothing to drop. Verified by
- *     reverting (1) alone: a settled message whose canonical payload lists one
- *     part still ended up holding two.
- *     IndexedDB persistence (`conversation-persistence.ts` →
- *     `compactConversationSnapshot`) dedupes by MESSAGE id and never inspects
- *     parts, so a session that duplicated before this fix still has the duplicate
- *     on disk — no migration was written because the first canonical refetch after
- *     reload now prunes it (covered by `conversation-hydrator.test.ts`).
- *     This spec does NOT `test.fixme` behavior 1 over this: the
- *     defect is intermittent (most runs, including full multi-turn + reload runs,
- *     show zero duplication), never affects turn 1, and — critically — never causes
- *     a REPLY to be invisible or wrong (every turn's own oracle check, the actual
- *     behavior-1 proof, still passes every time); the ADDITIONAL supplementary
- *     duplicate-render check this spec runs (`expectLiveTurnsSettledAfterReload`)
- *     is therefore left ENABLED and un-softened — if the fix is incomplete this
- *     should fail the suite loudly and intermittently, not be silently downgraded
- *     to always-green.
- *   - Gating reconciliation: `e2e/INVARIANTS.md`'s Tier L rule says a missing
- *     credential/binary "FAILS the test with a clear setup message... silent
- *     `test.skip()` is forbidden," while the plan's spec-22 entry separately says
- *     "Loud-skip on missing credential/binary." This spec reconciles the two by
- *     treating them as operating at different levels: `claxedo-server` failing to
- *     boot is the mandatory backbone every harness (including the always-available
- *     `opencode` baseline) depends on — that FAILS loudly (an uncaught throw from
- *     `beforeAll`), never a skip. An individual OPTIONAL harness's binary
- *     (`claude`/`codex`) being absent is a `test.skip(condition, reason)` — but the
- *     reason string is always a specific, visible sentence naming the missing
- *     binary and how to fix it (`e2e/INVARIANTS.md`'s actual complaint is about
- *     SILENT no-reason skips, e.g. the pre-refactor suite's Tier-L-in-name-only
- *     files that quietly skipped everything with no explanation at all). A harness
- *     whose binary IS present but whose real turn genuinely errored would be a hard
- *     failure citation (a `test.fixme`), never silently skipped or downgraded — this
- *     is how behavior 5 (native codex-app-server) was tracked while its `thread not
- *     found` skew was open; that skew is now resolved and behavior 5 is a normal
- *     live test (see BEHAVIORS #5).
- *   - `claude-sdk`'s credential source: this environment's `claude-sdk` (native,
- *     non-ACP) harness resolved and answered without any `ANTHROPIC_API_KEY` being
- *     set, meaning it shares the local `claude` CLI's own OAuth session — this spec
- *     therefore gates BOTH `claude-acp` and `claude-sdk` on the same `claude`
- *     binary preflight (`resolveBinary("claude", ...)`), since that is the only
- *     verifiable local signal for "Claude is usable here" this spec has.
- *   - Real per-turn latency (measured directly against this repo's live
- *     `claxedo-server`, `curl`, no browser overhead): `opencode`/`big-pickle` ~3s,
- *     `claude-sdk` ~6s, `codex-acp` ~12s, `claude-acp` ~15-20s. `turn-oracle.ts`'s
- *     `domTruth`/`thinkingRowGone`/`submitControlReady` each hardcode a 20s
- *     Playwright timeout that this spec file cannot change (helpers are off-limits
- *     per this suite's authoring rules) — `claude-acp` turns are the closest to that
- *     ceiling once real browser/SSE-reconnect overhead is added on top of the raw
- *     API latency measured above. Prompts in this spec are deliberately terse
- *     ("reply with exactly this one token") specifically to minimize that risk; if
- *     `claude-acp` ever flakes on the 20s ceiling in CI, the fix belongs in
- *     `turn-oracle.ts`'s timeout (a Tier-L-aware bump), not in weakening this
- *     spec's assertions.
- *   - Behavior 5's bug locus: `packages/agent-sdk-runtime/src/harnesses/codex/
- *     driver.ts:78-92` (`createAgentSession` issues `thread/start` to the spawned
- *     `codex app-server` subprocess and captures `result.thread.id` as `threadId`)
- *     and `driver.ts:160-174` (`runTurn`'s `turn/start` request references that
- *     SAME `threadId` on the SAME long-lived subprocess instance — `ensureProcess`
- *     reuses `this.process` while `alive`). Against the locally installed
- *     `codex-cli 0.143.0`, the second call consistently fails with `thread not
- *     found: <the exact uuid thread/start just returned>`, reproduced on two
- *     independently fresh sessions/directories with a 3s settle delay inserted
- *     between the two calls (ruling out a same-tick race) — this reads as a
- *     protocol/version skew between the vendored driver's `thread/start` ->
- *     `turn/start` two-step and what this codex-cli build's `app-server` subcommand
- *     actually expects, not an environment/auth problem (the SAME binary's
- *     `codex-acp` mode, a different code path in the same CLI, completes turns
- *     successfully — behavior 4).
- *   - `cursor-acp`/`cursor-sdk` are deliberately NOT in this spec's harness matrix:
- *     the plan's spec-22 entry scopes Tier L smoke coverage to "opencode, claude,
- *     codex; ACP and SDK where available" — Cursor is out of scope here even though
- *     a `cursor-acp`-capable `agent` binary happens to be present on this particular
- *     development machine.
- *
- * OUT OF SCOPE — the full per-harness ownership/model/effort/payload matrix against
- *   a pinned mock (`core-harness-ownership-local`, `core-harness-ownership-cloud`);
- *   per-harness event/tool-rendering fidelity (`core-harness-rendering-matrix`);
- *   Agent Plugins materialization and MCP Inspector coverage; the
- *   user-hosted relay (`live-user-hosted-relay`); cloud/sandbox provisioning
- *   (`core-cloud-provisioning` and friends); busy/abort/error escalation UI
- *   (`core-busy-abort-errors`) — this spec's turns are deliberately short and
- *   unlikely to need any permission/question/abort interaction, and does not
- *   exercise those paths.
+ * Assistant text has been observed rendering twice in two simultaneously visible
+ * rows from turn 2 onward, never turn 1, while that message's
+ * `GET /session/:id/message` payload still held exactly one text part — the strict
+ * per-marker duplicate check therefore runs only after `page.reload()`.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
@@ -301,7 +78,6 @@ async function stopServer() {
   server = undefined
 }
 
-/** Harvested from the retired real-auth spec's realClaudeBinary(). */
 async function resolveBinary(name: string, envVar: string) {
   const override = process.env[envVar]?.trim()
   const binary = override || name
@@ -359,7 +135,7 @@ async function registerWorkspace(dir: string) {
   if (!res.ok) {
     throw new Error(
       `GATING: failed to pre-register workspace ${dir} via ${url} (${res.status}) — ` +
-        `${await res.text().catch(() => "<no body>")}`,
+        (await res.text().catch(() => "<no body>")),
     )
   }
 }
@@ -434,11 +210,6 @@ type HarnessCase = {
   seededHarness?: string
 }
 
-/**
- * Sets the server's harness default for this directory — the selection
- * mechanism for harnesses the picker no longer lists. Mirrors Tier R's
- * `seedDefaultHarness` in `real-harness-local.spec.ts`.
- */
 async function seedDefaultHarness(dir: string, harnessKey: string) {
   const url = `${BACKEND_URL}/api/claxedo/agent-config/harness?directory=${encodeURIComponent(dir)}`
   const res = await fetch(url, {
@@ -451,15 +222,6 @@ async function seedDefaultHarness(dir: string, harnessKey: string) {
   }
 }
 
-// `expectLiveUserRowCount` / `expectLiveTurnsSettledAfterReload` moved to
-// `e2e/helpers/turn-oracle-extras.ts` — Tier R's `real-harness-local.spec.ts`
-// needs the identical checks against real (multi-part) assistant output, and a
-// second hand-rolled copy would drift. See that file's doc comments for why
-// these exist instead of `turn-oracle.ts`'s `expectTurnCounts`, and this file's
-// HARNESS NOTES ("mid-session assistant-part duplication") for why the strict
-// per-marker check runs only after `page.reload()`.
-
-/** Drives the shared "3 real turns + reload, full oracle each turn" journey. */
 async function runLiveHarnessSmoke(page: Page, dir: string, harness: HarnessCase) {
   const runId = `${Date.now()}`.slice(-6)
   const input = await openDraftPrompt(page, dir)
@@ -529,9 +291,7 @@ test.describe("live real-harness smoke @live", () => {
     await Promise.all(scratchDirs.map((dir) => fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)))
   })
 
-  test.beforeEach(async ({}, testInfo) => {
-    // Real agent turns take several real seconds each (see HARNESS NOTES latency
-    // table); 3 turns + reload per scenario needs headroom above the file default.
+  test.beforeEach(async (_fixtures, testInfo) => {
     testInfo.setTimeout(240_000)
   })
 
@@ -591,21 +351,6 @@ test.describe("live real-harness smoke @live", () => {
   test("codex native SDK harness completes 3 real turns and survives reload — behavior 5", async ({
     page,
   }) => {
-    // Previously `test.fixme` for a "REAL APP BUG": against codex-cli 0.143.0 every
-    // `turn/start` was reported to fail `thread not found: <uuid>` for the thread
-    // `thread/start` had just returned. That bug is NOT reproducible in the current
-    // driver: the native codex-app-server two-step lifecycle
-    // (`packages/agent-sdk-runtime/src/harnesses/codex/driver.ts` — `createAgentSession`
-    // -> `thread/start`, then `runTurn` -> `turn/start`, plus the fresh-process
-    // `thread/resume` recovery in `startTurnWithThreadRecovery`) completes real turns
-    // against BOTH codex-cli 0.143.0 and 0.144.x. Verified 2026-07-20 by driving the
-    // real `CodexHarnessAdapter` (createSession + sendMessage, the exact path
-    // `POST /session/:id/prompt_async` invokes) against real ChatGPT auth: 3 turns in
-    // one session plus a reload (dispose -> respawn -> resume) all returned real model
-    // output with no `thread not found`, from BOTH the source driver and the published
-    // `@claxedo/agent-sdk-runtime@0.5.3` bundle. The recovery mechanism added in
-    // 086be6cb7d resolved the original skew. Now a first-class live-smoke harness like
-    // its siblings (native SDK == the picker's single `Codex` option).
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
     test.skip(
       !binary,

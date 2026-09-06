@@ -1,4 +1,5 @@
-import type { AgentPluginHarness, AgentPluginSourceKind } from "../api"
+import { isRecord, readArray, readField, readString } from "@/lib/record"
+import { isAgentPluginSourceKind, type AgentPluginHarness, type AgentPluginSourceKind } from "../api"
 
 /**
  * The reads the Directory needs beyond the catalog itself: the sources a
@@ -81,18 +82,10 @@ export class DirectorySourceError extends Error {
 
 type RequestFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-}
-
-function sourceKind(value: unknown): value is AgentPluginSourceKind {
-  return value === "claxedo" || value === "personal" || value === "organization"
-}
-
 function directorySource(value: unknown): DirectorySource | undefined {
-  if (!record(value)
+  if (!isRecord(value)
     || typeof value.id !== "string"
-    || !sourceKind(value.kind)
+    || !isAgentPluginSourceKind(value.kind)
     || typeof value.label !== "string"
     || typeof value.repository !== "string"
     || typeof value.ref !== "string"
@@ -111,7 +104,7 @@ function directorySource(value: unknown): DirectorySource | undefined {
 
 function diagnostics(value: unknown): DirectorySourceDiagnostic[] {
   if (!Array.isArray(value)) return []
-  return value.flatMap((item) => record(item)
+  return value.flatMap((item) => isRecord(item)
     && typeof item.sourceId === "string"
     && typeof item.relativePath === "string"
     && typeof item.code === "string"
@@ -121,7 +114,7 @@ function diagnostics(value: unknown): DirectorySourceDiagnostic[] {
 }
 
 function machineEntry(value: unknown): MachineInstalledEntry | undefined {
-  if (!record(value) || typeof value.name !== "string" || typeof value.root !== "string") return undefined
+  if (!isRecord(value) || typeof value.name !== "string" || typeof value.root !== "string") return undefined
   return {
     name: value.name,
     ...(typeof value.version === "string" ? { version: value.version } : {}),
@@ -132,7 +125,7 @@ function machineEntry(value: unknown): MachineInstalledEntry | undefined {
 }
 
 function machineHarness(value: unknown): MachineInstalledHarness | undefined {
-  if (!record(value)) return undefined
+  if (!isRecord(value)) return undefined
   const harnessId = value.harnessId
   if (harnessId !== "claude" && harnessId !== "cursor" && harnessId !== "codex") return undefined
   const entries = Array.isArray(value.entries)
@@ -145,14 +138,14 @@ function machineHarness(value: unknown): MachineInstalledHarness | undefined {
 }
 
 export function directorySourceFailure(status: number, body: unknown, fallback: string): DirectorySourceError {
-  const error = record(body) && record(body.error) ? body.error : undefined
-  const code = typeof error?.code === "string" ? error.code : `http_${status}`
-  const message = typeof error?.message === "string" ? error.message : `${fallback} (${status})`
-  return new DirectorySourceError(code, message, diagnostics(error?.["diagnostics"]))
+  const error = readField(body, "error")
+  const code = readString(error, "code") ?? `http_${status}`
+  const message = readString(error, "message") ?? `${fallback} (${status})`
+  return new DirectorySourceError(code, message, diagnostics(readField(error, "diagnostics")))
 }
 
 export function parseDirectorySourceList(body: unknown): { sources: DirectorySource[] } {
-  const rows = record(body) && Array.isArray(body.sources) ? body.sources : []
+  const rows = readArray(body, "sources") ?? []
   return { sources: rows.flatMap((row) => {
     const source = directorySource(row)
     return source ? [source] : []
@@ -160,7 +153,7 @@ export function parseDirectorySourceList(body: unknown): { sources: DirectorySou
 }
 
 export function parseDirectorySourceResponse(body: unknown): { source: DirectorySource } {
-  const source = record(body) ? directorySource(body.source) : undefined
+  const source = directorySource(readField(body, "source"))
   if (!source) throw new DirectorySourceError("invalid_response", "The source response did not match its API contract")
   return { source }
 }
@@ -199,7 +192,7 @@ export function directoryApi(input: { baseUrl: string; request: RequestFn }): Di
       const response = await input.request(url("/machine-installed"))
       if (!response.ok) throw await failure(response, "Could not read this machine's harness installs")
       const body: unknown = await response.json().catch(() => undefined)
-      const rows = record(body) && Array.isArray(body.harnesses) ? body.harnesses : []
+      const rows = readArray(body, "harnesses") ?? []
       return {
         harnesses: rows.flatMap((row) => {
           const harness = machineHarness(row)

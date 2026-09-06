@@ -14,6 +14,7 @@ import {
   Switch,
   untrack,
   type ComponentProps,
+  type JSX,
   type ParentProps,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
@@ -58,27 +59,30 @@ const kindDotColor = (kind: Kind) => {
 
 const visibleKind = (node: FileNode, kinds?: ReadonlyMap<string, Kind>, marks?: Set<string>) => {
   const kind = kinds?.get(node.path)
-  if (!kind) return
-  if (!marks?.has(node.path)) return
+  if (!kind) return undefined
+  if (!marks?.has(node.path)) return undefined
   return kind
 }
 
 const buildDragImage = (target: HTMLElement) => {
   const icon = target.querySelector('[data-component="file-icon"]') ?? target.querySelector("svg")
   const text = target.querySelector("span")
-  if (!icon || !text) return
+  if (!icon || !text) return undefined
 
   const image = document.createElement("div")
   image.className =
     "flex items-center gap-x-2 px-2 py-1 bg-surface-raised-base rounded-md border border-border-base text-12-regular text-text-strong"
   image.style.position = "absolute"
   image.style.top = "-1000px"
-  image.innerHTML = (icon as SVGElement).outerHTML + (text as HTMLSpanElement).outerHTML
+  image.innerHTML = icon.outerHTML + text.outerHTML
   return image
 }
 
-const withFileDragImage = (event: DragEvent) => {
-  const image = buildDragImage(event.currentTarget as HTMLElement)
+/** A row drag: `Dynamic` types its props loosely, so name the row we bind to. */
+type FileRowDragEvent = DragEvent & { currentTarget: HTMLElement }
+
+const withFileDragImage = (event: FileRowDragEvent) => {
+  const image = buildDragImage(event.currentTarget)
   if (!image) return
   document.body.appendChild(image)
   event.dataTransfer?.setDragImage(image, 0, 12)
@@ -116,7 +120,7 @@ const FileTreeNode = (
   const active = () => !!kind() && !local.node.ignored
   const color = () => {
     const value = kind()
-    if (!value) return
+    if (!value) return undefined
     return kindTextColor(value)
   }
 
@@ -133,7 +137,7 @@ const FileTreeNode = (
       }}
       style={`padding-left: ${Math.max(0, 8 + local.level * 12 - (local.node.type === "file" ? 24 : 4))}px`}
       draggable={local.draggable}
-      onDragStart={(event: DragEvent) => {
+      onDragStart={(event: FileRowDragEvent) => {
         if (!local.draggable) return
         event.dataTransfer?.setData("text/plain", `file:${local.node.path}`)
         event.dataTransfer?.setData("text/uri-list", pathToFileUrl(local.node.path))
@@ -203,11 +207,10 @@ export default function FileTree(props: {
   // focusable [role="treeitem"] elements (Kobalte trigger button for a
   // directory, the file button for a file); expanded state is read from the
   // trigger's aria-expanded so expand/collapse reuses the existing click path.
-  const handleTreeKeyDown = (event: KeyboardEvent) => {
-    const root = event.currentTarget as HTMLElement | null
-    if (!root) return
+  const handleTreeKeyDown: JSX.EventHandler<HTMLDivElement, KeyboardEvent> = (event) => {
+    const root = event.currentTarget
     const items = Array.from(root.querySelectorAll<HTMLElement>('[role="treeitem"]'))
-    const current = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="treeitem"]') ?? null
+    const current = event.target.closest<HTMLElement>('[role="treeitem"]')
     const index = current ? items.indexOf(current) : -1
     const expandedAttr = current?.getAttribute("aria-expanded")
     const expanded = expandedAttr === null || expandedAttr === undefined ? undefined : expandedAttr === "true"
@@ -237,7 +240,7 @@ export default function FileTree(props: {
     if (props._filter) return props._filter
 
     const allowed = props.allowed
-    if (!allowed) return
+    if (!allowed) return undefined
 
     return buildAllowedFilter(allowed)
   })
@@ -248,7 +251,7 @@ export default function FileTree(props: {
     const out = new Set<string>()
     for (const item of props.modified ?? []) out.add(item)
     for (const item of props.kinds?.keys() ?? []) out.add(item)
-    if (out.size === 0) return
+    if (out.size === 0) return undefined
     return out
   })
 
@@ -284,10 +287,10 @@ export default function FileTree(props: {
     push(root, level - 1)
 
     while (stack.length > 0) {
-      const top = stack[stack.length - 1]!
+      const top = stack[stack.length - 1]
 
       if (top.i < top.kids.length) {
-        const next = top.kids[top.i]!
+        const next = top.kids[top.i]
         top.i++
         push(next, top.lvl + 1)
         continue

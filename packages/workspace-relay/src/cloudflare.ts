@@ -1,17 +1,14 @@
+// Packages that compile these sources directly (claxedo-app does) build their
+// own program from imports alone and never pick up this package's tsconfig
+// file list, so the ambient declaration has to travel with the file.
+/// <reference path="./workerd-globals.d.ts" />
 import { WorkspaceRelayAuthError, verifyHostTunnelToken } from "./auth"
 import { bearerToken, errorBody } from "./http"
 import {
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
   validateTunnelMessage,
-  type TunnelError,
-  type TunnelHttpResponseChunk,
-  type TunnelHttpResponseEnd,
   type TunnelHttpResponseFlow,
-  type TunnelHttpResponseStart,
-  type TunnelHostRegistrationUpdate,
-  type TunnelPing,
-  type TunnelWsClose,
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
@@ -67,7 +64,12 @@ export const RELAY_LOCATION_HINTS = ["wnam", "enam", "sam", "weur", "eeur", "apa
 
 export type RelayLocationHint = typeof RELAY_LOCATION_HINTS[number]
 
-const relayLocationHintSet = new Set<string>(RELAY_LOCATION_HINTS)
+const relayLocationHintSet: ReadonlySet<string> = new Set<string>(RELAY_LOCATION_HINTS)
+
+/** The membership test `RELAY_LOCATION_HINTS` exists for, as a narrowing one. */
+function isRelayLocationHint(input: string): input is RelayLocationHint {
+  return relayLocationHintSet.has(input)
+}
 
 /**
  * Maps a workspace home region to a Cloudflare location hint.
@@ -161,8 +163,9 @@ export function relayLocationHint(input: {
   if (region) {
     // A caller may pass a literal CF hint (e.g. "weur") or a workspace region
     // name (e.g. "eu-west"); accept either.
-    const direct = relayLocationHintSet.has(region.toLowerCase()) ? region.toLowerCase() as RelayLocationHint : undefined
-    const mapped = direct ?? RELAY_REGION_TO_LOCATION_HINT[region.toLowerCase()]
+    const lowered = region.toLowerCase()
+    const direct = isRelayLocationHint(lowered) ? lowered : undefined
+    const mapped = direct ?? RELAY_REGION_TO_LOCATION_HINT[lowered]
     if (mapped) return mapped
   }
   const country = clean(input.country)
@@ -379,6 +382,24 @@ type UserHostedClientSocket = ClientSocket & {
   channelId: string
 }
 
+/**
+ * Node and Bun hand back a `Timeout` whose `unref()` keeps a watchdog from
+ * holding the process open; workerd hands back a plain number. The guard is
+ * therefore a runtime one, not a typing workaround.
+ */
+function unrefTimer(timer: ReturnType<typeof setInterval>) {
+  if (typeof timer.unref === "function") timer.unref()
+}
+
+/**
+ * `clients` holds both cloud-VM and user-hosted sockets; only the latter carry
+ * the tunnel channel they are multiplexed over. This is the one place that
+ * distinction is made at runtime.
+ */
+function isUserHostedClient(client: ClientSocket): client is UserHostedClientSocket {
+  return "channelId" in client && typeof client.channelId === "string"
+}
+
 type PendingTunnelHttpResponse = {
   chunks: Uint8Array[]
   bytes: number
@@ -580,10 +601,7 @@ const BASE64_CHUNK_BYTES = 0x8000
 export function bytesToBase64(bytes: Uint8Array) {
   let binary = ""
   for (let i = 0; i < bytes.length; i += BASE64_CHUNK_BYTES) {
-    binary += String.fromCharCode.apply(
-      null,
-      bytes.subarray(i, i + BASE64_CHUNK_BYTES) as unknown as number[],
-    )
+    binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_CHUNK_BYTES))
   }
   return btoa(binary)
 }
@@ -607,9 +625,9 @@ type BlobLike = { arrayBuffer: () => Promise<ArrayBuffer> }
  * type surface). Reached only after the concrete `ArrayBuffer` / view branches,
  * so nothing that is already bytes can land here.
  */
-function blobLike(input: unknown) {
-  if (!input || typeof input !== "object") return undefined
-  return typeof (input as BlobLike).arrayBuffer === "function" ? input as BlobLike : undefined
+function isBlobLike(input: unknown): input is BlobLike {
+  if (!input || typeof input !== "object") return false
+  return "arrayBuffer" in input && typeof input.arrayBuffer === "function"
 }
 
 /**
@@ -660,9 +678,8 @@ function socketFrame(input: unknown) {
       data_base64: bytesToBase64(viewBytes(input)),
     }
   }
-  const blob = blobLike(input)
-  if (!blob) return undefined
-  return blob.arrayBuffer().then((buffer) => ({
+  if (!isBlobLike(input)) return undefined
+  return input.arrayBuffer().then((buffer) => ({
     binary: true,
     data_base64: bytesToBase64(new Uint8Array(buffer)),
   }))
@@ -677,9 +694,8 @@ function socketPayload(input: unknown) {
   if (input instanceof ArrayBuffer) return input
   if (input instanceof Uint8Array) return input
   if (ArrayBuffer.isView(input)) return viewBytes(input)
-  const blob = blobLike(input)
-  if (!blob) return undefined
-  return blob.arrayBuffer()
+  if (!isBlobLike(input)) return undefined
+  return input.arrayBuffer()
 }
 
 /**
@@ -790,11 +806,11 @@ export function workspaceRelayDurableObjectRoomName(workspaceId: string) {
   return `workspace:${workspaceId}`
 }
 
-export function workspaceRelayDurableObjectWorkspaceId(request: Request) {
+export function workspaceRelayDurableObjectWorkspaceId(request: Request): string | undefined {
   const url = new URL(request.url)
   const workspaceId = clean(workspaceIdFromRelayPath(url.pathname))
   if (workspaceId) return decodeURIComponent(workspaceId)
-  if (!hostIdFromTunnelPath(url.pathname)) return
+  if (!hostIdFromTunnelPath(url.pathname)) return undefined
   return clean(url.searchParams.get("workspaceId")) ?? clean(url.searchParams.get("workspace_id"))
 }
 
@@ -804,7 +820,19 @@ function namespaceFromEnv(
 ) {
   if (options.namespace) return options.namespace
   const binding = env[options.bindingName ?? "WORKSPACE_RELAY_ROOM"]
-  return binding && typeof binding === "object" ? binding as WorkspaceRelayDurableObjectNamespace : undefined
+  return isDurableObjectNamespace(binding) ? binding : undefined
+}
+
+/**
+ * `WorkspaceRelayDurableObjectEnv` is `Record<string, unknown>` — a Workers env
+ * bag whose contents the platform fills in. This is the one place a binding out
+ * of it becomes a namespace, and it checks the two members the gateway actually
+ * calls rather than accepting any object.
+ */
+function isDurableObjectNamespace(value: unknown): value is WorkspaceRelayDurableObjectNamespace {
+  if (!value || typeof value !== "object") return false
+  return "idFromName" in value && typeof value.idFromName === "function"
+    && "get" in value && typeof value.get === "function"
 }
 
 function json(code: string, message: string, status: 400 | 401 | 403 | 404 | 413 | 426 | 503) {
@@ -837,15 +865,14 @@ export function setWorkspaceRelayAllowedOrigins(raw: string | undefined) {
   baseOriginAllowed = patterns ? createOriginMatcher(patterns) : defaultOriginAllowed
 }
 
-function allowedCorsOrigin(origin: string | null) {
-  if (!origin) return
-  if (baseOriginAllowed(origin)) return origin
-  if (configuredAppOriginAllowed(origin)) return origin
+function allowedCorsOrigin(origin: string | null): string | undefined {
+  if (!origin) return undefined
+  return baseOriginAllowed(origin) || configuredAppOriginAllowed(origin) ? origin : undefined
 }
 
-function corsHeaders(request: Request) {
+function corsHeaders(request: Request): Record<string, string> | undefined {
   const origin = allowedCorsOrigin(request.headers.get("origin"))
-  if (!origin) return
+  if (!origin) return undefined
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
@@ -869,7 +896,7 @@ function withCors(request: Request, response: Response) {
   // wrapping here turned EVERY browser PTY/WS connection into a 500 while
   // non-browser clients (no Origin header) worked — pass upgrades through
   // untouched (WebSockets are not subject to CORS).
-  if (response.status === 101 || (response as { webSocket?: unknown }).webSocket) return response
+  if (response.status === 101 || ("webSocket" in response && response.webSocket)) return response
   const next = new Headers(response.headers)
   for (const [key, value] of Object.entries(headers)) next.set(key, value)
   return new Response(response.body, {
@@ -880,21 +907,21 @@ function withCors(request: Request, response: Response) {
 }
 
 function defaultWebSocketPair(): WorkspaceRelayDurableObjectSocketPair {
-  const pair = new (globalThis as unknown as {
-    WebSocketPair?: new () => { 0: WorkspaceRelayDurableObjectSocket; 1: WorkspaceRelayDurableObjectSocket }
-  }).WebSocketPair!()
+  // `WebSocketPair` is declared in ./workerd-globals.d.ts — see that file for
+  // why this package models the workerd surface structurally.
+  const pair = new WebSocketPair<WorkspaceRelayDurableObjectSocket>()
   return {
     client: pair[0],
     server: pair[1],
   }
 }
 
-function selectedSubprotocol(request: Request) {
+function selectedSubprotocol(request: Request): string | undefined {
   const offered = request.headers.get("sec-websocket-protocol")
     ?.split(",")
     .map((item) => item.trim())
     .filter(Boolean)
-  if (!offered?.length) return
+  if (!offered?.length) return undefined
   return offered.find((item) => item.startsWith("claxedo-rat.")) ?? offered[0]
 }
 
@@ -978,7 +1005,7 @@ export function createWorkspaceRelayDurableObjectGateway(
           phases: [],
         }))
       const fetchFinishedAt = performance.now()
-      if (response.status === 101 || (response as { webSocket?: unknown }).webSocket) {
+      if (response.status === 101 || ("webSocket" in response && response.webSocket)) {
         return url.pathname.startsWith("/workspaces/") ? withCors(request, response) : response
       }
       const headers = new Headers(response.headers)
@@ -1189,9 +1216,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   const watchRuntimeAccessToken = (
     client: ClientSocket,
     onInactive: (reason: string) => void,
-  ) => {
+  ): ReturnType<typeof setInterval> | undefined => {
     const intervalMs = options.runtimeAccessTokenActiveCheckIntervalMs ?? RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT
-    if (intervalMs <= 0) return
+    if (intervalMs <= 0) return undefined
     const now = options.now ?? Date.now
     // Reset on any conclusive answer, so grace covers a BURST of failures rather
     // than a slow drip that would eventually add up to a kill.
@@ -1228,18 +1255,16 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         })
         .catch(() => tolerate("Runtime Access Token active check failed"))
     }, intervalMs)
-    if (typeof (timer as { unref?: () => void }).unref === "function") {
-      (timer as { unref?: () => void }).unref!()
-    }
+    unrefTimer(timer)
     return timer
   }
 
   const watchUserHostedTarget = (
     client: UserHostedClientSocket,
     onInactive: (reason: string) => void,
-  ) => {
+  ): ReturnType<typeof setInterval> | undefined => {
     const intervalMs = options.workspaceTargetActiveCheckIntervalMs ?? WORKSPACE_TARGET_ACTIVE_CHECK_INTERVAL_MS_DEFAULT
-    if (intervalMs <= 0) return
+    if (intervalMs <= 0) return undefined
     const target = client.request.target
     let consecutiveUnreachable = 0
     const timer = setInterval(() => {
@@ -1270,9 +1295,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           onInactive("Workspace relay target active check failed")
         })
     }, intervalMs)
-    if (typeof (timer as { unref?: () => void }).unref === "function") {
-      (timer as { unref?: () => void }).unref!()
-    }
+    unrefTimer(timer)
     return timer
   }
 
@@ -1393,7 +1416,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         .filter(([id, entry]) => entry.startedSeq !== undefined && id !== keepRequestId)
         .sort((a, b) => (a[1].startedSeq ?? 0) - (b[1].startedSeq ?? 0))
       if (started.length + 1 <= cap) return
-      const [oldestId, oldest] = started[0]!
+      const [oldestId, oldest] = started[0]
       failPendingTunnelResponse(tunnel, oldestId, oldest, new Error("stream_evicted: tunnel started-stream cap reached"))
     }
   }
@@ -1612,18 +1635,20 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
     /** Close and forget one client, telling its host tunnel if it has one. */
     const revoke = (client: ClientSocket, reason: string) => {
-      const channelId = (client as UserHostedClientSocket).channelId
-      for (const tunnel of hostTunnels.values()) {
-        if (!channelId || tunnel.channels.get(channelId) !== client) continue
-        dropUserHostedChannel(tunnel, channelId, client as UserHostedClientSocket, 1008, reason)
-        return
+      if (isUserHostedClient(client)) {
+        for (const tunnel of hostTunnels.values()) {
+          if (tunnel.channels.get(client.channelId) !== client) continue
+          dropUserHostedChannel(tunnel, client.channelId, client, 1008, reason)
+          return
+        }
       }
       // A cloud client (no channel) — just close and forget.
       closeSocket(client.socket, 1008, reason)
       clients.delete(client)
     }
 
-    for (const client of [...clients]) {
+    // Snapshot: `revoke` deletes from `clients` while this loop runs.
+    for (const client of Array.from(clients)) {
       // Local and resolver-free, so it is checked first and never graced.
       if (client.request.claims.exp * 1000 <= now()) {
         revoke(client, "Runtime Access Token expired")
@@ -1651,6 +1676,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       const client = tunnel.channels.get(channelId)
       if (client?.socket === socket) return { tunnel, client }
     }
+    return undefined
   }
 
   const handleUserHostedClientMessage = async (
@@ -1697,11 +1723,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     // refresh an active host's process-local presence.
     directory.recordPong(tunnel.hostId)
     if (parsed.message.type === "ping") {
-      tunnel.socket.send?.(JSON.stringify(makeTunnelPong(parsed.message as TunnelPing)))
+      tunnel.socket.send?.(JSON.stringify(makeTunnelPong(parsed.message)))
       return
     }
     if (parsed.message.type === "host.registration.update") {
-      const update = parsed.message as TunnelHostRegistrationUpdate
+      const update = parsed.message
       const workspaceIds = [...new Set(update.workspace_ids)]
       try {
         await verifyHostTunnelToken(update.token, options.runtimeAccessKey, { hostId, workspaceIds })
@@ -1727,7 +1753,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "http.response.start") {
-      const message = parsed.message as TunnelHttpResponseStart
+      const message = parsed.message
       const pending = tunnel.pending.get(message.request_id)
       if (!pending) return
       pending.status = message.status
@@ -1737,7 +1763,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "http.response.chunk") {
-      const message = parsed.message as TunnelHttpResponseChunk
+      const message = parsed.message
       const pending = tunnel.pending.get(message.request_id)
       if (!pending) return
       const chunk = base64ToBytes(message.body_base64)
@@ -1750,7 +1776,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "http.response.end") {
-      const message = parsed.message as TunnelHttpResponseEnd
+      const message = parsed.message
       const pending = tunnel.pending.get(message.request_id)
       if (!pending) return
       tunnel.pending.delete(message.request_id)
@@ -1777,7 +1803,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "ws.frame") {
-      const message = parsed.message as TunnelWsFrame
+      const message = parsed.message
       const channel = tunnel.channels.get(message.channel_id)
       if (!channel) return
       const token = await runtimeAccessTokenActive(channel)
@@ -1798,7 +1824,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "ws.close") {
-      const message = parsed.message as TunnelWsClose
+      const message = parsed.message
       const channel = tunnel.channels.get(message.channel_id)
       if (!channel) return
       tunnel.channels.delete(message.channel_id)
@@ -1807,7 +1833,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "error" && parsed.message.channel_id) {
-      const message = parsed.message as TunnelError
+      const message = parsed.message
       const channelId = parsed.message.channel_id
       const channel = tunnel.channels.get(channelId)
       if (!channel) return

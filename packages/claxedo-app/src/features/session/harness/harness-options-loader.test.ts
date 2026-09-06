@@ -367,7 +367,7 @@ describe("harness options loader", () => {
     release?.()
     await slow
 
-    expect(patches.at(-1)).toBe(settled!)
+    expect(patches.at(-1)).toBe(settled)
     expect(loading.at(-1)).toBe(false)
   })
 

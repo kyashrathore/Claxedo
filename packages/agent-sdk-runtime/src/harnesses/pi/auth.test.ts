@@ -4,7 +4,6 @@ import path from "node:path"
 import { piAuthProjection, retainPiAuth, writePiAuth } from "./auth"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { PiHarnessAdapter } from "./index"
-import { storeRows } from "../../test-utils/store-internals"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 
 test("a profile reacquired during cleanup serializes its new credential write after removal", async () => {
@@ -50,7 +49,7 @@ test("a profile reacquired during cleanup serializes its new credential write af
 test("a shared profile keeps credentials until its final adapter is disposed", async () => {
   const f = await installFakePiRpc()
   const create = () =>
-    new PiHarnessAdapter({ binary: f.binary, agentDir: f.agentDir, store: storeRows(createMemoryRuntimeStore()) })
+    new PiHarnessAdapter({ binary: f.binary, agentDir: f.agentDir, store: createMemoryRuntimeStore() })
   const a = create()
   const b = create()
   const config = { auth: { "codex-app-server": JSON.stringify({ tokens: { access_token: "shared-access" } }) } }
@@ -96,7 +95,7 @@ test("first empty registry sync revokes stale credentials; rotation replaces the
   const adapter = new PiHarnessAdapter({
     binary: f.binary,
     agentDir: f.agentDir,
-    store: storeRows(createMemoryRuntimeStore()),
+    store: createMemoryRuntimeStore(),
   })
   const file = path.join(f.agentDir, "auth.json")
   try {
@@ -122,7 +121,7 @@ test("an explicit native profile overrides the store default and is scrubbed on 
     adapter = new PiHarnessAdapter({
       binary: f.binary,
       storeRoot: path.join(f.agentDir, "store"),
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
     })
   } finally {
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR

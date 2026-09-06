@@ -3,7 +3,7 @@ import { forwardMcpGatewayRequest, McpGatewayError } from "./gateway"
 
 describe("MCP transport gateway", () => {
   test("forwards one ordinary MCP request with the live token and protocol headers", async () => {
-    const fetch = vi.fn(async (_url: string, init?: RequestInit) => new Response("event: message\ndata: {}\n\n", {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response("event: message\ndata: {}\n\n", {
       status: 200,
       headers: {
         "content-type": "text/event-stream",
@@ -35,7 +35,7 @@ describe("MCP transport gateway", () => {
     })
 
     expect(fetch).toHaveBeenCalledTimes(1)
-    const [url, init] = fetch.mock.calls[0]!
+    const [url, init] = fetch.mock.calls[0]
     expect(url).toBe("https://mcp.example/mcp")
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer connection-token")
     expect(new Headers(init?.headers).get("cookie")).toBeNull()

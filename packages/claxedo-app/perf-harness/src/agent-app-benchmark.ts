@@ -7,11 +7,12 @@ import { readCanonicalCorpusDigest } from "./agent-corpus-materializer";
 import { agentAppViewport } from "./agent-display-contract";
 import { AGENT_APP_PROFILES, type AgentAppProfile, type AgentAppScenario } from "./agent-driver-contract";
 import { captureHostState, acquireKeepAwake, environmentDisclosure, validateHostTransition, type HostState, type KeepAwakeLease } from "./agent-host-preflight";
-import { PRIMARY_AGENT_APP_METRICS, resourceMetrics, type PrimaryAgentAppMetric } from "./agent-metrics";
-import { isT3Process, macMemoryHelperPath, processFamily, processLineage, readPhysFootprint, readProcessTable, toIdleRows, totalPhysFootprintBytes, withPhysFootprint, type ProcessSnapshot } from "./agent-process-family";
+import { resourceMetrics, type PrimaryAgentAppMetric } from "./agent-metrics";
+import { isT3Process, macMemoryHelperPath, processFamily, processLineage, readPhysFootprint, readProcessSnapshot, readProcessTable, toIdleRows, totalPhysFootprintBytes, withPhysFootprint, type ProcessSnapshot } from "./agent-process-family";
 import { IdleProcessFamilyTracker } from "./idle-process-family";
+import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields";
 import { loadPriorEvidence, checkExperimentProposal } from "./agent-prior-evidence";
-import { driverClock, rawMetricSample, type RawMetricSample, type ValidityCheckEvidence } from "./agent-samples";
+import { driverClock, rawMetricSample, readRawMetricSample, type RawMetricSample, type ValidityCheckEvidence } from "./agent-samples";
 import { evaluateTarget, loadAgentBenchmarkTargets } from "./agent-benchmark-targets";
 import { writeJson } from "./storage";
 
@@ -59,8 +60,16 @@ export function parseAgentBenchmarkOptions(argv: string[], cwd = process.cwd()):
     return value;
   };
   const profileValue = required("--profiles");
-  const profiles = profileValue === "all" ? [...AGENT_APP_PROFILES] : profileValue.split(",") as AgentAppProfile[];
-  if (!profiles.length || new Set(profiles).size !== profiles.length || profiles.some((profile) => !AGENT_APP_PROFILES.includes(profile))) throw new Error(`invalid --profiles: ${profileValue}`);
+  const requested = profileValue === "all" ? [...AGENT_APP_PROFILES] : profileValue.split(",");
+  // Matched against the known set rather than asserted into it, so an unknown
+  // profile name is reported here with the value that was typed.
+  const profiles = requested.flatMap((name) => {
+    const profile = AGENT_APP_PROFILES.find((candidate) => candidate === name);
+    return profile ? [profile] : [];
+  });
+  if (!profiles.length || profiles.length !== requested.length || new Set(profiles).size !== profiles.length) {
+    throw new Error(`invalid --profiles: ${profileValue}`);
+  }
   const runProfile = required("--run-profile");
   if (runProfile !== "iteration") throw new Error("U1 supports only --run-profile iteration; publication belongs to U11");
   const seed = required("--seed");
@@ -98,11 +107,14 @@ export async function runAgentAppBenchmark(options: Options) {
   let failure: string | undefined;
   let correlation = 0;
   const ownershipSnapshots: Array<{ at: string; processes: ProcessSnapshot[] }> = [];
-  const call = async <T>(method: "hello" | "prepare" | "launch" | "run-scenario" | "inspect" | "shutdown", params: Record<string, unknown>) => {
+  // The driver answers in JSON, so what a method returns is read here rather
+  // than named by the caller. `agent-driver-contract` decodes the request side
+  // of the same protocol; `read` is the response side of it.
+  const call = async <T>(method: "hello" | "prepare" | "launch" | "run-scenario" | "inspect" | "shutdown", params: Record<string, unknown>, read: (value: unknown) => T) => {
     if (!runtime) throw new Error("driver runtime is unavailable");
     const response = await runtime.handle(JSON.stringify({ protocolVersion: 1, kind: "request", correlationId: `${runId}-${++correlation}`, method, params }));
     if (!response.ok) throw new Error(`${method}: ${response.error.code}: ${response.error.message}`);
-    return response.result as T;
+    return read(response.result);
   };
 
   let targets: Awaited<ReturnType<typeof loadAgentBenchmarkTargets>> | undefined;
@@ -135,19 +147,17 @@ export async function runAgentAppBenchmark(options: Options) {
       keepAwake: { pid: lease.pid, ownerPid: process.pid }, experimentDecision,
     };
     runtime = await createClaxedoAgentDriver({ executable, driverDigestSha256: driverDigest });
-    await call("hello", { frameworkVersion: 1 });
+    await call("hello", { frameworkVersion: 1 }, () => undefined);
     const runDirectory = path.join(options.output, "run");
     await mkdir(runDirectory, { recursive: true, mode: 0o700 });
-    const prepared = await call<{ coverage: Array<{ passed: boolean; profile: string }> }>("prepare", { corpusPath: corpus, corpusDigestSha256: corpusDigest, runDirectory, profiles: options.profiles });
-    if (!prepared.coverage.every((item) => item.passed)) throw new Error(`corpus materialization coverage failed: ${JSON.stringify(prepared.coverage)}`);
-    const launched = await call<{ processes: Array<{ pid: number }> }>("launch", { isolatedProfilePath: path.join(runDirectory, "profile") });
-    rootPid = launched.processes[0]?.pid;
-    if (!rootPid) throw new Error("driver did not declare an application root process");
+    const coverage = await call("prepare", { corpusPath: corpus, corpusDigestSha256: corpusDigest, runDirectory, profiles: options.profiles }, readCoverage);
+    if (!coverage.every((item) => item.passed)) throw new Error(`corpus materialization coverage failed: ${JSON.stringify(coverage)}`);
+    rootPid = await call("launch", { isolatedProfilePath: path.join(runDirectory, "profile") }, readRootPid);
 
     for (const profile of options.profiles) {
       for (const scenario of PROFILE_SCENARIOS[profile]) {
         lease.assertActive();
-        const before = await call<InspectResult>("inspect", {});
+        const before = await call("inspect", {}, readInspectResult);
         assertSurface(before.surface);
         const beforeChecks = processChecks(await readProcessTable(), rootPid);
         if (beforeChecks.failures.length) throw new Error(beforeChecks.failures.join(","));
@@ -159,12 +169,12 @@ export async function runAgentAppBenchmark(options: Options) {
         const inspectForeground = async () => {
           if (healthActive) return;
           healthActive = true;
-          try { assertSurface((await call<InspectResult>("inspect", {})).surface); }
+          try { assertSurface((await call("inspect", {}, readInspectResult)).surface); }
           catch (error) { foregroundFailures.push(`foreground-monitor:${error instanceof Error ? error.message : String(error)}`); }
           finally { healthActive = false; }
         };
         const healthTimer = setInterval(() => void inspectForeground(), 1_000);
-        const measured = await runWithProcessSampling(rootPid, settleMs, memoryHelperPath, async () => await call<{ samples: RawMetricSample[] }>("run-scenario", { attemptId, profile, scenario, seed: options.seed })).finally(() => clearInterval(healthTimer));
+        const measured = await runWithProcessSampling(rootPid, settleMs, memoryHelperPath, async () => await call("run-scenario", { attemptId, profile, scenario, seed: options.seed }, readScenarioSamples)).finally(() => clearInterval(healthTimer));
         // Raw family ticks, persisted. The derived peak/p95 land in the sample
         // records, but the tick series itself was consumed in-process and
         // discarded — which made the cross-app resource matrix (peak/avg/p95
@@ -194,7 +204,7 @@ export async function runAgentAppBenchmark(options: Options) {
         );
         await inspectForeground();
         measured.failures.push(...foregroundFailures);
-        const after = await call<InspectResult>("inspect", {});
+        const after = await call("inspect", {}, readInspectResult);
         const validity: ValidityCheckEvidence[] = [
           surfaceEvidence("surface-visible-before", before.surface), surfaceEvidence("surface-visible-after", after.surface),
           { check: "complete-process-ownership", expectedCount: 0, actualCount: measured.failures.length, passed: measured.failures.length === 0 },
@@ -219,23 +229,26 @@ export async function runAgentAppBenchmark(options: Options) {
     hostAfter = await captureHostState();
     const transitionFailures = validateHostTransition(hostBefore, hostAfter);
     if (transitionFailures.length) {
-      for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index]!, transitionFailures.map((check) => ({ check, passed: false })));
+      for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index], transitionFailures.map((check) => ({ check, passed: false })));
     }
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
   } finally {
     if (runtime) {
-      try { shutdown = await call("shutdown", { reason: failure ? "failed" : "complete" }); }
+      try { shutdown = await call("shutdown", { reason: failure ? "failed" : "complete" }, (value) => value); }
       catch (error) { failure ??= error instanceof Error ? error.message : String(error); }
     }
     try { await lease?.release(); }
     catch (error) { failure ??= error instanceof Error ? error.message : String(error); }
   }
 
-  const survivorCount = shutdown && typeof shutdown === "object" && "survivors" in shutdown && Array.isArray((shutdown as { survivors: unknown[] }).survivors) ? (shutdown as { survivors: unknown[] }).survivors.length : runtime ? 1 : 0;
+  // A shutdown that could not be read at all is treated as one survivor while
+  // the runtime is still up, exactly as before.
+  const survivors = isRecord(shutdown) && Array.isArray(shutdown.survivors) ? shutdown.survivors : undefined;
+  const survivorCount = survivors ? survivors.length : runtime ? 1 : 0;
   if (survivorCount > 0) {
     failure ??= `${survivorCount} owned process survivor(s)`;
-    for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index]!, [{ check: "zero-process-survivors", expectedCount: 0, actualCount: survivorCount, passed: false }]);
+    for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index], [{ check: "zero-process-survivors", expectedCount: 0, actualCount: survivorCount, passed: false }]);
   }
   if (failure || samples.length !== selectedMetrics(options.profiles).length) {
     const existing = new Set(samples.map((sample) => sample.metric));
@@ -297,6 +310,51 @@ async function withFootprint(family: readonly ProcessSnapshot[], memoryHelperPat
   return withPhysFootprint(family, await readPhysFootprint(family.map((row) => row.pid), memoryHelperPath));
 }
 
+// Readers for the driver's replies. Each names the fields this run actually
+// consumes, so a driver that answered with something else fails at the call
+// that asked for it rather than in a report built from `undefined`.
+function readCoverage(value: unknown): Array<Record<string, unknown> & { profile: string; passed: boolean }> {
+  const rows = isRecord(value) ? recordsField(value, "coverage") : undefined;
+  if (!rows) throw new Error(`prepare returned no corpus coverage: ${JSON.stringify(value)}`);
+  // Only the profile and the verdict are branched on; the rest of each row is
+  // kept because the failure below reports it.
+  return rows.map((row) => {
+    const profile = textField(row, "profile");
+    if (profile === undefined || typeof row.passed !== "boolean") throw new Error("prepare coverage requires a profile and a verdict");
+    return { ...row, profile, passed: row.passed };
+  });
+}
+function readRootPid(value: unknown): number {
+  const processes = isRecord(value) ? recordsField(value, "processes") : undefined;
+  const first = processes?.[0];
+  const pid = first && numberField(first, "pid");
+  if (!pid) throw new Error("driver did not declare an application root process");
+  return pid;
+}
+function readInspectResult(value: unknown): InspectResult {
+  const root = isRecord(value) ? value : undefined;
+  const surface = root && recordField(root, "surface");
+  const processes = root && recordsField(root, "processes");
+  const viewport = surface && recordField(surface, "viewport");
+  const visibilityState = surface && textField(surface, "visibilityState");
+  const width = viewport && numberField(viewport, "width");
+  const height = viewport && numberField(viewport, "height");
+  if (
+    !surface || !processes || visibilityState === undefined || width === undefined || height === undefined ||
+    typeof surface.focused !== "boolean" || typeof surface.hidden !== "boolean"
+  ) {
+    throw new Error(`inspect returned an unreadable application surface: ${JSON.stringify(value)}`);
+  }
+  return {
+    surface: { visibilityState, focused: surface.focused, hidden: surface.hidden, viewport: { width, height } },
+    processes: processes.map(readProcessSnapshot),
+  };
+}
+function readScenarioSamples(value: unknown): { samples: RawMetricSample[] } {
+  const rows = isRecord(value) ? recordsField(value, "samples") : undefined;
+  if (!rows) throw new Error(`run-scenario returned no samples: ${JSON.stringify(value)}`);
+  return { samples: rows.map(readRawMetricSample) };
+}
 function processChecks(table: ProcessSnapshot[], rootPid: number) {
   const family = processFamily(table, rootPid);
   const failures: string[] = [];
@@ -331,7 +389,7 @@ export function summarizeAgentMetrics(samples: RawMetricSample[], profiles: Agen
     const raw = samples.filter((sample) => sample.metric === metric);
     const valid = raw.filter((sample) => sample.validity.status === "valid" && (sample.observation.state === "exact" || sample.observation.state === "bounded"));
     const values = valid.flatMap((sample) => sample.observation.state === "exact" ? [sample.observation.value] : sample.observation.state === "bounded" ? [sample.observation.upperBound] : []);
-    const value = values.length ? values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)]! : undefined;
+    const value = values.length ? values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)] : undefined;
     const target = targets?.absoluteBudgets[metric];
     return { metric, target, totalSamples: raw.length, validSamples: valid.length, excludedInvalidSamples: raw.length - valid.length, value, passed: value !== undefined && !!target && evaluateTarget(target, value) };
   });
@@ -352,7 +410,7 @@ async function resolveExecutable(app: string) {
   await access(executable);
   return await realpath(executable);
 }
-function isT3Path(value: string) { return /(^|[\/\\])(?:t3|t3code)(?=$|[\/\\.:-])/iu.test(value); }
+function isT3Path(value: string) { return /(^|[/\\])(?:t3|t3code)(?=$|[/\\.:-])/iu.test(value); }
 async function sha256File(file: string) { return createHash("sha256").update(await readFile(file)).digest("hex"); }
 async function hashDriverClosure() {
   const files = (await readdir(import.meta.dir)).filter((name) => name.startsWith("agent-") && name.endsWith(".ts")).toSorted();

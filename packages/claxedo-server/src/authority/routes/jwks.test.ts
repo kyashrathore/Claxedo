@@ -57,7 +57,7 @@ describe("JwksRoutes", () => {
     const body = (await response.json()) as { keys: Array<Record<string, unknown>> }
     expect(Array.isArray(body.keys)).toBe(true)
     expect(body.keys.length).toBe(1)
-    const jwk = body.keys[0]!
+    const jwk = body.keys[0]
     expect(jwk.kty).toBe("OKP")
     expect(jwk.crv).toBe("Ed25519")
     expect(typeof jwk.x).toBe("string")

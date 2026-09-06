@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { closeContextAndSaveVideo } from "./capture-video"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import "./capture-harness-window"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(
@@ -91,9 +92,8 @@ const context = await browser.newContext({
   recordVideo: { dir: RAW_VIDEO_DIR, size: viewport },
 })
 await context.addInitScript(() => {
-  const w = window as unknown as Record<string, unknown>
-  w.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
-  w.__CLAXEDO_TEST_AUTH_USER__ = {
+  window.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
+  window.__CLAXEDO_TEST_AUTH_USER__ = {
     id: "workspace-panel-motion-user",
     primaryEmailAddress: { emailAddress: "workspace-panel-motion@claxedo.test" },
     fullName: "Workspace Panel Motion",
@@ -323,7 +323,18 @@ async function measureRapidOpenCloseOpen(
   closedStart: PanelSample,
   minDelta: number,
 ): Promise<RapidReversalTrace> {
-  const trace = await page.evaluate(async ({ startAt, rapidClickDelayMs }) => {
+  type MeasuredTrace = Omit<RapidReversalTrace,
+    | "longFrameGaps"
+    | "visibleJumps"
+    | "visibleJumpBudgetPx"
+    | "maxFrameDeltaMs"
+    | "allClicksAvailable"
+    | "startedOpeningBeforeClose"
+    | "startedClosingBeforeReopen"
+    | "reopenedFromPartialClose"
+    | "finalOpenSettled"
+  >
+  const trace: MeasuredTrace = await page.evaluate(async ({ startAt, rapidClickDelayMs }) => {
     const readPanel = (name: string) => {
       const panel = document.querySelector<HTMLElement>('[data-testid="workspace-panel-shell"]')
       if (!panel) throw new Error("Workspace panel shell is missing")
@@ -436,24 +447,14 @@ async function measureRapidOpenCloseOpen(
       name: "rapid open-close-open reversal",
       frames,
       clickEvents,
-      clickIntervalsMs: clickEvents.slice(1).map((event, index) => event.atMs - clickEvents[index]!.atMs),
+      clickIntervalsMs: clickEvents.slice(1).map((event, index) => event.atMs - clickEvents[index].atMs),
       keySamples: {
         openingBeforeClose,
         closingBeforeReopen,
         finalOpen,
       },
     }
-  }, { startAt, rapidClickDelayMs }) as Omit<RapidReversalTrace,
-    | "longFrameGaps"
-    | "visibleJumps"
-    | "visibleJumpBudgetPx"
-    | "maxFrameDeltaMs"
-    | "allClicksAvailable"
-    | "startedOpeningBeforeClose"
-    | "startedClosingBeforeReopen"
-    | "reopenedFromPartialClose"
-    | "finalOpenSettled"
-  >
+  }, { startAt, rapidClickDelayMs })
 
   const visibleJumpBudgetPx = Math.max(48, closedStart.width * 0.2)
   const isRestingOpen = (frame: Pick<PanelSample, "open" | "x" | "width">) =>

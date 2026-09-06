@@ -130,9 +130,9 @@ describe("diagnostics view model", () => {
 
   test("shows only process generations sampled inside the retained window", () => {
     const historical = {
-      ...snapshot.processes[0]!,
+      ...snapshot.processes[0],
       identity: {
-        ...snapshot.processes[0]!.identity,
+        ...snapshot.processes[0].identity,
         id: "host:42:old",
         creation: { state: "available" as const, value: "old", source: "linux-proc" as const },
       },

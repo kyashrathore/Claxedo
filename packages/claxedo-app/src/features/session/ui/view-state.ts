@@ -1,7 +1,7 @@
 import type {
-  AgentPresentationMessage as Message,
-  AgentUserMessage as UserMessage,
-} from "@claxedo/agent-runtime-contract"
+  ProjectedAgentMessage as Message,
+  ProjectedUserMessage as UserMessage,
+} from "../conversation/agent-conversation-codec"
 import {
   sessionTurnOutcomeMatchesAssistant,
   type ClaxedoSession,

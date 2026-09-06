@@ -26,9 +26,9 @@ function text(env: Env, key: string) {
   return value || undefined
 }
 
-function numberEnv(env: Env, key: string) {
+function numberEnv(env: Env, key: string): number | undefined {
   const value = text(env, key)
-  if (!value) return
+  if (!value) return undefined
   const parsed = Number(value)
   if (Number.isFinite(parsed) && parsed > 0) return parsed
   throw new Error(`${key} must be a positive number`)
@@ -68,11 +68,12 @@ export async function relayHostAuthFromEnv(env: Env = process.env): Promise<Rela
       trustedDirectToken,
     }
   }
+  return undefined
 }
 
 export function hostTunnelFromEnv(env: Env = process.env, port = 3002): WorkspaceRelayHostTunnelOptions | undefined {
   const relayUrl = text(env, "WORKSPACE_RUNTIME_RELAY_URL")
-  if (!relayUrl) return
+  if (!relayUrl) return undefined
   const hostId = text(env, "WORKSPACE_RUNTIME_HOST_ID") ?? workspaceId(env)
   return {
     relayUrl: normalized(relayUrl),
@@ -113,8 +114,8 @@ export async function managementAuthFromEnv(env: Env = process.env): Promise<Wor
   const verifyPem = text(env, "WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM")
   const issuer = text(env, "WORKSPACE_RUNTIME_MANAGEMENT_ISSUER")
   const audience = text(env, "WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE")
-  if (!issuer || !audience) return
-  if (!jwksUrl && !verifyPem) return
+  if (!issuer || !audience) return undefined
+  if (!jwksUrl && !verifyPem) return undefined
   return createWorkspaceRuntimeJwtManagementAuth({
     key: await loadWorkspaceRuntimeManagementVerificationKey({
       WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: jwksUrl,

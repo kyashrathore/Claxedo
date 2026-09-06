@@ -14,11 +14,9 @@ import {
   type AgentHarnessAdapter,
 } from "../adapter-contract"
 import { createMemoryRuntimeStore } from "../stores/memory"
-import { storeRows } from "../test-utils/store-internals"
 import { installFakeCodexAppServer } from "../test-utils/fake-codex-app-server"
 import { removeTestTempDir } from "./shared/test-temp-dir"
 import { SdkRuntimeAdapter } from "./shared/sdk-runtime-adapter"
-import { executionBinding } from "../test-utils/execution-binding"
 import { CodexHarnessAdapter } from "./codex"
 import { createClaudeSdkDriver } from "./claude/driver"
 import { createCursorSdkDriver } from "./cursor/driver"
@@ -47,7 +45,7 @@ async function codexHarness(): Promise<ConformanceHarness> {
   tempDirs.push(fake.directory)
   const adapter = new CodexHarnessAdapter({
     binary: fake.binary,
-    store: storeRows(createMemoryRuntimeStore()),
+    store: createMemoryRuntimeStore(),
     codexHome: path.join(fake.directory, "codex-home"),
   })
   const session = await adapter.createSession(fake.directory, undefined, "session-conformance")
@@ -78,7 +76,7 @@ async function claudeHarness(): Promise<ConformanceHarness> {
     return Object.assign(stream, { close() {} }) as unknown as Query
   }) as never
   const adapter = new SdkRuntimeAdapter({
-    store: storeRows(createMemoryRuntimeStore()),
+    store: createMemoryRuntimeStore(),
     driver: (host) => createClaudeSdkDriver(host, {
       query: fakeQuery,
       executable: () => "/fake/claude",
@@ -115,7 +113,7 @@ async function cursorHarness(): Promise<ConformanceHarness> {
     [Symbol.asyncDispose]: async () => {},
   }
   const adapter = new SdkRuntimeAdapter({
-    store: storeRows(createMemoryRuntimeStore()),
+    store: createMemoryRuntimeStore(),
     driver: (host) => createCursorSdkDriver(host, {
       loadAgent: async () => ({
         Agent: { create: async () => agent, resume: async () => agent } as never,
@@ -136,7 +134,7 @@ async function piHarness(): Promise<ConformanceHarness> {
   const fake = await installFakePiRpc()
   tempDirs.push(fake.directory)
   await fs.writeFile(path.join(fake.directory, "hold-evaluator"), "yes")
-  const store = storeRows(createMemoryRuntimeStore())
+  const store = createMemoryRuntimeStore()
   const adapter = new PiHarnessAdapter({ binary: fake.binary, agentDir: fake.agentDir, store })
   const session = await adapter.createSession(fake.directory)
   const nativeId = store.getAgentSessionId(session.id)

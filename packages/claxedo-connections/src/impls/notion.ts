@@ -1,5 +1,6 @@
 import type { ConnectionFields, IntegrationDeclaration, IntegrationImpl, VerifyResult } from "../types.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
+import { record, text } from "../json.js"
 
 export function notionIntegration(options: IntegrationFetchOptions = {}): {
   decl: IntegrationDeclaration
@@ -26,8 +27,8 @@ export function notionIntegration(options: IntegrationFetchOptions = {}): {
           })
           if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
           if (!res.ok) return { ok: false, reason: "network" }
-          const body = (await res.json().catch(() => ({}))) as { name?: unknown }
-          return { ok: true, ...(typeof body.name === "string" ? { accountLabel: body.name } : {}) }
+          const name = text(record(await res.json().catch(() => ({})))?.name)
+          return { ok: true, ...(name ? { accountLabel: name } : {}) }
         } catch {
           return { ok: false, reason: "network" }
         }

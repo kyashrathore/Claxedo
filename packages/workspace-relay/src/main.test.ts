@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { exportJWK, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import {
   createResolverClient,
   createCachedRevocationClient,
@@ -569,7 +569,11 @@ describe("loadRelayHostKeyMaterial", () => {
     // so we can assert the loader bails before generating an ephemeral key.
     type ExitError = Error & { exitCode?: number }
     function withExitMock<T>(fn: () => Promise<T>): Promise<{ exitCode?: number; threw: boolean; result?: T }> {
-      const original = process.exit
+      // Bound on capture: `process.exit` is a method that reads `this`, and a
+      // bare reference held across the swap below would lose its receiver if
+      // anything ever called it detached. Restoring the bound copy is
+      // equivalent for every caller — they all go through `process.exit(...)`.
+      const original = process.exit.bind(process)
       const originalConsoleError = console.error
       const errors: string[] = []
       process.exit = ((code?: number) => {
@@ -773,6 +777,104 @@ describe("installShutdownDrainHandler (T9)", () => {
     // re-arming the timer. Calling dispose() again should be a no-op.
     directory.dispose()
   })
+
+  // `stopServer` awaits `server.stop(true)`, which resolves only once every
+  // socket is actually closed. A socket that never finishes closing must not
+  // hold the drain open: the platform SIGKILLs us and we lose `dispose()` and
+  // the exit code, which is strictly worse than force-exiting ourselves.
+  test("exits even when stopServer never resolves", async () => {
+    let disposed = false
+    let exitCode: number | undefined
+    const logs: string[] = []
+    const handle = installShutdownDrainHandler({
+      drain: {
+        isDraining: () => false,
+        setDraining: () => {},
+        pendingCount: () => 0,
+        waitForDrain: async () => ({ drained: true, remaining: 0 }),
+      },
+      directory: {
+        dispose: () => {
+          disposed = true
+        },
+      },
+      drainTimeoutMs: 10,
+      stopServer: () => new Promise<void>(() => {}),
+      stopTimeoutMs: 20,
+      exit: (code) => {
+        exitCode = code
+      },
+      log: (message) => logs.push(message),
+      register: false,
+    })
+
+    await handle.trigger()
+
+    expect(disposed).toBe(true)
+    expect(exitCode).toBe(0)
+    expect(logs.some((line) => line.includes("stopServer did not finish within 20ms"))).toBe(true)
+  })
+
+  test("logs a stopServer rejection that lands after the bound expired", async () => {
+    const logs: string[] = []
+    let exited = false
+    const handle = installShutdownDrainHandler({
+      drain: {
+        isDraining: () => false,
+        setDraining: () => {},
+        pendingCount: () => 0,
+        waitForDrain: async () => ({ drained: true, remaining: 0 }),
+      },
+      directory: { dispose: () => {} },
+      drainTimeoutMs: 10,
+      // Rejects well after the bound: the handler has already moved on, so this
+      // must be logged rather than surface as an unhandled rejection (which,
+      // in the fatal path, would be a second crash on top of the first).
+      stopServer: () =>
+        new Promise<void>((_resolve, reject) => {
+          setTimeout(() => reject(new Error("socket close wedged")), 40)
+        }),
+      stopTimeoutMs: 10,
+      exit: () => {
+        exited = true
+      },
+      log: (message) => logs.push(message),
+      register: false,
+    })
+
+    await handle.trigger()
+    expect(exited).toBe(true)
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 80))
+    expect(logs.some((line) => line.includes("stopServer failed: socket close wedged"))).toBe(true)
+  })
+
+  test("still awaits a stopServer that finishes inside the bound", async () => {
+    const order: string[] = []
+    const handle = installShutdownDrainHandler({
+      drain: {
+        isDraining: () => false,
+        setDraining: () => {},
+        pendingCount: () => 0,
+        waitForDrain: async () => ({ drained: true, remaining: 0 }),
+      },
+      directory: {
+        dispose: () => order.push("dispose"),
+      },
+      drainTimeoutMs: 10,
+      stopServer: async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 15))
+        order.push("stopped")
+      },
+      stopTimeoutMs: 500,
+      exit: () => order.push("exit"),
+      register: false,
+    })
+
+    await handle.trigger()
+
+    expect(order).toEqual(["stopped", "dispose", "exit"])
+  })
 })
 
 describe("installFatalProcessHandlers", () => {
@@ -816,6 +918,40 @@ describe("installFatalProcessHandlers", () => {
     expect(disposed).toBe(true)
     expect(exitCode).toBe(1)
     expect(logs.some((line) => line.includes("fatal uncaughtException"))).toBe(true)
+  })
+  // The fatal path has the same bound as the drain path, and needs it more: we
+  // are already unwinding a broken process, so a teardown step that never
+  // settles would strand it with no exit code at all.
+  test("exits non-zero even when stopServer never resolves", async () => {
+    let disposed = false
+    let exitCode: number | undefined
+    const logs: string[] = []
+    const handle = installFatalProcessHandlers({
+      drain: {
+        isDraining: () => false,
+        setDraining: () => {},
+        pendingCount: () => 0,
+        waitForDrain: async () => ({ drained: true, remaining: 0 }),
+      },
+      directory: {
+        dispose: () => {
+          disposed = true
+        },
+      },
+      stopServer: () => new Promise<void>(() => {}),
+      stopTimeoutMs: 20,
+      exit: (code) => {
+        exitCode = code
+      },
+      log: (message) => logs.push(message),
+      register: false,
+    })
+
+    await handle.trigger(new Error("boom"), "uncaughtException")
+
+    expect(disposed).toBe(true)
+    expect(exitCode).toBe(1)
+    expect(logs.some((line) => line.includes("fatal stopServer did not finish within 20ms"))).toBe(true)
   })
 })
 
@@ -910,6 +1046,3 @@ describe("parseMetricsToken (T31)", () => {
     expect(parseMetricsToken({ CLAXEDO_RELAY_METRICS_TOKEN: "   " })).toBeUndefined()
   })
 })
-
-// Reference exportJWK so the import is not stripped if unused above.
-void exportJWK

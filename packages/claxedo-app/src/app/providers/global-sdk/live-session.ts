@@ -115,7 +115,7 @@ export function globalSdkClientWorkspaceId(
 
 export function globalSdkClientPlacement(workspaceId?: string) {
   const resolved = workspaceId?.trim()
-  if (!resolved) return
+  if (!resolved) return undefined
   return {
     workspaceId: resolved,
     hosting: "workspace",
@@ -155,9 +155,9 @@ export function runtimeEventLiveSession(
   projects: WorkspaceProjects,
   scopeSessionId?: string,
 ) {
-  if (!current) return
+  if (!current) return undefined
   const sessionID = scopeSessionId?.trim()
     || (current.sessionID === "route" ? undefined : current.sessionID)
-  if (!sessionID) return
+  if (!sessionID) return undefined
   return liveSessionWithRelayBacking({ ...current, sessionID }, projects)
 }

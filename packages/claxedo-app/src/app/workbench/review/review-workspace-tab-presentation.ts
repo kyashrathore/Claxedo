@@ -1,6 +1,45 @@
 import type { ClaxedoIconName } from "@/ui/controls/claxedo-icon"
 import type { ReviewWorkspaceTab } from "@/features/review/ui/review-workspace-tabs"
 
+type ReviewWorkspaceTabKind = ReviewWorkspaceTab["kind"]
+
+/**
+ * Every tab this app can open is built by `review-workspace-tabs` — no tab kind
+ * ever arrives from a wire payload or from storage — so a kind outside the union
+ * is a programming error, not bad input. The guard makes that unreachability
+ * explicit and keeps the presentation switches total under `noImplicitReturns`.
+ */
+export function unhandledReviewWorkspaceTab(tab: never): never {
+  throw new Error(`Unhandled review workspace tab: ${JSON.stringify(tab)}`)
+}
+
+const TAB_ICON: Record<ReviewWorkspaceTabKind, ClaxedoIconName> = {
+  review: "review",
+  context: "circle-half",
+  file: "file-text",
+  browser: "globe",
+  process: "console",
+}
+
+// Optical sizing: every icon shares the same 16px slot, but a filled square
+// (review) reads larger than an inscribed circle (context/browser) at the
+// same box, so boxy glyphs render a hair smaller and round glyphs a hair
+// larger to equalise perceived size next to the 13px label.
+const TAB_ICON_PX: Record<ReviewWorkspaceTabKind, number> = {
+  review: 13,
+  file: 14,
+  process: 14,
+  context: 15,
+  browser: 15,
+}
+
+const CLOSE_LABEL: Record<Exclude<ReviewWorkspaceTabKind, "file">, string> = {
+  review: "Close review",
+  context: "Close context",
+  browser: "Close browser",
+  process: "Close process section",
+}
+
 /**
  * Presentation lookups for the workspace tab strip: a tab's label, its glyph,
  * the glyph's optical size, and the close button's accessible label. Pure
@@ -25,55 +64,17 @@ export function createReviewWorkspaceTabPresentation(deps: {
         return "Browser"
       case "process":
         return deps.processName(tab.processId) ?? "Process"
+      default:
+        return unhandledReviewWorkspaceTab(tab)
     }
   }
 
-  const tabIcon = (tab: ReviewWorkspaceTab): ClaxedoIconName => {
-    switch (tab.kind) {
-      case "review":
-        return "review"
-      case "context":
-        return "circle-half"
-      case "file":
-        return "file-text"
-      case "browser":
-        return "globe"
-      case "process":
-        return "console"
-    }
-  }
+  const tabIcon = (tab: ReviewWorkspaceTab): ClaxedoIconName => TAB_ICON[tab.kind]
 
-  // Optical sizing: every icon shares the same 16px slot, but a filled square
-  // (review) reads larger than an inscribed circle (context/browser) at the
-  // same box, so boxy glyphs render a hair smaller and round glyphs a hair
-  // larger to equalise perceived size next to the 13px label.
-  const tabIconPx = (tab: ReviewWorkspaceTab): number => {
-    switch (tab.kind) {
-      case "review":
-        return 13
-      case "file":
-      case "process":
-        return 14
-      case "context":
-      case "browser":
-        return 15
-    }
-  }
+  const tabIconPx = (tab: ReviewWorkspaceTab): number => TAB_ICON_PX[tab.kind]
 
-  const closeLabel = (tab: ReviewWorkspaceTab): string => {
-    switch (tab.kind) {
-      case "context":
-        return "Close context"
-      case "file":
-        return `Close ${tabLabel(tab)} tab`
-      case "browser":
-        return "Close browser"
-      case "process":
-        return "Close process section"
-      case "review":
-        return "Close review"
-    }
-  }
+  const closeLabel = (tab: ReviewWorkspaceTab): string =>
+    tab.kind === "file" ? `Close ${tabLabel(tab)} tab` : CLOSE_LABEL[tab.kind]
 
   return { tabLabel, tabIcon, tabIconPx, closeLabel }
 }

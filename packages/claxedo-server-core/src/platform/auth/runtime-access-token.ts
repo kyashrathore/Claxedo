@@ -20,14 +20,7 @@ export type RuntimeAccessTokenConfigurationErrorCode =
   | "runtime_access_token_public_key_missing"
   | "runtime_access_token_key_pair_mismatch"
 
-// Narrows `code` to this class's union. Merged rather than written as a
-// `declare` class field: Playwright's babel transform rejects those unless
-// @babel/plugin-transform-typescript is configured, and it loads this file.
-export interface RuntimeAccessTokenConfigurationError {
-  readonly code: RuntimeAccessTokenConfigurationErrorCode
-}
-
-export class RuntimeAccessTokenConfigurationError extends ClaxedoError {
+export class RuntimeAccessTokenConfigurationError extends ClaxedoError<RuntimeAccessTokenConfigurationErrorCode> {
   constructor(code: RuntimeAccessTokenConfigurationErrorCode, message: string) {
     // Misconfiguration, not load: retrying cannot fix an absent or mismatched
     // key, so this fails closed at 503 and stays non-retryable.
@@ -169,7 +162,7 @@ async function loadPrivateKey(
 
 async function keyIdentity(key: ExportableKey) {
   const jwk = await exportJWK(key)
-  const material = String(jwk.x ?? "")
+  const material = jwk.x ?? ""
   if (!material) {
     throw new Error("Unable to derive kid: key has no public component")
   }

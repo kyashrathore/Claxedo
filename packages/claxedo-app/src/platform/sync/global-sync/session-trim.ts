@@ -1,7 +1,5 @@
-import type {
-  AgentPermission as PermissionRequest,
-  AgentPresentationSession as Session,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
+import type { RuntimeSession as Session } from "@/platform/runtime/session"
 import { cmp } from "@/platform/query/sort"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 

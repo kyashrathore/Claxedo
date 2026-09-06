@@ -9,9 +9,9 @@ import { sessionPath } from "../state"
 import type { Page } from "playwright-core"
 
 export async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  await launchTo(page, app, sessionPath(fixture.sessions[0]!, fixture.sessions[0]!.id))
-  await waitForTranscript(page, fixture, fixture.sessions[0]!.id, fixture.sessions[0]!.title)
-  const target = fixture.sessions.find((session) => session.directory !== fixture.sessions[0]!.directory) ?? fixture.sessions[1]!
+  await launchTo(page, app, sessionPath(fixture.sessions[0], fixture.sessions[0].id))
+  await waitForTranscript(page, fixture, fixture.sessions[0].id, fixture.sessions[0].title)
+  const target = fixture.sessions.find((session) => session.directory !== fixture.sessions[0].directory) ?? fixture.sessions[1]
   await showSessionInventory(page, fixture, Math.min(5, fixture.sessions.length), { settle: "frame" })
   // Headline: selecting a session whose route is owned by another workspace.
   const headline = await measureInteraction(page, "workspace-switch", async () => {

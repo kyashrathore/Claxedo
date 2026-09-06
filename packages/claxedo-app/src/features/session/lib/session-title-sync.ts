@@ -113,7 +113,7 @@ export function selectSessionTitleInventoryRow<T extends SessionTitleRow>(input:
 
 export function provisionalSessionTitle(text: string) {
   const cleaned = text.replace(/\s+/g, " ").trim()
-  if (!cleaned) return
+  if (!cleaned) return undefined
   return cleaned.length > 72 ? cleaned.slice(0, 72).trimEnd() + "…" : cleaned
 }
 
@@ -121,7 +121,7 @@ export function stableSessionTitle(
   previous: StableSessionTitle | undefined,
   input: SessionTitleCandidates & { sessionKey?: string },
 ) {
-  if (!input.sessionKey) return
+  if (!input.sessionKey) return undefined
   const prior = previous?.sessionKey === input.sessionKey ? previous : undefined
   const directoryTitle = normalizedTitle(input.directoryTitle)
   if (
@@ -148,7 +148,7 @@ export function stableSessionTitle(
   if (prior) return prior
 
   const placeholder = directoryTitle ?? inventoryTitle
-  if (!placeholder) return
+  if (!placeholder) return undefined
   return { sessionKey: input.sessionKey, title: placeholder, source: "placeholder" } satisfies StableSessionTitle
 }
 

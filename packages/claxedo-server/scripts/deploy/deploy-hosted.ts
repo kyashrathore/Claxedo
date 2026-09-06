@@ -4,6 +4,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-shared/deployment-profile"
 import { betterAuthD1ReleaseInputs } from "./release-better-auth-d1"
+import { asRecord, parseJson, stringField } from "../../src/platform/json/index"
+import { errorMessage } from "../../src/platform/errors/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const sandboxScriptsRoot = path.join(serverRoot, "scripts/sandbox")
@@ -33,6 +35,8 @@ function targets(args = process.argv, fallback = "central") {
   return input.split(",").map((item) => {
     const target = item.trim()
     if (target === "central" || target === "cloudflare-sandbox") return target
+    // `target` is `never` here: every `Target` is handled above, and this
+    // guards a value that only reaches us from an untyped caller.
     throw new Error(`Unknown deploy target: ${target}`)
   })
 }
@@ -114,7 +118,9 @@ export function hostedDeployCommands(input: {
             },
           ]
     }
-    throw new Error(`Unknown deploy target: ${target}`)
+    // `target` is `never` here: every `Target` is handled above, and this
+    // guards a value that only reaches us from an untyped caller.
+    throw new Error(`Unknown deploy target: ${JSON.stringify(target)}`)
   })
 }
 
@@ -146,24 +152,19 @@ function printSandboxBuildInfo() {
   const infoPath = path.join(sandboxScriptsRoot, ".build", "build-info.json")
   if (!fs.existsSync(infoPath)) return
   try {
-    const info = JSON.parse(fs.readFileSync(infoPath, "utf8")) as {
-      imageTag?: string
-      snapshotName?: string
-      buildId?: string
-      coreVersion?: string
-    }
+    const info = asRecord(parseJson(fs.readFileSync(infoPath, "utf8")))
     console.log("")
     console.log("=== sandbox build identity (build-info.json) ===")
-    console.log(`  core version:  ${info.coreVersion ?? "?"}`)
-    console.log(`  build id:      ${info.buildId ?? "?"}`)
-    console.log(`  image tag:     ${info.imageTag ?? "?"}`)
-    console.log(`  snapshot name: ${info.snapshotName ?? "?"}`)
-    console.log(`  -> pin the control plane with CLAXEDO_SANDBOX_BUILD_ID=${info.buildId ?? "<id>"}`)
+    console.log(`  core version:  ${stringField(info, "coreVersion") ?? "?"}`)
+    console.log(`  build id:      ${stringField(info, "buildId") ?? "?"}`)
+    console.log(`  image tag:     ${stringField(info, "imageTag") ?? "?"}`)
+    console.log(`  snapshot name: ${stringField(info, "snapshotName") ?? "?"}`)
+    console.log(`  -> pin the control plane with CLAXEDO_SANDBOX_BUILD_ID=${stringField(info, "buildId") ?? "<id>"}`)
     console.log(`     (or CLAXEDO_SNAPSHOT_NAME / CLAXEDO_SANDBOX_IMAGE to override names outright)`)
     console.log("================================================")
     console.log("")
   } catch (err) {
-    console.warn(`[deploy-hosted] could not read sandbox build-info: ${(err as Error).message}`)
+    console.warn(`[deploy-hosted] could not read sandbox build-info: ${errorMessage(err)}`)
   }
 }
 

@@ -186,7 +186,7 @@ describe("Codex Goal lifecycle", () => {
     })
     const session = await first.createSession(fake.directory, undefined, "session-recovery")
     await first.goals!.start(session.id, { objective: "Survive app-server restart" }, fake.directory)
-    first.dispose()
+    await first.dispose()
 
     const second = new CodexHarnessAdapter({
       binary: fake.binary,
@@ -204,7 +204,7 @@ describe("Codex Goal lifecycle", () => {
       "thread/resume",
       "thread/goal/get",
     ])
-    second.dispose()
+    await second.dispose()
   })
 
   test("recovers durable threads for Goal mutations and clears Goal before session deletion", async () => {
@@ -217,7 +217,7 @@ describe("Codex Goal lifecycle", () => {
     })
     const session = await first.createSession(fake.directory, undefined, "session-delete")
     await first.goals!.start(session.id, { objective: "Stop before delete" }, fake.directory)
-    first.dispose()
+    await first.dispose()
 
     const second = new CodexHarnessAdapter({
       binary: fake.binary,
@@ -225,7 +225,7 @@ describe("Codex Goal lifecycle", () => {
       codexHome: path.join(fake.directory, "codex-home"),
     })
     expect(await second.goals!.pause(session.id, fake.directory)).toMatchObject({ ok: true, goal: { status: "paused" } })
-    second.dispose()
+    await second.dispose()
 
     const third = new CodexHarnessAdapter({
       binary: fake.binary,
@@ -247,7 +247,7 @@ describe("Codex Goal lifecycle", () => {
       "thread/goal/get",
       "thread/goal/clear",
     ])
-    third.dispose()
+    await third.dispose()
   })
 
   test("deletes a session without spawning an app-server when the Codex binary is broken", async () => {
@@ -260,7 +260,7 @@ describe("Codex Goal lifecycle", () => {
     })
     const session = await live.createSession(fake.directory, undefined, "session-broken-binary")
     await live.goals!.start(session.id, { objective: "Outlive the binary" }, fake.directory)
-    live.dispose()
+    await live.dispose()
     const requestsBeforeDelete = fs.readFileSync(fake.log, "utf8")
 
     const broken = new CodexHarnessAdapter({
@@ -275,7 +275,7 @@ describe("Codex Goal lifecycle", () => {
     // survives — deletion of local state must not depend on it.
     expect(fs.readFileSync(fake.log, "utf8")).toBe(requestsBeforeDelete)
     expect(fs.existsSync(fake.goalFile)).toBe(true)
-    broken.dispose()
+    await broken.dispose()
   })
 
   test("uses structured Goal operations and publishes each accepted state once", async () => {
@@ -335,7 +335,7 @@ describe("Codex Goal lifecycle", () => {
       { type: "goal-updated", sessionId: session.id, goal: { status: "active" } },
       { type: "goal-cleared", sessionId: session.id },
     ])
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("routes remaining frames after a mid-turn provider pause and ends the Goal turn", async () => {
@@ -357,7 +357,7 @@ describe("Codex Goal lifecycle", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "After pause" }))
     expect(events.filter((event) => (event as { type?: string }).type === "finish")).toHaveLength(1)
     expect(await adapter.goals!.read(session.id, fake.directory)).toMatchObject({ status: "paused" })
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("a child agent finishing does not end the parent Goal turn", async () => {
@@ -481,6 +481,6 @@ describe("Codex Goal lifecycle", () => {
     // Pause interrupts and awaits the in-flight Goal turn, so the session must
     // already be idle — a stranded turn would report "cancelled" here instead.
     expect(await adapter.abort(executionBinding(session.id, fake.directory, "native:codex"))).toEqual({ ok: true, status: "already_idle" })
-    adapter.dispose()
+    await adapter.dispose()
   })
 })

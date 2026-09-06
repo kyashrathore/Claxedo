@@ -22,3 +22,18 @@ export function sandboxLeaseStatus(status: SandboxLeaseRow["status"]): SandboxLe
   if (status === "pending" || status === "acquiring" || status === "starting") return "acquiring"
   return "unavailable"
 }
+
+/**
+ * The inverse: port status -> stored row status. Both stores wrote their own
+ * copy, and `stores/d1.ts` carried a comment promising its copy was kept
+ * "byte-identical" to `stores/sqlite.ts`'s — a promise no check enforced.
+ * The conversion is lossy (the row's ten states collapse to the port's five),
+ * so the two directions only round-trip when they are read together, which is
+ * the reason they now sit in one file.
+ */
+export function sandboxLeaseRowStatus(lease: SandboxLease): SandboxLeaseRow["status"] {
+  if (lease.status === "ready" || lease.status === "stopped") return lease.status
+  if (lease.status === "unavailable") return lease.nextRetryAt === undefined ? "failed" : "backoff"
+  if (lease.status === "destroyed") return "destroyed"
+  return "acquiring"
+}

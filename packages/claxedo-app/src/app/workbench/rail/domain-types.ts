@@ -50,12 +50,22 @@ export type WorkspaceItem = {
   available?: boolean
 }
 
+/**
+ * One workspace as the project payload carries it.
+ *
+ * `id`, `directory` and `kind` are optional because the control plane's
+ * `ClaxedoWorkspaceInventoryEntry` declares them optional and this type is
+ * populated straight from it. They used to be required, and `route-bridge`'s
+ * `projectToProjectItem` bridged the gap with `as any` — so a row with no `id`
+ * reached `railProjectDirectoryRefs`, which added `undefined` to a
+ * `Set<string>` of directory refs. Every other reader already guarded.
+ */
 export type WorkspaceInfo = {
-  id: string
+  id?: string
   workspaceId?: string
   workspace_name?: string
-  directory: string
-  kind: RuntimeKind
+  directory?: string
+  kind?: RuntimeKind
   /** What this principal may do here, as the control plane reports it. */
   role?: string
   /** Whether a live host is serving this user-hosted workspace right now. */

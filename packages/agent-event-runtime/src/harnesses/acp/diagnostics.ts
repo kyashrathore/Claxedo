@@ -38,7 +38,7 @@ export function shape(value: unknown): unknown {
   if (value === null) return "null"
   if (value === undefined) return "undefined"
   if (Array.isArray(value)) return { type: "array", length: value.length }
-  if (typeof value === "object") return { type: "object", keys: Object.keys(value as Record<string, unknown>).sort() }
+  if (typeof value === "object") return { type: "object", keys: Object.keys(value).sort() }
   return typeof value
 }
 

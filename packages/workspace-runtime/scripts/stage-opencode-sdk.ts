@@ -25,6 +25,7 @@ function resolvePackage(name: string, from: string): string | undefined {
     if (fs.existsSync(path.join(directory, "package.json"))) return fs.realpathSync(directory)
     if (path.dirname(ancestor) === ancestor) break
   }
+  return undefined
 }
 
 function supports(values: string[] | undefined, target: string) {
@@ -40,7 +41,7 @@ function supports(values: string[] | undefined, target: string) {
  */
 export function stageOpenCodeSdk(
   nodeModules: string,
-  target = { platform: process.platform as string, arch: process.arch as string },
+  target: { platform: string; arch: string } = { platform: process.platform, arch: process.arch },
   owner = path.resolve(import.meta.dirname, ".."),
 ) {
   const installed = new Map<string, string>()

@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono"
 import { WorkspaceTargetError } from "../target"
+import { rec } from "../json-value"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import type { WorkspaceWorktreeRecord } from "../store"
 import { errorBody } from "./http"
@@ -23,7 +24,7 @@ export function worktreeResponse(worktree: WorkspaceWorktreeRecord) {
 export function parseWorktreeCreateBody(body: unknown):
   | { ok: true; value: { sessionId: string; baseCommit?: string } }
   | { ok: false; status: 400; body: ReturnType<typeof errorBody> } {
-  const value = body as { sessionId?: unknown; baseCommit?: unknown } | null
+  const value = rec(body)
   if (typeof value?.sessionId !== "string") {
     return {
       ok: false,
@@ -56,7 +57,7 @@ export function WorktreeRoutes(
     operation: "worktree_read" | "worktree_write",
     sessionId: string,
   ) => {
-    if (!sessionAccessContext(c).authority && !options.sessionAccessPolicy) return
+    if (!sessionAccessContext(c).authority && !options.sessionAccessPolicy) return undefined
     if (!options.sessionAccessPolicy) {
       return sessionAccessDenied({
         allowed: false,
@@ -73,6 +74,7 @@ export function WorktreeRoutes(
       path: c.req.path,
     })
     if (!decision.allowed) return sessionAccessDenied(decision)
+    return undefined
   }
 
   return new Hono<{ Variables: RelayHostAuthContext }>()

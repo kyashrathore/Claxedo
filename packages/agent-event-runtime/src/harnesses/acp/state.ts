@@ -1,4 +1,4 @@
-import { object, text as str } from "../value"
+import { object, text as str } from "../../value"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "../../contracts/agent-runtime-event"
 import type { ToolIntent } from "../../contracts/agent-runtime-event"
@@ -40,11 +40,19 @@ export type SessionState = {
   tools: Record<string, ToolState>
 }
 
+/**
+ * `pick()` always stamps `acp.intent`; classification reads it back without re-deriving.
+ * The open records keep the rest of the bag free-form, as harness metadata is.
+ */
+export type AcpToolMetadata = Record<string, unknown> & {
+  acp: Record<string, unknown> & { intent: AcpIntent }
+}
+
 export type ToolView = {
   toolName: string
   input?: Record<string, unknown>
   display: ToolDisplay
-  metadata: Record<string, unknown>
+  metadata: AcpToolMetadata
 }
 
 function parsed(raw: unknown) {
@@ -89,11 +97,16 @@ function termKey(item: ToolCallContent) {
   return item.terminalId ?? ""
 }
 
-function contentKey(item: ToolCallContent) {
+let unserializableContentSeq = 0
+
+function contentKey(item: ToolCallContent): string {
   try {
     return `${item.type}:${JSON.stringify(item)}`
   } catch {
-    return `${item.type}:${String(item)}`
+    // Content that cannot be serialized (cycles) has no comparable identity:
+    // give it a unique key so dedupe never drops it.
+    unserializableContentSeq += 1
+    return `${item.type}:unserializable:${unserializableContentSeq}`
   }
 }
 
@@ -143,10 +156,11 @@ function firstPath(list: Array<{ path: string; line?: number | null }>) {
   return str(list[0]?.path)
 }
 
-function diffPath(content: ToolCallContent[]) {
+function diffPath(content: ToolCallContent[]): string | undefined {
   for (const item of content) {
     if (item.type === "diff" && item.path) return item.path
   }
+  return undefined
 }
 
 function files(state: ToolState) {
@@ -177,15 +191,15 @@ function textBody(raw: unknown) {
   return str(item?.content) ?? str(item?.text) ?? str(item?.body)
 }
 
-function url(value: unknown) {
+function url(value: unknown): string | undefined {
   const item = str(value)
-  if (!item) return
+  if (!item) return undefined
   try {
     const next = new URL(item)
-    if (!next.protocol.startsWith("http")) return
+    if (!next.protocol.startsWith("http")) return undefined
     return item
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -208,7 +222,7 @@ function type(
 }
 
 function diffInfo(item: ToolCallContent) {
-  if (item.type !== "diff" || !item.path || typeof item.newText !== "string") return
+  if (item.type !== "diff" || !item.path || typeof item.newText !== "string") return undefined
   return {
     file: item.path,
     before: typeof item.oldText === "string" ? item.oldText : "",
@@ -223,7 +237,7 @@ function filediff(content: ToolCallContent[]) {
     const next = diffInfo(row)
     return next ? [next] : []
   })
-  if (item.length !== 1) return
+  if (item.length !== 1) return undefined
   return item[0]
 }
 
@@ -245,7 +259,7 @@ function patch(content: ToolCallContent[]) {
   })
 }
 
-function shell(raw: unknown) {
+function shell(raw: unknown): string | undefined {
   for (const item of parsed(raw)) {
     const cmd = str(item.cmd)
     if (cmd) return cmd
@@ -255,9 +269,9 @@ function shell(raw: unknown) {
   const direct = str(row?.command)
   if (direct) return direct
   const cmd = row?.command
-  if (!Array.isArray(cmd)) return
+  if (!Array.isArray(cmd)) return undefined
   const list = cmd.filter((item): item is string => typeof item === "string")
-  if (list.length === 0) return
+  if (list.length === 0) return undefined
   if (list.length >= 3 && list[1] === "-lc") return str(list[2])
   return list.join(" ")
 }
@@ -281,15 +295,16 @@ function parseTitle(
   return { short }
 }
 
-function mode(title?: string) {
+function mode(title?: string): "web" | "codebase" | "files" | undefined {
   const item = title?.trim().toLowerCase()
   if (item === "web search") return "web"
   if (item === "codebase search") return "codebase"
   if (item === "find") return "files"
+  return undefined
 }
 
-function first(value: unknown) {
-  if (!Array.isArray(value)) return
+function first(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined
   return value.find((item): item is string => typeof item === "string" && !!item)
 }
 

@@ -321,8 +321,8 @@ function localDocumentsBackend(
 
 function portEntry(value: DocumentIndexEntry): DocumentEntry {
   return value.origin_kind === "managed"
-    ? { origin: "managed", placement: "local", projectId: value.project_id, documentId: value.id, relativePath: value.managed_relative_path! }
-    : { origin: "repository", placement: "local", projectId: value.project_id, documentId: value.id, workspaceId: value.workspace_id!, relativePath: value.repository_relative_path! }
+    ? { origin: "managed", placement: "local", projectId: value.project_id, documentId: value.id, relativePath: value.managed_relative_path }
+    : { origin: "repository", placement: "local", projectId: value.project_id, documentId: value.id, workspaceId: value.workspace_id, relativePath: value.repository_relative_path }
 }
 
 function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAuth) {

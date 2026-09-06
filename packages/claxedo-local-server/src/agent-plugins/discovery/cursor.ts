@@ -1,13 +1,10 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { MachineInstalledEntry } from "./types"
+import { isRecord } from "../../platform/json"
 
 /** The ownership marker `cursorAgentPluginAdapter` writes into every directory it manages (see `../runtime/adapters/cursor.ts`). */
 const OWNERSHIP_MARKER = ".claxedo-agent-plugin.json"
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
 
 async function isOwnedByClaxedo(entryRoot: string): Promise<boolean> {
   try {
@@ -21,7 +18,7 @@ async function isOwnedByClaxedo(entryRoot: string): Promise<boolean> {
 async function manifestNameAndVersion(entryRoot: string): Promise<{ name?: string; version?: string }> {
   try {
     const parsed = JSON.parse(await fs.readFile(path.join(entryRoot, "plugin.json"), "utf8")) as unknown
-    if (!record(parsed)) return {}
+    if (!isRecord(parsed)) return {}
     return {
       ...(typeof parsed.name === "string" && parsed.name ? { name: parsed.name } : {}),
       ...(typeof parsed.version === "string" && parsed.version ? { version: parsed.version } : {}),

@@ -11,6 +11,8 @@
 // the `bypassFetchThrottle` marker below, or via an `Accept:
 // text/event-stream` header which we detect heuristically.
 
+import { requestUrl } from "./url"
+
 const DEFAULT_CAP = 4
 
 // Keep the marker out of the HTTP request. A wire header would trigger CORS
@@ -22,8 +24,8 @@ const FETCH_BYPASS = Symbol("fetch-bypass-throttle")
 type FetchThrottleInit = RequestInit & { [FETCH_BYPASS]?: true }
 
 function requestPathname(input?: string | URL | Request): string | undefined {
-  if (!input) return
-  const raw = input instanceof Request ? input.url : String(input)
+  if (!input) return undefined
+  const raw = requestUrl(input)
   try {
     return new URL(raw, "http://local.invalid").pathname
   } catch {
@@ -44,7 +46,7 @@ export function isEventStreamPath(input?: string | URL | Request): boolean {
   return /^\/workspaces\/[^/]+\/(global\/)?event$/.test(pathname)
 }
 
-function isEventStreamRequest(init?: RequestInit | undefined, input?: string | URL | Request): boolean {
+function isEventStreamRequest(init?: RequestInit  , input?: string | URL | Request): boolean {
   if (isEventStreamPath(input)) return true
   const accept = (() => {
     const h = init?.headers
@@ -54,7 +56,7 @@ function isEventStreamRequest(init?: RequestInit | undefined, input?: string | U
       const row = h.find(([k]) => k.toLowerCase() === "accept")
       return row?.[1]
     }
-    const rec = h as Record<string, string>
+    const rec = h
     return rec["Accept"] ?? rec["accept"] ?? undefined
   })()
   if (accept && accept.includes("text/event-stream")) return true
@@ -115,19 +117,33 @@ function createThrottle(cap: number): FetchThrottle {
   }
 }
 
+/** Live throttle counters published on `window.__fetchThrottle` for the browser console. */
+export type FetchThrottleDebug = {
+  readonly inFlight: number
+  readonly queued: number
+  readonly cap: number
+}
+
+declare global {
+  interface Window {
+    __fetchThrottle?: FetchThrottleDebug
+  }
+}
+
 let globalThrottle: FetchThrottle | undefined
 
 export function getFetchThrottle(): FetchThrottle {
-  if (!globalThrottle) globalThrottle = createThrottle(DEFAULT_CAP)
-  if (typeof window !== "undefined") {
-    // as-any: exposes throttle counters on an untyped browser debug hook.
-    ;(window as unknown as { __fetchThrottle?: { inFlight: number; queued: number; cap: number } }).__fetchThrottle = {
-      get inFlight() { return globalThrottle!.inFlight() },
-      get queued() { return globalThrottle!.queued() },
+  const throttle = (globalThrottle ??= createThrottle(DEFAULT_CAP))
+  if (typeof window !== "undefined" && !window.__fetchThrottle) {
+    // Getters read the live module binding, so the hook keeps reporting the
+    // current throttle after `__setFetchThrottleForTests` swaps it out.
+    window.__fetchThrottle = {
+      get inFlight() { return getFetchThrottle().inFlight() },
+      get queued() { return getFetchThrottle().queued() },
       cap: DEFAULT_CAP,
-    } as never
+    }
   }
-  return globalThrottle
+  return throttle
 }
 
 // Test-only override so suites can drive deterministic concurrency limits
@@ -147,7 +163,7 @@ export function __resetFetchThrottleForTests() {
  */
 export async function throttledFetch(
   underlying: () => Promise<Response>,
-  init?: RequestInit | undefined,
+  init?: RequestInit  ,
   input?: string | URL | Request,
 ): Promise<Response> {
   if (isEventStreamRequest(init, input) || isFetchThrottleBypassed(init)) {

@@ -103,8 +103,8 @@ describe("worktree event publishing", () => {
     )
 
     expect(readyEvents.length).toBe(1)
-    expect(readyEvents[0]!.directory).toBe(body.directory)
-    expect(readyEvents[0]!.payload.properties?.name).toBe(body.name)
+    expect(readyEvents[0].directory).toBe(body.directory)
+    expect(readyEvents[0].payload.properties?.name).toBe(body.name)
   })
 
   test("POST /experimental/worktree publishes worktree.ready on claxedoBus", async () => {
@@ -148,7 +148,7 @@ describe("worktree event publishing", () => {
     )
 
     expect(readyEvents.length).toBe(1)
-    const ready = readyEvents[0] as Extract<ClaxedoEvent, { type: "worktree.ready" }>
+    const ready = readyEvents[0]
     expect(ready.directory).toBe(body.directory)
     expect(ready.name).toBe(body.name)
   })

@@ -43,7 +43,7 @@ export function sandboxTargetFromLease(lease: SandboxLeaseRow | undefined): Sand
   const sandboxId = lease?.sandbox_id ?? lease?.driver_resource_id
   const hostId = lease?.lease_id || sandboxId
   const url = sandboxLeaseUrl(lease)
-  if (!lease || !url || !sandboxId || !hostId) return
+  if (!lease || !url || !sandboxId || !hostId) return undefined
   return {
     workspaceId: lease.workspace_id,
     sandboxId,
@@ -60,7 +60,7 @@ export function sandboxTargetFromLease(lease: SandboxLeaseRow | undefined): Sand
 export function sandboxLeaseFromRow(lease: SandboxLeaseRow): SandboxLease {
   return {
     workspaceId: lease.workspace_id,
-    homeRegion: (lease.home_region ?? "us-east") as SandboxLease["homeRegion"],
+    homeRegion: (lease.home_region ?? "us-east"),
     driver: lease.driver,
     epoch: lease.epoch,
     status: sandboxLeaseStatus(lease.status),
@@ -118,9 +118,12 @@ export function pendingSandboxLease(
   }
 }
 
-export function updateSupervisorSandboxLease(workspaceId: string, patch: Partial<SandboxLeaseRow>) {
+export function updateSupervisorSandboxLease(
+  workspaceId: string,
+  patch: Partial<SandboxLeaseRow>,
+): SandboxLeaseRow | undefined {
   const prev = getLease(workspaceId)
-  if (!prev) return
+  if (!prev) return undefined
   const next = { ...prev, ...patch, updated_at: Date.now() }
   upsertLease(next)
   return next
@@ -181,7 +184,7 @@ export function recordSupervisorSandboxLeaseFailure(
   nextRetryAt: number | null,
 ): SandboxLeaseRow | undefined {
   const prev = getLease(workspaceId)
-  if (!prev) return
+  if (!prev) return undefined
   return updateSupervisorSandboxLease(workspaceId, {
     status: nextRetryAt ? "backoff" : "failed",
     retry_count: prev.retry_count + 1,

@@ -218,9 +218,10 @@ describe("WorkspaceFilesNavigator (files mode)", () => {
 
     const row = document.createElement("button")
     row.dataset.fileTreePath = "src/deep/file.ts"
-    row.scrollIntoView = vi.fn()
+    const scrollIntoView = vi.fn()
+    row.scrollIntoView = scrollIntoView
     view.getByTestId("file-tree").append(row)
 
-    await waitFor(() => expect(row.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }))
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }))
   })
 })

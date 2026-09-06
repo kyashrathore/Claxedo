@@ -134,8 +134,8 @@ export function applyOptimisticPromptHandoff(input: ApplyOptimisticPromptHandoff
     input.replaceSession && !input.draftId && input.claxedoState && !input.didNavigateHandoffPatch && !input.handoffCreatedSession
       ? (() => {
           const active = input.surfaceId ? input.claxedoState?.meta.get(input.surfaceId) : undefined
-          if (active?.type !== "session") return
-          if (active?.sessionId !== input.previousSessionId) return
+          if (active?.type !== "session") return undefined
+          if (active?.sessionId !== input.previousSessionId) return undefined
           return active.id
         })()
       : undefined

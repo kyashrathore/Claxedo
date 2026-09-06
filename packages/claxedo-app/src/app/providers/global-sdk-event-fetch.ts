@@ -1,7 +1,5 @@
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
-import type { AccountState } from "@/platform/account/account-port"
 import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type LiveSession = {

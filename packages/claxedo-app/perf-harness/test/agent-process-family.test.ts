@@ -6,6 +6,7 @@ import {
   parseMacMemoryImpact,
   parseProcessTable,
   readPhysFootprint,
+  readProcessSnapshot,
   toIdleRows,
   totalPhysFootprintBytes,
   withPhysFootprint,
@@ -63,9 +64,9 @@ describe("physical-footprint observation recorded beside summed RSS", () => {
 
   test("attaches readings per process without disturbing any existing field", () => {
     const family = withPhysFootprint(table, new Map([[101, 195_200_000]]))
-    expect(family[0]).toEqual({ ...table[0]!, physFootprintBytes: 195_200_000 })
-    expect(family[1]).toEqual(table[1]!)
-    expect("physFootprintBytes" in family[1]!).toBe(false)
+    expect(family[0]).toEqual({ ...table[0], physFootprintBytes: 195_200_000 })
+    expect(family[1]).toEqual(table[1])
+    expect("physFootprintBytes" in family[1]).toBe(false)
   })
 
   test("reports a family total only when every member was read", () => {
@@ -95,9 +96,26 @@ describe("physical-footprint observation recorded beside summed RSS", () => {
     const decoded = JSON.parse(JSON.stringify({ processOwnership: { snapshots: [snapshot] } })) as {
       processOwnership: { snapshots: Array<{ processes: ProcessSnapshot[] }> }
     }
-    const processes = decoded.processOwnership.snapshots[0]!.processes
+    const processes = decoded.processOwnership.snapshots[0].processes
     expect(processes.map((row) => row.physFootprintBytes)).toEqual([195_200_000, 277_800_000])
     expect(processes.map((row) => row.rssBytes)).toEqual([2_048 * 1_024, 4_096 * 1_024])
     expect(totalPhysFootprintBytes(processes)).toBe(473_000_000)
+  })
+})
+
+describe("process snapshot readback", () => {
+  const row = parseProcessTable("  501   1 4096 0:01.00 Mon Jan  1 00:00:00 2024 /usr/bin/example --flag\n")[0]
+
+  test("reads back a row the process table produced", () => {
+    expect(readProcessSnapshot(JSON.parse(JSON.stringify(row)))).toEqual(row)
+  })
+
+  test("carries the optional physical footprint when it is present", () => {
+    expect(readProcessSnapshot({ ...row, physFootprintBytes: 2048 })).toEqual({ ...row, physFootprintBytes: 2048 })
+  })
+
+  test("rejects a row that lost its resident size", () => {
+    const { rssBytes: _dropped, ...partial } = row
+    expect(() => readProcessSnapshot(partial)).toThrow("process snapshot is missing a required field")
   })
 })

@@ -115,8 +115,8 @@ describe("ipc caller guard wiring", () => {
     // let the renderer name itself.
     const readCaller = entry.slice(entry.indexOf("readCaller: (event)"), entry.indexOf("onRejected:"))
 
-    expect(readCaller).toContain("ipc.sender.id")
-    expect(readCaller).toContain("ipc.senderFrame")
-    expect(readCaller).toContain("ipc.sender.mainFrame")
+    expect(readCaller).toContain("event.sender.id")
+    expect(readCaller).toContain("event.senderFrame")
+    expect(readCaller).toContain("event.sender.mainFrame")
   })
 })

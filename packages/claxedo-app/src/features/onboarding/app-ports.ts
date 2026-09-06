@@ -28,12 +28,18 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof OnboardingAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as OnboardingAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: OnboardingAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
-export const ProviderList = bind("ProviderList")
-export const ProviderConnectForm = bind("ProviderConnectForm")
-export const workspaceSandboxDriversUrl = bind("workspaceSandboxDriversUrl")
-export const workspaceSandboxDriverAuthUrl = bind("workspaceSandboxDriverAuthUrl")
-export const SandboxDriverLogo = bind("SandboxDriverLogo")
+export const ProviderList = bind((ports) => ports.ProviderList)
+export const ProviderConnectForm = bind((ports) => ports.ProviderConnectForm)
+export const workspaceSandboxDriversUrl = bind((ports) => ports.workspaceSandboxDriversUrl)
+export const workspaceSandboxDriverAuthUrl = bind((ports) => ports.workspaceSandboxDriverAuthUrl)
+export const SandboxDriverLogo = bind((ports) => ports.SandboxDriverLogo)

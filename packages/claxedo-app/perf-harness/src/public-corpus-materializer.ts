@@ -9,6 +9,7 @@ import { verifyWorkspaceFixtureManifest } from "agent-app-benchmark/workspace-fi
 import type { SessionReadinessTarget } from "./agent-browser-observer"
 import { initializeWorkspace, type MaterializedWorkspace } from "./workspace-fixture"
 import { persistClaxedoCorpus, registerWorkspace } from "./fixture-registration"
+import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
 
 type ManifestSession = {
   logicalSessionId: string
@@ -55,6 +56,141 @@ type CanonicalPart = {
   [key: string]: unknown
 }
 
+/** Read one session row of the corpus manifest. */
+function parseManifestSession(value: Record<string, unknown>): ManifestSession {
+  const logicalSessionId = textField(value, "logicalSessionId")
+  const nativeSessionId = textField(value, "nativeSessionId")
+  const workspaceId = textField(value, "workspaceId")
+  const role = textField(value, "role")
+  const file = textField(value, "file")
+  const fileDigestSha256 = textField(value, "fileDigestSha256")
+  const transcriptBytes = numberField(value, "transcriptBytes")
+  const eventCount = numberField(value, "eventCount")
+  if (
+    logicalSessionId === undefined ||
+    nativeSessionId === undefined ||
+    workspaceId === undefined ||
+    role === undefined ||
+    file === undefined ||
+    fileDigestSha256 === undefined ||
+    transcriptBytes === undefined ||
+    eventCount === undefined
+  ) {
+    throw new Error("Claxedo received a corpus manifest with an incomplete session")
+  }
+  return { logicalSessionId, nativeSessionId, workspaceId, role, transcriptBytes, eventCount, file, fileDigestSha256 }
+}
+
+/** Read the corpus manifest; the digest checks at the call site follow. */
+function parseCorpusManifest(value: unknown): CorpusManifest {
+  if (!isRecord(value)) throw new Error("Claxedo received a malformed corpus manifest")
+  const corpusId = textField(value, "corpusId")
+  const corpusDigestSha256 = textField(value, "corpusDigestSha256")
+  const sourceEventFormat = recordField(value, "sourceEventFormat")
+  const schemaDigestSha256 = sourceEventFormat && textField(sourceEventFormat, "schemaDigestSha256")
+  const sessions = recordsField(value, "sessions")
+  if (
+    value.schemaVersion !== 1 ||
+    corpusId === undefined ||
+    corpusDigestSha256 === undefined ||
+    schemaDigestSha256 === undefined ||
+    schemaDigestSha256 === null ||
+    !sessions
+  ) {
+    throw new Error("Claxedo received a malformed corpus manifest")
+  }
+  return {
+    schemaVersion: 1,
+    corpusId,
+    corpusDigestSha256,
+    sourceEventFormat: { schemaDigestSha256 },
+    sessions: sessions.map(parseManifestSession),
+  }
+}
+
+/**
+ * Readers for the corpus's own record shapes.
+ *
+ * These types are declared here, so the corpus stream can be checked against
+ * them here too. Each reader names the field that failed rather than letting an
+ * assertion carry a malformed record into the database writes below.
+ */
+function parseSerializedEvent(value: unknown): SerializedEvent {
+  const id = isRecord(value) ? textField(value, "id") : undefined
+  const type = isRecord(value) ? textField(value, "type") : undefined
+  const seq = isRecord(value) ? numberField(value, "seq") : undefined
+  const aggregateID = isRecord(value) ? textField(value, "aggregateID") : undefined
+  const data = isRecord(value) ? recordField(value, "data") : undefined
+  if (
+    id === undefined ||
+    seq === undefined ||
+    aggregateID === undefined ||
+    data === undefined ||
+    (type !== "session.created.1" && type !== "message.updated.1" && type !== "message.part.updated.1")
+  ) {
+    throw new Error("Claxedo rejected a malformed corpus event")
+  }
+  return { id, type, seq, aggregateID, data }
+}
+
+function parseSessionInfo(value: unknown): SessionInfo {
+  if (!isRecord(value)) throw new Error("Claxedo received a malformed session.created payload")
+  const id = textField(value, "id")
+  const slug = textField(value, "slug")
+  const title = textField(value, "title")
+  const version = textField(value, "version")
+  const time = recordField(value, "time")
+  const created = time && numberField(time, "created")
+  const updated = time && numberField(time, "updated")
+  if (
+    id === undefined ||
+    slug === undefined ||
+    title === undefined ||
+    version === undefined ||
+    created === undefined ||
+    created === null ||
+    updated === undefined ||
+    updated === null
+  ) {
+    throw new Error("Claxedo received an incomplete session.created payload")
+  }
+  return { id, slug, title, version, time: { created, updated } }
+}
+
+function parseMessageInfo(value: unknown): MessageInfo {
+  if (!isRecord(value)) throw new Error("Claxedo received a malformed message.updated payload")
+  const id = textField(value, "id")
+  const sessionID = textField(value, "sessionID")
+  const role = textField(value, "role")
+  const time = recordField(value, "time")
+  const created = time && numberField(time, "created")
+  if (
+    id === undefined ||
+    sessionID === undefined ||
+    (role !== "user" && role !== "assistant") ||
+    created === undefined ||
+    created === null
+  ) {
+    throw new Error("Claxedo received an incomplete message.updated payload")
+  }
+  const completed = time ? numberField(time, "completed") : undefined
+  return { ...value, id, sessionID, role, time: { created, ...(completed === undefined ? {} : { completed }) } }
+}
+
+const CANONICAL_PART_TYPES = ["text", "reasoning", "tool", "patch", "step-start", "step-finish"] as const
+
+function parseCanonicalPart(value: unknown): CanonicalPart {
+  if (!isRecord(value)) throw new Error("Claxedo received a malformed message.part.updated payload")
+  const id = textField(value, "id")
+  const sessionID = textField(value, "sessionID")
+  const messageID = textField(value, "messageID")
+  const type = CANONICAL_PART_TYPES.find((entry) => entry === value.type)
+  if (id === undefined || sessionID === undefined || messageID === undefined || !type) {
+    throw new Error("Claxedo received an invalid completed part")
+  }
+  return { ...value, id, sessionID, messageID, type }
+}
+
 type SerializedEvent = {
   id: string
   type: "session.created.1" | "message.updated.1" | "message.part.updated.1"
@@ -96,7 +232,7 @@ export async function materializeClaxedoPublicCorpus(input: {
   workspaceFixtureManifest?: WorkspaceFixtureManifest
   expectedWorkspaceFixtureDigestSha256?: string
 }): Promise<ClaxedoPublicMaterialization> {
-  const manifest = JSON.parse(await readFile(input.corpusManifestPath, "utf8")) as CorpusManifest
+  const manifest = parseCorpusManifest(JSON.parse(await readFile(input.corpusManifestPath, "utf8")))
   if (manifest.schemaVersion !== 1 || manifest.corpusDigestSha256 !== input.expectedCorpusDigestSha256) {
     throw new Error("Claxedo received a corpus manifest with the wrong digest")
   }
@@ -152,7 +288,7 @@ export async function materializeClaxedoPublicCorpus(input: {
 
   const messageCount = database.messages.size
   const transcriptBytes = [...database.parts.values()].reduce(
-    (sum, part) => sum + partPayloadBytes(part.data as CanonicalPart),
+    (sum, part) => sum + partPayloadBytes(partPayload(part.data)),
     0,
   )
   if (
@@ -201,13 +337,13 @@ async function materializeSession(input: {
     if (line.length === 0) continue
     if (Buffer.byteLength(line) > 2 * 1024 * 1024) throw new Error("Claxedo rejected an oversized corpus event")
     fileHash.update(`${line}\n`)
-    const event = JSON.parse(line) as SerializedEvent
+    const event = parseSerializedEvent(JSON.parse(line))
     if (event.seq !== expectedSequence || event.aggregateID !== input.session.nativeSessionId) {
       throw new Error(`Claxedo rejected invalid event order for ${input.session.logicalSessionId}`)
     }
     if (event.type === "session.created.1") {
       if (expectedSequence !== 0) throw new Error("Claxedo received a late session.created event")
-      sessionInfo = event.data.info as SessionInfo
+      sessionInfo = parseSessionInfo(event.data.info)
       if (sessionInfo.id !== input.session.nativeSessionId)
         throw new Error("Claxedo received the wrong native session id")
       // Authoritative display identity for the rail/page: per-workspace serial +
@@ -235,7 +371,7 @@ async function materializeSession(input: {
       }
     } else if (event.type === "message.updated.1") {
       if (!sessionInfo) throw new Error("Claxedo received a message before its session")
-      const info = event.data.info as MessageInfo
+      const info = parseMessageInfo(event.data.info)
       if (info.sessionID !== sessionInfo.id) throw new Error("Claxedo received a message for another session")
       const { id, sessionID: _, ...data } = info
       input.database.addMessage(id, sessionInfo.id, data)
@@ -244,12 +380,8 @@ async function materializeSession(input: {
       messageCount += 1
     } else if (event.type === "message.part.updated.1") {
       if (!sessionInfo || !currentMessage) throw new Error("Claxedo received a part before its message")
-      const part = event.data.part as CanonicalPart
-      if (
-        !["text", "reasoning", "tool", "patch", "step-start", "step-finish"].includes(part.type) ||
-        part.sessionID !== sessionInfo.id ||
-        part.messageID !== currentMessage.id
-      ) {
+      const part = parseCanonicalPart(event.data.part)
+      if (part.sessionID !== sessionInfo.id || part.messageID !== currentMessage.id) {
         throw new Error("Claxedo received an invalid completed part")
       }
       const { id, sessionID: _, messageID: __, ...data } = part
@@ -298,7 +430,15 @@ async function materializeSession(input: {
   }
 }
 
-function partPayloadBytes(part: CanonicalPart): number {
+/**
+ * Size the payload of a part.
+ *
+ * Takes the payload fields it reads rather than a whole `CanonicalPart`. The
+ * stored part records this is also called with have had `id`, `sessionID` and
+ * `messageID` destructured off them, so the old `CanonicalPart` parameter was
+ * describing a shape half its callers never had.
+ */
+function partPayloadBytes(part: Pick<CanonicalPart, "type" | "text" | "state">): number {
   if ((part.type === "text" || part.type === "reasoning") && typeof part.text === "string") {
     return Buffer.byteLength(part.text, "utf8")
   }
@@ -309,6 +449,18 @@ function partPayloadBytes(part: CanonicalPart): number {
     )
   }
   return 0
+}
+
+/** Read the payload fields {@link partPayloadBytes} needs off a stored part record. */
+function partPayload(data: Record<string, unknown>): Pick<CanonicalPart, "type" | "text" | "state"> {
+  const type = CANONICAL_PART_TYPES.find((entry) => entry === data.type)
+  if (!type) throw new Error("Claxedo stored a part with an unknown type")
+  const state = recordField(data, "state")
+  return {
+    type,
+    text: textField(data, "text"),
+    ...(state ? { state: { input: state.input, output: textField(state, "output") } } : {}),
+  }
 }
 
 function normalizeSemanticText(value: string): string {
@@ -355,8 +507,8 @@ export function workspaceListRanks(
 function verifyRequestedWorkspaceFixture(input: {
   workspaceFixtureManifest?: WorkspaceFixtureManifest
   expectedWorkspaceFixtureDigestSha256?: string
-}) {
-  if (!input.workspaceFixtureManifest && !input.expectedWorkspaceFixtureDigestSha256) return
+}): WorkspaceFixtureManifest | undefined {
+  if (!input.workspaceFixtureManifest && !input.expectedWorkspaceFixtureDigestSha256) return undefined
   if (!input.workspaceFixtureManifest || !input.expectedWorkspaceFixtureDigestSha256) {
     throw new Error("Claxedo workspace fixture manifest and digest must be supplied together")
   }

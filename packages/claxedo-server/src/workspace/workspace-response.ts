@@ -13,7 +13,7 @@ import { getSupervisorSandboxStatus } from "./supervisor"
  * producer instead of copying its field list.
  */
 export function workspaceResponse(ws: Workspace | undefined) {
-  if (!ws) return
+  if (!ws) return undefined
   const live = getSupervisorSandboxStatus(ws.id)
   const stopped = live === "stopped" ? "stopped" : undefined
   return projectWorkspaceResponse(ws, stopped)

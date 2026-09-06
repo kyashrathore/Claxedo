@@ -259,7 +259,7 @@ export async function journeyB5B6(ctx: JourneyCtx) {
     sessionIds.push(sessionId)
   }
 
-  const target = sessionIds[0]!
+  const target = sessionIds[0]
   await expectRailRowVisible({ page, sessionId: target, index: 3 })
 
   await page.locator(RAIL_SELECTORS.sessionRow(target)).click()

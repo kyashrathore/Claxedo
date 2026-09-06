@@ -18,11 +18,15 @@ export type ClaxedoSessionStatus = SdkSessionStatus | SessionRecoveringStatus
 
 export function ClaxedoSessionRetry(props: { status: ClaxedoSessionStatus; show?: boolean }) {
   const recovering = () => props.status.type === "recovering" ? props.status : undefined
+  // The union's own discriminant: everything that is not the Claxedo-only
+  // "recovering" arm IS the upstream status, so the fallback narrows instead of
+  // asserting.
+  const upstream = () => props.status.type === "recovering" ? undefined : props.status
 
   return (
     <Show
       when={recovering()}
-      fallback={<UpstreamSessionRetry status={props.status as SdkSessionStatus} show={props.show} />}
+      fallback={<Show when={upstream()}>{(status) => <UpstreamSessionRetry status={status()} show={props.show} />}</Show>}
     >
       {(status) => (
         <Show when={props.show ?? true}>

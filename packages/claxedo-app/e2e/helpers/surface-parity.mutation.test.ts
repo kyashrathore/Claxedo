@@ -94,7 +94,7 @@ function parityFixtureHtml(opts: { railStatus: SurfaceStatus; switcherStatus: Su
       // Stands in for workbench-shell-header.tsx:107's "<Show when={!sidebarPinned()}>"
       // gate around BOTH the sidebar-toggle button and CompactSwitcher — clicking one
       // toggle mounts/unmounts the other's visibility, matching surface-parity.ts's own
-      // header note that this is "also the ONLY way [data-testid=\"compact-switcher\"]
+      // header note that this is "also the ONLY way [data-testid="compact-switcher"]
       // enters the DOM."
       (function () {
         var toggle = document.querySelector('[data-testid="sidebar-toggle"]');

@@ -1,6 +1,6 @@
 // Vendored from arctic@2.3.4 (MIT) — see LICENSE-NOTICE.md.
 // Adaptation: @oslojs/encoding + @oslojs/crypto replaced with node:crypto.
-import { createHash, randomBytes } from "node:crypto"
+import { createHash } from "node:crypto"
 
 export class OAuth2Tokens {
   data: Record<string, unknown>

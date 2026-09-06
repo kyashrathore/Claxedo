@@ -22,7 +22,7 @@ function makeListener() {
   }
   return {
     listener,
-    emit(event: ClaxedoLifecycleListenerEvent) {
+    emit: (event: ClaxedoLifecycleListenerEvent) => {
       for (const handler of handlers) handler(event)
     },
     size: () => handlers.size,

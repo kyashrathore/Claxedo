@@ -30,7 +30,9 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
+import { isRecordArray, parseJsonRecords, stringField } from "../../src/platform/json/index"
 
 export type PackageTrack = "runtime" | "apps" | "wakes"
 
@@ -99,20 +101,9 @@ export function selectPackages(selector: PackageSelector): readonly ClaxedoPacka
 const CONSUMER_SECTIONS = ["dependencies", "peerDependencies", "optionalDependencies"] as const
 const ALL_SECTIONS = [...CONSUMER_SECTIONS, "devDependencies"] as const
 
-export type PackageJson = {
-  name?: string
-  version?: string
-  private?: boolean
-  scripts?: Record<string, string>
-} & Partial<Record<(typeof ALL_SECTIONS)[number], Record<string, string>>>
-
-export type CommandRunner = (cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) => string
+export { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
-
-export function readPackageJson(file: string) {
-  return JSON.parse(fs.readFileSync(file, "utf8")) as PackageJson
-}
 
 /**
  * `workspace:` / `catalog:` specifiers in sections a consumer actually
@@ -205,7 +196,12 @@ export function defaultCommandRunner(cmd: string, args: string[], cwd = repoRoot
 export function parsePackJson(stdout: string) {
   const start = stdout.indexOf("[")
   if (start < 0) throw new Error(`unrecognised npm pack --json output: ${stdout.slice(0, 200)}`)
-  return JSON.parse(stdout.slice(start)) as Array<{ filename: string; files: Array<{ path: string }> }>
+  const packs = parseJsonRecords(stdout.slice(start))
+  if (!packs) throw new Error(`unrecognised npm pack --json output: ${stdout.slice(0, 200)}`)
+  return packs.map((pack) => ({
+    filename: stringField(pack, "filename") ?? "",
+    files: (isRecordArray(pack.files) ? pack.files : []).map((file) => ({ path: stringField(file, "path") ?? "" })),
+  }))
 }
 
 export const REQUIRED_TARBALL_FILES = ["README.md", "LICENSE"] as const
@@ -413,12 +409,13 @@ const SELECTORS: readonly PackageSelector[] = ["all", "others", "runtime-family"
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track") ?? "others"
-  if (!SELECTORS.includes(selectorArg as PackageSelector)) {
+  const selector = SELECTORS.find((candidate) => candidate === selectorArg)
+  if (!selector) {
     throw new Error(`--track must be one of ${SELECTORS.join(", ")} (got ${selectorArg})`)
   }
   const onlyArg = argValue(argv, "--packages")
   return {
-    selector: selectorArg as PackageSelector,
+    selector,
     only: onlyArg ? onlyArg.split(",").map((value) => value.trim()).filter(Boolean) : undefined,
     tag: argValue(argv, "--tag"),
     dryRun: argv.includes("--dry-run"),

@@ -204,8 +204,8 @@ export const SettingsModels: Component = () => {
     sortBy: (a, b) => a.name.localeCompare(b.name),
     groupBy: (x) => x.provider.id,
     sortGroupsBy: (a, b) => {
-      const aConnected = a.items[0]?.connected === true
-      const bConnected = b.items[0]?.connected === true
+      const aConnected =  a.items[0]?.connected
+      const bConnected =  b.items[0]?.connected
       if (aConnected && !bConnected) return -1
       if (!aConnected && bConnected) return 1
 
@@ -295,7 +295,7 @@ export const SettingsModels: Component = () => {
                 <ProviderModelGroup
                   providerId={group.category}
                   providerName={group.items[0].provider.name}
-                  connected={group.items[0]?.connected === true}
+                  connected={group.items[0]?.connected}
                   items={group.items}
                   pageFilterActive={!!list.filter().trim()}
                   visible={models.visible}

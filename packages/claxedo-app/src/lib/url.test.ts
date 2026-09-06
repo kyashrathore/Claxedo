@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { scopeUrl } from "./url"
+import { requestUrl, scopeUrl } from "./url"
 
 describe("scopeUrl", () => {
   test("normalizes 127.0.0.1 to localhost and strips trailing slashes", () => {
@@ -18,5 +18,19 @@ describe("scopeUrl", () => {
 
   test("falls back to string normalization for invalid URLs", () => {
     expect(scopeUrl(" not a url/// ")).toBe("not a url")
+  })
+})
+
+describe("requestUrl", () => {
+  test("returns a string input unchanged", () => {
+    expect(requestUrl("http://localhost:3001/api/session")).toBe("http://localhost:3001/api/session")
+  })
+
+  test("returns the href of a URL input", () => {
+    expect(requestUrl(new URL("http://localhost:3001/api/session?a=1"))).toBe("http://localhost:3001/api/session?a=1")
+  })
+
+  test("returns the url of a Request input rather than [object Object]", () => {
+    expect(requestUrl(new Request("http://localhost:3001/api/session"))).toBe("http://localhost:3001/api/session")
   })
 })

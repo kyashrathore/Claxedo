@@ -45,6 +45,13 @@ const noopSessionTitles: Pick<SessionTitleProjectionApi, "publishCanonical" | "r
   remove: () => undefined,
 }
 
+/** Drain event-loop turns until `done()` holds or the budget is spent. */
+async function settleUntil(done: () => boolean, turns = 20) {
+  for (let turn = 0; turn < turns && !done(); turn++) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
 const revocationDefaults = {
   sessionAccessRetained: async () => false,
   revocationScope: () => "signed:user_bob",
@@ -886,7 +893,7 @@ describe("global sync event ingress", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test.local",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [inventoryRow],
         loaded: true,
       },
@@ -966,7 +973,7 @@ describe("global sync event ingress", () => {
     expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items?.map((row) => row.sessionId)).toEqual([
       "ses_shared",
     ])
-    expect(readSessionInventoryQueryData<SessionInventoryRow>({
+    expect(readSessionInventoryQueryData({
       baseUrl: "http://test.local",
     }).sessions.map((row) => row.id)).toEqual(["ses_shared"])
 
@@ -983,7 +990,7 @@ describe("global sync event ingress", () => {
     expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items?.map((row) => row.sessionId)).toEqual([
       "ses_shared",
     ])
-    expect(readSessionInventoryQueryData<SessionInventoryRow>({
+    expect(readSessionInventoryQueryData({
       baseUrl: "http://test.local",
     }).sessions.map((row) => row.id)).toEqual(["ses_shared"])
     expect(conversationEntryIdsForTest().sort()).toEqual([
@@ -1007,12 +1014,10 @@ describe("global sync event ingress", () => {
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
-    for (let attempt = 0; attempt < 50 && revoked.length === 0; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
+    await settleUntil(() => revoked.length > 0, 50)
 
     expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items).toEqual([])
-    expect(readSessionInventoryQueryData<SessionInventoryRow>({
+    expect(readSessionInventoryQueryData({
       baseUrl: "http://test.local",
     }).sessions).toEqual([])
     expect(queryClient.getQueryData(conversationSnapshotKey({ directory: "/repo", sessionID: "ses_shared" }))).toBeUndefined()
@@ -1160,9 +1165,7 @@ describe("global sync event ingress", () => {
     await flushStarted
     retainsAccess = true
     rejectFirstFlush?.(new Error("transient IndexedDB failure"))
-    for (let attempt = 0; attempt < 20 && accessAttempts < 2; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
+    await settleUntil(() => accessAttempts >= 2)
 
     expect(flushAttempts).toBe(2)
     expect(accessAttempts).toBe(2)

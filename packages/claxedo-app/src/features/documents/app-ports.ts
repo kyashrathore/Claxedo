@@ -41,8 +41,14 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof DocumentsAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as DocumentsAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: DocumentsAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
 /**
@@ -54,10 +60,10 @@ export function claxedoEventsPort() {
   return ports?.useClaxedoEventsOptional
 }
 
-export const useSessionSyncOptional = bind("useSessionSyncOptional")
-export const useClaxedoState = bind("useClaxedoState")
-export const markdownPathFromHref = bind("markdownPathFromHref")
-export const useShellQueryOptions = bind("useShellQueryOptions")
-export const ensureLocalProject = bind("ensureLocalProject")
-export const surfaceRoute = bind("surfaceRoute")
-export const SessionPaneScope = bind("SessionPaneScope")
+export const useSessionSyncOptional = bind((ports) => ports.useSessionSyncOptional)
+export const useClaxedoState = bind((ports) => ports.useClaxedoState)
+export const markdownPathFromHref = bind((ports) => ports.markdownPathFromHref)
+export const useShellQueryOptions = bind((ports) => ports.useShellQueryOptions)
+export const ensureLocalProject = bind((ports) => ports.ensureLocalProject)
+export const surfaceRoute = bind((ports) => ports.surfaceRoute)
+export const SessionPaneScope = bind((ports) => ports.SessionPaneScope)

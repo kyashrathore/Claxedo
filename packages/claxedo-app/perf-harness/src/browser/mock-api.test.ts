@@ -11,7 +11,7 @@ import { monitorPage } from "./page-validation"
 import { HEAVY_WORKSPACE_FILE_LINES, HEAVY_WORKSPACE_REOPEN_FILE_PATHS } from "./scenarios/heavy-workspace-reopen-contract"
 
 const servers: ReturnType<typeof startMockStreamServer>[] = []
-afterEach(() => { for (const server of servers.splice(0)) server.stop() })
+afterEach(async () => { for (const server of servers.splice(0)) await server.stop() })
 
 async function transport(scenario: ScenarioId) {
   let handle: (route: Route) => Promise<unknown>
@@ -58,7 +58,7 @@ async function transport(scenario: ScenarioId) {
 
 test("registered mock transport serves bounded message pages and rejects conflicting page parameters", async () => {
   const api = await transport("session-switch")
-  const id = api.fixture.sessions[0]!.id
+  const id = api.fixture.sessions[0].id
   const surface = await api.request(`/session/${id}/message?view=latest-surface`)
   expect(surface.status).toBe(200)
   expect(surface.json).toHaveLength(2)
@@ -100,7 +100,7 @@ test("registered mock transport counts app reads, excludes preflights, and expos
 test("fixture accounting remains isolated across independently registered pages", async () => {
   const first = await transport("session-switch")
   const second = await transport("session-switch")
-  await first.request(`/session/${first.fixture.sessions[0]!.id}/message?limit=2`)
+  await first.request(`/session/${first.fixture.sessions[0].id}/message?limit=2`)
   expect(first.fixture.requestCounts.messages).toBe(1)
   expect(second.fixture.requestCounts.messages).toBe(0)
   expect(second.monitor.unmatchedMockPaths).toEqual([])
@@ -116,7 +116,7 @@ test("connection discovery decodes through the product contract without triggeri
 
 test("activation auxiliary reads expose the fixture's goal and device state without session events", async () => {
   const api = await transport("launch-project")
-  const goal = await api.request(`/session/${api.fixture.sessions[0]!.id}/goal/state`)
+  const goal = await api.request(`/session/${api.fixture.sessions[0].id}/goal/state`)
   expect(goal.status).toBe(200)
   expect(goal.json).toEqual(api.fixture.goalState)
   expect(goal.json.capabilities).toMatchObject({
@@ -172,7 +172,7 @@ test("mock preflights stay local while SSE continues through the private page le
 test("both runtime file mounts serve the same substantial workspace corpus and account for each read", async () => {
   const api = await transport("heavy-workspace-reopen")
   const directory = encodeURIComponent(api.fixture.directory)
-  const filePath = HEAVY_WORKSPACE_REOPEN_FILE_PATHS[0]!
+  const filePath = HEAVY_WORKSPACE_REOPEN_FILE_PATHS[0]
   for (const prefix of ["", "/api/wr"]) {
     const root = await api.request(`${prefix}/file?directory=${directory}&path=`)
     expect(root.status).toBe(200)
@@ -195,10 +195,10 @@ test("both runtime file mounts serve the same substantial workspace corpus and a
     const status = await api.request(`${prefix}/file/status?directory=${directory}`)
     expect(status.status).toBe(200)
     expect(status.json[0]).toEqual({
-      path: api.fixture.changedFiles[0]!.file,
-      added: api.fixture.changedFiles[0]!.additions,
-      removed: api.fixture.changedFiles[0]!.deletions,
-      status: api.fixture.changedFiles[0]!.status,
+      path: api.fixture.changedFiles[0].file,
+      added: api.fixture.changedFiles[0].additions,
+      removed: api.fixture.changedFiles[0].deletions,
+      status: api.fixture.changedFiles[0].status,
     })
     const all = await api.request(`${prefix}/file/all?directory=${directory}`)
     expect(all.json).toEqual({ paths: api.fixture.changedFiles.map((file) => file.file) })

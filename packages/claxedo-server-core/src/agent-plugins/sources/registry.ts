@@ -1,3 +1,4 @@
+import { isJsonRecord, jsonText } from "../../platform/runtime/lib/json"
 import { resolveCollections } from "../catalog/resolve-collections"
 import type { AgentPluginCatalogError, AgentPluginSourceKind } from "../catalog/types"
 import type { CatalogSourceProvider } from "../ports"
@@ -76,10 +77,6 @@ export function agentPluginSourceRecord(
   }
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 /**
  * Decodes a `POST /sources` body.
  *
@@ -91,14 +88,12 @@ export function parseAgentPluginSourceRegistration(
   value: unknown,
   options: { signed: boolean },
 ): AgentPluginSourceRegistration | undefined {
-  if (!record(value)) return undefined
+  if (!isJsonRecord(value)) return undefined
   const allowed = new Set(["owner", "repository", "ref", "authority"])
   if (!Object.keys(value).every((key) => allowed.has(key))) return undefined
-  const owner = typeof value.owner === "string" ? value.owner.trim() : undefined
-  const repository = typeof value.repository === "string" ? value.repository.trim() : undefined
-  const ref = value.ref === undefined || value.ref === null
-    ? AGENT_PLUGIN_SOURCE_DEFAULT_REF
-    : typeof value.ref === "string" ? value.ref.trim() : undefined
+  const owner = jsonText(value, "owner")
+  const repository = jsonText(value, "repository")
+  const ref = value.ref === undefined || value.ref === null ? AGENT_PLUGIN_SOURCE_DEFAULT_REF : jsonText(value, "ref")
   if (!owner || !repository || !ref) return undefined
   if (!isGitHubNameSegment(owner) || !isGitHubNameSegment(repository) || !isGitHubRef(ref)) return undefined
   if (value.authority !== undefined && value.authority !== null

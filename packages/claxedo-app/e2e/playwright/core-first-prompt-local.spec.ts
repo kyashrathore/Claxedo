@@ -68,8 +68,7 @@
  *      workbench-empty `EmptyDraftSessionComposer` — always carries at least a
  *      fallback directory, so that reactive toast is not independently e2e-reachable
  *      today. This test pins the stronger, observable contract the guard exists to
- *      protect: zero workspace ⇒ zero compose surface ⇒ zero session creation. See
- *      inline comment on the test for the full trace.)
+ *      protect: zero workspace ⇒ zero compose surface ⇒ zero session creation.)
  *   6. The draft exposes repository branches, and selecting one creates the first
  *      session in a new worktree based on that exact ref.
  *
@@ -255,7 +254,6 @@ test.describe("core first prompt (local) @core", () => {
     await input.fill("hello, world")
     await expect(input).toContainText("hello, world", { timeout: 10_000 })
 
-    // No send happened yet: zero session/prompt requests, no assistant row.
     await expect(page.locator(SELECTORS.userMessageContent)).toHaveCount(0)
     await expect(page.locator(SELECTORS.assistantContent)).toHaveCount(0)
   })
@@ -280,23 +278,15 @@ test.describe("core first prompt (local) @core", () => {
     await startTitleContinuityProbe(page, SESSION_ID, promptText)
     await page.locator(SELECTORS.submitControl).last().click()
 
-    // Behavior 4: the optimistic user row renders before the server round-trip
-    // settles. Assert it appears while the create/prompt requests are still the
-    // ones we just fired (bounded count), without waiting on a network event —
-    // a real network race, not a fixed sleep (INVARIANTS.md authoring rule #3).
     await expect(
       page.locator(SELECTORS.userMessageContent).getByText(promptText, { exact: true }),
     ).toBeVisible({ timeout: 5_000 })
 
-    // Behavior 2: URL moves onto the created session's route.
     await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID), { timeout: 20_000 })
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
 
-    // Behavior 2 (oracle): the assistant reply is visibly rendered — DOM +
-    // geometric + evidence screenshot, all three layers.
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
 
-    // Behavior 3: exactly one user row + one assistant row, no duplication.
     await expectTurnCounts(page, { user: 1, assistant: 1 })
     await expectNoDuplicateRows(page)
 
@@ -367,23 +357,6 @@ test.describe("core first prompt (local) @core", () => {
   })
 
   test("a directory-less draft offers no compose surface and creates zero sessions — behavior 5", async ({ page }) => {
-    // No project ever registered (seedNoProjects clears localStorage entirely) and
-    // the mock's bootstrap/project endpoints are overridden below to report zero
-    // projects. This is the one app state where NO fallback directory exists at
-    // all (`emptyDraftDirectory()` in `src/app/workbench/rail/rail-workbench-
-    // canvas.tsx` is undefined), so no surface can render `EmptyDraftSessionComposer`
-    // — no composer is offered, so `resolveSubmitDirectory`'s
-    // `draftId && !projectDirectory` guard (`src/session/submit/resolve.ts`) can
-    // never even be reached: this spec proves the STRONGER, observable contract
-    // (zero compose surface, zero session creation) that guard exists to protect.
-    // Every OTHER draft surface in this app (including `EmptyDraftSessionComposer`
-    // itself) always carries at least a fallback directory, which is why that
-    // reactive toast is not independently e2e-reachable — see SPEC BEHAVIORS #5.
-    //
-    // The zero-workspace state has TWO settled surfaces depending on whether the
-    // route owns a workbench content, and each is asserted where it is stable —
-    // see the inline (a)/(b) notes below. Asserting the (a) surface on the (b)
-    // route is exactly the race this test used to lose.
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/bootstrap**", (route) =>
       route.fulfill({
@@ -425,46 +398,8 @@ test.describe("core first prompt (local) @core", () => {
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
 
-    // (b) The directory-less draft route itself, `/s/new`.
-    //
-    // With ZERO projects registered this route settles on `central-session-content` —
-    // `SessionContent`'s "No workspace backing" branch
-    // (`src/features/session/ui/content/session-content.tsx:81-88`, reached when
-    // `fallbackDirectory()` is absent because the only candidate is the `/workspace`
-    // placeholder, which that memo rejects at :62-64). Route intent resolves `"new"`
-    // far enough to own a surface, but nothing backs it with a real directory, so the
-    // pane is a dead end rather than a composer. This is what SPEC BEHAVIORS #5 above
-    // has said all along — "the directory-less draft route (`/s/new`) settles on the
-    // central 'No workspace backing' surface … the placeholder is only transiently
-    // reachable on `/s/new` (it survives just until the session inventory loads)". The
-    // spec block was right and the assertion had drifted away from it; see below for
-    // why the drift stayed green.
-    //
-    // This assertion has now moved THREE times; do not "fix" it by guessing — verify
-    // against a real run, as this revision did. The first two moves are recorded
-    // below; the third (this one) has a specific, non-obvious cause worth stating,
-    // because it means the earlier "settles back on the placeholder" observation was
-    // an artifact of a broken mock rather than a change in the app:
-    //
-    //   `installMockRuntime` did not mock `GET /api/control/sessions`, and the app
-    //   addresses it on the CENTRAL origin (`VITE_CLAXEDO_SERVER_URL`,
-    //   http://127.0.0.1:3001) where NOTHING is listening under this harness. So the
-    //   fetch in `fetchLocalControlSessions`
-    //   (`src/features/session/data/sync/inventory-source.ts:449-457`) did not return
-    //   an empty inventory — it REJECTED with a connection error, and that rejection
-    //   aborted the inventory bootstrap before route intent could resolve `"new"`.
-    //   The workbench then never gained a content and `renderEmpty` won. The shared
-    //   mock now serves that endpoint the way the real server does
-    //   (`{ sessions: [] }`, claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts,
-    //   the GET /api/control/sessions handler in mountSessionReadRoutes), so the
-    //   bootstrap completes and the app reaches its genuine settled surface for this
-    //   state. Found by `requests.unhandled`, which had never recorded anything until
-    //   it was made real.
-    //
-    // What is INVARIANT across all three revisions, and is the actual contract
-    // behavior 5 exists to pin, is the bottom half: zero compose surface, and zero
-    // sessions created. Assert the settled surface positively first so the negatives
-    // below cannot pass vacuously.
+    // (b) Route intent resolves "new" far enough to own a surface, but `fallbackDirectory()`
+    // rejects the "/workspace" placeholder, so nothing backs the pane with a real directory.
     await page.goto("/s/new")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })

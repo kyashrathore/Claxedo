@@ -54,6 +54,13 @@ export type WillAttachEvent = {
   preventDefault(): void
 }
 
+/**
+ * The security-relevant slice of Electron's `WebPreferences` this handler
+ * reads or pins. Deliberately declared here rather than imported so the
+ * module stays Electron-free and unit-testable — and deliberately WITHOUT an
+ * index signature, because Electron's `WebPreferences` is an interface and so
+ * gets no implicit one, which is what forced the call site into a cast.
+ */
 export type WillAttachWebPreferences = {
   partition?: string
   preload?: string
@@ -68,14 +75,18 @@ export type WillAttachWebPreferences = {
   experimentalFeatures?: boolean
   enableBlinkFeatures?: string
   webviewTag?: boolean
-  [key: string]: unknown
 }
 
-export type WillAttachParams = {
+/**
+ * The `<webview>` attribute bag Electron passes as the third argument. It is
+ * a `Record<string, string>` at the call site; the named members are the ones
+ * this handler inspects, and the index signature is what lets it delete the
+ * dangerous ones by name.
+ */
+export type WillAttachParams = Record<string, unknown> & {
   src?: string
   partition?: string
   webpreferences?: string
-  [key: string]: unknown
 }
 
 export type WillAttachHandlerOptions = {
@@ -150,10 +161,10 @@ export function createWillAttachWebviewHandler(opts: WillAttachHandlerOptions = 
     // smuggle them through. Electron does not re-read params after this event,
     // but deleting makes the intent explicit and keeps the object clean.
     for (const key of DANGEROUS_PARAM_KEYS) {
-      if (key in params) delete (params as Record<string, unknown>)[key]
+      if (key in params) delete params[key]
     }
     if ("webpreferences" in params) {
-      delete (params as Record<string, unknown>).webpreferences
+      delete params.webpreferences
     }
 
     // Strip any preload the embedder tried to inject, regardless of case.

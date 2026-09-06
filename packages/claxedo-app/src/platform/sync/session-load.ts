@@ -1,4 +1,4 @@
-import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { RuntimeSession as Session } from "@/platform/runtime/session"
 
 type RootLoadArgs = {
   directory: string

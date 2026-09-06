@@ -1,4 +1,5 @@
 // Claxedo routes session commands through Workbench panes.
+import { asRecord } from "@/lib/record"
 import { createMemo, createRenderEffect, createRoot, onCleanup } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import type { Accessor } from "solid-js"
@@ -17,10 +18,29 @@ import type { PickerState } from "@/features/session/ui/model/select-model"
 import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@/lib/array"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
-import type {
-  AgentRuntimeStatus as SessionStatus,
-  AgentUserMessage as UserMessage,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
+// The conversation snapshot this reads carries optimistic rows too, so the
+// user-row predicate below narrows to the projection's union, not the contract's
+// — a stub passes `role === "user"` and is not an `AgentUserMessage`.
+import type { ProjectedUserMessage as UserMessage } from "@/features/session/conversation/agent-conversation-codec"
+/**
+ * The selection a file view reports.
+ *
+ * `file.selectedLines` is typed `unknown` at this port (the file provider owns
+ * the real shape), so the two numbers the context command needs are checked here
+ * rather than asserted.
+ */
+function selectedLineRange(value: unknown): SelectedLineRange | undefined {
+  const row = asRecord(value)
+  if (typeof row?.start !== "number" || typeof row.end !== "number") return undefined
+  return {
+    start: row.start,
+    end: row.end,
+    ...(row.side === "additions" || row.side === "deletions" ? { side: row.side } : {}),
+    ...(row.endSide === "additions" || row.endSide === "deletions" ? { endSide: row.endSide } : {}),
+  }
+}
+
 const canAddSelectionContext = (input: {
   active?: string
   pathFromTab: (tab: string) => string | undefined
@@ -180,7 +200,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
   )
   const info = () => {
     const sessionID = args.sessionId()
-    if (!sessionID) return
+    if (!sessionID) return undefined
     return queryClient
       .getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey)
       ?.session.find((session) => session.id === sessionID)
@@ -250,7 +270,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+p",
       slash: "open",
       onSelect: (source) => {
-        dialog.show(() => (
+        void dialog.show(() => (
           <DialogSelectFile
             mode={source === "palette" ? "all" : "files"}
             directory={args.directory()}
@@ -290,7 +310,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const path = file.pathFromTab(active)
         if (!path) return
 
-        const range = file.selectedLines(path) as SelectedLineRange | null | undefined
+        const range = selectedLineRange(file.selectedLines(path))
         if (!range) {
           showToast({
             title: language.t("toast.context.noLineSelection.title"),
@@ -468,7 +488,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+'",
       slash: "model",
       onSelect: () => {
-        dialog.show(() => <DialogSelectModel model={pickerModel()} surface="command_palette" />)
+        void dialog.show(() => <DialogSelectModel model={pickerModel()} surface="command_palette" />)
       },
     }),
     agentCommand({
@@ -618,7 +638,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "fork",
       disabled: !args.sessionId() || visibleUserMessages().length === 0 || !supports("fork"),
       onSelect: () => {
-        dialog.show(() => <DialogFork />)
+        void dialog.show(() => <DialogFork />)
       },
     }),
   ])

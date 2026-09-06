@@ -141,7 +141,8 @@ describe("local credential store KEK rotation", () => {
       orgId: PARTITION,
     })
     const refs = listCredentials().map((credential) => credential.secure_ref!)
-    expect((await Promise.all(refs.map((ref) => newKeyOnly.get(ref)))).sort()).toEqual([
+    expect((await Promise.all(refs.map((ref) => newKeyOnly.get(ref))))
+      .sort((left, right) => String(left).localeCompare(String(right)))).toEqual([
       "sk-anthropic",
       "sk-openai",
     ])
@@ -180,11 +181,11 @@ describe("local credential store KEK rotation", () => {
     expect(report.scanned).toBe(2)
     expect(report.rewritten).toBe(1)
     expect(report.failures).toHaveLength(1)
-    expect(report.failures[0]!.error).toMatch(/unknown key-id/)
+    expect(report.failures[0].error).toMatch(/unknown key-id/)
     expect(report.complete).toBe(false)
 
     const orphanRef = listCredentials().find((credential) => credential.provider_id === "anthropic")!.secure_ref!
-    expect(report.failures[0]!.ref).toBe(orphanRef)
+    expect(report.failures[0].ref).toBe(orphanRef)
   })
 
   test("reports honestly when the active backend is not KEK-managed at all", async () => {

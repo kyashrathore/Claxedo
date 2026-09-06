@@ -222,8 +222,11 @@ describe("BrowserHandle state machine", () => {
     await new Promise((r) => setTimeout(r, 0))
 
     const before = fake.sendCommandCalls.length
-    // isMainFrame = true
-    fake.emitWc("did-navigate", {}, "https://b.com", 200, "OK", true)
+    // Exactly the arguments Electron emits: `did-navigate` fires for
+    // main-frame navigations only and carries no `isMainFrame` flag. The
+    // handler used to expect a fifth argument and skipped every navigation
+    // because it was always `undefined`.
+    fake.emitWc("did-navigate", {}, "https://b.com", 200, "OK")
     await new Promise((r) => setTimeout(r, 0))
     const after = fake.sendCommandCalls.slice(before).map((c) => c.method)
     expect(after).toContain("Target.setAutoAttach")
@@ -231,16 +234,15 @@ describe("BrowserHandle state machine", () => {
     expect(handle.state).toBe("attached")
   })
 
-  test("did-navigate on subframe does nothing", async () => {
+  test("did-navigate while detached does nothing (next dom-ready drives the attach)", async () => {
     const fake = makeFakeWc()
-    new BrowserHandle(fake.wc)
-    fake.emitWc("dom-ready")
-    await new Promise((r) => setTimeout(r, 0))
+    const handle = new BrowserHandle(fake.wc)
 
     const before = fake.sendCommandCalls.length
-    fake.emitWc("did-navigate", {}, "https://sub.example.com", 200, "OK", false)
+    fake.emitWc("did-navigate", {}, "https://b.com", 200, "OK")
     await new Promise((r) => setTimeout(r, 0))
     expect(fake.sendCommandCalls.length).toBe(before)
+    expect(handle.state).toBe("detached")
   })
 
   test("render-process-gone clears state and reattaches on next dom-ready", async () => {

@@ -1,10 +1,11 @@
-import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoProject as Project, ClaxedoWorkspaceInventoryEntry } from "@/platform/api/claxedo-api-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { normalizeProjectList, readProjectCatalog } from "@/platform/query/control-plane"
 import { authFetch as defaultAuthFetch } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isDemoMode } from "@/lib/runtime-mode"
+import { asRecord, readArray } from "@/lib/record"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import type { SignedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
@@ -33,7 +34,13 @@ import { workspaceListUrl } from "@/platform/runtime/agent/workspace-control-rou
 export type WorkspaceCatalogEntry = {
   id: string
   workspaceId: string
-  kind: string
+  /**
+   * The same three access kinds `ClaxedoWorkspaceInventoryEntry` declares.
+   * Widening this to `string` made a catalog row something an inventory row
+   * could never be, which is what forced the assertions this file used to
+   * carry — the control plane sends exactly these values on `access`.
+   */
+  kind: NonNullable<ClaxedoWorkspaceInventoryEntry["kind"]>
   /** What this principal may do here, as the control plane reports it. */
   role?: string
   /** The serving host's state, as the control plane reports it. */
@@ -69,10 +76,6 @@ export type WorkspaceCatalogProject = Project & {
 
 type ProjectListClient = {
   project: { list: () => Promise<{ data?: Project[] }> }
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function txt(input: unknown) {
@@ -167,7 +170,7 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
     updated: number
   }>()
   for (const workspace of input.workspaces) {
-    const row = rec(workspace)
+    const row = asRecord(workspace)
     if (!row) continue
     const workspaceId = txt(row.workspace_id) ?? txt(row.workspaceId)
     if (!workspaceId) continue
@@ -211,7 +214,7 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
     }
     groups.set(projectID, group)
   }
-  return [...groups.values()].map((group) => ({
+  return [...groups.values()].map((group): WorkspaceCatalogProject => ({
     id: group.id,
     name: group.name,
     worktree: group.directories[0] ?? group.id,
@@ -221,11 +224,34 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
       created: group.created,
       updated: group.updated,
     },
-  })) as WorkspaceCatalogProject[]
+  }))
+}
+
+/**
+ * The workspace rows on a project, read through the inventory shape both
+ * sources share. The merge only ever reads `id`/`workspaceId` here, which the
+ * inventory row already declares — so no narrowing of a direct project's rows
+ * into catalog rows is needed, and none is asserted.
+ */
+/**
+ * The widest window either side knows about: earliest creation, latest update.
+ *
+ * Either side may carry no `time` at all — the embedded OpenCode engine's
+ * project payload has none — in which case the other side's is the whole
+ * answer.
+ */
+function mergeProjectTime(local: Project["time"], central: Project["time"]): Project["time"] {
+  if (!local) return central
+  if (!central) return local
+  return {
+    created: Math.min(local.created, central.created),
+    updated: Math.max(local.updated, central.updated),
+    initialized: local.initialized ?? central.initialized,
+  }
 }
 
 function catalogWorkspaces(project: Project) {
-  return (project as WorkspaceCatalogProject).workspaces ?? {}
+  return project.workspaces ?? {}
 }
 
 /**
@@ -279,11 +305,7 @@ export function mergeWorkspaceCatalog(direct: Project[], remote: WorkspaceCatalo
         ...catalogWorkspaces(project),
         ...additions.workspaces,
       },
-      time: {
-        created: Math.min(project.time?.created ?? remoteProject.time.created, remoteProject.time.created),
-        updated: Math.max(project.time?.updated ?? remoteProject.time.updated, remoteProject.time.updated),
-        initialized: project.time?.initialized ?? remoteProject.time.initialized,
-      },
+      time: mergeProjectTime(project.time, remoteProject.time),
     }
   })
   return [
@@ -305,19 +327,19 @@ async function listControlPlaneWorkspaces(input: {
   const run = await signedAccountRun()
   if (run) {
     const operation = input.access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
-    const body = decodeHostedResult<{ workspaces: unknown[] }>(operation, await run(operation, {}))
-    if (!Array.isArray(body.workspaces)) throw new Error(`${operation} returned an invalid workspaces payload`)
-    return body.workspaces
+    const workspaces = readArray(decodeHostedResult(operation, await run(operation, {})), "workspaces")
+    if (!workspaces) throw new Error(`${operation} returned an invalid workspaces payload`)
+    return workspaces
   }
   const res = await input.request(workspaceListUrl({ baseUrl: input.serverUrl, access: input.access }), {
     headers: { Accept: "application/json" },
   })
   if (!res.ok) throw new Error(`Control-plane ${input.access} workspace list failed with ${res.status}`)
-  const body = await res.json()
-  if (!Array.isArray(body?.workspaces)) {
+  const workspaces = readArray(await res.json(), "workspaces")
+  if (!workspaces) {
     throw new Error(`Control-plane ${input.access} workspace list returned an invalid workspaces payload`)
   }
-  return body.workspaces as unknown[]
+  return workspaces
 }
 
 /**
@@ -393,8 +415,20 @@ export async function refreshWorkspaceCatalog(input: WorkspaceCatalogQueryInput)
 }
 
 /** The kind a control-plane row states for itself; a row that states none is not a catalog row. */
-function controlPlaneRowKind(row: Record<string, unknown>): string {
+/** The access kinds a catalog row may declare, as one list rather than a chain. */
+const accessKinds: readonly WorkspaceCatalogEntry["kind"][] = ["cloud", "local", "user-hosted"]
+
+function isAccessKind(value: unknown): value is WorkspaceCatalogEntry["kind"] {
+  return accessKinds.some((entry) => entry === value)
+}
+
+function controlPlaneRowKind(row: Record<string, unknown>): WorkspaceCatalogEntry["kind"] {
   const kind = txt(row.access)
-  if (!kind) throw new Error("Control-plane workspace row states no access kind")
+  if (!isAccessKind(kind)) {
+    // Unchanged for a missing kind; an UNKNOWN one is now refused for the same
+    // reason — a row whose access this build cannot interpret must not be
+    // rendered as though it could be opened.
+    throw new Error(`Control-plane workspace row states no access kind${kind ? `: ${kind}` : ""}`)
+  }
   return kind
 }

@@ -62,8 +62,6 @@ const services = createControlPlaneServices({
 const app = createSelfHostedApp(services).app
 const inspectAuthority = openAuthorityDb({ path: authorityPath })
 
-type SignedAuth = Exclude<Awaited<ReturnType<typeof controlPlaneAuthContext>>, { mode: "unsigned-local" }>
-
 afterAll(async () => {
   inspectAuthority().close()
   embedded.close()
@@ -144,7 +142,7 @@ describe("two-user signed app transport", () => {
       kind: "create",
       title: "Signed private session",
     })
-    await authority.registerRuntimeSession!({
+    await authority.registerRuntimeSession({
       principalKind: "user",
       actorId: aliceIdentity.token_identifier,
       actorKind: "human",
@@ -157,7 +155,7 @@ describe("two-user signed app transport", () => {
       workspaceId: "ws_signed_private",
       sessions: [{ sessionId: "ses_signed_private", title: "Signed private session" }],
     })
-    const turn = await authority.acquireSessionTurn!({
+    const turn = await authority.acquireSessionTurn({
       principalKind: "user",
       actorId: aliceIdentity.token_identifier,
       actorKind: "human",
@@ -171,7 +169,7 @@ describe("two-user signed app transport", () => {
       messages: [{ id: "msg_alice", role: "user", text: "Alice wrote this" }],
       fencingToken: turn.fencingToken,
     })
-    await authority.releaseSessionTurn!({
+    await authority.releaseSessionTurn({
       principalKind: "user",
       actorId: aliceIdentity.token_identifier,
       actorKind: "human",
@@ -219,7 +217,7 @@ describe("two-user signed app transport", () => {
       allowed: true,
       messages: [{ id: "msg_alice", role: "user" }],
     })
-    const bobTurn = await authority.acquireSessionTurn!({
+    const bobTurn = await authority.acquireSessionTurn({
       principalKind: "user",
       actorId: bobIdentity.token_identifier,
       actorKind: "human",
@@ -236,7 +234,7 @@ describe("two-user signed app transport", () => {
       ],
       fencingToken: bobTurn.fencingToken,
     })).resolves.toEqual({ ok: true })
-    await authority.releaseSessionTurn!({
+    await authority.releaseSessionTurn({
       principalKind: "user",
       actorId: bobIdentity.token_identifier,
       actorKind: "human",
@@ -246,7 +244,7 @@ describe("two-user signed app transport", () => {
       leaseId: bobTurn.leaseId,
       fencingToken: bobTurn.fencingToken,
     })
-    await expect(authority.acquireSessionTurn!({
+    await expect(authority.acquireSessionTurn({
       principalKind: "user",
       actorId: caseyIdentity.token_identifier,
       actorKind: "human",
@@ -352,7 +350,7 @@ async function verifiedAuth(token: string) {
     services.auth,
   )
   if (auth.mode !== "signed") throw new Error("Expected signed auth")
-  return auth as SignedAuth
+  return auth
 }
 
 function signedRequest(token: string, pathname: string, init: RequestInit = {}) {

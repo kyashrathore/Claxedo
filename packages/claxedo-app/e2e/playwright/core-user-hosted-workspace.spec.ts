@@ -18,22 +18,22 @@
  * (spec 25); this spec never makes a real network call.
  *
  * STATE MODEL — the SAME single connection authority as cloud workspaces owns this:
- * `workspaceConnection` (in-memory Solid store, `src/shell/workspace/workspace-
- * connection.ts`), keyed by `workspaceId`, ref-counted across mounted panes.
- * `WorkspaceGate` (`src/shell/workspace/workspace-gate.tsx`) renders `CloudStartupView
+ * `workspaceConnection` (in-memory Solid store, `src/features/workspaces/data/
+ * workspace-connection.ts`), keyed by `workspaceId`, ref-counted across mounted panes.
+ * `WorkspaceGate` (`src/features/workspaces/data/workspace-gate.tsx`) renders `CloudStartupView
  * variant="user-hosted"` while `connections[workspaceId].status !== "ready"`, the terminal
  * `WorkspaceOfflineView` while `status` is `{offline: reason}`, and `props.children`
  * (the real session/composer surface) once `status === "ready"`.
- *   Kind resolution — `sessionWorkspaceRuntimeRef` (`src/shell/workspace/session-
- *   workspace-key.ts`) reads the workspace's kind off the signed project inventory
+ *   Kind resolution — `sessionWorkspaceRuntimeRef` (`src/platform/runtime/session-
+ *   workspace.ts`) reads the workspace's kind off the signed project inventory
  *   (`/api/claxedo/bootstrap`'s `project[].workspaces` map); a `ws_`-shaped workspaceId
  *   with NO matching inventory entry DEFAULTS to `"user-hosted"` (never `"cloud"` —
  *   `"cloud"` would route through the sandbox-provisioning resolve endpoint, which 404s
  *   for a workspace that has no central sandbox). This spec registers the workspace
  *   explicitly as `kind: "user-hosted"` for clarity rather than relying on the default.
  *   Connect sequence — `acquireWorkspaceConnection` → `driveConnection` (kind
- *   `"user-hosted"`) calls `prepareUserHostedRuntime` (`src/cloud/runtime/workspace-
- *   runtime-store.ts`) directly — NO `/api/workspace/resolve` polling and NO `provision`
+ *   `"user-hosted"`) calls `prepareUserHostedRuntime` (`src/platform/runtime/cloud/
+ *   workspace-runtime-store.ts`) directly — NO `/api/workspace/resolve` polling and NO `provision`
  *   SSE stream (that machinery is cloud-only). `prepareUserHostedRuntime`: (1) emits
  *   `connecting_workspace` then, synchronously right after (no network yet), emits
  *   `establishing_relay`; (2) builds a `workspace-relay` transport and calls
@@ -47,8 +47,8 @@
  *   FIRST such miss (not debounced to "N consecutive misses") — `workspace-connection.ts`
  *   wires that straight to `setOffline(workspaceId, "no-host", message)`, so a single
  *   transient relay hiccup DOES flip the gate to the offline view even though the retry
- *   loop keeps running underneath and can still recover to `ready` — see BEHAVIORS #5 and
- *   the finding filed in this spec's task report; (4) any other non-2xx fails FAST (no
+ *   loop keeps running underneath and can still recover to `ready` — see BEHAVIORS #5;
+ *   (4) any other non-2xx fails FAST (no
  *   retry) with a generic error, not `offline`; (5) success emits `checking_health` then
  *   `ready`. None of these three timing constants are overridable from the app's call
  *   site (`driveConnection` calls `prepareUserHostedRuntime` with no attempt/delay/timeout
@@ -73,7 +73,7 @@
  *   Enabling remote access (Settings > Devices) publishes every local workspace this
  *   machine holds, and one opened later is published as soon as the inventory reports it.
  *   The reconciler is `useLocalWorkspaceAutoShareDriver` (`features/workspaces/data/auto-
- *   share-local-workspaces.ts`), mounted once by the app shell in `app/entry/runtime-
+ *   share-local-workspaces.tsx`), mounted once by the app shell in `app/entry/runtime-
  *   providers.tsx`; per workspace it still fires the same ONE-SHOT
  *   `registerUserHostedWorkspace` (`features/workspaces/data/share-workspace.ts`) →
  *   `POST /api/workspace/:id/host-assignment`. It does not touch `workspaceConnection` at
@@ -92,11 +92,11 @@
  *     pipeline (`acquiring_sandbox`/`cloning`/`starting_runtime`/`waiting_health`). Its
  *     heading reads exactly "Connecting to workspace" (`isUserHosted() ? "Connecting to
  *     workspace" : "Preparing workspace"`). The detail line under it is GENERIC ("The
- *     composer unlocks when the runtime is ready.") for a plain mid-pipeline step — dev
- *     8d1227e44 dropped the old always-on `cloudSummary()` sentence there (it now only
- *     appears on error or ready-handoff) — so this spec proves the 3-step pipeline via the
- *     row labels themselves, not a step-specific summary sentence.
- *   `[data-testid="workspace-offline"]` (`src/shell/workspace/workspace-gate.tsx`'s
+ *     composer unlocks when the runtime is ready.") for a plain mid-pipeline step; a
+ *     `cloudSummary()` sentence appears only on error or ready-handoff — so this spec
+ *     proves the 3-step pipeline via the row labels themselves, not a step-specific
+ *     summary sentence.
+ *   `[data-testid="workspace-offline"]` (`src/features/workspaces/data/workspace-gate.tsx`'s
  *     `WorkspaceOfflineView`) — the terminal "can't reach it" state for reason `"no-
  *     host"`: title "Workspace host is offline", detail EXACTLY "Start it by running
  *     `claxedo up` on the machine that serves this workspace, then retry." (note: this is
@@ -185,20 +185,12 @@ import {
 } from "../helpers/contracts/session-config"
 import { draftDefaultStorageKey } from "../../src/features/session/harness/draft-defaults"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
+import { eventStream, lastEventId } from "../helpers/sse-route"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
-// Runtime-native session id (NOT `ses_`-prefixed): the relay `/api/wr/runtime-events`
-// lane is consumed by global-sdk's runtime loop, which gates every frame on
-// `runtimeProjectionOwnsCompat` → `runtimeOwnsClientPresentationProjection`
-// (`packages/agent-event-runtime/.../client-presentation/ownership.ts`), and that
-// returns `false` for any `ses_`-prefixed id (those are OpenCode-legacy sessions
-// whose compat frames arrive on the classic `/global/event` loop instead). A
-// `ses_` id here would make the runtime consumer `continue` past every frame, so
-// the runtime-events lane below could never render. Real user-hosted runtime
-// sessions are runtime-native, so this matches production, not just the gate.
 const SESSION_ID = "run_core_user_hosted_workspace"
 const DIR = "/tmp/e2e-core-user-hosted-workspace"
 // The path the HOST machine serves this workspace from — a directory on
@@ -211,8 +203,8 @@ const HOST_DIR = "/Users/host/e2e-core-user-hosted-workspace"
 // `sessionRowDirectory` stamps on every session row of a relay-backed workspace.
 const WORKSPACE_REF = `workspace:${WORKSPACE_ID}`
 // Contention-tolerant ceiling for reactive UI transitions that a starved CI runner
-// was blowing past the 10-20s local budget (doc entry 7: CI-only, "runner-contention
-// timing"; the oracle-send and Share-toast waits are the named victims). Every use
+// was blowing past the 10-20s local budget (CI-only "runner-contention timing";
+// the oracle-send and Share-toast waits are the named victims). Every use
 // still awaits the actual state transition — this only outlasts host lag, it never
 // weakens what is asserted.
 const CONTENTION_TIMEOUT = 45_000
@@ -295,16 +287,6 @@ class Bus<T> {
   }
 }
 
-function lastEventId(route: Route) {
-  const value = Number(route.request().headers()["last-event-id"])
-  return Number.isFinite(value) && value > 0 ? value : 0
-}
-
-function eventStream<T>(events: Array<{ id: number; payload: T }>) {
-  if (events.length === 0) return ": heartbeat\n\n"
-  return events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event.payload)}\n\n`).join("")
-}
-
 type HealthOutcome = 200 | 409 | 503
 
 async function seedProject(page: Page, opts: { registerWorkspace: boolean; model?: typeof BIG_PICKLE }) {
@@ -380,15 +362,14 @@ async function installUserHostedRuntimeMock(
   const sessionBus = new Bus<Record<string, unknown>>()
   // The canonical-contract runtime-events lane. A ready user-hosted (workspace-relay)
   // session consumes live turn events ONLY through global-sdk's runtime loop
-  // (`startRuntimeEvents`, src/context/global-sdk.tsx), which fetches
+  // (`startRuntimeEvents`, src/app/providers/global-sdk/provider.tsx), which fetches
   // `${relayUrl}/workspaces/:id/api/wr/runtime-events` and reads each frame with
   // `runtimeEnvelope` — a `{contractVersion, directory, sessionId,
   // assistantMessageId?, payload: AgentRuntimeEvent}` shape run through
   // `createClientPresentationProjection`. For a workspace-routed session the classic
-  // `/global/event` loop short-circuits (`workspaceRuntimeOwnsLiveEvents()` →
-  // idle), so this lane is the ONLY channel that drives the turn. Frames go here,
-  // NOT on `sessionBus` (whose `/global/event` route the app never polls for this
-  // route shape — the exact gap the fixme pinned).
+  // `/global/event` loop goes idle, so this lane is the ONLY channel that drives the
+  // turn. Frames go here, NOT on `sessionBus` (whose `/global/event` route the app
+  // never polls for this route shape).
   const runtimeBus = new Bus<Record<string, unknown>>()
   // The FLAT workspace bus (`/api/wr/events`). The host's daemon composes the
   // unbound local session policy, so it serves this stream WORKSPACE-WIDE: it
@@ -425,7 +406,6 @@ async function installUserHostedRuntimeMock(
     mintCount: 0,
     /** GETs of `/workspaces/:id/api/wr/runtime-events` — proof the emitter is actually consumed. */
     runtimeEventsPollCount: 0,
-    /** Contract-v4 frames actually pushed onto `runtimeBus`. */
     runtimeFramesEmitted: [] as Array<Record<string, unknown>>,
     /** `?parentSessionId=` of every `/api/wr/runtime-events` GET, in order. */
     runtimeEventsParents: [] as Array<string | null>,
@@ -534,7 +514,6 @@ async function installUserHostedRuntimeMock(
     // bare-hit oracle scoped to runtime/control APIs.
     if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/@fs/")) return route.continue()
 
-    // ---- Bootstrap / project inventory (bare origin) ----
     // Bootstrap discovery is legitimately bare-origin at ANY readiness state
     // (it is how the app learns which workspaces/projects exist at all, not
     // part of the per-workspace runtime lane Behavior 3 pins) — it is
@@ -572,7 +551,6 @@ async function installUserHostedRuntimeMock(
     // now reads GET /api/claxedo/session) — control-plane discovery like the
     // session-list above, not the per-workspace runtime lane.
     if (isSessionInventoryPath(url.pathname)) return json(route, { sessions: [] })
-    // Sanitized generic agent-connection discovery.
     if (url.pathname === "/api/claxedo/agent-config/connections") {
       return json(route, { status: "supported", connections: [] })
     }
@@ -612,7 +590,7 @@ async function installUserHostedRuntimeMock(
       return json(route, result, sessionReservationStatus(result))
     }
     if (/^\/api\/control\/workspaces\/[^/]+\/sessions\/[^/]+\/(register|checkpoint|repair)$/.test(url.pathname) && method === "POST") {
-      // `src/runtime/session-projection.ts` fire-and-forget projection pull —
+      // `src/platform/runtime/agent/session-projection.ts` fire-and-forget pull —
       // bare origin by design (`getClaxedoServerUrl()`), not the relay lane.
       return json(route, { ok: true })
     }
@@ -628,8 +606,9 @@ async function installUserHostedRuntimeMock(
       })
     }
     // A `ws_...`-shaped workspaceId with no inventory entry defaults to
-    // "user-hosted" (session-workspace-key.ts), but OTHER resolve calls for
-    // unrelated ids (there shouldn't be any in this spec) should not 599.
+    // "user-hosted" (`sessionWorkspaceRuntimeRef`), but OTHER resolve calls for
+    // unrelated ids (there shouldn't be any in this spec) must not fall through
+    // to the unhandled-request 598 below.
     if (isWorkspaceResolvePath(url.pathname)) {
       return json(route, { workspaceId: WORKSPACE_ID, directory: WORKSPACE_ID, kind: "user-hosted", status: "ready" })
     }
@@ -657,7 +636,6 @@ async function installUserHostedRuntimeMock(
       })
     }
 
-    // ---- Workspace runtime lane, proxied through /workspaces/:id/... ----
     const prefix = `/workspaces/${WORKSPACE_ID}`
     if (url.pathname.startsWith(prefix)) {
       const runtimePath = url.pathname.slice(prefix.length) || "/"
@@ -799,7 +777,7 @@ async function installUserHostedRuntimeMock(
         // service.ts): the assistant reply's id is `${userMessageId}_r`. The app's
         // settle-triggered REST reconciliation (`syncSessionHistory` in
         // session-controller.ts, fired when the turn goes busy→idle) and its
-        // `assistantMessageIdForUserMessage` matching (src/shared/data/
+        // `assistantMessageIdForUserMessage` matching (src/features/session/data/
         // session-types.ts) both key on EXACTLY this id — so this id is what makes
         // the re-fetched message list render as the reply. The runtime frames
         // below carry the SAME id as their `assistantMessageId` so the compat
@@ -811,9 +789,10 @@ async function installUserHostedRuntimeMock(
         ]
         await route.fulfill({ status: 204, body: "" })
 
-        // Fire-and-forget: emit the turn as CONTRACT-V4 AgentRuntimeEvent frames on
-        // the runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
-        // (src/context/global-sdk.tsx) validates — the canonical `contractVersion`,
+        // Fire-and-forget: emit the turn as AgentRuntimeEvent frames on the
+        // runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
+        // (src/app/providers/global-sdk/runtime-envelope.ts) validates — the
+        // canonical `contractVersion`,
         // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
         // `AgentRuntimeEvent` variant — then handed to `createClientPresentationProjection`.
         // The `session-status: busy` → `finish` pair drives the app's turn
@@ -981,7 +960,6 @@ async function installUserHostedRuntimeMock(
     emitRuntimeFrame(payload: Record<string, unknown>, input: { assistantMessageId: string }) {
       const frame = {
         contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
-        // The host's own path, exactly as `emitFrame` above — see its note.
         directory: HOST_DIR,
         sessionId: SESSION_ID,
         assistantMessageId: input.assistantMessageId,
@@ -1040,9 +1018,9 @@ test.describe("core user-hosted workspace @core", () => {
       composerVisible: !!document.querySelector('[role="textbox"][aria-label*="Ask anything"]'),
     }))
     expect(connecting.text).toContain("Connecting to workspace")
-    // The detail line under the heading is generic post-8d1227e44 (no more
-    // step-specific `cloudSummary()` sentence for a plain mid-pipeline step),
-    // so the distinct-3-step-pipeline proof is the row labels themselves.
+    // The detail line under the heading is generic — no step-specific
+    // `cloudSummary()` sentence for a plain mid-pipeline step — so the
+    // distinct-3-step-pipeline proof is the row labels themselves.
     expect(connecting.text).toContain("Establishing relay tunnel")
     expect(connecting.text).toContain("Checking runtime health")
 
@@ -1054,21 +1032,19 @@ test.describe("core user-hosted workspace @core", () => {
     // Heading distinct from cloud's "Preparing workspace".
     expect(connecting.text).not.toContain("Preparing workspace")
 
-    // Composer is not offered while connecting.
     expect(connecting.composerVisible).toBe(false)
 
     await expect(view).toHaveCount(0, { timeout: 20_000 })
   })
 
   // The reply renders through the real projection path: the mock emits the turn as
-  // CONTRACT-V4 AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
-  // (`{contractVersion:4, directory, sessionId, assistantMessageId, payload}`), which
+  // AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
+  // (`{contractVersion, directory, sessionId, assistantMessageId, payload}`), which
   // global-sdk's runtime loop reads via `runtimeEnvelope` and runs through
   // `createClientPresentationProjection`. The `session-status: busy` → `finish` pair
   // settles the turn, and the settle re-fetches the message list over the relay lane
   // (now carrying the `${userID}_r` assistant row) — see `installUserHostedRuntimeMock`
-  // above. The runtime-native session id (`SESSION_ID` = `run_...`, not `ses_...`) is
-  // what lets the frames pass `runtimeProjectionOwnsCompat`.
+  // above.
   test("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
@@ -1085,8 +1061,8 @@ test.describe("core user-hosted workspace @core", () => {
     // requires an explicit pick). Wait for the catalog first, then drive the picker.
     const modelControl = page.locator('[data-action="prompt-harness-model"]')
     await expect(modelControl).toBeEnabled({ timeout: CONTENTION_TIMEOUT })
-    // Remote workspaces no longer inherit a hardcoded local harness. Pick the
-    // native Pi connection explicitly, as a user must on a fresh workspace.
+    // A remote workspace inherits no harness. Pick the native Pi connection
+    // explicitly, as a user must on a fresh workspace.
     await selectComposerAgent(page, /^Pi$/)
     await expect(modelControl).toHaveAttribute("data-readiness", "ready", { timeout: CONTENTION_TIMEOUT })
     await ensureComposerModelSelected(page, { modelName: /Big Pickle/i, search: "Big Pickle" })
@@ -1152,7 +1128,6 @@ test.describe("core user-hosted workspace @core", () => {
 
   test("transient 409/503 health hiccups still reach ready — behavior 5", async ({ page }) => {
     test.setTimeout(120_000)
-    // Two transient misses (409 then 503), third probe succeeds.
     await installUserHostedRuntimeMock(page, { health: [409, 503, 200] })
     await seedProject(page, { registerWorkspace: true })
 
@@ -1392,8 +1367,8 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.hostPathScopes).toEqual([])
   })
 
-  // PRODUCT REQUIREMENT 6 — "attach to a session that is currently running and
-  // receive its live stream as it happens", from the web, over the relay.
+  // Attaching to a session that is currently running and receiving its live
+  // stream as it happens, from the web, over the relay.
   //
   // The turn here is started on the HOST, not by this client's composer: the
   // spec pushes canonical-contract frames straight onto the session-scoped
@@ -1403,14 +1378,9 @@ test.describe("core user-hosted workspace @core", () => {
   // what carries it.
   //
   // What this pins is the LANE: it is open for the route's session before the
-  // turn's frames exist, and this client reads them as they are published. It is
-  // a standing guard, not the evidence for the scope-owner change that made the
-  // lane read `session-event-scope` instead of the live session a history fetch
-  // marked — in THIS harness the pane's hydration marks that live session early
-  // enough either way, so the biting evidence for that change is the unit
-  // coverage on `runtimeEventLiveSession` and `sessionEventScopeId`. The
+  // turn's frames exist, and this client reads them as they are published. The
   // transcript's own rendering of those deltas is a separate seam and is NOT
-  // asserted here — see `docs/plans` follow-up: the projected
+  // asserted here: the projected
   // `message.part.updated` / `message.part.delta` events are published under the
   // live session's bare `workspaceId`
   // (`eventDirectoryForLiveSession`, app/providers/global-sdk/live-session.ts),

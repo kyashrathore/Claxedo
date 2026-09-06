@@ -9,6 +9,7 @@ import {
   originOf,
   readCachedEntry,
   terminalScopedPlacement,
+  type CacheKey,
   type CacheTtl,
 } from "./terminal-scoped-cache"
 
@@ -36,7 +37,7 @@ const target = (sdkUrl: string, terminalId: string, directory: string) => {
   const site = originOf(sdkUrl)
   const id = resolve(text(terminalId))
   const dir = text(directory)
-  if (!site || !id || !dir) return
+  if (!site || !id || !dir) return undefined
   return {
     site,
     id,
@@ -59,7 +60,8 @@ function parseSummary(raw: string): TerminalLogSummary | null {
   }
 }
 
-const summaryCacheKey = (cacheKey: string) => ["shell", "terminal-log-summary", cacheKey, "cache"] as const
+const summaryCacheKey = (cacheKey: string): CacheKey<TerminalLogSummary> =>
+  ["shell", "terminal-log-summary", cacheKey, "cache"] as const
 const summaryRequestKey = (cacheKey: string) => ["shell", "terminal-log-summary", cacheKey, "request"] as const
 
 const logsPath = (terminalId: string, dir: string) => {
@@ -94,7 +96,7 @@ export const cachedTerminalLogSummary = (
 ): TerminalLogSummary | null | undefined => {
   const nextTarget = target(sdkUrl, terminalId, directory)
   if (!nextTarget) return undefined
-  return readCachedEntry<TerminalLogSummary>(summaryCacheKey(nextTarget.cacheKey), SUMMARY_TTL)
+  return readCachedEntry(summaryCacheKey(nextTarget.cacheKey), SUMMARY_TTL)
 }
 
 export const loadTerminalLogSummary = (
@@ -111,7 +113,7 @@ export const loadTerminalLogSummary = (
     : requestOrOptions
   const request = opts.request ?? fetch
 
-  return loadCachedEntry<TerminalLogSummary>({
+  return loadCachedEntry({
     cacheKey: summaryCacheKey(nextTarget.cacheKey),
     requestKey: summaryRequestKey(nextTarget.cacheKey),
     ttl: SUMMARY_TTL,

@@ -17,11 +17,15 @@ export function createRuntimeLifecycle() {
     } catch (error) { done(); throw error }
   }
 
-  function resource<T extends Record<string, (...args: any[]) => Promise<any>>>(methods: T): T {
+  type ResourceMethods = Record<string, (...args: any[]) => Promise<any>>
+  function resource<T extends ResourceMethods>(methods: T): T
+  // Each wrapper has the signature of the method it replaces, so the wrapped map
+  // keeps the caller's type; the implementation is typed at the shape it walks.
+  function resource(methods: ResourceMethods): ResourceMethods {
     return Object.fromEntries(Object.entries(methods).map(([name, method]) => [name, (...args: any[]) => {
       if (closing) return Promise.reject(new Error("AgentRuntime is disposed"))
       return track(() => method(...args))
-    }])) as T
+    }]))
   }
 
   return {
@@ -35,7 +39,7 @@ export function createRuntimeLifecycle() {
         const stopped = Promise.resolve().then(stop)
         // Observe early teardown failure while admitted producers drain.
         void stopped.catch(() => {})
-        while (pendingTasks.size) await Promise.all([...pendingTasks])
+        while (pendingTasks.size) await Promise.all(pendingTasks)
         await stopped
         cleanup()
       })()

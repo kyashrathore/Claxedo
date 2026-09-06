@@ -711,15 +711,15 @@ describe("state/orchestration", () => {
       expect(getState().contentIds).toContain(extra)
       // The first session opened is the one that has gone the longest unused.
       expect(getState().contentIds).not.toContain(opened[0])
-      expect(meta.get(opened[0]!)).toBeUndefined()
-      expect(meta.get(opened[1]!)).toBeDefined()
+      expect(meta.get(opened[0])).toBeUndefined()
+      expect(meta.get(opened[1])).toBeDefined()
     })
 
     test("eviction follows use, not open order", () => {
       const { layout, getState } = makeFixture()
       const opened = openSessions(layout, MAX_OPEN_SURFACES)
       // Touch the oldest surface so the second-oldest becomes the LRU.
-      layout.showContent(opened[0]!)
+      layout.showContent(opened[0])
 
       layout.openSession("/work/foo", "ses_extra", "Extra", {
         sessionRef: localSessionRef("ses_extra"),

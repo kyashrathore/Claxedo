@@ -45,7 +45,7 @@ export function readProcessInventory(platform: NodeJS.Platform = process.platfor
 export function parsePosixProcessInventory(output: string): ProcessInventoryRow[] {
   return output.split("\n").flatMap((line) => {
     const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
-    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3]!.trim() }] : []
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3].trim() }] : []
   })
 }
 

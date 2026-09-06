@@ -95,7 +95,7 @@ describe("git remote -v parsing", () => {
       ["origin\thttps://github.com/acme/app.git (fetch)", "origin\tgit@github.com:acme/app.git (push)"].join("\n"),
     )
     expect(remotes).toHaveLength(1)
-    expect(remotes[0]!.url).toBe("https://github.com/acme/app.git")
+    expect(remotes[0].url).toBe("https://github.com/acme/app.git")
   })
 
   test("keeps every remote and preserves order", () => {

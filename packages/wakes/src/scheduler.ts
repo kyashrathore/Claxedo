@@ -40,8 +40,10 @@ export function createScheduler(
       recovering = true
       pending = wakes
         .recover()
-        .then(() => {
-          if (current === generation) return tick()
+        .then(async () => {
+          // A `stop()` during recovery bumps `generation`; that run is abandoned.
+          if (current !== generation) return
+          await tick()
         })
         .catch((e) => opts?.onError?.(e))
         .finally(() => {

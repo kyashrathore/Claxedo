@@ -280,16 +280,16 @@ describe("session Goal routes", () => {
       "goal_stop",
       "goal_delete",
     ])
-    expect(await responses[0]!.json()).toEqual({ capabilities, goal })
-    expect(await responses[2]!.json()).toEqual(goal)
-    expect(await responses[7]!.json()).toEqual({ ok: true, goal: null })
+    expect(await responses[0].json()).toEqual({ capabilities, goal })
+    expect(await responses[2].json()).toEqual(goal)
+    expect(await responses[7].json()).toEqual({ ok: true, goal: null })
   })
 
   it("admits Goal work before resolving its runtime", async () => {
     let runtimeResolutions = 0
     const app = SessionRoutes(() => adapter({}), {
       beforeSessionOperation({ operation }) {
-        if (operation === "goal_start") return new Response("blocked", { status: 403 })
+        return operation === "goal_start" ? new Response("blocked", { status: 403 }) : undefined
       },
       resolveRuntime: () => {
         runtimeResolutions++
@@ -426,7 +426,7 @@ describe("session Goal routes", () => {
     let runtimeResolutions = 0
     const blocked = SessionRoutes(() => adapter({}), {
       beforeSessionOperation({ operation }) {
-        if (operation === "goal_state") return new Response("blocked", { status: 403 })
+        return operation === "goal_state" ? new Response("blocked", { status: 403 }) : undefined
       },
       resolveRuntime: () => {
         runtimeResolutions++

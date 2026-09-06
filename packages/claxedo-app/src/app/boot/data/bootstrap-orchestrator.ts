@@ -96,7 +96,7 @@ export function bootstrapSessionRuntimeTarget(input: {
       signedControlPlane: true,
     } as const
   }
-  if (!input.runtimeRef) return
+  if (!input.runtimeRef) return undefined
   return { workspaceId: input.runtimeRef.workspaceId } as const
 }
 
@@ -214,7 +214,7 @@ export function createQueryOptionsApi(input: {
 export type QueryOptionsApi = ReturnType<typeof createQueryOptionsApi>
 
 export function localLoopbackFetch(baseUrl: string) {
-  if (!isLoopbackServer(baseUrl)) return
+  if (!isLoopbackServer(baseUrl)) return undefined
   return globalThis.fetch
 }
 

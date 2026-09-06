@@ -74,7 +74,7 @@ export function createRouteOwnership() {
 export type RouteOwnership = ReturnType<typeof createRouteOwnership>
 
 /** The `app.route()` shape this wraps. */
-export type Mountable = { route: (prefix: string, sub: never) => unknown }
+export type Mountable = { route(prefix: string, sub: unknown): unknown }
 
 const rawRoute = new WeakMap<object, Mountable["route"]>()
 
@@ -89,7 +89,7 @@ const rawRoute = new WeakMap<object, Mountable["route"]>()
 export function withRouteOwnership<T extends Mountable>(app: T, ownership: RouteOwnership, owner: string): T {
   const original = rawRoute.get(app) ?? app.route.bind(app)
   rawRoute.set(app, original)
-  app.route = ((prefix: string, sub: never) => {
+  app.route = ((prefix: string, sub: unknown) => {
     ownership.claim(prefix, owner)
     return original(prefix, sub)
   }) as T["route"]
@@ -97,12 +97,12 @@ export function withRouteOwnership<T extends Mountable>(app: T, ownership: Route
 }
 
 /** Mount one explicitly composed contribution under its own route owner. */
-export function mountOwnedRoute<T extends Mountable>(
-  app: T,
+export function mountOwnedRoute(
+  app: Mountable,
   ownership: RouteOwnership,
   owner: string,
   prefix: string,
-  sub: never,
+  sub: unknown,
 ): void {
   ownership.claim(prefix, owner)
   const mount = rawRoute.get(app) ?? app.route.bind(app)

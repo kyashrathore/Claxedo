@@ -5,7 +5,13 @@
     "moduleResolution": "bundler",
     "noUncheckedIndexedAccess": false,
     "noEmit": true,
-    "lib": ["ESNext", "DOM"],
+    // No `DOM`: every file here runs under Bun, and `bun-types` yields its own
+    // globals to `lib.dom` whenever `lib.dom` is loaded
+    // (`Bun.__internal.UseLibDomIfAvailable`). That handed the bench the
+    // browser's `new WebSocket(url, protocols)` — which cannot send headers —
+    // in place of Bun's `new WebSocket(url, { headers })`, which is the form
+    // `lib/ws.ts` actually calls. Dropping `DOM` gives it the real signature.
+    "lib": ["ESNext"],
     "types": ["bun"]
   },
   "include": ["."],

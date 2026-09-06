@@ -70,7 +70,8 @@ describe("managed document session hydration", () => {
     const replacement = `${hydrated}.replacement`
     await fs.writeFile(replacement, "agent edit")
     await fs.rename(replacement, hydrated)
-    for (let attempt = 0; attempt < 40 && writes === 0; attempt++) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (writes > 0) break
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect({ canonical, writes }).toEqual({ canonical: "agent edit", writes: 1 })
@@ -186,8 +187,8 @@ describe("managed document session hydration", () => {
       syncHydratedSessionDocuments("session-two"),
     ])
     expect(settled.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"])
-    await disposeHydratedSessionDocuments(settled[0]!.status === "fulfilled" ? "session-one" : "session-two")
-    expect(await exists(settled[0]!.status === "fulfilled" ? second : first)).toBe(true)
+    await disposeHydratedSessionDocuments(settled[0].status === "fulfilled" ? "session-one" : "session-two")
+    expect(await exists(settled[0].status === "fulfilled" ? second : first)).toBe(true)
     forgetHydratedSessionRuntime("session-one")
     forgetHydratedSessionRuntime("session-two")
     await fs.rm(root, { recursive: true, force: true })

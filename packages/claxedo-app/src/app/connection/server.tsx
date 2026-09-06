@@ -28,15 +28,15 @@ type WorkspaceServerMap = Record<string, string>
 
 export function normalizeServerUrl(input: string) {
   const trimmed = input.trim()
-  if (!trimmed) return
+  if (!trimmed) return undefined
   const withProtocol = /^https?:\/\//.test(trimmed) ? trimmed : `http://${trimmed}`
   try {
     const url = new URL(withProtocol)
     const local = url.hostname === "localhost" || url.hostname === "127.0.0.1"
     // In demo mode, keep the origin as-is so MSW can intercept all requests
     if (local && (url.port === "3000" || url.port === "4444") && !isDemoMode()) {
-      const env = import.meta.env.VITE_CLAXEDO_SERVER_URL as string | undefined
-      if (env?.trim()) return env.trim().replace(/\/+$/, "")
+      const env: unknown = import.meta.env.VITE_CLAXEDO_SERVER_URL
+      if (typeof env === "string" && env.trim()) return env.trim().replace(/\/+$/, "")
       url.port = String(DEFAULT_LOCAL_CLAXEDO_SERVER_PORT)
       return url.toString().replace(/\/+$/, "")
     }
@@ -153,15 +153,22 @@ const serverContextInput = {
     }
 
     function add(input: string | { url: string } | ServerConnection.Http) {
-      const raw = typeof input === "string" ? input : "http" in input && typeof input.http === "object" ? input.http.url : (input as { url: string }).url
+      // Three shapes, one url: a bare string, a `{ url }`, or a connection whose
+      // url lives under `http`. `"url" in input` narrows the last two apart, so
+      // no branch has to claim a shape the check did not establish.
+      const raw = typeof input === "string"
+        ? input
+        : "http" in input && typeof input.http === "object"
+          ? input.http.url
+          : "url" in input ? input.url : ""
       const url = normalizeServerUrl(raw)
-      if (!url) return
+      if (!url) return undefined
 
       // If it's the default server, just switch to it
       const defaultUrl = normalizeServerUrl(props.defaultServer as string)
       if (defaultUrl && url === defaultUrl) {
         setState("active", ServerConnection.Key.make(url))
-        return
+        return undefined
       }
 
       // Build the connection to store
@@ -223,7 +230,7 @@ const serverContextInput = {
       const u = url()
       const connection = current()
       const server = {
-        ...(connection?.http ?? {}),
+        ...connection?.http,
         url: u ?? "",
       }
       return {
@@ -284,7 +291,7 @@ const serverContextInput = {
       remove,
       projects: {
         list: projectsList,
-        open(directory: string) {
+        open: (directory: string) => {
           if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
@@ -297,7 +304,7 @@ const serverContextInput = {
           if (current.find((x) => x.worktree === directory)) return
           setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
         },
-        close(directory: string) {
+        close: (directory: string) => {
           if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
@@ -313,7 +320,7 @@ const serverContextInput = {
             current.filter((x) => x.worktree !== directory),
           )
         },
-        remove(directory: string) {
+        remove: (directory: string) => {
           if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
@@ -325,14 +332,14 @@ const serverContextInput = {
             current.filter((x) => x.worktree !== directory),
           )
         },
-        isClosed(directory: string) {
+        isClosed: (directory: string) => {
           if (!validProjectRef(directory)) return false
           const key = origin()
           if (!key) return false
           const closed = store.closedProjects[key] ?? []
           return closed.includes(directory)
         },
-        sync(directories: string[]) {
+        sync: (directories: string[]) => {
           const key = origin()
           if (!key) return
           const current = store.projects[key] ?? []
@@ -379,7 +386,7 @@ const serverContextInput = {
         },
         last() {
           const key = origin()
-          if (!key) return
+          if (!key) return undefined
           return store.lastProject[key]
         },
         touch(directory: string) {

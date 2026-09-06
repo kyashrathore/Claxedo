@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { verifyDocumentJobCapability } from "../document-job-capability"
 import { boundedJson, RequestBodyTooLargeError } from "./bounded-json"
+import { rec } from "../json-value"
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 30_000
@@ -127,12 +128,10 @@ async function externalFetch(input: string, init: RequestInit, timeoutMs: number
   })
 }
 
-function parseControlEnvelope(bytes: Uint8Array) {
-  const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Local document broker control response is invalid")
-  }
-  return value as Record<string, unknown>
+function parseControlEnvelope(bytes: Uint8Array): Record<string, unknown> {
+  const value = rec(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)))
+  if (!value) throw new Error("Local document broker control response is invalid")
+  return value
 }
 
 function responseHeaders(value: Headers) {

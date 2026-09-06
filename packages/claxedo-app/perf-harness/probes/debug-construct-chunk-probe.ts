@@ -119,10 +119,10 @@ const clickToggle = async (page: import("@playwright/test").Page, label: string 
 }
 
 const report = async (page: import("@playwright/test").Page) => {
-  const record = await page.evaluate(() => {
-    const value = window.__chunkProbe?.read()
-    return value ? JSON.parse(JSON.stringify(value)) as ChunkRecord : undefined
-  })
+  // Structured-cloned in the page rather than JSON round-tripped and re-typed:
+  // `read()` already returns a `ChunkRecord`, and the clone keeps it
+  // serializable across the evaluate boundary without losing that type.
+  const record = await page.evaluate(() => structuredClone(window.__chunkProbe?.read()))
   if (!record) {
     console.log("  (no record)")
     return
@@ -162,7 +162,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", (error.stack ?? Strin
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
 
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await page.waitForTimeout(1_500)

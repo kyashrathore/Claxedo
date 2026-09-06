@@ -7,6 +7,7 @@ import {
   type AgentPluginSourceRegistry,
 } from "@claxedo/server-core/agent-plugins/sources/routes"
 import type { AgentPluginSqliteDatabase } from "../activation/sqlite-store"
+import { isRecord } from "../../platform/json"
 
 /**
  * Create-only, in the same database the activation store opens.
@@ -25,12 +26,8 @@ CREATE TABLE IF NOT EXISTS agent_plugin_sources (
 );
 `
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function toRecord(row: unknown): AgentPluginSourceRecord {
-  if (!record(row)
+  if (!isRecord(row)
     || typeof row.id !== "string"
     || typeof row.owner !== "string"
     || typeof row.repository !== "string"

@@ -1,4 +1,4 @@
-import type { AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
+import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"

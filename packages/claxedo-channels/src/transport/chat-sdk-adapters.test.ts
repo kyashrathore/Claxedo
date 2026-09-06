@@ -69,7 +69,6 @@ describe("createChatSdkBot", () => {
           return {
             Chat: class {
               webhooks = { telegram: async () => new Response("ok") }
-              constructor() {}
               onNewMention(handler: typeof mention) {
                 mention = handler
               }

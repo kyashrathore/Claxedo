@@ -353,7 +353,7 @@ describe("moveToRepository", () => {
     expect(indexed).toBe(firstRequest.relativePath)
     expect(repositories).toEqual(new Map([[firstRequest.relativePath, "exact"]]))
     expect(archives).toBe(1)
-    const journal = JSON.parse(await fs.readFile(path.join(root, (await fs.readdir(root))[0]!), "utf8"))
+    const journal = JSON.parse(await fs.readFile(path.join(root, (await fs.readdir(root))[0]), "utf8"))
     expect(journal).toMatchObject({
       state: "complete",
       workspaceId: firstRequest.workspaceId,

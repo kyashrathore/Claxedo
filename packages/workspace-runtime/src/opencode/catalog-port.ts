@@ -16,6 +16,7 @@
  */
 import type { OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
+import { arr, rec, str } from "../json-value"
 
 export type AgentEntry = Readonly<{
   name: string
@@ -44,18 +45,20 @@ export type OpenCodeCatalogPort = Readonly<{
 }>
 
 function modelRef(value: unknown): Readonly<{ providerID: string; id: string }> | undefined {
-  const ref = value as { providerID?: unknown; id?: unknown } | undefined
-  if (typeof ref?.providerID !== "string" || typeof ref.id !== "string") return undefined
-  return { providerID: ref.providerID, id: ref.id }
+  const ref = rec(value)
+  const providerID = str(ref?.providerID)
+  const id = str(ref?.id)
+  return providerID !== undefined && id !== undefined ? { providerID, id } : undefined
 }
 
 /** V2 returns `{ location, data }` for location-scoped lists. */
 function rows(response: unknown): readonly Record<string, unknown>[] {
-  const data = (response as { data?: unknown } | undefined)?.data
-  if (!Array.isArray(data) || data.some((row) => !row || typeof row !== "object" || Array.isArray(row))) {
+  const data = arr(rec(response)?.data)
+  const items = data?.map(rec)
+  if (!items?.every((row): row is Record<string, unknown> => row !== undefined)) {
     throw new Error("OpenCode returned an invalid catalog list")
   }
-  return data as Record<string, unknown>[]
+  return items
 }
 
 export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {

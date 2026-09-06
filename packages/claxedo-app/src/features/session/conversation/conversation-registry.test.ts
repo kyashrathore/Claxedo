@@ -17,6 +17,8 @@ import {
   prepareRegisteredSessionRevocation,
   warmConversationMemorySnapshot,
 } from "./conversation-registry"
+import { isRuntimeAgentMessage } from "./agent-conversation-codec"
+import { sessionUserMessages } from "../ui/view-state"
 
 const testDirectory = "/repo"
 const registerSessionConversationChat = (sessionID: string, chat?: Parameters<typeof registerScopedConversationChat>[1]) =>
@@ -303,6 +305,37 @@ describe("conversation chat registry", () => {
     expect(removeRegisteredConversationMessage({ sessionID: "ses_1", messageID: "msg_user" })).toBe(true)
     expect(registeredConversationSnapshot("ses_1").messages).toEqual([])
     expect(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey({ directory: testDirectory, sessionID: "ses_1" }))).toEqual([])
+  })
+
+  test("a pre-echo optimistic user message still reaches the timeline's user rows", () => {
+    registerSessionConversationChat("ses_1")
+    addRegisteredConversationMessage({
+      sessionID: "ses_1",
+      message: userMessage("msg_user", "ses_1"),
+      parts: [textPart("part_1", "ses_1", "msg_user", "hello")],
+    })
+
+    // Nothing has echoed yet — this is the window between pressing send and
+    // `message.updated` landing, which every message the user sends passes
+    // through. `session-screen` filters its rows with `isRuntimeAgentMessage`
+    // and the timeline's `UserMessage` row gates on it again, so a projection
+    // that classified this row as a local stub would erase the user's own
+    // message from the timeline until the server replied.
+    const snapshot = registeredConversationSnapshot("ses_1")
+    expect(snapshot.messages.every(isRuntimeAgentMessage)).toBe(true)
+    expect(sessionUserMessages(snapshot.messages.filter(isRuntimeAgentMessage)).map((row) => row.id))
+      .toEqual(["msg_user"])
+    expect(snapshot.parts.msg_user).toMatchObject([{ type: "text", text: "hello" }])
+
+    // Why it classifies as runtime-produced: the registry writes every row
+    // through the codec, which stashes the canonical message under
+    // `metadata.agentMessage`. That stamp is the whole difference between this
+    // row and the stub arm, so assert it rather than only its consequence.
+    const stored = queryClient.getQueryData<UIMessage[]>(
+      conversationSnapshotKey({ directory: testDirectory, sessionID: "ses_1" }),
+    )
+    expect(stored?.map((row) => (row.metadata as { agentMessage?: Message } | undefined)?.agentMessage?.id))
+      .toEqual(["msg_user"])
   })
 
   test("rollback does not delete a message the server already confirmed", () => {

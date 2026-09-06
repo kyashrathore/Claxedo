@@ -20,6 +20,8 @@ import type {
   ClaxedoProviderAuthorization,
   ClaxedoVcsInfo,
 } from "./claxedo-api-types"
+import { recordOrEmpty } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 
 export type ServerClientRequestOptions = { headers?: HeadersInit; signal?: AbortSignal }
 export type ServerClientResponse<T> = { data: T; error?: unknown; request: Request; response: Response }
@@ -153,7 +155,7 @@ export class ServerClientPayloadError extends Error {
 }
 export class ServerClientTransportError extends Error {
   constructor(readonly operation: string, readonly cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause))
+    super(errorMessage(cause))
     this.name = "ServerClientTransportError"
   }
 }
@@ -198,8 +200,8 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
     return { data: await responseJson(input.operation, response) as T, request, response }
   }
 
-  const parameters = (value: unknown) => record(value)
-  const body = (value: unknown, omitted: string[]) => omit(record(value), [...omitted, "directory", "workspace"])
+  const parameters = (value: unknown) => recordOrEmpty(value)
+  const body = (value: unknown, omitted: string[]) => omit(recordOrEmpty(value), [...omitted, "directory", "workspace"])
   const sessionPath = (input: SessionInput) => `/session/${encodeURIComponent(input.sessionID)}`
   const request = <T>(operation: string, method: string, path: string, value?: unknown, config?: {
     query?: string[]
@@ -275,7 +277,13 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
 }
 
 function appendQuery(url: URL, key: string, value: unknown) {
-  if (value !== undefined) url.searchParams.set(key, String(value))
+  if (value === undefined) return
+  // A query value is a scalar. Anything else used to reach the wire as
+  // "[object Object]", which no endpoint can read back; JSON at least is.
+  if (typeof value === "string") url.searchParams.set(key, value)
+  else if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    url.searchParams.set(key, value.toString())
+  } else url.searchParams.set(key, JSON.stringify(value) ?? "")
 }
 function mergeHeaders(...values: Array<HeadersInit | undefined>) {
   const headers = new Headers()
@@ -284,9 +292,6 @@ function mergeHeaders(...values: Array<HeadersInit | undefined>) {
     new Headers(value).forEach((headerValue, key) => headers.set(key, headerValue))
   }
   return headers
-}
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 function omit(value: Record<string, unknown>, keys: string[]) {
   return Object.fromEntries(Object.entries(value).filter(([key, field]) => !keys.includes(key) && field !== undefined))
@@ -300,8 +305,8 @@ async function responseJson(operation: string, response: Response): Promise<unkn
 }
 async function responseError(operation: string, response: Response) {
   const body = await response.clone().json().catch(() => undefined)
-  const row = record(body)
-  const nested = record(row.error)
+  const row = recordOrEmpty(body)
+  const nested = recordOrEmpty(row.error)
   const code = typeof nested.code === "string" ? nested.code : typeof row.code === "string" ? row.code : `http_${response.status}`
   const message = typeof nested.message === "string" ? nested.message : typeof row.message === "string" ? row.message : `Server request failed with status ${response.status}`
   return new ServerClientResponseError(operation, response.status, code, body, message)

@@ -59,7 +59,13 @@ await page.route("**/permission**", (r) => (api(r.request()) ? json(r, []) : r.c
 await page.route("**/question**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
 await page.route("**/api/workspace/resolve**", (r) => (api(r.request()) ? json(r, { workspaceId: "local-x", directory: DIR, kind: "local", status: "ready" }) : r.continue()))
 await page.route("**/api/claxedo/agent-config/**", (r) => (api(r.request()) ? json(r, { source: "runner", stale: false, options: [] }) : r.continue()))
-const eventStreamHandler = async (route) => { if (!api(route.request())) return route.continue(); await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {}) }
+const eventStreamHandler = async (route) => {
+  if (!api(route.request())) {
+    await route.continue()
+    return
+  }
+  await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
+}
 await page.route("**/global/event?**", eventStreamHandler)
 await page.route("**/event?**", eventStreamHandler)
 await page.route("**/api/wr/events**", eventStreamHandler)

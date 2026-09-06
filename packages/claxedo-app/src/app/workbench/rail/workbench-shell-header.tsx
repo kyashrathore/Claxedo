@@ -124,7 +124,8 @@ export function WorkbenchShellHeader(props: {
               data-icon-interaction="binary"
               class="relative z-[90] hidden size-6 shrink-0 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base md:flex"
               onMouseEnter={(event) => {
-                if ((event.relatedTarget as HTMLElement | null)?.closest?.('[data-testid="rail-sidebar"]')) return
+                const from = event.relatedTarget
+                if (from instanceof Element && from.closest('[data-testid="rail-sidebar"]')) return
                 props.onSidebarHotZoneEnter()
               }}
               onClick={props.onShowSidebar}
@@ -262,7 +263,7 @@ function L2HeaderStrip(props: {
   const tabKind = () => focusedContent()?.type
   const focusedTitleSelection = createMemo(() => {
     const meta = focusedContent()
-    if (meta?.type !== "session" || !meta.sessionId) return
+    if (meta?.type !== "session" || !meta.sessionId) return undefined
     return sessionTitles.select({
       sessionId: meta.sessionId,
       ...(meta.directory ? { directory: meta.directory } : {}),

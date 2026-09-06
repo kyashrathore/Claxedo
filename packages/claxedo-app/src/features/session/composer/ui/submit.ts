@@ -1,5 +1,5 @@
 import { showToast } from "@opencode-ai/ui/toast"
-import { submitErrorMessage } from "./submit-error-message"
+import { requestErrorMessage } from "../../lib/request-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
   isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
@@ -83,7 +83,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
   const surfaceId = () => input.surfaceId?.()
   const optimisticTimeline = createSubmitOptimisticTimeline()
-  const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
+  const errorMessage = (err: unknown) => requestErrorMessage(err, language.t("common.requestFailed"))
 
   const commentActions = createSubmitCommentActions(prompt.context)
 
@@ -145,7 +145,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const projectCatalog = () => globalProjects()
-  const handleSubmit = async (event: Event) => {
+  // Only `preventDefault` is read, and the retry path replays a submit without a
+  // real DOM event — so the parameter states what it uses instead of demanding a
+  // whole `Event` the caller has to fabricate.
+  const handleSubmit = async (event: Pick<Event, "preventDefault">) => {
     event.preventDefault()
 
     const setBooting = createSubmitBootWriter(input)
@@ -166,14 +169,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       working: input.working(),
     })
     if (admission === "abort-active") return abort()
-    if (admission === "ignore") return
+    if (admission === "ignore") return undefined
 
     const goalIntent = prepareGoalComposerIntent({
       text, armed: input.goalArmed?.() ?? false, mode: userMode, prompt: currentPrompt,
       setPrompt: prompt.set, onArm: input.onGoalArm, setMode: input.setMode,
       setPopover: input.setPopover, focus: () => { input.editor()?.focus(); input.queueScroll() },
     })
-    if (goalIntent.kind === "arm") return
+    if (goalIntent.kind === "arm") return undefined
 
     input.addToHistory(currentPrompt, userMode)
     input.resetHistoryNavigation()
@@ -277,7 +280,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         attachProjectBeforeCloudWorkspace: "Attach a project before creating a cloud workspace.",
       },
     })
-    if (!resolvedDirectory) return
+    if (!resolvedDirectory) return undefined
     const sessionDirectory = resolvedDirectory.directory
     let client = sdk.client
 
@@ -293,14 +296,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       harnessController.promote(sourceScope, scope)
     }
     const existingSessionConfig = isNewSession ? undefined : await loadExistingSubmitConfig(
-      () => readSessionConfig({ sessionID: explicitSessionID!, directory: sessionDirectory }),
+      () => readSessionConfig({ sessionID: explicitSessionID, directory: sessionDirectory }),
       (err) => showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: errorMessage(err),
         variant: "error",
       }),
     )
-    if (!isNewSession && !existingSessionConfig) return
+    if (!isNewSession && !existingSessionConfig) return undefined
     const sessionHarnessType = isNewSession ? selectedHarnessType(scope) : existingSessionConfig?.harnessType
     if (!sessionHarnessType) {
       showToast({
@@ -308,7 +311,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         description: "Select an agent connection before starting a session.",
         variant: "error",
       })
-      return
+      return undefined
     }
     // Every provider creates and sends through AgentRuntime, and the harness
     // controller is the one submitted-model authority for every harness. Pi's
@@ -404,7 +407,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     replaceSession = target.replaceSession
     if (!session) {
       clearBoot()
-      return
+      return undefined
     }
     const provisionalTitle = mode === "normal" ? provisionalSessionTitle(text) : undefined
     const finalizedSessionTarget = finalizeSubmitSessionTarget({
@@ -594,7 +597,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         reportCloudStartupError,
         showFailed: showSendFailed,
       })
-      return
+      return undefined
     }
 
     await dispatchNormalPromptSubmit({
@@ -659,6 +662,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       showSendFailed,
       worktreePreparingMessage: language.t("workspace.error.stillPreparing"),
     })
+    return undefined
   }
 
   return {

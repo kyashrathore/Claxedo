@@ -52,7 +52,7 @@ test("the electron-builder file globs are exactly the declared roots", () => {
   expect(code).toContain("asarStructuralGlobs()")
   // Every remaining literal is either an exclusion or a native-module path —
   // never a new structural root smuggled in beside the declared ones.
-  const literals = [...code.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+  const literals = [...code.matchAll(/"([^"]+)"/g)].map((match) => match[1])
   expect(literals.filter((glob) => !glob.startsWith("!") && !glob.includes("node_modules/"))).toEqual([])
 })
 
@@ -66,7 +66,7 @@ test("the config's native-module list and the verifier's allowlist cannot drift"
   const conditional = config.match(/win32-"\) \? \[([^\]]*)\] : \[\]/)?.[1]
 
   expect(conditional).toBeString()
-  const inlineWindows = [...conditional!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+  const inlineWindows = [...conditional!.matchAll(/"([^"]+)"/g)].map((match) => match[1])
 
   expect(inlineWindows).toEqual([...WINDOWS_NATIVE_MODULES])
   expect(config).toContain("BASE_NATIVE_MODULES")

@@ -6,6 +6,14 @@ import {
   mcpOAuthIntegrationId,
 } from "./integration"
 
+/** The form body an OAuth token request carries. Anything else is a bug in the code under test. */
+function formBody(init: RequestInit | undefined): URLSearchParams {
+  const body = init?.body
+  if (body instanceof URLSearchParams) return body
+  if (typeof body === "string") return new URLSearchParams(body)
+  throw new Error(`expected a form-encoded request body, received ${typeof body}`)
+}
+
 const discovery = (overrides: Partial<McpOAuthDiscovery> = {}): McpOAuthDiscovery => ({
   resource: "https://mcp.example/mcp",
   resourceMetadataUrl: "https://mcp.example/.well-known/oauth-protected-resource/mcp",
@@ -86,9 +94,9 @@ describe("MCP OAuth Connections integration", () => {
       expiresAt: 61_000,
       fields: { resource: "https://mcp.example/mcp", issuer: "https://login.example" },
     })
-    const [url, init] = calls[0]!
+    const [url, init] = calls[0]
     expect(url).toBe("https://login.example/token")
-    const body = new URLSearchParams(String(init?.body))
+    const body = formBody(init)
     expect(Object.fromEntries(body)).toEqual({
       grant_type: "authorization_code",
       code: "code",
@@ -129,7 +137,7 @@ describe("MCP OAuth Connections integration", () => {
       fetch,
     })
     await expect(integration.impl.refresh("old-refresh")).resolves.toEqual({ accessToken: "next" })
-    expect(Object.fromEntries(new URLSearchParams(String(calls[0]?.[1]?.body)))).toEqual({
+    expect(Object.fromEntries(formBody(calls[0]?.[1]))).toEqual({
       grant_type: "refresh_token",
       refresh_token: "old-refresh",
       resource: "https://mcp.example/mcp",
@@ -173,7 +181,7 @@ describe("MCP OAuth Connections integration", () => {
       accessToken: "access",
       fields: { resource: "https://mcp.example/mcp", issuer: "https://login.example" },
     })
-    expect(new URLSearchParams(String(calls[0]?.[1]?.body)).get("client_secret")).toBe("secret")
+    expect(formBody(calls[0]?.[1]).get("client_secret")).toBe("secret")
   })
 
   it("fails callback reconstruction when a pre-registration was removed or changed", async () => {
@@ -223,7 +231,7 @@ describe("MCP OAuth Connections integration", () => {
       original.impl.attemptContext,
       { issuer: "https://login.example" },
     )).resolves.toMatchObject({ accessToken: "access" })
-    const body = new URLSearchParams(String(calls[0]?.[1]?.body))
+    const body = formBody(calls[0]?.[1])
     expect(body.get("client_id")).toBe("dyn-1")
     expect(body.get("client_secret")).toBe("issued")
   })

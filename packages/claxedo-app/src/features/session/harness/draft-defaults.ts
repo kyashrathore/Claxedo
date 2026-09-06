@@ -3,6 +3,7 @@ import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import { Persist } from "@/platform/persistence/persist"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
+import { asRecord } from "@/lib/record"
 
 const VERSION = 3
 const KEY = "session.draft-default.v1"
@@ -59,7 +60,7 @@ export function draftDefaultStorageKey(input: Omit<DraftDefaultScope, "fallbackW
 export function decodeDraftDefaultRecord(input: string | null) {
   if (!input) return undefined
   try {
-    const row = object(JSON.parse(input))
+    const row = asRecord(JSON.parse(input))
     if (!row) return undefined
     if (row.version !== VERSION) return undefined
     const record = decodeRecord(row)
@@ -92,7 +93,7 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
     read(input: DraftDefaultScope): DraftDefault | undefined {
       const record = load(input)
       if (!record) return undefined
-      return { harness: record.lastHarness, ...(record.byHarness[harnessSelectionKey(record.lastHarness)] ?? {}) }
+      return { harness: record.lastHarness, ...record.byHarness[harnessSelectionKey(record.lastHarness)] }
     },
     /** What ONE harness remembers here, whichever harness was last used. */
     readHarness(input: DraftDefaultScope, harness: HarnessSelection): DraftDefaultHarnessChoice | undefined {
@@ -104,7 +105,7 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
       const current = load(input)
       const record = decodeRecord({
         version: VERSION,
-        byHarness: { ...(current?.byHarness ?? {}), [harnessSelectionKey(value.harness)]: choice },
+        byHarness: { ...current?.byHarness, [harnessSelectionKey(value.harness)]: choice },
         lastHarness: value.harness,
       })
       if (!record) return false
@@ -115,7 +116,7 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
 
 function decodeRecord(row: Record<string, unknown>): DraftDefaultRecord | undefined {
   if (!isHarnessSelection(row.lastHarness)) return undefined
-  const stored = object(row.byHarness)
+  const stored = asRecord(row.byHarness)
   if (!stored) return undefined
   const byHarness: Record<string, DraftDefaultHarnessChoice> = {}
   for (const [key, value] of Object.entries(stored)) {
@@ -130,7 +131,7 @@ function decodeRecord(row: Record<string, unknown>): DraftDefaultRecord | undefi
 }
 
 function decodeChoice(input: unknown): DraftDefaultHarnessChoice | undefined {
-  const row = object(input)
+  const row = asRecord(input)
   if (!row) return undefined
 
   const model = decodeModel(row.model)
@@ -153,7 +154,7 @@ function modelBelongsToHarness(model: ModelKey | undefined, harness: HarnessSele
 
 function decodeModel(input: unknown): ModelKey | undefined {
   if (input === undefined) return undefined
-  const row = object(input)
+  const row = asRecord(input)
   if (!row) return undefined
   const providerID = id(row.providerID)
   const modelID = id(row.modelID)
@@ -166,7 +167,7 @@ function decodeModel(input: unknown): ModelKey | undefined {
 
 function decodeLabels(input: unknown): DraftDefaultLabels | undefined {
   if (input === undefined) return undefined
-  const row = object(input)
+  const row = asRecord(input)
   if (!row) return undefined
   const provider = label(row.provider)
   const model = label(row.model)
@@ -196,11 +197,6 @@ function safeRemove(storage: DraftDefaultStorage, key: string) {
   try {
     storage.removeItem?.(key)
   } catch {}
-}
-
-function object(input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined
-  return input as Record<string, unknown>
 }
 
 function id(input: unknown) {

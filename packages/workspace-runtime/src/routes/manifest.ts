@@ -21,10 +21,16 @@ export const WorkspaceRuntimeRoutes = {
 
 export type WorkspaceRuntimeRouteFamily = keyof typeof WorkspaceRuntimeRoutes
 
-export const WorkspaceRuntimeRouteManifest = Object.entries(WorkspaceRuntimeRoutes).map(([family, path]) => ({
-  family: family as WorkspaceRuntimeRouteFamily,
-  path,
-}))
+function isRouteFamily(key: string): key is WorkspaceRuntimeRouteFamily {
+  return key in WorkspaceRuntimeRoutes
+}
+
+// Built from the table's own keys through a predicate: `Object.keys` types them
+// as `string`, and recognising each one keeps the family literal without
+// claiming a shape the table has not been asked about.
+export const WorkspaceRuntimeRouteManifest = Object.keys(WorkspaceRuntimeRoutes)
+  .filter(isRouteFamily)
+  .map((family) => ({ family, path: WorkspaceRuntimeRoutes[family] }))
 
 export function workspaceRuntimeRoute(path: string) {
   return WorkspaceRuntimeRouteManifest.find((item) => path === item.path || path.startsWith(item.path + "/"))

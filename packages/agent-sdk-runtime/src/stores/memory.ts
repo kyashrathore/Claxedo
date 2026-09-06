@@ -8,15 +8,24 @@ import {
   sessionStatus,
   type CompatEvent,
 } from "../compat-events"
-import type { AgentExecutionBinding, AgentMessageInfo } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentExecutionBinding,
+  AgentMessage,
+  AgentMessageInfo,
+  AgentPermission,
+  AgentQuestion,
+  AgentTodo,
+} from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
-import type { AgentTurnOutcome, PromptInput, SessionConfig, SessionConfigUpdate } from "../index"
+import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
 import type {
+  AgentRuntimeAppendEventInput,
   AgentRuntimeCommittedCompatOutput,
   AgentRuntimeTurnFinishInput,
+  AgentRuntimeTurnStartInput,
   AgentRuntimeSessionBinding,
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnStartOutput,
@@ -28,7 +37,7 @@ import {
   type SubagentObservation,
 } from "../subagent-admission"
 
-type SessionRow = {
+export type SessionRow = {
   scope?: "workspace"
   id: string
   parentID?: string | null
@@ -52,13 +61,13 @@ type SessionRow = {
   goal?: RuntimeGoalSnapshot | null
 }
 
-type MessageRow = {
-  info: Record<string, unknown>
-  parts: unknown[]
-}
-
-type PermissionRow = { id: string; sessionID: string } & Record<string, unknown>
-type QuestionRow = { id: string; sessionID: string; questions: unknown[] } & Record<string, unknown>
+/**
+ * Stored rows ARE the canonical contract shapes: the store holds what
+ * `AgentPresentationEvent` carries, so no local re-description of them exists.
+ */
+export type MessageRow = AgentMessage
+export type PermissionRow = AgentPermission
+export type QuestionRow = AgentQuestion
 
 export type MemoryRuntimeStoreSnapshot = {
   sessions: SessionRow[]
@@ -66,7 +75,7 @@ export type MemoryRuntimeStoreSnapshot = {
   messages: Array<{ sessionId: string; messages: MessageRow[] }>
   permissions: Array<{ directory: string; rows: PermissionRow[] }>
   questions: Array<{ directory: string; rows: QuestionRow[] }>
-  todos: Array<{ sessionId: string; rows: Array<{ content: string; status: string; priority: string }> }>
+  todos: Array<{ sessionId: string; rows: AgentTodo[] }>
   recoveryErrors: Array<{ sessionId: string; message: string }>
   seq: Array<{ sessionId: string; seq: number }>
   subagents: Array<{
@@ -81,7 +90,7 @@ export type MemoryRuntimeSessionPersistenceState = {
   session: SessionRow | null
   config: SessionConfig | null
   messages: MessageRow[]
-  todos: Array<{ content: string; status: string; priority: string }>
+  todos: AgentTodo[]
   recoveryError: string | null
   seq: number | null
   subagents: MemoryRuntimeStoreSnapshot["subagents"]
@@ -94,7 +103,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   protected messages = new Map<string, MessageRow[]>()
   protected permissions = new Map<string, Map<string, PermissionRow>>()
   protected questions = new Map<string, Map<string, QuestionRow>>()
-  protected todos = new Map<string, Array<{ content: string; status: string; priority: string }>>()
+  protected todos = new Map<string, AgentTodo[]>()
   protected recoveryErrors = new Map<string, string>()
   protected seq = new Map<string, number>()
   private subagentAdmission = createMemorySubagentAdmissionStore()
@@ -229,8 +238,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.afterChange()
   }
 
-  acquireTurnLease(sessionId: string) {
-    if (this.turnLeases.has(sessionId)) return
+  acquireTurnLease(sessionId: string): string | undefined {
+    if (this.turnLeases.has(sessionId)) return undefined
     const leaseId = `${sessionId}:${++this.nextTurnLease}`
     this.turnLeases.set(sessionId, leaseId)
     return leaseId
@@ -241,23 +250,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.turnLeases.delete(sessionId)
   }
 
-  startTurn(input: {
-    sessionId: string
-    agentSessionId?: string
-    userMessageId?: string
-    assistantMessageId: string
-    agent: string
-    model: { providerID: string; modelID: string }
-    parts: unknown[]
-    tools?: Record<string, boolean>
-    format?: unknown
-    system?: string
-    variant?: string
-    actorId?: string
-    actorKind?: "human" | "agent"
-    author?: PromptInput["author"]
-    fencingToken?: number
-  }): AgentRuntimeTurnStartOutput {
+  startTurn(input: AgentRuntimeTurnStartInput): AgentRuntimeTurnStartOutput {
     const session = this.sessions.get(input.sessionId)
     const activeTurn = session?.activeTurn
     if (
@@ -288,7 +281,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
               model: input.model,
               created: createdAt,
               ...(input.tools ? { tools: input.tools } : {}),
-              ...(input.format ? { format: input.format as never } : {}),
+              ...(input.format ? { format: input.format } : {}),
               ...(input.system ? { system: input.system } : {}),
               ...(input.variant ? { variant: input.variant } : {}),
               ...(input.author ? { author: input.author } : {}),
@@ -344,7 +337,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const events: CompatEvent[] = []
     if (input.outcome.status === "failed") {
       const message = this.ensureMessage(input.sessionId, assistantMessageId)
-      const info = message.info as AgentMessageInfo
+      const info = message.info
       events.push(
         messageUpdated({
           ...info,
@@ -367,13 +360,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     return { events }
   }
 
-  appendEvent(input: {
-    sessionId: string
-    agentSessionId?: string
-    payload: CompatEvent
-    source?: unknown
-    fencingToken?: number
-  }): AgentRuntimeCommittedCompatOutput {
+  appendEvent(input: AgentRuntimeAppendEventInput): AgentRuntimeCommittedCompatOutput {
     const activeTurn = this.sessions.get(input.sessionId)?.activeTurn
     if (input.fencingToken !== undefined && input.fencingToken !== activeTurn?.fencingToken) {
       throw new AgentRuntimeStaleTurnError(input.sessionId)
@@ -386,7 +373,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       createdAt: Date.now(),
       ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
       payload: input.payload,
-      ...(input.source ? { source: input.source as never } : {}),
+      ...(input.source ? { source: input.source } : {}),
     }
   }
 
@@ -594,11 +581,11 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.messages = new Map((snapshot.messages ?? []).map((row) => [row.sessionId, row.messages]))
     this.permissions = new Map((snapshot.permissions ?? []).map((row) => [
       row.directory,
-      new Map(row.rows.map((item) => [String(item.id), item])),
+      new Map(row.rows.map((item) => [item.id, item])),
     ]))
     this.questions = new Map((snapshot.questions ?? []).map((row) => [
       row.directory,
-      new Map(row.rows.map((item) => [String(item.id), item])),
+      new Map(row.rows.map((item) => [item.id, item])),
     ]))
     this.todos = new Map((snapshot.todos ?? []).map((row) => [row.sessionId, row.rows]))
     this.recoveryErrors = new Map((snapshot.recoveryErrors ?? []).map((row) => [row.sessionId, row.message]))
@@ -684,8 +671,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       case "message.part.delta": return this.applyPartDelta(sessionId, event)
       case "message.completed": {
         const message = this.ensureMessage(sessionId, event.properties.messageID)
-        const time = message.info.time as { created?: number } | undefined
-        this.upsertMessage(sessionId, { ...message, info: { ...message.info, time: { ...time, completed: Date.now() } } })
+        const completedAt = Date.now()
+        const created = message.info.time?.created ?? completedAt
+        this.upsertMessage(sessionId, { ...message, info: { ...message.info, time: { ...message.info.time, created, completed: completedAt } } })
         return
       }
       case "permission.asked": return this.applyPermissionAsked(sessionId, event)
@@ -693,7 +681,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       case "question.asked": return this.applyQuestionAsked(sessionId, event)
       case "question.replied":
       case "question.rejected": return this.removeQuestion(event.properties.requestID)
-      case "todo.updated": return void this.todos.set(sessionId, event.properties.todos as Array<{ content: string; status: string; priority: string }>)
+      case "todo.updated": return void this.todos.set(sessionId, event.properties.todos)
       case "session.status": return this.applySessionStatus(sessionId, event)
       case "session.idle": return this.touch(sessionId, null, null)
       case "session.error": return this.touch(sessionId, "error", errorMessage(event.properties.error))
@@ -701,12 +689,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   private applySessionUpdated(sessionId: string, event: Extract<CompatEvent, { type: "session.updated" }>) {
-    const info = event.properties.info as unknown as {
-      id?: string
-      directory?: string
-      title?: string | null
-      time?: { created?: number; updated?: number; archived?: number }
-    }
+    const info = event.properties.info
     const previous = this.sessions.get(info.id ?? sessionId)
     if (!previous) return
     this.sessions.set(previous.id, {
@@ -724,28 +707,29 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   private applyMessageUpdated(sessionId: string, event: Extract<CompatEvent, { type: "message.updated" }>) {
-    const info = event.properties.info as unknown as Record<string, unknown>
-    const messageId = typeof info.id === "string" ? info.id : undefined
+    const info = event.properties.info
+    const messageId = info.id
     const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
-    const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
+    const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info, info)
     this.upsertMessage(sessionId, { info: preservedInfo, parts: previous?.parts ?? [] })
   }
 
   private applyPartUpdated(sessionId: string, event: Extract<CompatEvent, { type: "message.part.updated" }>) {
-    const part = event.properties.part as { id?: string; messageID?: string; text?: string; sessionID?: string }
+    const part = event.properties.part
     if (!part.messageID) return
     const message = this.ensureMessage(sessionId, part.messageID)
-    message.parts = [...message.parts.filter((item) => (item as { id?: string }).id !== part.id), part]
+    message.parts = [...message.parts.filter((item) => item.id !== part.id), part]
     this.upsertMessage(sessionId, message)
   }
 
   private applyPartDelta(sessionId: string, event: Extract<CompatEvent, { type: "message.part.delta" }>) {
     const { messageID: messageId, partID: partId, delta } = event.properties
     const message = this.ensureMessage(sessionId, messageId)
-    const previous = message.parts.find((item) => (item as { id?: string }).id === partId) as { text?: string } | undefined
+    const previous = message.parts.find((item) => item.id === partId)
+    const previousText = previous && "text" in previous ? previous.text : ""
     message.parts = [
-      ...message.parts.filter((item) => (item as { id?: string }).id !== partId),
-      { id: partId, sessionID: sessionId, messageID: messageId, type: "text", text: `${previous?.text ?? ""}${delta}` },
+      ...message.parts.filter((item) => item.id !== partId),
+      { id: partId, sessionID: sessionId, messageID: messageId, type: "text", text: `${previousText}${delta}` },
     ]
     this.upsertMessage(sessionId, message)
   }
@@ -753,7 +737,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private applyPermissionAsked(sessionId: string, event: Extract<CompatEvent, { type: "permission.asked" }>) {
     const directory = this.sessions.get(sessionId)?.directory ?? ""
     const rows = this.permissions.get(directory) ?? new Map()
-    rows.set(event.properties.id, event.properties as unknown as PermissionRow)
+    rows.set(event.properties.id, event.properties)
     this.permissions.set(directory, rows)
   }
 
@@ -764,7 +748,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private applyQuestionAsked(sessionId: string, event: Extract<CompatEvent, { type: "question.asked" }>) {
     const directory = this.sessions.get(sessionId)?.directory ?? ""
     const rows = this.questions.get(directory) ?? new Map()
-    rows.set(event.properties.id, event.properties as unknown as QuestionRow)
+    rows.set(event.properties.id, event.properties)
     this.questions.set(directory, rows)
   }
 
@@ -816,26 +800,16 @@ function terminalSubagentStatus(status: string | undefined) {
   return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
 }
 
+/** A re-sent user message keeps the author the first copy carried. */
 function preserveClaxedoAuthorOnInfo(
-  previous: Record<string, unknown> | undefined,
-  next: Record<string, unknown>,
-): Record<string, unknown> {
+  previous: AgentMessageInfo | undefined,
+  next: AgentMessageInfo,
+): AgentMessageInfo {
   if (next.role !== "user") return next
-  const nextClaxedo = next.claxedo && typeof next.claxedo === "object" && !Array.isArray(next.claxedo)
-    ? next.claxedo as Record<string, unknown>
-    : undefined
-  if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
-  const prevClaxedo = previous?.claxedo && typeof previous.claxedo === "object" && !Array.isArray(previous.claxedo)
-    ? previous.claxedo as Record<string, unknown>
-    : undefined
-  if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
-  return {
-    ...next,
-    claxedo: {
-      ...(nextClaxedo ?? {}),
-      author: prevClaxedo.author,
-    },
-  }
+  if (next.claxedo?.author) return next
+  const author = previous?.claxedo?.author
+  if (!author) return next
+  return { ...next, claxedo: { ...next.claxedo, author } }
 }
 
 function errorMessage(input: unknown) {
@@ -850,5 +824,5 @@ function errorMessage(input: unknown) {
 }
 
 export function createMemoryRuntimeStore(): AgentRuntimeStore {
-  return new MemoryRuntimeStore() as unknown as AgentRuntimeStore
+  return new MemoryRuntimeStore()
 }

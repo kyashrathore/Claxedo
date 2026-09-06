@@ -84,7 +84,7 @@ export async function verifyStandardWebhook(input: {
 
   const key = await crypto.subtle.importKey(
     "raw",
-    keyBytes(input.secret) as unknown as ArrayBuffer,
+    keyBytes(input.secret).slice().buffer,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -92,7 +92,7 @@ export async function verifyStandardWebhook(input: {
   const signed = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`${id}.${timestamp}.${input.payload}`) as unknown as ArrayBuffer,
+    new TextEncoder().encode(`${id}.${timestamp}.${input.payload}`),
   )
   const expected = base64(signed)
 
@@ -116,7 +116,7 @@ export async function signStandardWebhook(input: {
 }): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    keyBytes(input.secret) as unknown as ArrayBuffer,
+    keyBytes(input.secret).slice().buffer,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -124,7 +124,7 @@ export async function signStandardWebhook(input: {
   const signed = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`${input.id}.${input.timestampSeconds}.${input.payload}`) as unknown as ArrayBuffer,
+    new TextEncoder().encode(`${input.id}.${input.timestampSeconds}.${input.payload}`),
   )
   return `v1,${base64(signed)}`
 }

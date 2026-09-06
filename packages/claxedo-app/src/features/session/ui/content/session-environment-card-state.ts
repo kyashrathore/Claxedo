@@ -1,3 +1,4 @@
+import { asRecord } from "@/lib/record"
 import { createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Persist, persisted } from "@/platform/persistence/persist"
@@ -23,14 +24,14 @@ export type SessionEnvironmentCardState = {
 export type SessionEnvironmentCardOccupancy = "expanded" | "collapsed"
 
 export function migrateSessionEnvironmentCardPersist(value: unknown): SessionEnvironmentCardPersist {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const record = asRecord(value)
+  if (!record) {
     return { collapsedBySessionId: {}, recency: [] }
   }
-  const record = value as Record<string, unknown>
-  const byId = record.collapsedBySessionId
-  if (byId && typeof byId === "object" && !Array.isArray(byId)) {
+  const byId = asRecord(record.collapsedBySessionId)
+  if (byId) {
     const collapsedBySessionId: Record<string, boolean> = {}
-    for (const [id, collapsed] of Object.entries(byId as Record<string, unknown>)) {
+    for (const [id, collapsed] of Object.entries(byId)) {
       if (typeof collapsed === "boolean") collapsedBySessionId[id] = collapsed
     }
     const recency = Array.isArray(record.recency)

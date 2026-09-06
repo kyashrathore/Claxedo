@@ -7,6 +7,7 @@ import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
+import { record, trimmed as text } from "../../platform/json"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -132,13 +133,7 @@ async function localOnly(c: Context, options: AgentConfigRouteOptions) {
   })
 }
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
 
-function text(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
 
 export async function sandboxFetchOptions(c: Context, options: AgentConfigRouteOptions, workspaceId: string) {
   return sandboxFetchOptionsForRequest(c.req.raw, workspaceId, options)

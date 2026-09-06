@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import { orphanModules, reachableModules } from "./import-graph"
-import baseline from "./orphan-baseline.json"
+import orphanBaseline from "./orphan-baseline.json"
+
+/** Module paths, relative to `src`. Annotated because an empty JSON array
+ *  otherwise imports as `never[]`. */
+const baseline: readonly string[] = orphanBaseline
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const liveTypeContracts = [

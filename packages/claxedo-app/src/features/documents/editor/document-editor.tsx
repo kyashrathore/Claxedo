@@ -1,5 +1,5 @@
 import { Match, Show, Switch, createSignal, onCleanup } from "solid-js"
-import { detectMarkdown, type MarkdownDetection } from "@/features/documents/markdown/detector"
+import { detectMarkdown } from "@/features/documents/markdown/detector"
 import {
   createDocumentPersistenceController,
   type DocumentPersistenceController,
@@ -57,7 +57,7 @@ export default function DocumentEditor(props: DocumentEditorProps) {
     reportError,
   })
   const [snapshot, setSnapshot] = createSignal(controller.snapshot())
-  const [detection, setDetection] = createSignal<MarkdownDetection>(detectMarkdown(snapshot().draft.markdown))
+  const [detection, setDetection] = createSignal(detectMarkdown(snapshot().draft.markdown))
   const [editorError, setEditorError] = createSignal<string>()
   const [richUnavailable, setRichUnavailable] = createSignal(false)
   const unsubscribe = controller.subscribe(setSnapshot)
@@ -78,6 +78,18 @@ export default function DocumentEditor(props: DocumentEditorProps) {
   const rejectedReason = () => {
     const value = detection()
     return value.status === "rejected" ? value.reason.message : "The document cannot be edited."
+  }
+  // `<Match when={detection().status === "x" && detection()}>` gates on the
+  // status but still hands the branch the whole union, which is what forced an
+  // assertion inside each one. Narrowing in the accessor hands `<Match>` the
+  // already-narrowed value instead.
+  const sourceDetection = () => {
+    const value = detection()
+    return value.status === "source" ? value : undefined
+  }
+  const richDetection = () => {
+    const value = detection()
+    return value.status === "rich" ? value : undefined
   }
   const reload = () => {
     const reloaded = controller.reloadFromConflict()
@@ -184,9 +196,9 @@ export default function DocumentEditor(props: DocumentEditorProps) {
             <Match when={detection().status === "rejected"}>
               <DocumentRecoveryState kind="rejected" message={rejectedReason()} onBack={props.onBackToIndex} />
             </Match>
-            <Match when={detection().status === "source" && detection()}>
+            <Match when={sourceDetection()}>
               {(value) => {
-                const source = value() as Extract<MarkdownDetection, { status: "source" }>
+                const source = value()
                 return (
                   <SourceMode
                     markdown={snapshot().draft.markdown}
@@ -199,10 +211,10 @@ export default function DocumentEditor(props: DocumentEditorProps) {
                 )
               }}
             </Match>
-            <Match when={detection().status === "rich" && detection()}>
+            <Match when={richDetection()}>
               {(value) => (
                 <RichMode
-                  detection={value() as Extract<MarkdownDetection, { status: "rich" }>}
+                  detection={value()}
                   onInput={editMarkdown}
                   onBlur={flush}
                   onSerializationError={(error) => {

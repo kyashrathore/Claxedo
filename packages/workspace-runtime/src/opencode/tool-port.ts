@@ -54,7 +54,7 @@ export function createToolPort(host: OpenCodeHost): OpenCodeToolPort {
           draft.add({
             name: tool.name,
             description: tool.description,
-            input: tool.inputSchema as never,
+            input: tool.inputSchema,
             async execute(input: unknown, toolContext: { sessionID: unknown; id: unknown }) {
               const registration = sessions.get(String(toolContext.sessionID))
               const active = registration?.tools.find((candidate) => candidate.name === tool.name)
@@ -76,7 +76,7 @@ export function createToolPort(host: OpenCodeHost): OpenCodeToolPort {
               const value = body ? JSON.parse(body) : null
               return { content: typeof value === "string" ? value : JSON.stringify(value) }
             },
-          } as never)
+          })
         }
       })
       reloads.set(context.location.directory, context.tool.reload)

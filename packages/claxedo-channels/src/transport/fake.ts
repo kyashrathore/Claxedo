@@ -1,6 +1,7 @@
 import type { Context } from "hono"
 import type { ChannelChatType, ChannelId, InboundEnvelope, OutboundChunk } from "../envelope"
 import type { ChannelCore } from "../core/command-emit"
+import { record } from "../json"
 
 function channel(input: unknown): ChannelId {
   if (input === "github" || input === "slack" || input === "telegram" || input === "discord" || input === "whatsapp") return input
@@ -12,8 +13,8 @@ function str(input: unknown, fallback: string) {
 }
 
 function intent(input: unknown): InboundEnvelope["intent"] {
-  if (!input || typeof input !== "object") return { kind: "message" }
-  const row = input as Record<string, unknown>
+  const row = record(input)
+  if (!row) return { kind: "message" }
   if (row.kind === "cancel") return { kind: "cancel", ...(typeof row.sessionId === "string" ? { sessionId: row.sessionId } : {}) }
   if (row.kind === "approval_reply" && typeof row.callId === "string") {
     return { kind: "approval_reply", callId: row.callId, approved: row.approved === true }
@@ -37,15 +38,15 @@ function mentions(input: unknown): string[] | undefined {
 }
 
 function repo(input: unknown): InboundEnvelope["repo"] {
-  if (!input || typeof input !== "object") return undefined
-  const row = input as Record<string, unknown>
+  const row = record(input)
+  if (!row) return undefined
   if (typeof row.owner !== "string" || typeof row.name !== "string") return undefined
   if (row.owner.length === 0 || row.name.length === 0) return undefined
   return { owner: row.owner, name: row.name }
 }
 
 export async function fakeTransportHandler(core: ChannelCore, c: Context) {
-  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+  const body = record(await c.req.json().catch(() => ({}))) ?? {}
   const chunks: OutboundChunk[] = []
   const parsedRepo = repo(body.repo)
   const parsedChatType = chatType(body.chatType)

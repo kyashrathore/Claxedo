@@ -281,7 +281,8 @@ function ConnectionGate(props: ParentProps) {
   createEffect(() => {
     if (mode() !== "background") return
     if (server.healthy() !== true) return
-    actions.refetch()
+    // Failure surfaces as `startup.error` on the resource, which the view below renders.
+    void actions.refetch()
   })
 
   const readyToRender = () => (mode() === "blocking" ? !startup.loading : startup.state !== "pending")
@@ -295,12 +296,12 @@ function ConnectionGate(props: ParentProps) {
           fallback={
             <ConnectionError
               onRetry={() => {
-                if (mode() === "background") actions.refetch()
+                if (mode() === "background") void actions.refetch()
               }}
               onServerSelected={(key) => {
                 setMode("blocking")
                 server.setActive(key)
-                actions.refetch()
+                void actions.refetch()
               }}
             />
           }
@@ -505,10 +506,10 @@ function AuthenticatedLayout(
   const platform = usePlatform()
 
   const stored = (() => {
-    if (platform.platform !== "web") return
+    if (platform.platform !== "web") return undefined
     const result = platform.getDefaultServer?.()
-    if (result instanceof Promise) return
-    if (!result) return
+    if (result instanceof Promise) return undefined
+    if (!result) return undefined
     return result
   })()
 

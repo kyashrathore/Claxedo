@@ -62,7 +62,6 @@ export type SessionAppPorts = {
   sessionContentPayload: typeof StatePayload.sessionContentPayload
   usePaneId: typeof PaneID.usePaneId
   PaneIdProvider: typeof PaneID.PaneIdProvider
-  workbenchDrag: typeof Workbench.workbenchDrag
   useWorkspaceQuery: typeof WorkspaceQuery.useWorkspaceQuery
   isWorkspaceReady: typeof WorkspaceConnection.isWorkspaceReady
   workspacePlacement: typeof WorkspaceConnection.workspacePlacement
@@ -106,65 +105,70 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof SessionAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as SessionAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: SessionAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
-export const useSDK = bind("useSDK")
-export const useGlobalSDK = bind("useGlobalSDK")
-export const useLayout = bind("useLayout")
-export const useServer = bind("useServer")
-export const checkServerHealth = bind("checkServerHealth")
-export const ProjectCreateForm = bind("ProjectCreateForm")
-export const DialogSelectDirectory = bind("DialogSelectDirectory")
-export const formatKeybind = bind("formatKeybind")
-export const useCommand = bind("useCommand")
+export const useSDK = bind((ports) => ports.useSDK)
+export const useGlobalSDK = bind((ports) => ports.useGlobalSDK)
+export const useLayout = bind((ports) => ports.useLayout)
+export const useServer = bind((ports) => ports.useServer)
+export const checkServerHealth = bind((ports) => ports.checkServerHealth)
+export const ProjectCreateForm = bind((ports) => ports.ProjectCreateForm)
+export const DialogSelectDirectory = bind((ports) => ports.DialogSelectDirectory)
+export const formatKeybind = bind((ports) => ports.formatKeybind)
+export const useCommand = bind((ports) => ports.useCommand)
 export type CommandOption = Command.CommandOption
-export const useFile = bind("useFile")
-export const useProviders = bind("useProviders")
-export const useGlobalSync = bind("useGlobalSync")
-export const useTerminal = bind("useTerminal")
-export const createProcessClient = bind("createProcessClient")
-export const parseOwnerRepo = bind("parseOwnerRepo")
-export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")
-export const useFirstTurnFunnel = bind("useFirstTurnFunnel")
-export const useConfigOptional = bind("useConfigOptional")
-export const useShellQueryOptions = bind("useShellQueryOptions")
-export const useGlobalBootstrapActions = bind("useGlobalBootstrapActions")
-export const useClaxedoState = bind("useClaxedoState")
+export const useFile = bind((ports) => ports.useFile)
+export const useProviders = bind((ports) => ports.useProviders)
+export const useGlobalSync = bind((ports) => ports.useGlobalSync)
+export const useTerminal = bind((ports) => ports.useTerminal)
+export const createProcessClient = bind((ports) => ports.createProcessClient)
+export const parseOwnerRepo = bind((ports) => ports.parseOwnerRepo)
+export const useClaxedoEventsOptional = bind((ports) => ports.useClaxedoEventsOptional)
+export const useFirstTurnFunnel = bind((ports) => ports.useFirstTurnFunnel)
+export const useConfigOptional = bind((ports) => ports.useConfigOptional)
+export const useShellQueryOptions = bind((ports) => ports.useShellQueryOptions)
+export const useGlobalBootstrapActions = bind((ports) => ports.useGlobalBootstrapActions)
+export const useClaxedoState = bind((ports) => ports.useClaxedoState)
 export type ContentMeta = StateTypes.ContentMeta
 export type TerminalAgentStatus = StateTypes.TerminalAgentStatus
 export type TerminalLifecycleState = StateTypes.TerminalLifecycleState
-export const sessionContentPayload = bind("sessionContentPayload")
-export const usePaneId = bind("usePaneId")
-export const PaneIdProvider = bind("PaneIdProvider")
-export const workbenchDrag = bind("workbenchDrag")
+export const sessionContentPayload = bind((ports) => ports.sessionContentPayload)
+export const usePaneId = bind((ports) => ports.usePaneId)
+export const PaneIdProvider = bind((ports) => ports.PaneIdProvider)
 export type PaneCtx = Workbench.PaneCtx
-export const useWorkspaceQuery = bind("useWorkspaceQuery")
-export const isWorkspaceReady = bind("isWorkspaceReady")
-export const workspacePlacement = bind("workspacePlacement")
-export const createCloudWorkspace = bind("createCloudWorkspace")
-export const WorkspaceGate = bind("WorkspaceGate")
-export const useWorkspaceScopeRegistryOptional = bind("useWorkspaceScopeRegistryOptional")
-export const DirectoryScope = bind("DirectoryScope")
+export const useWorkspaceQuery = bind((ports) => ports.useWorkspaceQuery)
+export const isWorkspaceReady = bind((ports) => ports.isWorkspaceReady)
+export const workspacePlacement = bind((ports) => ports.workspacePlacement)
+export const createCloudWorkspace = bind((ports) => ports.createCloudWorkspace)
+export const WorkspaceGate = bind((ports) => ports.WorkspaceGate)
+export const useWorkspaceScopeRegistryOptional = bind((ports) => ports.useWorkspaceScopeRegistryOptional)
+export const DirectoryScope = bind((ports) => ports.DirectoryScope)
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
-export const terminalSurfaceStatus = bind("terminalSurfaceStatus")
-export const NavigationRow = bind("NavigationRow")
-export const NavigationStatusDot = bind("NavigationStatusDot")
-export const NavigationRowStatusGutter = bind("NavigationRowStatusGutter")
-export const NavigationRowGlyph = bind("NavigationRowGlyph")
+export const terminalSurfaceStatus = bind((ports) => ports.terminalSurfaceStatus)
+export const NavigationRow = bind((ports) => ports.NavigationRow)
+export const NavigationStatusDot = bind((ports) => ports.NavigationStatusDot)
+export const NavigationRowStatusGutter = bind((ports) => ports.NavigationRowStatusGutter)
+export const NavigationRowGlyph = bind((ports) => ports.NavigationRowGlyph)
 export type SessionItem = RailTypes.SessionItem
 export type ProjectItem = RailTypes.ProjectItem
 export type ActionProps = LayoutActions.ActionProps
 export type Nav = LayoutActions.Nav
-export const ensureActionDirectorySessionCache = bind("ensureActionDirectorySessionCache")
-export const findProjectForWorkspace = bind("findProjectForWorkspace")
-export const findWorkspaceForDirectory = bind("findWorkspaceForDirectory")
-export const message = bind("message")
-export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
-export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
-export const loadManageModelsDialog = bind("loadManageModelsDialog")
-export const openSettingsProviders = bind("openSettingsProviders")
-export const listDocumentMentions = bind("listDocumentMentions")
-export const documentMentionText = bind("documentMentionText")
+export const ensureActionDirectorySessionCache = bind((ports) => ports.ensureActionDirectorySessionCache)
+export const findProjectForWorkspace = bind((ports) => ports.findProjectForWorkspace)
+export const findWorkspaceForDirectory = bind((ports) => ports.findWorkspaceForDirectory)
+export const message = bind((ports) => ports.message)
+export const sessionRefForActionWorkspace = bind((ports) => ports.sessionRefForActionWorkspace)
+export const recoverMissingWorkspace = bind((ports) => ports.recoverMissingWorkspace)
+export const loadManageModelsDialog = bind((ports) => ports.loadManageModelsDialog)
+export const openSettingsProviders = bind((ports) => ports.openSettingsProviders)
+export const listDocumentMentions = bind((ports) => ports.listDocumentMentions)
+export const documentMentionText = bind((ports) => ports.documentMentionText)
 export type DocumentMentionOption = DocumentMentions.DocumentMentionOption

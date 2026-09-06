@@ -1,3 +1,5 @@
+import { isRecord } from "./record"
+
 export const TUNNEL_PROTOCOL_VERSION = 1
 export const SESSION_STREAM_LEASE_TTL_MS = 15_000
 export const SESSION_TURN_LEASE_TTL_MS = 60_000
@@ -131,21 +133,6 @@ export type TunnelMessage =
   | TunnelWsClose
   | TunnelError
 
-const tunnelMessageTypes = new Set<TunnelMessage["type"]>([
-  "ping",
-  "pong",
-  "host.registration.update",
-  "http.request",
-  "http.response.start",
-  "http.response.chunk",
-  "http.response.end",
-  "http.response.flow",
-  "ws.open",
-  "ws.frame",
-  "ws.close",
-  "error",
-])
-
 export type TunnelMessageValidation =
   | { ok: true; message: TunnelMessage }
   | {
@@ -158,25 +145,22 @@ export type TunnelMessageValidation =
   | { ok: false; reason: "invalid" }
 
 export function validateTunnelMessage(input: unknown): TunnelMessageValidation {
-  if (!input || typeof input !== "object") return { ok: false, reason: "invalid" }
-  const row = input as Record<string, unknown>
-  if (row.protocol !== TUNNEL_PROTOCOL_VERSION) {
+  if (!isRecord(input)) return { ok: false, reason: "invalid" }
+  if (input.protocol !== TUNNEL_PROTOCOL_VERSION) {
     return {
       ok: false,
       reason: "protocol_mismatch",
       expected_protocol: TUNNEL_PROTOCOL_VERSION,
-      actual_protocol: row.protocol,
-      ...(typeof row.type === "string" ? { type: row.type } : {}),
+      actual_protocol: input.protocol,
+      ...(typeof input.type === "string" ? { type: input.type } : {}),
     }
   }
-  if (typeof row.type !== "string") return { ok: false, reason: "invalid" }
-  if (!tunnelMessageTypes.has(row.type as TunnelMessage["type"])) return { ok: false, reason: "invalid" }
-  if (!validateTunnelMessageShape(row)) return { ok: false, reason: "invalid" }
-  return { ok: true, message: row as TunnelMessage }
+  if (!isTunnelMessageRecord(input)) return { ok: false, reason: "invalid" }
+  return { ok: true, message: input }
 }
 
 export function isTunnelMessage(input: unknown): input is TunnelMessage {
-  return validateTunnelMessage(input).ok
+  return isRecord(input) && isTunnelMessageRecord(input)
 }
 
 export function makeTunnelPong(input: TunnelPing, receivedAt = Date.now()): TunnelPong {
@@ -198,7 +182,13 @@ export function makeTunnelPing(sentAt = Date.now(), id: string = crypto.randomUU
   }
 }
 
-function validateTunnelMessageShape(row: Record<string, unknown>) {
+/**
+ * The single source of truth for what a wire frame must look like to be a `TunnelMessage`:
+ * the switch's `default` arm is what rejects unknown `type` values, so no separate
+ * list of valid types is kept anywhere.
+ */
+function isTunnelMessageRecord(row: Record<string, unknown>): row is TunnelMessage {
+  if (row.protocol !== TUNNEL_PROTOCOL_VERSION) return false
   switch (row.type) {
     case "ping":
       return isString(row.id) && isFiniteNumber(row.sent_at)

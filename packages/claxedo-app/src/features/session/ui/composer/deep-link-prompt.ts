@@ -31,9 +31,9 @@ export function consumeNewSessionDeepLinkPrompt(input: {
   ready: boolean
   dirty: boolean
 }) {
-  if (!input.newSession || !input.ready) return
+  if (!input.newSession || !input.ready) return undefined
   const text = newSessionDeepLinkPromptFromSearch(input.search)
-  if (!text) return
+  if (!text) return undefined
   const search = searchWithoutNewSessionDeepLinkPrompt(input.search)
   if (!shouldSeedNewSessionDeepLinkPrompt(input)) return { search }
   return {

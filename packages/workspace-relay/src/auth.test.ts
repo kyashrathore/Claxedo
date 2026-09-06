@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { SignJWT, createLocalJWKSet, decodeProtectedHeader, errors, exportJWK, generateKeyPair } from "jose"
+import { SignJWT, createLocalJWKSet, decodeProtectedHeader, errors, exportJWK, generateKeyPair, importPKCS8 } from "jose"
 import {
   WorkspaceRelayAuthError,
   relayHostTokenAudience,
@@ -11,6 +11,8 @@ import {
   verifyHostTunnelToken,
   verifyRelayHostToken,
   verifyRuntimeAccessToken,
+  deriveRelayHostKid,
+  deriveRelayHostPublicKey,
   type RelayClaimPair,
 } from "./auth"
 
@@ -212,7 +214,7 @@ describe("workspace relay auth", () => {
     const key = await keys()
     const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
     const [header, payload, signature] = token.split(".")
-    const claims = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8")) as Record<string, unknown>
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>
     const tampered = [
       header,
       Buffer.from(JSON.stringify({ ...claims, role: "owner" })).toString("base64url"),
@@ -507,5 +509,48 @@ describe("workspace relay auth", () => {
     })).rejects.toMatchObject({
       code: "relay_token_workspace_mismatch",
     } satisfies Partial<WorkspaceRelayAuthError>)
+  })
+})
+/*
+ * A fixed Ed25519 key and the `kid` this repository publishes for it.
+ *
+ * The value below is a PUBLISHED IDENTIFIER, not a test detail. `kid` is how a
+ * relay host advertises its signing key and how the other side looks that key
+ * up, so `deriveRelayHostKid` must return the same string for the same key in
+ * every runtime that signs: the Bun relay (`main.ts`) and the Cloudflare
+ * relay/worker (`worker.ts`) both call this one implementation precisely so a
+ * token minted by one verifies at the other.
+ *
+ * Therefore: if a change to `deriveRelayHostKid` (or to
+ * `deriveRelayHostPublicKey` feeding it) makes this test fail, the fix is NOT
+ * to update the literal. Changing it rotates the `kid` of every enrolled host,
+ * which is a breaking deployment requiring both sides to be redeployed
+ * together — not a refactor. Update the value only as a deliberate,
+ * coordinated key-id migration.
+ */
+const RELAY_HOST_KEY_PEM =
+  "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIK5deGJyYg+DtM2fydAGN6XUzQpAgck9coVQNFVd57p4\n-----END PRIVATE KEY-----"
+const RELAY_HOST_KEY_PUBLIC_X = "e__LBs0bIcSli9PmbUEJTa9cgtKGV6EMX8-h-PHj2FU"
+const RELAY_HOST_KEY_KID = "b2c8b0497a919fed"
+
+describe("relay host key identity", () => {
+  test("derives the pinned kid for the pinned signing key", async () => {
+    const privateKey = await importPKCS8(RELAY_HOST_KEY_PEM, "EdDSA", { extractable: true })
+    if (privateKey instanceof Uint8Array) throw new Error("fixture key imported as raw bytes, not a CryptoKey")
+
+    const publicKey = await deriveRelayHostPublicKey(privateKey)
+
+    // Pin the public component too: the kid is sha256(utf8(jwk.x)), so a change
+    // in how the public key is recovered from the private key moves the kid
+    // just as surely as a change to the hashing does.
+    expect((await exportJWK(publicKey)).x).toBe(RELAY_HOST_KEY_PUBLIC_X)
+    expect(await deriveRelayHostKid(publicKey)).toBe(RELAY_HOST_KEY_KID)
+  })
+
+  test("derives the same kid whether the public key is recovered or supplied directly", async () => {
+    const pair = await generateKeyPair("EdDSA", { extractable: true })
+    const roundTripped = await deriveRelayHostPublicKey(pair.privateKey)
+
+    expect(await deriveRelayHostKid(roundTripped)).toBe(await deriveRelayHostKid(pair.publicKey))
   })
 })

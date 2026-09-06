@@ -126,7 +126,7 @@ export function useWorkspacePanelVisualState(input: {
   }
 
   function workspacePanelFallbackTarget() {
-    if (input.focusedSurfaceWorkspaceToolsBlocked()) return
+    if (input.focusedSurfaceWorkspaceToolsBlocked()) return undefined
     const target = input.focusedPanelTarget()
     if (target) return target
     const panel = input.claxedoState.workspacePanel.state()
@@ -137,7 +137,7 @@ export function useWorkspacePanelVisualState(input: {
       }
     }
     const workspaceDir = input.activeDirectory() ?? input.emptyDraftDirectory()
-    if (!workspaceDir) return
+    if (!workspaceDir) return undefined
     return {
       workspaceDir,
       targetPaneId: input.focusedSplitPaneId() ?? "",

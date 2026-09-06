@@ -48,24 +48,30 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof SettingsAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as SettingsAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: SettingsAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
-export const useProviders = bind("useProviders")
-export const useGlobalSDK = bind("useGlobalSDK")
-export const useShellQueryOptions = bind("useShellQueryOptions")
-export const DialogConnectProvider = bind("DialogConnectProvider")
-export const DialogAIConnect = bind("DialogAIConnect")
-export const DialogSelectProvider = bind("DialogSelectProvider")
-export const useModels = bind("useModels")
-export const formatKeybind = bind("formatKeybind")
-export const parseKeybind = bind("parseKeybind")
-export const useCommand = bind("useCommand")
-export const DialogConnectIntegration = bind("DialogConnectIntegration")
-export const ProviderConnectForm = bind("ProviderConnectForm")
-export const Link = bind("Link")
-export const useSandboxOnboardingFunnel = bind("useSandboxOnboardingFunnel")
-export const useSDK = bind("useSDK")
-export const useEnabledAcpHarnesses = bind("useEnabledAcpHarnesses")
-export const readWorkspaceHarnessDefault = bind("readWorkspaceHarnessDefault")
+export const useProviders = bind((ports) => ports.useProviders)
+export const useGlobalSDK = bind((ports) => ports.useGlobalSDK)
+export const useShellQueryOptions = bind((ports) => ports.useShellQueryOptions)
+export const DialogConnectProvider = bind((ports) => ports.DialogConnectProvider)
+export const DialogAIConnect = bind((ports) => ports.DialogAIConnect)
+export const DialogSelectProvider = bind((ports) => ports.DialogSelectProvider)
+export const useModels = bind((ports) => ports.useModels)
+export const formatKeybind = bind((ports) => ports.formatKeybind)
+export const parseKeybind = bind((ports) => ports.parseKeybind)
+export const useCommand = bind((ports) => ports.useCommand)
+export const DialogConnectIntegration = bind((ports) => ports.DialogConnectIntegration)
+export const ProviderConnectForm = bind((ports) => ports.ProviderConnectForm)
+export const Link = bind((ports) => ports.Link)
+export const useSandboxOnboardingFunnel = bind((ports) => ports.useSandboxOnboardingFunnel)
+export const useSDK = bind((ports) => ports.useSDK)
+export const useEnabledAcpHarnesses = bind((ports) => ports.useEnabledAcpHarnesses)
+export const readWorkspaceHarnessDefault = bind((ports) => ports.readWorkspaceHarnessDefault)

@@ -1,7 +1,8 @@
 import type { HarnessEventAdapter } from "../../core/adapter"
 import { createAcpTranslatorState, type SessionState } from "./state"
 import { translateAcpSessionUpdate } from "./translate-session-update"
-import { createAcpDiagnostics } from "./diagnostics"
+import { createAcpDiagnostics, diagnoseTranslation, shape } from "./diagnostics"
+import { isSessionUpdate } from "./validation"
 
 export type AcpEventTranslatorState = SessionState
 
@@ -23,7 +24,14 @@ export function createAcpEventTranslator(options: AcpEventTranslatorOptions): Ha
       state.assistantTextByMessageId ??= {}
       state.assistantThinkingByMessageId ??= {}
       const diagnostics = createAcpDiagnostics()
-      const events = translateAcpSessionUpdate(event.payload as Parameters<typeof translateAcpSessionUpdate>[0], {
+      if (!isSessionUpdate(event.payload)) {
+        diagnoseTranslation(diagnostics, "acp.dropped_content", {
+          reason: "unknown_session_update",
+          shape: shape(event.payload),
+        })
+        return { events: [], diagnostics: diagnostics.items }
+      }
+      const events = translateAcpSessionUpdate(event.payload, {
         state,
         diagnostics,
         preserveUserMessageChunks: options.preserveUserMessageChunks,

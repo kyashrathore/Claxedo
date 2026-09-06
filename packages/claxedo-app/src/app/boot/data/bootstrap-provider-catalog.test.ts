@@ -3,6 +3,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { bootstrapDirectory, type DirectoryBootstrapSdk } from "./bootstrap"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
+import { requestUrl } from "@/lib/url"
 
 /** Native provider catalogs belong to the control plane, including VM sessions. */
 
@@ -18,12 +19,6 @@ afterEach(async () => {
   await settleWarmup()
   queryClient.clear()
 })
-
-function requestUrl(input: string | URL | Request) {
-  if (input instanceof Request) return input.url
-  if (input instanceof URL) return input.href
-  return String(input)
-}
 
 function connectionBody() {
   return {

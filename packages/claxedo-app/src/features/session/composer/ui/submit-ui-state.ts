@@ -65,7 +65,7 @@ type LastSubmittedSnapshot = {
 
 export function createPromptInputSubmitRetry(input: {
   readonly resetKey: Accessor<string>
-  readonly rawHandleSubmit: (event: Event) => unknown
+  readonly rawHandleSubmit: (event: Pick<Event, "preventDefault">) => unknown
   readonly roleSubmitBlocked: Accessor<boolean>
   /**
    * Any standing block reason (T5). Actionable reasons leave the Send button
@@ -101,7 +101,9 @@ export function createPromptInputSubmitRetry(input: {
     ),
   )
 
-  const handleSubmit = async (event: Event) => {
+  // Only `preventDefault` is read, and the retry path below replays a submit
+  // without a real DOM event — so the parameter states what it uses.
+  const handleSubmit = async (event: Pick<Event, "preventDefault">) => {
     if (input.roleSubmitBlocked() || input.submitBlocked?.()) {
       if (input.submitBlock?.()?.reason === "no-model") input.onChooseModel?.()
       return event.preventDefault()
@@ -128,7 +130,7 @@ export function createPromptInputSubmitRetry(input: {
     const snapshot = prompt
       ? { prompt, mode: "normal" as const }
       : lastSubmitted()
-    if (!snapshot) return
+    if (!snapshot) return undefined
     // Restore the captured payload, then route through the same submit
     // pipeline. The downstream submit re-runs all phase resolution from scratch.
     input.prompt.set(
@@ -136,7 +138,7 @@ export function createPromptInputSubmitRetry(input: {
       input.promptLength(snapshot.prompt),
     )
     input.setMode(snapshot.mode)
-    return handleSubmit({ preventDefault: () => undefined } as unknown as Event) // as-any: retry submit only needs preventDefault from the Event contract.
+    return handleSubmit({ preventDefault: () => undefined })
   }
 
   input.registerRetry?.(retryPrompt)

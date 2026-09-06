@@ -58,8 +58,9 @@ export type OnboardingStepState = {
 
 const appliesEverywhere = () => true
 
-function aiLockReason(state: OnboardingState) {
+function aiLockReason(state: OnboardingState): string | undefined {
   if (!destinationSettled(state)) return "Finish the first step to continue."
+  return undefined
 }
 
 /**

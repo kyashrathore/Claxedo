@@ -17,6 +17,8 @@ import {
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
+import { asRecord, readJsonRecord, stringField } from "../platform/json/index"
+import { isComposedAuthorityPort } from "../authority/composed-authority"
 
 export type MachineSessionCaller =
   SignedControlPlaneAuth | { kind: "channel"; identity: ChannelMachineIdentity } | { kind: "actor"; actorId: string }
@@ -42,7 +44,7 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       })
     const channelIdentity = caller && "identity" in caller ? caller.identity : undefined
     const delegatedActor = caller && "kind" in caller && caller.kind === "actor" ? caller.actorId : undefined
-    const auth = caller && !channelIdentity && !delegatedActor ? (caller as SignedControlPlaneAuth) : undefined
+    const auth = signedCaller(caller)
     let runtimeOptions = options
     let embeddedHeaders: HeadersInit | undefined
     if (auth || channelIdentity || delegatedActor) {
@@ -103,7 +105,10 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       throw new ControlPlaneAuthError(400, "workspace_required", "Select an existing machine session before dispatch")
     const resolved = await target(meta.workspaceID, caller)
     if (caller) {
-      const authority = services.authority as unknown as PrivateSessionAuthority
+      const authority = services.authority ?? undefined
+      if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "authorizeRuntimeSession">>(authority, ["authorizeRuntimeSession"])) {
+        throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
+      }
       if (!resolved.runtimeActor) throw new Error("Machine dispatch actor is unavailable")
       await authority.authorizeRuntimeSession({
         ...resolved.runtimeActor,
@@ -120,7 +125,7 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       const meta = await services.projectionStore.session_meta(sessionId)
       return { workspaceId: meta!.workspaceID! }
     },
-    async create(input: MachineSessionCreate, caller?: MachineSessionCaller) {
+    create: async (input: MachineSessionCreate, caller?: MachineSessionCaller) => {
       const { workspace, client, runtimeActor } = await target(input.workspaceId, caller)
       const headers: Record<string, string> = { "content-type": "application/json" }
       let id: string | undefined
@@ -131,8 +136,11 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
             "session_identity_required",
             "Create and bind a machine session using your signed account before channel dispatch",
           )
-        const authority = services.authority as unknown as Partial<PrivateSessionAuthority>
-        if (!authority.reserveSession)
+        const authority = services.authority ?? undefined
+        if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "reserveSession" | "reserveRuntimeSession">>(
+          authority,
+          ["reserveSession", "reserveRuntimeSession"],
+        ))
           throw new ControlPlaneAuthError(
             503,
             "session_registration_unavailable",
@@ -149,7 +157,7 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         }
         const reservation =
           "kind" in caller
-            ? await authority.reserveRuntimeSession!(runtimeActor, intent)
+            ? await authority.reserveRuntimeSession(runtimeActor, intent)
             : await authority.reserveSession(caller, intent)
         if (reservation.sessionId !== id || reservation.operationId !== operationId || reservation.state !== "reserved")
           throw new Error("Machine session reservation did not match admission")
@@ -164,21 +172,22 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         body: JSON.stringify({ ...(id ? { id } : {}), title: input.title, model: input.model }),
       })
       if (!response.ok) throw await workspaceRuntimeRequestError("session creation", response)
-      const session = (await response.json()) as { id?: string; directory?: string; title?: string }
-      if (!session.id || (id && session.id !== id))
+      const session = await readJsonRecord(response)
+      const sessionId = stringField(session, "id")
+      if (!sessionId || (id && sessionId !== id))
         throw new Error("Machine runtime returned an invalid session identity")
-      await services.projectionStore.put_session_meta(session.id, {
+      await services.projectionStore.put_session_meta(sessionId, {
         host: "workspace",
         workspaceID: input.workspaceId,
-        directory: session.directory,
-        title: session.title,
+        directory: stringField(session, "directory"),
+        title: stringField(session, "title"),
         ...(input.harness ? { tags: [`harness:${input.harness.id}`] } : {}),
       })
-      return { ...session, id: session.id }
+      return { ...session, id: sessionId }
     },
     async *prompt(sessionId: string, body: unknown, caller?: MachineSessionCaller) {
       const client = await sessionClient(sessionId, caller)
-      const prompt = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
+      const prompt = asRecord(body) ?? {}
       const messageID =
         typeof prompt.messageID === "string" && prompt.messageID ? prompt.messageID : `msg_${randomUUID()}`
       const abort = new AbortController()
@@ -187,15 +196,22 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       const reader = stream.body.pipeThrough(new TextDecoderStream()).getReader()
       const queue: unknown[] = []
       let wake: (() => void) | undefined
-      let turnObserved = false
-      let terminalObserved = false
-      let responseComplete = false
-      let closed = false
-      let failure: unknown
+      // One turn's state, mutated by three concurrent closures — the SSE
+      // reader, the prompt POST, and this generator's own `finally`. Held
+      // together in one object rather than five `let`s so a reader can see
+      // which flags belong to the same handshake, and so each closure is
+      // visibly writing shared state rather than a local of its own.
+      const progress = {
+        turnObserved: false,
+        terminalObserved: false,
+        responseComplete: false,
+        closed: false,
+        failure: undefined as unknown,
+      }
       let terminalDeadline: ReturnType<typeof setTimeout> | undefined
       const reading = (async () => {
         let buffer = ""
-        while (!closed && !terminalObserved) {
+        while (!progress.closed && !progress.terminalObserved) {
           const item = await reader.read()
           if (item.done) break
           buffer += item.value
@@ -215,8 +231,8 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
             if (eventSessionId(event) !== sessionId) continue
             const info = event.properties?.info
             if (event.type === "message.updated" && (info?.id === messageID || info?.parentID === messageID))
-              turnObserved = true
-            if (!turnObserved) continue
+              progress.turnObserved = true
+            if (!progress.turnObserved) continue
             if (queue.length >= 1024) throw new Error("Channel consumer fell behind the machine event stream")
             queue.push(event)
             if (
@@ -224,17 +240,17 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
               event.type === "session.error" ||
               (event.type === "session.status" && event.properties?.status?.type === "idle")
             ) {
-              terminalObserved = true
+              progress.terminalObserved = true
               if (terminalDeadline) clearTimeout(terminalDeadline)
             }
             wake?.()
-            if (terminalObserved) break
+            if (progress.terminalObserved) break
           }
         }
-        if (!closed && !terminalObserved) throw new Error("Machine event stream disconnected during the turn")
+        if (!progress.closed && !progress.terminalObserved) throw new Error("Machine event stream disconnected during the turn")
       })().catch((error) => {
-        if (!closed) {
-          failure = error
+        if (!progress.closed) {
+          progress.failure = error
           wake?.()
         }
       })
@@ -248,22 +264,22 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         .then(async (response) => {
           if (!response.ok) throw await workspaceRuntimeRequestError("channel prompt", response)
           await response.arrayBuffer()
-          responseComplete = true
+          progress.responseComplete = true
           // HTTP and SSE are independent transports. Completion of the POST is
           // not evidence that the observer has received the machine's terminal.
-          if (!terminalObserved)
+          if (!progress.terminalObserved)
             terminalDeadline = setTimeout(() => {
-              failure = new Error("Machine prompt completed without an observed terminal event")
+              progress.failure = new Error("Machine prompt completed without an observed terminal event")
               wake?.()
             }, 15_000)
         })
         .catch((error) => {
-          failure = error
+          progress.failure = error
         })
         .finally(() => wake?.())
       try {
-        while (!responseComplete || !terminalObserved || queue.length) {
-          if (failure) throw failure
+        while (!progress.responseComplete || !progress.terminalObserved || queue.length) {
+          if (progress.failure) throw progress.failure
           if (queue.length) {
             yield queue.shift()
             continue
@@ -272,9 +288,9 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
             wake = resolve
           })
         }
-        if (failure) throw failure
+        if (progress.failure) throw progress.failure
       } finally {
-        closed = true
+        progress.closed = true
         if (terminalDeadline) clearTimeout(terminalDeadline)
         abort.abort()
         await reader.cancel().catch(() => {})
@@ -289,3 +305,15 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
     },
   }
 }
+
+
+/**
+ * A caller that is a signed account rather than a channel identity or a
+ * delegated actor. The union's two other members carry a `kind` discriminant,
+ * so this is a real narrowing; the previous `caller as SignedControlPlaneAuth`
+ * only asserted the same conclusion.
+ */
+function signedCaller(caller: MachineSessionCaller | undefined): SignedControlPlaneAuth | undefined {
+  return caller === undefined || "kind" in caller ? undefined : caller
+}
+

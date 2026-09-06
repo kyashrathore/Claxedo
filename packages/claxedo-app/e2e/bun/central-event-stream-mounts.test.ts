@@ -31,13 +31,13 @@ const repoFile = (relative: string) =>
 function centralStreamPaths() {
   const source = repoFile("../../../claxedo-local-server/src/shell/routes.ts")
   const paths = [...source.matchAll(/\.get\("([^"]+)",\s*\(c\)\s*=>\s*stream\(c\)\)/g)]
-    .map((match) => match[1]!)
+    .map((match) => match[1])
   return [...new Set(paths)]
 }
 
 /** Every path a spec registers a Playwright route glob for. */
 function routedPaths(specSource: string) {
-  return [...specSource.matchAll(/page\.route\(\s*"\*\*([^"]+?)\*?\*?"/g)].map((match) => match[1]!)
+  return [...specSource.matchAll(/page\.route\(\s*"\*\*([^"]+?)\*?\*?"/g)].map((match) => match[1])
 }
 
 function routes(specSource: string, path: string) {

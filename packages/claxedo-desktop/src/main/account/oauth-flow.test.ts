@@ -97,7 +97,7 @@ describe("signIn", () => {
       tokens: { accessToken: "at", refreshToken: "rt", expiresAt: 9_999 },
     })
     expect(h.exchanges).toHaveLength(1)
-    expect(h.exchanges[0]!.code).toBe("the-code")
+    expect(h.exchanges[0].code).toBe("the-code")
   })
 
   test("sends the verifier only on the back channel", async () => {
@@ -112,10 +112,10 @@ describe("signIn", () => {
     h.callback(`${REDIRECT_PATH}?code=the-code&state=${issuedState(h.opened)}`)
     await pending
 
-    const verifier = h.exchanges[0]!.codeVerifier
+    const verifier = h.exchanges[0].codeVerifier
     expect(verifier.length).toBeGreaterThanOrEqual(43)
     expect(h.opened[0]).not.toContain(verifier)
-    expect(new URL(h.opened[0]!).searchParams.get("code_challenge")).not.toBe(verifier)
+    expect(new URL(h.opened[0]).searchParams.get("code_challenge")).not.toBe(verifier)
   })
 
   test("exchanges against the same redirect URI it authorized with", async () => {
@@ -129,8 +129,8 @@ describe("signIn", () => {
     h.callback(`${REDIRECT_PATH}?code=the-code&state=${issuedState(h.opened)}`)
     await pending
 
-    expect(h.exchanges[0]!.redirectUri).toBe(new URL(h.opened[0]!).searchParams.get("redirect_uri"))
-    expect(h.exchanges[0]!.redirectUri).toBe(`http://127.0.0.1:${PORT}${REDIRECT_PATH}`)
+    expect(h.exchanges[0].redirectUri).toBe(new URL(h.opened[0]).searchParams.get("redirect_uri"))
+    expect(h.exchanges[0].redirectUri).toBe(`http://127.0.0.1:${PORT}${REDIRECT_PATH}`)
   })
 
   test("never exchanges a code whose state did not match", async () => {
@@ -145,7 +145,7 @@ describe("signIn", () => {
 
     const result = await pending
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toBe("callback-failed")
+    expect(!result.ok && result.reason).toBe("callback-failed")
     expect(h.exchanges).toEqual([])
   })
 
@@ -198,7 +198,7 @@ describe("signIn", () => {
 
     const result = await pending
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.detail).toContain("token endpoint said no")
+    expect(!result.ok && result.detail).toContain("token endpoint said no")
     expect(h.closes).toBe(1)
   })
 
@@ -210,7 +210,7 @@ describe("signIn", () => {
     h.fireTimeout()
 
     const result = await pending
-    expect(result.ok === false && result.reason).toBe("timeout")
+    expect(!result.ok && result.reason).toBe("timeout")
     expect(h.exchanges).toEqual([])
   })
 
@@ -222,7 +222,7 @@ describe("signIn", () => {
 
     const result = await createOAuthFlow(CONFIG, h.seams).signIn()
 
-    expect(result.ok === false && result.reason).toBe("no-secure-storage")
+    expect(!result.ok && result.reason).toBe("no-secure-storage")
     expect(h.opened).toEqual([])
     expect(h.closes).toBe(0)
   })
@@ -237,7 +237,7 @@ describe("signIn", () => {
     await Promise.resolve()
 
     const second = await flow.signIn()
-    expect(second.ok === false && second.reason).toBe("already-running")
+    expect(!second.ok && second.reason).toBe("already-running")
     expect(h.opened).toHaveLength(1)
 
     h.callback(`${REDIRECT_PATH}?code=c&state=${issuedState(h.opened)}`)

@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 export function hasConcreteSessionTitle(title: unknown) {
   if (typeof title !== "string") return false
   const cleaned = title.replace(/\s+/g, " ").trim()
@@ -19,8 +20,8 @@ export function deriveSessionTitle(text: string) {
 export function extractPromptTitleText(parts: unknown[]) {
   return parts.flatMap((part) => {
     if (typeof part === "string") return [part]
-    if (!part || typeof part !== "object" || Array.isArray(part)) return []
-    const row = part as Record<string, unknown>
+    const row = asRecord(part)
+    if (!row) return []
     if (typeof row.text === "string") return [row.text]
     if (typeof row.content === "string") return [row.content]
     return []

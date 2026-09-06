@@ -19,7 +19,7 @@ function credentialsPath() {
 function credentials(input: unknown): Credentials | undefined {
   const row = object(input)
   const accessToken = text(row.accessToken) ?? text(row.access_token)
-  if (!accessToken) return
+  if (!accessToken) return undefined
   return {
     controlPlaneUrl: text(row.controlPlaneUrl) ?? config().controlPlaneUrl,
     accessToken,
@@ -34,11 +34,11 @@ function credentials(input: unknown): Credentials | undefined {
   }
 }
 
-export async function readCredentials() {
+export async function readCredentials(): Promise<Credentials | undefined> {
   const fromFile = credentials(await readJsonFile(credentialsPath()))
   if (fromFile) return fromFile
   const token = text(process.env.CLAXEDO_DEV_TOKEN) ?? text(process.env.CLAXEDO_ACCESS_TOKEN)
-  if (!token) return
+  if (!token) return undefined
   return {
     controlPlaneUrl: config().controlPlaneUrl,
     accessToken: token,

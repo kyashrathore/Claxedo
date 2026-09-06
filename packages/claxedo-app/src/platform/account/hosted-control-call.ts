@@ -1,5 +1,9 @@
 import type { HostedOperationName } from "./account-port"
-import { decodeHostedResult } from "./hosted-operations"
+import type { AccountBridge } from "./electron-account-port"
+import { decodeHostedResult, type DecodedHostedResult } from "./hosted-operations"
+import { hasBridgeMembers, preloadAccountBridge } from "./preload-bridge"
+import { readField, readString } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 
 /**
  * Desktop AccountPort `run`, without importing the Solid-backed electron port
@@ -7,21 +11,16 @@ import { decodeHostedResult } from "./hosted-operations"
  *
  * Present only when preload exposed a complete `api.account` bridge.
  */
-type AccountOperationBridge = {
-  state: () => Promise<{ status: string }>
-  run: (operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
-}
+// The two members this module uses, taken from the bridge that owns the
+// shape rather than re-declared. `electron-account-port` is imported
+// TYPE-only, so none of its `solid-js` runtime reaches here.
+type AccountOperationBridge = Pick<AccountBridge, "state" | "run">
 
 function accountOperationBridge(): AccountOperationBridge | undefined {
-  const account = (globalThis as { api?: { account?: Record<string, unknown> } }).api?.account
-  if (!account) return undefined
-  for (const member of ["state", "onState", "signIn", "signOut", "run"] as const) {
-    if (typeof account[member] !== "function") return undefined
-  }
-  return {
-    state: account.state as AccountOperationBridge["state"],
-    run: account.run as AccountOperationBridge["run"],
-  }
+  const account = preloadAccountBridge()
+  // Completeness is still all-or-none, even though only two members are used.
+  if (!hasBridgeMembers<AccountBridge>(account, ["state", "onState", "signIn", "signOut", "run"])) return undefined
+  return { state: account.state, run: account.run }
 }
 
 /** Raw bridge capability check for adapters that already hold account state. */
@@ -55,16 +54,16 @@ export function parseHostedHttpError(error: unknown): {
   detail: string
   body: unknown
 } | undefined {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   const match = /^HOSTED_HTTP (\d+) ([\s\S]+)$/.exec(message)
   if (!match) return undefined
   const status = Number(match[1])
   try {
-    const parsed = JSON.parse(match[2]!) as { detail?: unknown; body?: unknown }
+    const parsed: unknown = JSON.parse(match[2])
     return {
       status,
-      detail: typeof parsed.detail === "string" ? parsed.detail : message,
-      body: parsed.body,
+      detail: readString(parsed, "detail") ?? message,
+      body: readField(parsed, "body"),
     }
   } catch {
     return { status, detail: message, body: null }
@@ -74,13 +73,22 @@ export function parseHostedHttpError(error: unknown): {
 /**
  * Desktop with a SIGNED account: named AccountPort op. Browser / unsigned /
  * unconfigured: `fallback`.
+ *
+ * The two branches produce different evidence, so the result is their union
+ * rather than one type asserted over both. The hosted branch is worth only what
+ * the operation's decoder in `HOSTED_OPERATIONS` proves — for most operations
+ * that is object-ness and nothing more. The fallback is worth whatever its own
+ * caller-owned parse establishes. Callers read the union through `@/lib/record`,
+ * which is the point: this used to take a caller-named `T` and hand the hosted
+ * branch out wearing it, so a control-plane response that had merely been
+ * decoded as "an object" reached readers dressed as a checked DTO.
  */
-export async function hostedControlCall<T>(
-  operation: HostedOperationName,
+export async function hostedControlCall<N extends HostedOperationName, T>(
+  operation: N,
   input: Record<string, unknown>,
   fallback: () => Promise<T>,
-): Promise<T> {
+): Promise<DecodedHostedResult<N> | T> {
   const run = await signedAccountRun()
   if (!run) return fallback()
-  return decodeHostedResult<T>(operation, await run(operation, input))
+  return decodeHostedResult(operation, await run(operation, input))
 }

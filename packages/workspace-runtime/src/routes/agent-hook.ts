@@ -9,7 +9,8 @@ import { Hono, type Context } from "hono"
 import z from "zod/v3"
 import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
-import { bearerToken, boundedJsonBody, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { bearerToken, boundedJsonBody, boundedJsonRecord, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { arr, bool, num, str } from "../json-value"
 import {
   setupAgentHooks,
   getTerminalEnvVars,
@@ -45,12 +46,12 @@ const AgentEventInputType = z.enum([
 
 const normalizeAgentEventType = (value: unknown): AgentEventType | undefined => {
   const parsed = AgentEventInputType.safeParse(value)
-  if (!parsed.success) return
+  if (!parsed.success) return undefined
   if (parsed.data === "Start" || parsed.data === "SessionStart") return "Busy"
   if (parsed.data === "Stop" || parsed.data === "SessionEnd") return "Idle"
   if (parsed.data === "PermissionRequest" || parsed.data === "QuestionRequest") return "UserActionRequired"
   if (parsed.data === "Failed") return "Error"
-  return parsed.data as AgentEventType
+  return parsed.data
 }
 
 const lifecycleId = z.string().max(512)
@@ -232,7 +233,7 @@ const upsertTerminalSession = (input: {
 }) => {
   pruneTerminalSessions()
   const terminalId = clean(input.terminalId)
-  if (!terminalId) return
+  if (!terminalId) return undefined
   const found = terminalSessions.get(terminalId)
   const verifiedOwner = clean(input.ownerActorId)
   // A managed terminal never inherits metadata written before its verified
@@ -287,7 +288,7 @@ const upsertTerminalSession = (input: {
 const clearTerminalSession = (terminalId: string) => {
   pruneTerminalSessions()
   const id = clean(terminalId)
-  if (!id) return
+  if (!id) return undefined
   const previous = terminalSessions.get(id)
   const next: TerminalSessionRecord = {
     terminalId: id,
@@ -323,12 +324,11 @@ const clearTerminalSession = (terminalId: string) => {
 const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => {
   pruneTerminalSessions()
   const terminalId = resolveTerminalId(input)
-  if (!terminalId) return
+  if (!terminalId) return undefined
   const mapped = terminalSessions.get(terminalId)
-  if (mapped) {
-    const { ownerActorId: _ownerActorId, ...session } = mapped
-    return { source: "memory" as const, terminalId, session }
-  }
+  if (!mapped) return undefined
+  const { ownerActorId: _ownerActorId, ...session } = mapped
+  return { source: "memory" as const, terminalId, session }
 }
 
 // Subscribe to PTY exit/delete events to clear terminal sessions
@@ -435,7 +435,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
     .post("/agent-lifecycle", async (c) => {
       const body = c.req.header("content-type")?.includes("application/x-www-form-urlencoded")
         ? Object.fromEntries(new URLSearchParams(await boundedTextBody(c)))
-        : await boundedJsonBody<unknown | null>(c, null)
+        : await boundedJsonBody(c)
       const parsed = AgentLifecycleInputPayload.safeParse(body)
       if (!parsed.success) {
         return c.json({ success: false, error: "Invalid payload" }, 400)
@@ -549,17 +549,12 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
         })
       }
       try {
-        const body = await boundedJsonBody<{
-          port?: number
-          force?: boolean
-          wrappers?: string[]
-          replaceWrappers?: boolean
-        }>(c, {})
+        const body = await boundedJsonRecord(c)
         await setupAgentHooks({
-          port: body.port,
-          force: body.force,
-          wrappers: body.wrappers,
-          replaceWrappers: body.replaceWrappers,
+          port: num(body.port),
+          force: bool(body.force),
+          wrappers: arr(body.wrappers)?.flatMap((item) => str(item) ?? []),
+          replaceWrappers: bool(body.replaceWrappers),
         })
         const wrappers = await listWrapperAgents()
         return c.json({

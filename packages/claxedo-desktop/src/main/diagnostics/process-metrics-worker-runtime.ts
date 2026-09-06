@@ -24,7 +24,9 @@ import {
   uniqueEntries,
 } from "./process-metrics-worker"
 
-const packageUsage = packageUsageModule as unknown as Pidusage
+// Assigned, not asserted: the import above is untyped, so naming the
+// contract on the binding is what gives it one.
+const packageUsage: Pidusage = packageUsageModule
 const execFileAsync = promisify(execFile)
 
 type PidusageStats = {
@@ -72,7 +74,7 @@ export function createPosixProcessMetricsWorker(options: {
       )
       const entries = uniqueEntries(
         settled.flatMap((result, index) =>
-          result.status === "fulfilled" ? result.value : [{ pid: roots[index]!, ppid: 0, rootPid: roots[index]! }],
+          result.status === "fulfilled" ? result.value : [{ pid: roots[index], ppid: 0, rootPid: roots[index] }],
         ),
       ).slice(0, MAX_DIAGNOSTICS_PIDS)
       if (settled.some((result) => result.status === "rejected")) {
@@ -113,7 +115,7 @@ export function createPosixProcessMetricsWorker(options: {
                 const bytes = parseLinuxPssBytes(rollup)
                 return bytes === undefined ? undefined : [pid, { kind: "pss" as const, bytes }] as const
               } catch {
-                return
+                return undefined
               }
             }))).filter((reading): reading is readonly [number, { kind: "pss"; bytes: number }] => !!reading))
         memoryImpact.clear()
@@ -124,7 +126,7 @@ export function createPosixProcessMetricsWorker(options: {
         await Promise.all(
           bounded.map(async (entry) => {
             const value = stats[entry.pid]
-            if (!value || !Number.isFinite(value.cpu) || !Number.isFinite(value.memory)) return
+            if (!value || !Number.isFinite(value.cpu) || !Number.isFinite(value.memory)) return undefined
             return {
               ...entry,
               creation:
@@ -162,11 +164,11 @@ export function createPosixProcessMetricsWorker(options: {
 
 }
 
-export function parseLinuxPssBytes(rollup: string) {
+export function parseLinuxPssBytes(rollup: string): number | undefined {
   const match = /^Pss:\s+(\d+)\s+kB$/m.exec(rollup)
-  if (!match) return
+  if (!match) return undefined
   const kib = Number(match[1])
-  if (!Number.isSafeInteger(kib)) return
+  if (!Number.isSafeInteger(kib)) return undefined
   return kib * 1_024
 }
 

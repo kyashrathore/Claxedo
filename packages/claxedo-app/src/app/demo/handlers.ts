@@ -1,3 +1,4 @@
+import { readString, readStringArray, recordOrEmpty } from "@/lib/record"
 import { http, HttpResponse, passthrough, ws } from "msw"
 import {
   loadFixtures,
@@ -33,23 +34,8 @@ const magenta = (value: string) => `${CSI}35m${value}${CSI}0m`
 
 const prompt = () => `${green(bold("demo"))}${dim(":")}${cyan(bold("~/projects/my-app"))} ${dim("$")} `
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object"
-}
-
 async function jsonRecord(request: Request) {
-  const body: unknown = await request.json().catch(() => ({}))
-  return isRecord(body) ? body : {}
-}
-
-function stringField(value: Record<string, unknown>, key: string) {
-  const item = value[key]
-  return typeof item === "string" ? item : undefined
-}
-
-function stringArrayField(value: Record<string, unknown>, key: string) {
-  const item = value[key]
-  return Array.isArray(item) ? item.filter((entry) => typeof entry === "string") : undefined
+  return recordOrEmpty(await request.json().catch(() => ({})))
 }
 
 function routeParam(params: Record<string, string | readonly string[] | undefined>, key: string) {
@@ -59,7 +45,7 @@ function routeParam(params: Record<string, string | readonly string[] | undefine
 }
 
 function modelFrom(body: Record<string, unknown>) {
-  return isRecord(body.model) ? body.model : {}
+  return recordOrEmpty(body.model)
 }
 
 function boot(kind: "claude" | "codex") {
@@ -400,7 +386,7 @@ export async function createHandlers() {
     http.post(`${DEMO_BASE}/session`, async ({ request }) => {
       const body = await jsonRecord(request)
       const id = `ses_demo_${Math.random().toString(36).slice(2, 8)}`
-      const dir = stringField(body, "directory") || root
+      const dir = readString(body, "directory") || root
       const project = projectFor(state, dir)
       const session: DemoSession = {
         id,
@@ -444,12 +430,12 @@ export async function createHandlers() {
       }
       const body = await jsonRecord(request)
       const model = modelFrom(body)
-      const providerID = stringField(model, "providerID") || "anthropic"
-      const modelID = stringField(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
-      const agent = stringField(body, "agent") || "code"
+      const providerID = readString(model, "providerID") || "anthropic"
+      const modelID = readString(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
+      const agent = readString(body, "agent") || "code"
       const text = textOf(body.parts) || "mock prompt"
       const messageID =
-        stringField(body, "messageID") || `msg_${Date.now()}_user`
+        readString(body, "messageID") || `msg_${Date.now()}_user`
       const assistantID = `msg_${Date.now()}_assistant`
       const items = state.sessionMessages[sessionID] ?? []
       const nextUser = user({
@@ -459,8 +445,8 @@ export async function createHandlers() {
         providerID,
         modelID,
         text,
-        system: stringField(body, "system"),
-        variant: stringField(body, "variant"),
+        system: readString(body, "system"),
+        variant: readString(body, "variant"),
       })
       const nextAssistant = row({
         sessionID,
@@ -483,12 +469,12 @@ export async function createHandlers() {
       if (!session) return new HttpResponse(null, { status: 404 })
       const body = await jsonRecord(request)
       const model = modelFrom(body)
-      const providerID = stringField(model, "providerID") || "anthropic"
-      const modelID = stringField(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
-      const agent = stringField(body, "agent") || "code"
+      const providerID = readString(model, "providerID") || "anthropic"
+      const modelID = readString(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
+      const agent = readString(body, "agent") || "code"
       const text = textOf(body.parts) || "mock prompt"
       const messageID =
-        stringField(body, "messageID") || `msg_${Date.now()}_user`
+        readString(body, "messageID") || `msg_${Date.now()}_user`
       const assistantID = `msg_${Date.now()}_assistant`
       const items = state.sessionMessages[sessionID] ?? []
       state.sessionMessages[sessionID] = [
@@ -500,8 +486,8 @@ export async function createHandlers() {
           providerID,
           modelID,
           text,
-          system: stringField(body, "system"),
-          variant: stringField(body, "variant"),
+          system: readString(body, "system"),
+          variant: readString(body, "variant"),
         }),
         row({
           sessionID,
@@ -547,10 +533,10 @@ export async function createHandlers() {
       const id = `pty_demo_${Math.random().toString(36).slice(2, 8)}`
       const pty: DemoPty = {
         id,
-        title: stringField(body, "title") || "shell",
-        command: stringField(body, "command") || "/bin/zsh",
-        args: stringArrayField(body, "args") || [],
-        cwd: stringField(body, "cwd") || root,
+        title: readString(body, "title") || "shell",
+        command: readString(body, "command") || "/bin/zsh",
+        args: readStringArray(body, "args") || [],
+        cwd: readString(body, "cwd") || root,
         status: "running",
         pid: 10000 + Math.floor(Math.random() * 50000),
       }
@@ -693,8 +679,8 @@ export async function createHandlers() {
       const id = documentID()
       const document: DemoDocument = {
         id,
-        project_id: stringField(body, "project_id") || "demo-project",
-        display_name: stringField(body, "display_name") || "Untitled document",
+        project_id: readString(body, "project_id") || "demo-project",
+        display_name: readString(body, "display_name") || "Untitled document",
         origin_kind: "managed",
         placement_kind: "local",
         placement_id: "demo-local",
@@ -703,14 +689,14 @@ export async function createHandlers() {
         workspace_id: null,
         repository_relative_path: null,
         branch: null,
-        status: stringField(body, "status") || "draft",
+        status: readString(body, "status") || "draft",
         session_id: null,
         archived_at: null,
         created_at: now,
         updated_at: now,
         last_opened_at: null,
         last_known_file_version: "demo-v1",
-        markdown: stringField(body, "markdown") || "",
+        markdown: readString(body, "markdown") || "",
         modifiedAt: Date.now(),
       }
       state.documents.unshift(document)
@@ -720,17 +706,17 @@ export async function createHandlers() {
       const body = await jsonRecord(request)
       const now = new Date().toISOString()
       const id = documentID()
-      const relativePath = stringField(body, "path") || "README.md"
+      const relativePath = readString(body, "path") || "README.md"
       const document: DemoDocument = {
         id,
-        project_id: stringField(body, "project_id") || "demo-project",
-        display_name: stringField(body, "display_name") || relativePath.split("/").at(-1) || "Document",
+        project_id: readString(body, "project_id") || "demo-project",
+        display_name: readString(body, "display_name") || relativePath.split("/").at(-1) || "Document",
         origin_kind: "repository",
         placement_kind: "local",
-        placement_id: stringField(body, "workspace_id") || "demo-workspace",
+        placement_id: readString(body, "workspace_id") || "demo-workspace",
         managed_relative_path: null,
         repository_id: `demo:${relativePath}`,
-        workspace_id: stringField(body, "workspace_id") || "demo-workspace",
+        workspace_id: readString(body, "workspace_id") || "demo-workspace",
         repository_relative_path: relativePath,
         branch: "main",
         status: "draft",
@@ -759,8 +745,8 @@ export async function createHandlers() {
       const document = documentFor(state, routeParam(params, "id"))
       if (!document) return HttpResponse.json({ error: "Not found" }, { status: 404 })
       const body = await jsonRecord(request)
-      document.markdown = stringField(body, "markdown") || ""
-      document.display_name = stringField(body, "display_name") || document.display_name
+      document.markdown = readString(body, "markdown") || ""
+      document.display_name = readString(body, "display_name") || document.display_name
       document.last_known_file_version = `demo-v${Date.now()}`
       document.modifiedAt = Date.now()
       document.updated_at = new Date().toISOString()

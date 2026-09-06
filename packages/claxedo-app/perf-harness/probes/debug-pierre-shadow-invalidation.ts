@@ -54,7 +54,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -89,7 +89,7 @@ const results = await page.evaluate(async () => {
     document.documentElement.style.removeProperty("--claxedo-floor-probe")
     void getComputedStyle(document.body).color
     values.sort((a, b) => a - b)
-    return values[Math.floor(values.length / 2)]!
+    return values[Math.floor(values.length / 2)]
   }
 
   const host =
@@ -116,7 +116,7 @@ const results = await page.evaluate(async () => {
       values.push(performance.now() - started)
     }
     values.sort((a, b) => a - b)
-    return { median: values[Math.floor(values.length / 2)]!, min: values[0]!, max: values.at(-1)! }
+    return { median: values[Math.floor(values.length / 2)], min: values[0], max: values.at(-1)! }
   }
 
   const out: { name: string; median: number; min: number; max: number; note: string }[] = []
@@ -128,7 +128,7 @@ const results = await page.evaluate(async () => {
   await record("A create <diffs-container>", "constructor attaches shadow + adopts the shared sheet", 5, () => {
     const element = document.createElement("diffs-container")
     stage.appendChild(element)
-    created.push(element as HTMLElement)
+    created.push(element)
   })
 
   // --- B. a bare shadow host with no stylesheet at all --------------------
@@ -169,7 +169,8 @@ const results = await page.evaluate(async () => {
     const node = document.createElement("style")
     node.setAttribute("data-theme-css", "")
     node.textContent = THEME_CSS
-    styleHosts[styleIndex++ % styleHosts.length]!.appendChild(node)
+    styleHosts[styleIndex % styleHosts.length].appendChild(node)
+    styleIndex += 1
   })
 
   // --- F. append a <style> node WITHOUT any @layer statement --------------
@@ -184,13 +185,14 @@ const results = await page.evaluate(async () => {
   await record("F append <style> (no @layer)", "same append, layer statement removed", 5, () => {
     const node = document.createElement("style")
     node.textContent = THEME_CSS_NO_LAYER
-    plainHosts[plainIndex++ % plainHosts.length]!.appendChild(node)
+    plainHosts[plainIndex % plainHosts.length].appendChild(node)
+    plainIndex += 1
   })
 
   // --- G. rewrite the text of an ALREADY-APPENDED <style> -----------------
   const resident = document.createElement("style")
   resident.textContent = THEME_CSS
-  styleHosts[0]!.appendChild(resident)
+  styleHosts[0].appendChild(resident)
   await settle()
   let tick = 0
   await record("G rewrite resident <style>.textContent", "upsertHostThemeStyle's update path", 5, () => {
@@ -220,7 +222,7 @@ const results = await page.evaluate(async () => {
   }
   let spriteIndex = 0
   await record("I append sprite <svg> to shadow root", "ensureSpriteSVG's append", 5, () => {
-    spriteRoot.appendChild(sprites[spriteIndex++ % sprites.length]!)
+    spriteRoot.appendChild(sprites[spriteIndex++ % sprites.length])
   })
 
   // --- J. inline custom property on a <code> inside a shadow root ---------
@@ -258,13 +260,14 @@ const results = await page.evaluate(async () => {
   for (let index = 0; index < 6; index++) {
     const node = document.createElement("style")
     node.textContent = THEME_CSS
-    styleHosts[index % styleHosts.length]!.appendChild(node)
+    styleHosts[index % styleHosts.length].appendChild(node)
     removable.push(node)
   }
   await settle()
   let removeIndex = 0
   await record("L remove <style> from shadow root", "cleanChildNodes' themeCSSStyle.remove()", 5, () => {
-    removable[removeIndex++ % removable.length]!.remove()
+    removable[removeIndex % removable.length].remove()
+    removeIndex += 1
   })
 
   // --- M..R. `:has()` anchors in the DOCUMENT's own stylesheets -----------
@@ -341,10 +344,6 @@ const results = await page.evaluate(async () => {
   // --- S..Z. DOCUMENT-scope acts the app itself can perform ---------------
   // These are the remaining ways a page can mark every element for recalc.
   // `W` is the deliberate control: it is the floor by construction.
-  const g = globalThis as unknown as {
-    CSS?: { highlights?: { set: (n: string, h: unknown) => void; delete: (n: string) => void } }
-    Highlight?: new (...ranges: Range[]) => unknown
-  }
   const documentSheet = new CSSStyleSheet()
   documentSheet.replaceSync(":root { --pierre-probe-doc: 1; }")
   await record("S document.adoptedStyleSheets rewrite", "same list re-assigned on the document", 5, () => {
@@ -360,17 +359,21 @@ const results = await page.evaluate(async () => {
   for (const node of headStyles) node.remove()
   await settle()
 
-  if (g.CSS?.highlights && typeof g.Highlight === "function") {
+  // `CSS.highlights` and `Highlight` are the CSS Custom Highlight API. Both are
+  // feature-detected: an older engine has neither, and this act is then skipped.
+  const highlights = CSS.highlights as HighlightRegistry | undefined
+  if (highlights && typeof Highlight === "function") {
     const target = document.body.firstElementChild ?? document.body
     let highlightTick = 0
     await record("U CSS.highlights set/delete", "the file-find highlight registry mutation", 5, () => {
-      if (highlightTick++ % 2 === 0) {
+      if (highlightTick % 2 === 0) {
         const range = document.createRange()
         range.selectNodeContents(target)
-        g.CSS!.highlights!.set("pierre-probe-find", new g.Highlight!(range))
-      } else g.CSS!.highlights!.delete("pierre-probe-find")
+        highlights.set("pierre-probe-find", new Highlight(range))
+      } else highlights.delete("pierre-probe-find")
+      highlightTick += 1
     })
-    g.CSS.highlights.delete("pierre-probe-find")
+    highlights.delete("pierre-probe-find")
   }
 
   let rootTick = 0

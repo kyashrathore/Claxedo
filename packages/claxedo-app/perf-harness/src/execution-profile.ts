@@ -5,10 +5,9 @@ export const EXECUTION_SUITES = ["renderer", "diagnostics", "attribution"] as co
 export type ExecutionSuite = (typeof EXECUTION_SUITES)[number]
 
 export function executionSuite(value = "renderer"): ExecutionSuite {
-  if (!EXECUTION_SUITES.includes(value as ExecutionSuite)) {
-    throw new Error(`Unknown --suite ${value}. Use ${EXECUTION_SUITES.join(", ")}`)
-  }
-  return value as ExecutionSuite
+  const suite = EXECUTION_SUITES.find((candidate) => candidate === value)
+  if (!suite) throw new Error(`Unknown --suite ${value}. Use ${EXECUTION_SUITES.join(", ")}`)
+  return suite
 }
 
 // Required causal observers are part of each suite's fixed measurement setup.
@@ -35,7 +34,7 @@ export function rejectRemovedExecutionOptions(env: NodeJS.ProcessEnv = process.e
 
 export function configureExecution(suite: ExecutionSuite | "memory", env: NodeJS.ProcessEnv = process.env) {
   rejectRemovedExecutionOptions(env)
-  const active = Object.keys(env).filter((name) => env[name] !== undefined && (diagnosticFlags.includes(name as typeof diagnosticFlags[number]) || (name.startsWith("CLAXEDO_PERF_") && !["CLAXEDO_PERF_CAUSAL", "CLAXEDO_PERF_MOCK_PORT", "CLAXEDO_PERF_APP_SCRIPT"].includes(name))))
+  const active = Object.keys(env).filter((name) => env[name] !== undefined && (diagnosticFlags.some((flag) => flag === name) || (name.startsWith("CLAXEDO_PERF_") && !["CLAXEDO_PERF_CAUSAL", "CLAXEDO_PERF_MOCK_PORT", "CLAXEDO_PERF_APP_SCRIPT"].includes(name))))
   if (suite !== "attribution" && active.length) {
     throw new Error(`Use --suite attribution for profiling or workload overrides: ${active.join(", ")}`)
   }

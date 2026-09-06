@@ -108,8 +108,7 @@ export function betterAuthD1Adapter(database: D1Database) {
           return { user, account }
         },
         rotateRefreshToken: async (parent, child, update) => {
-          assertRefreshRotation(parent, child, update)
-          const rotationNonce = requiredString(update, "rotationNonce", "oauthRefreshToken")
+          const rotation = validateRefreshRotation(parent, child, update)
           let results
           try {
             results = await database.batch([
@@ -120,24 +119,24 @@ export function betterAuthD1Adapter(database: D1Database) {
                 .bind(
                   d1Value(update.revoked),
                   d1Value(update.rotatedAt),
-                  rotationNonce,
+                  rotation.rotationNonce,
                   // Absent when `refreshTokenReuseInterval` is 0. Dropping it
                   // here silently disabled the lost-response replay window the
                   // foundation config asks for.
                   d1Value(update.rotationReplayExpiresAt) ?? null,
-                  parent.id as string,
-                  parent.clientId as string,
-                  parent.familyId as string,
-                  parent.generation as number,
+                  rotation.parent.id,
+                  rotation.parent.clientId,
+                  rotation.parent.familyId,
+                  rotation.parent.generation,
                 ),
-              conditionalRefreshInsert(database, parent, child, update, rotationNonce),
+              conditionalRefreshInsert(database, rotation, child, update),
             ])
           } catch (error) {
-            const committedChild = await findCommittedRefreshChild(database, parent, child)
+            const committedChild = await findCommittedRefreshChild(database, rotation)
             if (committedChild) return child
             const currentParent = await database.prepare(`select "revoked", "rotatedAt"
               from "oauthRefreshToken" where "id" = ? and "familyId" = ? and "generation" = ?`)
-              .bind(parent.id as string, parent.familyId as string, parent.generation as number)
+              .bind(rotation.parent.id, rotation.parent.familyId, rotation.parent.generation)
               .first<{ revoked: string | null; rotatedAt: string | null }>()
             if (!currentParent || currentParent.revoked != null || currentParent.rotatedAt != null) return undefined
             throw error
@@ -235,20 +234,36 @@ function requiredString(
   return value
 }
 
-function assertRefreshRotation(
+function requiredGeneration(record: Record<string, unknown>) {
+  const value = record.generation
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error("Better Auth D1 oauthRefreshToken.generation must be a non-negative safe integer")
+  }
+  return value
+}
+
+/**
+ * The single place the untyped Better Auth refresh-rotation payloads are proven.
+ * Every downstream bind reads the returned binding instead of re-narrowing the
+ * raw records, so the rotation's identity columns have one validation owner.
+ */
+type RefreshRotationBinding = {
+  parent: { id: string; clientId: string; familyId: string; generation: number }
+  child: { id: string; token: string; generation: number }
+  rotationNonce: string
+}
+
+function validateRefreshRotation(
   parent: Record<string, unknown>,
   child: Record<string, unknown>,
   update: Record<string, unknown>,
-) {
+): RefreshRotationBinding {
   const parentId = requiredString(parent, "id", "oauthRefreshToken")
   const clientId = requiredString(parent, "clientId", "oauthRefreshToken")
   const familyId = requiredString(parent, "familyId", "oauthRefreshToken")
-  const generation = parent.generation
-  if (!Number.isSafeInteger(generation) || (generation as number) < 0) {
-    throw new Error("Better Auth D1 oauthRefreshToken.generation must be a non-negative safe integer")
-  }
-  requiredString(child, "id", "oauthRefreshToken")
-  requiredString(child, "token", "oauthRefreshToken")
+  const generation = requiredGeneration(parent)
+  const childId = requiredString(child, "id", "oauthRefreshToken")
+  const childToken = requiredString(child, "token", "oauthRefreshToken")
   requiredString(child, "userId", "oauthRefreshToken")
   if (requiredString(child, "parentId", "oauthRefreshToken") !== parentId) {
     throw new Error("Better Auth D1 refresh child.parentId must match its parent.id")
@@ -259,11 +274,16 @@ function assertRefreshRotation(
   if (requiredString(child, "familyId", "oauthRefreshToken") !== familyId) {
     throw new Error("Better Auth D1 refresh child.familyId must match its parent.familyId")
   }
-  if (child.generation !== (generation as number) + 1) {
+  if (child.generation !== generation + 1) {
     throw new Error("Better Auth D1 refresh child.generation must immediately follow its parent")
   }
   if (!(update.revoked instanceof Date) || !(update.rotatedAt instanceof Date)) {
     throw new Error("Better Auth D1 refresh rotation requires canonical timestamps")
+  }
+  return {
+    parent: { id: parentId, clientId, familyId, generation },
+    child: { id: childId, token: childToken, generation: generation + 1 },
+    rotationNonce: requiredString(update, "rotationNonce", "oauthRefreshToken"),
   }
 }
 
@@ -306,10 +326,9 @@ function fixedInsert(
 
 function conditionalRefreshInsert(
   database: D1Database,
-  parent: Record<string, unknown>,
+  rotation: RefreshRotationBinding,
   child: Record<string, unknown>,
   update: Record<string, unknown>,
-  rotationNonce: string,
 ) {
   if (Object.keys(child).some((field) => !REFRESH_TOKEN_FIELDS.has(field))) {
     throw new Error("Better Auth D1 oauthRefreshToken record contains unsupported fields")
@@ -327,46 +346,43 @@ function conditionalRefreshInsert(
       and parent."revoked" = ? and parent."rotatedAt" = ? and parent."rotationNonce" = ?
       and not exists (select 1 from "oauthRefreshToken" as child where child."parentId" = parent."id")`)
     .bind(
-      child.id as string,
-      child.token as string,
+      rotation.child.id,
+      rotation.child.token,
       d1Value(child.confirmation),
       d1Value(child.requestedUserInfoClaims),
       d1Value(child.scopes),
       d1Value(child.resources),
       d1Value(child.createdAt),
       d1Value(child.expiresAt),
-      parent.id as string,
-      parent.clientId as string,
-      parent.familyId as string,
-      parent.generation as number,
+      rotation.parent.id,
+      rotation.parent.clientId,
+      rotation.parent.familyId,
+      rotation.parent.generation,
       d1Value(update.revoked),
       d1Value(update.rotatedAt),
-      rotationNonce,
+      rotation.rotationNonce,
     )
 }
 
-async function findCommittedRefreshChild(
-  database: D1Database,
-  parent: Record<string, unknown>,
-  child: Record<string, unknown>,
-) {
+async function findCommittedRefreshChild(database: D1Database, rotation: RefreshRotationBinding) {
   const committed = await database.prepare(`select "id" from "oauthRefreshToken"
     where "id" = ? and "parentId" = ? and "familyId" = ? and "generation" = ? and "token" = ?`)
     .bind(
-      child.id as string,
-      parent.id as string,
-      parent.familyId as string,
-      child.generation as number,
-      child.token as string,
+      rotation.child.id,
+      rotation.parent.id,
+      rotation.parent.familyId,
+      rotation.child.generation,
+      rotation.child.token,
     )
     .first<{ id: string }>()
-  return committed?.id === child.id
+  return committed?.id === rotation.child.id
 }
 
 function d1Value(value: unknown): string | number | null {
-  if (value === undefined) return null
+  if (value === undefined || value === null) return null
   if (value instanceof Date) return value.toISOString()
   if (typeof value === "boolean") return value ? 1 : 0
-  if (Array.isArray(value) || value && typeof value === "object") return JSON.stringify(value)
-  return value as string | number | null
+  if (typeof value === "object") return JSON.stringify(value)
+  if (typeof value === "string" || typeof value === "number") return value
+  throw new Error(`Better Auth D1 cannot bind a ${typeof value} value`)
 }

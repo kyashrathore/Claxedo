@@ -160,4 +160,6 @@ export const APP_ICONS = {
 
 export type AppIconName = keyof typeof APP_ICONS
 
-export const appIconNames = Object.freeze(Object.keys(APP_ICONS) as AppIconName[])
+export const appIconNames: readonly AppIconName[] = Object.freeze(
+  Object.keys(APP_ICONS).filter((name): name is AppIconName => name in APP_ICONS),
+)

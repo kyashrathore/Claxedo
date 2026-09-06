@@ -250,7 +250,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
-    // Turn 1 creates the session.
     await sendAndProve(page, "core turns first message", "ack 1: core turns first message")
     await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID), { timeout: 20_000 })
     expect(mock.requests.createSessionCount).toBe(1)
@@ -293,7 +292,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expectAssistantReplyVisible(page, "ack 2: core turns second message")
     await expectTurnCounts(page, { user: 2, assistant: 2 })
     await expectNoDuplicateRows(page)
-    expect(mock.requests.createSessionCount).toBe(1) // reload never re-creates the session
+    expect(mock.requests.createSessionCount).toBe(1)
 
     // This guard is about rate, not total: some endpoints legitimately poll at a
     // low frequency, so the question is whether traffic is proportional to elapsed
@@ -402,7 +401,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
-    // First send succeeds normally and creates the session.
     await sendAndProve(page, "core turns dispatch failure setup", "ack 1: core turns dispatch failure setup")
 
     // Layer a fail-once override on top of the shared mock's prompt_async route. Playwright
@@ -449,7 +447,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       .poll(() => mock.requests.badResponses.some((entry) => entry.includes("prompt_async")), { timeout: 10_000 })
       .toBe(true)
 
-    // Error toast.
     await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to send prompt", { timeout: 10_000 })
 
     // Optimistic user row removed; still only turn 1 on the timeline.
@@ -458,7 +455,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     ).toHaveCount(0, { timeout: 10_000 })
     await expectTurnCounts(page, { user: 1, assistant: 1 })
 
-    // Composer state restored exactly: text AND the image attachment.
     await expect(input).toContainText(failingText, { timeout: 10_000 })
     await expect(page.getByAltText("attach.png")).toBeVisible({ timeout: 10_000 })
 
@@ -478,7 +474,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
-    // First send succeeds normally and creates the session.
     await sendAndProve(page, "core turns chip dispatch failure setup", "ack 1: core turns chip dispatch failure setup")
 
     // Stub the composer's @-mention file-search endpoint (`searchFilesAndDirectories` ->
@@ -494,7 +489,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([MENTION_FILE_PATH]) })
     })
 
-    // Same fail-once layering as the text+attachment case above.
     let forceFailure = false
     let forcedFailureCount = 0
     await page.route("**/session/*/prompt_async**", async (route) => {
@@ -512,9 +506,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await input.fill(failingText + " ")
     await expect(input).toContainText(failingText, { timeout: 10_000 })
 
-    // Same choreography as core-composer-modes.spec.ts's "@ mention popover keyboard
-    // nav inserts a pill" (behavior 10): type `@`+query, wait for the popover row, Enter
-    // inserts the active item as an inline pill.
     await page.keyboard.type("@chip-context")
     const fileOption = page.locator('button[role="option"]').filter({ hasText: MENTION_FILE_PATH })
     await expect(fileOption).toBeVisible({ timeout: 15_000 })
@@ -535,7 +526,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       .poll(() => mock.requests.badResponses.some((entry) => entry.includes("prompt_async")), { timeout: 10_000 })
       .toBe(true)
 
-    // Error toast.
     await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to send prompt", { timeout: 10_000 })
 
     // Optimistic user row removed; still only turn 1 on the timeline.
@@ -544,7 +534,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     ).toHaveCount(0, { timeout: 10_000 })
     await expectTurnCounts(page, { user: 1, assistant: 1 })
 
-    // Composer state restored exactly: text AND the mention pill (the context-item chip).
     await expect(input).toContainText(failingText, { timeout: 10_000 })
     await expect(pill).toBeVisible({ timeout: 10_000 })
     await expect(input).toContainText("please look", { timeout: 10_000 })
@@ -825,8 +814,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       settled.top,
       "scrollTop after the reveal must stay near the compensated position, well above maxScroll (a bottom snap-back lands at maxScroll)",
     ).toBeLessThan(settled.height - settled.client - 100)
-    // And the turn the user was looking at is still on screen — mounted again
-    // now that the compensated position sits in the middle of the list.
     await expect(witness).toBeInViewport()
 
     // Bring the oldest turn into the virtualizer's mounted range with real wheel

@@ -89,7 +89,7 @@ describe("Harness + demo dispatch and abort", () => {
       call.method === "POST" && call.input.startsWith("/session/session-1/goal?")
     )
     expect(goalPosts).toHaveLength(1)
-    expect(JSON.parse(goalPosts[0]!.body ?? "{}")).toEqual({ objective: "Ship Goal support" })
+    expect(JSON.parse(goalPosts[0].body ?? "{}")).toEqual({ objective: "Ship Goal support" })
     expect(runtimeCalls.some((call) => call.input.includes("/goal/capabilities"))).toBe(true)
     expect(calls.prompt).toBe(0)
     expect(calls.async).toBe(0)

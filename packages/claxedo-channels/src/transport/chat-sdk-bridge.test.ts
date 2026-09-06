@@ -8,6 +8,17 @@ import {
 } from "./chat-sdk-bridge"
 import type { ChannelCore } from "../core/command-emit"
 
+/**
+ * `ChatSdkThread.post` receives a string or an AsyncIterable of deltas; the
+ * real SDK renders both. Draining it here records what a channel would show.
+ */
+async function postedText(text: string | AsyncIterable<string>): Promise<string> {
+  if (typeof text === "string") return text
+  let rendered = ""
+  for await (const chunk of text) rendered += chunk
+  return rendered
+}
+
 describe("chat sdk bridge", () => {
   test("normalizes SDK thread and message objects into channel envelopes", () => {
     expect(chatSdkEnvelope({
@@ -282,7 +293,7 @@ describe("chat sdk bridge", () => {
       core,
       toApprovalDecision: () => ({ callId: "call_1", approved: true, actorExternalUserId: "user_1" }),
     })
-    await mention({ id: "thread", channel: "telegram", post: async (text) => posted.push(String(text)) }, {
+    await mention({ id: "thread", channel: "telegram", post: async (text) => posted.push(await postedText(text)) }, {
       id: "msg",
       text: "hello",
     })
@@ -321,7 +332,7 @@ describe("chat sdk bridge", () => {
       core,
       dataMinimization: { maxLength: 90 },
     })
-    await mention({ id: "thread", channel: "slack", post: async (text) => posted.push(String(text)) }, {
+    await mention({ id: "thread", channel: "slack", post: async (text) => posted.push(await postedText(text)) }, {
       id: "msg",
       text: "hello",
     })

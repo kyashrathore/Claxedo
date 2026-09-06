@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import type { Plugin } from "@opencode-ai/plugin"
 import type { OpenCodeHost } from "./host"
 import { createToolPort } from "./tool-port"
-import { authorizeWorkspace } from "./scope"
+import { WorkspaceScope } from "./scope"
 
 const servers: Array<ReturnType<typeof Bun.serve>> = []
 
@@ -34,8 +34,8 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
     } },
   }
   const port = createToolPort({ client: async () => client } as unknown as OpenCodeHost)
-  const alpha = authorizeWorkspace({ workspaceID: "alpha", directory: process.cwd() })
-  const beta = authorizeWorkspace({ workspaceID: "beta", directory: "/tmp" })
+  const alpha = WorkspaceScope.authorize({ workspaceID: "alpha", directory: process.cwd() })
+  const beta = WorkspaceScope.authorize({ workspaceID: "beta", directory: "/tmp" })
   const registration = (sessionID: string, scope: typeof alpha, name: string) => ({
     sessionID, scope, callbackUrl: "http://localhost/callback",
     tools: [{ name, description: name, inputSchema: { type: "object" } }],
@@ -52,8 +52,10 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
   expect(catalogs.get(beta.directory)).toEqual(["beta_tool"])
 })
 
-afterEach(() => {
-  for (const server of servers.splice(0)) server.stop(true)
+afterEach(async () => {
+  // `stop(true)` closes active connections; awaiting it keeps a socket from
+  // outliving the test that opened it.
+  await Promise.all(servers.splice(0).map((server) => server.stop(true)))
 })
 
 test("merged Session tool groups keep their authoritative callback", async () => {
@@ -95,7 +97,7 @@ test("merged Session tool groups keep their authoritative callback", async () =>
   const port = createToolPort(host)
 
   await port.registerSession({
-    scope: authorizeWorkspace({ workspaceID: "test", directory: process.cwd() }),
+    scope: WorkspaceScope.authorize({ workspaceID: "test", directory: process.cwd() }),
     sessionID: "session-1",
     callbackUrl: `${server.url}default`,
     tools: [

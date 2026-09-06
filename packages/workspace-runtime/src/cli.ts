@@ -15,13 +15,14 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText } from "./env"
-import { RUNTIME_NATIVE_HARNESS_IDS, type RuntimeNativeHarnessId } from "./routes/config"
+import { RUNTIME_NATIVE_HARNESS_IDS } from "./routes/config"
+import { rec, str } from "./json-value"
 import { createWorkspaceOpenCodeRuntime } from "./opencode-runtime"
 
-const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
+const pkg = rec(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")))
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-  console.log(pkg.version)
+  console.log(str(pkg?.version) ?? "unknown")
   process.exit(0)
 }
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -33,11 +34,14 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 const port = parseInt(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_PORT") ?? "3002", 10)
 const hostname = workspaceRuntimeListenHostname(process.env)
 const relay = await workspaceRelayRuntimeOptionsFromEnv(process.env, port)
-const nativeHarness = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_NATIVE_HARNESS")
+const nativeHarnessInput = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_NATIVE_HARNESS")
+// `find` over the canonical id list produces the literal type; the membership
+// test below left a bare `string`, which is what forced the assertion.
+const nativeHarness = RUNTIME_NATIVE_HARNESS_IDS.find((id) => id === nativeHarnessInput)
 const connectionId = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_CONNECTION_ID")
-if (nativeHarness && connectionId) throw new Error("Select either WORKSPACE_RUNTIME_NATIVE_HARNESS or WORKSPACE_RUNTIME_CONNECTION_ID")
-if (nativeHarness && !RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === nativeHarness)) {
-  throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarness}`)
+if (nativeHarnessInput && connectionId) throw new Error("Select either WORKSPACE_RUNTIME_NATIVE_HARNESS or WORKSPACE_RUNTIME_CONNECTION_ID")
+if (nativeHarnessInput && !nativeHarness) {
+  throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarnessInput}`)
 }
 // A standalone runtime selecting the native OpenCode harness owns its public
 // embedded-SDK runtime and closes it during process drain.
@@ -53,7 +57,7 @@ const server = startServer(port, {
       : privateNetworkDevUnsafeWorkspaceRuntimeExposure(
         "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK managed runtime",
       ),
-  ...(nativeHarness ? { harness: { kind: "native" as const, harnessId: nativeHarness as RuntimeNativeHarnessId } }
+  ...(nativeHarness ? { harness: { kind: "native" as const, harnessId: nativeHarness } }
     : connectionId ? { harness: { kind: "connection" as const, connectionId } } : {}),
   ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
   // The kit CLI mounts NO route contributions. Host-supplied tool brokers are a

@@ -116,7 +116,7 @@ describe("SandboxProviderSurface", () => {
     const many: SandboxProviderCatalog = {
       defaultProviderId: "daytona",
       providers: [
-        catalog.providers[0]!,
+        catalog.providers[0],
         { id: "e2b", label: "E2B", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
       ],
     }
@@ -133,7 +133,7 @@ describe("SandboxProviderSurface", () => {
   test("an already-configured provider reads as ready", () => {
     render(() => (
       <SandboxProviderSurface
-        catalog={{ ...catalog, providers: [{ ...catalog.providers[0]!, configured: true }] }}
+        catalog={{ ...catalog, providers: [{ ...catalog.providers[0], configured: true }] }}
       />
     ))
 

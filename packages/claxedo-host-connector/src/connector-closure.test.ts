@@ -27,7 +27,7 @@ function sourceFiles(dir = SRC): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const file = path.join(dir, entry)
     if (statSync(file).isDirectory()) return sourceFiles(file)
-    if (!/\.ts$/.test(file) || /\.test\.ts$/.test(file)) return []
+    if (!file.endsWith('.ts') || file.endsWith('.test.ts')) return []
     return [file]
   })
 }
@@ -107,6 +107,6 @@ describe("Host Connector's dependency closure", () => {
     const specifiers = [...sample.matchAll(pattern)].map((match) => match[1])
 
     expect(specifiers).toEqual(["hono", "@claxedo/server"])
-    expect(specifiers.filter((s) => s!.startsWith("@claxedo/"))).toEqual(["@claxedo/server"])
+    expect(specifiers.filter((s) => s.startsWith("@claxedo/"))).toEqual(["@claxedo/server"])
   })
 })

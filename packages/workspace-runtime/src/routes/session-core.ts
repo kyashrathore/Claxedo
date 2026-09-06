@@ -47,9 +47,11 @@ import {
   sessionPromptReply,
   type ActiveTurnScope,
   type RuntimeSessionBusEvent,
+  parseSessionPromptBody,
   type SessionPromptBody,
 } from "../session/service"
 import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig } from "../session-config"
+import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import {
   managedWorkspaceSessionAccessPolicy,
@@ -76,6 +78,7 @@ import {
   type ActiveSessionTurnLease,
 } from "./session-turn-lease"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
+import { SessionRollbackError } from "../session-rollback-error"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -116,7 +119,14 @@ type MessageSnapshot = {
   fencingToken?: number
 }
 
-type Ctx = Context
+/**
+ * The request context every route hook receives. Exported so the thin
+ * `SessionRoutes` wrapper declares the SAME context its own hosts are handed,
+ * instead of a second `unknown` that every host then has to cast back.
+ */
+export type SessionRouteContext = Context
+
+type Ctx = SessionRouteContext
 
 async function readSession(
   opts: Opts,
@@ -192,11 +202,31 @@ function messagePageResponse(c: Ctx, page: AgentMessagePage) {
   return noStoreJson(c, page.messages)
 }
 
+/**
+ * Every status Hono will accept on a body-carrying response: its `StatusCode`
+ * union minus the content-less 101/204/205/304.
+ *
+ * A status that reaches these routes is a plain `number` — read off a delegate's
+ * `Response` or off a thrown `AgentMessagePageError` — while `ContentfulStatusCode`
+ * is a literal union. Recognising the number against this list produces one
+ * honestly; the call sites used to assert it.
+ */
+const CONTENTFUL_STATUS_CODES: readonly ContentfulStatusCode[] = [
+  100, 102, 103,
+  200, 201, 202, 203, 206, 207, 208, 226,
+  300, 301, 302, 303, 305, 306, 307, 308,
+  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415,
+  416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451,
+  500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+]
+
+function contentfulStatus(status: number): ContentfulStatusCode | undefined {
+  return CONTENTFUL_STATUS_CODES.find((code) => code === status)
+}
+
 function throwMessagePageError(error: unknown, fallbackStatus: 500 | 502): never {
   if (!(error instanceof AgentMessagePageError)) throw error
-  const status = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
-    ? error.status as ContentfulStatusCode
-    : fallbackStatus
+  const status = error.status >= 400 ? contentfulStatus(error.status) ?? fallbackStatus : fallbackStatus
   throw new HTTPException(status, { message: error.message, cause: error })
 }
 
@@ -249,7 +279,11 @@ type Opts = {
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string) => Promise<{ id: string }>
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
-  getStatus?: (c: Ctx, directory: RuntimeDirectory) => Promise<unknown | Response> | unknown | Response
+  /**
+   * A status payload, or a `Response` the route forwards verbatim. Awaited by
+   * the route, so an async implementation is fine.
+   */
+  getStatus?: (c: Ctx, directory: RuntimeDirectory) => unknown
   afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
   getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
@@ -283,7 +317,7 @@ type Opts = {
   afterUpdateSession?: (
     c: Ctx,
     directory: RuntimeDirectory,
-    session: unknown,
+    session: AgentSession,
     updates: { title?: string; time?: { archived?: number } },
   ) => Promise<void> | void
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
@@ -344,8 +378,32 @@ export function parseDraftId(raw: string | null | undefined): string | undefined
   return raw
 }
 
-function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+/**
+ * The one JSON request-body read in these routes.
+ *
+ * Hono types `c.req.json()` as `any` and rejects on an absent or malformed
+ * body, so every route repeated `(await c.req.json().catch(() => ({}))) as
+ * Shape` — an assertion promising a shape nobody had checked. Reading it here
+ * hands back an inspectable record; handlers pick fields through the
+ * `json-value` narrowers, so `{"command": 42}` no longer reaches an adapter
+ * that believes it holds a string.
+ */
+async function requestBody(c: Ctx): Promise<Record<string, unknown>> {
+  const parsed: unknown = await c.req.json().catch(() => undefined)
+  return rec(parsed) ?? {}
+}
+
+/** The `string[][]` a question reply must carry, or `undefined` when it does not. */
+function questionAnswers(input: unknown): string[][] | undefined {
+  const rows = arr(input)
+  if (!rows) return undefined
+  const answers: string[][] = []
+  for (const row of rows) {
+    const values = arr(row)
+    if (!values?.every((value) => str(value) !== undefined)) return undefined
+    answers.push(values.filter((value): value is string => str(value) !== undefined))
+  }
+  return answers
 }
 
 function sessionNotFound() {
@@ -432,8 +490,8 @@ function goalRoute(
 }
 
 function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unknown {
-  if (!s || typeof s !== "object") return s
-  const r = s as Record<string, unknown>
+  const r = rec(s)
+  if (!r) return s
   if (r.time) return r
   const ts = Date.now()
   return {
@@ -455,8 +513,8 @@ function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unk
 
 function summarizeSession(s: unknown): unknown {
   const row = normalizeSession(s)
-  if (!row || typeof row !== "object") return row
-  const item = row as Record<string, unknown>
+  const item = rec(row)
+  if (!item) return row
   return {
     id: item.id,
     title: item.title ?? null,
@@ -586,7 +644,7 @@ async function acquireManagedPromptLease(input: {
   const acquired = await acquireSessionTurnLease({
     policy: input.opts.sessionAccessPolicy!,
     access: {
-      ...sessionAccessContext(input.c as never),
+      ...sessionAccessContext(input.c),
       operation: "prompt",
       sessionId: input.sessionId,
       method: input.c.req.method,
@@ -635,7 +693,7 @@ function registrationOperationId(c: Ctx) {
 
 function registrationInput(c: Ctx, sessionId: string, operationId: string, title?: string) {
   return {
-    ...sessionAccessContext(c as never),
+    ...sessionAccessContext(c),
     operation: "session_create" as const,
     sessionId,
     registrationOperationId: operationId,
@@ -678,7 +736,7 @@ async function compensateRegistration(input: {
     await input.adapter.deleteSession(await requireExecutionBinding(input.opts, input.c, input.directory, input.sessionId, input.adapter))
     await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
   } catch (error) {
-    throw new AggregateError([error], "Session compensation could not delete runtime state")
+    throw new Error("Session compensation could not delete runtime state", { cause: error })
   }
   const completed = await policy.completeRegistrationCompensation({ ...registration, reason: input.reason })
   if (!completed.allowed) throw new Error(`Session compensation completion was denied: ${completed.code}`)
@@ -705,11 +763,11 @@ async function unsupportedIfUnavailable(
 ) {
   const caps = await adapter.readHarnessCapabilities(directory, sessionId ? { sessionId } : undefined)
   if (!caps[key]) return unsupportedOperation(c, caps, operation, { capability: key })
-  if (typeof adapter[method] === "function") return
+  if (typeof adapter[method] === "function") return undefined
   return unsupportedOperation(c, caps, operation, {
     capability: key,
     reason: "adapter_method_unavailable",
-    message: `${caps.harness} advertised ${key} but did not provide ${String(method)}`,
+    message: `${caps.harness} advertised ${key} but did not provide ${method}`,
   })
 }
 
@@ -738,7 +796,7 @@ async function sessionOperationGuard(
   operation: SessionAccessOperation,
 ) {
   const decision = await opts.sessionAccessPolicy?.authorize({
-    ...sessionAccessContext(c as never),
+    ...sessionAccessContext(c),
     sessionId,
     operation,
     method: c.req.method,
@@ -823,10 +881,7 @@ async function rollbackCreatedSession(
     await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
     await opts.afterDeleteSession?.(c, directory, sessionId)
   } catch (cleanupError) {
-    throw new AggregateError(
-      [cause, cleanupError],
-      "Session creation failed and runtime rollback also failed",
-    )
+    throw new SessionRollbackError("runtime", cause, cleanupError)
   }
 }
 
@@ -838,7 +893,7 @@ async function collectionSessionIds(
 ) {
   if (!opts.sessionAccessPolicy) return new Set(sessionIds)
   return new Set(await opts.sessionAccessPolicy.filterSessions({
-    ...sessionAccessContext(c as never),
+    ...sessionAccessContext(c),
     operation,
     method: c.req.method,
     path: c.req.path,
@@ -890,21 +945,21 @@ async function filterSessionRows<T>(opts: Opts, c: Ctx, operation: SessionAccess
 }
 
 async function filterSessionStatus(opts: Opts, c: Ctx, status: unknown) {
-  if (!status || typeof status !== "object" || Array.isArray(status)) return status
-  const entries = Object.entries(status as Record<string, unknown>)
+  const row = rec(status)
+  if (!row) return status
+  const entries = Object.entries(row)
   const allowed = await collectionSessionIds(opts, c, "session_status", entries.map(([sessionId]) => sessionId))
   return Object.fromEntries(entries.filter(([sessionId]) => allowed.has(sessionId)))
 }
 
-function sessionBusEventSessionId(event: unknown) {
+function sessionBusEventSessionId(event: unknown): string | undefined {
   const row = rec(event)
-  if (typeof row?.sessionId === "string") return row.sessionId
-  if (typeof row?.sessionID === "string") return row.sessionID
-  if (row?.type === "process.status" && typeof row.configId === "string") return row.configId
-  const payload = rec(row?.payload)
-  const properties = rec(payload?.properties)
-  if (typeof properties?.sessionID === "string") return properties.sessionID
-  if (typeof properties?.sessionId === "string") return properties.sessionId
+  const properties = rec(rec(row?.payload)?.properties)
+  return str(row?.sessionId)
+    ?? str(row?.sessionID)
+    ?? (row?.type === "process.status" ? str(row.configId) : undefined)
+    ?? str(properties?.sessionID)
+    ?? str(properties?.sessionId)
 }
 
 function sensitiveSessionBusEvent(event: unknown) {
@@ -1030,7 +1085,7 @@ export function createSessionRoutes(opts: Opts) {
         if (data === undefined) return status
         return c.json(
           await filterSessionStatus(opts, c, data),
-          status.status as ContentfulStatusCode,
+          contentfulStatus(status.status) ?? 200,
           Object.fromEntries(status.headers.entries()),
         )
       }
@@ -1038,7 +1093,8 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string }
+      const wire = await requestBody(c)
+      const body = { id: str(wire.id), title: str(wire.title) }
       const guarded = await sessionOperationGuard(opts, c, "", "session_create")
       if (guarded) return guarded
       const operationId = registrationOperationId(c)
@@ -1048,7 +1104,7 @@ export function createSessionRoutes(opts: Opts) {
           "Managed session creation requires a preassigned session id and reservation operation",
         ), 400)
       }
-      const config = normalizeSessionCreateConfig(body)
+      const config = normalizeSessionCreateConfig(wire)
       const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
       const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
       opts.publishSessionLifecycle?.({
@@ -1198,10 +1254,10 @@ export function createSessionRoutes(opts: Opts) {
     .get("/session/:id/goal", goalRoute(opts, "goal_read", async ({ c, sessionId, directory, runtime }) =>
       noStoreJson(c, await runtime.goals.read(sessionId, directory))))
     .post("/session/:id/goal", goalRoute(opts, "goal_start", async ({ c, sessionId, directory, runtime }) => {
-      const body = (await c.req.json().catch(() => ({}))) as { objective?: unknown }
+      const body = await requestBody(c)
       return goalMutationResponse(
         c,
-        await runtime.goals.start({ sessionId, objective: body.objective as string }, directory),
+        await runtime.goals.start({ sessionId, objective: str(body.objective) ?? "" }, directory),
         201,
       )
     }))
@@ -1247,7 +1303,13 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const body = (await c.req.json().catch(() => ({}))) as { title?: string; time?: { archived?: number } }
+      const wire = await requestBody(c)
+      const title = str(wire.title)
+      const archived = num(rec(wire.time)?.archived)
+      const body = {
+        ...(title !== undefined ? { title } : {}),
+        ...(archived !== undefined ? { time: { archived } } : {}),
+      }
       const session = await adapter.updateSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body)
       if (!session) return c.json(sessionNotFound(), 404)
       await after(opts.afterUpdateSession?.(c, directory, session, body))
@@ -1260,7 +1322,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const body = normalizeSessionConfigUpdate(await c.req.json().catch(() => ({})))
+      const body = normalizeSessionConfigUpdate(await requestBody(c))
       const requestedHarness = opts.requestedSessionHarness?.(c)
       if (requestedHarness) body.harness = requestedHarness
       if (body.harness) {
@@ -1302,8 +1364,8 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
-      const access = sessionAccessContext(c as never)
-      const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      const access = sessionAccessContext(c)
+      const parsedBody = parseSessionPromptBody(await c.req.json().catch(() => undefined))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       const turnAdmission = await acquireManagedPromptLease({
         opts,
@@ -1502,8 +1564,7 @@ export function createSessionRoutes(opts: Opts) {
           message: `${caps.harness} cannot be told about permission modes`,
         })
       }
-      const body = (await c.req.json().catch(() => ({}))) as { modeId?: unknown }
-      const modeId = typeof body.modeId === "string" ? body.modeId : ""
+      const modeId = str((await requestBody(c)).modeId) ?? ""
       if (!modeId) return c.json({ error: "modeId is required" }, 400)
       // The adapter's own read-back is returned verbatim. A harness that kept a
       // different mode than the one requested must reach the client as the mode
@@ -1573,7 +1634,8 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "fork", "forkSession", "fork", sessionId)
       if (unsupported) return unsupported
-      const body = (await c.req.json().catch(() => ({}))) as { id?: string; messageId?: string }
+      const wire = await requestBody(c)
+      const body = { id: str(wire.id), messageId: str(wire.messageId) }
       const operationId = registrationOperationId(c)
       if (managedRegistration(opts) && (!body.id || !operationId)) {
         return c.json(errorBody(
@@ -1624,10 +1686,10 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "executeCommand", "command")
       if (unsupported) return unsupported
-      const body = (await c.req.json().catch(() => ({}))) as { command?: string }
+      const body = await requestBody(c)
       await adapter.executeCommand!(
         await requireExecutionBinding(opts, c, directory, sessionId, adapter),
-        body.command ?? "",
+        str(body.command) ?? "",
       )
       return c.json({ ok: true })
     })
@@ -1639,17 +1701,16 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "shell", "shell")
       if (unsupported) return unsupported
-      const body = (await c.req.json().catch(() => ({}))) as {
-        command?: string
-        agent?: string
-        model?: { providerID: string; modelID: string }
-        messageID?: string
-      }
+      const body = await requestBody(c)
+      const shellModel = rec(body.model)
+      const providerID = str(shellModel?.providerID)
+      const modelID = str(shellModel?.modelID)
+      const shellMessageID = str(body.messageID)
       await adapter.shell!(sessionId, {
-        command: body.command ?? "",
-        agent: body.agent ?? "",
-        ...(body.model ? { model: body.model } : {}),
-        ...(body.messageID ? { messageID: body.messageID } : {}),
+        command: str(body.command) ?? "",
+        agent: str(body.agent) ?? "",
+        ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
+        ...(shellMessageID ? { messageID: shellMessageID } : {}),
       }, directory)
       return c.json({ ok: true })
     })
@@ -1661,15 +1722,12 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "summarize", "summarize")
       if (unsupported) return unsupported
-      const body = (await c.req.json().catch(() => ({}))) as {
-        providerID?: string
-        modelID?: string
-        auto?: boolean
-      }
+      const body = await requestBody(c)
+      const auto = bool(body.auto)
       await adapter.summarize!(sessionId, {
-        providerID: body.providerID ?? "",
-        modelID: body.modelID ?? "",
-        ...(body.auto !== undefined ? { auto: body.auto } : {}),
+        providerID: str(body.providerID) ?? "",
+        modelID: str(body.modelID) ?? "",
+        ...(auto !== undefined ? { auto } : {}),
       }, directory)
       return c.json({ ok: true })
     })
@@ -1679,7 +1737,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
-      const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      const parsedBody = parseSessionPromptBody(await c.req.json().catch(() => undefined))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       if (body.messageID) {
         const admitted = promptAdmissions.get(id) ?? new Set<string>()
@@ -1723,7 +1781,7 @@ export function createSessionRoutes(opts: Opts) {
         }
         return turnAdmission.rejected
       }
-      const access = sessionAccessContext(c as never)
+      const access = sessionAccessContext(c)
       if (!runtime) await applyTurnPermissionMode({
         adapter,
         binding: await requireExecutionBinding(opts, c, directory, id, adapter),
@@ -1735,7 +1793,10 @@ export function createSessionRoutes(opts: Opts) {
             settleAdmission = resolve
           })
         : undefined
-      ;(async () => {
+      // prompt_async answers as soon as the turn is ADMITTED; the turn itself
+      // runs on after the response. The IIFE below has its own catch/finally,
+      // so nothing here can reject unobserved.
+      void (async () => {
         try {
           const turn = runtime
             ? await runRuntimePromptTurn({
@@ -1866,8 +1927,7 @@ export function createSessionRoutes(opts: Opts) {
       if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
       const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_response")
       if (guarded) return guarded
-      const body = (await c.req.json().catch(() => ({}))) as { response?: string }
-      const r = body.response ?? "deny"
+      const r = str((await requestBody(c)).response) ?? "deny"
       const decision = r === "once" ? "allow_once" : r === "always" ? "allow_always" : "deny"
       const result = await adapter.respondPermission!(
         await requireExecutionBinding(opts, c, directory, sessionId, adapter),
@@ -1887,20 +1947,11 @@ export function createSessionRoutes(opts: Opts) {
       const admitted = await admitQuestionOperation(opts, c, "replyQuestion")
       if (admitted.rejected) return admitted.rejected
       const { id, directory, adapter, sessionId } = admitted
-      const body = await c.req.json().catch(() => undefined)
-      if (
-        !body
-        || typeof body !== "object"
-        || Array.isArray(body)
-        || Object.keys(body).some((key) => key !== "answers")
-        || !Array.isArray((body as { answers?: unknown }).answers)
-        || (body as { answers: unknown[] }).answers.some((answer) =>
-          !Array.isArray(answer) || answer.some((value) => typeof value !== "string")
-        )
-      ) {
-        return c.json({ error: "answers must be an array of string arrays" }, 400)
-      }
-      const answers = (body as { answers: string[][] }).answers
+      const body = rec(await c.req.json().catch(() => undefined))
+      const answers = body && Object.keys(body).every((key) => key === "answers")
+        ? questionAnswers(body.answers)
+        : undefined
+      if (!answers) return c.json({ error: "answers must be an array of string arrays" }, 400)
       const result = await adapter.replyQuestion!(
         await requireExecutionBinding(opts, c, directory, sessionId, adapter),
         id,

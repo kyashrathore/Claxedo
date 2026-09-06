@@ -11,14 +11,14 @@ import {
 import {
   requireAuthority,
   type ProjectAction,
-  type ProjectId,
   type WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
+import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServices } from "../../authority/services"
 import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../backend"
 import type { DocumentIndexEntry } from "../index-store"
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "../errors"
-import type { DocumentHandle, DocumentVersion, SnapshotID } from "../port"
+import { toDocumentVersion, toSnapshotID, type DocumentHandle } from "../port"
 import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../../documents/service"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
@@ -124,9 +124,7 @@ type AuthenticatedScope = Readonly<{
 type DirectScope = AuthenticatedScope & Readonly<{ entry: DocumentIndexEntry }>
 
 export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRouteOptions<H> = {}) {
-  const documents = () => createDocumentsService(requireBackend(options), {
-    ...(options.documentChangedSink ? { documentChangedSink: options.documentChangedSink } : {}),
-  })
+  const documents = () => createDocumentsService(requireBackend(options), (options.documentChangedSink ? { documentChangedSink: options.documentChangedSink } : {}))
   return new Hono()
     .onError((error) => errorResponse(error))
     .get("/statuses", async (context) => {
@@ -359,7 +357,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         await documents().pinWorkSource(
           serviceScope(scope),
           scope.entry.id,
-          context.req.param("snapshotId") as SnapshotID,
+          toSnapshotID(context.req.param("snapshotId")),
           { workSourceId: body.work_source_id, revisionId: body.revision_id },
         ),
       )
@@ -388,7 +386,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         await documents().restoreSnapshot(
           serviceScope(scope),
           scope.entry.id,
-          context.req.param("snapshotId") as SnapshotID,
+          toSnapshotID(context.req.param("snapshotId")),
           expectedVersion,
         ),
       )
@@ -460,8 +458,8 @@ async function authorize<H extends DocumentHandle>(
   action: ProjectAction,
 ) {
   const result = await routeAuthority(options).authorizeProject(auth, {
-    orgId: orgId as never,
-    projectId: projectId as ProjectId,
+    orgId: asOrgId(orgId),
+    projectId: asProjectId(projectId),
     action,
   })
   if (!result.ok) throw notFound()
@@ -531,7 +529,7 @@ async function cappedBody(request: Request) {
 
 function requiredVersion(value: string | undefined) {
   if (!value) throw new DocumentHttpError(428, "document_version_required", "If-Match is required")
-  return value as DocumentVersion
+  return toDocumentVersion(value)
 }
 
 function requiredQuery(value?: string) {

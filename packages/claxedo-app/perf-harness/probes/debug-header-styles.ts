@@ -18,7 +18,7 @@ const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(fixture, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -27,7 +27,7 @@ const report = await page.evaluate(() => {
   const pick = (element: Element | null | undefined, props: string[]) => {
     if (!element) return null
     const style = getComputedStyle(element)
-    const rect = (element as HTMLElement).getBoundingClientRect()
+    const rect = element.getBoundingClientRect()
     return {
       rect: { x: Math.round(rect.x), w: Math.round(rect.width), h: Math.round(rect.height) },
       ...Object.fromEntries(props.map((prop) => [prop, style.getPropertyValue(prop)])),

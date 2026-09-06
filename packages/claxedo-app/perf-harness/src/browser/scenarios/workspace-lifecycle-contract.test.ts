@@ -38,8 +38,8 @@ describe("workspace lifecycle benchmark contract", () => {
     expect(seed.changed_files).toBe(500)
     const fixture = fixtureFor("workspace-lifecycle", seed)
     expect(fixture.changedFiles).toHaveLength(500)
-    expect(fixture.changedFiles[0]!.additions).toBe(WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES)
-    expect(fixture.changedFiles[0]!.patch.length).toBeGreaterThan(10_000)
+    expect(fixture.changedFiles[0].additions).toBe(WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES)
+    expect(fixture.changedFiles[0].patch.length).toBeGreaterThan(10_000)
   })
 
   test("cold open fails when the fetch never starts, data never arrives, or content never renders", () => {

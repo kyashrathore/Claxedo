@@ -1,10 +1,11 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createMockApi, mockApiRegistration } from "./mock-api"
+import { requestUrl } from "@/lib/url"
 
 const realApiModule = { ...(await import(`${import.meta.dir}/../../platform/api/api.ts?mock-api-restore`)) }
 
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
 })
 
 describe("createMockApi defaults", () => {
@@ -122,7 +123,7 @@ describe("createMockApi defaults", () => {
     const fixture = createMockApi({
       baseUrl: "http://test.local",
       authFetch: async (input) => {
-        customCalls.push(String(input))
+        customCalls.push(requestUrl(input))
         return Response.json({ routed: true })
       },
     })
@@ -191,14 +192,14 @@ describe("pure export mirrors match the real ../api.ts implementation", () => {
 describe("mock.module(...register) registers the fixture against the shared alias", () => {
   let calls: Array<{ url: string; init?: RequestInit }>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // mockApiRegistration's default specifier ("@/platform/api/api") resolves,
     // via tsconfig paths, to the same absolute module every consumer's
     // "./api" / "@/platform/api/api" specifiers do — this test proves that
     // redirection works, standing in for a real consumer file wiring the
     // fixture up the way the module header's usage example shows.
     const { fixture, register } = mockApiRegistration({ baseUrl: "http://installed.test" })
-    mock.module(...register)
+    await mock.module(...register)
     calls = fixture.calls
   })
 

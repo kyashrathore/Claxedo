@@ -1,5 +1,5 @@
 import type { ToolDisplay, ToolIntent } from "../contracts/agent-runtime-event"
-import { text } from "./value"
+import { text } from "../value"
 
 export function canonicalToolIntent(input: { kind?: string; toolName?: string }): ToolIntent {
   const kind = input.kind?.toLowerCase()

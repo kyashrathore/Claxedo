@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   blockedFrameRatio,
   eventTimingP95,
+  readAgentMetricValue,
   resourceMetrics,
   terminalThroughput,
 } from "../src/agent-metrics"
@@ -119,5 +120,23 @@ describe("agent-app benchmark metric semantics", () => {
       peakRss: { state: "invalid", reason: "resource-sample-gap" },
       cpuP95: { state: "invalid", reason: "resource-sample-gap" },
     })
+  })
+})
+
+describe("metric value readback", () => {
+  test("reads back each state the metric constructors produce", () => {
+    expect(readAgentMetricValue({ state: "exact", value: 12, unit: "ms" })).toEqual({ state: "exact", value: 12, unit: "ms" })
+    expect(readAgentMetricValue({ state: "bounded", upperBound: 5, unit: "ms", reason: "clamped" }))
+      .toEqual({ state: "bounded", upperBound: 5, unit: "ms", reason: "clamped" })
+    expect(readAgentMetricValue({ state: "unsupported", reason: "no-probe" })).toEqual({ state: "unsupported", reason: "no-probe" })
+    expect(readAgentMetricValue({ state: "invalid", reason: "invalid-probe-count" })).toEqual({ state: "invalid", reason: "invalid-probe-count" })
+  })
+
+  test("rejects a state this benchmark does not report", () => {
+    expect(() => readAgentMetricValue({ state: "estimated", value: 1, unit: "ms" })).toThrow("unsupported metric state")
+  })
+
+  test("rejects an invalid metric that lost its reason", () => {
+    expect(() => readAgentMetricValue({ state: "invalid" })).toThrow("invalid metric requires a reason")
   })
 })

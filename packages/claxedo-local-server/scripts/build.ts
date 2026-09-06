@@ -5,9 +5,10 @@ import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode
 
 import {
   normalizeSourceMapBuildManifest,
+  readSourceMapMetadata,
   serializeBuildManifest,
-  type SourceMapMetadata,
 } from "../../../script/product-boundary/normalize-build-manifest"
+import { runBunBuild } from "../../../script/bun-build"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
@@ -18,7 +19,7 @@ const runtimeRequire = createRequire(path.join(ROOT, "../workspace-runtime/packa
 
 fs.rmSync(DIST, { recursive: true, force: true })
 
-const result = await Bun.build({
+const result = await runBunBuild("Local Server bundle failed", {
   entrypoints: [ENTRY],
   outdir: DIST,
   naming: { entry: "self-hosted-execution.[ext]" },
@@ -39,7 +40,6 @@ const result = await Bun.build({
     },
   }],
 })
-if (!result.success) throw new AggregateError(result.logs, "Local Server bundle failed")
 stageOpenCodeSdk(path.join(DIST, "node_modules"))
 
 const journalModule = require.resolve("@claxedo/server-core/platform/db/journal")
@@ -48,7 +48,7 @@ if (!fs.existsSync(migrations)) throw new Error(`Local Server migration journal 
 fs.cpSync(migrations, path.join(DIST, "claxedo-migration"), { recursive: true })
 
 const mapFile = path.join(DIST, "self-hosted-execution.js.map")
-const sourceMap = JSON.parse(fs.readFileSync(mapFile, "utf8")) as SourceMapMetadata
+const sourceMap = readSourceMapMetadata(fs.readFileSync(mapFile, "utf8"), mapFile)
 const manifest = normalizeSourceMapBuildManifest({
   entry: ENTRY,
   sourceMap,

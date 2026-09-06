@@ -356,9 +356,9 @@ describe("syncLocalCredentials", () => {
       .filter((item) => item.provider_id === "codex-app-server")
 
     expect(discovered).toHaveLength(1)
-    expect(discovered[0]!.account_id).toBe("shared-account")
-    expect(discovered[0]!.origin).toBe("~/.codex/auth.json")
-    expect(JSON.parse(discovered[0]!.secret).access).toBe("renewed-access")
+    expect(discovered[0].account_id).toBe("shared-account")
+    expect(discovered[0].origin).toBe("~/.codex/auth.json")
+    expect(JSON.parse(discovered[0].secret).access).toBe("renewed-access")
   })
 
   test("still lists a top-level account that has no accounts-dir copy", async () => {
@@ -379,7 +379,10 @@ describe("syncLocalCredentials", () => {
     const discovered = (await collectLocalCredentialItems())
       .filter((item) => item.provider_id === "codex-app-server")
 
-    expect(discovered.map((item) => item.account_id).sort()).toEqual(["other-account", "solo-account"])
+    expect(discovered.map((item) => item.account_id ?? "").toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "other-account",
+      "solo-account",
+    ])
   })
 
   test("discovers every local Codex account without exposing account names in origins", async () => {
@@ -388,7 +391,7 @@ describe("syncLocalCredentials", () => {
     await Promise.all([
       ["first@example.com.auth.json", "first-account", "2026-04-22T00:00:00.000Z"],
       ["second@example.com.auth.json", "second-account", "2026-04-21T00:00:00.000Z"],
-    ].map(([file, account, refreshed]) => fs.writeFile(path.join(accountsDir, file!), JSON.stringify({
+    ].map(([file, account, refreshed]) => fs.writeFile(path.join(accountsDir, file), JSON.stringify({
       auth_mode: "chatgpt",
       tokens: {
         access_token: `access-${account}`,
@@ -450,7 +453,7 @@ describe("syncLocalCredentials", () => {
 
         const claude = discovered.filter((item) => item.provider_id.startsWith("claude-"))
         expect(claude.map((item) => item.provider_id)).toEqual(["claude-sdk"])
-        expect(JSON.parse(claude[0]!.secret)).toEqual({
+        expect(JSON.parse(claude[0].secret)).toEqual({
           type: "claude_code_oauth",
           claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" },
         })

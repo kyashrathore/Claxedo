@@ -159,7 +159,10 @@ describe("agent-hooks real-world execution", () => {
     // Wait for the background trap notification: it arrives from a detached
     // curl the wrapper fires on exit, so poll rather than sleep a fixed
     // 500ms (run 366: the event landed just past that on a loaded runner).
-    for (let attempt = 0; lastEvent === null && attempt < 200; attempt++) {
+    // Read through a call: `lastEvent` is assigned by the HTTP handler on
+    // another task, which a bare variable in the loop condition cannot express.
+    const eventPending = () => lastEvent === null
+    for (let attempt = 0; eventPending() && attempt < 200; attempt++) {
       await new Promise((r) => setTimeout(r, 25))
     }
 
@@ -191,7 +194,10 @@ describe("agent-hooks real-world execution", () => {
     expect(result.status).toBe(0)
     // Same shape as the crash-trap test above: poll for the detached
     // notification instead of a fixed sleep.
-    for (let attempt = 0; lastEvent === null && attempt < 200; attempt++) {
+    // Read through a call: `lastEvent` is assigned by the HTTP handler on
+    // another task, which a bare variable in the loop condition cannot express.
+    const eventPending = () => lastEvent === null
+    for (let attempt = 0; eventPending() && attempt < 200; attempt++) {
       await new Promise((r) => setTimeout(r, 25))
     }
 

@@ -68,6 +68,11 @@ const EFFORT_CONFIG_ID = "effort"
 export const SDK_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const
 export type SdkEffortLevel = (typeof SDK_EFFORT_LEVELS)[number]
 
+/** Sound because `SDK_EFFORT_LEVELS` is the tuple `SdkEffortLevel` is derived from. */
+export function isSdkEffortLevel(value: string): value is SdkEffortLevel {
+  return (SDK_EFFORT_LEVELS as readonly string[]).includes(value)
+}
+
 /**
  * The effort to send with a turn, or `undefined` for "let the model decide".
  *
@@ -83,9 +88,9 @@ export function resolveTurnEffort(
   modelId: string | undefined,
   requested: string | undefined,
 ): SdkEffortLevel | undefined {
-  if (!requested) return undefined
-  if (!(SDK_EFFORT_LEVELS as readonly string[]).includes(requested)) return undefined
-  return resolveSupportedEffort(models, modelId, requested) as SdkEffortLevel | undefined
+  if (!requested || !isSdkEffortLevel(requested)) return undefined
+  const resolved = resolveSupportedEffort(models, modelId, requested)
+  return resolved && isSdkEffortLevel(resolved) ? resolved : undefined
 }
 
 /** Resolves a harness-advertised effort without imposing another harness's union. */

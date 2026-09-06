@@ -492,17 +492,20 @@ export function managedWorkspaceSessionAccessPolicy(
   }
 }
 
+/**
+ * The two members of a request context this function reads. Narrowed to the ONE
+ * key it actually asks for, so the returned claims arrive already typed instead
+ * of as a union the body then had to assert its way out of.
+ */
 type SessionAccessContextReader = {
-  get(name: "relayHostAuth" | "relayHostDirectAuth"):
-    | RelayHostAuthContext["relayHostAuth"]
-    | RelayHostAuthContext["relayHostDirectAuth"]
+  get(name: "relayHostAuth"): RelayHostAuthContext["relayHostAuth"]
   req?: { header(name: string): string | undefined }
 }
 
 /** Actor identity is accepted only from the relay-host verification middleware. */
 export function sessionAccessContext(input: SessionAccessContextReader):
   Pick<SessionAccessPolicyInput, "actor" | "authority" | "credential"> & { author?: SessionAccessAuthor } {
-  const auth = input.get("relayHostAuth") as RelayHostAuthContext["relayHostAuth"]
+  const auth = input.get("relayHostAuth")
   if (!auth) return {}
   const profile = auth as typeof auth & {
     actor_public_id?: string

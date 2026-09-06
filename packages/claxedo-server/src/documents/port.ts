@@ -1,6 +1,32 @@
 export type DocumentVersion = string & { readonly __documentVersion: unique symbol }
 export type SnapshotID = string & { readonly __snapshotID: unique symbol }
 
+/**
+ * Versions and snapshot ids are opaque brands so an unrelated string can never
+ * drift into a version or snapshot position. Any non-empty transport string can
+ * legitimately be one — object-store etags, generated ulids, content hashes,
+ * request params — so these guards are the single place a raw string becomes a
+ * brand. Every producer goes through them, which keeps the emptiness rule in one
+ * owner and makes the set of minting sites greppable.
+ */
+export function isDocumentVersion(value: string): value is DocumentVersion {
+  return value.length > 0
+}
+
+export function toDocumentVersion(value: string): DocumentVersion {
+  if (!isDocumentVersion(value)) throw new TypeError("A document version must be a non-empty string")
+  return value
+}
+
+export function isSnapshotID(value: string): value is SnapshotID {
+  return value.length > 0
+}
+
+export function toSnapshotID(value: string): SnapshotID {
+  if (!isSnapshotID(value)) throw new TypeError("A snapshot id must be a non-empty string")
+  return value
+}
+
 export type DocumentActor = Readonly<{
   type: "user" | "agent" | "system"
   id: string

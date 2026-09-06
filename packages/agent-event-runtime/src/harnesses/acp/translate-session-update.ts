@@ -6,20 +6,17 @@
  */
 
 import type {
-  AvailableCommand,
   SessionUpdate,
   ToolCallContent,
   StopReason,
-  SessionConfigOption,
-  SessionConfigSelectOption,
-  SessionConfigSelectGroup,
   ToolKind,
 } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus } from "../../contracts/agent-runtime-event"
-import { createAcpTranslatorState, drainContent, drainSpots, reduceTool, viewToolWithDiagnostics, type SessionState } from "./state"
+import { drainContent, drainSpots, reduceTool, viewToolWithDiagnostics, type SessionState } from "./state"
 import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
-import { safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
+import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
+import { jsonText, object, text } from "../../value"
 
 export type { SessionUpdate }
 
@@ -38,7 +35,7 @@ export interface TranslatorContext {
  * Rejects empty objects sent as placeholders.
  */
 function hasStructuredInput(raw: unknown): raw is Record<string, unknown> {
-  return raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw as object).length > 0
+  return raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length > 0
 }
 
 function emitInput(
@@ -57,17 +54,6 @@ function emitInput(
   return false
 }
 
-function text(value: unknown) {
-  if (typeof value !== "string") return
-  if (!value) return
-  return value
-}
-
-function object(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
-}
-
 function hasOwn(value: object, key: string) {
   return Object.prototype.hasOwnProperty.call(value, key)
 }
@@ -77,6 +63,7 @@ function toolStatus(status: unknown): RuntimeToolStatus | undefined {
   if (status === "in_progress") return "running"
   if (status === "completed") return "completed"
   if (status === "failed") return "failed"
+  return undefined
 }
 
 function hasUsefulToolUpdate(input: {
@@ -120,13 +107,7 @@ function errorText(value: unknown, metadata?: Record<string, unknown>) {
     text(raw?.content)
   if (fromMeta) return fromMeta
 
-  if (row || raw || value !== undefined && value !== null) {
-    try {
-      return JSON.stringify(value ?? raw)
-    } catch {
-      return String(value ?? raw)
-    }
-  }
+  if (row || raw || (value !== undefined && value !== null)) return jsonText(value ?? raw)
   return ""
 }
 
@@ -135,7 +116,7 @@ function translateContentChunk(input: {
   content: Extract<SessionUpdate, { sessionUpdate: "agent_message_chunk" | "agent_thought_chunk" }>["content"]
   messageId?: string
   state: SessionState
-}): AgentRuntimeEvent[] | null {
+}): AgentRuntimeEvent[] {
   const isThought = input.kind === "agent_thought_chunk"
   if (input.content.type === "text") {
     const text = textChunkDelta({
@@ -209,54 +190,23 @@ function textChunkDelta(input: {
 }
 
 
-function flattenSelectOptions(
-  options: SessionConfigSelectOption[] | SessionConfigSelectGroup[],
-): Array<{ id: string; name: string }> {
-  if (options.length === 0) return []
-  // Detect if first element is a group (has `group` property) or an option (has `value`)
-  const first = options[0] as Record<string, unknown>
-  if ("group" in first) {
-    // Array<SessionConfigSelectGroup>
-    const groups = options as SessionConfigSelectGroup[]
-    return groups.flatMap((g) =>
-      g.options.map((o) => ({ id: o.value as string, name: o.name })),
-    )
-  }
-  // Array<SessionConfigSelectOption>
-  return (options as SessionConfigSelectOption[]).map((o) => ({
-    id: o.value as string,
-    name: o.name,
-  }))
-}
+type ConfigUpdateEvent = Extract<AgentRuntimeEvent, { type: "config-update" }>
+type ConfigUpdateOption = ConfigUpdateEvent["options"][number]
 
-function mapConfigOptions(
-  configOptions: SessionConfigOption[],
-): AgentRuntimeEvent & { type: "config-update" } {
-  const options = configOptions.map((opt) => {
-    if (opt.type === "select") {
-      const rawOpts = opt.options ?? []
-      const selectOptions = flattenSelectOptions(
-        rawOpts as SessionConfigSelectOption[] | SessionConfigSelectGroup[],
-      )
-      return {
-        id: opt.id as string,
-        name: opt.name,
-        category: opt.category ?? undefined,
-        type: "select" as const,
-        currentValue: opt.currentValue as string,
-        selectOptions,
-      }
-    } else {
-      return {
-        id: opt.id as string,
-        name: opt.name,
-        category: opt.category ?? undefined,
-        type: "boolean" as const,
-        currentValue: opt.currentValue as boolean,
-      }
-    }
+/**
+ * Flattens `SessionConfigSelectOptions` (a flat option array OR an array of groups)
+ * into the id/name pairs the runtime event carries. Entries that do not match either
+ * wire shape are dropped rather than emitted as `{ id: undefined }`.
+ */
+function decodeSelectOptions(value: unknown): Array<{ id: string; name: string }> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const row = object(entry)
+    if (!row) return []
+    if (Array.isArray(row.options)) return decodeSelectOptions(row.options)
+    if (typeof row.value === "string" && typeof row.name === "string") return [{ id: row.value, name: row.name }]
+    return []
   })
-  return { type: "config-update", options }
 }
 
 function safePlanEntries(value: unknown, diagnostics: AcpDiagnostics) {
@@ -285,7 +235,7 @@ function safePlanEntries(value: unknown, diagnostics: AcpDiagnostics) {
   })
 }
 
-function safeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): SessionConfigOption[] {
+function decodeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): ConfigUpdateOption[] {
   if (!Array.isArray(value)) {
     diagnoseTranslation(diagnostics, "acp.malformed_config_options", {
       reason: "configOptions_not_array",
@@ -293,7 +243,7 @@ function safeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): Session
     })
     return []
   }
-  return value.flatMap((item) => {
+  return value.flatMap((item): ConfigUpdateOption[] => {
     const row = object(item)
     if (!row || typeof row.id !== "string" || typeof row.name !== "string") {
       diagnoseTranslation(diagnostics, "acp.malformed_config_options", {
@@ -302,11 +252,12 @@ function safeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): Session
       })
       return []
     }
+    const common = { id: row.id, name: row.name, category: text(row.category) }
     if (row.type === "select" && typeof row.currentValue === "string") {
-      return [row as SessionConfigOption]
+      return [{ ...common, type: "select" as const, currentValue: row.currentValue, selectOptions: decodeSelectOptions(row.options) }]
     }
     if (row.type === "boolean" && typeof row.currentValue === "boolean") {
-      return [row as SessionConfigOption]
+      return [{ ...common, type: "boolean" as const, currentValue: row.currentValue }]
     }
     diagnoseTranslation(diagnostics, "acp.malformed_config_options", {
       reason: "option_invalid_type_or_value",
@@ -330,33 +281,18 @@ export function translateSessionUpdate(
     case "agent_message_chunk":
     case "agent_thought_chunk": {
       const isThought = kind === "agent_thought_chunk"
-      const chunks: AgentRuntimeEvent[] = []
       const content = (update as { content?: unknown }).content
-      const contentRow = object(content)
-      const contentType = contentRow?.type
-      if (!contentRow || typeof contentType !== "string") {
+      const check = checkContentBlock(content)
+      if (!check.ok && check.reason !== "unknown_content_block") {
         diagnoseTranslation(ctx.diagnostics, "acp.malformed_content", {
           kind,
-          reason: "content_missing_type",
-          shape: shape(content),
-        })
-        return []
-      }
-      if (
-        contentType === "text" && typeof contentRow.text !== "string" ||
-        contentType === "image" && (typeof contentRow.mimeType !== "string" || typeof contentRow.data !== "string") ||
-        contentType === "audio" && (typeof contentRow.mimeType !== "string" || typeof contentRow.data !== "string") ||
-        contentType === "resource_link" && (typeof contentRow.uri !== "string" || typeof contentRow.name !== "string") ||
-        contentType === "resource" && !object(contentRow.resource)
-      ) {
-        diagnoseTranslation(ctx.diagnostics, "acp.malformed_content", {
-          kind,
-          reason: "content_missing_required_fields",
+          reason: check.reason,
           shape: shape(content),
         })
         return []
       }
 
+      const chunks: AgentRuntimeEvent[] = []
       // messageId tracking for step-start (agent_message_chunk only)
       if (!isThought && "messageId" in update) {
         const newMsgId = (update as { messageId?: string | null }).messageId ?? null
@@ -366,18 +302,18 @@ export function translateSessionUpdate(
         }
       }
 
-      const typedContent = content as Extract<SessionUpdate, { sessionUpdate: "agent_message_chunk" | "agent_thought_chunk" }>["content"]
-      const translated = translateContentChunk({
-        kind,
-        content: typedContent,
-        messageId: "messageId" in update ? update.messageId ?? undefined : undefined,
-        state: ctx.state,
-      })
-      if (translated === null) return chunks
+      const translated = check.ok
+        ? translateContentChunk({
+          kind,
+          content: check.block,
+          messageId: "messageId" in update ? update.messageId ?? undefined : undefined,
+          state: ctx.state,
+        })
+        : []
       if (translated.length) {
         chunks.push(...translated)
       } else {
-        diagnoseTranslation(ctx.diagnostics, "acp.unknown_content_type", { kind, shape: shape(typedContent), reason: "unknown_content_block" })
+        diagnoseTranslation(ctx.diagnostics, "acp.unknown_content_type", { kind, shape: shape(content), reason: "unknown_content_block" })
       }
 
       return chunks
@@ -386,12 +322,11 @@ export function translateSessionUpdate(
     case "user_message_chunk": {
       if (!ctx.preserveUserMessageChunks) return []
       const content = (update as { content?: unknown }).content
-      const contentRow = object(content)
-      const contentType = contentRow?.type
-      if (!contentRow || typeof contentType !== "string") {
+      const check = checkContentBlock(content)
+      if (!check.ok) {
         diagnoseTranslation(ctx.diagnostics, "acp.malformed_content", {
           kind,
-          reason: "content_missing_type",
+          reason: check.reason,
           shape: shape(content),
         })
         return []
@@ -399,16 +334,14 @@ export function translateSessionUpdate(
       return [{
         type: "user-message-delta",
         ...("messageId" in update && update.messageId ? { messageId: update.messageId } : {}),
-        content: content as Extract<SessionUpdate, { sessionUpdate: "user_message_chunk" }>["content"],
+        content: check.block,
       }]
     }
 
     case "tool_call": {
       const chunks: AgentRuntimeEvent[] = []
       const diagnosticContext = { diagnostics: ctx.diagnostics, toolCallId: update.toolCallId, title: update.title, kind: update.kind }
-      const meta = safeMeta((update as unknown as Record<string, unknown>)._meta, {
-        ...diagnosticContext,
-      })
+      const meta = safeMeta(update._meta, diagnosticContext)
       const rawInput = safeRawInput(update.rawInput, diagnosticContext)
       const content = safeContent(update.content, diagnosticContext)
       const locations = safeLocations(update.locations, diagnosticContext)
@@ -451,9 +384,11 @@ export function translateSessionUpdate(
     }
 
     case "tool_call_update": {
-      const { toolCallId, status, rawInput, rawOutput, content, locations, title, kind } = update as typeof update & { title?: string; kind?: ToolKind }
-      const diagnosticContext = { diagnostics: ctx.diagnostics, toolCallId, title: title ?? undefined, kind }
-      const meta = safeMeta((update as unknown as Record<string, unknown>)._meta, diagnosticContext)
+      const { toolCallId, status, rawInput, rawOutput, content, locations } = update
+      const title = update.title ?? undefined
+      const kind = update.kind ?? undefined
+      const diagnosticContext = { diagnostics: ctx.diagnostics, toolCallId, title, kind }
+      const meta = safeMeta(update._meta, diagnosticContext)
       const safeInput = safeRawInput(rawInput, diagnosticContext)
       const safeOutput = safeRawOutput(rawOutput, diagnosticContext)
       const safeItems = safeContent(content, diagnosticContext)
@@ -522,7 +457,7 @@ export function translateSessionUpdate(
         chunks.push({
           type: "tool-error",
           toolCallId,
-          error: error || (safeOutput !== undefined && safeOutput !== null ? JSON.stringify({ raw: safeOutput }) : ""),
+          error: error || (safeOutput !== undefined && safeOutput !== null ? jsonText({ raw: safeOutput }) : ""),
           display: next.display,
           metadata: next.metadata,
         })
@@ -579,7 +514,7 @@ export function translateSessionUpdate(
     case "available_commands_update": {
       return [{
         type: "available-commands-update",
-        commands: Array.isArray(update.availableCommands) ? update.availableCommands as AvailableCommand[] : [],
+        commands: Array.isArray(update.availableCommands) ? update.availableCommands : [],
       }]
     }
 
@@ -588,8 +523,8 @@ export function translateSessionUpdate(
     }
 
     case "config_option_update": {
-      const options = safeConfigOptions((update as { configOptions?: unknown }).configOptions, ctx.diagnostics)
-      return options.length ? [mapConfigOptions(options)] : []
+      const options = decodeConfigOptions((update as { configOptions?: unknown }).configOptions, ctx.diagnostics)
+      return options.length ? [{ type: "config-update", options }] : []
     }
 
     case "session_info_update": {

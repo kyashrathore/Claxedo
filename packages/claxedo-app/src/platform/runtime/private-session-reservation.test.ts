@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { forkSessionWithReservation, reservePrivateSession } from "./private-session-reservation"
+import { requestBodyText, requestUrl } from "@/lib/url"
 
 describe("private session reservation", () => {
   test("reserves a preassigned create intent on the authenticated control plane", async () => {
@@ -12,7 +13,7 @@ describe("private session reservation", () => {
       sessionId: "ses_fixed",
       operationId: "op_fixed",
       request: async (request, init) => {
-        requests.push({ url: String(request), body: JSON.parse(String(init?.body)) })
+        requests.push({ url: requestUrl(request), body: JSON.parse(requestBodyText(init?.body)) })
         return Response.json({
           changed: true,
           operationId: "op_fixed",
@@ -68,7 +69,7 @@ describe("private session reservation", () => {
       messageId: "msg_1",
       serverUrl: "https://core.test",
       request: async (_request, init) => {
-        const body = JSON.parse(String(init?.body)) as {
+        const body = JSON.parse(requestBodyText(init?.body)) as {
           operationId: string
           sessionId: string
           workspaceId: string

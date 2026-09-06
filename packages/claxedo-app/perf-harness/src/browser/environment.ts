@@ -100,7 +100,7 @@ async function buildProductionApp(mockPort: number) {
 }
 
 export async function stopApp(app: BrowserTarget) {
-  app.streams.stop()
+  await app.streams.stop()
   if (!app.process) return
   app.process.kill()
   const exited = await Promise.race([

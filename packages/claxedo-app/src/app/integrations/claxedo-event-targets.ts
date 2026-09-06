@@ -181,9 +181,9 @@ export const CLAXEDO_EVENTS_RELAY_PATH = "/api/wr/events"
 /** Returns only a real session identity owned by the canonical shell route. */
 export function claxedoEventRouteSessionID(pathname: string) {
   const route = parseShellRoute(pathname)
-  if (!("sessionId" in route)) return
+  if (!("sessionId" in route)) return undefined
   const sessionID = route.sessionId?.trim()
-  if (!sessionID || sessionID === "new") return
+  if (!sessionID || sessionID === "new") return undefined
   return sessionID
 }
 
@@ -265,13 +265,14 @@ export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget): Strea
 }
 
 export function routeDirectory(pathname: string) {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return undefined
   const routed = shellRouteDirectoryFromPathname(pathname)
   if (routed) return routed
   const configured = (window as typeof window & {
     __OPENCODE__?: { activeDirectory?: string }
   }).__OPENCODE__?.activeDirectory
   if (configured) return configured
+  return undefined
 }
 
 export function eventStreamTargetKey(

@@ -10,6 +10,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
+import { readJsonRecord } from "../platform/json/index"
 
 const BODY_LIMIT_BYTES = 16 * 1024
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/
@@ -50,7 +51,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
       options.services,
     )
     if ("error" in authenticated) {
-      return context.json(authenticated.error, authenticated.status as 401 | 403 | 503)
+      return context.json(authenticated.error, authenticated.status)
     }
     if (!authenticated.auth) {
       return context.json({
@@ -58,7 +59,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
       }, 401)
     }
 
-    const body = await context.req.json().catch(() => undefined) as Record<string, unknown> | undefined
+    const body = await readJsonRecord(context.req.raw)
     const operationId = identifier(body?.operationId)
     const sessionId = identifier(body?.sessionId)
     const workspaceId = identifier(body?.workspaceId)
@@ -95,7 +96,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
       return context.json(result, result.changed ? 201 : 200)
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
-        return context.json(controlPlaneAuthErrorBody(error), error.status as 400 | 401 | 403 | 503)
+        return context.json(controlPlaneAuthErrorBody(error), error.status)
       }
       const code = errorCode(error)
       if (code) {
@@ -123,7 +124,7 @@ function optionalTitle(value: unknown) {
 }
 
 function errorCode(error: unknown) {
-  if (!error || typeof error !== "object") return
+  if (!error || typeof error !== "object") return undefined
   const code = (error as { code?: unknown }).code
   return code === "invalid_input"
     || code === "resource_conflict"

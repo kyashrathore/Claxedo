@@ -31,7 +31,7 @@ export function syncHarnessSessionModel(input: {
     ...current,
     desired: input.model,
   })
-  if (current.synced === input.model) return
+  if (current.synced === input.model) return undefined
 
   const pending = input.cache.getPending(input.key, input.model)
   if (pending) return pending
@@ -69,7 +69,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
 }) {
   const syncSessionModel = async (params: ScopeInput | undefined, model: ModelKey) => {
     const key = sessionModelSyncKey({ serverUrl: input.base, ...params })
-    if (!key) return
+    if (!key) return undefined
     const syncValue = `${model.providerID}/${model.modelID}`
     return syncHarnessSessionModel({
       key,

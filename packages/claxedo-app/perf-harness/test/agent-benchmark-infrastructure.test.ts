@@ -113,6 +113,6 @@ test("selected profiles score only their required metrics and still fail missing
   const summary = summarizeAgentMetrics(measured, ["workspace-core-v1"], targets);
   expect(summary).toHaveLength(3);
   expect(summary.every((entry) => entry.passed)).toBe(true);
-  expect(summarizeAgentMetrics(measured.slice(1), ["workspace-core-v1"], targets)[0]!.passed).toBe(false);
+  expect(summarizeAgentMetrics(measured.slice(1), ["workspace-core-v1"], targets)[0].passed).toBe(false);
   expect(summarizeAgentMetrics([], [...AGENT_APP_PROFILES], targets)).toHaveLength(9);
 });

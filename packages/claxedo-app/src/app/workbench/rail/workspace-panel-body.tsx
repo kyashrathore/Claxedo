@@ -49,7 +49,7 @@ const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), 
 type ConsumedPanelFocus = { version: number; kind: WorkspacePanelFocus["kind"]; target: string }
 const consumedPanelFocus = new WeakMap<WorkspacePanelState, ConsumedPanelFocus>()
 
-function panelFocusTarget(value: WorkspacePanelFocus) {
+function panelFocusTarget(value: WorkspacePanelFocus): string {
   switch (value.kind) {
     case "review":
       return "review"
@@ -61,6 +61,12 @@ function panelFocusTarget(value: WorkspacePanelFocus) {
       return value.processId
     case "context":
       return value.sessionId
+    default: {
+      // Focus requests are only ever built in-app from `WorkspacePanelFocus`,
+      // so an unlisted kind is a programming error rather than bad input.
+      const unhandled: never = value
+      throw new Error(`Unhandled workspace panel focus: ${JSON.stringify(unhandled)}`)
+    }
   }
 }
 
@@ -279,16 +285,16 @@ export function WorkspacePanelBody(props: {
   })
   const targetContent = () => {
     const target = targetContentId()
-    if (!target) return
+    if (!target) return undefined
     return claxedoState.meta.get(target)
   }
   const targetTerminalId = () => {
-    if (!props.active()) return
+    if (!props.active()) return undefined
     const content = targetContent()
     if (content?.type === "terminal") return content.terminalId
     const surface = activeSurface()
     if (surface?.type === "terminal") return surface.terminalId
-    return
+    return undefined
   }
   const [targetTerminalSession] = createResource(targetTerminalId, (terminalId) =>
     loadTerminalSessionPreview(getClaxedoServerUrl(), terminalId, {
@@ -337,7 +343,7 @@ export function WorkspacePanelBody(props: {
   )
   const reviewWorkspaceKey = createMemo(() => {
     const dir = directory()
-    if (!dir) return
+    if (!dir) return undefined
     return [dir, PANEL_REVIEW_MODE].join("\n")
   })
   // Identity of the retained working set this mount owns. Derived from the
@@ -345,7 +351,7 @@ export function WorkspacePanelBody(props: {
   // one workspace keeps the same review tabs and scroll.
   const reviewWorkingSetKey = createMemo(() => {
     const dir = directory()
-    if (!dir) return
+    if (!dir) return undefined
     // reviewWorkspaceId() keeps this memo reactive to runtime signing.
     reviewWorkspaceId()
     return panelReviewWorkingSetKey({ directory: dir })

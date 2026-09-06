@@ -9,6 +9,7 @@ import {
   type RotatableBackend,
 } from "./rotate"
 import { CREDENTIALS_KEK_ENV, CREDENTIALS_KEK_NEXT_ENV } from "@claxedo/server-core/credentials/envelope"
+import { fetchBodyText } from "../../test-support/fetch-calls"
 
 function memoryBackend(): SecretBackend & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -107,7 +108,7 @@ describe("KEK rotation re-encrypts stored ciphertext", () => {
     expect(beforeAudit.staleKeyIds).toEqual([await envelopeKeyId(kek(1))])
     expect(beforeAudit.complete).toBe(false)
     // A dry run writes nothing.
-    expect(keyIdOf(inner, refs[0]!)).toBe(await envelopeKeyId(kek(1)))
+    expect(keyIdOf(inner, refs[0])).toBe(await envelopeKeyId(kek(1)))
 
     await rotateEnvelopeKeys({ items, backendFor })
 
@@ -159,13 +160,13 @@ describe("KEK rotation re-encrypts stored ciphertext", () => {
     const interrupted = await rotateEnvelopeKeys({ items, backendFor: () => flaky })
     expect(interrupted.rewritten).toBe(2)
     expect(interrupted.failures).toHaveLength(1)
-    expect(interrupted.failures[0]!.fromKeyId).toBe(await envelopeKeyId(kek(1)))
+    expect(interrupted.failures[0].fromKeyId).toBe(await envelopeKeyId(kek(1)))
     expect(interrupted.staleKeyIds).toEqual([await envelopeKeyId(kek(1))])
     expect(interrupted.complete).toBe(false)
 
     // Nothing was lost: the slot whose write died is untouched, still under the
     // retired key-id, and still decrypts to its original plaintext.
-    const crashed = interrupted.failures[0]!.ref
+    const crashed = interrupted.failures[0].ref
     expect(keyIdOf(inner, crashed)).toBe(await envelopeKeyId(kek(1)))
     expect(await rotatedEpoch(inner).get(crashed)).toBe("second")
 
@@ -231,7 +232,7 @@ describe("KEK rotation re-encrypts stored ciphertext", () => {
       backendFor: () => rotatedEpoch(inner),
     })
     expect(report.failures).toHaveLength(1)
-    expect(report.failures[0]!.error).toMatch(/no envelope partition/)
+    expect(report.failures[0].error).toMatch(/no envelope partition/)
     expect(report.complete).toBe(false)
   })
 
@@ -272,8 +273,8 @@ describe("KEK rotation re-encrypts stored ciphertext", () => {
 
     const report = await rotateEnvelopeKeys({ items: [{ ref, orgId: "org-a" }], backendFor: () => drifted })
     expect(report.failures).toHaveLength(1)
-    expect(report.failures[0]!.error).toMatch(/instead of its own slot/)
-    expect(report.failures[0]!.fromKeyId).toBe(await envelopeKeyId(kek(1)))
+    expect(report.failures[0].error).toMatch(/instead of its own slot/)
+    expect(report.failures[0].fromKeyId).toBe(await envelopeKeyId(kek(1)))
     expect(report.staleKeyIds).toEqual([await envelopeKeyId(kek(1))])
     expect(deleteRef).toHaveBeenCalledWith("mem:somewhere-else")
     expect(inner.values.has("mem:somewhere-else")).toBe(false)
@@ -296,7 +297,7 @@ describe("KEK rotation re-encrypts stored ciphertext", () => {
 
     const report = await rotateEnvelopeKeys({ items: [{ ref, orgId: "org-a" }], backendFor: () => drifted })
     expect(report.failures).toHaveLength(1)
-    expect(report.failures[0]!.error).toMatch(/instead of its own slot/)
+    expect(report.failures[0].error).toMatch(/instead of its own slot/)
     expect(report.staleKeyIds).toEqual([await envelopeKeyId(kek(1))])
     expect(report.complete).toBe(false)
   })
@@ -356,7 +357,7 @@ describe("hosted (Cloudflare KV) rotation", () => {
       }
       const key = decodeURIComponent(url.pathname.split("/values/")[1] ?? "")
       if (init?.method === "PUT") {
-        seed.set(key, String(init.body))
+        seed.set(key, fetchBodyText(init.body))
         return new Response("ok", { status: 200 })
       }
       const value = seed.get(key)
@@ -462,8 +463,8 @@ describe("hosted (Cloudflare KV) rotation", () => {
     const report = await rotateHostedCredentialKeys({ env: rotatedEnv })
     expect(report.rewritten).toBe(1)
     expect(report.failures).toHaveLength(1)
-    expect(report.failures[0]!.ref).toBe("cf:legacy-uuid")
-    expect(report.failures[0]!.error).toMatch(/no envelope partition/)
+    expect(report.failures[0].ref).toBe("cf:legacy-uuid")
+    expect(report.failures[0].error).toMatch(/no envelope partition/)
     expect(report.complete).toBe(false)
   })
 })

@@ -80,7 +80,13 @@ export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "server.heartbeat": true,
 } satisfies Record<AgentPresentationEventType, true>
 
-export const AGENT_PRESENTATION_EVENT_TYPES = Object.keys(AGENT_PRESENTATION_EVENT_TYPE_REGISTRY) as AgentPresentationEventType[]
+/** Sound because the registry is `satisfies Record<AgentPresentationEventType, true>`: its keys are exactly the union. */
+export function isAgentPresentationEventType(value: string): value is AgentPresentationEventType {
+  return Object.hasOwn(AGENT_PRESENTATION_EVENT_TYPE_REGISTRY, value)
+}
+
+export const AGENT_PRESENTATION_EVENT_TYPES: AgentPresentationEventType[] =
+  Object.keys(AGENT_PRESENTATION_EVENT_TYPE_REGISTRY).filter(isAgentPresentationEventType)
 
 export type AgentEventEnvelope<Event extends AgentPresentationEvent = AgentPresentationEvent> = {
   directory: string

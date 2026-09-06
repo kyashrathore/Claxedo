@@ -145,7 +145,7 @@ function isDeclarationExternal(id: string) {
 
 async function bundleDeclarations() {
   // One declaration graph preserves nominal identities (WorkspaceScope's
-  // unique symbol) across public subpaths. Independent bundles duplicate them.
+  // private field) across public subpaths. Independent bundles duplicate them.
   const staging = path.join(DIST, ".declarations")
   const bundle = await rollup({
     input: Object.fromEntries(PUBLIC_ENTRIES.map((entry) => [entry, path.join(DIST, `${entry}.d.ts`)])),

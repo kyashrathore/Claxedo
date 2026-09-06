@@ -1,3 +1,4 @@
+import { clearOpaqueTimer } from "./opaque-timer"
 /**
  * Shared child-process lifecycle: one active generation, single-flight startup,
  * lease-based liveness, generation-scoped teardown, and retryable startup.
@@ -129,7 +130,7 @@ export function createIdleReaper(input: {
   clearTimeout?: (handle: unknown) => void
 }): IdleReaper {
   const setTimer = input.setTimeout ?? ((fn, ms) => setTimeout(fn, ms))
-  const clearTimer = input.clearTimeout ?? ((handle) => clearTimeout(handle as never))
+  const clearTimer = input.clearTimeout ?? clearOpaqueTimer
   let timer: unknown
   let leases = 0
   let cancelled = false
@@ -190,7 +191,7 @@ export function createProcessLifecycle<THandle>(
   const idleGraceMs = options.idleGraceMs ?? 30_000
   const stopTimeoutMs = options.stopTimeoutMs ?? 10_000
   const setTimer = options.setTimeout ?? ((fn, ms) => setTimeout(fn, ms))
-  const clearTimer = options.clearTimeout ?? ((handle) => clearTimeout(handle as never))
+  const clearTimer = options.clearTimeout ?? clearOpaqueTimer
   const emit = (event: ProcessLifecycleEvent) => {
     try {
       options.onEvent?.(event)

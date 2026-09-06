@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process"
-import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -16,13 +15,7 @@ const runtimePackageNames = new Set<string>(runtimePackages.map((item) => item.n
 const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
 
-type PackageJson = {
-  name?: string
-  version?: string
-  scripts?: Record<string, string>
-} & Partial<Record<(typeof dependencySections)[number], Record<string, string>>>
-
-type CommandRunner = (cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) => string
+import { readPackageJson, writePackageJson, type CommandRunner, type PackageJson } from "./package-json"
 
 export function rewriteRuntimePackageJson(pkg: PackageJson, version: string) {
   const next: PackageJson = { ...pkg, version }
@@ -51,13 +44,7 @@ export function packagePath(root: string, item: (typeof runtimePackages)[number]
   return path.join(root, item.dir, "package.json")
 }
 
-export function readPackageJson(file: string) {
-  return JSON.parse(fs.readFileSync(file, "utf8")) as PackageJson
-}
-
-export function writePackageJson(file: string, pkg: PackageJson) {
-  fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
-}
+export { readPackageJson, writePackageJson }
 
 export function runtimeReleasePlan(root: string, version: string) {
   return runtimePackages.map((item) => {
@@ -169,13 +156,13 @@ export async function publishRuntimePackages(options: {
     try {
       run("npm", ["run", "build", "--workspace", item.name], root)
     } catch (error) {
-      throw new Error(`build failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
+      throw new Error(`build failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`, { cause: error })
     }
     if (item.next.scripts?.["verify:publish"] && !options.dryRun) {
       try {
         run("npm", ["run", "verify:publish", "--workspace", item.name], root)
       } catch (error) {
-        throw new Error(`publish verification failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
+        throw new Error(`publish verification failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`, { cause: error })
       }
     }
   }
@@ -199,7 +186,7 @@ export async function publishRuntimePackages(options: {
           tag,
         ], root)
       } catch (error) {
-        throw new Error(`publish failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
+        throw new Error(`publish failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`, { cause: error })
       }
     }
   }

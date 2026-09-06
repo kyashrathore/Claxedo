@@ -53,7 +53,7 @@ export async function requireSignedControlPlaneRoute(
   options: ControlPlaneRouteAuthOptions,
 ) {
   const config = options.authConfig ?? controlPlaneAuthConfig()
-  if (!config.enabled && config.mode === "local-only") return
+  if (!config.enabled && config.mode === "local-only") return undefined
   const context = await controlPlaneAuthContext(request, {
     config,
     ...(options.verifier ? { verifier: options.verifier } : {}),
@@ -102,5 +102,6 @@ export function controlPlaneRouteAuth(options: ControlPlaneRouteAuthOptions): Mi
       throw err
     }
     await next()
+    return undefined
   }
 }

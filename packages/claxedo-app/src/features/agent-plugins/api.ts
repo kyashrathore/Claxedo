@@ -1,3 +1,5 @@
+import { isRecord, readField, readString } from "@/lib/record"
+
 export const AGENT_PLUGIN_HARNESSES = ["opencode", "claude", "codex", "cursor"] as const
 export type AgentPluginHarness = (typeof AGENT_PLUGIN_HARNESSES)[number]
 
@@ -85,10 +87,6 @@ type MutationReceipt = { revision: number; reconciliation: { state: string; mess
 /** One skill's SKILL.md, read from the plugin's retained artifact. */
 export type SkillDocument = { name: string; description: string; markdown: string }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-}
-
 function optionalString(value: unknown) {
   return value === undefined || value === null || typeof value === "string"
 }
@@ -98,7 +96,7 @@ function harness(value: unknown): value is AgentPluginHarness {
 }
 
 function harnessActivation(value: unknown): value is HarnessActivation {
-  if (!record(value) || !record(value.effective)) return false
+  if (!isRecord(value) || !isRecord(value.effective)) return false
   const effective = value.effective
   return (value.explicit === undefined || value.explicit === null || typeof value.explicit === "boolean")
     && (value.projectOverride === undefined || value.projectOverride === null || typeof value.projectOverride === "boolean")
@@ -111,38 +109,39 @@ function harnessActivation(value: unknown): value is HarnessActivation {
     && optionalString(effective.artifactDigest)
 }
 
-function sourceKind(value: unknown): value is AgentPluginSourceKind {
+/** Exported because the Directory's DTO reader narrows the same field. */
+export function isAgentPluginSourceKind(value: unknown): value is AgentPluginSourceKind {
   return value === "claxedo" || value === "personal" || value === "organization"
 }
 
 function pluginIcon(value: unknown): value is PluginIcon | undefined {
   if (value === undefined) return true
-  if (!record(value)) return false
+  if (!isRecord(value)) return false
   if (value.kind === "url") return typeof value.url === "string"
   return value.kind === "monogram" && typeof value.text === "string"
 }
 
 function pluginSource(value: unknown): value is PluginSource | null {
   if (value === null) return true
-  return record(value)
+  return isRecord(value)
     && typeof value.id === "string"
-    && sourceKind(value.kind)
+    && isAgentPluginSourceKind(value.kind)
     && typeof value.label === "string"
     && optionalString(value.repository)
 }
 
 function pluginSkills(value: unknown): value is PluginSkill[] {
-  return Array.isArray(value) && value.every((skill) => record(skill)
+  return Array.isArray(value) && value.every((skill) => isRecord(skill)
     && typeof skill.name === "string"
     && typeof skill.description === "string"
     && typeof skill.path === "string")
 }
 
 function pluginCandidate(value: unknown): value is PluginCandidate {
-  if (!record(value)
+  if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
     || !optionalString(value.sourceId)
-    || !(value.sourceKind === null || sourceKind(value.sourceKind))
+    || !(value.sourceKind === null || isAgentPluginSourceKind(value.sourceKind))
     || !pluginSource(value.source)
     || !pluginIcon(value.icon)
     || !pluginSkills(value.skills)
@@ -156,20 +155,20 @@ function pluginCandidate(value: unknown): value is PluginCandidate {
     || typeof value.updateAvailable !== "boolean"
     || !Array.isArray(value.componentDiagnostics)
     || !Array.isArray(value.mcpServers)
-    || !record(value.harnesses)) return false
+    || !isRecord(value.harnesses)) return false
   const harnesses = value.harnesses
-  if (!(value.manifest === null || (record(value.manifest)
+  if (!(value.manifest === null || (isRecord(value.manifest)
     && typeof value.manifest.name === "string"
     && optionalString(value.manifest.version)
     && optionalString(value.manifest.description)))) return false
-  if (!value.componentDiagnostics.every((diagnostic) => record(diagnostic)
+  if (!value.componentDiagnostics.every((diagnostic) => isRecord(diagnostic)
     && typeof diagnostic.code === "string"
     && typeof diagnostic.path === "string"
     && typeof diagnostic.message === "string")) return false
-  if (!value.mcpServers.every((server) => record(server)
+  if (!value.mcpServers.every((server) => isRecord(server)
     && typeof server.name === "string"
     && (server.type === "stdio" || server.type === "streamable-http" || server.type === "sse")
-    && record(server.authentication)
+    && isRecord(server.authentication)
     && (server.authentication.state === "local"
       || server.authentication.state === "harness"
       || server.authentication.state === "public"
@@ -183,13 +182,13 @@ function pluginCandidate(value: unknown): value is PluginCandidate {
 }
 
 function pluginCatalog(value: unknown): value is PluginCatalog {
-  return record(value)
+  return isRecord(value)
     && typeof value.revision === "number"
     && Number.isSafeInteger(value.revision)
     && Array.isArray(value.supportedHarnesses)
     && value.supportedHarnesses.every(harness)
     && (value.projects === undefined || (Array.isArray(value.projects)
-      && value.projects.every((project) => record(project)
+      && value.projects.every((project) => isRecord(project)
         && typeof project.id === "string"
         && typeof project.label === "string")))
     && optionalString(value.selectedProjectId)
@@ -198,7 +197,7 @@ function pluginCatalog(value: unknown): value is PluginCatalog {
     && Array.isArray(value.candidates)
     && value.candidates.every(pluginCandidate)
     && Array.isArray(value.errors)
-    && value.errors.every((error) => record(error)
+    && value.errors.every((error) => isRecord(error)
       && typeof error.sourceId === "string"
       && typeof error.relativePath === "string"
       && typeof error.code === "string"
@@ -206,17 +205,17 @@ function pluginCatalog(value: unknown): value is PluginCatalog {
 }
 
 function skillDocument(value: unknown): value is SkillDocument {
-  return record(value)
+  return isRecord(value)
     && typeof value.name === "string"
     && typeof value.description === "string"
     && typeof value.markdown === "string"
 }
 
 function mutationReceipt(value: unknown): value is MutationReceipt {
-  return record(value)
+  return isRecord(value)
     && typeof value.revision === "number"
     && Number.isSafeInteger(value.revision)
-    && record(value.reconciliation)
+    && isRecord(value.reconciliation)
     && typeof value.reconciliation.state === "string"
     && optionalString(value.reconciliation.message)
 }
@@ -271,10 +270,9 @@ export async function withCurrentRevision<T>(input: {
 
 function resultJson<T>(result: AgentPluginStatusResult, validate: (value: unknown) => value is T): T {
   if (result.status < 200 || result.status >= 300) {
-    const body = result.body
-    const failure = record(body) && record(body.error) ? body.error : undefined
-    const message = failure && typeof failure.message === "string" ? failure.message : undefined
-    const code = failure && typeof failure.code === "string" ? failure.code : undefined
+    const failure = readField(result.body, "error")
+    const message = readString(failure, "message")
+    const code = readString(failure, "code")
     throw new AgentPluginRequestError(result.status, code, message ?? `Agent Plugins request failed (${result.status})`)
   }
   const body = result.body

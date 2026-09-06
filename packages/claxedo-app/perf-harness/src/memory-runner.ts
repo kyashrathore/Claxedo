@@ -1,4 +1,5 @@
 import type { Browser, CDPSession, Page } from "playwright-core"
+import { isRecord, numberField, recordField } from "./json-fields"
 import { fixtureFor } from "./browser/fixtures"
 import { installMockApi } from "./browser/mock-api"
 import { installSeedState, sessionPath } from "./browser/state"
@@ -144,6 +145,29 @@ export function memorySessionQueryCounts(
 // knows (its own retention counters).
 const MEMORY_SESSION_QUERY_COUNTS_SOURCE = memorySessionQueryCounts.toString()
 
+/**
+ * Read the in-page memory probe's result.
+ *
+ * A counter that did not come back reads as -1 rather than 0: a missing
+ * measurement and a measurement of zero are different answers, and a memory
+ * lane that silently reports zero retention is the worst failure mode here.
+ */
+function parseMemoryProbe(
+  value: unknown,
+): Pick<MemorySample, "documentElements" | "queries" | "cachedSessions" | "lightweightSessions" | "families"> {
+  const probe = isRecord(value) ? value : {}
+  const families = recordField(probe, "families") ?? {}
+  return {
+    documentElements: numberField(probe, "documentElements") ?? -1,
+    queries: numberField(probe, "queries") ?? -1,
+    cachedSessions: numberField(probe, "cachedSessions") ?? -1,
+    lightweightSessions: numberField(probe, "lightweightSessions") ?? -1,
+    families: Object.fromEntries(
+      Object.entries(families).flatMap(([name, count]) => (typeof count === "number" ? [[name, count]] : [])),
+    ),
+  }
+}
+
 const PROBE = `(() => {
   const qc = window.__claxedoQueryClient
   const classifySurface = window.__claxedoSessionCachePolicy?.isSurfaceQueryKey
@@ -213,10 +237,9 @@ async function sample(page: Page, cdp: CDPSession, step: number): Promise<Memory
   await page.waitForTimeout(150)
   // Narrow to what the PAGE can know. Typing this as the whole sample minus
   // heap made the spread below silently shadow the CDP counters with fields
-  // the page never returns.
-  const probe = await page.evaluate(PROBE) as Pick<
-    MemorySample, "documentElements" | "queries" | "cachedSessions" | "lightweightSessions" | "families"
-  >
+  // the page never returns. `PROBE` is a source string, so its result arrives
+  // untyped and is read here rather than asserted.
+  const probe = parseMemoryProbe(await page.evaluate(PROBE))
   const usage = await cdp.send("Runtime.getHeapUsage") as {
     usedSize: number
     embedderHeapUsedSize?: number
@@ -366,7 +389,7 @@ export async function runMemorySweep(input: {
   await installSeedState(page, input.app, fixture)
 
   const mode = input.mode ?? "normal"
-  const first = fixture.sessions[0]!
+  const first = fixture.sessions[0]
   await page.goto(`${input.app.baseUrl}${sessionPath(first, first.id)}`, { waitUntil: "domcontentloaded" })
   await page.waitForSelector("[data-claxedo]", { timeout: 30_000 })
   await page.waitForTimeout(1_500)
@@ -413,7 +436,7 @@ export async function runMemorySweep(input: {
 function median(values: readonly number[]) {
   const sorted = values.toSorted((a, b) => a - b)
   const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
 }
 
 export function summarizeMemorySweeps(sweeps: readonly MemorySweep[]): MemorySweepSummary {
@@ -450,7 +473,7 @@ export function memoryRecords(summary: MemorySweepSummary, stack: string, profil
     {
       lane: "memory", flow: summary.flow, metric: "retained_heap_bytes_per_visit",
       value: summary.slopeBytesPerStep,
-      unit: METRICS.retained_heap_bytes_per_visit!.unit,
+      unit: METRICS.retained_heap_bytes_per_visit.unit,
       samples: slopes, stack, profile,
       ...(summary.slopeSupported ? {} : {
         absentReason: `Need at least ${MIN_SLOPE_POST_CLICK_SAMPLES} distinct post-click tail samples per repetition`,
@@ -458,7 +481,7 @@ export function memoryRecords(summary: MemorySweepSummary, stack: string, profil
     },
     {
       lane: "memory", flow: summary.flow, metric: "retained_heap_bytes",
-      value: summary.plateauBytes, unit: METRICS.retained_heap_bytes!.unit,
+      value: summary.plateauBytes, unit: METRICS.retained_heap_bytes.unit,
       samples: plateaus, stack, profile,
     },
   ]

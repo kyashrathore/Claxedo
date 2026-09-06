@@ -232,6 +232,37 @@ describe("controlPlaneCatalogProjects", () => {
   })
 })
 
+describe("controlPlaneCatalogProjects access kind", () => {
+  /**
+   * `access` decides how every later read addresses the workspace, so a row
+   * this build cannot interpret must stop the catalog rather than be rendered
+   * as something openable. A missing kind always did; an unknown one used to
+   * pass straight through the guard and reach the UI as a bad `kind`.
+   */
+  test("refuses a row whose access kind this build does not know", () => {
+    expect(() =>
+      controlPlaneCatalogProjects({
+        workspaces: [{ workspace_id: "ws_new", project_id: "proj_1", access: "quantum-hosted" }],
+      })
+    ).toThrow("Control-plane workspace row states no access kind: quantum-hosted")
+  })
+
+  test("refuses a row with no access kind at all, and names no kind in the message", () => {
+    expect(() =>
+      controlPlaneCatalogProjects({
+        workspaces: [{ workspace_id: "ws_bare", project_id: "proj_1" }],
+      })
+    ).toThrow("Control-plane workspace row states no access kind")
+  })
+
+  test.each(["cloud", "user-hosted", "local"])("%s is a kind this build can open", (access) => {
+    const [project] = controlPlaneCatalogProjects({
+      workspaces: [{ workspace_id: "ws_ok", project_id: "proj_1", access }],
+    })
+    expect(Object.values(project?.workspaces ?? {})[0]).toMatchObject({ kind: access })
+  })
+})
+
 describe("controlPlaneCatalogProjects project naming", () => {
   // `display_name` is the WORKSPACE name and the hosted create dialog posts
   // `workspaceName: "main"`, so preferring it named every hosted cloud PROJECT
@@ -345,7 +376,7 @@ function daemonClient(projects: unknown[]) {
 
 function controlPlaneFetch(rows: Record<"cloud" | "user-hosted", unknown[]>, calls: string[] = []) {
   return (async (input: URL | RequestInfo) => {
-    const url = new URL(input.toString())
+    const url = new URL(requestUrl(input))
     calls.push(url.toString())
     const access = url.searchParams.get("access") as "cloud" | "user-hosted"
     return Response.json({ workspaces: rows[access] ?? [] })
@@ -373,8 +404,8 @@ describe("workspaceCatalogQuery", () => {
     })
 
     const catalog = await options.queryFn()
-    expect(catalog.map((project) => project.id).toSorted()).toEqual(["proj_cloud", "proj_local"])
-    expect(calls.toSorted()).toEqual([
+    expect(catalog.map((project) => project.id).toSorted((a, b) => a.localeCompare(b))).toEqual(["proj_cloud", "proj_local"])
+    expect(calls.toSorted((a, b) => a.localeCompare(b))).toEqual([
       `${LOOPBACK}/api/workspace?access=cloud`,
       `${LOOPBACK}/api/workspace?access=user-hosted`,
     ])
@@ -457,3 +488,12 @@ describe("workspaceCatalogQuery", () => {
       .toEqual(queryKeys.controlPlane.projects(LOOPBACK))
   })
 })
+
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}

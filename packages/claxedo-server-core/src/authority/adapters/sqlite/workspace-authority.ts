@@ -1,8 +1,9 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type {
   HostEnrollment,
-  OrgId,
   ProjectAction,
   ProjectRoleResult,
   SessionShareFanoutTarget,
@@ -31,11 +32,14 @@ import {
   workspaceRoleForUser,
   type AuthorityUser,
   type ProjectRow,
+  type IdentifiedSessionShareTargetRow,
+  type SessionShareTargetRow,
   type SqliteAuthorityDb,
   type SqliteWorkspaceAuthorityOptions,
   type WorkspaceAction,
   type WorkspaceRow,
   type WorkspaceRole,
+  type WorkspaceShareGrantRow,
 } from "./workspace-authority-store"
 import { createSqlitePrivateSessionAuthority } from "./private-session-authority"
 
@@ -224,14 +228,14 @@ const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at IS NULL AND enrollment
 /** Of these workspaces, the ones a live enrollment currently serves. */
 function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]) {
   if (workspaceIds.length === 0) return new Set<string>()
-  const rows = db.prepare(`
+  const rows = db.prepare<unknown[], { workspace_id: string }>(`
     SELECT DISTINCT assignment.workspace_id
     FROM host_workspace_assignments assignment
     JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
       AND enrollment.owner_token_identifier = assignment.owner_token_identifier
     WHERE assignment.workspace_id IN (${workspaceIds.map(() => "?").join(", ")})
       AND ${HOST_SERVING_WORKSPACE_SQL}
-  `).all(...workspaceIds, Date.now()) as Array<{ workspace_id: string }>
+  `).all(...workspaceIds, Date.now())
   return new Set(rows.map((row) => row.workspace_id))
 }
 
@@ -294,8 +298,8 @@ function shareTarget(db: SqliteAuthorityDb, args: {
   if (selectors.length !== 1) throw new Error("Share target must be exactly one user, org, or team")
 
   if (args.grantedToTokenIdentifier) {
-    const target = db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
-      .get(args.grantedToTokenIdentifier) as AuthorityUser | undefined
+    const target = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
+      .get(args.grantedToTokenIdentifier)
     if (!target && options.requireExisting) throw new Error("Share target not found")
     const legacySubjectKey = target?.subject && userBySubject(db, target.subject)?.token_identifier === target.token_identifier
       ? `subject:${target.subject}`
@@ -327,9 +331,9 @@ function shareTarget(db: SqliteAuthorityDb, args: {
 
   const teamSelector = args.grantedToTeamId ?? args.grantedToTeamPublicId
   if (teamSelector) {
-    const team = db.prepare(`
+    const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`
       SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL
-    `).get(teamSelector) as { team_id: string; org_id: string } | undefined
+    `).get(teamSelector)
     if (!team && options.requireExisting) throw new Error("Share target not found")
     const teamId = team?.team_id ?? teamSelector
     return {
@@ -427,11 +431,11 @@ export function createSqliteWorkspaceAuthority(
   }) => {
     const orgId = input.orgId ?? ensurePersonalOrg(db, who)
     if (input.orgId) {
-      const membership = db.prepare(`
+      const membership = db.prepare<unknown[], { role: string }>(`
         SELECT m.role FROM org_memberships m
         JOIN orgs o ON o.org_id = m.org_id
         WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
-      `).get(input.orgId, who.token_identifier) as { role: string } | undefined
+      `).get(input.orgId, who.token_identifier)
       if (membership?.role !== "owner" && membership?.role !== "admin") denied()
     }
     const projectId = ensureProject(db, {
@@ -456,14 +460,17 @@ export function createSqliteWorkspaceAuthority(
     return revoked
   }
 
-  const linkedChannelUser = (db: SqliteAuthorityDb, args: { channel: string; externalUserId: string }) => {
-    const link = db.prepare(`
+  const linkedChannelUser = (
+    db: SqliteAuthorityDb,
+    args: { channel: string; externalUserId: string },
+  ): AuthorityUser | undefined => {
+    const link = db.prepare<unknown[], { token_identifier: string }>(`
       SELECT token_identifier FROM channel_identities
       WHERE channel = ? AND external_user_id = ? AND revoked_at IS NULL
-    `).get(args.channel, args.externalUserId) as { token_identifier: string } | undefined
-    if (!link) return
-    return db.prepare(`SELECT token_identifier, public_id, subject, name, image_url FROM users WHERE token_identifier = ?`)
-      .get(link.token_identifier) as AuthorityUser | undefined
+    `).get(args.channel, args.externalUserId)
+    if (!link) return undefined
+    return db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, public_id, subject, name, image_url FROM users WHERE token_identifier = ?`)
+      .get(link.token_identifier)
   }
 
   type SessionRow = {
@@ -483,26 +490,23 @@ export function createSqliteWorkspaceAuthority(
     who: AuthorityUser,
     workspaceRole: WorkspaceRole,
     isOrgAdmin?: boolean,
-  ) => {
+  ): WorkspaceRole | undefined => {
     if (session.creator_actor_id === who.token_identifier) return workspaceRole
-    const participant = db.prepare(`
+    const participant = db.prepare<unknown[], { revoked_at: number | null }>(`
       SELECT revoked_at FROM session_participants WHERE session_id = ? AND participant_actor_id = ?
-    `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
+    `).get(session.session_id, who.token_identifier)
     if (participant && !participant.revoked_at) return workspaceRole
     if (sessionShareAllowsUser(db, who, session.session_id)) return workspaceRole
     if (isOrgAdmin ?? orgAdminForUser(db, who, workspace.org_id)) return workspaceRole
+    return undefined
   }
 
   const sessionShareAllowsUser = (db: SqliteAuthorityDb, who: AuthorityUser, sessionId: string) => {
-    const grants = db.prepare(`
+    const grants = db.prepare<unknown[], SessionShareTargetRow>(`
       SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
       FROM session_share_grants
       WHERE session_id = ? AND revoked_at IS NULL
-    `).all(sessionId) as Array<{
-      granted_to_user_token_identifier: string | null
-      granted_to_org_id: string | null
-      granted_to_team_id: string | null
-    }>
+    `).all(sessionId)
     for (const grant of grants) {
       if (grant.granted_to_user_token_identifier === who.token_identifier) return true
       if (grant.granted_to_org_id) {
@@ -523,12 +527,12 @@ export function createSqliteWorkspaceAuthority(
 
   const teamAdminForProject = (db: SqliteAuthorityDb, who: AuthorityUser, workspace: WorkspaceRow) => {
     if (!workspace.org_id || !workspace.project_id) return false
-    const memberships = db.prepare(`
+    const memberships = db.prepare<unknown[], { team_id: string; role: string }>(`
       SELECT m.team_id AS team_id, m.role AS role FROM team_memberships m
       JOIN teams t ON t.team_id = m.team_id
       WHERE m.user_token_identifier = ? AND t.org_id = ? AND t.deleted_at IS NULL
         AND (m.role = 'admin' OR m.role = 'owner')
-    `).all(who.token_identifier, workspace.org_id) as Array<{ team_id: string; role: string }>
+    `).all(who.token_identifier, workspace.org_id)
     for (const membership of memberships) {
       const grant = db.prepare(`
         SELECT 1 FROM team_project_grants
@@ -552,7 +556,7 @@ export function createSqliteWorkspaceAuthority(
       : projectRoleForUser(db, project, who)
     if (!role || !project.org_id) return { ok: false }
     if (input.orgId && input.orgId !== project.org_id) return { ok: false }
-    return { ok: true, role, orgId: project.org_id as OrgId }
+    return { ok: true, role, orgId: asOrgId(project.org_id) }
   }
 
   const recordUserRuntimeToken = (who: AuthorityUser, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => {
@@ -607,7 +611,7 @@ export function createSqliteWorkspaceAuthority(
         SELECT o.org_id, o.name, m.role FROM org_memberships m
         JOIN orgs o ON o.org_id = m.org_id
         WHERE m.token_identifier = ? AND o.deleted_at IS NULL
-      `).all(who.token_identifier) as unknown[]
+      `).all(who.token_identifier)
     },
     async createOrg(auth: SignedControlPlaneAuth, args: { name: string }) {
       const db = database()
@@ -640,8 +644,8 @@ export function createSqliteWorkspaceAuthority(
     async listTeams(auth: SignedControlPlaneAuth, args: { orgId: string }) {
       const db = database()
       const who = user(auth)
-      const org = db.prepare(`SELECT org_id, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
-        .get(args.orgId) as { org_id: string; owner_token_identifier: string } | undefined
+      const org = db.prepare<unknown[], { org_id: string; owner_token_identifier: string }>(`SELECT org_id, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+        .get(args.orgId)
       if (!org) return []
       const membership = db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
@@ -663,8 +667,8 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const name = args.name.trim()
       if (!name) throw new Error("team_name_required")
-      const org = db.prepare(`SELECT org_id, kind FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
-        .get(args.orgId) as { org_id: string; kind: string } | undefined
+      const org = db.prepare<unknown[], { org_id: string; kind: string }>(`SELECT org_id, kind FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+        .get(args.orgId)
       if (!org) throw new Error("Organization not found")
       if (org.kind === "personal") throw new Error("team_not_allowed_on_personal_org")
       if (!orgAdminForUser(db, who, args.orgId)) throw new Error("org_admin_required")
@@ -685,8 +689,8 @@ export function createSqliteWorkspaceAuthority(
     async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
       const db = database()
       const who = user(auth)
-      const org = db.prepare(`SELECT org_id, kind, name, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
-        .get(args.orgId) as { org_id: string; kind: string; name: string; owner_token_identifier: string } | undefined
+      const org = db.prepare<unknown[], { org_id: string; kind: string; name: string; owner_token_identifier: string }>(`SELECT org_id, kind, name, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+        .get(args.orgId)
       if (!org) throw new Error("Organization not found")
       if (org.kind === "personal") return { skipped: true as const }
       const membership = db.prepare(`
@@ -695,9 +699,9 @@ export function createSqliteWorkspaceAuthority(
       if (!membership && org.owner_token_identifier !== who.token_identifier) throw new Error("org_membership_required")
       const now = Date.now()
       return db.transaction(() => {
-        let defaultTeam = db.prepare(`
+        let defaultTeam = db.prepare<unknown[], { team_id: string }>(`
           SELECT team_id FROM teams WHERE org_id = ? AND is_default = 1 AND deleted_at IS NULL
-        `).get(args.orgId) as { team_id: string } | undefined
+        `).get(args.orgId)
         if (!defaultTeam) {
           const teamId = `team_${randomToken()}`
           db.prepare(`
@@ -706,47 +710,47 @@ export function createSqliteWorkspaceAuthority(
           `).run(teamId, args.orgId, org.name || "Everyone", who.token_identifier, now, now)
           defaultTeam = { team_id: teamId }
         }
-        const orgMembers = db.prepare(`
+        const orgMembers = db.prepare<unknown[], { token_identifier: string; role: string }>(`
           SELECT token_identifier, role FROM org_memberships WHERE org_id = ?
-        `).all(args.orgId) as Array<{ token_identifier: string; role: string }>
+        `).all(args.orgId)
         for (const member of orgMembers) {
           const existing = db.prepare(`
             SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
-          `).get(defaultTeam!.team_id, member.token_identifier)
+          `).get(defaultTeam.team_id, member.token_identifier)
           if (existing) continue
           const role = member.role === "owner" || member.role === "admin" ? member.role : "member"
           db.prepare(`
             INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?)
-          `).run(defaultTeam!.team_id, member.token_identifier, role, now, now)
+          `).run(defaultTeam.team_id, member.token_identifier, role, now, now)
         }
-        const projects = db.prepare(`
+        const projects = db.prepare<unknown[], { project_id: string }>(`
           SELECT project_id FROM projects WHERE org_id = ? AND deleted_at IS NULL
-        `).all(args.orgId) as Array<{ project_id: string }>
+        `).all(args.orgId)
         for (const project of projects) {
-          const grant = db.prepare(`
+          const grant = db.prepare<unknown[], { revoked_at: number | null }>(`
             SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
-          `).get(defaultTeam!.team_id, project.project_id) as { revoked_at: number | null } | undefined
+          `).get(defaultTeam.team_id, project.project_id)
           if (grant) continue
           db.prepare(`
             INSERT INTO team_project_grants (
               team_id, project_id, role, created_by_token_identifier, created_at
             ) VALUES (?, ?, 'editor', ?, ?)
-          `).run(defaultTeam!.team_id, project.project_id, who.token_identifier, now)
+          `).run(defaultTeam.team_id, project.project_id, who.token_identifier, now)
         }
 
         // D18: retarget interim org-scoped shares onto the default team.
-        const teamTargetKey = `team:${defaultTeam!.team_id}`
+        const teamTargetKey = `team:${defaultTeam.team_id}`
         let workspaceSharesRetargeted = 0
-        const orgWorkspaceShares = db.prepare(`
+        const orgWorkspaceShares = db.prepare<unknown[], { grant_id: string; workspace_id: string }>(`
           SELECT grant_id, workspace_id FROM workspace_share_grants
           WHERE granted_to_org_id = ? AND revoked_at IS NULL
-        `).all(args.orgId) as Array<{ grant_id: string; workspace_id: string }>
+        `).all(args.orgId)
         for (const share of orgWorkspaceShares) {
-          const existingTeam = db.prepare(`
+          const existingTeam = db.prepare<unknown[], { grant_id: string }>(`
             SELECT grant_id FROM workspace_share_grants
             WHERE workspace_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
-          `).get(share.workspace_id, defaultTeam!.team_id) as { grant_id: string } | undefined
+          `).get(share.workspace_id, defaultTeam.team_id)
           if (existingTeam) {
             db.prepare(`UPDATE workspace_share_grants SET revoked_at = ? WHERE grant_id = ?`)
               .run(now, share.grant_id)
@@ -756,20 +760,20 @@ export function createSqliteWorkspaceAuthority(
             UPDATE workspace_share_grants
             SET granted_to_org_id = NULL, granted_to_team_id = ?, target_key = ?
             WHERE grant_id = ?
-          `).run(defaultTeam!.team_id, teamTargetKey, share.grant_id)
+          `).run(defaultTeam.team_id, teamTargetKey, share.grant_id)
           workspaceSharesRetargeted += 1
         }
 
         let sessionSharesRetargeted = 0
-        const orgSessionShares = db.prepare(`
+        const orgSessionShares = db.prepare<unknown[], { grant_id: string; session_id: string }>(`
           SELECT grant_id, session_id FROM session_share_grants
           WHERE granted_to_org_id = ? AND revoked_at IS NULL
-        `).all(args.orgId) as Array<{ grant_id: string; session_id: string }>
+        `).all(args.orgId)
         for (const share of orgSessionShares) {
-          const existingTeam = db.prepare(`
+          const existingTeam = db.prepare<unknown[], { grant_id: string }>(`
             SELECT grant_id FROM session_share_grants
             WHERE session_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
-          `).get(share.session_id, defaultTeam!.team_id) as { grant_id: string } | undefined
+          `).get(share.session_id, defaultTeam.team_id)
           if (existingTeam) {
             db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`)
               .run(now, share.grant_id)
@@ -779,12 +783,12 @@ export function createSqliteWorkspaceAuthority(
             UPDATE session_share_grants
             SET granted_to_org_id = NULL, granted_to_team_id = ?
             WHERE grant_id = ?
-          `).run(defaultTeam!.team_id, share.grant_id)
+          `).run(defaultTeam.team_id, share.grant_id)
           sessionSharesRetargeted += 1
         }
 
         return {
-          team_id: defaultTeam!.team_id,
+          team_id: defaultTeam.team_id,
           org_id: args.orgId,
           workspace_shares_retargeted: workspaceSharesRetargeted,
           session_shares_retargeted: sessionSharesRetargeted,
@@ -800,16 +804,16 @@ export function createSqliteWorkspaceAuthority(
     }) {
       const db = database()
       const who = user(auth)
-      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
-        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId)
       if (!team) throw new Error("Team not found")
       if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
       const target = args.tokenIdentifier
-        ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier) as AuthorityUser | undefined
+        ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier)
         : args.providerSubject
           ? userBySubject(db, args.providerSubject)
           : args.userPublicId
-            ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
+            ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId)
             : undefined
       if (!target) throw new Error("team_member_not_found")
       const orgMembership = db.prepare(`
@@ -833,16 +837,16 @@ export function createSqliteWorkspaceAuthority(
     }) {
       const db = database()
       const who = user(auth)
-      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
-        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId)
       if (!team) throw new Error("Team not found")
       if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
       const target = args.tokenIdentifier
-        ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier) as AuthorityUser | undefined
+        ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier)
         : args.providerSubject
           ? userBySubject(db, args.providerSubject)
           : args.userPublicId
-            ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
+            ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId)
             : undefined
       if (!target) return { removed: false }
       const result = db.prepare(`
@@ -853,8 +857,8 @@ export function createSqliteWorkspaceAuthority(
     async listTeamMembers(auth: SignedControlPlaneAuth, args: { teamId: string }) {
       const db = database()
       const who = user(auth)
-      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
-        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId)
       if (!team) return []
       const membership = db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
@@ -867,7 +871,7 @@ export function createSqliteWorkspaceAuthority(
         LEFT JOIN users u ON u.token_identifier = m.user_token_identifier
         WHERE m.team_id = ?
         ORDER BY m.role DESC, m.user_token_identifier ASC
-      `).all(args.teamId) as unknown[]
+      `).all(args.teamId)
     },
     async grantTeamProject(auth: SignedControlPlaneAuth, args: {
       teamId: string
@@ -876,16 +880,16 @@ export function createSqliteWorkspaceAuthority(
     }) {
       const db = database()
       const who = user(auth)
-      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
-        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId)
       if (!team) throw new Error("Team not found")
       if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
       const project = projectByPublicId(db, args.projectId)
       if (!project || project.org_id !== team.org_id) throw new Error("Project not found")
       const now = Date.now()
-      const existing = db.prepare(`
+      const existing = db.prepare<unknown[], { revoked_at: number | null }>(`
         SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
-      `).get(args.teamId, args.projectId) as { revoked_at: number | null } | undefined
+      `).get(args.teamId, args.projectId)
       if (existing) {
         db.prepare(`
           UPDATE team_project_grants
@@ -903,8 +907,8 @@ export function createSqliteWorkspaceAuthority(
     async revokeTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string }) {
       const db = database()
       const who = user(auth)
-      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
-        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId)
       if (!team) throw new Error("Team not found")
       if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
       const result = db.prepare(`
@@ -917,14 +921,14 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       if (auth.user.orgId) {
-        const org = db.prepare(`
+        const org = db.prepare<unknown[], { org_id: string }>(`
           SELECT o.org_id FROM orgs o
           JOIN org_memberships m ON m.org_id = o.org_id AND m.token_identifier = ?
           WHERE o.org_id = ? AND o.deleted_at IS NULL
-        `).get(who.token_identifier, auth.user.orgId) as { org_id: string } | undefined
-        if (org) return org.org_id as OrgId
+        `).get(who.token_identifier, auth.user.orgId)
+        if (org) return asOrgId(org.org_id)
       }
-      return ensurePersonalOrg(db, who) as OrgId
+      return asOrgId(ensurePersonalOrg(db, who))
     },
     async projectRole(auth: SignedControlPlaneAuth, args): Promise<ProjectRoleResult> {
       const db = database()
@@ -976,10 +980,10 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const channel = requiredText(args.channel, "channel")
       const externalUserId = requiredText(args.externalUserId, "externalUserId")
-      const existing = db.prepare(`
+      const existing = db.prepare<unknown[], { binding_id: string; token_identifier: string }>(`
         SELECT binding_id, token_identifier FROM channel_identities
         WHERE channel = ? AND external_user_id = ? AND revoked_at IS NULL
-      `).get(channel, externalUserId) as { binding_id: string; token_identifier: string } | undefined
+      `).get(channel, externalUserId)
       if (existing && existing.token_identifier !== who.token_identifier) {
         throw new Error("Channel identity is already bound")
       }
@@ -1014,11 +1018,11 @@ export function createSqliteWorkspaceAuthority(
         who.token_identifier,
       )
       if (result.changes > 0) return { revoked: true }
-      const latest = db.prepare(`
+      const latest = db.prepare<unknown[], { token_identifier: string }>(`
         SELECT token_identifier FROM channel_identities
         WHERE channel = ? AND external_user_id = ?
         ORDER BY created_at DESC, rowid DESC LIMIT 1
-      `).get(channel, externalUserId) as { token_identifier: string } | undefined
+      `).get(channel, externalUserId)
       return { revoked: latest?.token_identifier === who.token_identifier }
     },
 
@@ -1027,11 +1031,11 @@ export function createSqliteWorkspaceAuthority(
       if (!args.orgId) return
       const db = database()
       const who = user(auth)
-      const membership = db.prepare(`
+      const membership = db.prepare<unknown[], { role: string }>(`
         SELECT m.role FROM org_memberships m
         JOIN orgs o ON o.org_id = m.org_id
         WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
-      `).get(args.orgId, who.token_identifier) as { role: string } | undefined
+      `).get(args.orgId, who.token_identifier)
       if (membership?.role !== "owner" && membership?.role !== "admin") denied()
     },
     async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args) {
@@ -1056,7 +1060,7 @@ export function createSqliteWorkspaceAuthority(
     async listWorkspaces(auth: SignedControlPlaneAuth) {
       const db = database()
       const who = user(auth)
-      const rows = db.prepare(`SELECT * FROM workspaces WHERE deleted_at IS NULL`).all() as WorkspaceRow[]
+      const rows = db.prepare<unknown[], WorkspaceRow>(`SELECT * FROM workspaces WHERE deleted_at IS NULL`).all()
       const visible = rows
         .map((workspace) => ({
           workspace_id: workspace.workspace_id,
@@ -1194,10 +1198,10 @@ export function createSqliteWorkspaceAuthority(
       requireWorkspace(db, who, args.workspaceId, "admin")
       const target = canonicalShareTarget(db, args.target, { requireExisting: true })
       return db.transaction(() => {
-        const active = target.activeKeys.flatMap((targetKey) => db.prepare(`
+        const active = target.activeKeys.flatMap((targetKey) => db.prepare<unknown[], { grant_id: string; role: string }>(`
             SELECT grant_id, role FROM workspace_share_grants
             WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
-          `).all(args.workspaceId, targetKey) as Array<{ grant_id: string; role: string }>)
+          `).all(args.workspaceId, targetKey))
         if (active.length === 1 && active[0].role === args.role) return active[0].grant_id
         const now = Date.now()
         if (active.length > 0) {
@@ -1211,11 +1215,11 @@ export function createSqliteWorkspaceAuthority(
               ? [userBySubject(db, target.subject)?.token_identifier]
                 .filter((item): item is string => !!item)
               : target.teamId
-                ? (db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
-                  .all(target.teamId) as Array<{ user_token_identifier: string }>)
+                ? (db.prepare<unknown[], { user_token_identifier: string }>(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
+                  .all(target.teamId))
                   .map((item) => item.user_token_identifier)
-                : (db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
-                  .all(target.orgId) as Array<{ token_identifier: string }>)
+                : (db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+                  .all(target.orgId))
                   .map((item) => item.token_identifier)
           revokeRuntimeTokensForUsers(db, args.workspaceId, tokenIdentifiers)
         }
@@ -1248,20 +1252,16 @@ export function createSqliteWorkspaceAuthority(
         throw new Error("Share revoke target must be exactly one grant or canonical target")
       }
       const target = args.grantId ? undefined : canonicalShareTarget(db, args.target!, { requireExisting: false })
-      const grants = (args.grantId
-        ? db.prepare(`SELECT * FROM workspace_share_grants WHERE workspace_id = ? AND grant_id = ? AND revoked_at IS NULL`)
-          .all(args.workspaceId, args.grantId)
-        : target!.activeKeys.flatMap((targetKey) => db.prepare(`
+      const grants = args.grantId
+        ? db.prepare<unknown[], WorkspaceShareGrantRow>(
+          `SELECT * FROM workspace_share_grants WHERE workspace_id = ? AND grant_id = ? AND revoked_at IS NULL`,
+        ).all(args.workspaceId, args.grantId)
+        : target!.activeKeys.flatMap((targetKey) =>
+          db.prepare<unknown[], WorkspaceShareGrantRow>(`
             SELECT * FROM workspace_share_grants
             WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
-          `).all(args.workspaceId, targetKey))) as Array<{
-          grant_id: string
-          granted_to_token_identifier: string | null
-          granted_to_subject: string | null
-          granted_to_org_id: string | null
-          granted_to_team_id: string | null
-          revoked_at: number | null
-        }>
+          `).all(args.workspaceId, targetKey)
+        )
       if (grants.length === 0) return { revoked: false }
       return db.transaction(() => {
         const now = Date.now()
@@ -1277,14 +1277,14 @@ export function createSqliteWorkspaceAuthority(
             if (user) tokenIdentifiers.add(user.token_identifier)
           }
           if (grant.granted_to_org_id) {
-            for (const membership of db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
-              .all(grant.granted_to_org_id) as Array<{ token_identifier: string }>) {
+            for (const membership of db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+              .all(grant.granted_to_org_id)) {
               tokenIdentifiers.add(membership.token_identifier)
             }
           }
           if (grant.granted_to_team_id) {
-            for (const membership of db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
-              .all(grant.granted_to_team_id) as Array<{ user_token_identifier: string }>) {
+            for (const membership of db.prepare<unknown[], { user_token_identifier: string }>(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
+              .all(grant.granted_to_team_id)) {
               tokenIdentifiers.add(membership.user_token_identifier)
             }
           }
@@ -1343,8 +1343,8 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const now = Date.now()
-      const request = db.prepare(`SELECT * FROM host_enrollment_requests WHERE request_id = ?`)
-        .get(args.requestId) as HostEnrollmentRequestRow | undefined
+      const request = db.prepare<unknown[], HostEnrollmentRequestRow>(`SELECT * FROM host_enrollment_requests WHERE request_id = ?`)
+        .get(args.requestId)
       if (
         !request
         || request.owner_token_identifier !== who.token_identifier
@@ -1416,16 +1416,18 @@ export function createSqliteWorkspaceAuthority(
           claimedAt,
           claimedAt,
         )
-        const row = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
-          .get(who.token_identifier, args.hostId) as HostEnrollmentRow
+        const row = db.prepare<unknown[], HostEnrollmentRow>(
+          `SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`,
+        ).get(who.token_identifier, args.hostId)
+        if (!row) throw new Error("host_enrollment_missing_after_claim")
         return toHostEnrollment(row)
       })()
     },
     async heartbeatHostEnrollment(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
-      const row = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
-        .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
+      const row = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+        .get(who.token_identifier, args.hostId)
       if (!row || row.revoked_at) throw new Error("Host enrollment not found")
       if (!Array.isArray(args.workspaceIds)) {
         throw new Error("workspaceIds is required — the heartbeat signature covers the served set")
@@ -1462,11 +1464,11 @@ export function createSqliteWorkspaceAuthority(
       // The owner's assignment view rides back on every ack so the machine can
       // reconcile its persisted set — without this, machine consent and owner
       // intent drift apart silently forever.
-      const assigned = db.prepare(`
+      const assigned = db.prepare<unknown[], { workspace_id: string }>(`
         SELECT workspace_id FROM host_workspace_assignments
         WHERE host_id = ? AND owner_token_identifier = ?
         ORDER BY workspace_id
-      `).all(args.hostId, who.token_identifier) as Array<{ workspace_id: string }>
+      `).all(args.hostId, who.token_identifier)
       return {
         expires_at: expiresAt,
         last_seen_at: now,
@@ -1502,10 +1504,10 @@ export function createSqliteWorkspaceAuthority(
     async activeHostEnrollment(auth: SignedControlPlaneAuth) {
       const db = database()
       const who = user(auth)
-      const row = db.prepare(`
+      const row = db.prepare<unknown[], HostEnrollmentRow>(`
         SELECT * FROM host_enrollments WHERE owner_token_identifier = ?
         ORDER BY last_seen_at DESC LIMIT 1
-      `).get(who.token_identifier) as HostEnrollmentRow | undefined
+      `).get(who.token_identifier)
       if (!row) return { active: false as const, reason: "not-enrolled" as const }
       // Ordered most-specific first: a revoked enrollment is also expired
       // eventually, and reporting the expiry would send the user to reconnect
@@ -1566,8 +1568,8 @@ export function createSqliteWorkspaceAuthority(
       // valid under, and a revoke landing between the check and the insert
       // would otherwise be admitted.
       return db.transaction(() => {
-        const enrollment = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
-          .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
+        const enrollment = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+          .get(who.token_identifier, args.hostId)
         if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
         db.prepare(`
           UPDATE workspaces SET deleted_at = NULL, updated_at = ?
@@ -1649,7 +1651,15 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "read")
-      const row = db.prepare(`
+      const row = db.prepare<unknown[], {
+        workspace_id: string
+        host_id: string
+        second_device_open_at: number | null
+        display_name: string | null
+        expires_at: number
+        last_seen_at: number
+        session_authority: string | null
+      }>(`
         SELECT assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
           enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
           enrollment.session_authority
@@ -1658,15 +1668,7 @@ export function createSqliteWorkspaceAuthority(
           AND enrollment.owner_token_identifier = assignment.owner_token_identifier
         WHERE assignment.workspace_id = ? AND ${HOST_SERVING_WORKSPACE_SQL}
         LIMIT 1
-      `).get(args.workspaceId, Date.now()) as {
-        workspace_id: string
-        host_id: string
-        second_device_open_at: number | null
-        display_name: string | null
-        expires_at: number
-        last_seen_at: number
-        session_authority: string | null
-      } | undefined
+      `).get(args.workspaceId, Date.now())
       if (!row) return { active: false as const }
       const sessionAuthority = hostSessionAuthority(row.session_authority)
       return {
@@ -1684,7 +1686,14 @@ export function createSqliteWorkspaceAuthority(
     async listHostAssignments(auth: SignedControlPlaneAuth) {
       const db = database()
       const who = user(auth)
-      const rows = db.prepare(`
+      const rows = db.prepare<unknown[], {
+        workspace_id: string
+        host_id: string
+        display_name: string | null
+        last_seen_at: number
+        expires_at: number
+        acked_workspace_ids: string
+      }>(`
         SELECT assignment.workspace_id, assignment.host_id,
           enrollment.display_name, enrollment.last_seen_at, enrollment.expires_at,
           COALESCE(enrollment.acked_workspace_ids, '[]') AS acked_workspace_ids
@@ -1695,14 +1704,7 @@ export function createSqliteWorkspaceAuthority(
           AND enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
           AND enrollment.expires_at > ?
         ORDER BY assignment.host_id, assignment.workspace_id
-      `).all(who.token_identifier, Date.now()) as Array<{
-        workspace_id: string
-        host_id: string
-        display_name: string | null
-        last_seen_at: number
-        expires_at: number
-        acked_workspace_ids: string
-      }>
+      `).all(who.token_identifier, Date.now())
       const groups = new Map<string, {
         host_id: string
         display_name: string
@@ -1718,7 +1720,7 @@ export function createSqliteWorkspaceAuthority(
           last_seen_at: row.last_seen_at,
           expires_at: row.expires_at,
           workspace_ids: [],
-          acked_workspace_ids: JSON.parse(row.acked_workspace_ids) as string[],
+          acked_workspace_ids: ackedWorkspaceIds(row.acked_workspace_ids),
         }
         group.workspace_ids.push(row.workspace_id)
         groups.set(row.host_id, group)
@@ -1745,7 +1747,7 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
       if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       if (
@@ -1763,19 +1765,19 @@ export function createSqliteWorkspaceAuthority(
       ].filter(Boolean)
       if (selectors.length !== 1) throw new Error("session_share_target_required")
       const userTarget = args.grantedToTokenIdentifier
-        ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.grantedToTokenIdentifier) as AuthorityUser | undefined
+        ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.grantedToTokenIdentifier)
         : args.grantedToSubject
           ? userBySubject(db, args.grantedToSubject)
           : args.grantedToUserId
-            ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
-              .get(args.grantedToUserId, args.grantedToUserId) as AuthorityUser | undefined
+            ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
+              .get(args.grantedToUserId, args.grantedToUserId)
             : undefined
       const orgSelector = args.grantedToOrgId
       const org = orgSelector ? activeOrgById(db, orgSelector) : undefined
       const teamSelector = args.grantedToTeamId ?? args.grantedToTeamPublicId
       const team = teamSelector
-        ? db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
-          .get(teamSelector) as { team_id: string; org_id: string } | undefined
+        ? db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+          .get(teamSelector)
         : undefined
       if (!userTarget && !org && !team) throw new Error("session_share_target_not_found")
       if (userTarget && !authorizeWorkspaceForUser(db, workspace, userTarget, "read")) {
@@ -1784,15 +1786,10 @@ export function createSqliteWorkspaceAuthority(
       if (team && team.org_id !== workspace.org_id) throw new Error("session_share_team_org_mismatch")
       if (org && workspace.org_id && org.org_id !== workspace.org_id) throw new Error("session_share_org_mismatch")
       const now = Date.now()
-      const existing = db.prepare(`
+      const existing = db.prepare<unknown[], IdentifiedSessionShareTargetRow>(`
         SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
         FROM session_share_grants WHERE session_id = ? AND revoked_at IS NULL
-      `).all(args.sessionId) as Array<{
-        grant_id: string
-        granted_to_user_token_identifier: string | null
-        granted_to_org_id: string | null
-        granted_to_team_id: string | null
-      }>
+      `).all(args.sessionId)
       const match = existing.filter((grant) => {
         if (userTarget) return grant.granted_to_user_token_identifier === userTarget.token_identifier
         if (team) return grant.granted_to_team_id === team.team_id
@@ -1825,7 +1822,7 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
       if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       if (
@@ -1834,18 +1831,13 @@ export function createSqliteWorkspaceAuthority(
         && !teamAdminForProject(db, who, workspace)
       ) throw new Error("session_share_admin_required")
       const now = Date.now()
-      let grants: Array<{
-        grant_id: string
-        granted_to_user_token_identifier: string | null
-        granted_to_org_id: string | null
-        granted_to_team_id: string | null
-      }>
+      let grants: IdentifiedSessionShareTargetRow[]
       if (args.grantId) {
-        grants = db.prepare(`
+        grants = db.prepare<unknown[], IdentifiedSessionShareTargetRow>(`
           SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
           FROM session_share_grants
           WHERE session_id = ? AND grant_id = ? AND revoked_at IS NULL
-        `).all(args.sessionId, args.grantId) as typeof grants
+        `).all(args.sessionId, args.grantId)
       } else {
         const selectors = [
           args.grantedToTokenIdentifier,
@@ -1861,21 +1853,21 @@ export function createSqliteWorkspaceAuthority(
           : args.grantedToSubject
             ? userBySubject(db, args.grantedToSubject)?.token_identifier
             : args.grantedToUserId
-              ? (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
-                .get(args.grantedToUserId, args.grantedToUserId) as { token_identifier: string } | undefined)?.token_identifier
+              ? (db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
+                .get(args.grantedToUserId, args.grantedToUserId))?.token_identifier
               : undefined
         const orgSelector = args.grantedToOrgId
         const orgId = orgSelector ? activeOrgById(db, orgSelector)?.org_id : undefined
         const teamId = args.grantedToTeamId ?? args.grantedToTeamPublicId
-        grants = db.prepare(`
+        grants = db.prepare<unknown[], IdentifiedSessionShareTargetRow>(`
           SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
           FROM session_share_grants WHERE session_id = ? AND revoked_at IS NULL
-        `).all(args.sessionId).filter((grant: any) => {
+        `).all(args.sessionId).filter((grant) => {
           if (userTarget) return grant.granted_to_user_token_identifier === userTarget
           if (teamId) return grant.granted_to_team_id === teamId
           if (orgId) return grant.granted_to_org_id === orgId
           return false
-        }) as typeof grants
+        })
       }
       if (grants.length === 0) return { revoked: false, revokedTargets: [] }
       const revokedTargets = grants.flatMap((grant): SessionShareFanoutTarget[] => {
@@ -1895,14 +1887,14 @@ export function createSqliteWorkspaceAuthority(
         db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
         if (grant.granted_to_user_token_identifier) tokenIdentifiers.add(grant.granted_to_user_token_identifier)
         if (grant.granted_to_org_id) {
-          for (const membership of db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
-            .all(grant.granted_to_org_id) as Array<{ token_identifier: string }>) {
+          for (const membership of db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+            .all(grant.granted_to_org_id)) {
             tokenIdentifiers.add(membership.token_identifier)
           }
         }
         if (grant.granted_to_team_id) {
-          for (const membership of db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
-            .all(grant.granted_to_team_id) as Array<{ user_token_identifier: string }>) {
+          for (const membership of db.prepare<unknown[], { user_token_identifier: string }>(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
+            .all(grant.granted_to_team_id)) {
             tokenIdentifiers.add(membership.user_token_identifier)
           }
         }
@@ -1920,7 +1912,7 @@ export function createSqliteWorkspaceAuthority(
       if (!workspace || workspace.deleted_at) throw new Error("Session not found")
       const workspaceRole = authorizeWorkspaceForUser(db, workspace, who, "read")
       if (!workspaceRole) throw new Error("session_share_admin_required")
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       // A session this authority does not hold has no shares here and none to
       // manage — a definite answer for a workspace reader, not an error.
       if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) {
@@ -1937,20 +1929,20 @@ export function createSqliteWorkspaceAuthority(
       if (!canManageShares) {
         return { can_manage_shares: false, grants: [], participants: [], teams: [] }
       }
-      const grants = db.prepare(`
+      const grants = db.prepare<unknown[], Record<string, unknown>>(`
         SELECT grant_id, session_id, workspace_id, granted_to_user_token_identifier AS granted_to_user_id,
           granted_to_org_id, granted_to_team_id, created_by_token_identifier AS created_by_user_id,
           created_at, revoked_at
         FROM session_share_grants
         WHERE session_id = ? AND revoked_at IS NULL
         ORDER BY created_at ASC
-      `).all(args.sessionId) as Array<Record<string, unknown>>
-      const participants = db.prepare(`
+      `).all(args.sessionId)
+      const participants = db.prepare<unknown[], Record<string, unknown>>(`
         SELECT participant_actor_id AS user_id, added_by_actor_id AS added_by_user_id, created_at
         FROM session_participants
         WHERE session_id = ? AND revoked_at IS NULL
         ORDER BY created_at ASC
-      `).all(args.sessionId) as Array<Record<string, unknown>>
+      `).all(args.sessionId)
       const sharedTeamIds = new Set(grants.flatMap((grant: any) =>
         typeof grant.granted_to_team_id === "string" ? [grant.granted_to_team_id] : []))
       const teams = db.prepare(`
@@ -1967,7 +1959,7 @@ export function createSqliteWorkspaceAuthority(
     // --- runtime tokens ------------------------------------------------------
     async resolveRuntimeMachineAccess(actorId, workspaceId) {
       const db = database()
-      const who = db.prepare(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId) as AuthorityUser | undefined
+      const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId)
       if (!who || who.kind !== "human") denied()
       const workspace = requireWorkspace(db, who, workspaceId, "write")
       const role = workspaceRoleForUser(db, workspace, who)
@@ -1976,7 +1968,7 @@ export function createSqliteWorkspaceAuthority(
     },
     async recordActorRuntimeAccessToken(args) {
       const db = database()
-      const who = db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`).get(args.actorId) as AuthorityUser | undefined
+      const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`).get(args.actorId)
       if (!who || who.kind !== "human" || args.actorKind !== "human") denied()
       return recordUserRuntimeToken(who, args)
     },
@@ -1996,7 +1988,6 @@ export function createSqliteWorkspaceAuthority(
       return recordUserRuntimeToken(who, args)
     },
     async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args) {
-      const db = database()
       const who = user(auth)
       if (who.token_identifier !== args.actorId || who.kind !== args.actorKind) denied()
       return recordUserRuntimeToken(who, args)
@@ -2005,8 +1996,8 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const who = args.principalKind === "user"
-        ? db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
-            .get(args.actorId) as AuthorityUser | undefined
+        ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
+            .get(args.actorId)
         : undefined
       const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const userAllowed = args.principalKind === "user"
@@ -2041,7 +2032,7 @@ export function createSqliteWorkspaceAuthority(
     },
     async runtimeAccessTokenActive(args) {
       const db = database()
-      const token = db.prepare(`SELECT * FROM runtime_access_tokens WHERE jti = ?`).get(args.jti) as {
+      const token = db.prepare<unknown[], {
         workspace_id: string
         host_id: string
         minted_for_token_identifier: string | null
@@ -2051,7 +2042,7 @@ export function createSqliteWorkspaceAuthority(
         role: "viewer" | "editor" | "admin" | "owner"
         expires_at: number
         revoked_at: number | null
-      } | undefined
+      }>(`SELECT * FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
       if (!token) {
         return { active: false, code: "runtime_access_token_unknown", reason: "Runtime Access Token has not been recorded" }
       }
@@ -2066,8 +2057,8 @@ export function createSqliteWorkspaceAuthority(
       }
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const who = token.principal_kind === "user"
-        ? db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
-            .get(token.actor_id) as AuthorityUser | undefined
+        ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
+            .get(token.actor_id)
         : undefined
       const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const authorizationChanged = !workspace
@@ -2142,4 +2133,14 @@ export function createSqliteWorkspaceAuthority(
     },
   }
   return Object.assign(workspaceAuthority, privateSessions)
+}
+
+/** The host's acknowledged workspace ids, as persisted by `markSecondDeviceOpen`. */
+function ackedWorkspaceIds(json: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(json)
+    return Array.isArray(parsed) ? parsed.flatMap((item) => jsonString(item) ?? []) : []
+  } catch {
+    return []
+  }
 }

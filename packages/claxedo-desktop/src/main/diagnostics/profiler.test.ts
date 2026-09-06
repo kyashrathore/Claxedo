@@ -334,8 +334,7 @@ describe("bounded desktop profiler", () => {
       },
     }
     const profiler = createProfiler({ clock, source: electronSource })
-    const utility = new EventEmitter() as EventEmitter & { pid: number }
-    utility.pid = 50
+    const utility = Object.assign(new EventEmitter(), { pid: 50 })
     profiler.registerUtilityProcess(utility, {
       launchId: "server-launch",
       ownerId: "owner-server",

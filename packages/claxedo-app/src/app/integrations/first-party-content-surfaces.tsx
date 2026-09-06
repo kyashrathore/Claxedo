@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "solid-js"
 import { SessionContent } from "../../features/session/ui/content/session-content"
-import { createContributionRegistry, type ContributionGateContext, type SurfaceContribution } from "./registry"
+import { createContributionRegistry, type ContributionGateContext } from "./registry"
 import type { ContentMeta } from "../workbench/state/index"
 import { SurfaceFallback } from "./surface-fallback"
 import type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./content-surface-contract"
@@ -68,13 +68,13 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
 ]
 
 export function createContentSurfaceRegistry(surfaces: ContentSurfaceContribution[] = localContentSurfaces) {
-  return createContributionRegistry({ surfaces: surfaces as SurfaceContribution[] })
+  return createContributionRegistry({ surfaces })
 }
 
 export const contentSurfaceRegistry = createContentSurfaceRegistry()
 
 export function registerContentSurface(surface: ContentSurfaceContribution) {
-  contentSurfaceRegistry.addSurface(surface as SurfaceContribution)
+  contentSurfaceRegistry.addSurface(surface)
 }
 
 /**
@@ -89,7 +89,7 @@ export function unregisterContentSurface(surface: ContentSurfaceContribution) {
 }
 
 export function contentSurface(type: string | undefined, context: ContributionGateContext = {}, registry = contentSurfaceRegistry) {
-  return (registry.visibleSurfaces(context) as ContentSurfaceContribution[]).find(
+  return registry.visibleSurfaces(context).find(
     (surface): surface is ContentSurfaceContribution => surface.surface === type && typeof surface.renderer === "function",
   )
 }

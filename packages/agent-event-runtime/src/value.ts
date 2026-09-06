@@ -1,12 +1,17 @@
-export function object(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
-}
+import { asRecord, asText, isRecord } from "@claxedo/agent-runtime-contract"
 
-export function text(value: unknown) {
-  if (typeof value !== "string") return
-  if (!value) return
-  return value
+/** Harness payload readers. The structural guards live in the contract package. */
+export { isRecord }
+export const object = asRecord
+export const text = asText
+
+/** JSON text for diagnostics and error surfaces. Never throws on cycles or BigInt. */
+export function jsonText(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? ""
+  } catch {
+    return "[unserializable]"
+  }
 }
 
 export function number(value: unknown) {

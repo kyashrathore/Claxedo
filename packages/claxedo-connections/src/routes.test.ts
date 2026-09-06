@@ -162,7 +162,7 @@ describe("integrations routes", () => {
     expect(listing.integrations).toHaveLength(1)
     expect(listing.connections[0]).toMatchObject({ integrationId: "fake", status: "connected", accountLabel: "Acme" })
 
-    const token = await app.request(`/connections/${listing.connections[0]!.id}/token?capability=docs`)
+    const token = await app.request(`/connections/${listing.connections[0].id}/token?capability=docs`)
     expect(token.status).toBe(200)
     expect(await token.json()).toEqual({
       token: "good",
@@ -176,7 +176,7 @@ describe("integrations routes", () => {
     await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
     const listing = await (await app.request("/")).json() as { connections: Array<{ id: string }> }
 
-    const response = await app.request(`/connections/${listing.connections[0]!.id}/repositories`)
+    const response = await app.request(`/connections/${listing.connections[0].id}/repositories`)
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body).toEqual({ repositories: [{
@@ -344,7 +344,7 @@ describe("integrations routes", () => {
       method: "POST",
       body: JSON.stringify({ fields: {}, secret: "good" }),
     })
-    const id = ((await (await orgA.request("/")).json()) as { connections: Array<{ id: string }> }).connections[0]!.id
+    const id = ((await (await orgA.request("/")).json()) as { connections: Array<{ id: string }> }).connections[0].id
     expect((await orgA.request(`/connections/${id}/webhook-secret`, {
       method: "PUT",
       body: JSON.stringify({ secret: "org-a-secret" }),
@@ -408,8 +408,8 @@ describe("integrations routes", () => {
     expect(body.url).toBe(`https://provider.example/auth?state=${body.attemptId}`)
     // The PKCE verifier stays server-side — it is never part of the response.
     expect(authorized).toHaveLength(1)
-    expect(authorized[0]!.state).toBe(body.attemptId)
-    expect(JSON.stringify(body)).not.toContain(authorized[0]!.verifier)
+    expect(authorized[0].state).toBe(body.attemptId)
+    expect(JSON.stringify(body)).not.toContain(authorized[0].verifier)
 
     // The attempt is live and readable through the status route.
     const status = await app.request(`/attempts/${body.attemptId}`)
@@ -591,7 +591,7 @@ describe("integrations routes", () => {
     expect((await orgA.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
     const aListing = (await (await orgA.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
     expect(aListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
-    const teamRow = aListing.connections[0]!
+    const teamRow = aListing.connections[0]
     expect((await service.getById(teamRow.id))?.owner).toBe("org:org-a")
 
     // Every org B surface: list, delete, reverify, token, auth-failure.
@@ -612,7 +612,7 @@ describe("integrations routes", () => {
     // Seed an owner-absent (self-host team) row through the default app.
     expect((await selfHost.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
     const seeded = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string }> }
-    const ownerless = seeded.connections[0]!.id
+    const ownerless = seeded.connections[0].id
 
     const refusing = createIntegrationsRoutes(service, {
       owner: () => "user:alice",

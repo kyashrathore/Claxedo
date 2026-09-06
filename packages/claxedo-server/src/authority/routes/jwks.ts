@@ -35,7 +35,7 @@ function pem(input?: string) {
 }
 
 async function deriveKid(jwk: JWK): Promise<string> {
-  const material = String(jwk.x ?? jwk.n ?? "")
+  const material = jwk.x ?? jwk.n ?? ""
   if (!material) {
     throw new Error("Cannot derive kid: JWK has no public component")
   }

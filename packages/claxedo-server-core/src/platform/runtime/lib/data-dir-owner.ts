@@ -3,6 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import { parseJsonRecord } from "./json"
 
 const OWNER_DIRECTORY = "control-plane.owners"
 const LEGACY_OWNER_FILE = "control-plane.owner.json"
@@ -174,24 +175,21 @@ function inspectOwner(ownerPath: string): InspectedOwner | undefined {
       fs.closeSync(handle)
     }
   } catch (error) {
-    if (isNodeError(error, "ENOENT")) return
+    if (isNodeError(error, "ENOENT")) return undefined
     throw error
   }
 }
 
 function parseOwner(raw: string): OwnerRecord | undefined {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    if (
-      typeof parsed.pid !== "number" || !Number.isSafeInteger(parsed.pid) || parsed.pid <= 0 ||
-      typeof parsed.hostname !== "string" || !parsed.hostname ||
-      typeof parsed.token !== "string" || !parsed.token ||
-      typeof parsed.startedAt !== "string" || !parsed.startedAt
-    ) return
-    return { pid: parsed.pid, hostname: parsed.hostname, token: parsed.token, startedAt: parsed.startedAt }
-  } catch {
-    return
-  }
+  const parsed = parseJsonRecord(raw)
+  if (
+    !parsed ||
+    typeof parsed.pid !== "number" || !Number.isSafeInteger(parsed.pid) || parsed.pid <= 0 ||
+    typeof parsed.hostname !== "string" || !parsed.hostname ||
+    typeof parsed.token !== "string" || !parsed.token ||
+    typeof parsed.startedAt !== "string" || !parsed.startedAt
+  ) return undefined
+  return { pid: parsed.pid, hostname: parsed.hostname, token: parsed.token, startedAt: parsed.startedAt }
 }
 
 function staleOwner(inspected: InspectedOwner) {

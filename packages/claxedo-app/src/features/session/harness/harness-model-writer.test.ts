@@ -6,6 +6,7 @@ import {
   type SessionModelSyncState,
 } from "./harness-model-writer"
 import { sessionResourceUrl } from "./harness-config-routes"
+import { requestUrl } from "@/lib/url"
 
 const scope = "draft:/repo:route"
 
@@ -203,7 +204,7 @@ function writerFor() {
       useLocalHarnessConfig: () => useLocal,
       harnessSessionFetch: () => async (url, init) => {
         posts.push({
-          url: String(url),
+          url: requestUrl(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
         })
         return Response.json({

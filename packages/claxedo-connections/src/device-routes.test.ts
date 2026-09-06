@@ -28,7 +28,7 @@ function harness(polls: DevicePoll[], options: { gateDenies?: boolean } = {}) {
           intervalMs: 5_000,
           expiresAt: Date.now() + 900_000,
         }),
-        poll: async () => polls[Math.min(pollIndex++, polls.length - 1)]!,
+        poll: async () => polls[Math.min(pollIndex++, polls.length - 1)],
       },
     },
   )
@@ -39,9 +39,7 @@ function harness(polls: DevicePoll[], options: { gateDenies?: boolean } = {}) {
     attempts: createAttempts({ sweepIntervalMs: 0 }),
     newId: () => "connection-1",
   })
-  const app = createIntegrationsRoutes(service, {
-    ...(options.gateDenies ? { gate: () => new Response("denied", { status: 401 }) } : {}),
-  })
+  const app = createIntegrationsRoutes(service, (options.gateDenies ? { gate: () => new Response("denied", { status: 401 }) } : {}))
   const request = (path: string, init?: RequestInit) => app.fetch(new Request(`http://host${path}`, init))
   return { app, service, request }
 }

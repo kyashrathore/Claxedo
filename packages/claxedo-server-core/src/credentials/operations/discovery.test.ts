@@ -84,7 +84,7 @@ describe("credential discovery", () => {
       discovery_id: discovery.discovery_id,
       items: [{
         provider_id: "openai",
-        account_id: discovery.items[1]!.account_id,
+        account_id: discovery.items[1].account_id,
         scope: "shared",
       }],
     })
@@ -92,7 +92,7 @@ describe("credential discovery", () => {
     expect(result).toEqual({ saved: [{
       credential_id: "saved-account-two@example.com",
       provider_id: "openai",
-      account_id: discovery.items[1]!.account_id,
+      account_id: discovery.items[1].account_id,
     }] })
     expect(save).toHaveBeenCalledOnce()
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
@@ -111,7 +111,7 @@ describe("credential discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "openai", account_id: discovery.items[1]!.account_id, scope: "local" }],
+      items: [{ provider_id: "openai", account_id: discovery.items[1].account_id, scope: "local" }],
     }, "org_a")
 
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ provider_id: "openai" }), "org_a")
@@ -123,7 +123,7 @@ describe("credential discovery", () => {
 
     await expect(service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "openai", account_id: discovery.items[1]!.account_id, scope: "local" }],
+      items: [{ provider_id: "openai", account_id: discovery.items[1].account_id, scope: "local" }],
     }, "org_b")).rejects.toMatchObject({ code: "discovery_org_mismatch" })
     expect(save).not.toHaveBeenCalled()
   })
@@ -154,7 +154,7 @@ describe("credential discovery", () => {
     const discovery = await service.discover()
     const selection = {
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "openai", account_id: discovery.items[0]!.account_id, scope: "local" as const }],
+      items: [{ provider_id: "openai", account_id: discovery.items[0].account_id, scope: "local" as const }],
     }
 
     await expect(service.save({ ...selection, discovery_id: "unknown" })).rejects.toMatchObject({ code: "discovery_not_found" })
@@ -221,7 +221,7 @@ describe("live probing during discovery", () => {
     const result = await service.discover()
 
     expect(result.items.every((item) => item.probe?.state === "unknown")).toBe(true)
-    expect(result.items[0]!.probe).toMatchObject({ reason: expect.stringContaining("ENOTFOUND") })
+    expect(result.items[0].probe).toMatchObject({ reason: expect.stringContaining("ENOTFOUND") })
   })
 
   test("no probe configured leaves every row unknown rather than claiming success", async () => {

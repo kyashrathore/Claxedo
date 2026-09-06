@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { harnessQueryFetch } from "./harness-query-fetch"
+import { requestUrl } from "@/lib/url"
 
 describe("harnessQueryFetch", () => {
   test("returns the underlying request when no harness is selected", () => {
@@ -11,7 +12,7 @@ describe("harnessQueryFetch", () => {
   test("adds the harness query parameter to string requests", async () => {
     const calls: string[] = []
     const request = ((url: RequestInfo | URL) => {
-      calls.push(String(url))
+      calls.push(requestUrl(url))
       return Promise.resolve(new Response())
     }) as typeof fetch
 
@@ -27,7 +28,7 @@ describe("harnessQueryFetch", () => {
   test("adds the harness query parameter to Request inputs and preserves request metadata", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const request = ((url: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url: String(url), init })
+      calls.push({ url: requestUrl(url), init })
       return Promise.resolve(new Response())
     }) as typeof fetch
     const controller = new AbortController()

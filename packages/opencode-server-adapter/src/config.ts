@@ -107,7 +107,7 @@ export function resolveOpenCodeServerConnection(input: {
     throw invalid("Resolved secret names do not match configured secret references")
   }
   for (const name of required) {
-    if (typeof input.secrets[name] !== "string" || input.secrets[name]!.length === 0) throw invalid(`Resolved secret ${name} is missing`)
+    if (typeof input.secrets[name] !== "string" || input.secrets[name].length === 0) throw invalid(`Resolved secret ${name} is missing`)
   }
   const auth = input.config.auth?.type === "basic"
     ? { type: "basic" as const, username: input.config.auth.username ?? "opencode", password: input.secrets[input.config.auth.passwordSecret]! }
@@ -190,17 +190,27 @@ function parseTenant(input: unknown) {
 
 function parseReconnect(input: unknown) {
   const value = object(input, "reconnect")
-  return { maxAttempts: integer(value.maxAttempts, "reconnect.maxAttempts", 10), delayMs: integer(value.delayMs, "reconnect.delayMs", 30_000) }
+  return {
+    maxAttempts: integer(value.maxAttempts, "reconnect.maxAttempts", 0, 10),
+    delayMs: integer(value.delayMs, "reconnect.delayMs", 0, 30_000),
+  }
 }
 
 function parseDeadlines(input: unknown) {
   const value = object(input, "deadlines")
-  return { requestMs: positiveInteger(value.requestMs, "deadlines.requestMs", 120_000), streamIdleMs: positiveInteger(value.streamIdleMs, "deadlines.streamIdleMs", 300_000) }
+  return {
+    requestMs: integer(value.requestMs, "deadlines.requestMs", 1, 120_000),
+    streamIdleMs: integer(value.streamIdleMs, "deadlines.streamIdleMs", 1, 300_000),
+  }
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return !!input && typeof input === "object" && !Array.isArray(input)
 }
 
 function object(input: unknown, field: string): Record<string, unknown> {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw invalid(`${field} must be an object`)
-  return input as Record<string, unknown>
+  if (!isRecord(input)) throw invalid(`${field} must be an object`)
+  return input
 }
 
 function text(input: unknown, field: string) {
@@ -220,14 +230,11 @@ function headerName(input: unknown, field: string) {
   return value
 }
 
-function integer(input: unknown, field: string, max: number) {
-  if (!Number.isSafeInteger(input) || (input as number) < 0 || (input as number) > max) throw invalid(`${field} must be an integer from 0 to ${max}`)
-  return input as number
-}
-
-function positiveInteger(input: unknown, field: string, max: number) {
-  if (!Number.isSafeInteger(input) || (input as number) < 1 || (input as number) > max) throw invalid(`${field} must be an integer from 1 to ${max}`)
-  return input as number
+function integer(input: unknown, field: string, min: number, max: number): number {
+  if (typeof input !== "number" || !Number.isSafeInteger(input) || input < min || input > max) {
+    throw invalid(`${field} must be an integer from ${min} to ${max}`)
+  }
+  return input
 }
 
 function invalid(message: string) { return new OpenCodeServerAdapterError("invalid_config", message) }

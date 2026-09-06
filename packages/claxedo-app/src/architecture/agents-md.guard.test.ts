@@ -70,19 +70,25 @@ describe("per-directory AGENTS.md contracts", () => {
   })
 })
 
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []
+}
+
 function readContract(file: string): AgentsContract | string {
   const text = readFileSync(file, "utf8")
   const match = text.match(/```json\s*([\s\S]*?)```/)
   if (!match) return "missing fenced json contract"
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(match[1]) as Partial<AgentsContract>
-    return {
-      owns: String(parsed.owns ?? ""),
-      writerOf: Array.isArray(parsed.writerOf) ? parsed.writerOf.map(String) : [],
-      mustNotImport: Array.isArray(parsed.mustNotImport) ? parsed.mustNotImport.map(String) : [],
-    }
+    parsed = JSON.parse(match[1] ?? "")
   } catch (error) {
     return `invalid json contract: ${error instanceof Error ? error.message : String(error)}`
+  }
+  if (typeof parsed !== "object" || parsed === null) return "fenced json contract is not an object"
+  return {
+    owns: "owns" in parsed && typeof parsed.owns === "string" ? parsed.owns : "",
+    writerOf: "writerOf" in parsed ? stringList(parsed.writerOf) : [],
+    mustNotImport: "mustNotImport" in parsed ? stringList(parsed.mustNotImport) : [],
   }
 }
 

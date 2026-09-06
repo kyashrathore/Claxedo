@@ -20,24 +20,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-declare const scopeBrand: unique symbol
-
-/**
- * An authorized workspace. Opaque on purpose: callers cannot forge one by
- * writing an object literal, so "where may this operation act?" always traces
- * back to a mint site that did the authorization.
- */
-export type WorkspaceScope = Readonly<{
-  /** Canonical Claxedo workspace identity. */
-  workspaceID: string
-  /** Fully resolved real path — symlinks followed. */
-  directory: string
-}> & {
-  // Type-level only. It must NOT appear in the runtime object: `scopeBrand` is
-  // a `declare`d symbol with no runtime binding, so constructing it would throw.
-  readonly [scopeBrand]: true
-}
-
 export class WorkspaceScopeError extends Error {
   readonly code = "opencode_workspace_scope_invalid"
   constructor(message: string) {
@@ -47,34 +29,59 @@ export class WorkspaceScopeError extends Error {
 }
 
 /**
- * Mint a scope from a canonical workspace identity and directory.
+ * An authorized workspace.
  *
- * Call this ONLY from a composition/route boundary that has already decided
- * the actor may act on this workspace. Resolving the real path here is what
- * makes a later `sameScope` check meaningful after a symlink change.
+ * Unforgeable by construction: the constructor is private, so the only value
+ * of this type is one `authorize` produced after running the checks below, and
+ * the private field makes the class nominal so an object literal with the same
+ * two fields is not a `WorkspaceScope`. "Where may this operation act?"
+ * therefore always traces back to an `authorize` call that did the work.
  */
-export function authorizeWorkspace(input: { workspaceID: string; directory: string }): WorkspaceScope {
-  const workspaceID = input.workspaceID.trim()
-  if (!workspaceID) throw new WorkspaceScopeError("A workspace scope requires a canonical workspace id")
+export class WorkspaceScope {
+  /**
+   * Nominal brand. Never read: a class whose members are all public is
+   * structurally identical to `{ workspaceID, directory }`, and a caller could
+   * then hand a bare object to any port that takes a scope.
+   */
+  private readonly authorized = true
 
-  if (!path.isAbsolute(input.directory)) {
-    throw new WorkspaceScopeError(`Workspace directory must be absolute, received ${input.directory}`)
+  private constructor(
+    /** Canonical Claxedo workspace identity. */
+    readonly workspaceID: string,
+    /** Fully resolved real path — symlinks followed. */
+    readonly directory: string,
+  ) {}
+
+  /**
+   * Mint a scope from a canonical workspace identity and directory.
+   *
+   * Call this ONLY from a composition/route boundary that has already decided
+   * the actor may act on this workspace. Resolving the real path here is what
+   * makes a later `sameScope` check meaningful after a symlink change.
+   */
+  static authorize(input: { workspaceID: string; directory: string }): WorkspaceScope {
+    const workspaceID = input.workspaceID.trim()
+    if (!workspaceID) throw new WorkspaceScopeError("A workspace scope requires a canonical workspace id")
+
+    if (!path.isAbsolute(input.directory)) {
+      throw new WorkspaceScopeError(`Workspace directory must be absolute, received ${input.directory}`)
+    }
+
+    let directory: string
+    try {
+      directory = fs.realpathSync(input.directory)
+    } catch (cause) {
+      throw new WorkspaceScopeError(
+        `Workspace directory ${input.directory} could not be resolved: ${cause instanceof Error ? cause.message : String(cause)}`,
+      )
+    }
+
+    if (!fs.statSync(directory).isDirectory()) {
+      throw new WorkspaceScopeError(`Workspace path ${directory} is not a directory`)
+    }
+
+    return new WorkspaceScope(workspaceID, directory)
   }
-
-  let directory: string
-  try {
-    directory = fs.realpathSync(input.directory)
-  } catch (cause) {
-    throw new WorkspaceScopeError(
-      `Workspace directory ${input.directory} could not be resolved: ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
-  }
-
-  if (!fs.statSync(directory).isDirectory()) {
-    throw new WorkspaceScopeError(`Workspace path ${directory} is not a directory`)
-  }
-
-  return { workspaceID, directory } as unknown as WorkspaceScope
 }
 
 /** True when two scopes name the same authorized workspace. */

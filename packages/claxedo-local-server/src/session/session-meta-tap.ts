@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
 import { globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { record } from "../platform/json"
 
 /**
  * Records local session metadata as sessions are created, renamed, and deleted.
@@ -75,17 +76,15 @@ export function sessionMetaProjectionTap(
         })
         return
       }
-      const body = (await res
-        .clone()
-        .json()
-        .catch(() => undefined)) as Record<string, any> | undefined
+      const body = record(await res.clone().json().catch(() => undefined))
       if (!body || typeof body.id !== "string") return
+      const archived = record(body.time)?.archived
       await projectionStore.put_session_meta(body.id, {
         ws: ws ?? undefined,
         directory: ws?.directory ?? directory ?? (typeof body.directory === "string" ? body.directory : null),
         title: typeof body.title === "string" ? body.title : null,
         parentID: typeof body.parentID === "string" ? body.parentID : null,
-        archived: typeof body?.time?.archived === "number" ? body.time.archived : null,
+        archived: typeof archived === "number" ? archived : null,
       })
     } catch {
       // best-effort: never break the proxied response
@@ -110,8 +109,7 @@ export async function projectLocalSessionMetaFromEvent(
   },
 ) {
   try {
-    const raw = event.payload.properties?.info
-    const info = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
+    const info = record(event.payload.properties?.info)
     if (!info || typeof info.id !== "string") return
     const directory = typeof info.directory === "string" ? info.directory : event.directory
     const workspaceID = typeof info.workspaceID === "string" ? info.workspaceID : undefined

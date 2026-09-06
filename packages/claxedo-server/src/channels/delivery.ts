@@ -28,7 +28,8 @@ function dayStart(input: number) {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
 }
 
-type Tx = Parameters<Parameters<typeof ClaxedoDB.transaction>[0]>[0]
+/** `use` and `transaction` hand out the same client; the helpers below take either. */
+type Tx = ClaxedoDB.Client
 
 function initializedAt(tx: Tx, now: number) {
   const seeded = now - DAY_MS
@@ -137,7 +138,7 @@ export async function countChannelDeliveriesByUserDay(input: {
 }) {
   const start = Date.parse(`${input.day}T00:00:00.000Z`)
   if (!Number.isFinite(start)) return 0
-  return ClaxedoDB.use((db) => sessionCreateCountForDay(db as unknown as Tx, {
+  return ClaxedoDB.use((db) => sessionCreateCountForDay(db, {
     channel: input.channel,
     externalUserId: input.externalUserId,
     start,

@@ -1,4 +1,4 @@
-import type { AgentUserMessage } from "@claxedo/agent-runtime-contract"
+import type { AgentSnapshotFileDiff } from "@claxedo/agent-runtime-contract"
 import { HoverCard, useHoverCardContext } from "@kobalte/core/hover-card"
 import {
   ComponentProps,
@@ -22,14 +22,33 @@ export type MessageNavPreview = {
   assistant?: string
 }
 
-export function MessageNav(
+/**
+ * What this nav reads off a turn's user message: its id, and the summary it
+ * renders a label and diff bars from.
+ *
+ * Structural rather than `AgentUserMessage` — that contract also requires
+ * `agent` and `model`, which this component never touches and which a row the
+ * runtime has not echoed back yet does not have. Naming only the fields read
+ * keeps a caller free to pass an optimistic turn.
+ */
+export type MessageNavMessage = {
+  id: string
+  summary?: { title?: string; diffs?: AgentSnapshotFileDiff[] }
+}
+
+/**
+ * Generic over the row type so the callbacks hand back what the caller passed
+ * in. Typing them as `MessageNavMessage` would make the nav claim it can invoke
+ * a handler with a bare `{id}`, which no caller writes one for.
+ */
+export function MessageNav<M extends MessageNavMessage>(
   props: ComponentProps<"ul"> & {
-    messages: AgentUserMessage[]
-    current?: AgentUserMessage
+    messages: M[]
+    current?: M
     size: "normal" | "compact"
-    onMessageSelect: (message: AgentUserMessage) => void
-    getLabel?: (message: AgentUserMessage) => string | undefined
-    getPreview?: (message: AgentUserMessage) => MessageNavPreview
+    onMessageSelect: (message: M) => void
+    getLabel?: (message: M) => string | undefined
+    getPreview?: (message: M) => MessageNavPreview
   },
 ) {
   const i18n = useI18n()
@@ -43,7 +62,7 @@ export function MessageNav(
     "class",
   ])
   const [activePreview, setActivePreview] = createSignal<string>()
-  const [pendingPreview, setPendingPreview] = createSignal<AgentUserMessage>()
+  const [pendingPreview, setPendingPreview] = createSignal<M>()
   let previewSwitchTimer: number | undefined
 
   const cancelPreviewSwitch = () => {
@@ -59,16 +78,16 @@ export function MessageNav(
     return index >= 0 ? index : local.messages.length - 1
   }
 
-  const selectMessage = (message: AgentUserMessage) => {
+  const selectMessage = (message: M) => {
     local.onMessageSelect(message)
   }
 
-  const fallbackLabel = (message: AgentUserMessage) =>
+  const fallbackLabel = (message: M) =>
     local.getLabel?.(message) ?? message.summary?.title ?? i18n.t("ui.messageNav.newMessage")
 
   const activePreviewMessage = createMemo(() => {
     const id = activePreview()
-    if (!id) return
+    if (!id) return undefined
     return local.messages.find((message) => message.id === id)
   })
 
@@ -89,7 +108,7 @@ export function MessageNav(
       if (pending && !ids.has(pending.id)) {
         cancelPreviewSwitch()
         hoverCard.cancelOpening()
-        setPendingPreview(activePreviewMessage())
+        setPendingPreview(() => activePreviewMessage())
       }
 
       const active = activePreview()
@@ -99,14 +118,14 @@ export function MessageNav(
       closePreview()
     }))
 
-    const beginPreview = (message: AgentUserMessage, trigger: HTMLButtonElement) => {
+    const beginPreview = (message: M, trigger: HTMLButtonElement) => {
       hoverCard.cancelClosing()
 
       if (!hoverCard.isOpen()) {
         cancelPreviewSwitch()
         hoverCard.cancelOpening()
         hoverCard.setTriggerRef(trigger)
-        setPendingPreview(message)
+        setPendingPreview(() => message)
         hoverCard.openWithDelay()
         return
       }
@@ -114,7 +133,7 @@ export function MessageNav(
       if (activePreview() === message.id) return
 
       cancelPreviewSwitch()
-      setPendingPreview(message)
+      setPendingPreview(() => message)
       previewSwitchTimer = window.setTimeout(() => {
         previewSwitchTimer = undefined
         batch(() => {
@@ -124,14 +143,14 @@ export function MessageNav(
       }, 140)
     }
 
-    const cancelPendingPreview = (message: AgentUserMessage) => {
+    const cancelPendingPreview = (message: M) => {
       if (pendingPreview()?.id !== message.id) return
       cancelPreviewSwitch()
       hoverCard.cancelOpening()
-      setPendingPreview(activePreviewMessage())
+      setPendingPreview(() => activePreviewMessage())
     }
 
-    const selectCompactMessage = (message: AgentUserMessage) => {
+    const selectCompactMessage = (message: M) => {
       closePreview()
       hoverCard.close()
       selectMessage(message)
@@ -173,7 +192,10 @@ export function MessageNav(
                     }}
                     onBlur={(event) => {
                       cancelPendingPreview(message)
-                      if (hoverCard.isTargetOnHoverCard(event.relatedTarget as Node | null)) return
+                      // `relatedTarget` is an `EventTarget`; kobalte compares it against its
+                      // content node, so anything that is not a Node can never be inside it.
+                      const related = event.relatedTarget
+                      if (related instanceof Node && hoverCard.isTargetOnHoverCard(related)) return
                       hoverCard.closeWithDelay()
                     }}
                     onClick={() => selectCompactMessage(message)}

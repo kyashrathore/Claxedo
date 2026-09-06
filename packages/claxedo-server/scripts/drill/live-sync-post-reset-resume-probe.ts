@@ -23,6 +23,7 @@
 
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+import { asRecord, parseJson, stringField } from "../../src/platform/json/index"
 
 /** Long enough for miniflare to evict an idle Durable Object. */
 const HIBERNATE_MS = 12_000
@@ -80,7 +81,7 @@ const bundled = await build({
 const miniflare = new Miniflare({
   compatibilityDate: "2025-05-01",
   compatibilityFlags: ["nodejs_compat"],
-  modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0]!.text }],
+  modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0].text }],
   durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
 })
 await miniflare.ready
@@ -94,7 +95,8 @@ async function open(lastEventId?: string) {
   const response = await miniflare.dispatchFetch("http://probe.local/connect", {
     headers: lastEventId ? { "last-event-id": lastEventId } : {},
   })
-  const reader = (response.body as unknown as ReadableStream<Uint8Array>).getReader()
+  if (!response.body) throw new Error("probe stream did not open")
+  const reader = response.body.getReader()
   const frames: Frame[] = []
   const decoder = new TextDecoder()
   let buffer = ""
@@ -102,7 +104,7 @@ async function open(lastEventId?: string) {
     while (true) {
       const next = await reader.read().catch(() => ({ done: true, value: undefined }))
       if (next.done) break
-      buffer += decoder.decode(next.value!, { stream: true })
+      buffer += decoder.decode(next.value, { stream: true })
       const chunks = buffer.split("\n\n")
       buffer = chunks.pop() ?? ""
       for (const chunk of chunks) {
@@ -110,12 +112,11 @@ async function open(lastEventId?: string) {
         const id = lines.find((l) => l.startsWith("id:"))?.slice(3).trim()
         const data = lines.find((l) => l.startsWith("data:"))?.slice(5).trim()
         if (!data) continue
-        const payload = JSON.parse(data) as { type: string; documentId?: string }
-        frames.push({
-          ...(id ? { id } : {}),
-          type: payload.type,
-          ...(payload.documentId ? { doc: payload.documentId } : {}),
-        })
+        const payload = asRecord(parseJson(data))
+        const type = stringField(payload, "type")
+        if (type === undefined) continue
+        const doc = stringField(payload, "documentId")
+        frames.push({ ...(id ? { id } : {}), type, ...(doc ? { doc } : {}) })
       }
     }
   })()

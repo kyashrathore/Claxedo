@@ -149,18 +149,21 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
     })
     .post("/", async (c) => {
       const directory = await init(c)
-      const body = await boundedJsonBody<Omit<Process.ProcessConfig, "id"> & { id?: string }>(
-        c,
-        {} as Omit<Process.ProcessConfig, "id"> & { id?: string },
-      )
-      await validateConfig(directory, body)
-      const config = await ProcessManager.addConfig(directory, body)
+      // `ProcessConfig` is the schema `addConfig` parses with anyway; running it
+      // here turns an invalid body into a 400 instead of a thrown ZodError, and
+      // removes the asserted shape this route used to claim for the raw JSON.
+      const parsed = Process.ProcessConfig.safeParse(await boundedJsonBody(c))
+      if (!parsed.success) return c.json(errorBody("process_invalid_config", "Invalid process config"), 400)
+      await validateConfig(directory, parsed.data)
+      const config = await ProcessManager.addConfig(directory, parsed.data)
       return c.json(config, 201)
     })
     .put("/:id", async (c) => {
       const directory = await init(c)
       const id = c.req.param("id")
-      const updates = await boundedJsonBody<Partial<Omit<Process.ProcessConfig, "id">>>(c, {})
+      const parsedUpdates = Process.ProcessConfig.partial().safeParse(await boundedJsonBody(c))
+      if (!parsedUpdates.success) return c.json(errorBody("process_invalid_config", "Invalid process config"), 400)
+      const { id: _ignoredId, ...updates } = parsedUpdates.data
       try {
         const existing = ProcessManager.configs(directory).find((config) => config.id === id)
         if (existing) await validateConfig(directory, { ...existing, ...updates })
@@ -187,13 +190,10 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
     .post("/:id/start", async (c) => {
       const directory = await init(c)
       const id = c.req.param("id")
-      const body = await boundedJsonBody<
-        | { portConflict?: Process.PortConflictStrategy; routeConflict?: Process.PortConflictStrategy }
-        | undefined
-      >(c, undefined)
+      const launch = Process.LaunchRequest.safeParse(await boundedJsonBody(c) ?? {})
       const result = await ProcessManager.start(directory, id, {
-        portConflict: body?.portConflict,
-        routeConflict: body?.routeConflict,
+        portConflict: launch.success ? launch.data.portConflict : undefined,
+        routeConflict: launch.success ? launch.data.routeConflict : undefined,
       })
       if (result.kind === "port_conflict") {
         return c.json(result, 409)

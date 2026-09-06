@@ -35,7 +35,7 @@ describe("performance diagnostics release evidence", () => {
   test("blocks secret retention and overhead budget violations", () => {
     const input = snapshot()
     input.owners[0] = {
-      ...input.owners[0]!,
+      ...input.owners[0],
       label: "claxedo-diagnostics-secret-must-not-cross",
     }
     const result = evaluateDiagnosticsEvidence({

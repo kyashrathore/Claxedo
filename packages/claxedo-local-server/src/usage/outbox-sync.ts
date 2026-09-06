@@ -6,6 +6,9 @@ type UsageOutboxTelemetry = {
   capture(distinctId: string, event: string, properties?: Record<string, unknown>): void
 }
 
+/** Exactly the ledger surface the outbox drains: read pending, claim, then settle. */
+type UsageOutboxStore = Pick<SqliteUsageLedger, "pendingOutbox" | "claimPending" | "markDelivered" | "markConflict">
+
 type UsageIdentity = { org_id: string; user_id: string }
 type UsageOutboxResult = {
   attempted: number
@@ -25,7 +28,7 @@ export type UsageOutboxSync = {
 }
 
 export function createUsageOutboxSync(input: {
-  local: SqliteUsageLedger
+  local: UsageOutboxStore
   central?: UsageLedger
   limit?: number
   retryBaseMs?: number
@@ -108,7 +111,7 @@ export function createUsageOutboxSync(input: {
     const outcomes = { accepted: 0, duplicates: 0, stale: 0, conflicts: 0 }
     const acknowledged: Array<Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">> = []
     for (const [index, result] of results.entries()) {
-      const fact = pending[index]!
+      const fact = pending[index]
       acknowledged.push({ hostId: fact.hostId, sessionRef: fact.sessionRef, messageId: fact.messageId, revision: fact.revision })
       if (result.status === "accepted") outcomes.accepted += 1
       if (result.status === "duplicate") outcomes.duplicates += 1

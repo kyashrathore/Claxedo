@@ -116,7 +116,7 @@ export async function startTurnWithThreadRecovery(input: {
         lastError = retryErr
       }
     }
-    throw new Error(sessionLostMessage(lastError))
+    throw new Error(sessionLostMessage(lastError), { cause: err })
   }
 }
 
@@ -132,7 +132,7 @@ export function codexUserInput(parts: unknown[]) {
 
 export function codexAppServerModel(model: string | undefined) {
   const value = text(model)
-  if (!value || value === "default") return
+  if (!value || value === "default") return undefined
   return value
 }
 

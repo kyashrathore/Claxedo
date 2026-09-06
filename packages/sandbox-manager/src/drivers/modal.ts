@@ -8,6 +8,8 @@ import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
+import { record } from "../json"
+import { isTransientDriverError } from "./transient-error"
 
 type ModalAppLike = unknown
 type ModalImageLike = { imageId?: string }
@@ -77,16 +79,30 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const DEFAULT_TUNNEL_TIMEOUT_MS = 30_000
 const DEFAULT_OPERATION_TIMEOUT_MS = 60_000
 
+/**
+ * `ModalClientLike` is this driver's port: it names the three calls used and
+ * leaves the app/image/sandbox handles opaque, so the vendor's own types never
+ * enter the build graph. That erasure is why the SDK's client cannot simply be
+ * assigned to it — so the surface the port promises is checked here instead,
+ * and an SDK that renames one of these fails at construction rather than at the
+ * first provision.
+ */
+function isModalClient(value: unknown): value is ModalClientLike {
+  const row = record(value)
+  return typeof record(row?.apps)?.fromName === "function"
+    && typeof record(row?.images)?.fromRegistry === "function"
+    && typeof record(row?.sandboxes)?.create === "function"
+}
+
 function nameFor(workspaceId: string) {
   return `claxedo-${workspaceId}`
 }
 
+/** Markers this driver's SDK has been seen to use for a retryable failure. */
+const TRANSIENT_MARKERS = ["timeout", "unavailable", "deadline"] as const
+
 function transientDriverError(err: unknown) {
-  const shaped = err as { response?: { status?: number }; status?: number; code?: string; name?: string; message?: string }
-  const status = shaped.response?.status ?? shaped.status
-  if (typeof status === "number" && status >= 500) return true
-  const text = `${shaped.code ?? ""} ${shaped.name ?? ""} ${shaped.message ?? ""}`.toLowerCase()
-  return text.includes("timeout") || text.includes("unavailable") || text.includes("deadline")
+  return isTransientDriverError(err, TRANSIENT_MARKERS)
 }
 
 export function createModalSandboxDriver(options: ModalSandboxDriverOptions): SandboxDriver {
@@ -98,12 +114,11 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
   let defaultClient: Promise<ModalClientLike> | undefined
   function resolveClient(): ModalClientLike | Promise<ModalClientLike> {
     if (options.client) return options.client
-    defaultClient ??= import("modal").then((sdk) =>
-      new sdk.ModalClient({
-        tokenId: options.tokenId,
-        tokenSecret: options.tokenSecret,
-      }) as unknown as ModalClientLike,
-    )
+    defaultClient ??= import("modal").then((sdk) => {
+      const client: unknown = new sdk.ModalClient({ tokenId: options.tokenId, tokenSecret: options.tokenSecret })
+      if (!isModalClient(client)) throw new Error("modal SDK does not expose the client surface this driver uses")
+      return client
+    })
     return defaultClient
   }
   const appName = options.appName ?? DEFAULT_APP_NAME

@@ -31,7 +31,7 @@ function configureFunctions() {
       } catch {
         return []
       }
-      const names = [...source.matchAll(/export function (configure\w*AppPorts)\b/g)].map((match) => match[1]!)
+      const names = [...source.matchAll(/export function (configure\w*AppPorts)\b/g)].map((match) => match[1])
       return names.map((name) => ({ feature: entry.name, name }))
     })
     .sort((a, b) => a.name.localeCompare(b.name))

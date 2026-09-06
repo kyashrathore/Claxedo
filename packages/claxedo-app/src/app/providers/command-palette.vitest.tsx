@@ -126,22 +126,22 @@ function KeybindCell(props: { custom?: string; registeredDefault?: string }) {
 
 describe("command palette keybind cell", () => {
   test("renders the registered default binding next to a command", () => {
-    const { getByTestId } = render(() => <KeybindCell registeredDefault="mod+shift+p" />)
-    const text = getByTestId("keybind").textContent ?? ""
+    const view = render(() => <KeybindCell registeredDefault="mod+shift+p" />)
+    const text = view.getByTestId("keybind").textContent ?? ""
     // Platform-dependent modifier glyphs, but the command key is always shown.
     expect(text).toContain("P")
     expect(text.length).toBeGreaterThan(1)
   })
 
   test("renders the user's active rebind, not the default", () => {
-    const { getByTestId } = render(() => <KeybindCell custom="mod+k" registeredDefault="mod+shift+p" />)
-    const text = getByTestId("keybind").textContent ?? ""
+    const view = render(() => <KeybindCell custom="mod+k" registeredDefault="mod+shift+p" />)
+    const text = view.getByTestId("keybind").textContent ?? ""
     expect(text).toContain("K")
     expect(text).not.toContain("P")
   })
 
   test("renders an empty cell when the command is unbound", () => {
-    const { getByTestId } = render(() => <KeybindCell custom="none" registeredDefault="mod+shift+p" />)
-    expect(getByTestId("keybind").textContent).toBe("")
+    const view = render(() => <KeybindCell custom="none" registeredDefault="mod+shift+p" />)
+    expect(view.getByTestId("keybind").textContent).toBe("")
   })
 })

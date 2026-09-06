@@ -64,8 +64,8 @@ describe("reading code-host status", () => {
   test("carries the prompts the connect form has to render", async () => {
     const status = await readCodeHostStatus(responding({ integrations: [github], connections: [] }))
 
-    expect(status.integrations[0]!.methods).toEqual(["key"])
-    expect(status.integrations[0]!.prompts).toEqual([
+    expect(status.integrations[0].methods).toEqual(["key"])
+    expect(status.integrations[0].prompts).toEqual([
       { id: "token", label: "Fine-grained personal access token", secret: true },
     ])
   })
@@ -125,7 +125,7 @@ describe("connecting a code host", () => {
       method: "key",
       secret: "github_pat_abc",
       request: async (path, init) => {
-        calls.push({ path, body: JSON.parse(String(init?.body)) })
+        calls.push({ path, body: requestJson(init) })
         return new Response(JSON.stringify({ ok: true }))
       },
     })
@@ -178,8 +178,8 @@ describe("connecting a code host", () => {
     })
 
     expect(outcome.ok).toBe(false)
-    expect(outcome.ok === false && outcome.reason).toContain("copied whole")
-    expect(outcome.ok === false && outcome.reason).not.toContain("verify_failed")
+    expect(!outcome.ok && outcome.reason).toContain("copied whole")
+    expect(!outcome.ok && outcome.reason).not.toContain("verify_failed")
   })
 
   test("an unreachable server is a sentence, not an exception", async () => {
@@ -192,7 +192,7 @@ describe("connecting a code host", () => {
     })
 
     expect(outcome.ok).toBe(false)
-    expect(outcome.ok === false && outcome.reason).toContain("Couldn't reach the server")
+    expect(!outcome.ok && outcome.reason).toContain("Couldn't reach the server")
   })
 })
 
@@ -258,3 +258,8 @@ describe("failure copy", () => {
     expect(codeHostFailureCopy({ error: { code: "connection_exists" } }, 409)).toContain("already connected")
   })
 })
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

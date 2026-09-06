@@ -76,7 +76,7 @@ export function sanitizeMarkdown(html: string) {
 // (ftp/tel/callto/sms/cid/xmpp/matrix). `javascript:`, `data:`, `vbscript:` and
 // `blob:` fail every branch — a bare scheme is rejected because the third branch
 // requires the run of scheme characters to end in something other than `:`.
-const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
 
 // Mirrors DOMPurify's own ATTR_WHITESPACE: the characters a browser discards
 // before resolving a URL. Without this `java\tscript:alert(1)` smuggles a
@@ -220,9 +220,9 @@ export const mermaidSvgCacheLimits = {
 const mermaidCache = new Map<string, string>()
 let mermaidBytes = 0
 
-export function getCachedMermaidSvg(source: string) {
+export function getCachedMermaidSvg(source: string): string | undefined {
   const value = mermaidCache.get(source)
-  if (value === undefined) return
+  if (value === undefined) return undefined
   mermaidCache.delete(source)
   mermaidCache.set(source, value)
   return value

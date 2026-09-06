@@ -51,12 +51,12 @@ describe("viewer read-only role gates", () => {
     }
 
     const view = render(() => <Surface />)
-    expect((view.getByTestId("submit") as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByTestId("submit")).disabled).toBe(true)
     expect(view.queryByTestId("delete")).toBeNull()
     expect(mounts).toBe(1)
 
     internals.applyWorkspaceConnectionInfo(relayInfo("owner"))
-    expect((view.getByTestId("submit") as HTMLButtonElement).disabled).toBe(false)
+    expect((view.getByTestId("submit")).disabled).toBe(false)
     expect(view.getByTestId("delete")).toBeTruthy()
     expect(mounts).toBe(1)
   })

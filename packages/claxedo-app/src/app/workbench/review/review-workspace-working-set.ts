@@ -122,7 +122,7 @@ export function createReviewWorkspaceWorkingSetStore(
   return {
     get(key: string) {
       const snapshot = snapshots.get(key)
-      if (!snapshot) return
+      if (!snapshot) return undefined
       touch(key, snapshot)
       return cloneReviewWorkspaceWorkingSet(snapshot)
     },

@@ -24,14 +24,14 @@ export function loginOAuthContinuation(input: {
   pathname: string
   search: string
 }) {
-  if (input.pathname !== "/login" || !input.search) return
+  if (input.pathname !== "/login" || !input.search) return undefined
   const query = new URLSearchParams(input.search)
   if (
     query.get("response_type") !== "code" ||
     !query.get("client_id") ||
     !query.get("redirect_uri") ||
     !query.get("state")
-  ) return
+  ) return undefined
 
   const login = new URL(input.pathname, input.appOrigin)
   login.search = input.search
@@ -63,7 +63,7 @@ export default function LoginPage(props: LoginPageProps = {}) {
   const appName = () => props.appName ?? "Claxedo"
   const tagline = () => props.tagline ?? "Cloud-first development environment"
   const continuation = () => {
-    if (props.redirectUrl || typeof window === "undefined") return
+    if (props.redirectUrl || typeof window === "undefined") return undefined
     return loginOAuthContinuation({
       appOrigin: window.location.origin,
       apiOrigin: getClaxedoServerUrl(),

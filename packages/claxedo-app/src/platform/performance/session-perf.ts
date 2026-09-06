@@ -26,6 +26,8 @@
  * names the previously open session, so the summary can say switch vs cold.
  */
 
+import { errorMessage } from "@/lib/server-errors"
+
 export type PerfAttributes = Record<string, string | number | boolean | undefined>
 
 export type PerfRecord =
@@ -150,7 +152,7 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
         span.end({ ok: true })
         return result
       } catch (error) {
-        span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+        span.end({ ok: false, error: errorMessage(error) })
         throw error
       }
     },

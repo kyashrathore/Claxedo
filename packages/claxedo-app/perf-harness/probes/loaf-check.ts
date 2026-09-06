@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 import { materializeClaxedoCorpus, readCanonicalCorpusDigest } from "../src/agent-corpus-materializer";
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
+import { readLoafSamples } from "../src/browser/page-globals-read";
+import type { LoafSample } from "../src/browser/page-globals";
 
 const repositoryRoot = path.resolve(import.meta.dir, "../../../..");
 const corpusPath = process.argv[2];
@@ -52,20 +54,21 @@ try {
     }
     // First two MEASURED targets (real switches away from the current session).
     await launch.page.evaluate(() => {
-      const host = window as unknown as { __loaf: Array<Record<string, unknown>> };
-      host.__loaf = [];
+      const samples: LoafSample[] = [];
+      window.__loaf = samples;
       new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          const loaf = entry as PerformanceEntry & Record<string, unknown>;
-          host.__loaf.push({
+        for (const loaf of list.getEntries()) {
+          samples.push({
             duration: loaf.duration,
             blockingDuration: loaf.blockingDuration,
             styleAndLayoutStart: loaf.styleAndLayoutStart,
             renderStart: loaf.renderStart,
             startTime: loaf.startTime,
-            scripts: (loaf.scripts as Array<{ invoker?: string; duration: number; name?: string }> ?? []).map(
-              (script) => `${Math.round(script.duration)}ms ${script.invoker ?? script.name ?? "?"}`,
-            ),
+            scripts: (loaf.scripts ?? []).map((script) => ({
+              duration: script.duration,
+              invoker: script.invoker,
+              name: script.name,
+            })),
           });
         }
       }).observe({ type: "long-animation-frame", buffered: false });
@@ -77,20 +80,24 @@ try {
         result.state === "exact" ? `${result.durationMs.toFixed(1)} ms` : `invalid ${result.reason}`,
       );
     }
-    const loaves = await launch.page.evaluate(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      return (window as unknown as { __loaf: Array<Record<string, number | string | string[]>> }).__loaf;
-    });
+    const loaves = readLoafSamples(
+      await launch.page.evaluate(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return window.__loaf ?? [];
+      }),
+    );
     console.log(`LoAF entries across the two measured switches: ${loaves.length}`);
     for (const loaf of loaves) {
-      const start = Number(loaf.startTime);
+      const start = loaf.startTime;
       const layoutOffset =
-        loaf.styleAndLayoutStart !== undefined ? Math.round(Number(loaf.styleAndLayoutStart) - start) : "?";
-      const renderOffset = loaf.renderStart !== undefined ? Math.round(Number(loaf.renderStart) - start) : "?";
+        loaf.styleAndLayoutStart !== undefined ? Math.round(loaf.styleAndLayoutStart - start) : "?";
+      const renderOffset = loaf.renderStart !== undefined ? Math.round(loaf.renderStart - start) : "?";
       console.log(
-        `  ${Math.round(Number(loaf.duration))}ms (blocking ${Math.round(Number(loaf.blockingDuration ?? 0))}ms, style/layout @${layoutOffset}ms, render @${renderOffset}ms)`,
+        `  ${Math.round(loaf.duration)}ms (blocking ${Math.round(loaf.blockingDuration ?? 0)}ms, style/layout @${layoutOffset}ms, render @${renderOffset}ms)`,
       );
-      for (const script of (loaf.scripts as string[]).slice(0, 4)) console.log(`      ${script}`);
+      for (const script of loaf.scripts.slice(0, 4)) {
+        console.log(`      ${Math.round(script.duration)}ms ${script.invoker ?? script.name ?? "?"}`);
+      }
     }
   } finally {
     await launch.shutdown();

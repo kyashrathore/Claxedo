@@ -1,3 +1,4 @@
+import { asRecord, readString } from "@/lib/record"
 import { createResource, createSignal, onCleanup, type Accessor } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import {
@@ -9,7 +10,7 @@ import { applyPermissionMode } from "@/features/session/permission/apply"
 import { createComposerAutoAccept } from "./auto-accept"
 import { createComposerPermissionMode } from "./permission-mode"
 import type { HarnessId } from "@/platform/identity/session-ref"
-import type { HarnessSelection } from "@/platform/identity/harness-selection"
+import { isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
 import {
   type HarnessModeReport,
   type PermissionSelection,
@@ -122,12 +123,20 @@ export function createComposerPermissionModeWiring(input: {
     // `no-store` — nothing here caches a response.
     resourceKey,
     async (sourceKey) => {
-      const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; selection: HarnessSelection | null }
-      if (!source.sessionID && !source.selection) return
+      // `sourceKey` is this module's own `JSON.stringify`, but it comes back as
+      // JSON — read the three fields rather than asserting the shape back.
+      const parsed = asRecord(JSON.parse(sourceKey))
+      const selection = parsed ? parsed.selection : undefined
+      const source = {
+        sessionID: readString(parsed, "sessionID") ?? "",
+        directory: readString(parsed, "directory") ?? "",
+        selection: isHarnessSelection(selection) ? selection : null,
+      }
+      if (!source.sessionID && !source.selection) return undefined
       // Every new source/refetch cancels the previous wait. Owner cleanup also
       // resolves it false, so disposed surfaces never escape into transport I/O.
       const delay = fastSessionSwitchQuietDelay({ sessionId: source.sessionID })
-      if (!await waitForQuietWindow(delay)) return
+      if (!await waitForQuietWindow(delay)) return undefined
       return (
         await fetchSessionPermissionModesByTransport({
           ...transportScope(),

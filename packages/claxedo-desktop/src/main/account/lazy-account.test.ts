@@ -164,7 +164,9 @@ describe("setupLazyAccount", () => {
       })
       const streamSender = sender()
 
-      const { streamId } = await target.handlers.get(ACCOUNT_STREAM_OPEN_CHANNEL)?.(
+      const openStream = target.handlers.get(ACCOUNT_STREAM_OPEN_CHANNEL)
+      if (!openStream) throw new Error("the stream-open channel was not registered")
+      const { streamId } = await openStream(
         { sender: streamSender.value },
         { operation: "session.events", input: { cursor: "12" } },
       ) as { streamId: string }
@@ -205,7 +207,9 @@ describe("setupLazyAccount", () => {
         }),
       })
       const streamSender = sender()
-      const { streamId } = await target.handlers.get(ACCOUNT_STREAM_OPEN_CHANNEL)?.(
+      const openStream = target.handlers.get(ACCOUNT_STREAM_OPEN_CHANNEL)
+      if (!openStream) throw new Error("the stream-open channel was not registered")
+      const { streamId } = await openStream(
         { sender: streamSender.value },
         { operation: "session.events" },
       ) as { streamId: string }

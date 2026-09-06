@@ -1,4 +1,5 @@
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+import { errorText } from "./error-text"
 import type { AIConnectRequest } from "./ai-connect-api"
 
 /**
@@ -54,7 +55,7 @@ export async function shareCredentialsWithCloud(input: {
  * which is the only signal we get about which failure this was.
  */
 export function shareFailureCopy(error: unknown) {
-  const message = (error instanceof Error ? error.message : String(error ?? "")).toLowerCase()
+  const message = errorText(error).toLowerCase()
   if (message.includes("unavailable") || message.includes("501")) {
     return "This server can't share credentials with cloud sandboxes yet."
   }

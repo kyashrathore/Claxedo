@@ -75,7 +75,7 @@ function createViewSession(dir: string, id: string | undefined) {
     setView("file", path, (current) => {
       if (current?.scrollTop === top) return current
       return {
-        ...(current ?? {}),
+        ...current,
         scrollTop: top,
       }
     })
@@ -86,7 +86,7 @@ function createViewSession(dir: string, id: string | undefined) {
     setView("file", path, (current) => {
       if (current?.scrollLeft === left) return current
       return {
-        ...(current ?? {}),
+        ...current,
         scrollLeft: left,
       }
     })
@@ -98,7 +98,7 @@ function createViewSession(dir: string, id: string | undefined) {
     setView("file", path, (current) => {
       if (current?.selectedLines === next) return current
       return {
-        ...(current ?? {}),
+        ...current,
         selectedLines: next,
       }
     })

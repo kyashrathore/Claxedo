@@ -173,7 +173,7 @@ async function readSseFrame(
   const decoder = new TextDecoder()
   const { value, done } = await reader.read()
   if (done || !value) throw new Error("stream ended before a frame arrived")
-  return parseSseFrames(decoder.decode(value))[0]!
+  return parseSseFrames(decoder.decode(value))[0]
 }
 
 /**
@@ -794,7 +794,7 @@ describe("LiveSyncRoom — held-connection cap", () => {
     expect((await room.fetch(upgradeRequest("first"))).status).toBe(200)
     expect((await room.fetch(upgradeRequest("second"))).status).toBe(503)
 
-    sockets[0]!.close()
+    sockets[0].close()
     expect(room.size).toBe(0)
     expect((await room.fetch(upgradeRequest("second"))).status).toBe(200)
   })

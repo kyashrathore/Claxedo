@@ -40,9 +40,9 @@ function displayFrom(host: string, pathname: string) {
 
 function scpLike(url: string) {
   const match = SCP_LIKE.exec(url)
-  if (!match) return
+  if (!match) return undefined
   const [, user, host, pathname] = match
-  if (!host?.includes(".")) return
+  if (!host?.includes(".")) return undefined
   return {
     url: `${user ? `${user}@` : ""}${host}:${pathname}`,
     display: displayFrom(host, pathname ?? ""),
@@ -56,7 +56,7 @@ function urlLike(raw: string) {
   try {
     url = new URL(raw)
   } catch {
-    return
+    return undefined
   }
   const scheme = url.protocol.replace(/:$/, "")
   if (scheme === "file") {

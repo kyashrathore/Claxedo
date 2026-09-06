@@ -108,9 +108,9 @@ describe("network policy", () => {
 
   test("getPolicy retrieves by ID", () => {
     const all = listPolicies()
-    const entry = getPolicy(all[0]!.id)
+    const entry = getPolicy(all[0].id)
     expect(entry).toBeTruthy()
-    expect(entry!.id).toBe(all[0]!.id)
+    expect(entry!.id).toBe(all[0].id)
   })
 
   test("updatePolicy changes target", () => {

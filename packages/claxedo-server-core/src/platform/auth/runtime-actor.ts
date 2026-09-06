@@ -1,3 +1,4 @@
+import { jsonRecord } from "../runtime/lib/json"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { RuntimeActorIdentity, WorkspaceAuthority } from "./authority"
 
@@ -13,9 +14,8 @@ export async function resolveRuntimeActor(
   authority: Pick<WorkspaceAuthority, "usersMe">,
   auth: SignedControlPlaneAuth,
 ): Promise<RuntimeActor> {
-  const identity = await authority.usersMe(auth)
-  if (identity && typeof identity === "object" && !Array.isArray(identity)) {
-    const row = identity as Record<string, unknown>
+  const row = jsonRecord(await authority.usersMe(auth))
+  if (row) {
     const actorId = stringValue(row.actor_id)
     const actorKind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
     const actorPublicId = stringValue(row.actor_public_id)

@@ -2,6 +2,7 @@ import type { Context } from "hono"
 import type { SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { eventSessionId, type CompatEnvelope } from "../compat-events"
+import { rec, str } from "../json-value"
 import type { WorkspaceRuntimeEvent } from "../bus"
 import {
   sessionAccessContext,
@@ -68,7 +69,7 @@ export async function authorizeSessionEventScope(
     }, { status: 503 })
   }
 
-  const access = sessionAccessContext(c as never)
+  const access = sessionAccessContext(c)
   const input = {
     ...access,
     operation: "session_event_stream",
@@ -118,7 +119,9 @@ export function watchSessionEventLease(
 ) {
   if (!scope.managed) return () => {}
 
-  const authorizeStream = policy?.authorizeStream
+  // Bound, not detached: `authorizeStream` is a policy method that may close
+  // over its own policy object.
+  const authorizeStream = policy?.authorizeStream?.bind(policy)
   if (!authorizeStream) {
     void Promise.resolve().then(onRevoked).catch(() => {})
     return () => {}
@@ -239,8 +242,8 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
     case "session.lifecycle":
       return event.sessionID
     case "session.updated": {
-      const properties = record(event.properties)
-      const info = record(properties?.info)
+      const properties = rec(event.properties)
+      const info = rec(properties?.info)
       return text(properties?.sessionID) ?? text(properties?.sessionId) ?? text(info?.sessionID) ?? text(info?.id)
     }
     default:
@@ -250,12 +253,12 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
 
 /** Extracts only producer-owned session identifiers; it never guesses from directory/tab ids. */
 export function unknownEventSessionId(event: unknown): string | undefined {
-  const row = record(event)
+  const row = rec(event)
   if (!row) return undefined
-  const properties = record(row.properties)
-  const info = record(properties?.info)
-  const part = record(properties?.part)
-  const payload = record(row.payload)
+  const properties = rec(row.properties)
+  const info = rec(properties?.info)
+  const part = rec(properties?.part)
+  const payload = rec(row.payload)
   return text(row.sessionID)
     ?? text(row.sessionId)
     ?? text(properties?.sessionID)
@@ -281,12 +284,8 @@ export function scopedReplay<T>(
   }
 }
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input !== null && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
-}
-
+/** A non-empty string, or `undefined`. An empty id is no id here. */
 function text(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
+  const value = str(input)
+  return value && value.length > 0 ? value : undefined
 }

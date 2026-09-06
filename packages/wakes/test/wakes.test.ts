@@ -4,6 +4,9 @@ import { SqliteWakeStore } from "../src/sqlite"
 
 type Spawned = { sessionId: string | null; result: WakeResult }
 
+/** Stable ordering for nullable identifiers collected out of firing order. */
+const byText = (a: string | null, b: string | null) => (a ?? "").localeCompare(b ?? "")
+
 function harness(overrides?: {
   authorize?: (a: Actor, w: string) => boolean
   budgets?: Budgets
@@ -108,7 +111,7 @@ describe("on_event trigger (external)", () => {
 
     const { fired } = await wakes.deliverEvent("ci:pass:x", { sha: "abc" })
     expect(fired).toBe(2)
-    expect(spawned.map((s) => s.sessionId).sort()).toEqual(["s1", "s2"])
+    expect(spawned.map((s) => s.sessionId).sort(byText)).toEqual(["s1", "s2"])
     expect(spawned[0]!.result).toMatchObject({ trigger: "on_event", payload: { sha: "abc" } })
   })
 })

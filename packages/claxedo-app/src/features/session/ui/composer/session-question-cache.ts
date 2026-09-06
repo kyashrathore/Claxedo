@@ -32,6 +32,6 @@ function clone(snapshot: SessionQuestionDockSnapshot | undefined) {
     tab: snapshot.tab,
     answers: snapshot.answers.map((answer) => [...answer]),
     custom: snapshot.custom.map((value) => value ?? ""),
-    customOn: snapshot.customOn.map((value) => value === true),
+    customOn: snapshot.customOn.map((value) =>  value),
   }
 }

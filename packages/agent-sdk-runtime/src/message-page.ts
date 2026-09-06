@@ -68,7 +68,7 @@ export function latestSurfaceJSONBytes(value: unknown) {
   }
 }
 
-function projectLatestSurfaceInfo<TInfo extends Record<string, unknown>>(input: TInfo): TInfo | undefined {
+function projectLatestSurfaceInfo(input: Record<string, unknown>): Record<string, unknown> | undefined {
   const info: Record<string, unknown> = { ...input }
   if (info.role === "user") {
     delete info.summary
@@ -83,8 +83,11 @@ function projectLatestSurfaceInfo<TInfo extends Record<string, unknown>>(input: 
     delete info.error
   }
   if (latestSurfaceJSONBytes(info) > LATEST_SURFACE_MAX_INFO_BYTES) return undefined
-  return info as TInfo
+  return info
 }
+
+/** The message shape the latest-surface projection reads. */
+export type LatestSurfaceMessage = { info: Record<string, unknown>; parts: unknown[] }
 
 type SurfaceTextCandidate = {
   messageIndex: number
@@ -137,17 +140,19 @@ function surfaceTextCandidate(part: unknown, messageIndex: number, partIndex: nu
  * truncated or rewritten. A required envelope that cannot fit causes the whole surface to
  * be omitted; the deferred complete `latest-turn` is the authoritative repair.
  */
-export function projectLatestSurfaceMessages<
-  TInfo extends Record<string, unknown>,
-  TPart,
-  TMessage extends { info: TInfo; parts: TPart[] },
->(messages: readonly TMessage[]): TMessage[] {
+export function projectLatestSurfaceMessages<TMessage extends LatestSurfaceMessage>(
+  messages: readonly TMessage[],
+): TMessage[]
+// The projection only DROPS optional info fields and unselected parts, so what
+// comes back still satisfies the caller's message type; the implementation is
+// typed at the shape it actually reads.
+export function projectLatestSurfaceMessages(messages: readonly LatestSurfaceMessage[]): LatestSurfaceMessage[] {
   const info = messages.map((message) => projectLatestSurfaceInfo(message.info))
   if (info.some((value) => value === undefined)) return []
 
   const candidates: SurfaceTextCandidate[] = []
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
-    const message = messages[messageIndex]!
+    const message = messages[messageIndex]
     for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex--) {
       const candidate = surfaceTextCandidate(message.parts[partIndex], messageIndex, partIndex)
       if (candidate) candidates.push(candidate)
@@ -156,7 +161,7 @@ export function projectLatestSurfaceMessages<
 
   const selected = new Set(
     selectLatestSurfaceTextCandidateIndexes(candidates)
-      .map((index) => candidates[index]!)
+      .map((index) => candidates[index])
       .map((candidate) => `${candidate.messageIndex}:${candidate.partIndex}`),
   )
 
@@ -172,11 +177,9 @@ export function projectLatestSurfaceMessages<
  * shape. This is deliberately independent of persistence and cursor policy so
  * every authoritative Claxedo producer applies the same lossless omissions.
  */
-export function projectLatestSurfaceMessage<
-  TInfo extends Record<string, unknown>,
-  TPart,
-  TMessage extends { info: TInfo; parts: TPart[] },
->(message: TMessage): TMessage | undefined {
+export function projectLatestSurfaceMessage<TMessage extends LatestSurfaceMessage>(
+  message: TMessage,
+): TMessage | undefined {
   return projectLatestSurfaceMessages([message])[0]
 }
 

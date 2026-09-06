@@ -1,3 +1,4 @@
+import { isJsonRecord } from "../../platform/runtime/lib/json"
 import type { McpOAuthDiscovery, McpOAuthDynamicClient } from "./discovery"
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -73,10 +74,6 @@ function exactContext(value: Readonly<Record<string, string>> | undefined, expec
   return value && JSON.stringify(Object.entries(value).toSorted(byKey)) === JSON.stringify(Object.entries(expected).toSorted(byKey))
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 async function challenge(verifier: string) {
   return base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(verifier))))
 }
@@ -84,7 +81,7 @@ async function challenge(verifier: string) {
 async function tokens(response: Response, now: () => number = Date.now): Promise<OAuthTokens> {
   if (!response.ok) throw new Error(`OAuth token endpoint rejected the request with ${response.status}`)
   const raw = await response.json() as unknown
-  if (!record(raw)) throw new Error("OAuth token response is invalid")
+  if (!isJsonRecord(raw)) throw new Error("OAuth token response is invalid")
   const value = raw
   if (typeof value.access_token !== "string"
     || !value.access_token

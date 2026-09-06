@@ -46,6 +46,6 @@ const CTRL_ARROW: Partial<Record<AccessoryKey, string>> = {
  */
 export function resolveAccessoryKey(key: AccessoryKey, ctrlArmed: boolean): AccessoryKeyAction {
   if (key === "ctrl") return { kind: "arm", ctrlArmed: !ctrlArmed }
-  if (ctrlArmed && CTRL_ARROW[key]) return { kind: "send", data: CTRL_ARROW[key]! }
+  if (ctrlArmed && CTRL_ARROW[key]) return { kind: "send", data: CTRL_ARROW[key] }
   return { kind: "send", data: BASE[key] }
 }

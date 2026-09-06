@@ -137,12 +137,12 @@ export function isGlobalContent(content: Pick<ContentMeta, "type" | "scope" | "d
 }
 
 export function realDirectory(dir?: string | null) {
-  if (!dir || dir === "__process__") return
+  if (!dir || dir === "__process__") return undefined
   return dir
 }
 
 export function contentScopeDir(content: Pick<ContentMeta, "type" | "scope" | "directory">, dir?: string | null) {
-  if (isGlobalContent(content)) return
+  if (isGlobalContent(content)) return undefined
   if (content.type === "context") return realDirectory(dir) ?? realDirectory(content.directory)
   return realDirectory(content.directory)
 }

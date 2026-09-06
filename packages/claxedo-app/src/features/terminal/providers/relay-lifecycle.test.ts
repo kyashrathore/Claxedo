@@ -1,51 +1,36 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { createMockSDK, createMockStorage } from "./test-helpers"
+import { createMockSDK, createMockStorage, createTerminalApiModule } from "./test-support/terminal-fixture"
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?relay-lifecycle-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?relay-lifecycle-restore`)) }
 const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?relay-lifecycle-restore`)) }
 
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
-  mock.module("@/platform/persistence/persist", () => realPersistModule)
-  mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
+// `mock.module` returns a promise; awaiting it means the hook does not resolve
+// until the module graph has actually been swapped back, so a later file in the
+// same process cannot observe a half-restored module.
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
+  await mock.module("@/platform/persistence/persist", () => realPersistModule)
+  await mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
-mock.module("@opencode-ai/ui/context", () => ({
+await mock.module("@opencode-ai/ui/context", () => ({
   createSimpleContext: () => ({ use: () => {}, provider: () => {} }),
 }))
 
-mock.module("@/app/providers/sdk/sdk", () => ({
+await mock.module("@/app/providers/sdk/sdk", () => ({
   useSDK: () => {
     throw new Error("useSDK called outside test")
   },
 }))
 
-mock.module("@/platform/api/api", () => ({
-  authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
-  getConfiguredClaxedoServerUrl: () => "",
-  getDefaultBaseUrl: () => "http://server.test",
-  getClaxedoServerUrl: () => "http://server.test",
-  isDemoMode: () => false,
-  // Stub remaining api.ts exports so other tests in the same suite
-  // run that transitively import this module don't crash with
-  // "Export named 'api' not found" — bun:test mock.module shims leak
-  // across files.
-  api: {} as Record<string, unknown>,
-  isDemoPath: () => false,
-  isEmbedMode: () => false,
-  fixDir: (input: string | undefined) => input,
-  configureApiRuntime: () => undefined,
-  resetApiRuntime: () => undefined,
-  apiBearerToken: async () => null,
-  normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
-}))
+await mock.module("@/platform/api/api", () => createTerminalApiModule("http://server.test"))
 
 // Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so a
 // partial mock would break later files that import its other exports.
-mock.module("@/platform/persistence/persist", () => ({
+await mock.module("@/platform/persistence/persist", () => ({
   ...realPersistModule,
   Persist: {
     ...realPersistModule.Persist,
@@ -87,7 +72,7 @@ mock.module("@/platform/persistence/persist", () => ({
 // happened to install, and the no-op `clearInitialCommandMarker` then leaks
 // into terminal-recovery.test.ts (which runs later in CI's file order) and
 // silently breaks its `executed`-set clearing.
-mock.module("@/features/terminal/core/terminal-recovery", () => ({
+await mock.module("@/features/terminal/core/terminal-recovery", () => ({
   ...realRecoveryModule,
   clearInitialCommandMarker: () => {},
 }))

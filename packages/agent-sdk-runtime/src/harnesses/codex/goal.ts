@@ -252,7 +252,7 @@ export class CodexGoalController {
     const binding = active
       ? { sessionId: active.sessionId, directory: active.directory }
       : this.host.driverHost.getSessionForAgentSession(threadId)
-    if (!binding) return
+    if (!binding) return undefined
     this.bindings.set(threadId, binding)
     return binding
   }

@@ -40,7 +40,7 @@ export function createNewSessionBranchSelection(input: {
   })
   const selected = createMemo(() => {
     const state = input.state()
-    if (state.status !== "ready") return
+    if (state.status !== "ready") return undefined
     const value = explicit()
     if (value?.scope !== state.scope) return state.current
     return state.choices.find((choice) => choice.gitRef === value.gitRef) ?? state.current
@@ -113,7 +113,7 @@ export function createNewSessionBranchSource(input: {
   // createResource's latest-request semantics discard an older in-flight read.
   const refsSource = createMemo(() => {
     const scope = directory()
-    if (!scope || vcs.isFetching || !vcs.data) return
+    if (!scope || vcs.isFetching || !vcs.data) return undefined
     return { scope, vcsUpdatedAt: vcs.dataUpdatedAt }
   })
   const [snapshot] = createResource(refsSource, async ({ scope }): Promise<LoadedBranchRefs> => ({

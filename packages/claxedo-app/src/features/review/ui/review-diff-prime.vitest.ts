@@ -76,7 +76,7 @@ describe("createReviewDiffPrime (ahead of need)", () => {
     const diffs = [diff("a.ts"), { ...diff("logo.png") }, tooLarge, diff("b.ts")]
     const { dispose } = mount({ diffs: () => diffs })
     vi.advanceTimersByTime(600)
-    expect(primedKeys()).toEqual(keysOf([diffs[0]!, diffs[3]!]))
+    expect(primedKeys()).toEqual(keysOf([diffs[0], diffs[3]]))
     dispose()
   })
 
@@ -104,9 +104,9 @@ describe("createReviewDiffPrime (intent)", () => {
     const diffs = [diff("a.ts"), diff("b.ts")]
     const { prime, dispose } = mount({ diffs: () => diffs })
     prime.intend("b.ts")
-    expect(primedKeys()).toEqual(keysOf([diffs[1]!]))
+    expect(primedKeys()).toEqual(keysOf([diffs[1]]))
     vi.advanceTimersByTime(600)
-    expect(primedKeys()).toEqual(keysOf([diffs[1]!, diffs[0]!]))
+    expect(primedKeys()).toEqual(keysOf([diffs[1], diffs[0]]))
     dispose()
   })
 })

@@ -8,6 +8,7 @@ export function mockStreamKind(pathname: string): "central" | "workspace-bus" | 
   if (pathname === "/global/event" || pathname === "/api/claxedo/events") return "central"
   if (pathname === "/api/wr/events") return "workspace-bus"
   if (pathname === "/event" || pathname === "/api/wr/runtime-events") return "runtime"
+  return undefined
 }
 
 type StreamFixture = {
@@ -106,7 +107,8 @@ export function startMockStreamServer(input: { port: number }) {
     const fixture = fixtures.get(id)
     if (!fixture) return
     fixtures.delete(id)
-    for (const close of [...fixture.connections]) close()
+    // Copied before iterating: each `close()` removes itself from the set.
+    for (const close of Array.from(fixture.connections)) close()
   }
   return {
     port: server.port!,
@@ -121,10 +123,13 @@ export function startMockStreamServer(input: { port: number }) {
       return [...fixtures.values()].reduce((count, fixture) => count + fixture.connections.size, 0)
     },
     stop() {
-      if (stopped) return
+      if (stopped) return undefined
       stopped = true
-      for (const id of [...fixtures.keys()]) unregister(id)
-      server.stop(true)
+      // Copied before iterating: `unregister` deletes from the same map.
+      for (const id of Array.from(fixtures.keys())) unregister(id)
+      // Awaited so the listener has released its port before the next fixture
+      // binds one; the caller (`stopApp`) is already async.
+      return server.stop(true)
     },
   }
 }

@@ -36,8 +36,8 @@ describe("signed Agent Plugins sync", () => {
     expect(pushes).toHaveLength(1)
     expect(JSON.parse(pushes[0]!)).toMatchObject({ revision: 3 })
     expect(timers).toHaveLength(1)
-    expect(timers[0]!.delayMs).toBeLessThanOrEqual(10 * 60_000)
-    expect(timers[0]!.delayMs).toBeGreaterThan(0)
+    expect(timers[0].delayMs).toBeLessThanOrEqual(10 * 60_000)
+    expect(timers[0].delayMs).toBeGreaterThan(0)
   })
 
   test("withdraws the signed world when the account stops being signed and ignores repeats", async () => {
@@ -69,7 +69,7 @@ describe("signed Agent Plugins sync", () => {
     sync.follow({ status: "signed" })
     await settle()
     expect(pushes).toEqual([])
-    expect(timers[0]!.delayMs).toBe(60_000)
+    expect(timers[0].delayMs).toBe(60_000)
   })
 
   test("refresh is a no-op while unsigned", async () => {

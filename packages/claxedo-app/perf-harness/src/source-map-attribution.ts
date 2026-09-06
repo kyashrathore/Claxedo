@@ -16,7 +16,9 @@ import path from "node:path"
 
 const BASE64 =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-const CHAR_TO_INT = new Map([...BASE64].map((character, index) => [character, index]))
+// Indexed by code unit, not code point: the alphabet is ASCII, and spreading a
+// string iterates code points, which is the wrong unit for a character table.
+const CHAR_TO_INT = new Map(Array.from({ length: BASE64.length }, (_, index) => [BASE64[index], index]))
 
 type Segment = {
   generatedColumn: number
@@ -42,15 +44,21 @@ export type OriginalPosition = {
 }
 
 export function decodeSourceMap(raw: string): DecodedMap {
-  const parsed = JSON.parse(raw) as {
-    sources: string[]
-    sourcesContent?: (string | null)[]
-    sourceRoot?: string
-    names?: string[]
-    mappings: string
+  // Read against the v3 source-map fields this decoder uses. A map missing
+  // `sources` or `mappings` cannot attribute anything, and saying so here beats
+  // failing later inside the VLQ loop.
+  const parsed: unknown = JSON.parse(raw)
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+  if (!isRecord(parsed) || !Array.isArray(parsed.sources) || typeof parsed.mappings !== "string") {
+    throw new Error("source map is missing sources or mappings")
   }
-  const sourceRoot = parsed.sourceRoot ?? ""
-  const sources = parsed.sources.map((source) =>
+  const sourceRoot = typeof parsed.sourceRoot === "string" ? parsed.sourceRoot : ""
+  const sourcesContent = Array.isArray(parsed.sourcesContent)
+    ? parsed.sourcesContent.map((entry) => (typeof entry === "string" ? entry : null))
+    : []
+  const names = Array.isArray(parsed.names) ? parsed.names.filter((name) => typeof name === "string") : []
+  const sources = parsed.sources.map((entry) => (typeof entry === "string" ? entry : null)).map((source) =>
     source === null ? null : sourceRoot ? `${sourceRoot.replace(/\/$/u, "")}/${source}` : source,
   )
   const lines: Segment[][] = []
@@ -67,10 +75,10 @@ export function decodeSourceMap(raw: string): DecodedMap {
         const fields = decodeVlq(segment)
         generatedColumn += fields[0] ?? 0
         if (fields.length >= 4) {
-          sourceIndex += fields[1]!
-          sourceLine += fields[2]!
-          sourceColumn += fields[3]!
-          if (fields.length >= 5) nameIndex += fields[4]!
+          sourceIndex += fields[1]
+          sourceLine += fields[2]
+          sourceColumn += fields[3]
+          if (fields.length >= 5) nameIndex += fields[4]
           segments.push({
             generatedColumn,
             sourceIndex,
@@ -85,8 +93,8 @@ export function decodeSourceMap(raw: string): DecodedMap {
   }
   return {
     sources,
-    sourcesContent: parsed.sourcesContent ?? [],
-    names: parsed.names ?? [],
+    sourcesContent,
+    names,
     lines,
   }
 }
@@ -133,14 +141,14 @@ export function originalPositionFor(
   let found = -1
   while (low <= high) {
     const middle = (low + high) >> 1
-    if (segments[middle]!.generatedColumn <= column) {
+    if (segments[middle].generatedColumn <= column) {
       found = middle
       low = middle + 1
     } else {
       high = middle - 1
     }
   }
-  const segment = segments[found === -1 ? 0 : found]!
+  const segment = segments[found === -1 ? 0 : found]
   const source = map.sources[segment.sourceIndex]
   if (!source) return undefined
   return {
@@ -218,7 +226,7 @@ export function normalizeSourcePath(source: string): string {
   const packaged = cleaned.match(/(node_modules\/(?:@[^/]+\/)?[^/]+)\/(.*)$/u)
   if (packaged) return `${packaged[1]}/${packaged[2]}`
   const inRepo = cleaned.match(/(?:^|\/)(packages\/[^/]+\/.*)$/u)
-  if (inRepo) return inRepo[1]!
+  if (inRepo) return inRepo[1]
   return cleaned.replace(/^(\.\.\/)+/u, "")
 }
 
@@ -270,14 +278,14 @@ export async function loadBuildOffsetResolver(buildDirectory: string): Promise<O
       let line = 0
       while (low <= high) {
         const middle = (low + high) >> 1
-        if (starts[middle]! <= offset) {
+        if (starts[middle] <= offset) {
           line = middle
           low = middle + 1
         } else {
           high = middle - 1
         }
       }
-      return { line, column: offset - starts[line]! }
+      return { line, column: offset - starts[line] }
     },
   }
 }

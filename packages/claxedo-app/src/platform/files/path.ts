@@ -23,7 +23,7 @@ export function unquoteGitPath(input: string) {
   const bytes: number[] = []
 
   for (let i = 0; i < body.length; i++) {
-    const char = body[i]!
+    const char = body[i]
     if (char !== "\\") {
       bytes.push(char.charCodeAt(0))
       continue
@@ -136,7 +136,7 @@ export function createPathHelpers(scope: () => string) {
   }
 
   const pathFromTab = (tabValue: string) => {
-    if (!tabValue.startsWith("file://")) return
+    if (!tabValue.startsWith("file://")) return undefined
     return normalize(tabValue)
   }
 

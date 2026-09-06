@@ -70,7 +70,7 @@ export async function runBrowser(options: RunOptions) {
     browsers.push(await launchBenchmarkBrowser(options))
     if (options.suite === "diagnostics") browsers.push(await launchBenchmarkBrowser(options))
     const captureProvenance = () => captureMeasurementProvenance({
-      browserVersion: browsers[0]!.version(),
+      browserVersion: browsers[0].version(),
       appCommand: target.command,
       artifactMode: builtArtifact ? "built" : "source-only",
     })
@@ -80,10 +80,10 @@ export async function runBrowser(options: RunOptions) {
         const startProvenance = await captureProvenance()
         const modeRuns = options.suite === "diagnostics"
           ? [
-              ...await executeBrowserScenarioPair(options, target, scenario, browsers[0]!, diagnosticsPairModeOrder.slice(0, 2)),
-              ...await executeBrowserScenarioPair(options, target, scenario, browsers[1]!, diagnosticsPairModeOrder.slice(2)),
+              ...await executeBrowserScenarioPair(options, target, scenario, browsers[0], diagnosticsPairModeOrder.slice(0, 2)),
+              ...await executeBrowserScenarioPair(options, target, scenario, browsers[1], diagnosticsPairModeOrder.slice(2)),
             ]
-          : [{ label: options.suite, enabled: false, result: await executeBrowserScenarioMode(options, target, scenario, browsers[0]!, false) }]
+          : [{ label: options.suite, enabled: false, result: await executeBrowserScenarioMode(options, target, scenario, browsers[0], false) }]
         const controls = modeRuns.filter((item) => !item.enabled)
         const enabled = modeRuns.filter((item) => item.enabled)
         const selected = enabled.length ? enabled : controls
@@ -115,9 +115,9 @@ export async function runBrowser(options: RunOptions) {
           diagnostics,
           provenance,
           context: browserContext({ suite: options.suite, profile: options.profile, workload: measuredRun.seed,
-            browserVersion: selected[0]!.result.browserVersion, instrumentation, headless: options.headless }),
+            browserVersion: selected[0].result.browserVersion, instrumentation, headless: options.headless }),
           attribution: runAttribution({
-            browserVersion: selected[0]!.result.browserVersion,
+            browserVersion: selected[0].result.browserVersion,
             server: { baseUrl: target.baseUrl, mockPort: target.mockPort, command: target.command },
           }),
         }
@@ -329,16 +329,21 @@ export async function executeBrowserScenario(
       // body.innerText excludes, so read it explicitly.
       const boundaryError = await readBoundaryError(page)
       const state = await page.evaluate(() => {
+        // Persisted state is whatever the last build wrote; this debug dump
+        // reports the three fields it can find and stays silent about the rest.
+        const isRecord = (value: unknown): value is Record<string, unknown> =>
+          typeof value === "object" && value !== null && !Array.isArray(value)
         const raw = localStorage.getItem("claxedo.state.v5")
-        const parsed = raw ? JSON.parse(raw) as {
-          workbench?: { contentIds?: unknown }
-          meta?: Record<string, unknown>
-          terminal?: { owner?: Record<string, unknown> }
-        } : undefined
+        const decoded: unknown = raw ? JSON.parse(raw) : undefined
+        const parsed = isRecord(decoded) ? decoded : {}
+        const workbench = isRecord(parsed.workbench) ? parsed.workbench : undefined
+        const meta = isRecord(parsed.meta) ? parsed.meta : {}
+        const terminal = isRecord(parsed.terminal) ? parsed.terminal : undefined
+        const owner = terminal && isRecord(terminal.owner) ? terminal.owner : {}
         return {
-          contentIds: parsed?.workbench?.contentIds,
-          metaIds: Object.keys(parsed?.meta ?? {}),
-          terminalIds: Object.keys(parsed?.terminal?.owner ?? {}),
+          contentIds: workbench?.contentIds,
+          metaIds: Object.keys(meta),
+          terminalIds: Object.keys(owner),
           terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row']").length,
         }
       }).catch(() => undefined)
@@ -377,11 +382,11 @@ export async function executeBrowserScenario(
 export function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
   if (rawRuns.length === 0) throw new Error("Cannot merge an empty browser run")
   return {
-    ...rawRuns[0]!,
+    ...rawRuns[0],
     repetitions: rawRuns.flatMap((run) => run.repetitions ?? [{ headline: run.headline, vitals: run.vitals }]),
     duration_ms: rawRuns.reduce((sum, result) => sum + result.duration_ms, 0),
-    headline: mergeFrameMetrics(rawRuns[0]!.headline.label, rawRuns.map((result) => result.headline)),
-    metrics: rawRuns[0]!.metrics.map((metric, index) =>
+    headline: mergeFrameMetrics(rawRuns[0].headline.label, rawRuns.map((result) => result.headline)),
+    metrics: rawRuns[0].metrics.map((metric, index) =>
       summarize({
         ...metric,
         samples: rawRuns.flatMap((result) => result.metrics[index]?.samples ?? []),

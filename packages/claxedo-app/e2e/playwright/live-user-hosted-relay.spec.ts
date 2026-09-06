@@ -12,10 +12,8 @@
  * cross-origin fetches straight at that relay — zero `page.route()` calls anywhere in
  * this file (Tier L's non-negotiable rule, `e2e/INVARIANTS.md` authoring rule 6). It
  * exists to catch the class of bug no mock can: a real CORS misconfiguration, a real JWT
- * claims mismatch, a real WS multiplexing bug, or (as this spec's own investigation
- * found — see BEHAVIORS 6/7 and HARNESS NOTES) a stale product-finding assumption about
- * server-side role enforcement that turned out to be WRONG once checked against real
- * code.
+ * claims mismatch, a real WS multiplexing bug, or a role claim the relay accepts that
+ * the runtime behind it does not (behavior 7).
  *
  * STATE MODEL — built entirely on the real in-repo fixtures named in the task: `bun run
  * dev`-independent, this spec spawns its OWN `packages/claxedo-server/src/
@@ -23,7 +21,7 @@
  * for the standalone relay process, via `@claxedo/workspace-relay`'s
  * `createWorkspaceRelayBun`) and, distinctly from every other spec in this suite, its OWN
  * DEDICATED `vite` frontend dev-server instance. This second piece is load-bearing and
- * worth stating plainly: `getClaxedoServerUrl()` (`src/utils/api.ts:211-223`) has a
+ * worth stating plainly: `getClaxedoServerUrl()` (`src/platform/api/api.ts`) has a
  * HARDCODED fallback of `http://127.0.0.1:3001` for every claxedo-server API call
  * (bootstrap, connection mint, etc.) with no runtime override site reachable from a
  * Playwright init script — `window.__CLAXEDO__.serverUrl` is read only by
@@ -31,7 +29,7 @@
  * sidecar addressing, not the claxedo-server control-plane calls this spec needs). The
  * ONLY supported way to point the real app at a non-3001 backend is
  * `VITE_CLAXEDO_SERVER_URL`, a vite dev-server env var baked in at process start
- * (`vite.cloud.config.ts:18`) — so this spec spawns its own `vite --config
+ * (`vite.cloud.config.ts`) — so this spec spawns its own `vite --config
  * vite.cloud.config.ts --port <free>`, on a port distinct from the shared dev server
  * (4455) and from the shared persistent backend already occupying 3001 in this
  * environment (verified via `lsof` before writing this spec — killing or rebinding
@@ -44,19 +42,21 @@
  *   Connect sequence — identical AUTHORITATIVE contract to `core-user-hosted-workspace`'s
  *   STATE MODEL (`acquireWorkspaceConnection` -> `driveConnection` -> `prepareUserHostedRuntime`,
  *   `src/cloud/runtime/workspace-runtime-store.ts`), but every step here is a REAL network
- *   call: `GET /api/workspace/:id/connection` (`src/routes/hosted-workspace.ts:336`) mints a
+ *   call: `GET /api/workspace/:id/connection`
+ *   (`claxedo-server/src/connections/routes/connection-routes.ts`) mints a
  *   REAL EdDSA-signed runtime access token server-side
  *   (`packages/workspace-relay/src/auth.ts`'s `mintRuntimeAccessToken`), and the health probe
  *   (`transport.fetch("/api/wr/health")`) is a REAL cross-origin browser fetch straight to
  *   the standalone relay's own origin (`connection.relayUrl`, NOT the claxedo-server backend
- *   — `createWorkspaceRelayConnection.relayFetch`, `src/utils/workspace-relay-connection.ts:339-365`),
+ *   — `createWorkspaceRelayConnection.relayFetch`,
+ *   `src/platform/runtime/agent/workspace-relay-connection.ts`),
  *   which forwards over a REAL WS tunnel (`packages/workspace-runtime/relay`'s
  *   `startWorkspaceRelayHostTunnel`, started once at fixture boot in
  *   `signed-browser-relay-fixture.mjs`) into the embedded workspace-runtime engine.
- *   Token refresh — `ensureFresh()` (`workspace-relay-connection.ts:334-337`) refreshes
+ *   Token refresh — `ensureFresh()` (`workspace-relay-connection.ts`) refreshes
  *   whenever `tokenExpiresAt - now() <= refreshWindowMs` (default 60_000ms), AND
  *   `relayFetch` retries once on any 401 by calling `refresh()`
- *   (`workspace-relay-connection.ts:357-364`). This spec's token-refresh scenario (behavior
+ *   (`workspace-relay-connection.ts`). This spec's token-refresh scenario (behavior
  *   4) exploits the first path deterministically: the fixture's minted-token TTL is
  *   overridable via `CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS` (added to
  *   `signed-browser-relay-fixture.mjs` by this spec's author — see HARNESS NOTES) — set
@@ -65,20 +65,20 @@
  *   /api/workspace/:id/connection/refresh` fires deterministically within seconds of
  *   navigation, with no artificial waiting.
  *   Pause / resume — the REAL host-tunnel lifecycle (`start`/`stopUserHostedWorkspaceTunnel`,
- *   `packages/claxedo-server/src/user-hosted-tunnel.ts:81,138`) is reachable from this spec
- *   via two debug-only routes this spec's author added to the fixture
- *   (`POST /__fixture/tunnel/pause` / `/resume` — see HARNESS NOTES), which call those exact
- *   real functions; this proves "host goes offline" / "host comes back" as a genuine tunnel
- *   teardown/re-establish, not a simulated response.
- *   Role — the connection-mint's `role` claim is fixed for the WHOLE fixture process at
- *   boot (`CLAXEDO_E2E_RELAY_FIXTURE_ROLE`, defaults `"editor"` — the app under real UI
- *   drive in this spec is always editor). Viewer-role enforcement (behavior 6) is instead
- *   proven via a SEPARATE debug route this spec's author added
- *   (`GET /__fixture/mint?role=viewer`) that mints a real, independently-role-scoped token
- *   against the SAME already-running workspace/relay/tunnel — real JWT minting and real
- *   relay authorization code paths either way, just without paying for a second full
- *   fixture+frontend process per role (see HARNESS NOTES for why a second live app
- *   instance was judged not worth the added ~15s boot cost per scenario).
+ *   `packages/claxedo-server/src/user-hosted-tunnel.ts`) is reachable from this spec
+ *   via the fixture's debug-only `POST /__fixture/tunnel/pause` / `/resume` routes, which
+ *   call those exact real functions; this proves "host goes offline" / "host comes back" as
+ *   a genuine tunnel teardown/re-establish, not a simulated response.
+ *   Role — the product connection-mint derives its `role` claim from the caller's own
+ *   authority role on the workspace (`connections/user-hosted-connection.ts`'s
+ *   `relayRole(result.role)`), so the app under real UI drive here always mints as OWNER
+ *   (behavior 2 pins that). The fixture's `CLAXEDO_E2E_RELAY_FIXTURE_ROLE` (defaults
+ *   `"editor"`) sets the role only on the token the fixture itself prints at boot, never
+ *   on anything the app mints. Viewer-role enforcement (behavior 7) is proven instead
+ *   through the fixture's `GET /__fixture/mint?role=viewer` debug route, which mints a
+ *   real, independently-role-scoped token against the SAME already-running
+ *   workspace/relay/tunnel — real JWT minting and real relay authorization either way,
+ *   without paying a second full fixture+frontend boot (~15s) per role.
  *
  * ANATOMY — reuses `core-user-hosted-workspace`'s already-pinned DOM contract for the
  *   connect gate (this spec does not re-derive it):
@@ -140,12 +140,9 @@
  *      read) but REAL-denied (403 `relay_role_denied`) any write method AND any
  *      `/api/wr/pty` path (even GET) — this is REAL server-side enforcement at the relay
  *      transport layer (`packages/workspace-relay/src/server.ts`'s `roleAllowsRelayRequest`)
- *      plus a SECOND, independent check inside the workspace-runtime PTY route itself
- *      (`packages/workspace-runtime/src/routes/pty.ts:41-46`). This directly CONTRADICTS
- *      this suite's own plan doc, which states "no role enforcement at the relay/runtime
- *      transport layer" as an open product question — see HARNESS NOTES for the correction
- *      and for the DIFFERENT, still-open gap this investigation found in its place (the
- *      client UI has zero role-awareness anywhere in its source).
+ *      plus a SECOND, independent role check inside the workspace runtime itself
+ *      (`packages/workspace-runtime/src/session-access-policy.ts`'s `ROLE_RANK` against
+ *      each route's `minimumRole`), so viewer denial does not depend on the relay alone.
  *   9. A terminal opened FROM THE BROWSER on the user-hosted workspace runs on the host
  *      and streams its output back: the toolbar's own New Terminal control and the
  *      creator's plain-shell tile produce a real `pty_`-prefixed id, the rail row and the
@@ -227,48 +224,33 @@
  *     (`claxedo-server/src/deployments/self-hosted-node/app.ts`) answers it through the
  *     same owner the HTTP oracle serves remotely, `authorizeRuntimeSessionStream`
  *     (`claxedo-server/src/routes/runtime-session-authority.ts`).
- *   - Fixture extensions added by this spec's author (additive only, default-preserving,
- *     the two other consumers of this fixture file are both `e2e-legacy` and already
- *     `test.skip`d so nothing else was at risk): `CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS`
- *     env var (defaults 120, unchanged from before) threads through BOTH the initial mint
- *     and `runtimeAccessTokenSigner`'s refresh path; `GET /__fixture/mint?role=<role>` mints
- *     an arbitrary-role token for the same real workspace; `POST /__fixture/tunnel/pause` /
- *     `/__fixture/tunnel/resume` call the real `stop`/`startUserHostedWorkspaceTunnel`
- *     functions directly. All three are debug-only routes mounted on the fixture's own Hono
- *     app, never routes the product itself exposes, and are exercised for TEST
- *     ORCHESTRATION only (driving real lifecycle transitions) — no assertion in this file
- *     is proven BY calling them, only enabled by them.
- *   - [PRODUCT FINDING — corrects the original e2e-suite consolidation plan] That plan's
- *     spec-25 entry stated the investigation "found no role enforcement at the
- *     relay/runtime transport layer." Re-checked against the CURRENT
- *     source for this spec: that is no longer true (or was never true for the relay itself).
- *     `packages/workspace-relay/src/server.ts`'s `roleAllowsRelayRequest` (~line 518) denies
- *     ANY non-GET/HEAD/OPTIONS method for `role === "viewer"` (403 `relay_role_denied`) and
- *     additionally denies ALL methods (including GET) for any `/api/wr/pty` path via
- *     `RELAY_VIEWER_DENIED_PATH`; this is independently unit-tested in that package's own
- *     `server.test.ts` ("enforces viewer relay access as read-only", "denies viewer access
- *     to terminal routes including WebSocket upgrades") AND independently re-verified by
- *     THIS spec's behavior 7 against a genuinely live relay + genuine embedded runtime.
- *     `packages/workspace-runtime/src/routes/pty.ts:41-46` layers a SECOND, PTY-route-local
- *     check on top (`c.get("relayHostAuth")?.role === "viewer"` -> 403), so PTY denial for a
- *     viewer does not depend on the relay layer alone. The plan's premise was stale; this
- *     spec pins the real (already-correct) contract instead of treating it as a gap to work
- *     around.
- *   - [PRODUCT FINDING — the gap that actually exists] Searching the ENTIRE client source
- *     (`grep -rln '"viewer"' packages/claxedo-app/src`, and separately for any read of
- *     `WorkspaceConnectionInfo.role`/`runtimeAccessTokenRole(...)` outside
- *     `workspace-relay-connection.ts`'s own definitions) returns ZERO matches — the role a
- *     connection mints with is threaded all the way to the client
- *     (`WorkspaceConnectionInfo.role`, `workspace-relay-connection.ts:52`) and then never
- *     read by anything. This spec's behavior 7 confirms the practical consequence directly:
- *     a viewer sees the EXACT SAME interactive UI as an editor (composer enabled, "New
- *     Terminal" clickable) and only discovers the read-only boundary when a real write
- *     request 403s server-side, with no proactive "you are a viewer" affordance anywhere.
- *     This is a real, still-open UX gap — worth a dedicated product fix (surfacing
- *     `connection.role` into the shell to disable/hide write affordances) rather than a test
- *     workaround; this spec does not `test.fixme` over it because the SECURITY property
- *     (writes are genuinely blocked server-side) already holds, which is the property
- *     behavior 7 is pinning. See this file's task report for the follow-up recommendation.
+ *   - The fixture's debug surface this spec drives: `CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS`
+ *     (defaults 120) threads through BOTH the initial mint and `runtimeAccessTokenSigner`'s
+ *     refresh path; `GET /__fixture/mint?role=<role>` mints an arbitrary-role token for the
+ *     same real workspace; `POST /__fixture/tunnel/pause` / `/__fixture/tunnel/resume` call
+ *     the real `stop`/`startUserHostedWorkspaceTunnel` functions directly. All three are
+ *     mounted on the fixture's own Hono app, never routes the product exposes, and are used
+ *     for TEST ORCHESTRATION only (driving real lifecycle transitions) — no assertion in
+ *     this file is proven BY calling them, only enabled by them.
+ *   - Viewer role is enforced server-side in two independent places, which is why
+ *     behavior 7 pins it rather than treating it as a gap.
+ *     `packages/workspace-relay/src/server.ts`'s `roleAllowsRelayRequest` denies ANY
+ *     non-GET/HEAD/OPTIONS method for `role === "viewer"` (403 `relay_role_denied`) and
+ *     additionally denies ALL methods, GET included, for any `/api/wr/pty` path via
+ *     `RELAY_VIEWER_DENIED_PATH`; that package's own `server.test.ts` unit-tests both
+ *     ("enforces viewer relay access as read-only", "denies viewer access to terminal
+ *     routes including WebSocket upgrades"). The workspace runtime then ranks the same
+ *     role against each route's `minimumRole`
+ *     (`packages/workspace-runtime/src/session-access-policy.ts`'s `ROLE_RANK`).
+ *   - The client reads the minted role too, so behavior 7's server-side denials are not
+ *     the only gate: `placementFromWorkspaceConnection`
+ *     (`src/platform/runtime/placement.ts`) carries `connection.role` into the placement,
+ *     and `can()` against `RolePolicy` (`src/platform/auth/role.tsx`) withholds
+ *     `mutate.session` and `use.terminal` from a viewer, which is what
+ *     `features/session/composer/role-gate.ts` and
+ *     `features/terminal/core/terminal-role-gate.ts` consult. This spec drives the app
+ *     under an OWNER connection throughout (see STATE MODEL's Role note), so it observes
+ *     the owner surface only; the viewer UI is out of scope here.
  *   - Real per-turn latency for behavior 3, measured directly against this spec's own
  *     fixture (`opencode`/`big-pickle`, no external credentials needed in this environment,
  *     same finding `live-real-harness-smoke` documents): ~3-8s including one transient
@@ -342,16 +324,12 @@ type FixtureInfo = {
   role: string
   // Real, signed control-plane bearer JWT for `browserSubject = "user_browser"`
   // (`signed-browser-relay-fixture.mjs`'s `browserControlPlaneToken`, minted
-  // through that file's real local JWKS issuer). Plan `2026-08-06-001` Phase 3:
-  // once the fixture's control plane became the REAL `hosted-node` composition
-  // on `customVerifierAuthAdapter`, the two hardcoded literals this spec used
-  // to seed — `seedWorkspace`'s `__CLAXEDO_TEST_AUTH_TOKEN__ =
-  // "live-user-hosted-relay-token"` and `mintConnectionFromPage`'s inline
-  // `Bearer live-user-hosted-relay-token` — both started failing `jwtVerify`
-  // with 401 `invalid_bearer_token` (`platform/auth/auth.ts:335`), because
-  // neither is a JWT. `controlPlaneToken` is signed with the same keypair
-  // `controlPlaneJwks` verifies against, for the exact subject this spec's
-  // `__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }` already claims.
+  // through that file's real local JWKS issuer). The fixture's control plane is
+  // the real `hosted-node` composition on `customVerifierAuthAdapter`, so any
+  // non-JWT literal fails `jwtVerify` with 401 `invalid_bearer_token`: this
+  // token is signed with the keypair `controlPlaneJwks` verifies against, for
+  // the exact subject `__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }`
+  // claims. Every bearer this spec sends the control plane reads it.
   controlPlaneToken: string
 }
 
@@ -377,13 +355,6 @@ type RunningFrontend = {
   close: () => Promise<void>
 }
 
-/**
- * Boots the real `signed-browser-relay-fixture.mjs` (real relay process, real embedded
- * workspace-runtime, real host tunnel) exactly as `e2e-legacy/signed-user-hosted-relay-
- * live.spec.ts` does (same spawn incantation), plus this spec's three additive debug
- * routes (`/__fixture/mint`, `/__fixture/tunnel/pause`, `/__fixture/tunnel/resume`) — see
- * this file's HARNESS NOTES for exactly what was added to the fixture and why.
- */
 async function startFixture(extraEnv: Record<string, string> = {}): Promise<RunningFixture> {
   const backendPort = await freePort()
   const scripted = await startScriptedModelServer()
@@ -396,7 +367,6 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
       env: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
-        // Redirect only the real Pi model backend's HTTP endpoint.
         ...scripted.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: scripted.v1Url,
         // The relay's browser-origin allowlist, in its real deployment form.
@@ -476,19 +446,13 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
     child.once("error", fail)
   })
 
-  // Warm-up: [REAL PRODUCT FINDING, worked around here — see this file's HARNESS NOTES]
-  // the embedded workspace-runtime's `opencode` engine lazy-boots on first use
-  // (`ensureEmbeddedWorkspaceRuntime` in `embedded-workspace-runtime.ts`). The FIRST
-  // `/session` request to land during that boot window intermittently 500s (observed
-  // directly, `GET /workspaces/:id/session?roots=true&limit=55` -> 500, then the SAME
-  // call succeeds immediately after) or, more severely, surfaces as the UI's own
-  // "opencode exited during startup (code null)" error — reproduced independently while
-  // authoring this spec. This is a real cold-start race in product code, not a test
-  // artifact; forcing the warm-up here BEFORE any Playwright page ever navigates is the
-  // same category of fix as `live-real-harness-smoke`'s `registerWorkspace()` (closing a
-  // real, empirically-found race deterministically), not a weakened assertion — no test
-  // in this file relies on or hides the race, it is simply never given the chance to fire
-  // during a real user-driven navigation the way this spec's setup can trigger it.
+  // The embedded workspace-runtime's `opencode` engine lazy-boots on first use
+  // (`ensureEmbeddedWorkspaceRuntime` in `embedded-workspace-runtime.ts`), and the FIRST
+  // `/session` request to land inside that boot window intermittently 500s (observed:
+  // `GET /workspaces/:id/session?roots=true&limit=55` -> 500, the SAME call succeeding
+  // immediately after) or surfaces as the UI's "opencode exited during startup (code
+  // null)" error. That cold-start race lives in product code; burning it here, before
+  // any Playwright page navigates, keeps it out of the navigations under test.
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const res = await fetch(`${info.relayUrl}/workspaces/${info.workspaceId}/session`, {
       headers: { authorization: `Bearer ${info.runtimeAccessToken}` },
@@ -682,9 +646,6 @@ async function startFrontend(input: { backendUrl: string }): Promise<RunningFron
 async function seedWorkspace(page: Page, info: FixtureInfo) {
   await page.addInitScript((input: FixtureInfo) => {
     localStorage.clear()
-    // Real JWT, not a literal — see `FixtureInfo.controlPlaneToken`'s doc
-    // comment above for the incident (401 `invalid_bearer_token` once the
-    // fixture's control plane became the real `customVerifierAuthAdapter`).
     ;(window as typeof window & {
       __CLAXEDO_TEST_AUTH_TOKEN__?: string
       __CLAXEDO_TEST_AUTH_USER__?: { id: string }
@@ -777,11 +738,6 @@ async function gateReachesReady(page: Page, timeoutMs = 40_000) {
  * real app relies on.
  */
 async function mintConnectionFromPage(page: Page, info: FixtureInfo) {
-  // Same real-JWT requirement as `seedWorkspace` above (see `FixtureInfo.
-  // controlPlaneToken`'s doc comment): this used to hardcode the identical
-  // non-JWT literal `"live-user-hosted-relay-token"` independently of
-  // `seedWorkspace`'s copy, so fixing one without the other would have left
-  // this call 401ing on its own. Both now read the one fixture-minted token.
   return await page.evaluate(async (input: { workspaceId: string; token: string }) => {
     const res = await fetch(`/api/workspace/${encodeURIComponent(input.workspaceId)}/connection`, {
       headers: { authorization: `Bearer ${input.token}` },
@@ -981,14 +937,7 @@ test.describe("live user-hosted relay @live", () => {
     expect((listedAfterDelete.json as Array<{ id: string }>).map((p) => p.id)).not.toContain(directPtyId)
   })
 
-  // PRODUCT REQUIREMENT: a terminal on a user-hosted workspace, opened from the
-  // browser and driven through the real relay. Behavior 2 proves PTY
-  // create/list/delete at the transport layer with direct `fetch` calls; this
-  // proves the product surface on top of it — the toolbar's own New Terminal
-  // control, the rail row the created PTY gets, the mounted xterm, and the
-  // shell's own bytes arriving back over the tunnel.
-  //
-  // Reading the output is DOM-only: xterm paints to a canvas, so the assertion
+  // Reading the terminal's output is DOM-only: xterm paints to a canvas, so the assertion
   // rides the accessibility layer xterm mounts when `screenReaderMode` is on —
   // a real, persisted product preference
   // (`platform/settings/terminal-preferences.ts`'s
@@ -1015,8 +964,6 @@ test.describe("live user-hosted relay @live", () => {
     await expect(page.locator(`[data-testid="session-content"][data-session-id="${fixture.info.sessionId}"]`))
       .toBeVisible({ timeout: 60_000 })
 
-    // The one New Terminal control (`workspace-toolbar.tsx`), then the creator's
-    // plain-shell tile — the same two-step surface `core-terminal` pins.
     await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
     const launchers = page.locator('[data-component="terminal-new-launchers"]')
     await expect(launchers).toBeVisible({ timeout: 20_000 })
@@ -1032,8 +979,6 @@ test.describe("live user-hosted relay @live", () => {
     await expect(page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${ptyId}"]`))
       .toBeVisible({ timeout: 30_000 })
 
-    // The host really has this PTY: the same real relay lane behavior 2 uses,
-    // asked through the app's OWN connection mint.
     const connection = await mintConnectionFromPage(page, fixture.info)
     const listed = await relayFetchFromPage(page, {
       relayUrl: connection.relayUrl,
@@ -1047,9 +992,8 @@ test.describe("live user-hosted relay @live", () => {
       "the PTY the browser opened is not on the host's own list",
     ).toContain(ptyId)
 
-    // …and its OUTPUT reaches the browser. Type a command through the real xterm
-    // input and wait for the shell's echo of a marker only this run knows, so a
-    // stale buffer or a prompt painted before the tunnel opened cannot pass.
+    // The marker is unique per run, so a stale scrollback buffer or a prompt
+    // painted before the tunnel opened cannot satisfy the poll below.
     const marker = `TTY-${`${Date.now()}`.slice(-6)}`
     const readout = () =>
       page.evaluate((id) => {
@@ -1068,9 +1012,9 @@ test.describe("live user-hosted relay @live", () => {
   })
 
 
-  // PRODUCT REQUIREMENT 6, on the REAL path: attach from the web client to a
-  // session running on a user-hosted workspace and receive its live stream as it
-  // happens. Everything here is real except the model endpoint — real relay,
+  // Attaching from the web client to a session running on a user-hosted
+  // workspace and receiving its live stream as it happens. Everything here is
+  // real except the model endpoint — real relay,
   // real host tunnel, real workspace runtime, real embedded engine, real browser
   // — and the browser is a pure VIEWER: the session is created host-side before
   // it navigates, and the turn is started host-side after it has attached.
@@ -1196,7 +1140,7 @@ test.describe("live user-hosted relay @live", () => {
     // diagnostic a failure needs, in one line.
     const growth = samples
       .map((sample) => ({ at: sample.at - turn.at, length: sample.text.length }))
-      .filter((sample, index, all) => index === 0 || sample.length !== all[index - 1]!.length)
+      .filter((sample, index, all) => index === 0 || sample.length !== all[index - 1].length)
       .map((sample) => `+${sample.at}ms:${sample.length}`)
     const final = samples.at(-1)
     expect(
@@ -1233,7 +1177,7 @@ test.describe("live user-hosted relay @live", () => {
     // and one of those pairs races the host's prompt; a fetch that settled
     // before a single character was on screen delivered none of them.
     const partialSamples = samples.filter((sample) => sample.text.length > 0 && !sample.text.includes(marker))
-    const firstPartialAt = partialSamples[0]!.at
+    const firstPartialAt = partialSamples[0].at
     const lastPartialAt = partialSamples.at(-1)!.at
     const refetches = relayCalls.filter((call) =>
       call.url.startsWith("GET ") && call.url.includes(`/session/${encodeURIComponent(sessionId)}/message`))
@@ -1243,8 +1187,6 @@ test.describe("live user-hosted relay @live", () => {
         `lane: ${JSON.stringify(refetches)}`,
     ).toEqual([])
 
-    // The full three-layer oracle on the settled turn, and the model endpoint's
-    // own receipt that the turn really crossed the relay into the engine.
     await expectAssistantReplyVisible(page, new RegExp(marker), {
       spec: "live-user-hosted-relay",
       scenario: "attached-host-turn",
@@ -1300,10 +1242,9 @@ test.describe("live user-hosted relay @live", () => {
     expect(ptyList.status).toBe(403)
     expect((ptyList.json as { error?: { code?: string } })?.error?.code).toBe("relay_role_denied")
 
-    // FINDING (see HARNESS NOTES): the UI itself has zero role-awareness — a viewer's
-    // composer and "New Terminal" affordance remain fully interactive even though the
-    // above proves any resulting write would be 403'd server-side. Documenting the
-    // observable state rather than asserting a UI gate that does not exist.
+    // The viewer token above is minted out of band; this page itself is connected as
+    // OWNER, so its composer stays enabled. Asserted so a regression that read the
+    // out-of-band mint back into the page's own placement would fail here.
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeEnabled()
   })
 
@@ -1365,7 +1306,7 @@ test.describe("live user-hosted relay — token refresh @live", () => {
     if (!LIVE) return
     test.setTimeout(180_000)
     // 50s TTL: below `ensureFresh()`'s default 60s refreshWindowMs
-    // (`workspace-relay-connection.ts:326`), so the FIRST real relay call the app makes
+    // (`workspace-relay-connection.ts`), so the FIRST real relay call the app makes
     // after connecting is already inside the refresh window — see this file's STATE
     // MODEL section.
     fixture = await startFixture({ CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS: "50" })

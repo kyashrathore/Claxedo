@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceRuntimeClient, WorkspaceRuntimeClientError } from "./client"
-import { fetchDouble } from "./test-support/fetch-double"
+import { fetchDouble, fetchUrl } from "./test-support/fetch-double"
 
 describe("WorkspaceRuntimeClient file routes", () => {
   test("exposes typed file tree, content, status, and search requests", async () => {
@@ -10,7 +10,7 @@ describe("WorkspaceRuntimeClient file routes", () => {
       baseUrl: "http://runtime.local",
       headers: { authorization: "Bearer runtime" },
       fetch: fetchDouble(async (input, init) => {
-        const url = new URL(input.toString())
+        const url = new URL(fetchUrl(input))
         requests.push({ url, init })
         if (url.pathname.endsWith("/file/content")) {
           return Response.json({ type: "text", content: "hello" })

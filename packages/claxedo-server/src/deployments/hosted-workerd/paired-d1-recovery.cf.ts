@@ -56,7 +56,8 @@ function requireExactRow(row: RecoveryRow | null, binding: PairedD1RecoveryBindi
   ) {
     throw new Error(`${database} recovery epoch does not match the active release`)
   }
-  return row as { deploymentId: string; releaseId: string; recoveryEpoch: string }
+  // Every field was just compared to the binding's, so the binding IS the row.
+  return { deploymentId: binding.deploymentId, releaseId: binding.releaseId, recoveryEpoch: binding.recoveryEpoch }
 }
 
 export async function requirePairedD1RecoveryEpoch(
@@ -72,14 +73,14 @@ export async function requirePairedD1RecoveryEpoch(
          where "deploymentId" = ? and "releaseId" = ?`,
       )
       .bind(binding.deploymentId, binding.releaseId)
-      .first<RecoveryRow>(),
+      .first(),
     controlPlaneDatabase
       .prepare(
         `select deployment_id as "deploymentId", release_id as "releaseId", recovery_epoch as "recoveryEpoch"
          from control_plane_recovery_epochs where deployment_id = ? and release_id = ?`,
       )
       .bind(binding.deploymentId, binding.releaseId)
-      .first<RecoveryRow>(),
+      .first(),
   ])
   requireExactRow(auth, binding, "AUTH_DB")
   requireExactRow(controlPlane, binding, "CONTROL_PLANE_DB")

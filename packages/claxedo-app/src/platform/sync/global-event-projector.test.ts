@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test"
 import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { applyGlobalProjectEvent } from "./global-event-projector"
 
-const project = (id: string, title = id) => ({ id, title }) as Project
+// A real payload always carries the worktree: it is what the projector routes
+// on, and it is what tells a control-plane row from the embedded engine's
+// duplicate of the same directory.
+const project = (id: string, title = id) => ({ id, worktree: `/w/${id}`, title }) as Project
 
 describe("global event shell projector", () => {
   test("refreshes global inventory for connection lifecycle events", () => {

@@ -1,22 +1,18 @@
 import { children, createMemo, createSignal, Show, type JSX } from "solid-js"
 import type { ClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
+import { asRecord } from "@/lib/record"
 
 type MessageWithAuthor = {
   role: string
   claxedo?: unknown
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
-}
-
 export function messageAuthor(message: MessageWithAuthor): ClaxedoMessageAuthor | undefined {
-  if (message.role !== "user") return
-  const author = record(record(message.claxedo)?.author)
-  if (!author) return
-  if (typeof author.id !== "string" || typeof author.name !== "string") return
-  if (author.kind !== "human" && author.kind !== "agent") return
+  if (message.role !== "user") return undefined
+  const author = asRecord(asRecord(message.claxedo)?.author)
+  if (!author) return undefined
+  if (typeof author.id !== "string" || typeof author.name !== "string") return undefined
+  if (author.kind !== "human" && author.kind !== "agent") return undefined
   return {
     id: author.id,
     name: author.name,

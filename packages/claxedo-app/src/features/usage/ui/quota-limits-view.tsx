@@ -1,4 +1,5 @@
 import { For, Show, createMemo } from "solid-js"
+import { asRecord } from "@/lib/record"
 
 type QuotaWindow = {
   label?: string
@@ -27,10 +28,10 @@ function windowPercent(value: QuotaWindow) {
 }
 
 function windowBar(field: string, raw: unknown): Bar | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
   const value = raw as QuotaWindow
   const percent = windowPercent(value)
-  if (percent === undefined) return
+  if (percent === undefined) return undefined
   return {
     label: value.label ?? knownLabels[field] ?? field.replace(/_window$/, "").replaceAll("_", " "),
     percent,
@@ -59,11 +60,11 @@ function issueStatus(provider: Record<string, unknown>) {
 }
 
 export function providerRows(snapshot: unknown): Provider[] {
-  if (!snapshot || typeof snapshot !== "object") return []
-  return Object.entries(snapshot as Record<string, unknown>).flatMap(([name, raw]) => {
-    if (name === "fetched_at" || !raw || typeof raw !== "object" || Array.isArray(raw)) return []
-    const provider = raw as Record<string, unknown>
-    if (provider.configured !== true) return []
+  const providers = asRecord(snapshot)
+  if (!providers) return []
+  return Object.entries(providers).flatMap(([name, raw]) => {
+    const provider = name === "fetched_at" ? undefined : asRecord(raw)
+    if (!provider || provider.configured !== true) return []
     const issue = issueStatus(provider)
     const windows = issue ? [] : Object.entries(provider).flatMap(([field, value]) => {
       if (field === "weekly_scoped" && Array.isArray(value)) {

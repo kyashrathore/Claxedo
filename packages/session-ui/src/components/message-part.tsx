@@ -24,7 +24,6 @@ import type {
   AgentPresentationMessage,
   AgentQuestionAnswer,
   AgentQuestionInfo,
-  AgentReasoningPart,
   AgentTextPart,
   AgentTodo,
   AgentToolPart,
@@ -281,6 +280,16 @@ export type PartComponent = Component<MessagePartProps>
 
 export const PART_MAPPING: Record<string, PartComponent | undefined> = {}
 
+/**
+ * Every renderer below is registered under exactly one `part.type`, so `Part` only ever
+ * hands it that variant. The registry's value type is the wide `MessagePartProps`, so each
+ * renderer restates the invariant by checking the discriminant — which is also what lets
+ * TypeScript narrow the union. Reaching the throw means the registry was wired wrong.
+ */
+function wrongPartType(expected: AgentContentPart["type"], part: AgentContentPart): Error {
+  return new Error(`the "${expected}" renderer received a "${part.type}" part`)
+}
+
 const TEXT_RENDER_PACE_MS = 24
 const TEXT_RENDER_IMMEDIATE = 512
 const TEXT_RENDER_SNAP = /[\s.,!?;:)\]]/
@@ -477,14 +486,14 @@ function taskAgent(
   const color = agentColor(item?.color, agentThemeColors) ?? agentTones[key] ?? tone(key)
   const v2Color = agentColor(item?.color, v2AgentThemeColors) ?? v2Tone ?? color
   return {
-    name: item?.name ?? `${raw[0]!.toUpperCase()}${raw.slice(1)}`,
+    name: item?.name ?? `${raw[0].toUpperCase()}${raw.slice(1)}`,
     color,
     v2Color,
   }
 }
 
-function agentColor(value: string | undefined, themeColors: Record<string, string>) {
-  if (!value) return
+function agentColor(value: string | undefined, themeColors: Record<string, string>): string | undefined {
+  if (!value) return undefined
   return themeColors[value] ?? value
 }
 
@@ -613,14 +622,18 @@ function urls(text: string | undefined) {
     })
 }
 
-function sessionLink(id: string | undefined, path: string, href?: (id: string) => string | undefined) {
-  if (!id) return
+function sessionLink(
+  id: string | undefined,
+  path: string,
+  href?: (id: string) => string | undefined,
+): string | undefined {
+  if (!id) return undefined
 
   const direct = href?.(id)
   if (direct) return direct
 
   const idx = path.indexOf("/session")
-  if (idx === -1) return
+  if (idx === -1) return undefined
   return `${path.slice(0, idx)}/session/${id}`
 }
 
@@ -695,7 +708,7 @@ function sameRef(a: PartRef, b: PartRef) {
 
 function sameRefs(a: PartRef[], b: PartRef[]) {
   if (a.length !== b.length) return false
-  return a.every((ref, i) => sameRef(ref, b[i]!))
+  return a.every((ref, i) => sameRef(ref, b[i]))
 }
 
 function sameGroup(a: PartGroup, b: PartGroup) {
@@ -723,7 +736,7 @@ export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly Part
   if (a === b) return true
   if (!a || !b) return false
   if (a.length !== b.length) return false
-  return a.every((item, i) => sameGroup(item, b[i]!))
+  return a.every((item, i) => sameGroup(item, b[i]))
 }
 
 export function groupParts(parts: { messageID: string; part: AgentContentPart }[]) {
@@ -785,13 +798,14 @@ export function renderable(part: AgentContentPart, showReasoningSummaries = true
   return !!PART_MAPPING[part.type]
 }
 
-function toolDefaultOpen(tool: string, shell = false, edit = false) {
+function toolDefaultOpen(tool: string, shell = false, edit = false): boolean | undefined {
   if (tool === "bash") return shell
   if (tool === "edit" || tool === "write" || tool === "apply_patch") return edit
+  return undefined
 }
 
-export function partDefaultOpen(part: AgentContentPart, shell = false, edit = false) {
-  if (part.type !== "tool") return
+export function partDefaultOpen(part: AgentContentPart, shell = false, edit = false): boolean | undefined {
+  if (part.type !== "tool") return undefined
   return toolDefaultOpen(part.tool, shell, edit)
 }
 
@@ -867,12 +881,12 @@ export function AssistantParts(props: {
               {(() => {
                 const message = createMemo(() => {
                   const entry = entryAccessor()
-                  if (entry.type !== "part") return
+                  if (entry.type !== "part") return undefined
                   return msgs().get(entry.ref.messageID)
                 })
                 const item = createMemo(() => {
                   const entry = entryAccessor()
-                  if (entry.type !== "part") return
+                  if (entry.type !== "part") return undefined
                   return part().get(entry.ref.messageID)?.get(entry.ref.partID)
                 })
 
@@ -919,7 +933,7 @@ function contextToolDetail(part: AgentToolPart): string | undefined {
 }
 
 function contextToolTrigger(part: AgentToolPart, i18n: ReturnType<typeof useI18n>) {
-  const input = (part.state.input ?? {}) as Record<string, unknown>
+  const input = (part.state.input ?? {})
   const path = typeof input.path === "string" ? input.path : "/"
   const filePath = typeof input.filePath === "string" ? input.filePath : undefined
   const pattern = typeof input.pattern === "string" ? input.pattern : undefined
@@ -1007,12 +1021,14 @@ export function registerPartComponent(type: string, component: PartComponent) {
   PART_MAPPING[type] = component
 }
 
-function userMessage(message: AgentPresentationMessage) {
+function userMessage(message: AgentPresentationMessage): AgentUserMessage | undefined {
   if (message.role === "user") return message
+  return undefined
 }
 
-function assistantMessage(message: AgentPresentationMessage) {
+function assistantMessage(message: AgentPresentationMessage): AgentAssistantMessage | undefined {
   if (message.role === "assistant") return message
+  return undefined
 }
 
 export function Message(props: MessageProps) {
@@ -1099,7 +1115,7 @@ export function AssistantMessageDisplay(props: {
               {(() => {
                 const item = createMemo(() => {
                   const entry = entryAccessor()
-                  if (entry.type !== "part") return
+                  if (entry.type !== "part") return undefined
                   return part().get(entry.ref.partID)
                 })
 
@@ -1316,8 +1332,8 @@ function clampLabel(value: string, max = 72) {
 function workGroupActiveLabel(parts: AgentToolPart[]): string | undefined {
   const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
   if (!active) return undefined
-  const input = (active.state.input ?? {}) as Record<string, unknown>
-  const text = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : undefined)
+  const input = (active.state.input ?? {})
+  const text = (key: string) => (typeof input[key] === "string" ? (input[key]) : undefined)
 
   switch (active.tool) {
     case "bash":
@@ -1514,7 +1530,9 @@ export function UserMessageDisplay(props: {
   const metaTail = stamp
 
   const openImagePreview = (url: string, alt?: string) => {
-    dialog.show(() => <ImagePreview src={url} alt={alt} />)
+    // `show` resolves when Solid's transition settles; nothing here waits on the dialog
+    // being on screen, and the transition promise does not reject.
+    void dialog.show(() => <ImagePreview src={url} alt={alt} />)
   }
 
   const handleCopy = async () => {
@@ -1647,7 +1665,7 @@ export function UserMessageDisplay(props: {
               icon="reset"
               label={i18n.t("ui.message.revertMessage")}
               useV2={props.useV2Actions}
-              disabled={!!busy()}
+              disabled={busy()}
               onMouseDown={(event) => event.preventDefault()}
               onClick={(event) => {
                 event.stopPropagation()
@@ -1684,7 +1702,7 @@ function HighlightedText(props: { text: string; references: AgentFilePart[]; age
     const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
       ...props.references
         .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
-        .map((r) => ({ start: r.source!.text!.start, end: r.source!.text!.end, type: "file" as const })),
+        .map((r) => ({ start: r.source!.text.start, end: r.source!.text.end, type: "file" as const })),
       ...props.agents
         .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
         .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
@@ -1836,26 +1854,58 @@ function FrameDeferred(props: { content: () => JSX.Element }) {
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
-  const part = () => props.part as AgentToolPart
+  const part = () => {
+    const value = props.part
+    if (value.type !== "tool") throw wrongPartType("tool", value)
+    return value
+  }
   if (part().tool === "todowrite") return null
 
   const hideQuestion = createMemo(
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
   )
 
-  const emptyInput: Record<string, any> = {}
-  const emptyMetadata: Record<string, any> = {}
+  /** The failure text of an errored tool call. A task renders its own failure, so it opts out. */
+  const toolError = createMemo(() => {
+    if (part().tool === "task") return undefined
+    const state = part().state
+    return state.status === "error" ? state.error : undefined
+  })
 
-  const input = () => part().state?.input ?? emptyInput
-  // @ts-expect-error
-  const partMetadata = () => part().state?.metadata ?? emptyMetadata
+  /** When the call began. A pending call has not started, so it has no timestamp yet. */
+  const toolStartedAt = createMemo(() => {
+    const state = part().state
+    return state.status === "pending" ? undefined : state.time.start
+  })
+
+  const emptyInput: Record<string, unknown> = {}
+  const emptyMetadata: Record<string, unknown> = {}
+
+  const input = () => part().state.input ?? emptyInput
+  /**
+   * A pending call has not run, so it carries no metadata at all -- that is the
+   * one status `AgentToolState` omits the field from, and reading through it was
+   * the error the suppression here used to hide. Every started status declares
+   * it, optionally except when completed.
+   */
+  const partMetadata = () => {
+    const state = part().state
+    if (state.status === "pending") return emptyMetadata
+    return state.metadata ?? emptyMetadata
+  }
+  /** Output exists only once the call completes; every earlier status has none. */
+  const toolOutput = createMemo(() => {
+    const state = part().state
+    return state.status === "completed" ? state.output : undefined
+  })
   const taskId = createMemo(() => {
-    if (part().tool !== "task") return
+    if (part().tool !== "task") return undefined
     const value = partMetadata().sessionId
     if (typeof value === "string" && value) return value
+    return undefined
   })
   const taskHref = createMemo(() => {
-    if (part().tool !== "task") return
+    if (part().tool !== "task") return undefined
     return sessionLink(taskId(), useLocation().pathname, data.sessionHref)
   })
   const taskSubtitle = createMemo(() => {
@@ -1873,7 +1923,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
-          <Match when={part().tool !== "task" && part().state.status === "error" && (part().state as any).error}>
+          <Match when={toolError()}>
             {(error) => {
               const cleaned = error().replace("Error: ", "")
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
@@ -1907,10 +1957,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               toolCallId={part().callID}
               sessionID={part().sessionID}
               metadata={partMetadata()}
-              // @ts-expect-error
-              output={part().state.output}
+              output={toolOutput()}
               status={part().state.status}
-              startedAt={(part().state as any).time?.start}
+              startedAt={toolStartedAt()}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               open={controlledOpen()}
@@ -1954,7 +2003,11 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
   const numfmt = createMemo(() => new Intl.NumberFormat(i18n.locale()))
-  const part = () => props.part as AgentTextPart
+  const part = () => {
+    const value = props.part
+    if (value.type !== "text") throw wrongPartType("text", value)
+    return value
+  }
   const interrupted = createMemo(
     () =>
       props.message.role === "assistant" &&
@@ -2061,7 +2114,11 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
-  const part = () => props.part as AgentReasoningPart
+  const part = () => {
+    const value = props.part
+    if (value.type !== "reasoning") throw wrongPartType("reasoning", value)
+    return value
+  }
   const streaming = createMemo(
     () =>
       props.message.role === "assistant" &&
@@ -2095,7 +2152,11 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
 
 PART_MAPPING["file"] = function FilePartDisplay(props) {
   const dialog = useDialog()
-  const part = () => props.part as AgentFilePart
+  const part = () => {
+    const value = props.part
+    if (value.type !== "file") throw wrongPartType("file", value)
+    return value
+  }
   const name = createMemo(() => part().filename ?? getFilename(part().url) ?? part().url)
   const isImage = createMemo(() => part().mime.startsWith("image/"))
   const isAudio = createMemo(() => part().mime.startsWith("audio/"))
@@ -2581,7 +2642,7 @@ ToolRegistry.register({
       <Show when={localUrl()}>
         <a
           data-component="local-preview-row"
-          href={localUrl()!}
+          href={localUrl()}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -2609,7 +2670,7 @@ ToolRegistry.register({
     const diffSource = createMemo(
       () => {
         const filediff = props.metadata?.filediff
-        if (!filediff) return
+        if (!filediff) return undefined
         return {
           file: filediff.file || props.input.filePath || "",
           patch: typeof filediff.patch === "string" ? filediff.patch : undefined,
@@ -2664,7 +2725,7 @@ ToolRegistry.register({
                 </div>
                 <Show when={!pending() && props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
+                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath)}</span>
                   </div>
                 </Show>
               </div>
@@ -2681,7 +2742,7 @@ ToolRegistry.register({
               path={path()}
               actions={
                 <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff!} />
+                  <DiffChanges changes={props.metadata.filediff} />
                 </Show>
               }
             >
@@ -2740,7 +2801,7 @@ ToolRegistry.register({
                 </div>
                 <Show when={!pending() && props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
+                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath)}</span>
                   </div>
                 </Show>
               </div>
@@ -2781,7 +2842,7 @@ ToolRegistry.register({
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const single = createMemo(() => {
       const list = files()
-      if (list.length !== 1) return
+      if (list.length !== 1) return undefined
       return list[0]
     })
     const [expanded, setExpanded] = createSignal<string[]>([])
@@ -3042,8 +3103,12 @@ ToolRegistry.register({
   name: "question",
   render(props) {
     const i18n = useI18n()
-    const questions = createMemo(() => (props.input.questions ?? []) as AgentQuestionInfo[])
-    const answers = createMemo(() => (props.metadata.answers ?? []) as AgentQuestionAnswer[])
+    const questions = createMemo((): AgentQuestionInfo[] =>
+      Array.isArray(props.input.questions) ? props.input.questions : [],
+    )
+    const answers = createMemo((): AgentQuestionAnswer[] =>
+      Array.isArray(props.metadata.answers) ? props.metadata.answers : [],
+    )
     const completed = createMemo(() => answers().length > 0)
 
     const subtitle = createMemo(() => {

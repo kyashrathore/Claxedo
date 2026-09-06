@@ -38,6 +38,8 @@
  * bounded one.
  */
 
+import { parseJson } from "../../platform/json/index"
+
 /** Guard against a hung `run` holding a serialization slot or cache entry forever. */
 const IDEMPOTENCY_INFLIGHT_TTL_MS = 60_000
 const IDEMPOTENCY_TTL_MS = 5 * 60_000
@@ -158,10 +160,10 @@ export async function serialized<T>(key: string, run: () => Promise<T>) {
     ? Promise.race([
       previous.catch(() => undefined),
       new Promise<void>((resolve) => {
-        const timer: unknown = setTimeout(resolve, IDEMPOTENCY_INFLIGHT_TTL_MS)
+        const timer = setTimeout(resolve, IDEMPOTENCY_INFLIGHT_TTL_MS)
         // Never hold the Node event loop open on a lock-release timer. Absent on
-        // workerd, where timers do not keep an isolate alive.
-        ;(timer as { unref?: () => void }).unref?.()
+        // workerd, where a timer handle is a number and does not keep an isolate alive.
+        if (typeof timer === "object") timer.unref()
       }),
     ])
     : Promise.resolve()
@@ -175,10 +177,10 @@ export async function serialized<T>(key: string, run: () => Promise<T>) {
 }
 
 export function parseIdempotencyKey(input: unknown) {
-  if (typeof input !== "string") return
+  if (typeof input !== "string") return undefined
   if (input.length > IDEMPOTENCY_KEY_MAX_LENGTH) throw new InvalidIdempotencyKeyError()
   const key = input.trim()
-  if (!key) return
+  if (!key) return undefined
   return key
 }
 
@@ -189,7 +191,7 @@ export function idempotencyCacheKey(input: {
   sessionId: string
   key?: string
 }) {
-  if (!input.key) return
+  if (!input.key) return undefined
   return JSON.stringify([
     input.operation,
     input.principal,
@@ -241,17 +243,24 @@ function evictForCapacity() {
   }
 }
 
-export function cachedIdempotency<T>(
+/**
+ * The result is `unknown` rather than `run`'s return type, and deliberately so:
+ * a durable replay reconstructs it from the recorded JSON, so a caller told it
+ * was handed a `T` would be told a `Date` came back where a string did. Every
+ * caller re-serializes the value straight into its response, which is exactly
+ * what the recorded JSON already is.
+ */
+export function cachedIdempotency(
   key: string | undefined,
-  run: () => Promise<T>,
+  run: () => Promise<unknown>,
   fingerprint = "",
-) {
+): Promise<unknown> {
   if (!key) return run()
   sweep(Date.now())
   const hit = pullResults.get(key)
   if (hit) {
     if (hit.fingerprint !== fingerprint) return Promise.reject(new IdempotencyConflictError())
-    return hit.promise as Promise<T>
+    return hit.promise
   }
   evictForCapacity()
   if (pullResults.size >= IDEMPOTENCY_MAX_ENTRIES) {
@@ -294,21 +303,36 @@ export function cachedIdempotency<T>(
  * operation runs once; degrading to "run it anyway" on a store hiccup would
  * quietly restore the bug precisely when the store is unhealthy — which is when
  * client retries, and therefore duplicate deliveries, are most likely.
+ *
+ * Exported because the durable claim is not specific to a session operation:
+ * the billing webhook route dedupes provider deliveries against this same table
+ * under its own key prefix, and used to carry a hand-copied version of this
+ * exact begin/replay/release/complete sequence. `inFlightError` is the one thing
+ * that differed — a webhook wants a status its sender retries on — so it is a
+ * parameter and the sequence is not duplicated.
+ *
+ * A replayed value is `unknown`: it came back through `JSON.parse`, so it is
+ * whatever JSON preserved of what `run` returned, not `run`'s return type.
  */
-function durableIdempotency<T>(
+export function durableIdempotency(
   store: DurableIdempotencyStore,
-  input: { cacheKey: string; fingerprint: string; run: () => Promise<T> },
-) {
+  input: {
+    cacheKey: string
+    fingerprint: string
+    run: () => Promise<unknown>
+    inFlightError?: () => Error
+  },
+): () => Promise<unknown> {
   return async () => {
     const claim = await store.begin({ cacheKey: input.cacheKey, fingerprint: input.fingerprint })
     if (claim.state === "conflict") throw new IdempotencyConflictError()
-    if (claim.state === "in_flight") throw new IdempotencyInFlightError()
+    if (claim.state === "in_flight") throw (input.inFlightError ?? (() => new IdempotencyInFlightError()))()
     if (claim.state === "completed") {
       // Replay the recorded response. A completed row with no body means the
       // operation returned nothing worth recording, not that it never ran.
-      return (claim.resultJson === undefined ? undefined : JSON.parse(claim.resultJson)) as T
+      return claim.resultJson === undefined ? undefined : parseJson(claim.resultJson)
     }
-    let value: T
+    let value: unknown
     try {
       value = await input.run()
     } catch (error) {

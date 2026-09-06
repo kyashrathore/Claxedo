@@ -8,6 +8,7 @@ import {
 import type { SessionRequestsQueryData, Todo } from "../data/sync/queries"
 import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { observeSessionStatusEvent } from "./session-status-telemetry"
+import { isRecord, readField, readString } from "@/lib/record"
 
 const OPTIMISTIC_STATUS_REDISPATCH_MS = 8_000
 const OPTIMISTIC_STATUS_PENDING_MS = 20_000
@@ -162,47 +163,78 @@ export function dispatchSessionTodoEvent(input: {
   })
 }
 
+type RetryAction = NonNullable<Extract<SessionStatus, { type: "retry" }>["action"]>
+
+function retryAction(value: unknown): RetryAction | undefined {
+  if (!isRecord(value)) return undefined
+  const { reason, provider, title, message, label, link } = value
+  if (
+    typeof reason !== "string" || typeof provider !== "string" || typeof title !== "string"
+    || typeof message !== "string" || typeof label !== "string"
+  ) return undefined
+  return { reason, provider, title, message, label, ...(typeof link === "string" ? { link } : {}) }
+}
+
+/**
+ * The status payload of a `session.status` frame, or of the status client's
+ * untyped record.
+ *
+ * Both reach the app as opaque JSON, so the discriminated `AgentRuntimeStatus`
+ * union has to be re-established once — here. A payload matching no arm is
+ * dropped rather than forwarded into the status query, where a malformed `type`
+ * would render as an unknown stage forever.
+ */
+export function sessionStatus(value: unknown): SessionStatus | undefined {
+  if (!isRecord(value)) return undefined
+  switch (value.type) {
+    case "idle":
+    case "busy":
+      return { type: value.type }
+    case "retry": {
+      const { attempt, message, next } = value
+      if (typeof attempt !== "number" || typeof message !== "string" || typeof next !== "number") return undefined
+      const action = retryAction(value.action)
+      return { type: "retry", attempt, message, next, ...(action ? { action } : {}) }
+    }
+    case "recovering":
+      return value.kind === "process_restart" && typeof value.message === "string"
+        ? { type: "recovering", kind: "process_restart", message: value.message }
+        : undefined
+    default:
+      return undefined
+  }
+}
+
 export function applySessionStatusSseEvent(input: {
   event: { type: string; properties?: unknown }
   directory?: string
 }) {
   switch (input.event.type) {
     case "session.status": {
-      const props = input.event.properties as { sessionID?: string; status?: SessionStatus }
-      if (!props.sessionID) return false
-      observeSessionStatusEvent({
-        directory: input.directory,
-        sessionID: props.sessionID,
-        status: props.status,
-      })
+      const sessionID = readString(input.event.properties, "sessionID")
+      if (!sessionID) return false
+      const status = sessionStatus(readField(input.event.properties, "status"))
+      observeSessionStatusEvent({ directory: input.directory, sessionID, status })
       dispatchSessionStatusEvent({
-        event: { type: "session.status", source: "server", sessionID: props.sessionID, status: props.status },
+        event: { type: "session.status", source: "server", sessionID, status },
       })
       return true
     }
     case "session.idle": {
-      const props = input.event.properties as { sessionID?: string }
-      if (!props.sessionID) return false
-      observeSessionStatusEvent({
-        directory: input.directory,
-        sessionID: props.sessionID,
-        status: { type: "idle" },
-      })
+      const sessionID = readString(input.event.properties, "sessionID")
+      if (!sessionID) return false
+      observeSessionStatusEvent({ directory: input.directory, sessionID, status: { type: "idle" } })
       dispatchSessionStatusEvent({
-        event: { type: "session.idle", source: "server", sessionID: props.sessionID },
+        event: { type: "session.idle", source: "server", sessionID },
       })
       return true
     }
     case "session.error": {
-      const props = input.event.properties as { sessionID?: string }
-      if (!props.sessionID) return false
-      observeSessionStatusEvent({
-        directory: input.directory,
-        sessionID: props.sessionID,
-        status: { type: "idle" },
-      })
+      const sessionID = readString(input.event.properties, "sessionID")
+      if (!sessionID) return false
+      observeSessionStatusEvent({ directory: input.directory, sessionID, status: { type: "idle" } })
       dispatchSessionStatusEvent({
-        event: { type: "session.error", source: "server", sessionID: props.sessionID },
+        event: { type: "session.error", source: "server", sessionID },
       })
       return true
     }
@@ -382,6 +414,7 @@ function statusForTimeoutStage(stage: SessionStatusStage): SessionStatus | undef
       next: 0,
     }
   }
+  return undefined
 }
 
 function stageRank(stage: SessionStatusStage | undefined) {

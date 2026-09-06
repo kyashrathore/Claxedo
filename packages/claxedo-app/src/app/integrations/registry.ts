@@ -76,7 +76,14 @@ export type SettingsContribution = {
 }
 
 export type ContributionRegistry = {
-  surfaces: SurfaceContribution[]
+  /**
+   * `never` is the variance-correct render context for STORAGE: the registry
+   * cannot know what a contribution's renderer wants, and a renderer that
+   * accepts any specific context is assignable to one accepting `never`. Typing
+   * it `unknown` instead made every typed contribution need a cast on the way
+   * in and another on the way out.
+   */
+  surfaces: SurfaceContribution<never>[]
   commands: CommandContribution[]
   toolbar: ToolbarContribution[]
   menus: MenuContribution[]
@@ -121,7 +128,7 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
       track()
       return registry
     },
-    addSurface(contribution: SurfaceContribution) {
+    addSurface(contribution: SurfaceContribution<never>) {
       if (upsert(registry.surfaces, contribution)) changed()
     },
     /**
@@ -194,7 +201,7 @@ function upsert<T extends { id: string }>(items: T[], next: T) {
   return true
 }
 
-function remove<T extends { id: string }>(items: T[], id: string) {
+function remove(items: { id: string }[], id: string) {
   const index = items.findIndex((item) => item.id === id)
   if (index === -1) return false
   items.splice(index, 1)

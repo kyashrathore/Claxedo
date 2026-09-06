@@ -13,6 +13,7 @@ import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
+import { isTransientDriverError } from "./transient-error"
 
 type SandboxEnv = Record<string, string | undefined>
 
@@ -177,10 +178,11 @@ function labelArgs(input: Record<string, string>) {
   return Object.entries(input).flatMap(([key, value]) => ["--label", `${key}=${value}`])
 }
 
+/** Markers this driver's SDK has been seen to use for a retryable failure. */
+const TRANSIENT_MARKERS = ["timeout", "temporarily unavailable", "connection refused"] as const
+
 function transientDriverError(err: unknown) {
-  const shaped = err as { code?: string; message?: string }
-  const text = `${shaped.code ?? ""} ${shaped.message ?? ""}`.toLowerCase()
-  return text.includes("timeout") || text.includes("temporarily unavailable") || text.includes("connection refused")
+  return isTransientDriverError(err, TRANSIENT_MARKERS)
 }
 
 export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): SandboxDriver {

@@ -3,6 +3,7 @@ import {
   sandboxDriverCredentialFields,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
+import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
@@ -21,7 +22,9 @@ import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
  */
 export async function verifySandboxDriverAuth(
   id: SandboxDriverID,
-  auth: Record<string, string | undefined>,
+  // A decoded credential blob: `probeAuth` establishes which fields are usable
+  // strings, so the parameter does not have to promise what the blob cannot.
+  auth: Record<string, unknown>,
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   const values = probeAuth(id, auth)
@@ -81,17 +84,15 @@ export function sandboxDriverVerifiable(id: SandboxDriverID) {
  * `credentials/migrate.ts` still writes for daytona). A stored credential that
  * predates the codec must verify, not read as an unsupported shape.
  */
-function storedAuth(id: SandboxDriverID, secret: string): Record<string, string | undefined> {
+function storedAuth(id: SandboxDriverID, secret: string): Record<string, unknown> {
   const fields = sandboxDriverCredentialFields[id]
   try {
-    const parsed = JSON.parse(secret) as unknown
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, string | undefined>
-    }
+    const parsed = jsonRecord(JSON.parse(secret))
+    if (parsed) return parsed
   } catch {
     // Falls through to the legacy bare reading below.
   }
-  return fields.length === 1 ? { [fields[0]!.key]: secret } : {}
+  return fields.length === 1 ? { [fields[0].key]: secret } : {}
 }
 
 const VERIFIABLE = new Set<SandboxDriverID>(["daytona", "vercel", "cloudflare", "box", "exe"])
@@ -108,10 +109,7 @@ type SandboxDriverProbe = {
   rejected: (status: number) => boolean
 }
 
-function sandboxDriverProbe(
-  id: SandboxDriverID,
-  auth: Record<string, string>,
-): SandboxDriverProbe | undefined {
+function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): SandboxDriverProbe | undefined {
   const signal = () => AbortSignal.timeout(10_000)
 
   // Daytona: "Get current API key's details", the one route documented as
@@ -138,7 +136,7 @@ function sandboxDriverProbe(
   // failure this whole probe exists to move earlier.
   if (id === "vercel") {
     return {
-      url: `https://api.vercel.com/v9/projects/${encodeURIComponent(auth.project_id!)}?teamId=${encodeURIComponent(auth.team_id!)}`,
+      url: `https://api.vercel.com/v9/projects/${encodeURIComponent(auth.project_id)}?teamId=${encodeURIComponent(auth.team_id)}`,
       init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.access_token}` } },
       // 404 is a verdict, not a miss: the token authenticated and the project
       // it names is unreachable, so this credential set cannot launch anything.
@@ -154,8 +152,8 @@ function sandboxDriverProbe(
   // the deployed Worker, and its `GET /sandboxes` is the only non-mutating
   // route behind the same admin gate as the control actions.
   if (id === "cloudflare") {
-    const base = workerBase(auth.worker_url!)
-    if (!base) return
+    const base = workerBase(auth.worker_url)
+    if (!base) return undefined
     return {
       url: `${base}/sandboxes`,
       init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_token}` } },
@@ -207,7 +205,7 @@ function sandboxDriverProbe(
   // `ClientHello`/`WorkspaceNameLookup` RPC, which `fetch` cannot make. Docker
   // holds an image name, not a remote credential. Both are honestly
   // unverifiable rather than probed against something invented.
-  return
+  return undefined
 }
 
 /**
@@ -216,23 +214,22 @@ function sandboxDriverProbe(
  * space survives into the header as part of the token, so the provider is
  * handed a credential that is not the user's — a false rejection.
  */
-function probeAuth(id: SandboxDriverID, auth: Record<string, string | undefined>) {
-  const values = Object.fromEntries(
-    sandboxDriverCredentialFields[id].flatMap((field) => {
-      const value = auth[field.key]?.trim()
-      return value ? [[field.key, value]] : []
-    }),
-  )
-  if (Object.keys(values).length !== sandboxDriverCredentialFields[id].length) return
-  return values
+function probeAuth(id: SandboxDriverID, auth: Record<string, unknown>): Record<string, string> | undefined {
+  const values: Record<string, string> = {}
+  for (const field of sandboxDriverCredentialFields[id]) {
+    const raw = auth[field.key]
+    const value = typeof raw === "string" ? raw.trim() : ""
+    if (value) values[field.key] = value
+  }
+  return Object.keys(values).length === sandboxDriverCredentialFields[id].length ? values : undefined
 }
 
-function workerBase(input: string) {
+function workerBase(input: string): string | undefined {
   try {
     const url = new URL(input)
-    if (url.protocol !== "https:" && url.protocol !== "http:") return
+    if (url.protocol !== "https:" && url.protocol !== "http:") return undefined
     return `${url.origin}${url.pathname.replace(/\/+$/, "")}`
   } catch {
-    return
+    return undefined
   }
 }

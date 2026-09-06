@@ -1,7 +1,7 @@
-import { queryOptions, useQuery } from "@tanstack/solid-query"
+import { useQuery } from "@tanstack/solid-query"
 import type { Accessor } from "solid-js"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
-import { paneQueryOptions, parkedPaneQueryOptions, type PaneQueryOptions } from "./pane-query-observer"
+import { parkedPaneQueryOptions, type PaneQueryOptions } from "./pane-query-observer"
 import { sessionStatusPollingRemovalGate, waitForActiveStatusPollDelay } from "./session-status-telemetry"
 
 export const ACTIVE_SESSION_STATUS_POLL_DELAY_MS = 60_000
@@ -55,7 +55,7 @@ export function activeSessionStatusPollQueryOptions(input: {
   refresh: (signal: AbortSignal) => Promise<boolean>
 }): PaneQueryOptions<boolean> {
   const scope = activeSessionStatusPollScope(input)
-  return paneQueryOptions<boolean>(queryOptions({
+  return {
     queryKey: activeSessionStatusPollRequestKey(input),
     queryFn: async ({ signal }) => {
       await waitForFirstActiveSessionStatusPoll({
@@ -72,7 +72,7 @@ export function activeSessionStatusPollQueryOptions(input: {
     // pane observer leaves, keeping its queryFn would retain the disposed Solid
     // owner and SDK graph for the global QueryClient's normal 30-minute gcTime.
     gcTime: 0,
-  }))
+  }
 }
 
 export function createActiveSessionStatusPoll(input: {

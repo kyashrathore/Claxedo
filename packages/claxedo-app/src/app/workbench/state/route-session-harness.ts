@@ -1,22 +1,17 @@
 import { pickHarness } from "../../../features/session/harness/profile"
 import { isHarnessSelection } from "@/platform/identity/harness-selection"
 import type { HarnessRef } from "@/platform/identity/session-ref"
+import { asRecord } from "@/lib/record"
 
 export function routeSessionHarness(input: unknown): HarnessRef | undefined {
-  const row = record(input)
-  const value = row?.harness ?? record(row?.config)?.harness
+  const row = asRecord(input)
+  const value = row?.harness ?? asRecord(row?.config)?.harness
   if (isHarnessSelection(value)) return value
-  const harness = record(value)
+  const harness = asRecord(value)
   const selection = pickHarness(harness)
   if (!selection) return undefined
   const binary = string(harness?.binary)
   return { ...selection, ...(binary ? { binary } : {}) }
-}
-
-function record(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
 }
 
 function string(input: unknown) {

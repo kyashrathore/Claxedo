@@ -13,6 +13,8 @@ import {
 } from "../../src/authority/adapters/d1/workspace-authority"
 import { betterAuthIssuer } from "../../src/platform/auth/better-auth-d1-foundation"
 import { greenfieldUserDeployedPreflight } from "./greenfield-user-deployed"
+import { d1Row } from "./d1-json"
+import { errorCode } from "../../src/platform/errors/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const SHA256 = /^sha256:[0-9a-f]{64}$/
@@ -221,11 +223,8 @@ export function ownerClaimProvisioningCommands(input: {
 }
 
 export function verifyOwnerClaimProvisioningOutput(output: string) {
-  const parsed = JSON.parse(output) as unknown
-  if (!Array.isArray(parsed) || parsed.length !== 1) throw new Error("D1 owner-claim verification returned no result")
-  const result = parsed[0] as { success?: boolean; results?: Array<Record<string, unknown>> }
-  const row = result.results?.[0]
-  if (!result.success || result.results?.length !== 1 || row?.admitted !== 1) {
+  const row = d1Row(output, "D1 owner-claim verification")
+  if (row.admitted !== 1) {
     throw new Error("D1 rejected conflicting, consumed, expired, or stale bootstrap-owner provisioning")
   }
   return row
@@ -253,7 +252,7 @@ export async function resolveOwnerClaim(
     const claim = raw.endsWith("\n") ? raw.slice(0, -1) : raw
     return Object.freeze({ claim: canonicalOwnerClaim(claim), file: target, generated: false as const })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    if (errorCode(error) !== "ENOENT") throw error
   }
   const claim = generateCanonicalOwnerClaim()
   await writeFile(target, `${claim}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 })
@@ -300,7 +299,7 @@ async function main() {
   const resolved = await resolveOwnerClaim(commandEnvironment)
   const provisioning = await ownerClaimProvisioning({
     env: commandEnvironment,
-    mode: selected[0]!,
+    mode: selected[0],
     claim: resolved.claim,
   })
   const temporary = await mkdtemp(path.join(os.tmpdir(), `claxedo-owner-claim-${environment}-`))
@@ -310,7 +309,7 @@ async function main() {
     for (const command of ownerClaimProvisioningCommands({
       env: { ...commandEnvironment, CLAXEDO_WRANGLER_CONFIG: config },
       staging,
-      mode: selected[0]!,
+      mode: selected[0],
       provisioning,
     })) {
       await run(command)

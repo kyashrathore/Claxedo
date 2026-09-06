@@ -16,6 +16,7 @@
  */
 import type { OpenCodeHost } from "./host"
 import { assertLocationInScope, type WorkspaceScope } from "./scope"
+import { arr, num, rec } from "../json-value"
 
 export type PermissionRequest = Readonly<{
   id: string
@@ -54,14 +55,16 @@ export type OpenCodeInteractionPort = Readonly<{
 }>
 
 function rows(response: unknown): readonly Record<string, unknown>[] {
-  const data = (response as { data?: unknown }).data
-  return Array.isArray(data) ? (data as Record<string, unknown>[]) : []
+  const out: Record<string, unknown>[] = []
+  for (const row of arr(rec(response)?.data) ?? []) {
+    const item = rec(row)
+    if (item) out.push(item)
+  }
+  return out
 }
 
 function createdAt(row: Record<string, unknown>): number | undefined {
-  const time = row.time as { created?: unknown } | undefined
-  if (typeof time?.created === "number") return time.created
-  return typeof row.timeCreated === "number" ? row.timeCreated : undefined
+  return num(rec(row.time)?.created) ?? num(row.timeCreated)
 }
 
 export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPort {
@@ -91,7 +94,7 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
           sessionID: String(row.sessionID),
           ...(typeof row.type === "string" ? { type: row.type } : {}),
           ...(typeof row.title === "string" ? { title: row.title } : {}),
-          ...(row.metadata === undefined ? {} : { metadata: row.metadata as Record<string, unknown> }),
+          ...(row.metadata === undefined ? {} : { metadata: rec(row.metadata) ?? {} }),
           ...(at === undefined ? {} : { createdAt: at }),
         }
       })
@@ -130,7 +133,7 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
       await client.form.reply({
         sessionID: input.sessionID,
         formID: input.formID,
-        answer: input.answer as never,
+        answer: input.answer,
       })
     },
 

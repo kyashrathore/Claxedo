@@ -33,7 +33,7 @@ function fakeBox(options?: { states?: string[]; hostUrl?: string; failHealthOnce
   const fetchImpl: BoxFetch = async (input, init) => {
     const path = input.replace("https://ascii.dev/api/box/v1", "")
     const method = init?.method ?? "GET"
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
     calls.push({ path, method, body })
 
     const json = (obj: unknown) =>

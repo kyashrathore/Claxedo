@@ -26,7 +26,7 @@ export function createOnboardingFunnel(input: {
   capture: (name: OnboardingFunnelEvent["name"], properties?: Record<string, unknown>) => void
 }) {
   return {
-    emit(event: OnboardingFunnelEvent) {
+    emit: (event: OnboardingFunnelEvent) => {
       if (input.deployment === "self-host" && input.ossOptIn !== true) return
       const properties = Object.fromEntries(Object.entries(event).filter(([key]) => key !== "name"))
       input.capture(event.name, Object.keys(properties).length > 0 ? properties : undefined)

@@ -10,6 +10,7 @@ import fs from "node:fs"
 import { Miniflare } from "miniflare"
 
 import { WORKERD_BOUNDARY_TARGETS, type WorkerdBoundaryTarget } from "./certified-workerd-boundary"
+import { asRecord, parseJson } from "../../src/platform/json/index"
 
 /**
  * Read the compatibility contract out of the config Wrangler bundled with.
@@ -27,7 +28,7 @@ function compatibility(target: WorkerdBoundaryTarget) {
   if (!date || flags === undefined) throw new Error(`built Workerd config declares no compatibility contract: ${target.configFile}`)
   return {
     compatibilityDate: date,
-    compatibilityFlags: [...flags.matchAll(/"([^"]+)"/g)].map((match) => match[1]!),
+    compatibilityFlags: [...flags.matchAll(/"([^"]+)"/g)].map((match) => match[1]),
   }
 }
 
@@ -54,7 +55,7 @@ async function assertFailsClosed(target: WorkerdBoundaryTarget) {
         `unconfigured ${target.artifactId} must fail closed with ${target.failClosed.status}; got ${response.status}: ${body}`,
       )
     }
-    const code = (JSON.parse(body) as { error?: { code?: unknown } }).error?.code
+    const code = asRecord(asRecord(parseJson(body))?.error)?.code
     if (code !== target.failClosed.code) {
       throw new Error(
         `unconfigured ${target.artifactId} must fail closed with ${target.failClosed.code}; got ${JSON.stringify(code)}`,

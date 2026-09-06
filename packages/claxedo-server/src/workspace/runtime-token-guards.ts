@@ -2,14 +2,15 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { apiError, rec, txt } from "./route-support"
+import { apiError, txt } from "./route-support"
+import { asRecord } from "../platform/json/index"
 
 export async function runtimeTokenOrgId(
   authority: WorkspaceAuthority,
   auth: SignedControlPlaneAuth,
   workspace: unknown,
 ) {
-  const row = rec(workspace)
+  const row = asRecord(workspace)
   const fromWorkspace = txt(row?.org_id) ?? txt(row?.orgId)
   if (fromWorkspace) return fromWorkspace
   if (typeof authority.resolveOrgId === "function") return await authority.resolveOrgId(auth)
@@ -25,15 +26,15 @@ export async function previousRuntimeAccessTokenError(
     hostId: string
   },
 ) {
-  if (!input.previousJti) return
+  if (!input.previousJti) return undefined
   const authority = requireAuthority(services)
   const active = await authority.runtimeAccessTokenActive({
     jti: input.previousJti,
     workspaceId: input.workspaceId,
     hostId: input.hostId,
   })
-  const activeRecord = rec(active)
-  if (activeRecord?.active === true) return
+  const activeRecord = asRecord(active)
+  if (activeRecord?.active === true) return undefined
   await authority.auditDeny(auth, {
     action: "runtime_access_token.refresh.denied",
     reason: txt(activeRecord?.code) ?? "runtime_access_token_inactive",
@@ -58,10 +59,10 @@ export async function workspaceOpenAuthorizationError(
   result: unknown,
   workspaceId: string,
 ) {
-  const opened = rec(result)
-  const openedWorkspace = rec(opened?.workspace)
+  const opened = asRecord(result)
+  const openedWorkspace = asRecord(opened?.workspace)
   const openedWorkspaceId = txt(openedWorkspace?.workspace_id) ?? txt(openedWorkspace?.workspaceId)
-  if (opened?.allowed === true && (!openedWorkspaceId || openedWorkspaceId === workspaceId)) return
+  if (opened?.allowed === true && (!openedWorkspaceId || openedWorkspaceId === workspaceId)) return undefined
   await requireAuthority(services).auditDeny(auth, {
     action: "workspaces.open.denied",
     reason: opened?.allowed === true ? "workspace_id_mismatch" : "workspace_authorization_denied",
@@ -84,7 +85,7 @@ export async function connectionRateLimitError(
     userId: auth.user.subject,
     workspaceId,
   })
-  if (rateLimit.allowed) return
+  if (rateLimit.allowed) return undefined
   if (rateLimit.firstRejection ?? true) {
     await requireAuthority(services).auditDeny(auth, {
       action: "runtime_access_token.denied",
@@ -178,16 +179,16 @@ export async function sandboxLeaseCapError(
     countActiveLeases: ActiveSandboxLeaseCounter
   },
 ) {
-  if (!(input.cap > 0)) return
+  if (!(input.cap > 0)) return undefined
   const orgId = input.orgId?.trim()
   const ownerSubject = auth.user.subject?.trim()
-  if (!orgId && !ownerSubject) return
+  if (!orgId && !ownerSubject) return undefined
   const scope = {
     ...(orgId ? { orgId } : {}),
     ...(ownerSubject ? { ownerSubject } : {}),
   }
   const active = await input.countActiveLeases(scope)
-  if (active === undefined || active < input.cap) return
+  if (active === undefined || active < input.cap) return undefined
   await requireAuthority(services).auditDeny(auth, {
     action: input.action,
     reason: "sandbox_lease_limit_reached",
@@ -228,7 +229,7 @@ export async function controlPlaneRateLimitError(
     userId: auth.user.subject,
     workspaceId: input.key,
   })
-  if (rateLimit.allowed) return
+  if (rateLimit.allowed) return undefined
   if (input.workspaceId && (rateLimit.firstRejection ?? true)) {
     await requireAuthority(services).auditDeny(auth, {
       action: input.action,

@@ -47,6 +47,7 @@ import {
   type LineCommentEditorProps,
   type ViewDiff,
 } from "@/ui/session-kit"
+import { callEventHandler } from "@/ui/event-handler"
 
 const REVIEW_MOUNT_MARGIN = 80
 
@@ -140,7 +141,12 @@ export interface SessionReviewProps {
    */
   anchorFile?: string
   onDiffContentRequired?: (files: string[]) => void
-  scrollRef?: (el: HTMLDivElement) => void
+  /**
+   * Receives the element that actually scrolls. The renderer finds it by
+   * walking up from its own root, so it can only promise an `HTMLElement` —
+   * narrowing this to `HTMLDivElement` is what forced a cast at the seam.
+   */
+  scrollRef?: (el: HTMLElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
   onWheel?: JSX.EventHandlerUnion<HTMLDivElement, WheelEvent>
   class?: string
@@ -341,14 +347,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   const handleScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
     queue()
-    const next = props.onScroll
-    if (!next) return
-    if (Array.isArray(next)) {
-      const [fn, data] = next as [(data: unknown, event: Event) => void, unknown]
-      fn(data, event)
-      return
-    }
-    ;(next as JSX.EventHandler<HTMLDivElement, Event>)(event)
+    callEventHandler(props.onScroll, event)
   }
 
   onCleanup(() => {

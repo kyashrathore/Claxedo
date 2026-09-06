@@ -5,7 +5,6 @@ import path from "node:path"
 import type { Query } from "@anthropic-ai/claude-agent-sdk"
 import { createAgentRuntime, type AgentHarnessFactory } from "../../runtime"
 import { createSqliteRuntimeStore } from "../../stores/sqlite"
-import { storeRows } from "../../test-utils/store-internals"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 import type { AgentHarnessFactoryContext } from "../../runtime/contracts"
 import { SdkRuntimeAdapter } from "../shared/sdk-runtime-adapter"
@@ -36,7 +35,7 @@ test("public Claude first turn replaces its provisional upstream binding and res
   try {
     for (const iteration of [1, 2]) {
       const store = createSqliteRuntimeStore({ root })
-      const rows = storeRows(store)
+      const rows = store
       const harness = {
         id: "claude", access: "native",
         create: ({ eventHub }: AgentHarnessFactoryContext) => new SdkRuntimeAdapter({
@@ -77,7 +76,7 @@ test("public Claude first turn replaces its provisional upstream binding and res
         expect(rows.getSession(upstreamSessionId)).toBeNull()
       } finally {
         await runtime.dispose()
-        rows.close()
+        rows.close?.()
       }
     }
     expect(calls[0]?.options?.resume).toBeUndefined()

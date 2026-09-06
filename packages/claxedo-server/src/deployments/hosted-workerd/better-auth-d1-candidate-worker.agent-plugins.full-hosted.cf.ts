@@ -1,4 +1,3 @@
-import type { D1Database } from "@cloudflare/workers-types"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sandbox-driver"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
@@ -41,7 +40,7 @@ const composition = settledCompositionCache(
     return composeBetterAuthD1AgentPluginsCandidate(env, {
       sandbox: {
         driver,
-        leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB as D1Database }),
+        leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
       },
     })
   },

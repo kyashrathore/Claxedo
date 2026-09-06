@@ -510,7 +510,7 @@ export namespace Pty {
 
   export function commit(id: string) {
     const session = sessions.get(id)
-    if (!session || session.removed || session.exited) return
+    if (!session || session.removed || session.exited) return undefined
     session.committed = true
     clearOrphanTimer(session)
     return session.info
@@ -534,12 +534,13 @@ export namespace Pty {
   }
 
   export function agentHookAccessForToken(token: string) {
-    if (!token) return
+    if (!token) return undefined
     for (const [terminalId, session] of sessions) {
       if (session.exited || session.removed) continue
       if (session.agentHookAccess?.token !== token) continue
       return { terminalId, ...session.agentHookAccess }
     }
+    return undefined
   }
 
   export function renewAgentHookAccess(token: string, lease: { authorityLease: string; authorityExpiresAt: number }) {
@@ -554,7 +555,7 @@ export namespace Pty {
 
   export function agentHookToken(id: string) {
     const session = sessions.get(id)
-    if (!session || session.exited || session.removed) return
+    if (!session || session.exited || session.removed) return undefined
     return session.agentHookAccess?.token
   }
 
@@ -942,7 +943,7 @@ export namespace Pty {
 
   export async function update(id: string, input: UpdateInput) {
     const session = sessions.get(id)
-    if (!session) return
+    if (!session) return undefined
     if (input.title) {
       session.info.title = input.title
     }
@@ -1019,7 +1020,7 @@ export namespace Pty {
     const session = sessions.get(id)
     if (!session) {
       ws.close(1008, "Session not found")
-      return
+      return undefined
     }
     session.subscribers.add(ws)
 
@@ -1065,7 +1066,7 @@ export namespace Pty {
         message: "replay_send_failed",
       })
       ws.close()
-      return
+      return undefined
     }
     // Consumed only now — a failed send above returns early and leaves the flag
     // set, so the next attach still marks the seam.
@@ -1073,7 +1074,7 @@ export namespace Pty {
 
     if (!sendWebSocketWithBackpressure(ws, meta(end), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })) {
       session.subscribers.delete(ws)
-      return
+      return undefined
     }
 
     session.ready = true

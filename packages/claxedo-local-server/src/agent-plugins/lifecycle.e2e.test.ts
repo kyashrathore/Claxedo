@@ -125,7 +125,7 @@ describe("local Agent Plugins lifecycle", () => {
     const catalog = await readCatalog(app)
     expect(catalog.supportedHarnesses).toEqual([...SUPPORTED_AGENT_PLUGIN_HARNESSES])
     const candidate = catalog.candidates.find((row) => row.pluginInstanceId.includes("code-review"))
-      ?? catalog.candidates[0]!
+      ?? catalog.candidates[0]
     expect(candidate.retainedDigest).toBeNull()
 
     const response = await activate(app, {
@@ -141,28 +141,28 @@ describe("local Agent Plugins lifecycle", () => {
     expect(Object.keys(launch).toSorted()).toEqual([...SUPPORTED_AGENT_PLUGIN_HARNESSES].toSorted())
 
     // OpenCode: the SDK harness adapter receives `launch.config` verbatim (embedded SDK config shape).
-    const openCode = launch.opencode!.config as { skills?: string[]; mcp?: Record<string, unknown> }
+    const openCode = launch.opencode.config as { skills?: string[]; mcp?: Record<string, unknown> }
     expect(openCode.skills).toHaveLength(1)
-    await expect(fs.readFile(path.join(openCode.skills![0]!, "code-review", "SKILL.md"), "utf8"))
+    await expect(fs.readFile(path.join(openCode.skills![0], "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
     expect(Object.keys(openCode.mcp ?? {})).toHaveLength(1)
 
     // Claude: `claudePluginConfigs` keeps every non-empty string in pluginRoots.
-    const claudeRoots = launch.claude!.pluginRoots as string[]
+    const claudeRoots = launch.claude.pluginRoots as string[]
     expect(claudeRoots).toHaveLength(1)
     expect(claudeRoots.every((entry) => typeof entry === "string" && entry.trim() && path.isAbsolute(entry))).toBe(true)
-    await expect(fs.readFile(path.join(claudeRoots[0]!, ".claude-plugin", "plugin.json"), "utf8"))
+    await expect(fs.readFile(path.join(claudeRoots[0], ".claude-plugin", "plugin.json"), "utf8"))
       .resolves.toContain("code-review")
-    await expect(fs.readFile(path.join(claudeRoots[0]!, ".mcp.json"), "utf8")).resolves.toContain("docs")
+    await expect(fs.readFile(path.join(claudeRoots[0], ".mcp.json"), "utf8")).resolves.toContain("docs")
 
     // Cursor: `cursorPluginRoots` requires an array of non-empty paths.
-    const cursorRoots = launch.cursor!.pluginRoots as string[]
+    const cursorRoots = launch.cursor.pluginRoots as string[]
     expect(cursorRoots).toHaveLength(1)
     expect(cursorRoots[0]).toContain(path.join(root, "home", ".cursor", "plugins", "local", "claxedo--"))
-    await expect(fs.readFile(path.join(cursorRoots[0]!, "plugin.json"), "utf8")).resolves.toContain("code-review")
+    await expect(fs.readFile(path.join(cursorRoots[0], "plugin.json"), "utf8")).resolves.toContain("code-review")
 
     // Codex: `codexPluginLaunch` validates marketplace name/source and ids.
-    const codex = launch.codex!.config as { marketplace: { name: string; source: string }; plugins: string[] }
+    const codex = launch.codex.config as { marketplace: { name: string; source: string }; plugins: string[] }
     expect(codex.marketplace.name).toMatch(/^[A-Za-z0-9_-]+$/)
     expect(path.isAbsolute(codex.marketplace.source)).toBe(true)
     expect(codex.plugins).toHaveLength(1)
@@ -186,7 +186,7 @@ describe("local Agent Plugins lifecycle", () => {
     const { composition, app } = startComposition(root, collection)
     await composition.ready
     const catalog = await readCatalog(app)
-    const candidate = catalog.candidates[0]!
+    const candidate = catalog.candidates[0]
 
     const enabled = await activate(app, {
       pluginInstanceId: candidate.pluginInstanceId,
@@ -196,10 +196,10 @@ describe("local Agent Plugins lifecycle", () => {
     })
     expect(enabled.status).toBe(200)
     const afterEnable = await composition.harnessLaunch()
-    expect((afterEnable.claude!.pluginRoots as string[])).toHaveLength(1)
+    expect((afterEnable.claude.pluginRoots as string[])).toHaveLength(1)
 
     const enabledCatalog = await readCatalog(app)
-    const retainedDigest = enabledCatalog.candidates[0]!.retainedDigest
+    const retainedDigest = enabledCatalog.candidates[0].retainedDigest
     expect(retainedDigest).toBeTruthy()
 
     const disabled = await activate(app, {
@@ -212,13 +212,13 @@ describe("local Agent Plugins lifecycle", () => {
 
     const afterDisable = await composition.harnessLaunch()
     expect((afterDisable.claude?.pluginRoots as string[] | undefined) ?? []).toEqual([])
-    expect((afterDisable.opencode!.config as { skills?: string[] }).skills).toHaveLength(1)
+    expect((afterDisable.opencode.config as { skills?: string[] }).skills).toHaveLength(1)
 
     const finalCatalog = await readCatalog(app)
-    const row = finalCatalog.candidates[0]!
+    const row = finalCatalog.candidates[0]
     expect(row.retainedDigest).toBe(retainedDigest)
-    expect(row.harnesses.claude!.explicit).toBe(false)
-    expect(row.harnesses.opencode!.effective.effective).toBe(true)
+    expect(row.harnesses.claude.explicit).toBe(false)
+    expect(row.harnesses.opencode.effective.effective).toBe(true)
   })
 
   test("keeps a retained plugin usable after its catalog source disappears", async () => {
@@ -229,14 +229,14 @@ describe("local Agent Plugins lifecycle", () => {
     const first = startComposition(root, collection)
     await first.composition.ready
     const catalog = await readCatalog(first.app)
-    const candidate = catalog.candidates[0]!
+    const candidate = catalog.candidates[0]
     expect((await activate(first.app, {
       pluginInstanceId: candidate.pluginInstanceId,
       harnessIds: ["opencode"],
       choice: true,
       expectedRevision: catalog.revision,
     })).status).toBe(200)
-    const retainedDigest = (await readCatalog(first.app)).candidates[0]!.retainedDigest
+    const retainedDigest = (await readCatalog(first.app)).candidates[0].retainedDigest
     expect(retainedDigest).toBeTruthy()
 
     // The upstream collection goes away entirely, then the desktop restarts.
@@ -252,7 +252,7 @@ describe("local Agent Plugins lifecycle", () => {
     expect(retainedRow.updateAvailable).toBe(false)
 
     const launch = await second.composition.harnessLaunch()
-    const skills = (launch.opencode!.config as { skills: string[] }).skills[0]!
+    const skills = (launch.opencode.config as { skills: string[] }).skills[0]
     await expect(fs.readFile(path.join(skills, "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
 
@@ -266,9 +266,9 @@ describe("local Agent Plugins lifecycle", () => {
     expect(rebuilt.status).toBe(200)
     expect(await rebuilt.json()).toMatchObject({ reconciliation: { state: "applied" } })
     const rebuiltLaunch = await second.composition.harnessLaunch()
-    const claudeRoots = rebuiltLaunch.claude!.pluginRoots as string[]
+    const claudeRoots = rebuiltLaunch.claude.pluginRoots as string[]
     expect(claudeRoots).toHaveLength(1)
-    await expect(fs.readFile(path.join(claudeRoots[0]!, ".claude-plugin", "plugin.json"), "utf8"))
+    await expect(fs.readFile(path.join(claudeRoots[0], ".claude-plugin", "plugin.json"), "utf8"))
       .resolves.toContain("code-review")
   })
 })

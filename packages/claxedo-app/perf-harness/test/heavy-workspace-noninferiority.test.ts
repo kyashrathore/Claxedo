@@ -74,7 +74,7 @@ describe("heavy workspace retained-to-disposal noninferiority", () => {
       workspace_closed_review_files_after_dwell: { max: 500 },
       workspace_reopen_resource_requests: { max: 1 },
     })
-    candidate.flows[0]!.metrics = candidate.flows[0]!.metrics.filter((row) => row.metric !== "workspace_close_task_ms")
+    candidate.flows[0].metrics = candidate.flows[0].metrics.filter((row) => row.metric !== "workspace_close_task_ms")
 
     const result = compareHeavyWorkspaceNoninferiority(report(), candidate)
 

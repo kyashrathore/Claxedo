@@ -9,15 +9,26 @@ export type FastSessionSwitchWindow = {
   networkQuietUntil?: number
 }
 
-type FastSessionSwitchGlobal = typeof window & {
-  // owner: session switch race suppression; delete when query/cache writers carry activation epochs (Phase 1 IU-9 design 1).
-  __claxedoFastSessionSwitch?: FastSessionSwitchWindow
+/**
+ * The marker lives on the real `window` in a browser, and on `globalThis`
+ * itself under a non-browser test that has no window. Declaring it on both is
+ * what removes the cast: the carrier genuinely has this property.
+ *
+ * owner: session switch race suppression; delete when query/cache writers carry
+ * activation epochs (Phase 1 IU-9 design 1).
+ */
+declare global {
+  interface Window {
+    __claxedoFastSessionSwitch?: FastSessionSwitchWindow
+  }
+  // `var` is the only declaration form that adds a member to `globalThis`.
+  var __claxedoFastSessionSwitch: FastSessionSwitchWindow | undefined
 }
 
-function fastSessionSwitchGlobal(): FastSessionSwitchGlobal | undefined {
-  return (globalThis as typeof globalThis & { window?: FastSessionSwitchGlobal }).window ??
-    // as-any: non-browser tests use globalThis as the fast-switch debug carrier.
-    (globalThis as unknown as FastSessionSwitchGlobal)
+type FastSessionSwitchCarrier = { __claxedoFastSessionSwitch?: FastSessionSwitchWindow }
+
+function fastSessionSwitchGlobal(): FastSessionSwitchCarrier {
+  return typeof window === "object" ? window : globalThis
 }
 
 export function fastSessionSwitchWindow(): FastSessionSwitchWindow | undefined {

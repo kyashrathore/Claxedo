@@ -1,5 +1,7 @@
 import { Database as SQLiteDatabase } from "bun:sqlite"
 
+import { isRecord, numberField, textField } from "./json-fields"
+
 /**
  * Harness-hosted opencode-engine stand-in for the conversation (stream)
  * profile — the same seam the T3 arm fakes with its replay server.
@@ -18,6 +20,36 @@ import { Database as SQLiteDatabase } from "bun:sqlite"
  * `AgentSessionRow[]`, `/session/{id}/message` -> `{ info, parts }[]`,
  * `/global/event` -> SSE lines of `data: {type, properties}` compat events.
  */
+
+/**
+ * Read a lifecycle event off the corpus.
+ *
+ * Corpus events are `Record<string, unknown>` by declaration, so the replay
+ * used to assert the whole list into this shape at once. Reading each event
+ * drops the ones that cannot drive a replay instead of failing on the first
+ * field the assertion was wrong about.
+ */
+function lifecycleEvent(event: Record<string, unknown>): LifecycleEvent | undefined {
+  const id = textField(event, "id")
+  const sequence = numberField(event, "sequence")
+  const atMs = numberField(event, "atMs")
+  const type = textField(event, "type")
+  if (id === undefined || sequence === undefined || atMs === undefined || type === undefined) return undefined
+  return {
+    id,
+    sequence,
+    atMs,
+    type,
+    messageId: textField(event, "messageId"),
+    partId: textField(event, "partId"),
+    content: textField(event, "content"),
+    callId: textField(event, "callId"),
+    toolName: textField(event, "toolName"),
+    state: textField(event, "state"),
+    inputJson: textField(event, "inputJson"),
+    outputText: textField(event, "outputText"),
+  }
+}
 
 type LifecycleEvent = {
   id: string
@@ -39,7 +71,10 @@ type CorpusLike = {
     id: string
     order: number
     workspaceId?: string
-    events: unknown[]
+    // Matches `CorpusSession["events"]` in agent-corpus-materializer: the
+    // replay reads named fields off each event, which `unknown[]` forced it to
+    // assert its way into.
+    events: Array<Record<string, unknown>>
     turns: Array<{
       messages: Array<{ id: string; role: string; parts: Array<Record<string, unknown> & { id: string; type: string }> }>
     }>
@@ -57,6 +92,12 @@ type MaterializedPart = {
 
 export type FakeEngineEmission = { atMs: number; type: string; partId?: string }
 
+/** Decode a stored JSON column as an object; anything else reads as empty. */
+function parseRecord(text: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(text)
+  return isRecord(parsed) ? parsed : {}
+}
+
 export async function startFakeEngine(input: {
   dbPath: string
   corpus: CorpusLike
@@ -64,23 +105,36 @@ export async function startFakeEngine(input: {
   materializedParts: Map<string, MaterializedPart>
 }) {
   const database = new SQLiteDatabase(input.dbPath, { readonly: true })
-  const sessions = database
-    .prepare("SELECT id, directory, title, slug, time_created, time_updated FROM session")
-    .all() as Array<{ id: string; directory: string; title: string; slug: string; time_created: number; time_updated: number }>
+  // `node:sqlite` types `all()` as `unknown[]`: the driver cannot know the
+  // columns a statement selects. These readers name them once, next to the SQL
+  // that produces them, rather than asserting a row shape per query.
+  const queryRows = (sql: string, ...params: string[]) => database.prepare(sql).all(...params).filter(isRecord)
+  const sessions = queryRows(
+    "SELECT id, directory, title, slug, time_created, time_updated FROM session",
+  ).map((row) => ({
+    id: textField(row, "id") ?? "",
+    directory: textField(row, "directory") ?? "",
+    title: textField(row, "title") ?? "",
+    slug: textField(row, "slug") ?? "",
+    time_created: numberField(row, "time_created") ?? 0,
+    time_updated: numberField(row, "time_updated") ?? 0,
+  }))
   const sessionById = new Map(sessions.map((row) => [row.id, row]))
 
   const messagesForSession = (sessionId: string) => {
-    const messages = database
-      .prepare("SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created ASC")
-      .all(sessionId) as Array<{ id: string; data: string }>
+    const messages = queryRows(
+      "SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created ASC",
+      sessionId,
+    ).map((row) => ({ id: textField(row, "id") ?? "", data: textField(row, "data") ?? "{}" }))
     return messages.map((message) => {
-      const parts = database
-        .prepare("SELECT id, data FROM part WHERE message_id = ? ORDER BY time_created ASC")
-        .all(message.id) as Array<{ id: string; data: string }>
+      const parts = queryRows(
+        "SELECT id, data FROM part WHERE message_id = ? ORDER BY time_created ASC",
+        message.id,
+      ).map((row) => ({ id: textField(row, "id") ?? "", data: textField(row, "data") ?? "{}" }))
       return {
-        info: { ...(JSON.parse(message.data) as Record<string, unknown>), id: message.id, sessionID: sessionId },
+        info: { ...parseRecord(message.data), id: message.id, sessionID: sessionId },
         parts: parts.map((part) => ({
-          ...(JSON.parse(part.data) as Record<string, unknown>),
+          ...parseRecord(part.data),
           id: part.id,
           messageID: message.id,
           sessionID: sessionId,
@@ -110,8 +164,11 @@ export async function startFakeEngine(input: {
       for (const part of message.parts) corpusPartTypes.set(part.id, part.type)
     }
   }
-  const events = (streamCorpusSession.events as LifecycleEvent[])
-    .filter((event) => typeof event.atMs === "number")
+  const events = streamCorpusSession.events
+    .flatMap((event) => {
+      const read = lifecycleEvent(event)
+      return read ? [read] : []
+    })
     .sort((a, b) => a.sequence - b.sequence)
 
   const emissions: FakeEngineEmission[] = []
@@ -165,7 +222,7 @@ export async function startFakeEngine(input: {
         )
         if (!materialized) continue
         const status = event.state ?? "completed"
-        const parsedInput = JSON.parse(event.inputJson ?? "{}") as Record<string, unknown>
+        const parsedInput = parseRecord(event.inputJson ?? "{}")
         const state =
           status === "completed"
             ? { status, input: parsedInput, output: event.outputText ?? "", title: event.toolName, metadata: {}, time: { start: 0, end: 1 } }
@@ -228,7 +285,7 @@ export async function startFakeEngine(input: {
       if (path === "/permission" || path === "/question") return json([])
       const sessionMatch = /^\/session\/([^/]+)(.*)$/u.exec(path)
       if (sessionMatch) {
-        const id = decodeURIComponent(sessionMatch[1]!)
+        const id = decodeURIComponent(sessionMatch[1])
         const suffix = sessionMatch[2] ?? ""
         const row = sessionById.get(id)
         if (suffix === "" && request.method === "GET") {
@@ -261,10 +318,13 @@ export async function startFakeEngine(input: {
     emissions: () => [...emissions],
     replayFinished: () => replayDone ?? Promise.resolve(),
     promptReceived: () => replayStarted,
-    close: () => {
+    // Awaits the listener's own shutdown: `Bun.Server.stop` is asynchronous,
+    // and leaving it unawaited let the next fixture bind the port while this
+    // one was still releasing it.
+    close: async () => {
       for (const writer of clients) void writer.close().catch(() => {})
       clients.clear()
-      server.stop(true)
+      await server.stop(true)
       database.close()
     },
   }

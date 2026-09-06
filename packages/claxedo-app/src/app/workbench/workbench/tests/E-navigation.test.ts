@@ -18,7 +18,7 @@ describe("E. navigation.show", () => {
     h.api.navigation.show("a")
     h.api.split.split(h.api.selectors.contentPane("a")!, "right", "b")
     h.api.navigation.show("a")
-    expect(h.state().focusedPaneId).toBe(h.api.selectors.contentPane("a")!)
+    expect(h.state().focusedPaneId).toBe(h.api.selectors.contentPane("a"))
     expect(h.state().layoutSnapshots).toEqual({})
   })
 

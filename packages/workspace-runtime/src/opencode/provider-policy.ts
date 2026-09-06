@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import type { OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
+import { arr } from "../json-value"
 
 /**
  * The provider configuration of ONE harness inside this workspace.
@@ -29,11 +30,15 @@ export function createProviderPolicy() {
     id: "claxedo-provider-policy",
     async setup(context) {
       const key = `disabled-providers:${context.location.directory}`
-      const saved = await context.storage.get(key)
-      if (saved !== undefined && (!Array.isArray(saved) || saved.some((id) => typeof id !== "string"))) {
+      const raw = await context.storage.get(key)
+      const saved = arr(raw)
+      // A stored value that is not an array of ids is corruption, not an empty
+      // policy: refusing it is what stops a bad row silently re-enabling every
+      // provider the operator disabled.
+      if (raw !== undefined && !saved?.every((id) => typeof id === "string")) {
         throw new Error("Invalid persisted OpenCode provider policy")
       }
-      let disabled = (saved ?? []) as string[]
+      let disabled: string[] = saved?.filter((id): id is string => typeof id === "string") ?? []
       let pending = Promise.resolve()
       await context.catalog.transform((draft) => {
         // Config/model plugins may declare their rows after this transform.

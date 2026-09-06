@@ -55,7 +55,7 @@ export function AgentPluginDirectory(props: {
   const signed = () => props.mode === "signed"
   const [projectId, setProjectId] = createSignal<string>()
   const [query, setQuery] = createSignal("")
-  const [filter, setFilter] = createSignal<string>(ALL)
+  const [filter, setFilter] = createSignal(ALL)
   const [selectedId, setSelectedId] = createSignal<string>()
   const [selectedPersonalKey, setSelectedPersonalKey] = createSignal<string>()
   const [pending, setPending] = createSignal<string>()

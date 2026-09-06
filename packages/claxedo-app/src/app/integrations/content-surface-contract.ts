@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import type { PaneCtx } from "../workbench/workbench/index"
-import type { ContentMeta, ContentType } from "../workbench/state/index"
+import type { ContentMeta } from "../workbench/state/index"
 import type { SurfaceContribution } from "./registry"
 
 /**
@@ -17,7 +17,16 @@ export type ContentSurfaceRenderContext = {
   canUseDocuments?: boolean
 }
 
+/**
+ * The id of a renderable content surface: a first-party `ContentType`, or one
+ * contributed by a product or plugin.
+ *
+ * `string`, not `ContentType | string` — that union collapses to `string`, so
+ * it only read as a union. The first-party ids stay enumerated in `ContentType`.
+ */
+export type ContentSurfaceId = string
+
 export type ContentSurfaceContribution = SurfaceContribution<ContentSurfaceRenderContext, never> & {
-  surface: ContentType | string
+  surface: ContentSurfaceId
   renderer: (context: ContentSurfaceRenderContext) => JSX.Element
 }

@@ -3,7 +3,8 @@ import path from "path"
 import { createPrivateKey, generateKeyPairSync, randomUUID, sign as signData, type JsonWebKey } from "node:crypto"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { rec, txt } from "./route-support"
+import { txt } from "./route-support"
+import { asRecord } from "../platform/json/index"
 const log = Log.create({ service: "workspace-local-host" })
 
 export type LocalHostIdentity = {
@@ -18,18 +19,20 @@ async function loadLocalHostIdentity(): Promise<LocalHostIdentity> {
   const file = path.join(dataDir(), "local-host-identity.json")
   try {
     const existing = JSON.parse(await fs.readFile(file, "utf8")) as unknown
-    const id = txt(rec(existing)?.host_id)
-    const publicKey = rec(existing)?.public_key_jwk
-    const privateKey = rec(existing)?.private_key_jwk
+    const id = txt(asRecord(existing)?.host_id)
+    const publicKey = asRecord(asRecord(existing)?.public_key_jwk)
+    const privateKey = asRecord(asRecord(existing)?.private_key_jwk)
     if (id && publicKey && privateKey) {
       return {
         hostId: id,
         publicKey: JSON.stringify(publicKey),
-        privateKey: privateKey as JsonWebKey,
+        // A JWK is a record of optional string/array members; `crypto.subtle`
+        // checks the key material itself when it imports one.
+        privateKey,
       }
     }
   } catch (err) {
-    if (!rec(err) || rec(err)?.code !== "ENOENT") {
+    if (!asRecord(err) || asRecord(err)?.code !== "ENOENT") {
       log.warn("local host identity is invalid; replacing", { file })
     }
   }

@@ -6,6 +6,14 @@ Before changing code, inspect the implementation, callers, contracts, tests, and
 
 Treat work as complete when the implemented behavior satisfies the goal through real entrypoints and acceptance checks. Keep tests meaningful: exercise the actual implementation, preserve useful coverage, and investigate failures rather than shaping the test around the result. Use canonical data and events from their authoritative producer. Keep one implementation per responsibility and finish migrations by removing obsolete routes, flags, helpers, and temporary paths. Fallback and backward compatibility require an explicit user request. Verify the positive flow and relevant negative flows, including failure, recovery, persistence, security, and isolation. Report the exact commands run and their outcomes. When an environment or dependency is unavailable, identify the unverified acceptance criterion directly. Keep plans and documentation aligned with live code. Finish every requirement that can be completed; for anything blocked, state the unmet requirement, evidence, blocker, owner, and concrete follow-up.
 
+## Comments
+
+A comment may only say something the code cannot say: a constraint, a failure mode, a platform or library behavior invisible at the call site, an ordering invariant, a measured number, or why the obvious simpler approach fails. Before writing one, delete it and ask whether reading the code loses anything. If not, leave it deleted.
+
+Do not write a restatement of the identifier or the next statement, a section banner or group label, a narration of the test step below it, the history of what the code used to do, a plan or ticket or rubric number, a `file.ts:123` citation, or a defence addressed to a reviewer. A file header that documents the system rather than the file is the same defect at scale. Tool directives a script actually reads are not comments in this sense and stay.
+
+When changing code that carries a comment, rewrite the comment from the new code rather than editing the old sentence; editing preserves the old shape and is how history narration accumulates. Never explain what changed. Write the number, not the fact that you measured. A comment that contradicts the code is a defect to fix on sight, ahead of any cleanup, because it is the only kind that costs a debugging session.
+
 ## Architecture ratchets
 
 Run `bun run test:architecture-ratchets` before completing any change that adds, removes, or redirects a production import. The pre-push hook runs this command after typecheck so deterministic closure drift fails locally instead of in CI.

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import { bootstrapInitialShell, fetchShellBootstrap } from "./shell-bootstrap"
+import { requestUrl } from "@/lib/url"
 
 afterEach(() => {
   delete (globalThis as { api?: unknown }).api
@@ -34,11 +35,11 @@ describe("fetchShellBootstrap", () => {
   })
 
   test("requests only the lightweight shell projection", async () => {
-    let requestUrl = ""
+    let seenUrl = ""
     const result = await fetchShellBootstrap({
       baseUrl: "http://127.0.0.1:3101",
       request: Object.assign(async (input: URL | RequestInfo) => {
-        requestUrl = input.toString()
+        seenUrl = requestUrl(input)
         return Response.json({
           healthy: true,
           path: { home: "/Users/test", state: "/state", config: "/config", worktree: "", directory: "" },
@@ -47,7 +48,7 @@ describe("fetchShellBootstrap", () => {
       }, { preconnect: fetch.preconnect }),
     })
 
-    expect(new URL(requestUrl).searchParams.get("scope")).toBe("shell")
+    expect(new URL(seenUrl).searchParams.get("scope")).toBe("shell")
     expect(result?.path.home).toBe("/Users/test")
   })
 

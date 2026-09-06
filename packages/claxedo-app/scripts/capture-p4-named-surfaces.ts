@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import sharp from "sharp"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import "./capture-harness-window"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(Bun.env.CLAXEDO_P4_SURFACE_DIR ?? path.join(PACKAGE_DIR, "test-results/p4-named-surfaces"))
@@ -67,12 +68,27 @@ type SurfaceResult = {
 }
 
 type CaptureRuntime = {
+  context: BrowserContext
   page: Page
   surfaces: SurfaceResult[]
   failures: string[]
   consoleMessages: string[]
   failedRequests: string[]
   badResponses: string[]
+}
+
+/** The `manifest.json` this run writes; also the shape the run accumulates into. */
+type SurfaceArtifact = {
+  evidenceKind: "p4-named-surface-visual"
+  comparisonMode: "baseline-update" | "baseline-hash-compare"
+  baseURL: string
+  baselineDir: string
+  baselineManifest: string
+  updateBaseline: boolean
+  requireBaseline: boolean
+  capturedAt: string
+  surfaces: SurfaceResult[]
+  failures: string[]
 }
 
 type WorkspaceNavigatorLabel = "Files" | "Changes" | "Processes"
@@ -87,7 +103,7 @@ const expectedBaselines = await readBaselineManifest()
 const browser = await chromium.launch({ headless: true })
 const desktop = await newRuntime(browser, { width: 1440, height: 1000 })
 const mobile = await newRuntime(browser, { width: 375, height: 812, isMobile: true })
-const artifact: Record<string, unknown> = {
+const artifact: SurfaceArtifact = {
   evidenceKind: "p4-named-surface-visual",
   comparisonMode: updateBaseline ? "baseline-update" : "baseline-hash-compare",
   baseURL,
@@ -170,7 +186,7 @@ try {
 }
 
 for (const runtime of [desktop, mobile]) {
-  artifact.surfaces = [...artifact.surfaces as SurfaceResult[], ...runtime.surfaces]
+  artifact.surfaces = [...artifact.surfaces, ...runtime.surfaces]
   if (runtime.consoleMessages.length) runtime.failures.push(`console errors: ${runtime.consoleMessages.join(" | ")}`)
   const unexpectedFailedRequests = runtime.failedRequests.filter((item) =>
     !/\/api\/wr\/events\b.*net::ERR_ABORTED/.test(item) &&
@@ -189,38 +205,37 @@ for (const runtime of [desktop, mobile]) {
       runtime.failures.push(`${surface.name}: missing required screenshot baseline ${surface.baselinePath}`)
     }
   }
-  artifact.failures = [...artifact.failures as string[], ...runtime.failures]
+  artifact.failures = [...artifact.failures, ...runtime.failures]
 }
 
 if (updateBaseline) {
-  await writeBaselineManifest(artifact.surfaces as SurfaceResult[])
+  await writeBaselineManifest(artifact.surfaces)
 }
 
 const manifest = path.join(RESULT_DIR, "manifest.json")
 await Bun.write(manifest, JSON.stringify(artifact, null, 2) + "\n")
 
 console.log(`p4 surface manifest: ${manifest}`)
-for (const surface of artifact.surfaces as SurfaceResult[]) {
+for (const surface of artifact.surfaces) {
   if (surface.path) console.log(`p4 surface screenshot: ${surface.path}`)
 }
 
-if ((artifact.failures as string[]).length) {
-  console.error((artifact.failures as string[]).join("\n"))
+if (artifact.failures.length) {
+  console.error(artifact.failures.join("\n"))
   process.exit(1)
 }
 
 async function newRuntime(
   browser: Browser,
   viewport: { width: number; height: number; isMobile?: boolean },
-): Promise<CaptureRuntime & { context: BrowserContext }> {
+): Promise<CaptureRuntime> {
   const context = await browser.newContext({
     viewport: { width: viewport.width, height: viewport.height },
     isMobile: viewport.isMobile,
   })
   await context.addInitScript(() => {
-    const w = window as unknown as Record<string, unknown>
-    w.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
-    w.__CLAXEDO_TEST_AUTH_USER__ = {
+    window.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
+    window.__CLAXEDO_TEST_AUTH_USER__ = {
       id: "p4-surface-user",
       primaryEmailAddress: { emailAddress: "p4-surfaces@claxedo.test" },
       fullName: "P4 Surface Capture",
@@ -234,7 +249,15 @@ async function newRuntime(
     else window.addEventListener("DOMContentLoaded", injectStyle, { once: true })
   })
   const page = await context.newPage()
-  const runtime = { context, page, surfaces: [], failures: [], consoleMessages: [], failedRequests: [], badResponses: [] }
+  const runtime: CaptureRuntime = {
+    context,
+    page,
+    surfaces: [],
+    failures: [],
+    consoleMessages: [],
+    failedRequests: [],
+    badResponses: [],
+  }
   page.on("console", (message) => {
     if (message.type() === "error") runtime.consoleMessages.push(message.text())
   })
@@ -427,9 +450,13 @@ async function assertHiddenRailCompactSwitcher(runtime: CaptureRuntime) {
     const railVisible = !!rail && !!railRect && railRect.width > 100 && railRect.height > 200 &&
       getComputedStyle(rail).visibility !== "hidden" &&
       getComputedStyle(rail).display !== "none"
-    const chromeOverlap = !!compactRect && !!chromeRect &&
-      Math.max(0, Math.min(compactRect.right, chromeRect.right) - Math.max(compactRect.left, chromeRect.left)) *
+    // Overlap AREA in px², 0 when either box is absent — `!!a && !!b && area`
+    // used to yield `false` for the absent case, which typed the whole
+    // expression `boolean | number` and only compared as 0 by accident.
+    const chromeOverlap = compactRect && chromeRect
+      ? Math.max(0, Math.min(compactRect.right, chromeRect.right) - Math.max(compactRect.left, chromeRect.left)) *
         Math.max(0, Math.min(compactRect.bottom, chromeRect.bottom) - Math.max(compactRect.top, chromeRect.top))
+      : 0
     return { compactVisible, tabVisible, tabHit, railVisible, chromeOverlap }
   })
 
@@ -663,18 +690,23 @@ async function readBaselineManifest() {
   )
 }
 
+function isBaselineManifestEntry(value: unknown): value is { name: string; bytes: number; sha256: string } {
+  if (!value || typeof value !== "object") return false
+  return "name" in value && typeof value.name === "string" &&
+    "bytes" in value && typeof value.bytes === "number" &&
+    "sha256" in value && typeof value.sha256 === "string"
+}
+
 async function readBaselineManifestEntries() {
   if (!(await Bun.file(BASELINE_MANIFEST).exists())) return new Map<string, ScreenshotDigest>()
-  const manifest = await Bun.file(BASELINE_MANIFEST).json() as {
-    surfaces?: Array<{ name?: string; bytes?: number; sha256?: string }>
-  }
+  const parsed: unknown = await Bun.file(BASELINE_MANIFEST).json()
+  const surfaces: readonly unknown[] =
+    !!parsed && typeof parsed === "object" && "surfaces" in parsed && Array.isArray(parsed.surfaces)
+      ? parsed.surfaces
+      : []
   return new Map(
-    (manifest.surfaces ?? [])
-      .filter((item): item is { name: string; bytes: number; sha256: string } =>
-        typeof item.name === "string" &&
-        typeof item.bytes === "number" &&
-        typeof item.sha256 === "string"
-      )
+    surfaces
+      .filter(isBaselineManifestEntry)
       .map((item) => [item.name, { bytes: item.bytes, sha256: item.sha256 }] as const),
   )
 }

@@ -1,5 +1,6 @@
 import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
+import { asRecord } from "@/lib/record"
 export type { SignedWorkspaceKind }
 
 export type SignedWorkspaceInfo = {
@@ -104,7 +105,7 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
  * the session inventory query.
  */
 export function workspaceHostingKind(input: unknown): SignedWorkspaceKind | undefined {
-  const row = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
+  const row = asRecord(input)
   const access = workspaceKind(row?.access)
   if (access && isRelayBackedWorkspaceKind(access)) return access
   const backing = workspaceKind(row?.backing)

@@ -1,3 +1,4 @@
+import z from "zod"
 import { For, Show, createEffect, createMemo, createResource, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
 import { BP_SM } from "@/ui/controls/breakpoints"
 import { emitTerminalFit } from "@/features/workspaces/app-ports"
@@ -309,7 +310,8 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
 
   const resize = (event: PointerEvent) => {
     event.preventDefault()
-    const handle = event.currentTarget as HTMLElement
+    const handle = event.currentTarget
+    if (!(handle instanceof HTMLElement)) return
     const startX = event.clientX
     const startWidth = width() ?? defaultWidth()
     handle.setPointerCapture?.(event.pointerId)
@@ -471,16 +473,51 @@ type WorkspaceLifecycleSnapshot = {
   }>
 }
 
+/**
+ * The wire schema for the snapshot above.
+ *
+ * `workspace.checkpoints.list` reaches this component through
+ * `hostedControlCall`, whose two producers carry different evidence: the hosted
+ * operation's decoder proves object-ness, and `api.get` proves nothing. The
+ * markup below then indexes `lease.epoch`, `checkpoint.sourceEpoch` and the
+ * worktree rows, so the snapshot is parsed rather than asserted.
+ *
+ * `worktrees` defaults to empty: a workspace with none registered is a normal
+ * answer, and the panel already renders that as "None registered".
+ */
+const WorkspaceLifecycleSnapshotSchema: z.ZodType<WorkspaceLifecycleSnapshot> = z.object({
+  lease: z.object({
+    sandboxId: z.string().optional(),
+    driver: z.string(),
+    epoch: z.number(),
+    status: z.string(),
+  }).optional(),
+  checkpoint: z.object({
+    id: z.string(),
+    capturedAt: z.number(),
+    sourceEpoch: z.number(),
+    metadata: z.object({ scope: z.string(), restoreMount: z.string() }),
+  }).optional(),
+  capabilities: z.object({ capture: z.string(), resume: z.string() }).optional(),
+  runtime: z.object({ image: z.string().optional(), version: z.string().optional() }).optional(),
+  worktrees: z.array(z.object({
+    sessionId: z.string().optional(),
+    branch: z.string().optional(),
+    state: z.string().optional(),
+    path: z.string().optional(),
+  })).default([]),
+})
+
 function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
   const baseUrl = getDefaultBaseUrl()
   const [busy, setBusy] = createSignal("")
   const [snapshot, { refetch }] = createResource(
     () => props.workspaceId,
-    (workspaceId) => hostedControlCall(
+    async (workspaceId) => WorkspaceLifecycleSnapshotSchema.parse(await hostedControlCall(
       "workspace.checkpoints.list",
       { id: workspaceId },
-      () => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
-    ),
+      () => api.get(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
+    )),
   )
   const act = async (operation: "checkpoint" | "stop" | "restore" | "replace" | "cleanup" | "destroy") => {
     const checkpoint = snapshot()?.checkpoint

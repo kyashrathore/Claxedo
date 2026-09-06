@@ -19,7 +19,8 @@ type StubHandle = {
   screenshot: BrowserHandle["screenshot"]
   evaluate: BrowserHandle["evaluate"]
   navigate: BrowserHandle["navigate"]
-  webContents: unknown
+  getNavigationState: BrowserHandle["getNavigationState"]
+  getTitle: BrowserHandle["getTitle"]
 }
 
 function makeStubHandle(overrides: Partial<StubHandle> = {}): StubHandle {
@@ -30,10 +31,8 @@ function makeStubHandle(overrides: Partial<StubHandle> = {}): StubHandle {
     screenshot: async () => ({ ok: true as const, dataUrl: "data:image/png;base64,AA==", mimeType: "image/png" as const }),
     evaluate: async () => ({ ok: true as const, result: 42 }),
     navigate: async () => {},
-    webContents: {
-      getURL: () => "https://example.test/path",
-      getTitle: () => "Example Title",
-    },
+    getNavigationState: () => ({ url: "https://example.test/path", canGoBack: false, canGoForward: false }),
+    getTitle: () => "Example Title",
     ...overrides,
   }
 }
@@ -134,11 +133,13 @@ describe("http-bridge", () => {
     await boot({
       "pane-a": makeStubHandle({
         agentAllowed: true,
-        webContents: { getURL: () => "https://a.test/", getTitle: () => "A" },
+        getNavigationState: () => ({ url: "https://a.test/", canGoBack: false, canGoForward: false }),
+        getTitle: () => "A",
       }),
       "pane-b": makeStubHandle({
         agentAllowed: false,
-        webContents: { getURL: () => "https://b.test/", getTitle: () => "B" },
+        getNavigationState: () => ({ url: "https://b.test/", canGoBack: false, canGoForward: false }),
+        getTitle: () => "B",
       }),
     })
 

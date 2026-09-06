@@ -31,6 +31,7 @@ import {
 } from "./hosted-operations"
 import { fetchHosted } from "./hosted-transport"
 import { accountPerfMark, accountPerfNow } from "./account-perf"
+import { readNumber, readRecord, readString } from "../../shared/json-read"
 
 export type { RefreshOutcome } from "./desktop-native-auth"
 
@@ -72,34 +73,40 @@ const REFRESH_FAILURE_COOLDOWN_SECONDS = 20
 /** Backoff for the profile lookup after a failure: quick, then patient, then stop asking. */
 const IDENTITY_RETRY_DELAYS_MS = [15_000, 60_000, 5 * 60_000] as const
 
-function connectionRetryResult(name: HostedOperationName, response: Response, value: unknown) {
-  if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return
-  if (response.status !== 409 && response.status !== 429) return
-  const error = value && typeof value === "object" && !Array.isArray(value) && "error" in value
-    ? value.error
-    : undefined
-  const bodyDelay = error && typeof error === "object" && !Array.isArray(error) && "retryAfterMs" in error
-    ? error.retryAfterMs
-    : undefined
-  if (typeof bodyDelay === "number" && Number.isFinite(bodyDelay)) {
-    return { status: "provisioning" as const, retryAfterMs: bodyDelay }
-  }
+/**
+ * The control plane's error envelope, read in one place.
+ *
+ * Every failing hosted response carries `{ error: { code, message, ... } }`.
+ * The three readers below used to re-derive that nesting by hand — and the two
+ * call sites asserted `response.json()` into it — so the same shape had four
+ * spellings.
+ */
+function hostedError(value: unknown): Record<string, unknown> | undefined {
+  return readRecord(value, "error")
+}
+
+function connectionRetryResult(
+  name: HostedOperationName,
+  response: Response,
+  value: unknown,
+): { status: "provisioning"; retryAfterMs: number } | undefined {
+  if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return undefined
+  if (response.status !== 409 && response.status !== 429) return undefined
+  const bodyDelay = readNumber(hostedError(value), "retryAfterMs")
+  if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay }
   const header = response.headers.get("Retry-After")?.trim()
   if (header && /^\d+$/.test(header)) {
-    return { status: "provisioning" as const, retryAfterMs: Number(header) * 1_000 }
+    return { status: "provisioning", retryAfterMs: Number(header) * 1_000 }
   }
+  return undefined
 }
 
 function operationFailure(name: HostedOperationName, status: number, value: unknown) {
-  const error = value && typeof value === "object" && !Array.isArray(value) && "error" in value
-    ? value.error
-    : undefined
-  if (!error || typeof error !== "object" || Array.isArray(error)) {
-    return new Error(`operation "${name}" failed: ${status}`)
-  }
-  const code = "code" in error && typeof error.code === "string" ? error.code.trim() : ""
-  const message = "message" in error && typeof error.message === "string" ? error.message.trim() : ""
-  const detail = [code, message].filter(Boolean).join(": ")
+  const error = hostedError(value)
+  if (!error) return new Error(`operation "${name}" failed: ${status}`)
+  const detail = [readString(error, "code")?.trim() ?? "", readString(error, "message")?.trim() ?? ""]
+    .filter(Boolean)
+    .join(": ")
   return new Error(`operation "${name}" failed: ${status}${detail ? ` (${detail})` : ""}`)
 }
 
@@ -228,7 +235,7 @@ export function createAccountService(options: AccountServiceOptions) {
       // validated must not keep being used, and the Host Connector suspends
       // on exactly this transition. What differs is the future: silence is
       // retried by the callers below, a refusal is not.
-      return { ok: false as const, transient: transient as boolean }
+      return { ok: false as const, transient: transient }
     }
   }
 
@@ -469,14 +476,13 @@ export function createAccountService(options: AccountServiceOptions) {
   ): Promise<Response> {
     if (startedIn !== era) throw new Error("not signed in")
     if (response.status !== 401) return response
-    const body = await response.json().catch(() => undefined) as {
-      error?: { code?: string; message?: string }
-    } | undefined
+    const body: unknown = await response.json().catch(() => undefined)
     if (startedIn !== era) throw new Error("not signed in")
     // Missing credentials are a client error. Rejected credentials, including
     // invalid_bearer_token, may have been retired before their local expiry.
-    if (body?.error?.code === "missing_bearer_token") {
-      throw new Error(body.error.message ?? "The account request carried no credential.")
+    const error = hostedError(body)
+    if (readString(error, "code") === "missing_bearer_token") {
+      throw new Error(readString(error, "message") ?? "The account request carried no credential.")
     }
     const renewed = await renew(held)
     if (startedIn !== era) throw new Error("not signed in")
@@ -664,7 +670,7 @@ export function createAccountService(options: AccountServiceOptions) {
             headers: {
               authorization: `Bearer ${token}`,
               ...(request.body ? { "content-type": "application/json" } : {}),
-              ...(request.headers ?? {}),
+              ...request.headers,
             },
             ...(request.body ? { body: JSON.stringify(request.body) } : {}),
           },
@@ -690,11 +696,7 @@ export function createAccountService(options: AccountServiceOptions) {
         return { status: response.status, ...(value !== undefined ? { body: value } : {}) }
       }
       if (!response.ok) {
-        const body = await response.json().catch(() => undefined) as {
-          error?: { code?: string; message?: string }
-          code?: string
-          message?: string
-        } | undefined
+        const body: unknown = await response.json().catch(() => undefined)
         if (startedIn !== era) throw new Error("not signed in")
         // A cloud connection still provisioning answers 409/429 with a delay.
         // That is a wait, not a failure, so it crosses the boundary as a value
@@ -772,7 +774,7 @@ export function createAccountService(options: AccountServiceOptions) {
             headers: {
               authorization: `Bearer ${token}`,
               Accept: "text/event-stream",
-              ...(request.headers ?? {}),
+              ...request.headers,
             },
           },
           (attempt) => {

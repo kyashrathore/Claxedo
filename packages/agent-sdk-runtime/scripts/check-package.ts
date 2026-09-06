@@ -1,12 +1,11 @@
 import fs from "fs"
 import path from "path"
 import { pathToFileURL } from "url"
+import { readPackageJson } from "./manifest-files"
 
 const root = path.resolve(import.meta.dirname, "..")
 const dist = path.join(root, "dist")
-const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
-  exports: Record<string, { import: string }>
-}
+const packageJson = readPackageJson(root)
 const maxEntryBytes = 256 * 1024
 const maxRuntimeBytes = 2 * 1024 * 1024
 

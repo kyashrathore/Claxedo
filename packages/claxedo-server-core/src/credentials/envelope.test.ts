@@ -113,7 +113,7 @@ describe("envelope encryption wrapper", () => {
     const stored = inner.values.get(ref)!
     const [tag, keyId, payload] = stored.split(":") as [string, string, string]
     const bytes = Buffer.from(payload, "base64")
-    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff // flip bits inside the GCM tag
+    bytes[bytes.length - 1] = bytes[bytes.length - 1] ^ 0xff // flip bits inside the GCM tag
     inner.values.set(ref, `${tag}:${keyId}:${bytes.toString("base64")}`)
 
     await expect(backend.get(ref)).rejects.toThrow(/failed authentication/)

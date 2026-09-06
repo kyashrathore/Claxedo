@@ -9,6 +9,7 @@ import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runti
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
 import { requestName, sessionPerf } from "@/platform/performance/session-perf"
+import { asRecord } from "@/lib/record"
 
 type RouteSessionDirectory = NonNullable<Parameters<typeof signedWorkspaceFromProjects>[1]>
 
@@ -64,9 +65,9 @@ export function settledWorkspaceSessionRedirect(input: {
   routeId: string | undefined
   search: string
 }) {
-  if (!input.isSuccess || input.isFetching || input.routeId) return
+  if (!input.isSuccess || input.isFetching || input.routeId) return undefined
   const target = nonCanonicalWorkspaceRouteRedirect(input.pathname)
-  if (!target || target === input.pathname) return
+  if (!target || target === input.pathname) return undefined
   return `${target}${input.search}${input.hash}`
 }
 
@@ -109,8 +110,8 @@ export function routeSessionWorkspaceBacking(input: {
   const workspace =
     signedWorkspaceFromProjects(input.projects, input.directory) ??
     (input.workspaceId ? signedWorkspaceFromProjects(input.projects, input.workspaceId) : undefined)
-  if (!workspace) return
-  if (input.workspaceId && workspace.workspaceId !== input.workspaceId) return
+  if (!workspace) return undefined
+  if (input.workspaceId && workspace.workspaceId !== input.workspaceId) return undefined
   return {
     workspaceId: workspace.workspaceId,
     kind: workspace.kind,
@@ -212,11 +213,13 @@ export type RouteSessionMeta = {
  * cleared when the request settles, so concurrent callers share one fetch
  * while a later re-resolution still asks the server again.
  */
+// Two probes with two answer shapes share this map, so it holds the promise
+// as `unknown` and each caller narrows its own body — which both do already.
 const inflightSessionProbes = new Map<string, Promise<unknown>>()
 
-function shareSessionProbe<T>(key: string, run: () => Promise<T>): Promise<T> {
+function shareSessionProbe(key: string, run: () => Promise<unknown>): Promise<unknown> {
   const pending = inflightSessionProbes.get(key)
-  if (pending) return pending as Promise<T>
+  if (pending) return pending
   const span = sessionPerf.span("session.resolveProbe", { url: requestName(key) })
   const request = run().finally(() => {
     inflightSessionProbes.delete(key)
@@ -232,11 +235,13 @@ export async function fetchRouteSessionMeta(input: {
   request?: typeof authFetch
 }): Promise<RouteSessionMeta | undefined> {
   const url = routeBridgeClaxedoSessionMetaUrl(input)
-  return await shareSessionProbe(url.toString(), async () => {
+  // Every field of `RouteSessionMeta` is optional and `unknown`, so being an
+  // object is the whole contract and each reader checks the field it uses.
+  return asRecord(await shareSessionProbe(url.toString(), async () => {
     const response = await (input.request ?? authFetch)(url).catch(() => undefined)
     if (!response?.ok) return undefined
-    return await (response.json() as Promise<RouteSessionMeta>).catch(() => undefined)
-  })
+    return await response.json().catch(() => undefined)
+  }))
 }
 
 export async function routeBridgeSessionConfigHarness(input: {
@@ -246,11 +251,11 @@ export async function routeBridgeSessionConfigHarness(input: {
   request?: typeof authFetch
 }) {
   const url = routeBridgeSessionConfigUrl(input)
-  return await shareSessionProbe(url.toString(), async () => {
+  return routeSessionHarness(await shareSessionProbe(url.toString(), async () => {
     const response = await (input.request ?? authFetch)(url).catch(() => undefined)
     if (!response?.ok) return undefined
-    return routeSessionHarness(await response.json().catch(() => undefined))
-  })
+    return await response.json().catch(() => undefined)
+  }))
 }
 
 export async function probeRouteSessionDirectory(sessionId: string, directories: string[]) {

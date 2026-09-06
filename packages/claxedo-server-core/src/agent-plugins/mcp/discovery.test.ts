@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from "vitest"
 import { discoverMcpOAuth, McpOAuthDiscoveryError } from "./discovery"
 
-const json = (value: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(value), {
-  status: 200,
-  headers: { "content-type": "application/json", ...(init.headers ?? {}) },
-  ...init,
-})
+const json = (value: unknown, init: ResponseInit = {}) => {
+  // `HeadersInit` also covers `string[][]`, which object-spreads to indices.
+  const headers = new Headers(init.headers)
+  headers.set("content-type", "application/json")
+  return new Response(JSON.stringify(value), { status: 200, ...init, headers })
+}
+
+/** The request body this suite sends, which is always text. Anything else is a bug in the test. */
+function textBody(init: RequestInit | undefined): string {
+  const body = init?.body
+  if (typeof body !== "string") throw new Error(`expected a string request body, received ${typeof body}`)
+  return body
+}
 
 function mappedFetch(responses: Record<string, Response | (() => Response)>) {
   return vi.fn(async (url: string) => {
@@ -234,7 +242,7 @@ describe("MCP OAuth discovery", () => {
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "https://mcp.example/mcp") return new Response(null, { status: 401 })
       if (url === "https://login.example/oauth2/register") {
-        registrationBodies.push(String(init?.body))
+        registrationBodies.push(textBody(init))
         return Response.json({
           client_id: "dyn-client-1",
           client_id_issued_at: 1,

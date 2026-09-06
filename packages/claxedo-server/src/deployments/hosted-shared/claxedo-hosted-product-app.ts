@@ -65,7 +65,7 @@ export function createClaxedoHostedProductApp(
   app.route(
     "/api/billing",
     BillingRoutes({
-      ...(billing ?? {}),
+      ...billing,
       env: plane.env,
       store: billingStore,
       authentication: core.authentication,

@@ -34,7 +34,8 @@ function makeManualScheduler(): {
     pendingCount: () => pending.size,
     lastMs: () => last,
     tick: () => {
-      for (const id of [...pending.keys()]) {
+      // Snapshot: the loop deletes from `pending` as it goes.
+      for (const id of Array.from(pending.keys())) {
         const fn = pending.get(id)
         pending.delete(id)
         fn?.()

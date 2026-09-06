@@ -124,6 +124,7 @@ function isPartEqual(partA: ContentPart, partB: ContentPart) {
     case "image":
       return partB.type === "image" && partA.id === partB.id
   }
+  return undefined
 }
 
 export function isPromptEqual(promptA: Prompt, promptB: Prompt): boolean {
@@ -186,8 +187,15 @@ type PromptProviderProps = {
   draftId?: Accessor<string | undefined> | string
 }
 
-function value<T>(input: Accessor<T> | T): T {
-  return typeof input === "function" ? (input as Accessor<T>)() : input
+/**
+ * Read a prop that may be a plain value or an accessor.
+ *
+ * `T` is constrained to the string-ish props this provider actually takes, so
+ * `typeof input === "function"` narrows to the accessor arm — an unconstrained
+ * `T` could itself be a function, which is why this used to assert.
+ */
+function value<T extends string | undefined>(input: Accessor<T> | T): T {
+  return typeof input === "function" ? input() : input
 }
 
 // ---------------------------------------------------------------------------

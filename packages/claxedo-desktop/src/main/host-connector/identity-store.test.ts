@@ -68,7 +68,7 @@ describe("the canonical encrypted identity record", () => {
       ciphertext: expect.any(String),
     })
     expect(storage.encrypted).toHaveLength(1)
-    expect(JSON.parse(storage.encrypted[0]!)).toEqual(identity)
+    expect(JSON.parse(storage.encrypted[0])).toEqual(identity)
     expect(disk.contents()).not.toContain("private")
   })
 

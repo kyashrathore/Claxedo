@@ -3,17 +3,11 @@ import { useNavigate } from "@solidjs/router"
 
 import { useAccountPort } from "@/platform/account/account-provider"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { readArray, readField, readString } from "@/lib/record"
 
-type BootstrapOwnerResponse = {
-  user?: { id?: unknown }
-  organizations?: unknown
-  error?: { code?: unknown; message?: unknown }
-}
-
-function message(value: BootstrapOwnerResponse, status: number) {
-  if (typeof value.error?.message === "string" && value.error.message) return value.error.message
-  if (typeof value.error?.code === "string" && value.error.code) return value.error.code
-  return `Owner activation failed (${status})`
+function message(value: unknown, status: number) {
+  const error = readField(value, "error")
+  return readString(error, "message") || readString(error, "code") || `Owner activation failed (${status})`
 }
 
 /**
@@ -61,9 +55,9 @@ export default function BootstrapOwnerPage() {
         new URL("/api/claxedo/auth/bootstrap-owner", getClaxedoServerUrl()),
         { method: "POST", headers },
       )
-      const body = (await response.json().catch(() => ({}))) as BootstrapOwnerResponse
+      const body: unknown = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(message(body, response.status))
-      if (typeof body.user?.id !== "string" || !Array.isArray(body.organizations) || body.organizations.length !== 1) {
+      if (readString(readField(body, "user"), "id") === undefined || readArray(body, "organizations")?.length !== 1) {
         throw new Error("Owner activation returned an invalid application profile")
       }
       setClaim("")

@@ -14,6 +14,7 @@
  */
 
 import type { SecretBackend } from "../types"
+import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
   encryptedSecretBackend,
@@ -231,16 +232,15 @@ export async function listCloudflareCredentialRefs(opts: {
       log.error("Cloudflare KV key listing failed", { status: res.status })
       throw new Error(`Cloudflare KV key listing failed: ${res.status}`)
     }
-    const body = await res.json() as {
-      result?: Array<{ name?: unknown }>
-      result_info?: { cursor?: unknown }
-    }
-    const page = Array.isArray(body.result) ? body.result : []
+    const body = jsonRecord(await res.json())
+    const page = Array.isArray(body?.result) ? body.result : []
     for (const entry of page) {
-      if (typeof entry?.name === "string" && entry.name.startsWith("cf:")) refs.push(entry.name)
+      const name = jsonRecord(entry)?.name
+      if (typeof name === "string" && name.startsWith("cf:")) refs.push(name)
     }
 
-    const next = typeof body.result_info?.cursor === "string" ? body.result_info.cursor.trim() : ""
+    const rawCursor = jsonRecord(body?.result_info)?.cursor
+    const next = typeof rawCursor === "string" ? rawCursor.trim() : ""
     // Terminate on an empty/absent cursor (Cloudflare's end-of-list signal) and
     // on a repeated one, so a misbehaving proxy cannot spin this loop forever.
     if (!next || seenCursors.has(next) || page.length === 0) break

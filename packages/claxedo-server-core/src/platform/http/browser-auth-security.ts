@@ -101,7 +101,7 @@ function requestHasExactCookie(request: Request, name: string) {
 function hasSupportedMutationContentType(request: Request) {
   const raw = request.headers.get("content-type")
   if (!raw) return request.body === null
-  const mediaType = raw.split(";", 1)[0]!.trim().toLowerCase()
+  const mediaType = raw.split(";", 1)[0].trim().toLowerCase()
   return mediaType === "application/json" || /^application\/[a-z0-9!#$&^_.+-]+\+json$/.test(mediaType)
 }
 

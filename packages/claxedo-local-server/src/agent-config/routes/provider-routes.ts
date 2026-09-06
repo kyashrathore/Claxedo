@@ -24,6 +24,7 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi or nativeHarness=opencode" } }, 400)
     }
     await next()
+    return undefined
   }
   return new Hono()
     .use("/providers", controlPlaneRouteAuth(authOptions))

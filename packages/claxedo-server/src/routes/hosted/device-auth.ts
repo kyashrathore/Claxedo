@@ -22,6 +22,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
+import { asRecord } from "../../platform/json/index"
 
 export type HostedDeviceAuthProvider = {
   issuer: string
@@ -56,7 +57,7 @@ function unconfigured() {
 }
 
 function object(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
+  return asRecord(input) ?? {}
 }
 
 function clean(input: unknown) {
@@ -142,7 +143,7 @@ function rateLimitClientKey(c: Context) {
 
 function rateLimited(c: Context, limiter: ConnectionRateLimiter, endpoint: string) {
   const result = limiter.check({ userId: rateLimitClientKey(c), workspaceId: `device-login:${endpoint}` })
-  if (result.allowed) return
+  if (result.allowed) return undefined
   return c.json(
     {
       error: {
@@ -191,7 +192,7 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
       }
       auth = context
     } catch (err) {
-      if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status as 401 | 403 | 503)
+      if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
       throw err
     }
     await options.ensureCliUser?.(auth)

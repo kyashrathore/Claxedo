@@ -1,15 +1,15 @@
 import { parse as parseShellCommand } from "shell-quote"
 
 export function terminalLaunchCommand(input?: string) {
-  if (!input?.trim()) return
+  if (!input?.trim()) return undefined
   const parsed = parseShellCommand(input)
-  if (!parsed.every((item): item is string => typeof item === "string")) return
+  if (!parsed.every((item): item is string => typeof item === "string")) return undefined
 
   const command = parsed[0]
-  if (!command) return
+  if (!command) return undefined
 
   const name = command.split(/[\\/]/).pop()
-  if (name !== "claude" && name !== "codex" && name !== "gemini" && name !== "cursor" && name !== "cursor-agent") return
+  if (name !== "claude" && name !== "codex" && name !== "gemini" && name !== "cursor" && name !== "cursor-agent") return undefined
 
   return {
     command,

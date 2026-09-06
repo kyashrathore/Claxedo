@@ -4,6 +4,7 @@ import {
   type WorkspaceRuntimeRequestOptions,
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/transport"
+import { asRecord, readArray, readField, readFiniteNumber, readString, readStringArray } from "@/lib/record"
 
 type RawVcsFileDiff = {
   file: string
@@ -13,6 +14,12 @@ type RawVcsFileDiff = {
   additions: number
   deletions: number
   status?: string
+}
+
+function isRawVcsFileDiff(value: unknown): value is RawVcsFileDiff {
+  return typeof readField(value, "file") === "string"
+    && typeof readField(value, "additions") === "number"
+    && typeof readField(value, "deletions") === "number"
 }
 
 export type VcsRefs = {
@@ -27,9 +34,72 @@ export type WorkspaceDiffClient = ReturnType<typeof createWorkspaceDiffClient>
 
 type WorkspaceDiffResource = "vcs" | "vcs/file" | "refs" | "targets"
 
-async function json<T>(res: Response, fallback: T) {
-  if (!res.ok) return fallback
-  return await res.json().catch(() => fallback) as T
+/**
+ * A response body, unnarrowed.
+ *
+ * `Response.json()` is typed `Promise<any>`, so the previous `json<T>(res,
+ * fallback)` helper let every call site NAME a shape and receive it back
+ * unverified — four routes each claimed a different DTO and none of them
+ * checked one. Widening to `unknown` here forces the readers below to state
+ * what they actually looked at, which is also what the route already did for
+ * diff rows via `isRawVcsFileDiff`.
+ */
+async function jsonBody(res: Response): Promise<unknown> {
+  if (!res.ok) return undefined
+  return await res.json().catch(() => undefined)
+}
+
+/**
+ * A diff row for one file. `file` is the identity — a row without it is not a
+ * row — and every other field is optional because the route omits them for
+ * summary reads.
+ */
+function asVcsFileDiff(value: unknown): (Partial<RawVcsFileDiff> & { file: string }) | undefined {
+  const row = asRecord(value)
+  const file = readString(row, "file")
+  if (file === undefined) return undefined
+  const before = readString(row, "before")
+  const after = readString(row, "after")
+  const patch = readString(row, "patch")
+  const status = readString(row, "status")
+  const additions = readFiniteNumber(row, "additions")
+  const deletions = readFiniteNumber(row, "deletions")
+  return {
+    file,
+    ...(before === undefined ? {} : { before }),
+    ...(after === undefined ? {} : { after }),
+    ...(patch === undefined ? {} : { patch }),
+    ...(status === undefined ? {} : { status }),
+    ...(additions === undefined ? {} : { additions }),
+    ...(deletions === undefined ? {} : { deletions }),
+  }
+}
+
+/**
+ * Git refs as this client models them. A malformed entry is dropped rather
+ * than surfaced: the ref pickers render every element, so one bad row used to
+ * mean an empty label in a list the user is asked to choose from.
+ */
+function asVcsRefs(value: unknown): VcsRefs {
+  const row = asRecord(value)
+  const rawChoices = readArray(row, "branchChoices")
+  const branchChoices = (rawChoices ?? []).flatMap((item) => {
+    const gitRef = readString(item, "gitRef")
+    if (gitRef === undefined) return []
+    const sourceBranch = readString(item, "sourceBranch")
+    return [{ gitRef, ...(sourceBranch === undefined ? {} : { sourceBranch }) }]
+  })
+  const recent = (readArray(row, "recent") ?? []).flatMap((item) => {
+    const hash = readString(item, "hash")
+    const subject = readString(item, "subject")
+    return hash === undefined || subject === undefined ? [] : [{ hash, subject }]
+  })
+  return {
+    branches: readStringArray(row, "branches") ?? [],
+    ...(rawChoices === undefined ? {} : { branchChoices }),
+    tags: readStringArray(row, "tags") ?? [],
+    recent,
+  }
 }
 
 export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOptions) {
@@ -67,7 +137,7 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
       query: { directory: scope },
     }))
     if (!res.ok) throw new Error(`Failed to load Git refs: ${res.status}`)
-    return await res.json() as VcsRefs
+    return asVcsRefs(await res.json())
   }
 
   return {
@@ -82,8 +152,9 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
         resource: "vcs",
         query: input,
       }))
-      const data = await json<unknown[]>(res, [])
-      return Array.isArray(data) ? data as RawVcsFileDiff[] : []
+      const data = await jsonBody(res)
+      // The route answers with diff rows; a row without a file path is not one.
+      return Array.isArray(data) ? data.filter(isRawVcsFileDiff) : []
     },
 
     async vcsFile(input: {
@@ -97,7 +168,7 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
         resource: "vcs/file",
         query: input,
       }))
-      return await json<Partial<RawVcsFileDiff> & { file: string } | undefined>(res, undefined)
+      return asVcsFileDiff(await jsonBody(res))
     },
 
     async refs(directory: string) {
@@ -114,7 +185,13 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
         resource: "targets",
         query: { directory },
       }))
-      return await json<{ defaultRef?: string; candidates?: string[] }>(res, {})
+      const body = await jsonBody(res)
+      const defaultRef = readString(body, "defaultRef")
+      const candidates = readStringArray(body, "candidates")
+      return {
+        ...(defaultRef === undefined ? {} : { defaultRef }),
+        ...(candidates === undefined ? {} : { candidates }),
+      }
     },
   }
 }
@@ -123,6 +200,7 @@ function workspaceRuntimeSnapshot(input: WorkspaceRuntimeSnapshotLike | undefine
   if (input?.kind && input.kind !== "local" && input.workspaceId) {
     return { workspaceId: input.workspaceId }
   }
+  return undefined
 }
 
 function workspaceDiffPath(input: {

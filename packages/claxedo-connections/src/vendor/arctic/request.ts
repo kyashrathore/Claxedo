@@ -1,6 +1,12 @@
 // Vendored from arctic@2.3.4 (MIT) — see LICENSE-NOTICE.md.
-// Adaptations: node Buffer base64; injectable fetch for tests.
+// Adaptations: node Buffer base64; injectable fetch for tests; the response
+// body is narrowed by a local guard instead of asserted (kept local so this
+// file stays self-contained for re-sync).
 import { OAuth2Tokens } from "./oauth2.js"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
 
 export type FetchLike = (request: Request) => Promise<Response>
 
@@ -34,13 +40,13 @@ export async function sendTokenRequest(request: Request, fetchImpl: FetchLike = 
   } catch {
     throw new Error("Failed to parse response body")
   }
-  if (typeof data !== "object" || data === null) {
+  if (!isRecord(data)) {
     throw new Error("Unexpected response body data")
   }
-  if ("error" in data && typeof (data as { error: unknown }).error === "string") {
-    throw createOAuth2RequestError(data as Record<string, unknown>)
+  if (typeof data.error === "string") {
+    throw createOAuth2RequestError(data)
   }
-  return new OAuth2Tokens(data as Record<string, unknown>)
+  return new OAuth2Tokens(data)
 }
 
 export async function sendTokenRevocationRequest(request: Request, fetchImpl: FetchLike = fetch): Promise<void> {

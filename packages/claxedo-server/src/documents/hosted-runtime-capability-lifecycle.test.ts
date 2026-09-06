@@ -11,6 +11,7 @@ import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/run
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
 import type { DocumentIndexEntry } from "./index-store"
 import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"
+import { fetchUrl, fetchBodyText } from "../test-support/fetch-calls"
 
 const entry = {
   id: "document_1",
@@ -125,10 +126,10 @@ describe("hosted runtime capability lifecycle", () => {
       },
     })
     const relay = async (input: string | URL | Request, init?: RequestInit) => {
-      const pathname = new URL(String(input)).pathname
+      const pathname = new URL(fetchUrl(input)).pathname
       const runtimePath = pathname.slice(pathname.indexOf("/api/wr/"))
       if (runtimePath.endsWith("/hydrate")) {
-        capabilityToken = (JSON.parse(String(init?.body)) as { writeback: { token: string } }).writeback.token
+        capabilityToken = (JSON.parse(fetchBodyText(init?.body)) as { writeback: { token: string } }).writeback.token
       }
       const response = await runtime.fetch(new Request(`http://runtime.test${runtimePath}`, init))
       if (runtimePath.endsWith("/hydrate")) {

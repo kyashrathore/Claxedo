@@ -22,7 +22,7 @@ import type { LiveSession } from "../global-sdk-event-fetch"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 
 export function initialRouteDirectory() {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return undefined
   return shellRouteDirectoryFromPathname(window.location.pathname)
 }
 
@@ -32,7 +32,7 @@ export function cachedProjectInventory(baseUrl?: string) {
 
 export function initialRouteWorkspace(baseUrl?: string) {
   const directory = initialRouteDirectory()
-  if (!directory) return
+  if (!directory) return undefined
   for (const project of cachedProjectInventory(baseUrl)) {
     const match = Object.entries(project.workspaces ?? {})
       .find(([key, workspace]) =>

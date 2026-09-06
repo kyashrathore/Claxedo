@@ -1,5 +1,5 @@
 import { createContext, createMemo, useContext, type JSX } from "solid-js"
-import type { Pane, Snapshot, WorkbenchState, Edge, PaneRect } from "./types"
+import type { Pane, Snapshot, WorkbenchState, Edge, MovePaneTarget, PaneRect } from "./types"
 import { reducers } from "./reducers/index"
 import { selectors as pureSelectors } from "./selectors"
 
@@ -56,7 +56,7 @@ export type UseWorkbench = {
   split: {
     split: (targetPaneId: string, edge: Edge, contentId: string) => void
     close: (paneId: string, opts?: { destroyContent: boolean }) => void
-    move: (contentId: string, fromPaneId: string, toPaneId: string | "new") => void
+    move: (contentId: string, fromPaneId: string, toPaneId: MovePaneTarget) => void
     focus: (paneId: string) => void
     resize: (path: ReadonlyArray<"a" | "b">, ratio: number) => void
   }

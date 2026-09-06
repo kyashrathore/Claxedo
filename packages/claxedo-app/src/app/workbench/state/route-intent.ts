@@ -110,7 +110,7 @@ export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout"
 
 function workspaceBacking(input: { workspaceId?: string; kind?: string }): WorkspaceSessionBacking | undefined {
   const kind = workspaceKind(input.kind)
-  if (!input.workspaceId || !isRelayBackedWorkspaceKind(kind)) return
+  if (!input.workspaceId || !isRelayBackedWorkspaceKind(kind)) return undefined
   return {
     workspaceId: input.workspaceId,
     kind,
@@ -183,13 +183,13 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
         : []
     })
   const rawMatches = [...workspaceMatches, ...catalogMatches]
-  if (rawMatches.some((item) => item.directory === "/workspace")) return
+  if (rawMatches.some((item) => item.directory === "/workspace")) return undefined
   const matches = rawMatches
     .filter((item, index, all) =>
       item.directory !== "/workspace" &&
       all.findIndex((candidate) => candidate.directory === item.directory) === index
     )
-  if (matches.length !== 1) return
+  if (matches.length !== 1) return undefined
   return matches[0]
 }
 
@@ -276,7 +276,7 @@ export function createRouteIntentAdapter(input: {
     findContent((m) => contentMatchesSessionRoute(m, sessionId))
   const inventorySessionTarget = (sessionId: string) => {
     const inventory = input.inventory?.()
-    if (!inventory) return
+    if (!inventory) return undefined
     return sessionInventoryTarget(sessionId, inventory)
   }
   const openWorkspaceSession = (target: InventorySessionTarget, sessionId: string, title: string, decision: string) => {

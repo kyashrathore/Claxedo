@@ -126,7 +126,7 @@ describe("hosted MCP runtime preparation", () => {
     expect(new Set(value.preparation.secrets!.map((secret) => secret.hosts[0])).size).toBe(2)
     expect(value.resolveConnection).toHaveBeenCalledTimes(1)
 
-    const first = value.preparation.secrets![0]!
+    const first = value.preparation.secrets![0]
     expect(first.header).toBe("Authorization")
     expect(first.value).not.toContain("upstream")
     expect(first.hosts[0]).toMatch(/^mcp-[a-f0-9]{32}-mcp-gateway\.example$/)

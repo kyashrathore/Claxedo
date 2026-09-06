@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { SafeStorageApi } from "../account/credential-store"
+import { readString } from "../../shared/json-read"
 import { hostConnectorChildResourceDir, verifyHostConnectorChildArtifact } from "./child-artifact"
+import type { HostConnectorSharedWorkspace } from "./child-protocol"
 import {
   setupHostConnectorChild,
   type AccountOperationRunner,
@@ -30,24 +32,21 @@ export type HostConnectorUtilityFork = (
 function sharedWorkspacesFile(userDataDir: string) {
   const file = join(userDataDir, "host-connector-shared-workspaces.json")
   return {
-    load(): Array<{ workspaceId: string; displayName?: string }> {
+    load(): HostConnectorSharedWorkspace[] {
       try {
         const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown
         if (!Array.isArray(parsed)) return []
         return parsed.flatMap((entry) => {
-          if (typeof entry !== "object" || entry === null) return []
-          const share = entry as { workspaceId?: unknown; displayName?: unknown }
-          if (typeof share.workspaceId !== "string" || !share.workspaceId) return []
-          return [{
-            workspaceId: share.workspaceId,
-            ...(typeof share.displayName === "string" ? { displayName: share.displayName } : {}),
-          }]
+          const workspaceId = readString(entry, "workspaceId")
+          if (!workspaceId) return []
+          const displayName = readString(entry, "displayName")
+          return [{ workspaceId, ...(displayName === undefined ? {} : { displayName }) }]
         })
       } catch {
         return []
       }
     },
-    store(shares: readonly { workspaceId: string; displayName?: string }[]) {
+    store(shares: readonly HostConnectorSharedWorkspace[]) {
       if (shares.length === 0) {
         rmSync(file, { force: true })
         return

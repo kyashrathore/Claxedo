@@ -5,8 +5,13 @@
 // private half. This is the same trust shape the real system uses, just with
 // the bench standing in as issuer — no relay code path is bypassed.
 
-import { exportJWK, exportPKCS8, exportSPKI, generateKeyPair, importJWK, importPKCS8 } from "jose"
-import { mintHostTunnelToken, mintRuntimeAccessToken, type RelayRole } from "../../src/auth"
+import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8 } from "jose"
+import {
+  deriveRelayHostPublicKey,
+  mintHostTunnelToken,
+  mintRuntimeAccessToken,
+  type RelayRole,
+} from "../../src/auth"
 
 export type BenchIdentity = {
   privateKey: CryptoKey
@@ -66,8 +71,8 @@ function identityFromKeys(
 
 export async function createBenchIdentity(overrides: Partial<MintRatInput> = {}): Promise<BenchIdentity> {
   const pair = await generateKeyPair("EdDSA", { extractable: true })
-  const publicKeyPem = await exportSPKI(pair.publicKey as CryptoKey)
-  return identityFromKeys(pair.privateKey as CryptoKey, pair.publicKey as CryptoKey, publicKeyPem, overrides)
+  const publicKeyPem = await exportSPKI(pair.publicKey)
+  return identityFromKeys(pair.privateKey, pair.publicKey, publicKeyPem, overrides)
 }
 
 export type MintHttInput = {
@@ -96,7 +101,7 @@ export async function benchHostTunnelTokenFromPrivatePem(
   privateKeyPem: string,
   overrides: Partial<MintHttInput> = {},
 ): Promise<string> {
-  const privateKey = (await importPKCS8(privateKeyPem, "EdDSA", { extractable: true })) as CryptoKey
+  const privateKey = (await importPKCS8(privateKeyPem, "EdDSA", { extractable: true }))
   const merged = { ...HTT_DEFAULTS, ...overrides }
   return mintHostTunnelToken(
     {
@@ -115,8 +120,8 @@ export async function benchHostTunnelTokenFromPrivatePem(
 export async function benchKeypairPems(): Promise<{ publicKeyPem: string; privateKeyPem: string }> {
   const pair = await generateKeyPair("EdDSA", { extractable: true })
   return {
-    publicKeyPem: await exportSPKI(pair.publicKey as CryptoKey),
-    privateKeyPem: await exportPKCS8(pair.privateKey as CryptoKey),
+    publicKeyPem: await exportSPKI(pair.publicKey),
+    privateKeyPem: await exportPKCS8(pair.privateKey),
   }
 }
 
@@ -127,10 +132,8 @@ export async function benchIdentityFromPrivatePem(
   privateKeyPem: string,
   overrides: Partial<MintRatInput> = {},
 ): Promise<BenchIdentity> {
-  const privateKey = (await importPKCS8(privateKeyPem, "EdDSA", { extractable: true })) as CryptoKey
-  const jwk = await exportJWK(privateKey)
-  const publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x }
-  const publicKey = (await importJWK(publicJwk as Parameters<typeof importJWK>[0], "EdDSA", { extractable: true })) as CryptoKey
+  const privateKey = await importPKCS8(privateKeyPem, "EdDSA", { extractable: true })
+  const publicKey = await deriveRelayHostPublicKey(privateKey)
   const publicKeyPem = await exportSPKI(publicKey)
   return identityFromKeys(privateKey, publicKey, publicKeyPem, overrides)
 }

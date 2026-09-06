@@ -14,8 +14,8 @@ function common(active: string, done: string) {
   }
 }
 
-function contentWidth(el: HTMLSpanElement | undefined) {
-  if (!el) return
+function contentWidth(el: HTMLSpanElement | undefined): string | undefined {
+  if (!el) return undefined
   return `${Math.ceil(el.getBoundingClientRect().width)}px`
 }
 

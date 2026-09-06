@@ -91,12 +91,12 @@ console.error("[target] starting echo server in background session…")
 await sandbox.process.executeSessionCommand(sessionId, {
   command: `bash -lc 'nohup node /tmp/echo-server.cjs > /tmp/echo.log 2>&1 & echo started'`,
   runAsync: true,
-} as any)
+})
 
 // Give it a moment, then confirm it is listening from inside the sandbox.
 await new Promise((r) => setTimeout(r, 3000))
 const check = await sandbox.process.executeCommand(`bash -lc 'curl -s -o /dev/null -w "%{http_code}" http://localhost:${port}/health || echo DOWN'`)
-console.error(`[target] in-sandbox health -> ${(check as any).result ?? (check as any).stdout ?? "?"}`)
+console.error(`[target] in-sandbox health -> ${check.result}`)
 
 const preview = await sandbox.getPreviewLink(port)
 const httpUrl = preview.url

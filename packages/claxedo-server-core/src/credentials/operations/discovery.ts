@@ -35,16 +35,17 @@ export type CredentialDiscoverySelection = {
   scope: CredentialScope
 }
 
+export type CredentialDiscoveryErrorCode =
+  | "discovery_not_found"
+  | "discovery_expired"
+  | "discovery_item_not_found"
+  | "discovery_duplicate_item"
+  | "discovery_org_mismatch"
+
 export class CredentialDiscoveryError extends Error {
-  constructor(
-    public readonly code:
-      | "discovery_not_found"
-      | "discovery_expired"
-      | "discovery_item_not_found"
-      | "discovery_duplicate_item"
-      | "discovery_org_mismatch",
-  ) {
-    super(code)
+  constructor(public readonly code: CredentialDiscoveryErrorCode) {
+    super(`credential discovery failed: ${code}`)
+    this.name = "CredentialDiscoveryError"
   }
 }
 
@@ -150,19 +151,19 @@ export function createCredentialDiscovery(input: {
       const credentials = await Promise.all(selected.map((item, index) => input.save({
         provider_id: item!.provider_id,
         kind: item!.kind,
-        source: request.items[index]!.scope === "shared" ? "managed" : "local_only",
+        source: request.items[index].scope === "shared" ? "managed" : "local_only",
         label: item!.label,
         ...(item!.account_id ? { account_id: item!.account_id } : {}),
         secret: item!.secret,
         ...(item!.fresh_until ? { expires_at: item!.fresh_until } : {}),
-        scope: request.items[index]!.scope,
+        scope: request.items[index].scope,
         consent: { at: now(), surface: "desktop_discovery" },
       }, org)))
       stash.delete(request.discovery_id)
 
       return {
         saved: request.items.map((item, index) => ({
-          credential_id: credentials[index]!.id,
+          credential_id: credentials[index].id,
           provider_id: item.provider_id,
           ...(item.account_id ? { account_id: item.account_id } : {}),
         })),

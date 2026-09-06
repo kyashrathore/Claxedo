@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs"
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 
+import { readNumber, readString } from "../../shared/json-read"
+
 export type SessionMemoryDatabase = {
   prepare(sql: string): { all(): unknown[] }
   close(): void
@@ -47,23 +49,28 @@ async function scanDatabase(
   let database: SessionMemoryDatabase | undefined
   try {
     database = openDatabase(input.path)
-    const rows = database.prepare(databaseQuery).all() as Array<{
-      id: string
-      title?: string
-      updatedAt?: number
-      chatBytes?: number
-      imageBytes?: number
-      compactionBytes?: number
-      totalBytes?: number
-    }>
-    const sessions = rows.map((row) => ({
-      sessionId: row.id,
-      ...(row.title ? { title: safeLabel(row.title) } : {}),
-      harness,
-      profile: safeLabel(input.profile),
-      ...(row.updatedAt ? { updatedAt: Math.max(0, Math.floor(row.updatedAt)) } : {}),
-      buckets: normalizeBuckets(row),
-    } satisfies LocalDiagnostics.StoredSessionMemory))
+    // `all()` answers `unknown[]`; the query names the columns, but SQLite
+    // does not promise their types, so each one is read rather than asserted.
+    // A row with no session id is dropped instead of becoming one with an
+    // undefined `sessionId`.
+    const sessions = database.prepare(databaseQuery).all().flatMap((row) => {
+      const sessionId = readString(row, "id")
+      if (!sessionId) return []
+      const title = readString(row, "title")
+      const updatedAt = readNumber(row, "updatedAt")
+      return [{
+        sessionId,
+        ...(title ? { title: safeLabel(title) } : {}),
+        harness,
+        profile: safeLabel(input.profile),
+        ...(updatedAt ? { updatedAt: Math.max(0, Math.floor(updatedAt)) } : {}),
+        buckets: normalizeBuckets({
+          chatBytes: readNumber(row, "chatBytes"),
+          imageBytes: readNumber(row, "imageBytes"),
+          compactionBytes: readNumber(row, "compactionBytes"),
+        }),
+      } satisfies LocalDiagnostics.StoredSessionMemory]
+    })
     return completedScan(harness, input.profile, sessions)
   } catch {
     return emptyScan(harness, input.profile, "failed")

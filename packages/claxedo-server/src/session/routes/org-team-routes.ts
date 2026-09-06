@@ -9,7 +9,8 @@ import {
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { apiError, signedOrError } from "../../workspace/route-support"
+import { apiError, signedOrError, txt } from "../../workspace/route-support"
+import { readJsonRecord } from "../../platform/json/index"
 
 type Options = {
   authentication?: RequestAuthenticationAdapter
@@ -115,11 +116,11 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
     .post("/orgs", limited, async (c) => {
       try {
         const auth = await signed(c.req.raw)
-        const body = await c.req.json().catch(() => ({})) as { name?: string }
+        const name = txt((await readJsonRecord(c.req.raw))?.name)?.trim()
         const create = requireAuthority(services).createOrg
         if (!create) return c.json({ error: apiError("not_implemented", "Org create unavailable") }, 501)
-        if (!body.name?.trim()) return c.json({ error: apiError("org_name_required", "name is required") }, 400)
-        return c.json(await create(auth, { name: body.name.trim() }))
+        if (!name) return c.json({ error: apiError("org_name_required", "name is required") }, 400)
+        return c.json(await create(auth, { name }))
       } catch (err) {
         return orgTeamErrorResponse(c, err)
       }
@@ -139,9 +140,9 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         const auth = await signed(c.req.raw)
         const create = requireAuthority(services).createTeamInOrg
         if (!create) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = await c.req.json().catch(() => ({})) as { name?: string }
-        if (!body.name?.trim()) return c.json({ error: apiError("team_name_required", "name is required") }, 400)
-        return c.json(await create(auth, { orgId: c.req.param("orgId"), name: body.name.trim() }))
+        const name = txt((await readJsonRecord(c.req.raw))?.name)?.trim()
+        if (!name) return c.json({ error: apiError("team_name_required", "name is required") }, 400)
+        return c.json(await create(auth, { orgId: c.req.param("orgId"), name }))
       } catch (err) {
         return orgTeamErrorResponse(c, err)
       }
@@ -171,7 +172,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         const auth = await signed(c.req.raw)
         const add = requireAuthority(services).addTeamMember
         if (!add) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+        const body = (await readJsonRecord(c.req.raw)) ?? {}
         return c.json(await add(auth, {
           teamId: c.req.param("teamId"),
           ...(typeof body.tokenIdentifier === "string" ? { tokenIdentifier: body.tokenIdentifier } : {}),
@@ -188,7 +189,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         const auth = await signed(c.req.raw)
         const remove = requireAuthority(services).removeTeamMember
         if (!remove) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+        const body = (await readJsonRecord(c.req.raw)) ?? {}
         return c.json(await remove(auth, {
           teamId: c.req.param("teamId"),
           ...(typeof body.tokenIdentifier === "string" ? { tokenIdentifier: body.tokenIdentifier } : {}),
@@ -204,15 +205,13 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         const auth = await signed(c.req.raw)
         const grant = requireAuthority(services).grantTeamProject
         if (!grant) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = await c.req.json().catch(() => ({})) as { projectId?: string; role?: string }
-        if (!body.projectId || (body.role !== "viewer" && body.role !== "editor" && body.role !== "admin")) {
+        const body = (await readJsonRecord(c.req.raw)) ?? {}
+        const projectId = txt(body.projectId)
+        const role = body.role
+        if (!projectId || (role !== "viewer" && role !== "editor" && role !== "admin")) {
           return c.json({ error: apiError("team_project_grant_required", "projectId and role are required") }, 400)
         }
-        return c.json(await grant(auth, {
-          teamId: c.req.param("teamId"),
-          projectId: body.projectId,
-          role: body.role,
-        }))
+        return c.json(await grant(auth, { teamId: c.req.param("teamId"), projectId, role }))
       } catch (err) {
         return orgTeamErrorResponse(c, err)
       }
@@ -222,12 +221,9 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         const auth = await signed(c.req.raw)
         const revoke = requireAuthority(services).revokeTeamProject
         if (!revoke) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = await c.req.json().catch(() => ({})) as { projectId?: string }
-        if (!body.projectId) return c.json({ error: apiError("team_project_grant_required", "projectId is required") }, 400)
-        return c.json(await revoke(auth, {
-          teamId: c.req.param("teamId"),
-          projectId: body.projectId,
-        }))
+        const projectId = txt((await readJsonRecord(c.req.raw))?.projectId)
+        if (!projectId) return c.json({ error: apiError("team_project_grant_required", "projectId is required") }, 400)
+        return c.json(await revoke(auth, { teamId: c.req.param("teamId"), projectId }))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err

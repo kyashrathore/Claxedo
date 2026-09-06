@@ -20,11 +20,16 @@ export type RuntimeEventEnvelopeInput = Omit<RuntimeEventEnvelope, "contractVers
   contractVersion?: number
 }
 
+/**
+ * Function properties, not methods: the hub is a closure over its subscriber
+ * sets, so callers pass `publishRuntime` around as a plain callback and no
+ * member ever reads `this`.
+ */
 export type RuntimeEventHub = {
-  publishGlobal(event: CompatEnvelope): void
-  subscribeGlobal(fn: Subscriber): () => void
-  publishRuntime(event: RuntimeEventEnvelopeInput): void
-  subscribeRuntime(fn: RuntimeSubscriber): () => void
+  publishGlobal: (event: CompatEnvelope) => void
+  subscribeGlobal: (fn: Subscriber) => () => void
+  publishRuntime: (event: RuntimeEventEnvelopeInput) => void
+  subscribeRuntime: (fn: RuntimeSubscriber) => () => void
 }
 
 export type RuntimeEventPublishers = Pick<RuntimeEventHub, "publishGlobal" | "publishRuntime">

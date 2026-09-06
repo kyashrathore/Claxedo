@@ -158,7 +158,7 @@ describe("GitSourceRoutes", () => {
       })
 
       const responses = await Promise.all([request("first\n", "first"), request("second\n", "second")])
-      expect(responses.map((res) => res.status).sort()).toEqual([200, 409])
+      expect(responses.map((res) => res.status).sort((a, b) => a - b)).toEqual([200, 409])
       expect(["first\n", "second\n"]).toContain(await readFile(path.join(directory, "doc.md"), "utf8"))
       expect(await git(directory, ["status", "--porcelain"])).toBe("")
     })

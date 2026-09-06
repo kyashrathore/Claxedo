@@ -18,7 +18,7 @@ export function isWorkspaceIdRef(input: string | undefined) {
 /** Local sidecar association id (`randomUUID`), never a signed `ws_*` id. */
 export function localWorkspaceAssociationId(input: string | undefined): string | undefined {
   const value = input?.trim()
-  if (!value) return
+  if (!value) return undefined
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
     ? value
     : undefined

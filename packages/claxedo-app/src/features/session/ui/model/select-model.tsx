@@ -32,6 +32,14 @@ export type PickerItem = {
   cost?: { input: number; output?: number }
   latest?: boolean
   connected?: boolean
+  // Catalog-backed detail the hover card reads. Declared here because the picker
+  // items ARE the catalog models (`useProviders().list()` spreads them through);
+  // leaving them off meant every tooltip render asserted the item into a
+  // different shape, which is also how a picker item WITHOUT them typechecked.
+  limit?: { context: number }
+  capabilities?: { reasoning: boolean; input: Record<string, boolean> }
+  modalities?: { input: string[] }
+  reasoning?: boolean
 }
 
 export function comparePickerProviderGroups(
@@ -122,10 +130,10 @@ export const ModelList: Component<{
         return (
           <div class="w-full flex items-center justify-between gap-2">
             <span class="truncate">{item.provider.name}</span>
-            <Show when={item.connected === true}>
+            <Show when={item.connected}>
               <Tag>Configured</Tag>
             </Show>
-            <Show when={item.connected === false}>
+            <Show when={!item.connected}>
               <Tag>{language.t("command.provider.connect")}</Tag>
             </Show>
           </div>
@@ -140,8 +148,7 @@ export const ModelList: Component<{
             placement="right-start"
             gutter={12}
             openDelay={0}
-            // as-any: picker item is structurally the tooltip model, but the wrapper generic erases it.
-            value={<ModelTooltip model={item as unknown as Parameters<typeof ModelTooltip>[0]["model"]} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
+            value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
           >
             {node}
           </Tooltip>
@@ -225,7 +232,7 @@ export function ModelSelectorPopover(props: {
   const handleManage = () => {
     close("manage")
     void loadManageModelsDialog().then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
+      void dialog.show(() => <x.DialogManageModels />)
     })
   }
 
@@ -323,7 +330,7 @@ export const DialogSelectModel: Component<{ provider?: string; model: PickerStat
 
   const manage = () => {
     void loadManageModelsDialog().then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
+      void dialog.show(() => <x.DialogManageModels />)
     })
   }
 

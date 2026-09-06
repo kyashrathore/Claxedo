@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, importSPKI, jwtVerify, type JWTPayload, type KeyObject } from "jose"
+import { createRemoteJWKSet, importSPKI, jwtVerify, type JWTVerifyGetKey, type KeyObject } from "jose"
 
 export const WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER = "x-workspace-runtime-management-token"
 
@@ -37,11 +37,16 @@ export type WorkspaceRuntimeManagementAuth = {
   }): Promise<WorkspaceRuntimeManagementAuthResult>
 }
 
-export type WorkspaceRuntimeManagementVerifierKey =
-  | CryptoKey
-  | KeyObject
-  | Uint8Array
-  | ((header: { kid?: string; alg?: string }, token: { payload: JWTPayload }) => Promise<CryptoKey | KeyObject | Uint8Array>)
+/**
+ * Whatever `jwtVerify` accepts as its key: a key object, or a JWKS resolver.
+ *
+ * Each member is jose's OWN type rather than a hand-written equivalent — the
+ * previous copy declared a resolver signature jose does not use, which is why
+ * `createRemoteJWKSet` and the verify call each had to convert across it.
+ * `jwtVerify` overloads on the two kinds, so the call site branches on which
+ * one it holds instead of asserting past the overloads.
+ */
+export type WorkspaceRuntimeManagementVerifierKey = CryptoKey | KeyObject | Uint8Array | JWTVerifyGetKey
 
 export type LoadWorkspaceRuntimeManagementKeyEnv = {
   WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL?: string | undefined
@@ -80,7 +85,7 @@ export async function loadWorkspaceRuntimeManagementVerificationKey(
   env: LoadWorkspaceRuntimeManagementKeyEnv,
 ): Promise<WorkspaceRuntimeManagementVerifierKey> {
   const jwksUrl = text(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL)
-  if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl)) as unknown as WorkspaceRuntimeManagementVerifierKey
+  if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
   const verifyPem = pem(env.WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM)
   if (!verifyPem) {
     throw new Error(
@@ -107,11 +112,11 @@ export function createWorkspaceRuntimeJwtManagementAuth(
 
       let payload: Record<string, unknown>
       try {
-        const result = await jwtVerify(token, options.key as unknown as Parameters<typeof jwtVerify>[1], {
-          issuer: options.issuer,
-          audience: options.audience,
-        })
-        payload = result.payload as Record<string, unknown>
+        const verifyOptions = { issuer: options.issuer, audience: options.audience }
+        const result = typeof options.key === "function"
+          ? await jwtVerify(token, options.key, verifyOptions)
+          : await jwtVerify(token, options.key, verifyOptions)
+        payload = result.payload
       } catch {
         return {
           ok: false,

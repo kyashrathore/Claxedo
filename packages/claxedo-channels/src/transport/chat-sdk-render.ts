@@ -1,9 +1,11 @@
 import type { OutboundChunk } from "../envelope"
 import { sanitizeChannelText, type ChannelTextMinimizationOptions } from "../core/data-minimization"
 import { channelRetryDelayMs, type RetryAfterMs } from "./backpressure"
+import { record } from "../json"
 
 export type ChatSdkMessageHandle = {
-  edit?: (text: string) => Promise<unknown> | unknown
+  /** SDK adapters return a promise, a handle, or nothing — the caller only awaits it. */
+  edit?: (text: string) => unknown
 }
 
 export type ChatSdkApprovalCard = {
@@ -25,8 +27,8 @@ export type ChatSdkThread = {
    * text deltas — the SDK routes iterables to the adapter's native stream
    * implementation (Telegram/Slack/etc.) with a post+edit fallback.
    */
-  post: (text: string | AsyncIterable<string>) => Promise<ChatSdkMessageHandle | unknown> | ChatSdkMessageHandle | unknown
-  postCard?: (card: ChatSdkApprovalCard) => Promise<ChatSdkMessageHandle | unknown> | ChatSdkMessageHandle | unknown
+  post: (text: string | AsyncIterable<string>) => unknown
+  postCard?: (card: ChatSdkApprovalCard) => unknown
 }
 
 type TextStream = {
@@ -62,9 +64,10 @@ type ReliablePostOptions = {
 }
 
 function handle(input: unknown): ChatSdkMessageHandle | undefined {
-  if (!input || typeof input !== "object") return
-  const row = input as { edit?: unknown }
-  return typeof row.edit === "function" ? row as ChatSdkMessageHandle : undefined
+  const row = record(input)
+  const edit = row?.edit
+  if (typeof edit !== "function") return undefined
+  return { edit: (text: string) => edit.call(row, text) }
 }
 
 /**
@@ -163,7 +166,7 @@ async function postWithFallback(thread: ChatSdkThread, body: string, fallback: s
       }
     }
   }
-  if (options.fallbackOnExhaustion === false || fallback === body) return
+  if (options.fallbackOnExhaustion === false || fallback === body) return undefined
   return await thread.post(fallback)
 }
 

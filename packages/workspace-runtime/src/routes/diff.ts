@@ -6,6 +6,7 @@
 
 import { Hono } from "hono"
 import { lazy } from "../lazy"
+import { errorMessage } from "../error-message"
 import { errorBody } from "./http"
 import { assertTarget, hasWorkspaceTarget, WorkspaceTargetError } from "../target"
 import {
@@ -39,10 +40,10 @@ type DiffRouteContext = {
   }
 }
 
-function diffTargetDirectory(c: DiffRouteContext) {
+function diffTargetDirectory(c: DiffRouteContext): string | undefined {
   const requested = c.req.query("directory") || c.req.header("x-claxedo-directory")
   if (requested) return assertTarget(requested)
-  if (hasWorkspaceTarget()) return assertTarget(undefined)
+  return hasWorkspaceTarget() ? assertTarget(undefined) : undefined
 }
 
 function diffDirectory(c: DiffRouteContext) {
@@ -80,14 +81,14 @@ async function validateRangeRefs(runtime: DiffRuntime, directory: string, fromRe
   }
   if (!validRefSyntax(fromRef) || !validRefSyntax(toRef)) return invalidRef()
   if (!await refsExist(runtime, directory, fromRef, toRef)) return invalidRef()
+  return undefined
 }
 
 function routeFailure(err: unknown) {
   if (err instanceof GitTimeoutError) {
     return { body: gitTimeoutBody(), status: 504 as const }
   }
-  const msg = err instanceof Error ? err.message : String(err)
-  return { message: msg, status: 500 as const }
+  return { message: errorMessage(err), status: 500 as const }
 }
 
 export function createDiffRoutes(deps: DiffRoutesDeps = {}) {

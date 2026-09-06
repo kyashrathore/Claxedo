@@ -1,4 +1,5 @@
 import type { WorkspaceFileNode as FileNode } from "@claxedo/workspace-runtime/client"
+import { asRecord } from "@/lib/record"
 
 type WatcherEvent = {
   type: string
@@ -18,8 +19,7 @@ type WatcherOps = {
 
 export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
   if (event.type !== "file.watcher.updated") return
-  const props =
-    typeof event.properties === "object" && event.properties ? (event.properties as Record<string, unknown>) : undefined
+  const props = asRecord(event.properties)
   const rawPath = typeof props?.file === "string" ? props.file : undefined
   const kind = typeof props?.event === "string" ? props.event : undefined
   if (!rawPath) return
@@ -43,7 +43,7 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
     const dir = (() => {
       if (path === "") return ""
       const node = ops.node(path)
-      if (node?.type !== "directory") return
+      if (node?.type !== "directory") return undefined
       return path
     })()
     if (dir === undefined) return

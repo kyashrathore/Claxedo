@@ -47,9 +47,11 @@ describe("cross-harness tool registry", () => {
 
   test("task cards use canonical subagent lifecycle even when the parent tool call errors", async () => {
     const source = await Bun.file(`${import.meta.dir}/message-part.tsx`).text()
-    expect(source).toContain(
-      'part().tool !== "task" && part().state.status === "error" && (part().state as any).error',
-    )
+    // One memo drives the generic error banner. A task opts out of it so a failing task
+    // still renders its own card, and the text is only read in the errored state.
+    expect(source).toContain('if (part().tool === "task") return undefined')
+    expect(source).toContain('return state.status === "error" ? state.error : undefined')
+    expect(source).toContain("<Match when={toolError()}>")
   })
 
   test("uses only authoritative subagent associations for grouped chips", async () => {

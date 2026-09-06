@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto"
+import { record } from "../platform/json"
 import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
@@ -114,17 +115,13 @@ export function globalEventSessionId(frame: CentralFrame) {
   if (!("type" in frame)) {
     const properties = frame.payload.properties
     if (typeof properties.sessionID === "string") return properties.sessionID
-    const info = properties.info && typeof properties.info === "object" && !Array.isArray(properties.info)
-      ? properties.info as Record<string, unknown>
-      : undefined
+    const info = record(properties.info)
     if (
       (frame.payload.type === "session.updated" || frame.payload.type === "session.deleted")
       && typeof info?.id === "string"
     ) return info.id
     if (typeof info?.sessionID === "string") return info.sessionID
-    const part = properties.part && typeof properties.part === "object" && !Array.isArray(properties.part)
-      ? properties.part as Record<string, unknown>
-      : undefined
+    const part = record(properties.part)
     if (typeof part?.sessionID === "string") return part.sessionID
     return undefined
   }
@@ -302,7 +299,7 @@ export function createGlobalEventsHandler(
     }
     evict(scope)
   }
-  const evaluate = (scope: Scope, frame: CentralFrame) => {
+  const evaluate = (scope: Scope, frame: CentralFrame): Promise<void> | undefined => {
     const pending = [...scope.connections].map((connection) => {
       try {
         return { connection, visible: connection.subscription.visible(frame) }
@@ -310,9 +307,16 @@ export function createGlobalEventsHandler(
         return { connection, visible: false as const }
       }
     })
-    if (!pending.some((item) => item.visible instanceof Promise)) {
-      deliver(scope, frame, pending as Array<{ connection: Connection; visible: boolean }>)
-      return
+    // A synchronous verdict from every subscription is delivered inline; one
+    // pending promise makes the whole batch async. Splitting the settled case
+    // out here is what lets `deliver` take booleans instead of a union it would
+    // have to re-inspect.
+    const settled = pending.flatMap((item) =>
+      typeof item.visible === "boolean" ? [{ connection: item.connection, visible: item.visible }] : [],
+    )
+    if (settled.length === pending.length) {
+      deliver(scope, frame, settled)
+      return undefined
     }
     return Promise.all(pending.map(async (item) => ({
       connection: item.connection,
@@ -430,12 +434,13 @@ export function createGlobalEventsHandler(
         }
       },
       write: async (frame, meta) => {
-        const content = "type" in frame || "directory" in frame ? frame as CentralFrame : undefined
+        const content = "type" in frame || "directory" in frame ? frame : undefined
         if (content && !await Promise.resolve(subscription.visible(content)).catch(() => false)) {
           const sessionId = globalEventSessionId(content)
           if (sessionId && [...scope.connections].some((connection) =>
             connection.subscription === subscription && connection.authorizedSessions.has(sessionId))) {
-            for (const connection of [...scope.connections]) {
+            // Snapshot: `terminate` removes from `scope.connections` as we go.
+            for (const connection of Array.from(scope.connections)) {
               if (connection.subscription === subscription) terminate(scope, connection)
             }
           }

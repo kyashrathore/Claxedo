@@ -1,5 +1,7 @@
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 
+import { asRecord } from "../../shared/json-read"
+
 export type WindowsCimRow = {
   pid: number
   ppid: number
@@ -12,13 +14,13 @@ export type WindowsCimRow = {
 
 export function parseLinuxStartTicks(stat: string) {
   const end = stat.lastIndexOf(") ")
-  if (end < 0) return
+  if (end < 0) return undefined
   const fields = stat
     .slice(end + 2)
     .trim()
     .split(/\s+/)
   const value = fields[19]
-  if (!value || !/^\d+$/.test(value)) return
+  if (!value || !/^\d+$/.test(value)) return undefined
   return value
 }
 
@@ -29,18 +31,26 @@ export function linuxCreationIdentity(stat: string): LocalDiagnostics.CreationId
 }
 
 export function parseWindowsCimRow(input: unknown): WindowsCimRow | undefined {
-  if (!input || typeof input !== "object") return
-  const row = input as Record<string, unknown>
-  if (!validPid(row.pid) || !validParentPid(row.ppid)) return
+  const row = asRecord(input)
+  if (!row || !validPid(row.pid) || !validParentPid(row.ppid)) return undefined
   const creationTicks = decimal(row.creationTicks)
   const kernelTicks = decimal(row.kernelTicks)
   const userTicks = decimal(row.userTicks)
   const rssBytes = decimal(row.rssBytes)
   const memoryImpactBytes = row.memoryImpactBytes === undefined ? undefined : decimal(row.memoryImpactBytes)
-  if (creationTicks === undefined || kernelTicks === undefined || userTicks === undefined || rssBytes === undefined)
-    return
-  if (row.memoryImpactBytes !== undefined && memoryImpactBytes === undefined) return
-  return { pid: row.pid, ppid: row.ppid, creationTicks, kernelTicks, userTicks, rssBytes, ...(memoryImpactBytes === undefined ? {} : { memoryImpactBytes }) }
+  if (creationTicks === undefined || kernelTicks === undefined || userTicks === undefined || rssBytes === undefined) {
+    return undefined
+  }
+  if (row.memoryImpactBytes !== undefined && memoryImpactBytes === undefined) return undefined
+  return {
+    pid: row.pid,
+    ppid: row.ppid,
+    creationTicks,
+    kernelTicks,
+    userTicks,
+    rssBytes,
+    ...(memoryImpactBytes === undefined ? {} : { memoryImpactBytes }),
+  }
 }
 
 export function windowsCreationIdentity(row: WindowsCimRow): LocalDiagnostics.CreationIdentity {
@@ -134,8 +144,8 @@ export async function probeProcessCreationIdentity(options: {
   return { state: "unavailable", reason: "identity-unavailable" }
 }
 
-function decimal(value: unknown) {
-  if (typeof value !== "string" || !/^\d+$/.test(value) || value.length > 32) return
+function decimal(value: unknown): bigint | undefined {
+  if (typeof value !== "string" || !/^\d+$/.test(value) || value.length > 32) return undefined
   return BigInt(value)
 }
 

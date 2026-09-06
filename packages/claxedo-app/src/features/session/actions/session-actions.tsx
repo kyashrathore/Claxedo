@@ -88,8 +88,8 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
   const focusedSelection = (workspaceDir: string): LocalSelectionState | undefined => {
     const focusedId = props.state.wb.selectors.focusedContent()
     const focused = focusedId ? props.state.meta.get(focusedId) : undefined
-    if (focused?.type !== "session" || !focused.sessionId) return
-    if (focused.directory && focused.directory !== workspaceDir) return
+    if (focused?.type !== "session" || !focused.sessionId) return undefined
+    if (focused.directory && focused.directory !== workspaceDir) return undefined
     return cloneLocalSelectionState(
       queryClient.getQueryData<LocalSelectionState>(sessionConfigSelectionQueryKey({
         sessionID: focused.sessionId,
@@ -403,7 +403,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         sessionId: sessionItem.id,
       })
       removeDirectorySessionCacheRow(directory, sessionItem.id)
-      removeSessionInventoryQueryData<SessionItem>({
+      removeSessionInventoryQueryData({
         baseUrl: props.globalSDK.url,
         session: {
           id: sessionItem.id,

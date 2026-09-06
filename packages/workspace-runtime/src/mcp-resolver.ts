@@ -8,35 +8,41 @@ import {
   type McpCapableAgent,
 } from "@claxedo/agent-sdk-runtime/mcp-resolver"
 import { dataDir } from "./paths"
+import { num, rec } from "./json-value"
 
 export * from "@claxedo/agent-sdk-runtime/mcp-resolver"
 
 const runtimeDataDir = () => dataDir()
 const overridesFile = () => path.join(runtimeDataDir(), "managed-mcp-overrides.json")
 
-function isManagedMcpServer(value: string): value is ManagedMcpServer {
-  return MANAGED_MCP_SERVERS.includes(value as ManagedMcpServer)
+/**
+ * A plain boolean, not a type predicate: `ManagedMcpServer` is an alias for
+ * `string` upstream, so `value is ManagedMcpServer` narrowed nothing on the
+ * true branch and narrowed the FALSE branch to `never` — which is why the
+ * "unknown server" message could not interpolate the name it was reporting.
+ */
+function isManagedMcpServer(value: string): boolean {
+  return MANAGED_MCP_SERVERS.includes(value)
 }
 
 function apply(
   defaults: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
   overrides: ManagedMcpOverrides,
 ) {
-  return Object.fromEntries(
-    Object.entries(defaults).map(([server, agents]) => [
-      server,
-      { ...agents, ...(overrides[server] ?? {}) },
-    ]),
-  ) as Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>
+  // Filled key by key: `Object.fromEntries` widens the value type, which is
+  // what forced the whole record to be asserted afterwards.
+  const merged: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>> = {}
+  for (const server of MANAGED_MCP_SERVERS) {
+    merged[server] = { ...defaults[server], ...overrides[server] }
+  }
+  return merged
 }
 
 function normalizeOverrides(value?: unknown) {
-  const root = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  const root = rec(value) ?? {}
   const out: ManagedMcpOverrides = {}
   for (const server of MANAGED_MCP_SERVERS) {
-    const agents = typeof root[server] === "object" && root[server] !== null && !Array.isArray(root[server])
-      ? root[server] as Record<string, unknown>
-      : {}
+    const agents = rec(root[server]) ?? {}
     const enabled = Object.fromEntries(
       Object.entries(agents).filter((entry): entry is [McpCapableAgent, boolean] => typeof entry[1] === "boolean"),
     )
@@ -48,10 +54,10 @@ function normalizeOverrides(value?: unknown) {
 async function readState(fallback = 7860) {
   try {
     const raw = await fs.promises.readFile(overridesFile(), "utf-8")
-    const json = JSON.parse(raw) as { port?: number; overrides?: unknown }
+    const json = rec(JSON.parse(raw))
     return {
-      port: json.port ?? fallback,
-      overrides: normalizeOverrides(json.overrides),
+      port: num(json?.port) ?? fallback,
+      overrides: normalizeOverrides(json?.overrides),
     }
   } catch {}
 
@@ -88,12 +94,12 @@ export async function setManagedMcpOverride(server: ManagedMcpServer, agent: Mcp
   const next = base[agent]
   if (enabled === next) {
     delete state.overrides[server]?.[agent]
-    if (state.overrides[server] && Object.keys(state.overrides[server]!).length === 0) {
+    if (state.overrides[server] && Object.keys(state.overrides[server]).length === 0) {
       delete state.overrides[server]
     }
   } else {
     state.overrides[server] ??= {}
-    state.overrides[server]![agent] = enabled
+    state.overrides[server][agent] = enabled
   }
   state.port = port ?? state.port
   state.servers = apply(state.defaults, state.overrides)

@@ -56,7 +56,7 @@ async function resolveTarget(claims) {
   })()
   if (ws?.kind === "cloud") {
     const baseUrl = sandboxLeaseUrl(lease)
-    if (!baseUrl) return
+    if (!baseUrl) return undefined
     return {
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
@@ -102,7 +102,7 @@ const relay = Bun.serve({
   // Workspace runtime SSE heartbeats are intentionally 30s apart. The shared
   // bounded timeout exceeds that interval without disabling idle protection.
   idleTimeout: WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
-  fetch: relayHandler.fetch,
+  fetch: (request, server) => relayHandler.fetch(request, server),
   websocket: relayHandler.websocket,
 })
 
@@ -112,20 +112,19 @@ console.log(JSON.stringify({
   hostId,
 }))
 
-process.on("SIGTERM", () => {
-  relay.stop(true)
+// `stop(true)` severs live connections and RESOLVES once the server is fully
+// closed, so each shutdown path awaits it before exiting: calling `exit` on the
+// same tick tears the process down mid-close and the fixture's parent sees a
+// connection reset rather than a clean shutdown.
+async function shutdown() {
+  await relay.stop(true)
   process.exit(0)
-})
+}
 
-process.on("SIGINT", () => {
-  relay.stop(true)
-  process.exit(0)
-})
+process.on("SIGTERM", shutdown)
+process.on("SIGINT", shutdown)
 
 // The signed-browser fixture owns this relay through stdin. Parent death
 // closes the pipe even when the parent cannot run a signal handler.
 process.stdin.resume()
-process.stdin.once("end", () => {
-  relay.stop(true)
-  process.exit(0)
-})
+process.stdin.once("end", shutdown)

@@ -134,12 +134,12 @@ export function promptDocumentOptions(
 }
 
 export function activeAtOption(input: { items: AtOption[]; active?: string }) {
-  if (input.items.length === 0) return
+  if (input.items.length === 0) return undefined
   return input.items.find((entry) => promptAtOptionKey(entry) === input.active) ?? input.items[0]
 }
 
 export function activeSlashCommand(input: { items: SlashCommand[]; active?: string }) {
-  if (input.items.length === 0) return
+  if (input.items.length === 0) return undefined
   return input.items.find((entry) => entry.id === input.active) ?? input.items[0]
 }
 

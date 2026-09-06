@@ -43,7 +43,7 @@ describe("memory store isolation", () => {
       updatedAt: 1,
     })
     const [row] = await store.list()
-    row!.integrationId = "mutated"
+    row.integrationId = "mutated"
     expect((await store.getById("row"))?.integrationId).toBe("notion")
 
     const byId = await store.getById("row")

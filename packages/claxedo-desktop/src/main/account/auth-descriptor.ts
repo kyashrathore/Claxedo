@@ -1,3 +1,4 @@
+import { isRecord } from "../../shared/json-read"
 import type { TokenSet } from "./oauth-flow"
 
 /** Structural mirror of the server's provider-neutral native binding. */
@@ -55,10 +56,8 @@ function fail(code: DesktopAuthDescriptorError["code"], message: string): never 
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return fail("invalid_descriptor", `${name} must be an object`)
-  }
-  return value as Record<string, unknown>
+  if (!isRecord(value)) return fail("invalid_descriptor", `${name} must be an object`)
+  return value
 }
 
 function text(value: unknown, name: string) {
@@ -114,16 +113,18 @@ function exactHttpsUrl(value: unknown, name: string) {
   return normalized
 }
 
-function scopes(value: unknown, name: string) {
+function scopes(value: unknown, name: string): string[] {
+  const entries = Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
-    value.some((entry) => typeof entry !== "string" || !entry.trim()) ||
-    new Set(value).size !== value.length
+    entries.length !== value.length ||
+    entries.some((entry) => !entry.trim()) ||
+    new Set(entries).size !== entries.length
   ) {
     return fail("invalid_descriptor", `${name} must contain unique non-empty scopes`)
   }
-  return [...value] as string[]
+  return entries
 }
 
 /**

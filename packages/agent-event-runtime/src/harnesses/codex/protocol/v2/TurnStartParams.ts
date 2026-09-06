@@ -65,7 +65,7 @@ model?: string | null,
 /**
  * Override the service tier for this turn and subsequent turns.
  */
-serviceTier?: string | null | null,
+serviceTier?: string | null  ,
 /**
  * Override the reasoning effort for this turn and subsequent turns.
  */

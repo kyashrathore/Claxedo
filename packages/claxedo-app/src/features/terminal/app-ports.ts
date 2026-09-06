@@ -41,26 +41,32 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof TerminalAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as TerminalAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: TerminalAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
-export const useSDK = bind("useSDK")
-export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")
-export const useClaxedoState = bind("useClaxedoState")
+export const useSDK = bind((ports) => ports.useSDK)
+export const useClaxedoEventsOptional = bind((ports) => ports.useClaxedoEventsOptional)
+export const useClaxedoState = bind((ports) => ports.useClaxedoState)
 export type ContentMeta = State.ContentMeta
 export type PaneCtx = Workbench.PaneCtx
-export const SessionPaneScope = bind("SessionPaneScope")
+export const SessionPaneScope = bind((ports) => ports.SessionPaneScope)
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
-export const NavigationRow = bind("NavigationRow")
-export const NavigationStatusDot = bind("NavigationStatusDot")
-export const NavigationRowGlyph = bind("NavigationRowGlyph")
-export const NavigationRowStatusGutter = bind("NavigationRowStatusGutter")
+export const NavigationRow = bind((ports) => ports.NavigationRow)
+export const NavigationStatusDot = bind((ports) => ports.NavigationStatusDot)
+export const NavigationRowGlyph = bind((ports) => ports.NavigationRowGlyph)
+export const NavigationRowStatusGutter = bind((ports) => ports.NavigationRowStatusGutter)
 export type NavigationDragStart = SessionNavigation.NavigationDragStart
 export type RowActivityDetail = SessionNavigation.RowActivityDetail
 export type TerminalSurfaceRow = SessionNavigation.TerminalSurfaceRow
-export const workspacePlacement = bind("workspacePlacement")
+export const workspacePlacement = bind((ports) => ports.workspacePlacement)
 export type ActionProps = LayoutActions.ActionProps
 export type Nav = LayoutActions.Nav
-export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
-export const TerminalNewView = bind("TerminalNewView")
+export const recoverMissingWorkspace = bind((ports) => ports.recoverMissingWorkspace)
+export const TerminalNewView = bind((ports) => ports.TerminalNewView)

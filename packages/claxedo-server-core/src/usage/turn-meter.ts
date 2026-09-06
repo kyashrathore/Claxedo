@@ -1,6 +1,7 @@
 import type { RuntimeTokenUsage, RuntimeUsageObservation } from "@claxedo/agent-event-runtime"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
+import { jsonRecord } from "../platform/runtime/lib/json"
 import {
   knownTokenCategories,
   type TurnUsageLocation,
@@ -73,9 +74,9 @@ function numberOrNull(input: unknown) {
 }
 
 function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
-  if (!input || typeof input !== "object") return
-  const row = input as { input?: unknown; output?: unknown; reasoning?: unknown; cache?: unknown }
-  const cache = row.cache && typeof row.cache === "object" ? (row.cache as { read?: unknown; write?: unknown }) : {}
+  const row = jsonRecord(input)
+  if (!row) return undefined
+  const cache = jsonRecord(row.cache) ?? {}
   const tokens = {
     input: numberOrNull(row.input),
     output: numberOrNull(row.output),

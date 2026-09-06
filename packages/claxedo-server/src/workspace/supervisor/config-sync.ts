@@ -7,6 +7,7 @@ import {
 } from "./control-token"
 import { runtimeWorkspaceDir } from "./state"
 import type { WorkspaceRuntimeState } from "./store"
+import { numberField, readJsonRecord } from "../../platform/json/index"
 
 export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   return createClaxedoRuntimeConfig({
@@ -50,11 +51,8 @@ export async function runtimeHasActiveWork(state: WorkspaceRuntimeState) {
       signal: AbortSignal.timeout(2_000),
     })
     if (!res.ok) return false
-    const body = await res.json().catch(() => ({})) as {
-      ptyCount?: number
-      activeProcessCount?: number
-    }
-    return (body.ptyCount ?? 0) > 0 || (body.activeProcessCount ?? 0) > 0
+    const body = await readJsonRecord(res)
+    return (numberField(body, "ptyCount") ?? 0) > 0 || (numberField(body, "activeProcessCount") ?? 0) > 0
   } catch {
     return false
   }

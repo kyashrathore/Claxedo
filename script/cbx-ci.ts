@@ -2,6 +2,8 @@
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
+import { record, text } from "./json"
+
 const root = join(import.meta.dir, "..")
 const cbx = join(root, "script", "cbx")
 const stateFile = join(root, ".crabbox", "ci", "last-run.json")
@@ -70,14 +72,18 @@ forces concurrency=1 so jobs cannot corrupt each other's workspace.`)
   process.exit(2)
 }
 
+function isGroupName(name: string): name is keyof typeof groups {
+  return Object.hasOwn(groups, name)
+}
+
 function expandNames(names: string[]): string[] {
   const requested = names.length === 0 ? ["pr-linux"] : names
   const expanded: string[] = []
   for (const name of requested) {
     if (name === "pr") {
       expanded.push(...groups["pr-linux"], ...groups["pr-native"])
-    } else if (name in groups) {
-      expanded.push(...groups[name as keyof typeof groups])
+    } else if (isGroupName(name)) {
+      expanded.push(...groups[name])
     } else if (allJobs.has(name)) {
       expanded.push(name)
     } else {
@@ -167,11 +173,15 @@ async function loadFailedJobs(): Promise<string[]> {
   if (!(await file.exists())) {
     throw new Error(`no previous run state at ${stateFile}`)
   }
-  const state = (await file.json()) as RunState
-  if (state.schema !== "claxedo/crabbox-ci-state/v1" || !Array.isArray(state.results)) {
+  const state = record(await file.json())
+  if (state?.schema !== "claxedo/crabbox-ci-state/v1" || !Array.isArray(state.results)) {
     throw new Error(`unsupported Crabbox CI state at ${stateFile}`)
   }
-  return state.results.filter((result) => result.exitCode !== 0).map((result) => result.job)
+  return state.results.flatMap((item) => {
+    const result = record(item)
+    const job = text(result?.job)
+    return job && result?.exitCode !== 0 ? [job] : []
+  })
 }
 
 function printSummary(results: RunResult[], dryRun: boolean) {

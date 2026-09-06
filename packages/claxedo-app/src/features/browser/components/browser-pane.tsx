@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup, type Component } from "solid-js"
 import { Portal } from "solid-js/web"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"

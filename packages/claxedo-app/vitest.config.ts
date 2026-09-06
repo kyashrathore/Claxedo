@@ -7,12 +7,19 @@ import { fileURLToPath } from "node:url"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 
+// vitest 2.1.9 bundles its own `vite@5` type declarations, while this package
+// (and `vite-plugin-solid`) build against the workspace's `vite@7`. The plugin
+// object is the same value at runtime; the two `.d.ts` copies just disagree
+// nominally on the `UserConfig` inside `Plugin["apply"]`. There is no way to
+// state "these are the same type" — the bridge goes away when vitest is on a
+// vite@7-compatible major, not before.
+
 export default defineConfig({
   define: {
     __DEMO_ENABLED__: "false",
     __CLAXEDO_AGENT_PLUGINS_ENABLED__: "false",
   },
-  plugins: [solid() as unknown as NonNullable<UserConfig["plugins"]>[number]] satisfies UserConfig["plugins"],
+  plugins: [solid() as NonNullable<UserConfig["plugins"]>[number]] satisfies UserConfig["plugins"],
   resolve: {
     conditions: ["development", "browser"],
     alias: [

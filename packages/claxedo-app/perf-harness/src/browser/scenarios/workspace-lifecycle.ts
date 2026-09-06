@@ -51,7 +51,7 @@ import { sessionPath } from "../state"
 import type { Page } from "playwright-core"
 
 export async function workspaceLifecycle(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
   const expectedTotal = fixture.changedFiles.length
@@ -108,8 +108,10 @@ export async function workspaceLifecycle(page: Page, app: BrowserTarget, fixture
         const tick = () => {
           const elapsed = performance.now() - started
           if (!fetchEntry || fetchEntry.responseEnd === 0) {
-            const entries = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
-              .filter((entry) => fetchRe.test(entry.name))
+            const entries = performance
+              .getEntriesByType("resource")
+              .filter((entry): entry is PerformanceResourceTiming =>
+                entry instanceof PerformanceResourceTiming && fetchRe.test(entry.name))
             fetchEntry = entries.find((entry) => entry.startTime >= started - 5) ?? entries.at(-1) ?? fetchEntry
           }
           const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")

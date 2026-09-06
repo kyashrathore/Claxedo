@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { storeRows } from "../test-utils/store-internals"
 import { createMemoryRuntimeStore } from "../stores/memory"
 import type { WithInternals } from "../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./acp/index"
@@ -109,12 +108,12 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
       ...(["claude", "codex", "cursor"] as const).map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities()),
     ]
 
-    expect(unsupported.every((item) => item.goals === false)).toBe(true)
-    expect((await new PiHarnessAdapter({ store: storeRows(createMemoryRuntimeStore()) }).readHarnessCapabilities()).goals).toBe(true)
+    expect(unsupported.every((item) => ! item.goals)).toBe(true)
+    expect((await new PiHarnessAdapter({ store: createMemoryRuntimeStore() }).readHarnessCapabilities()).goals).toBe(true)
   })
 
   test("native Pi reports questions and goals but no permission or subagent emulation", () => {
-    const adapter = new PiHarnessAdapter({ store: storeRows(createMemoryRuntimeStore()) })
+    const adapter = new PiHarnessAdapter({ store: createMemoryRuntimeStore() })
     const caps = adapter.readHarnessCapabilities()
     assertCompleteShape(caps)
     expect(caps).toMatchObject({ harness: "pi", goals: true, subagents: false, permissions: false, questions: true, replay: true, configOptions: true })

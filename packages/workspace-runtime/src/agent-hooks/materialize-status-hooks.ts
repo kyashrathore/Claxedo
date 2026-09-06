@@ -1,12 +1,13 @@
 import fs from "fs/promises"
 import path from "path"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
+import { arr, rec, str } from "../json-value"
 
-async function readFileIfExists(filePath: string) {
+async function readFileIfExists(filePath: string): Promise<string | undefined> {
   try {
     return await fs.readFile(filePath, "utf8")
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    if (str(rec(error)?.code) === "ENOENT") return undefined
     throw error
   }
 }
@@ -38,9 +39,26 @@ const CLAUDE_NOTIFY_RELATIVE = `hooks/${NOTIFY_SCRIPT}`
 const CLAUDE_DYNAMIC_NOTIFY = `$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}`
 const MANAGED_HOOK_PATH_PATTERN = /\/\.claxedo(?:-[^/'"\s\\]+)?\//
 
-function asRecord(value: unknown) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
+/**
+ * These settings files are user-owned and arbitrarily shaped, so every read
+ * walks them field by field. An absent or non-object node reads as empty rather
+ * than throwing, which keeps the reconcile loops below linear.
+ */
+function asRecord(value: unknown): Record<string, unknown> {
+  return rec(value) ?? {}
+}
+
+/**
+ * The record at `key`, creating and installing an empty one when the file has
+ * no usable node there. Returns the SAME object that is now on `root`, so the
+ * caller mutates the settings tree it is about to write back.
+ */
+function recordAt(root: Record<string, unknown>, key: string): Record<string, unknown> {
+  const existing = rec(root[key])
+  if (existing) return existing
+  const created: Record<string, unknown> = {}
+  root[key] = created
+  return created
 }
 
 function shellQuote(value: string) {
@@ -59,7 +77,7 @@ async function readJson(filePath: string) {
     return JSON.parse(raw) as unknown
   } catch (err) {
     throw new Error(
-      `Hook target config ${filePath} contains invalid JSON; fix it before materializing hooks (refusing to rewrite a file that cannot be parsed): ${err instanceof Error ? err.message : String(err)}`,
+      `Hook target config ${filePath} contains invalid JSON; fix it before materializing hooks (refusing to rewrite a file that cannot be parsed): ${err instanceof Error ? err.message : String(err)}`, { cause: err },
     )
   }
 }
@@ -123,7 +141,7 @@ function removeManagedHooksFromDefinition(
 ) {
   const hooks = definition.hooks
   if (!Array.isArray(hooks)) return definition
-  const filtered = hooks.filter((hook) => !isManaged(asRecord(hook).command as string | undefined))
+  const filtered = hooks.filter((hook) => !isManaged(str(asRecord(hook).command)))
   if (filtered.length === hooks.length) return definition
   if (filtered.length === 0) return null
   return { ...definition, hooks: filtered }
@@ -137,8 +155,7 @@ async function upsertNestedHookSettings(input: {
   isManaged: (command: string | undefined) => boolean
 }) {
   const existing = asRecord(await readJson(input.file))
-  if (!existing.hooks || typeof existing.hooks !== "object") existing.hooks = {}
-  const hooks = existing.hooks as Record<string, unknown>
+  const hooks = recordAt(existing, "hooks")
 
   for (const item of input.events) {
     const current = hooks[item.event]
@@ -207,8 +224,7 @@ function pruneCodexHooks(hooks: Record<string, unknown>, notifyPath: string) {
 async function materializeCodex(input: { file: string; notifyPath: string; force: boolean; native: boolean }) {
   const existing = asRecord(await readJson(input.file))
   if (!existing.hooks && !input.native) return
-  if (!existing.hooks || typeof existing.hooks !== "object") existing.hooks = {}
-  const hooks = existing.hooks as Record<string, unknown>
+  const hooks = recordAt(existing, "hooks")
   pruneCodexHooks(hooks, input.notifyPath)
 
   if (input.native) {
@@ -229,17 +245,16 @@ async function materializeCodex(input: { file: string; notifyPath: string; force
 
 async function materializeGemini(input: { file: string; hookPath: string; force: boolean }) {
   const root = asRecord(await readJson(input.file))
-  if (!root.hooks || typeof root.hooks !== "object") root.hooks = {}
-  const hooks = root.hooks as Record<string, unknown>
+  const hooks = recordAt(root, "hooks")
 
   for (const event of ["BeforeAgent", "AfterAgent", "AfterTool"]) {
     hooks[event] = reconcileManagedEntries({
-      current: hooks[event] as unknown[] | undefined,
+      current: arr(hooks[event]),
       desired: [{ hooks: [{ type: "command", command: input.hookPath }] }],
       isManaged: (entry) => {
-        const nested = Array.isArray(asRecord(entry).hooks) ? asRecord(entry).hooks as unknown[] : []
+        const nested = arr(asRecord(entry).hooks) ?? []
         return nested.some((hook) => {
-          const command = asRecord(hook).command as string | undefined
+          const command = str(asRecord(hook).command)
           return command === input.hookPath || isManagedHookCommand(command, GEMINI_HOOK_SCRIPT)
         })
       },
@@ -253,8 +268,7 @@ async function materializeGemini(input: { file: string; hookPath: string; force:
 async function materializeCursor(input: { file: string; hookPath: string; force: boolean }) {
   const root = asRecord(await readJson(input.file))
   if (typeof root.version !== "number") root.version = 1
-  if (!root.hooks || typeof root.hooks !== "object") root.hooks = {}
-  const hooks = root.hooks as Record<string, unknown>
+  const hooks = recordAt(root, "hooks")
   const desired: Record<string, { command: string }> = {
     beforeSubmitPrompt: { command: `${input.hookPath} Start` },
     stop: { command: `${input.hookPath} Stop` },
@@ -264,10 +278,10 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
 
   for (const [event, entry] of Object.entries(desired)) {
     hooks[event] = reconcileManagedEntries({
-      current: hooks[event] as unknown[] | undefined,
+      current: arr(hooks[event]),
       desired: [entry],
       isManaged: (item) => {
-        const command = asRecord(item).command as string | undefined
+        const command = str(asRecord(item).command)
         return command?.includes(input.hookPath) || isManagedHookCommand(command, CURSOR_HOOK_SCRIPT)
       },
       isEquivalent: (a, b) => asRecord(a).command === asRecord(b).command,
@@ -283,10 +297,10 @@ async function materializeMastra(input: { file: string; notifyPath: string; forc
 
   for (const event of ["UserPromptSubmit", "Stop", "PostToolUse"]) {
     root[event] = reconcileManagedEntries({
-      current: root[event] as unknown[] | undefined,
+      current: arr(root[event]),
       desired: [{ type: "command", command }],
       isManaged: (entry) => {
-        const current = asRecord(entry).command as string | undefined
+        const current = str(asRecord(entry).command)
         return current?.includes(input.notifyPath) || isManagedHookCommand(current, NOTIFY_SCRIPT)
       },
       isEquivalent: (a, b) => asRecord(a).command === asRecord(b).command,

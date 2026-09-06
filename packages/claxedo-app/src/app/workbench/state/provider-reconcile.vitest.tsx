@@ -53,7 +53,7 @@ describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
     api().wb.navigation.show("a")
     await Promise.resolve()
 
-    const paneId = api().wb.state.panes[0]!.id
+    const paneId = api().wb.state.panes[0].id
     const paneBefore = utils.container.querySelector(`[data-testid="pane-${paneId}"]`)
     expect(paneBefore).toBeTruthy()
 
@@ -63,7 +63,7 @@ describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
     // Same single-pane layout: the reducer reuses the pane id, so reconcile
     // must update `contentId` in place instead of replacing the pane object —
     // pinned here through the DOM, which <For> rebuilds when identity breaks.
-    expect(api().wb.state.panes[0]!.id).toBe(paneId)
+    expect(api().wb.state.panes[0].id).toBe(paneId)
     const paneAfter = utils.container.querySelector(`[data-testid="pane-${paneId}"]`)
     expect(paneAfter).toBeTruthy()
     expect(paneAfter!.isSameNode(paneBefore)).toBe(true)
@@ -78,7 +78,7 @@ describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
 
     const before = api().wb.state
     const panesBefore = before.panes
-    const paneBefore = before.panes[0]!
+    const paneBefore = before.panes[0]
     const contentIdsBefore = before.contentIds
 
     api().wb.navigation.show("b")
@@ -91,7 +91,7 @@ describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
     // node, only `contentId` rewritten.
     expect(after.panes).toBe(panesBefore)
     expect(after.panes[0]).toBe(paneBefore)
-    expect(after.panes[0]!.contentId).toBe("b")
+    expect(after.panes[0].contentId).toBe("b")
   })
 
   test("one session focus wakes only the changed pane and recency slices", async () => {

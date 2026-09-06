@@ -127,7 +127,7 @@ function diagnosticsParent() {
       listen: (listener: (message: unknown) => void) => process.on("message", listener),
     }
   }
-  if (!process.parentPort) return
+  if (!process.parentPort) return undefined
   return {
     send: (message: Parameters<typeof process.parentPort.postMessage>[0]) => process.parentPort.postMessage(message),
     listen: (listener: (message: unknown) => void) => process.parentPort.on("message", (event) => listener(event.data)),
@@ -137,7 +137,7 @@ function diagnosticsParent() {
 function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): DiagnosticsBinding | undefined {
   const launchId = env.CLAXEDO_DIAGNOSTICS_LAUNCH_ID?.trim()
   const generation = env.CLAXEDO_DIAGNOSTICS_GENERATION?.trim()
-  if (!connected || !launchId || !generation) return
+  if (!connected || !launchId || !generation) return undefined
   return { pid: process.pid, launchId, generation }
 }
 
@@ -146,5 +146,10 @@ function positiveDuration<Key extends "leaseTtlMs" | "idleGraceMs" | "pollInterv
   key: Key,
 ): Partial<Record<Key, number>> {
   const value = Number(process.env[envKey])
-  return Number.isFinite(value) && value > 0 ? { [key]: Math.floor(value) } as Partial<Record<Key, number>> : {}
+  if (!Number.isFinite(value) || value <= 0) return {}
+  // Built as a typed record rather than asserting a computed-key literal into
+  // one: `{ [key]: n }` widens to `{ [x: string]: number }` on its own.
+  const duration: Partial<Record<Key, number>> = {}
+  duration[key] = Math.floor(value)
+  return duration
 }

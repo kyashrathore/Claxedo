@@ -17,9 +17,14 @@ export type RetainedAgentPluginArtifact = {
   plugin: ValidatedAgentPlugin
 }
 
+/**
+ * Function properties rather than methods: no implementation uses `this`, and
+ * passing `store.put` around (a test spy, a wrapper) is then an ordinary value
+ * rather than an unbound method.
+ */
 export type AgentPluginArtifactStore = {
-  put(artifact: InspectedAgentPluginArtifact): Promise<RetainedAgentPluginArtifact>
-  get(digest: ArtifactDigest): Promise<RetainedAgentPluginArtifact | undefined>
+  put: (artifact: InspectedAgentPluginArtifact) => Promise<RetainedAgentPluginArtifact>
+  get: (digest: ArtifactDigest) => Promise<RetainedAgentPluginArtifact | undefined>
 }
 
 export class AgentPluginArtifactError extends Error {

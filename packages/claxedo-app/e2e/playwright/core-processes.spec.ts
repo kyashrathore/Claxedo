@@ -427,7 +427,6 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
     const method = route.request().method()
     if (!pathname.startsWith("/api/wr/process")) return route.fallback()
 
-    // start-all / stop-all ---------------------------------------------
     if (pathname === "/api/wr/process/start-all" && method === "POST") {
       for (const config of configs) launchSuccess(config, ensureProcess(config.id))
       return json(route, true)
@@ -442,7 +441,6 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
       return json(route, true)
     }
 
-    // /:id/start | /:id/stop | /:id/restart ------------------------------
     const startMatch = pathname.match(/^\/api\/wr\/process\/([^/]+)\/start$/)
     if (startMatch && method === "POST") {
       requests.start += 1
@@ -460,7 +458,7 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
     const stopMatch = pathname.match(/^\/api\/wr\/process\/([^/]+)\/stop$/)
     if (stopMatch && method === "POST") {
       requests.stop += 1
-      const proc = processes.get(stopMatch[1]!)
+      const proc = processes.get(stopMatch[1])
       if (proc) {
         proc.status = "stopped"
         proc.ptyId = undefined
@@ -477,7 +475,6 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
       return json(route, runStart(config, undefined))
     }
 
-    // bare /api/wr/process — list / create -------------------------------
     if (pathname === "/api/wr/process") {
       if (method === "GET") {
         return json(route, { configs, processes: [...processes.values()] })
@@ -504,16 +501,15 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
       }
     }
 
-    // /:id — update / delete ----------------------------------------------
     const idMatch = pathname.match(/^\/api\/wr\/process\/([^/]+)$/)
     if (idMatch) {
-      const id = idMatch[1]!
+      const id = idMatch[1]
       if (method === "PUT") {
         requests.update += 1
         const idx = configs.findIndex((c) => c.id === id)
         if (idx === -1) return json(route, { error: "not found" }, 404)
         const body = route.request().postDataJSON() as Partial<MockConfig>
-        configs[idx] = { ...configs[idx]!, ...body, id }
+        configs[idx] = { ...configs[idx], ...body, id }
         return json(route, configs[idx])
       }
       if (method === "DELETE") {
@@ -543,10 +539,6 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
     nextPort: () => portCounter,
   }
 }
-
-// ---------------------------------------------------------------------------
-// Navigation helpers
-// ---------------------------------------------------------------------------
 
 async function openWorkspace(page: Page, dir: string) {
   await page.goto(`/${slug(dir)}/session`)
@@ -585,12 +577,6 @@ async function openProcessesNavigator(page: Page): Promise<Locator> {
   // before ever reaching the toggle click. `.count()` resolves immediately.
   const alreadyOpen = (await overlay.count()) > 0 && (await overlay.getAttribute("data-open")) === "true"
   if (!alreadyOpen) {
-    // The Files/Changes/Processes trio lives ONLY inside the workspace panel
-    // column now; the header's floating chrome used to carry a second copy and
-    // no longer does. While the panel is closed that column is a display:none
-    // shell, so the Processes button is attached but hidden — `toBeVisible`
-    // below would resolve the element and then time out on "hidden". Open the
-    // panel first, which is the path a user takes.
     await ensureWorkspacePanelOpen(page)
     const toggle = processesToggle(page)
     await expect(toggle).toBeVisible({ timeout: 10_000 })
@@ -672,10 +658,6 @@ async function openProcessPanel(page: Page, overlay: Locator, name: string): Pro
   await expect(overlay).toBeVisible()
   return panel
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 test.describe("core processes @core", () => {
   test.beforeEach(async ({ page }) => {
@@ -802,13 +784,11 @@ test.describe("core processes @core", () => {
     await addProcess(page, overlay, { name: "dev-server", command: "node server.js" })
     const panel = await openProcessPanel(page, overlay, "dev-server")
 
-    // Stopped -> restart uses /start.
     const stoppedRestartOrStart = processAction(page, panel, "start")
     await stoppedRestartOrStart.click()
     await expect.poll(() => mock.requests.start, { timeout: 10_000 }).toBe(1)
     expect(mock.requests.restart).toBe(0)
 
-    // Now running -> restart uses the dedicated /restart endpoint.
     const restartButton = processAction(page, panel, "restart")
     await expect(restartButton).toBeVisible({ timeout: 10_000 })
     await restartButton.click()
@@ -846,9 +826,8 @@ test.describe("core processes @core", () => {
     const stopAll = overlay.getByRole("button", { name: "Stop all processes" })
     await expect(stopAll).toBeVisible({ timeout: 10_000 })
     await expect.poll(() => mock.requests.start, { timeout: 10_000 }).toBe(2)
-    // Sequential: the second start call did not begin until ~150ms after the first.
     expect(startTimes.length).toBe(2)
-    expect(startTimes[1]! - startTimes[0]!).toBeGreaterThanOrEqual(120)
+    expect(startTimes[1] - startTimes[0]).toBeGreaterThanOrEqual(120)
 
     await stopAll.click()
     await expect.poll(() => mock.requests.stop, { timeout: 10_000 }).toBe(2)
@@ -863,7 +842,7 @@ test.describe("core processes @core", () => {
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "broken", command: "nonexistent-binary" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setStartBehavior(configId, { kind: "failed", error: "spawn nonexistent-binary ENOENT" })
 
     const panel = await openProcessPanel(page, overlay, "broken")
@@ -888,7 +867,7 @@ test.describe("core processes @core", () => {
     await processAction(page, panel, "start").click()
     await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
 
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setProcessState(configId, { status: "crashed", ptyId: undefined, exitCode: 17, exitedAt: Date.now() })
 
     // Close the panel, then reload — the client only reconciles crashes it did
@@ -979,13 +958,9 @@ test.describe("core processes @core", () => {
     await openWorkspace(page, DIR)
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "flaky-dev", command: "exit 1" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     const panel = await openProcessPanel(page, overlay, "flaky-dev")
 
-    // Delay the start HTTP response until well after the crash SSE lands —
-    // the exact ordering the real race depends on. `route.fallback()` defers
-    // to `installProcessMock`'s own handler once the delay elapses, same
-    // technique as the start-all sequencing test above.
     await page.route(
       `**/api/wr/process/${configId}/start**`,
       async (route) => {
@@ -1055,10 +1030,6 @@ test.describe("core processes @core", () => {
     await expect(flakyRow.getByRole("button", { name: "Start process" })).toBeVisible()
     await expect(flakyRow.getByRole("button", { name: "Stop process" })).toHaveCount(0)
 
-    // Literal pin on the bug report's wording ("still shows a GREEN dot"):
-    // the title-bar status dot's rendered color must differ from the app's
-    // running/success color token — it must render the same non-green color
-    // any other crashed process's dot renders.
     const dotColor = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
     expect(dotColor).not.toBe(runningColor)
   })
@@ -1071,7 +1042,7 @@ test.describe("core processes @core", () => {
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "web", command: "node web.js" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setStartBehavior(configId, { kind: "port_conflict", port: 4100 })
 
     const panel = await openProcessPanel(page, overlay, "web")
@@ -1083,7 +1054,6 @@ test.describe("core processes @core", () => {
     await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
     await expect(panel.getByText("Port")).toHaveCount(0)
 
-    // Second process: resolve via "Kill process & reclaim" instead.
     await clickPanelAction(page, panel, "stop")
     mock.setStartBehavior(configId, { kind: "port_conflict", port: 4100 })
     await clickPanelAction(page, panel, "start")
@@ -1101,7 +1071,7 @@ test.describe("core processes @core", () => {
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "web", command: "node web.js" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setStartBehavior(configId, { kind: "route_conflict", hostname: "web.local" })
 
     const panel = await openProcessPanel(page, overlay, "web")
@@ -1273,8 +1243,6 @@ test.describe("core processes @core", () => {
     await expect(processAction(page, panel2, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
-  // This web harness has no desktop diagnostics capability. Assert both entry points:
-  // the zero-project recovery surface and the account menu after a project is loaded.
   test("Diagnostics is absent from the web platform — behavior 17", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
@@ -1291,7 +1259,6 @@ test.describe("core processes @core", () => {
     // The always-present items confirm the menu actually opened...
     await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible()
     await expect(page.getByRole("menuitem", { name: "Usage", exact: true })).toBeVisible()
-    // ...while Diagnostics never renders on web.
     await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
   })
 
@@ -1308,19 +1275,4 @@ test.describe("core processes @core", () => {
     await expect(processAction(page, panel, "start")).toBeVisible()
     await expect(processHeader(page).getByRole("button", { name: "Edit process" })).toBeVisible()
   })
-
-  // "viewer role hides Add/Start/Stop/Restart/Edit controls — behavior 18 (read-only
-  // half)" — FOLDED into core-cloud-offline-roles' existing viewer-role fixture per
-  // e2e/e2e-decisions.md #24 (2026-07-20): see
-  // core-cloud-offline-roles.spec.ts's "viewer role locks the composer ... and hides
-  // mutation controls — behavior 8" test, which asserts the Processes panel's "Add
-  // process" control is hidden under the SAME `canMutateProcesses()` gate that governs
-  // Start/Stop/Restart/Edit (src/features/processes/providers/process-pane.tsx) — one
-  // control proves the shared gate, no need to duplicate the relay/role fixture here.
-
-  // "project-shared process config is visible across two local workspaces, no leaks
-  // after stop" — DELETED per e2e/e2e-decisions.md #25 (2026-07-20): duplicated a
-  // live spec and couldn't assert the real invariant with a mocked HTTP layer. Source
-  // of truth: e2e-legacy/process-project-shared.spec.ts
-  // (CLAXEDO_PROCESS_PROJECT_SHARED_LIVE=1, real backend/worktrees/child processes).
 })

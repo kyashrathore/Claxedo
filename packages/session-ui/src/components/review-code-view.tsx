@@ -48,16 +48,53 @@ export type ReviewCodeViewProps = {
   focusedFile?: string
   /** Receives the live scroll element for scroll capture/restoration. */
   scrollRef?: (element: HTMLDivElement) => void
-  /** Native scroll events from the scroll element. */
-  onScrollEvent?: (event: Event) => void
+  /**
+   * Native scroll events from the scroll element.
+   *
+   * Typed as Solid's handler rather than a bare `(event: Event) => void` so a
+   * caller can forward straight into an `onScroll` prop: Solid's handlers read
+   * `currentTarget` as the bound element, and a plain DOM `Event` does not
+   * satisfy that, so every consumer was re-asserting the shape at its own call
+   * site. Declaring it here moves the one narrowing to `forwardScroll`, which
+   * is the only place the element is actually known.
+   */
+  onScrollEvent?: JSX.EventHandler<HTMLDivElement, Event>
   /** Fired after CodeView commits a render pass with visible content. */
   onDiffRendered?: () => void
   class?: string
 }
 
+/**
+ * The debug handle the perf harness's CodeView probe reads
+ * (`claxedo-app/perf-harness/probes/debug-codeview-probe.ts`). Absent in a normal session.
+ */
+interface ReviewCodeViewWindow extends Window {
+  __reviewCodeView?: CodeView
+}
+
+/**
+ * The event shape Solid's scroll handlers receive. Derived from `JSX.EventHandler`
+ * rather than spelled out, so it cannot drift from what a consumer's `onScroll`
+ * expects.
+ */
+type DivScrollEvent = Parameters<JSX.EventHandler<HTMLDivElement, Event>>[0]
+
+/**
+ * Check the handler contract instead of asserting it.
+ *
+ * `findScroller` returns `HTMLElement`, so div-ness is not known statically --
+ * but the listener is attached to that element, so during dispatch
+ * `currentTarget` *is* it. Testing both fields makes the narrowing true at
+ * runtime rather than promised at compile time, which matters because
+ * consumers read `currentTarget` to restore scroll position.
+ */
+function isDivScrollEvent(event: Event): event is DivScrollEvent {
+  return event.currentTarget instanceof HTMLDivElement && event.target instanceof Element
+}
+
 export function ReviewCodeView(props: ReviewCodeViewProps) {
   let root: HTMLDivElement | undefined
-  let view: CodeView<undefined> | undefined
+  let view: CodeView | undefined
   let generation = 0
   let stampFrame: number | undefined
 
@@ -81,7 +118,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     return host
   }
 
-  const buildItems = (): CodeViewDiffItem<undefined>[] => {
+  const buildItems = (): CodeViewDiffItem[] => {
     const open = openSet()
     return props.diffs.map((diff) => ({
       id: diff.file,
@@ -164,8 +201,10 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     // path and it disables the vanilla header-slot rendering entirely.
     const instance = new CodeView(options, getWorkerPool(props.diffStyle))
     view = instance
-    // Spike diagnostics only: reachable state for the DOM probe.
-    ;(window as unknown as Record<string, unknown>).__reviewCodeView = instance
+    // Spike diagnostics only: reachable state for the DOM probe
+    // (claxedo-app/perf-harness/probes/debug-codeview-probe.ts reads this handle).
+    const debugTarget: ReviewCodeViewWindow = window
+    debugTarget.__reviewCodeView = instance
     instance.setup(host)
     instance.setItems(buildItems())
     // setItems reconciles and measures; the content render pass is a separate
@@ -207,8 +246,17 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
 
     const scroller = findScroller(host)
     scroller.dataset.scrollable = "true"
-    props.scrollRef?.(scroller as HTMLDivElement)
-    const forwardScroll = (event: Event) => props.onScrollEvent?.(event)
+    // `host` carries `overflow: auto` inline, so the search settles on it and the ref is
+    // the root div. `scrollRef` is declared as an HTMLDivElement callback by its app-side
+    // consumers, so a deeper non-div scroller falls back to the root rather than lying.
+    props.scrollRef?.(scroller instanceof HTMLDivElement ? scroller : host)
+    // The engine's scroller is only typed `HTMLElement`; when it is not the root
+    // div the ref above already reports `host` instead, so the two would disagree
+    // about which element the caller is tracking. Forwarding only the checked
+    // events keeps the scroll stream and the ref describing the same element.
+    const forwardScroll = (event: Event) => {
+      if (isDivScrollEvent(event)) props.onScrollEvent?.(event)
+    }
     scroller.addEventListener("scroll", forwardScroll, { passive: true })
     const unsubscribe = instance.subscribeToScroll(() => stampSoon())
     stampSoon()
@@ -265,7 +313,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     >
       <For each={headerFiles()}>
         {(file) => (
-          <Portal mount={headerHosts.get(file)!}>
+          <Portal mount={headerHosts.get(file)}>
             {/* The accordion structure the review header CSS is written
                 against; the engine's slot replaces the accordion's layout
                 role, this chain only carries the styling contract. */}

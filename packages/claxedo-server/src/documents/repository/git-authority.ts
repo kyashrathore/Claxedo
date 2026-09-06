@@ -9,7 +9,7 @@ import {
   DocumentVersionConflictError,
   nodeErrorCode,
 } from "../errors"
-import type { DocumentActor, SnapshotID, SnapshotRef, SnapshotRequest } from "../port"
+import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef, type SnapshotRequest } from "../port"
 import {
   atomicRepositoryReplace,
   insideRepository,
@@ -27,6 +27,8 @@ import {
 } from "../snapshot-pins"
 import { contentHash } from "../version"
 import { BoundedFileTooLargeError, readBoundedFile } from "../bounded-file-read"
+import { errorCode } from "../../platform/errors/index"
+import { asRecord } from "../../platform/json/index"
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50
@@ -216,7 +218,7 @@ export function createLocalRepositoryGitAuthority(
     async capture(root, documentId, markdown, request) {
       if (!request.reason.trim()) throw new DocumentInvalidEntryError("Snapshot reason is required")
       if (!request.actor.id.trim()) throw new DocumentInvalidEntryError("Snapshot actor id is required")
-      const id = contentHash(markdown) as SnapshotID
+      const id = toSnapshotID(contentHash(markdown))
       const directory = await snapshotDirectory(root, documentId)
       return await serializeRepositoryOperation(commitQueues, `${directory}\0snapshots`, async () => {
         const existing = await readSnapshotMetadata(directory, id).catch((error: unknown) => {
@@ -326,7 +328,7 @@ export function createLocalRepositoryGitAuthority(
       await mapBounded(
         names.filter((name) => name.endsWith(".json")),
         (name) => {
-          const snapshotId = name.slice(0, -5) as SnapshotID
+          const snapshotId = toSnapshotID(name.slice(0, -5))
           return Promise.resolve(options.faults?.beforeSnapshotMetadataRead?.(snapshotId)).then(() =>
             readSnapshotMetadata(directory, snapshotId).catch((error: unknown) => {
               if (error instanceof DocumentSnapshotNotFoundError) return undefined
@@ -500,35 +502,35 @@ async function readBoundedSnapshotMetadata(file: string, snapshotId: SnapshotID)
 }
 
 function snapshotRef(value: unknown, snapshotId: SnapshotID): SnapshotRef | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  const record = value as Record<string, unknown>
-  if (record.id !== snapshotId || typeof record.id !== "string" || !/^[a-f0-9]{64}$/.test(record.id)) return
-  if (record.sha256 !== snapshotId || typeof record.sha256 !== "string") return
+  const record = asRecord(value)
+  if (!record) return undefined
+  if (record.id !== snapshotId || typeof record.id !== "string" || !/^[a-f0-9]{64}$/.test(record.id)) return undefined
+  if (record.sha256 !== snapshotId || typeof record.sha256 !== "string") return undefined
   if (
     typeof record.size !== "number" ||
     !Number.isSafeInteger(record.size) ||
     record.size < 0 ||
     record.size > DEFAULT_MAX_DOCUMENT_BYTES
   )
-    return
-  if (typeof record.reason !== "string" || !record.reason.trim()) return
-  if (!snapshotActor(record.actor)) return
+    return undefined
+  if (typeof record.reason !== "string" || !record.reason.trim()) return undefined
+  if (!snapshotActor(record.actor)) return undefined
   if (
     typeof record.createdAt !== "number" ||
     !Number.isSafeInteger(record.createdAt) ||
     record.createdAt < 0 ||
     !Number.isFinite(new Date(record.createdAt).getTime())
   )
-    return
-  if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return
-  if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return
-  const pinValues = record.pins as string[]
+    return undefined
+  if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return undefined
+  if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return undefined
+  const pinValues = record.pins
 
   try {
     const pins = boundedSnapshotPins(pinValues, Number.NEGATIVE_INFINITY)
-    if (pins.length !== pinValues.length || pins.some((pin, index) => pin !== pinValues[index])) return
+    if (pins.length !== pinValues.length || pins.some((pin, index) => pin !== pinValues[index])) return undefined
     return {
-      id: record.id as SnapshotID,
+      id: toSnapshotID(record.id),
       sha256: record.sha256,
       size: record.size,
       reason: record.reason,
@@ -538,7 +540,7 @@ function snapshotRef(value: unknown, snapshotId: SnapshotID): SnapshotRef | unde
       pins,
     }
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -565,7 +567,7 @@ async function replaceSnapshotFile(target: string, content: string | Uint8Array,
       // read-only ATTRIBUTE blocks a replacing rename with EPERM — POSIX only
       // consults the directory. Clear the bit on the existing target and
       // retry once; anything else, or a second failure, is a real error.
-      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error
+      if (errorCode(error) !== "EPERM") throw error
       await fs.chmod(target, 0o600).catch(() => undefined)
       await fs.rename(temporary, target)
     }

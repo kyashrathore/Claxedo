@@ -2,8 +2,10 @@ import { Show, type Component } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 
 type InputKey = "text" | "image" | "audio" | "video" | "pdf"
-type InputMap = Record<InputKey, boolean>
 
+// The picker item this card describes. `limit` is optional because a model the
+// catalog has not detailed yet carries no context window — the card then omits
+// that line instead of reading through `undefined`.
 type ModelInfo = {
   id: string
   name: string
@@ -12,13 +14,13 @@ type ModelInfo = {
   }
   capabilities?: {
     reasoning: boolean
-    input: InputMap
+    input: Record<string, boolean>
   }
   modalities?: {
     input: Array<string>
   }
   reasoning?: boolean
-  limit: {
+  limit?: {
     context: number
   }
 }
@@ -59,7 +61,7 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
       return entries.length ? entries.join(", ") : undefined
     }
     const raw = props.model.modalities?.input
-    if (!raw) return
+    if (!raw) return undefined
     const entries = raw.map((value) => inputLabel(value))
     return entries.length ? entries.join(", ") : undefined
   }
@@ -72,7 +74,10 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
       ? language.t("model.tooltip.reasoning.allowed")
       : language.t("model.tooltip.reasoning.none")
   }
-  const context = () => language.t("model.tooltip.context", { limit: props.model.limit.context.toLocaleString() })
+  const context = () => {
+    const limit = props.model.limit?.context
+    return limit === undefined ? undefined : language.t("model.tooltip.context", { limit: limit.toLocaleString() })
+  }
 
   return (
     <div class="flex flex-col gap-1 py-1">
@@ -85,7 +90,9 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
         )}
       </Show>
       <div class="text-12-regular text-text-invert-base">{reasoning()}</div>
-      <div class="text-12-regular text-text-invert-base">{context()}</div>
+      <Show when={context()}>
+        {(value) => <div class="text-12-regular text-text-invert-base">{value()}</div>}
+      </Show>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { queryClient } from "@/platform/query/query-client"
 type QueueInput = {
   paused: () => boolean
   bootstrap: () => Promise<void>
-  bootstrapInstance: (directory: string) => Promise<void> | void
+  bootstrapInstance: (directory: string) => Promise<void>
   key?: (directory: string) => string
   owner?: string
 }

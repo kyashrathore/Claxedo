@@ -15,6 +15,9 @@ import {
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 
+import { readArray, readString, readUnknown } from "./json-read"
+import { nodeErrorCode } from "./node-error"
+
 /**
  * Seeding the V8 compile cache the packaged server child will actually read.
  *
@@ -156,16 +159,20 @@ export function compileCacheEntryName(sourceName: string, type: CompileCacheCode
 export function parseCompileCacheManifest(raw: string): CompileCacheManifest {
   const parsed: unknown = JSON.parse(raw)
   if (!parsed || typeof parsed !== "object") throw new Error("compile cache manifest is not an object")
-  const { version, entries } = parsed as { version?: unknown; entries?: unknown }
+  const version = readUnknown(parsed, "version")
   if (version !== 1) throw new Error(`unsupported compile cache manifest version ${String(version)}`)
-  if (!Array.isArray(entries)) throw new Error("compile cache manifest has no entries")
+  const entries = readArray(parsed, "entries")
+  if (!entries) throw new Error("compile cache manifest has no entries")
   return {
     version: 1,
     entries: entries.map((entry) => {
-      const { file, type, blob, bytes } = entry as Record<string, unknown>
-      if (typeof file !== "string" || !file) throw new Error("compile cache entry is missing its file")
+      const file = readString(entry, "file")
+      const type = readUnknown(entry, "type")
+      const blob = readString(entry, "blob")
+      const bytes = readUnknown(entry, "bytes")
+      if (!file) throw new Error("compile cache entry is missing its file")
       if (type !== "esm" && type !== "commonjs") throw new Error(`unknown compile cache entry type ${String(type)}`)
-      if (typeof blob !== "string" || !blob) throw new Error("compile cache entry is missing its blob")
+      if (!blob) throw new Error("compile cache entry is missing its blob")
       if (typeof bytes !== "number") throw new Error("compile cache entry is missing its size")
       return { file, type, blob, bytes }
     }),
@@ -239,7 +246,7 @@ export function seedShippedCompileCaches(input: {
         linkSync(pending, target)
         seeded += 1
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+        if (nodeErrorCode(error) !== "EEXIST") throw error
       } finally {
         rmSync(pending, { force: true })
       }

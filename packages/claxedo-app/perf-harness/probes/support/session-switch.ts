@@ -92,7 +92,7 @@ export const observeSwitch = async (params: {
     return foldReady && messagesReady && counted && revealReady && progressiveReady && shown && keyed && texted
   }
   const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
-  const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  const oldContent = window.__claxedoPerfOldPanelContent
   const readOldWorkspaceRelease = (): OldWorkspaceRelease | undefined => {
     if (!oldContent) return undefined
     if (!oldContent.isConnected) return "disposed"
@@ -164,7 +164,7 @@ export const observeSwitch = async (params: {
     .map((entry) => ({ name: entry.name, atMs: entry.startTime - started }))
   for (const entry of activationMarks) performance.clearMarks(entry.name)
   performance.clearMarks(params.mark)
-  delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  delete window.__claxedoPerfOldPanelContent
   return {
     completionMs,
     acknowledgedMs,

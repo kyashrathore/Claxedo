@@ -9,6 +9,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { signedOrError } from "../../workspace/route-support"
+import { readJsonRecord } from "../../platform/json/index"
 import {
   notifySessionShareChanged,
   peopleErrorResponse,
@@ -45,14 +46,13 @@ async function signedAuth(req: Request, options: Options, services: ControlPlane
 }
 
 async function participantBody(req: Request) {
-  const body = await req.json().catch(() => undefined)
-  if (!body || typeof body !== "object" || Array.isArray(body)) return
-  const input = body as Record<string, unknown>
+  const input = await readJsonRecord(req)
+  if (!input) return undefined
   const workspaceId = typeof input.workspaceId === "string" ? input.workspaceId.trim() : ""
   const participantActorId = typeof input.participantActorId === "string"
     ? input.participantActorId.trim()
     : ""
-  if (!workspaceId || !participantActorId) return
+  if (!workspaceId || !participantActorId) return undefined
   return { workspaceId, participantActorId }
 }
 
@@ -152,7 +152,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
       }
     })
     .post("/sessions/:sessionId/shares", async (c) => {
-      const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
       const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined
       if (!workspaceId) {
         return c.json({
@@ -188,7 +188,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
       }
     })
     .delete("/sessions/:sessionId/shares", async (c) => {
-      const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
       const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined
       if (!workspaceId) {
         return c.json({

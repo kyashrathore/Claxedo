@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { num, rec, str } from "../json-value"
 import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import { errorBody } from "./http"
@@ -17,8 +18,8 @@ export function CheckpointRoutes(input: {
     })
     .get("/", (c) => c.json(input.checkpoint.detail()))
     .post("/freeze", async (c) => {
-      const body = await c.req.json().catch(() => ({})) as { policy?: unknown }
-      const policy: WorkspaceCheckpointDrainPolicy = body.policy === "interrupt" ? "interrupt" : "drain"
+      const body = rec(await c.req.json().catch(() => undefined))
+      const policy: WorkspaceCheckpointDrainPolicy = body?.policy === "interrupt" ? "interrupt" : "drain"
       return c.json(await input.checkpoint.freeze(policy))
     })
     .post("/flush", async (c) => {
@@ -40,21 +41,15 @@ export function CheckpointRoutes(input: {
     })
     .post("/resume", async (c) => c.json(await input.checkpoint.resume()))
     .post("/restore-reconcile", async (c) => {
-      const body = await c.req.json().catch(() => null) as { epoch?: unknown; checkpointId?: unknown } | null
-      if (
-        !Number.isSafeInteger(body?.epoch)
-        || (body?.epoch as number) < 1
-        || typeof body?.checkpointId !== "string"
-        || !body.checkpointId.trim()
-      ) {
+      const body = rec(await c.req.json().catch(() => undefined))
+      const epoch = num(body?.epoch)
+      const checkpointId = str(body?.checkpointId)
+      if (epoch === undefined || !Number.isSafeInteger(epoch) || epoch < 1 || !checkpointId?.trim()) {
         return c.json(errorBody("workspace_checkpoint_reconcile_invalid", "epoch and checkpointId are required"), 400)
       }
       try {
         await input.worktrees?.reconcile()
-        return c.json(await input.checkpoint.restoreReconcile({
-          epoch: body.epoch as number,
-          checkpointId: body.checkpointId,
-        }))
+        return c.json(await input.checkpoint.restoreReconcile({ epoch, checkpointId }))
       } catch (error) {
         return c.json(errorBody("workspace_checkpoint_reconcile_failed", message(error)), 409)
       }

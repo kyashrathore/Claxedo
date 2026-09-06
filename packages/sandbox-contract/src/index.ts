@@ -118,7 +118,7 @@ export function sandboxDriverAuthValues<T extends SandboxDriverID>(
     const api_key = clean(cfg?.auth?.box?.api_key) ?? clean(env.BOX_API_KEY)
     return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T] | undefined
   }
-  if (!dockerSandboxDriverEnabled(env)) return
+  if (!dockerSandboxDriverEnabled(env)) return undefined
   const image = clean(cfg?.auth?.docker?.image)
     ?? clean(env.CLAXEDO_DOCKER_SANDBOX_IMAGE)
     ?? clean(env.CLAXEDO_SANDBOX_IMAGE)
@@ -129,9 +129,9 @@ export function sandboxDriverId(
   input: string | undefined,
   cfg?: SandboxDriverConfig,
   env: SandboxDriverEnv = process.env,
-) {
-  if (!isSandboxDriverID(input)) return
-  if (input === "docker" && !sandboxDriverAuthValues(cfg, input, env)) return
+): SandboxDriverID | undefined {
+  if (!isSandboxDriverID(input)) return undefined
+  if (input === "docker" && !sandboxDriverAuthValues(cfg, input, env)) return undefined
   return input
 }
 

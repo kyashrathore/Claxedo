@@ -16,7 +16,7 @@ import { createStore } from "solid-js/store"
 import type { PaneRect, WorkbenchState } from "./types"
 import { useWorkbench, useWorkbenchContext } from "./provider"
 import { computePaneRects } from "./reducers/tree-helpers"
-import { computeDropEdge } from "./drag-drop"
+import { hitTestPaneAt, type DropTarget } from "./drag-drop"
 import { collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
 import { useDragSource, workbenchDrag } from "./pointer-drag"
 import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
@@ -47,8 +47,6 @@ export type WorkbenchProps = {
   onContentClose?: (contentId: string, reason: "user" | "stale") => void
   onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }
-
-type DropTarget = { paneId: string; edge: Edge }
 
 /**
  * <Workbench> renders the pane tree (split + leaves), drag-drop overlays,
@@ -132,17 +130,18 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   // view positions (pane rects, content slots, resize emits) reads displayRects.
   const rectMemo = createMemo(() => computePaneRects(ctx.getState().split.root))
   const displayRects = createMemo(() => (collapsed() ? collapsePaneRects(ctx.getState()) : rectMemo()))
-  let pendingFrame: number | null = null
+  // Read only as "is a frame already scheduled" — nothing cancels it — so it
+  // holds whichever handle the scheduler below returned.
+  let pendingFrame: ReturnType<typeof requestAnimationFrame> | ReturnType<typeof setTimeout> | null = null
   let lastEmittedRects: Map<string, PaneRect> = new Map()
   const scheduleResizeEmit = () => {
     if (pendingFrame != null) return
-    const raf =
+    // `pendingFrame` only ever round-trips this handle back to `cancel`, so the
+    // fallback's timer handle is as good as a frame id and needs no cast.
+    const raf: (cb: FrameRequestCallback) => ReturnType<typeof requestAnimationFrame> | ReturnType<typeof setTimeout> =
       typeof requestAnimationFrame !== "undefined"
         ? requestAnimationFrame
-        : (cb: FrameRequestCallback) => {
-            // as-any: fallback timer handle is used only where RAF returns a numeric frame id.
-            return setTimeout(() => cb(performance?.now?.() ?? Date.now()), 16) as unknown as number
-          }
+        : (cb) => setTimeout(() => cb(performance?.now?.() ?? Date.now()), 16)
     pendingFrame = raf(() => {
       pendingFrame = null
       const rects = displayRects()
@@ -373,22 +372,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     return ids.filter((id) => isAssignedContent(id))
   }
 
-  // -- DnD hit-testing (pointer-driven). `elementFromPoint` finds the pane under
-  //    the cursor; the ghost is `pointer-events:none` so it never occludes it.
-  const hitTestPaneAt = (x: number, y: number): DropTarget | null => {
-    if (typeof document === "undefined" || !document.elementFromPoint) return null
-    let el: HTMLElement | null = document.elementFromPoint(x, y) as HTMLElement | null
-    while (el && !el.dataset?.paneId) el = el.parentElement
-    const paneId = el?.dataset?.paneId
-    if (!paneId) return null
-    const rect = el!.getBoundingClientRect()
-    const edge = computeDropEdge(
-      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      x,
-      y,
-    )
-    return { paneId, edge }
-  }
   const commitDrop = (paneId: string, edge: Edge, contentId: string) => {
     // Reject ids we don't own (external/stale). Self-drop onto the same pane is
     // a no-op inside the split reducer's own guard, preserved unchanged.

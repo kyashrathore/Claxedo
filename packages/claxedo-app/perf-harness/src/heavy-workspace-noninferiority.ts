@@ -1,3 +1,5 @@
+import { isRecord, numberField, textField } from "./json-fields"
+
 export type HeavyWorkspaceMetric = {
   metric: string
   p50: number
@@ -7,6 +9,30 @@ export type HeavyWorkspaceMetric = {
 
 export type HeavyWorkspaceReport = {
   flows: Array<{ metrics: HeavyWorkspaceMetric[] }>
+}
+
+/**
+ * Read a stored heavy-workspace report.
+ *
+ * Lives beside the type it produces, so the CLI that compares two report files
+ * does not have to assert each one into shape. A flow whose metrics cannot be
+ * read is dropped, which the comparison then reports as a missing metric rather
+ * than as a silent pass.
+ */
+export function parseHeavyWorkspaceReport(value: unknown): HeavyWorkspaceReport {
+  if (!isRecord(value) || !Array.isArray(value.flows)) return { flows: [] }
+  return {
+    flows: value.flows.filter(isRecord).map((flow) => ({
+      metrics: (Array.isArray(flow.metrics) ? flow.metrics : []).filter(isRecord).flatMap((entry) => {
+        const metric = textField(entry, "metric")
+        const p50 = numberField(entry, "p50")
+        const p95 = numberField(entry, "p95")
+        const max = numberField(entry, "max")
+        if (metric === undefined || p50 === undefined || p95 === undefined || max === undefined) return []
+        return [{ metric, p50, p95, max }]
+      }),
+    })),
+  }
 }
 
 export type HeavyWorkspaceNoninferiorityCheck = {

@@ -99,17 +99,21 @@ export function workspaceRuntimeKind(
   return "local"
 }
 
-export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
+// `directory` is a directory string, spelled as one. It used to be a
+// `TDirectory extends string` type parameter that constrained nothing and
+// whose only effect was to keep this parameter out of the `directoryStringParams`
+// debt regex; the debt is the same either way, so it is counted now.
+export function railWorkspaceSessionBacking(input: {
   workspaceId?: string
   environmentKind?: string
   sessionRef?: string
   project: Pick<ProjectItem, "workspaces">
-  directory: TDirectory
+  directory: string
 }): WorkspaceSessionBacking | undefined {
   if (
     input.sessionRef?.startsWith("central:") ||
     input.sessionRef?.startsWith("local:")
-  ) return
+  ) return undefined
   // A relay-backed session row is addressed as `workspace:<id>`, which is the
   // catalog's row under another of its identities — `projectWorkspaceForRef`
   // is what makes the two meet, so the row's own kind and id decide the
@@ -122,13 +126,13 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
   // sessions with a project; it is not evidence of relay hosting, so a
   // confirmed-local inventory record must win over the optimistic user-hosted
   // guess below.
-  if (workspace?.kind === "local") return
+  if (workspace?.kind === "local") return undefined
   const relayKind = workspaceKind(kind)
   if (isRelayBackedWorkspaceKind(relayKind)) {
     return workspaceId ? { workspaceId, kind: relayKind } : undefined
   }
-  if (!input.workspaceId) return
-  if (localWorkspaceAssociationId(input.workspaceId)) return
+  if (!input.workspaceId) return undefined
+  if (localWorkspaceAssociationId(input.workspaceId)) return undefined
   // An unknown `ws_*` row can still predate signed inventory hydration. UUIDs
   // and inventory-confirmed local records have already returned above.
   return { workspaceId: input.workspaceId, kind: "user-hosted" }

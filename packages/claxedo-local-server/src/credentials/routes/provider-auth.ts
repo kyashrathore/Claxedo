@@ -86,6 +86,7 @@ export function ProviderAuthRoutes(services: ControlPlaneServicesContract, optio
         throw error
       }
       await next()
+      return undefined
     })
     .get("/provider/auth", (c) => c.json(service.methods()))
     .post("/provider/:providerId/oauth/authorize", async (c) => {

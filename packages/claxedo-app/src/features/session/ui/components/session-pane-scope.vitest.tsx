@@ -29,7 +29,7 @@ const calls = vi.hoisted(() => ({
       harnessType?: () => string | undefined
       harnessSelection?: () => HarnessSelection | undefined
       workspaceReady?: () => boolean
-      refreshDirectory?: unknown
+      refreshDirectory?: (directory: string, harnessType?: string) => unknown
     },
 }))
 
@@ -180,10 +180,9 @@ describe("SessionPaneScope", () => {
     expect(calls.directoryScopeProps?.harnessType?.()).toBe("codex")
     expect(calls.directoryScopeProps?.workspaceReady?.()).toBe(true)
     expect(calls.directoryScopeProps?.refreshDirectory).toBeTypeOf("function")
-    await (calls.directoryScopeProps?.refreshDirectory as (directory: string, harnessType?: string) => unknown)(
-      "/repo/local",
-      "opencode",
-    )
+    const refreshDirectory = calls.directoryScopeProps?.refreshDirectory
+    if (!refreshDirectory) throw new Error("SessionDirectoryScope never received refreshDirectory")
+    await refreshDirectory("/repo/local", "opencode")
     expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", {
       workspace: { workspaceId: "ws_backing", kind: "cloud" },
     })
@@ -368,10 +367,9 @@ describe("SessionPaneScope", () => {
       </SessionPaneScope>
     ))
 
-    await (calls.directoryScopeProps?.refreshDirectory as (directory: string, harnessType?: string) => unknown)(
-      "/repo/local",
-      "opencode",
-    )
+    const refreshDirectory = calls.directoryScopeProps?.refreshDirectory
+    if (!refreshDirectory) throw new Error("SessionDirectoryScope never received refreshDirectory")
+    await refreshDirectory("/repo/local", "opencode")
 
     expect(calls.directoryRefresh).toHaveBeenCalledWith({ directory: "/repo/local", harnessType: "opencode" })
     expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", undefined)

@@ -599,7 +599,7 @@ export function verifyBetterAuthDatabaseSchemaInspection(result: BetterAuthSchem
 
 /** Fail readiness if the generated schema's tables, columns, indexes, cascade, or append-only triggers drift. */
 export async function requireBetterAuthDatabaseSchema(database: D1Database) {
-  const result = await database.prepare(betterAuthDatabaseSchemaInspectionSql()).first<BetterAuthSchemaInspection>()
+  const result = await database.prepare(betterAuthDatabaseSchemaInspectionSql()).first()
   verifyBetterAuthDatabaseSchemaInspection(result)
 }
 

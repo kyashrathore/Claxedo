@@ -6,7 +6,7 @@ export function workspaceDirectoryRef(directory: string) {
 }
 
 export function initialRouteDirectory() {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return undefined
   const configured = (window as typeof window & {
     __CLAXEDO__?: { activeDirectory?: string }
   }).__CLAXEDO__?.activeDirectory

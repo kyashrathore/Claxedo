@@ -1,15 +1,16 @@
 import { Hono, type Context } from "hono"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
-import { withDocumentOperation, type DocumentsBackend } from "../../backend"
+import { withDocumentOperation, type DocumentBrokerBackend } from "../../backend"
 import type { DocumentIndexEntry } from "../../index-store"
-import type { DocumentVersion } from "../../port"
+import { toDocumentVersion } from "../../port"
 import { DocumentVersionConflictError } from "../../errors"
 import { verifyDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { asRecord, parseJson } from "../../../platform/json/index"
 
 const MAX_BROKER_BODY_BYTES = 2 * 1024 * 1024 + 64 * 1024
 
 export function LocalInstallationDocumentBroker(options: {
-  backend: DocumentsBackend
+  backend: DocumentBrokerBackend
   installationToken?: string
   env?: NodeJS.ProcessEnv
   jobState?: ReturnType<typeof createLocalDocumentJobState>
@@ -26,6 +27,7 @@ export function LocalInstallationDocumentBroker(options: {
     )
       return context.json({ error: "unauthorized" }, 401)
     await next()
+    return undefined
   })
   app.post("/jobs/activate", async (context) => {
     jobs.prune()
@@ -71,7 +73,7 @@ export function LocalInstallationDocumentBroker(options: {
         : context.json({ error: "invalid" }, 400),
     )
     if (body instanceof Response) return body
-    if (typeof body.markdown !== "string" || typeof body.sessionId !== "string")
+    if (typeof body?.markdown !== "string" || typeof body.sessionId !== "string")
       return context.json({ error: "invalid" }, 400)
     const markdown = body.markdown
     const sessionId = body.sessionId
@@ -84,7 +86,7 @@ export function LocalInstallationDocumentBroker(options: {
       const written = await options.backend.workspace
         .write(await options.backend.workspace.resolve(portEntry(entry)), {
           markdown,
-          expectedVersion: expected as DocumentVersion,
+          expectedVersion: toDocumentVersion(expected),
           actor: { type: "agent", id: sessionId },
           sessionId,
         })
@@ -127,10 +129,7 @@ async function readBrokerBody(request: Request) {
     bytes.set(chunk, offset)
     offset += chunk.byteLength
   })
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as {
-    markdown?: unknown
-    sessionId?: unknown
-  }
+  return asRecord(parseJson(new TextDecoder("utf-8", { fatal: true }).decode(bytes)))
 }
 
 class BrokerBodyTooLargeError extends Error {}
@@ -221,7 +220,7 @@ async function verifyJob(context: Context, env?: NodeJS.ProcessEnv) {
   ).catch(() => undefined)
 }
 
-async function entryFor(backend: DocumentsBackend, context: Context) {
+async function entryFor(backend: DocumentBrokerBackend, context: Context) {
   required(context.req.query("org_id"))
   const projectId = required(context.req.query("project_id"))
   const entry = await backend.index.find("__local__", context.req.param("id"))

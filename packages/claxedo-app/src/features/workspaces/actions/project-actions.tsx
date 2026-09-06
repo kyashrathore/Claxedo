@@ -10,6 +10,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { readString } from "@/lib/record"
 import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/domain-types"
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
@@ -250,12 +251,15 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       workspaceId = result.workspaceId
 
       for (const ev of buffered) publishProvision(ev)
-      const current = await hostedControlCall<{ status?: string | null } | null>(
+      // `workspace.resolve` answers an object or a documented `null`, and the
+      // HTTP route answers raw JSON; neither proves a `status` field, so read
+      // one rather than declaring it.
+      const current = await hostedControlCall(
         "workspace.resolve",
         { workspaceId },
-        () => api.get<{ status?: string | null }>(workspaceResolveUrl({ baseUrl, workspaceId })),
+        () => api.get(workspaceResolveUrl({ baseUrl, workspaceId })),
       ).catch(() => undefined)
-      const status = current?.status ?? result.status
+      const status = readString(current, "status") ?? result.status
       if (status && status !== "pending") pushProgress(status)
       if (status === "ready") finishProvision?.()
       await provisionReady

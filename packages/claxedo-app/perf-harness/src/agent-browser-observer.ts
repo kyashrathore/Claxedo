@@ -1,4 +1,41 @@
-import type { BenchmarkPage as Page } from "./agent-cdp-page";
+import type { BenchmarkLocator } from "./agent-cdp-page";
+
+/**
+ * The page surface this observer drives.
+ *
+ * Narrower than `BenchmarkPage` on purpose. The observer runs against both the
+ * packaged app's CDP page and a Playwright page, and declaring the whole
+ * `BenchmarkPage` forced every Playwright caller through `page as never` —
+ * an assertion that would have hidden a real mismatch just as readily.
+ */
+export type Page = {
+  /** Widened to `unknown` because Playwright's own `addInitScript` resolves a `Disposable`. */
+  addInitScript(fn: () => void): Promise<unknown>;
+  /**
+   * Resolves `unknown` because the answer crosses a JSON boundary: see
+   * `BenchmarkPage.evaluate`. Playwright's own `evaluate` satisfies this, since
+   * its `Promise<R>` is assignable to `Promise<unknown>`.
+   */
+  evaluate<A = undefined>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>;
+  locator(selector: string): BenchmarkLocator;
+  getByTestId(testId: string): BenchmarkLocator;
+  waitForFunction<A = undefined>(
+    fn: ((arg: A) => unknown) | (() => unknown),
+    arg?: A,
+    options?: { polling?: "raf"; timeout?: number },
+  ): Promise<unknown>;
+};
+import {
+  optionalRecord,
+  optionalText,
+  readBoolean,
+  readList,
+  readNumber,
+  readNumberFields,
+  readRecord,
+  readRecords,
+  readText,
+} from "./page-value";
 import {
   blockedFrameRatio,
   eventTimingP95,
@@ -157,6 +194,125 @@ declare global {
   }
 }
 
+// Readers for what `BrowserBenchmark` answers.
+//
+// `BrowserBenchmark` is the observer's own contract, but it is implemented in
+// the renderer and its answers reach here as JSON, so the declaration above
+// describes the producer and these readers describe what actually arrived. They
+// throw rather than defaulting: every one of them feeds a published measurement,
+// and a missing field silently read as `0` is a fabricated number.
+
+function readTimelineCoverage(value: unknown): TimelineCoverage {
+  return readNumberFields(value, [
+    "overflowPx",
+    "topGapPx",
+    "visibleRowCount",
+    "virtualKeyCount",
+    "rowCount",
+  ]);
+}
+
+function readPaintedMessage(value: unknown): Omit<PaintedMessage, "contentSha256"> {
+  const record = readRecord(value);
+  const kind = readText(record.kind);
+  if (kind !== "UserMessage" && kind !== "AssistantPart") {
+    throw new Error(`browser observer painted an unknown row kind: ${kind}`);
+  }
+  return {
+    messageId: readText(record.messageId),
+    kind,
+    partId: optionalText(record.partId),
+    textLength: readNumber(record.textLength),
+    composerVisibleAndEnabled: readBoolean(record.composerVisibleAndEnabled),
+    surfaceFocused: readBoolean(record.surfaceFocused),
+    timelineCoverage: readTimelineCoverage(record.timelineCoverage),
+  };
+}
+
+function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
+  const record = readRecord(value);
+  return {
+    ...readNumberFields(record, ["atMs", "observerSampleMs"]),
+    ready: readBoolean(record.ready),
+    signature: optionalRecord(record.signature),
+    diagnostic: optionalRecord(record.diagnostic),
+  };
+}
+
+function readStablePaint(value: unknown) {
+  const record = readRecord(value);
+  return {
+    paintedAtMs: readNumber(record.paintedAtMs),
+    paintedMessage: readPaintedMessage(record.paintedMessage),
+    contentText: readText(record.contentText),
+    frames: readList(record.frames).map(readPaintStabilityFrame),
+  };
+}
+
+function readActionResult(value: unknown): ActionResult {
+  const record = readRecord(value);
+  if (record.state === "invalid") {
+    return { state: "invalid", reason: readText(record.reason) };
+  }
+  if (record.state !== "exact") {
+    throw new Error(
+      `browser observer answered an unknown action state: ${JSON.stringify(record.state)}`,
+    );
+  }
+  return {
+    state: "exact",
+    ...readNumberFields(record, ["durationMs", "trustedEventAtMs", "paintedAtMs"]),
+  };
+}
+
+function readStreamEvidence(value: unknown): StreamEvidence | undefined {
+  if (value === undefined || value === null) return undefined;
+  const record = readRecord(value);
+  return {
+    ...readNumberFields(record, [
+      "startedAtMs",
+      "endedAtMs",
+      "durationMs",
+      "probeCount",
+      "durationThresholdMs",
+    ]),
+    eventEntries: readRecords(record.eventEntries).map((entry) =>
+      readNumberFields(entry, ["interactionId", "durationMs"]),
+    ),
+    loafSupported: readBoolean(record.loafSupported),
+    loafEntries: readRecords(record.loafEntries).map((entry) =>
+      readNumberFields(entry, ["durationMs", "blockingDurationMs"]),
+    ),
+  };
+}
+
+function readTerminalEvidence(
+  value: unknown,
+): TerminalEvidence | { state: "invalid"; reason: string } | undefined {
+  if (value === undefined || value === null) return undefined;
+  const record = readRecord(value);
+  if ("state" in record) return { state: "invalid", reason: readText(record.reason) };
+  const outputHashAlgorithm = readText(record.outputHashAlgorithm);
+  if (outputHashAlgorithm !== "sha256-chunk-tree-v1") {
+    throw new Error(`terminal evidence used an unknown output hash: ${outputHashAlgorithm}`);
+  }
+  return {
+    echoTailMisses: readRecords(record.echoTailMisses).map((entry) => ({
+      echo: readText(entry.echo),
+      ...readNumberFields(entry, ["batchBytes", "bytesFromEnd"]),
+    })),
+    instanceId: readText(record.instanceId),
+    ...readNumberFields(record, ["bytes", "acceptedAtMs", "paintedAtMs", "cols", "rows"]),
+    modelHash: readText(record.modelHash),
+    outputHash: readText(record.outputHash),
+    outputHashAlgorithm,
+    inputDurationsMs: readList(record.inputDurationsMs).map(readNumber),
+    inputWindows: readRecords(record.inputWindows).map((entry) =>
+      readNumberFields(entry, ["startTimestamp", "endTimestamp"]),
+    ),
+  };
+}
+
 export function seededSwitchSequence<T>(values: readonly T[], seed: number) {
   const result = [...values];
   let state = seed >>> 0;
@@ -169,7 +325,7 @@ export function seededSwitchSequence<T>(values: readonly T[], seed: number) {
   };
   for (let index = result.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1));
-    [result[index], result[swap]] = [result[swap]!, result[index]!];
+    [result[index], result[swap]] = [result[swap], result[index]];
   }
   return result;
 }
@@ -687,7 +843,7 @@ export async function measureSessionActivation(
     },
   );
   await clickVisibleSessionActivation(page, target.sessionId);
-  const stablePaint = await stablePaintPromise;
+  const stablePaint = readStablePaint(await stablePaintPromise);
   await hooks?.onPainted?.();
   const contentSha256 = stablePaint
     ? await sha256Text(stablePaint.contentText)
@@ -695,19 +851,18 @@ export async function measureSessionActivation(
   const paintedMessage = stablePaint
     ? { ...stablePaint.paintedMessage, contentSha256 }
     : undefined;
-  const timing = await page.evaluate<
-    ActionResult,
-    { token: string; paintedAtMs?: number }
-  >(
-    async (input) =>
-      (await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(
-        input.token,
-        input.paintedAtMs,
-      )) ?? {
-        state: "invalid",
-        reason: "browser-observer-missing",
-      },
-    { token, paintedAtMs: stablePaint?.paintedAtMs },
+  const timing = readActionResult(
+    await page.evaluate(
+      async (input: { token: string; paintedAtMs?: number }) =>
+        (await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(
+          input.token,
+          input.paintedAtMs,
+        )) ?? {
+          state: "invalid",
+          reason: "browser-observer-missing",
+        },
+      { token, paintedAtMs: stablePaint.paintedAtMs },
+    ),
   );
   if (timing.state !== "exact") return timing;
   if (!stablePaint)
@@ -726,11 +881,11 @@ export async function measureSessionActivation(
 
 async function clickVisibleSessionActivation(page: Page, sessionId: string) {
   const selector = `[data-testid="rail-sidebar-session-row"][data-session-id="${cssEscape(sessionId)}"] [data-slot="navigation-row-activate"]`;
-  const result = await page.evaluate(async (query) => {
+  const answer = readRecord(await page.evaluate(async (query) => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>(query));
     const candidates: Array<Record<string, unknown>> = [];
     for (let index = 0; index < elements.length; index++) {
-      const element = elements[index]!;
+      const element = elements[index];
       element.scrollIntoView({ block: "center", inline: "center" });
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const rect = element.getBoundingClientRect();
@@ -757,9 +912,10 @@ async function clickVisibleSessionActivation(page: Page, sessionId: string) {
       if (candidate.geometricallyVisible && candidate.hitTarget) return { index, candidates };
     }
     return { index: -1, candidates };
-  }, selector);
-  if (result.index < 0) throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(result.candidates)}`);
-  await page.locator(selector).nth(result.index).click();
+  }, selector));
+  const index = readNumber(answer.index);
+  if (index < 0) throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(readRecords(answer.candidates))}`);
+  await page.locator(selector).nth(index).click();
 }
 
 async function sha256Text(value: string) {
@@ -821,28 +977,31 @@ async function revealSessionRows(page: Page, sessionIds: readonly string[]) {
   // Open closed groups through their headers (the user's own flow), then
   // click the load-more buttons round-robin until every target row exists.
   for (let attempt = 0; attempt < 80; attempt++) {
-    const state = await page.evaluate(
-      (ids) => ({
-        missing: ids.filter(
-          (id) =>
-            !document.querySelector(
-              `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`,
-            ),
-        ).length,
-        closedGroups: [
-          ...document.querySelectorAll<HTMLElement>('[data-testid="project-group"]'),
-        ].filter(
-          (group) =>
-            !group.querySelector('[data-testid="rail-sidebar-session-row"]'),
-        ).length,
-        loadMoreCount: document.querySelectorAll(
-          '[data-testid="rail-sidebar-session-load-more"]',
-        ).length,
-        visibleRows: document.querySelectorAll(
-          '[data-testid="rail-sidebar-session-row"]',
-        ).length,
-      }),
-      [...sessionIds],
+    const state = readNumberFields(
+      await page.evaluate(
+        (ids) => ({
+          missing: ids.filter(
+            (id) =>
+              !document.querySelector(
+                `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`,
+              ),
+          ).length,
+          closedGroups: [
+            ...document.querySelectorAll<HTMLElement>('[data-testid="project-group"]'),
+          ].filter(
+            (group) =>
+              !group.querySelector('[data-testid="rail-sidebar-session-row"]'),
+          ).length,
+          loadMoreCount: document.querySelectorAll(
+            '[data-testid="rail-sidebar-session-load-more"]',
+          ).length,
+          visibleRows: document.querySelectorAll(
+            '[data-testid="rail-sidebar-session-row"]',
+          ).length,
+        }),
+        [...sessionIds],
+      ),
+      ["missing", "closedGroups", "loadMoreCount", "visibleRows"],
     );
     if (state.missing === 0) return;
     if (state.closedGroups > 0) {
@@ -899,8 +1058,8 @@ export async function beginStreamObservation(page: Page) {
 }
 
 export async function finishStreamObservation(page: Page) {
-  const evidence = await page.evaluate(() =>
-    window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishStream(),
+  const evidence = readStreamEvidence(
+    await page.evaluate(() => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishStream()),
   );
   if (!evidence) {
     const invalid = invalidMetric("browser-observer-missing");
@@ -943,8 +1102,8 @@ export async function finishTerminalObservation(
   page: Page,
   expected: { outputHash: string; bytes: number; minimumDurationMs: number },
 ) {
-  const evidence = await page.evaluate(() =>
-    window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishTerminal(),
+  const evidence = readTerminalEvidence(
+    await page.evaluate(() => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishTerminal()),
   );
   if (!evidence || "state" in evidence) {
     return {
@@ -1144,7 +1303,7 @@ function installBrowserBenchmark() {
       offset += count;
       if (current.acceptedHashLength !== current.acceptedHashBuffer.byteLength) continue;
       const block = current.acceptedHashBuffer;
-      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block.buffer as ArrayBuffer));
+      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block));
       current.acceptedHashBuffer = new Uint8Array(1024 * 1024);
       current.acceptedHashLength = 0;
     }
@@ -1167,7 +1326,7 @@ function installBrowserBenchmark() {
   const finishTerminalHash = async (current: NonNullable<typeof terminal>) => {
     if (current.acceptedHashLength > 0) {
       const block = current.acceptedHashBuffer.slice(0, current.acceptedHashLength);
-      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block.buffer as ArrayBuffer));
+      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block.buffer));
       current.acceptedHashLength = 0;
     }
     const digests = await Promise.all(current.acceptedHashDigests);
@@ -1349,8 +1508,8 @@ function installBrowserBenchmark() {
         echoTailMisses: current.echoTailMisses,
         inputDurationsMs: current.inputDurationsMs,
         inputWindows: current.inputDurationsMs.map((_, index) => ({
-          startTimestamp: current.inputStarts[index]!,
-          endTimestamp: current.inputPaintedAtMs[index]!,
+          startTimestamp: current.inputStarts[index],
+          endTimestamp: current.inputPaintedAtMs[index],
         })),
       };
     },
@@ -1457,7 +1616,7 @@ function installBrowserBenchmark() {
         )
           continue;
         current.inputPaintPending.add(echoIndex);
-        const startedAtMs = current.inputStarts[echoIndex]!;
+        const startedAtMs = current.inputStarts[echoIndex];
         void afterPaint().then((paintedAtMs) => {
           current.inputPaintPending.delete(echoIndex);
           current.inputPaintedAtMs[echoIndex] = paintedAtMs;

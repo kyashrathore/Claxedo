@@ -27,6 +27,7 @@ import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../../credentials/operations/sandbox-verify"
 import type { CredentialProbe } from "../../credentials/operations/discovery"
 import { CredentialVerificationError } from "../../credentials/verification-error"
+import { jsonRecord, jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 
 export type SandboxDriverSettingsRouteOptions = {
   credentials: ControlPlaneCredentials
@@ -157,9 +158,7 @@ async function verifySandboxDriverKey(
     return { state: "unknown", reason: "Claxedo can't check this provider yet — the key was saved as-is." }
   }
   try {
-    const health = await verifySandboxDriverAuth(id, auth, {
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-    })
+    const health = await verifySandboxDriverAuth(id, auth, (options.fetch ? { fetch: options.fetch } : {}))
     if (health === "ok" || health === "rate_capped") return { state: "working" }
     if (health === "no_billing") {
       return {
@@ -188,21 +187,18 @@ function inconclusiveCopy(message: string) {
 }
 
 function apiError(code: string, message: string, extra?: Record<string, unknown>) {
-  return { code, message, ...(extra ?? {}) }
+  return { code, message, ...extra }
 }
 
 function parseDefaultBody(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return { driver: undefined }
-  const driver = (input as Record<string, unknown>).driver
+  const driver = jsonRecord(input)?.driver
   return { driver: typeof driver === "string" ? driver : undefined }
 }
 
 function parseAuthBody(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return { auth: {}, default: undefined }
-  const row = input as Record<string, unknown>
-  const auth = row.auth && typeof row.auth === "object" && !Array.isArray(row.auth)
-    ? Object.fromEntries(Object.entries(row.auth).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
-    : {}
+  const row = jsonRecord(input)
+  if (!row) return { auth: {}, default: undefined }
+  const auth = jsonStringEntries(row.auth)
   return {
     auth,
     default: typeof row.default === "boolean" ? row.default : undefined,
@@ -222,10 +218,10 @@ async function localSandboxDriverMutationDenied(
   request: Request,
   options: SandboxDriverSettingsRouteOptions,
 ) {
-  if (isLoopbackLocalRequest(request)) return
+  if (isLoopbackLocalRequest(request)) return undefined
   const config = options.authConfig ?? controlPlaneAuthConfig()
   const token = bearerToken(request.headers.get("authorization"))
-  if (!config.enabled && config.mode === "local-only" && !token) return
+  if (!config.enabled && config.mode === "local-only" && !token) return undefined
   if (!config.enabled && config.mode === "local-only" && token) {
     return Response.json(localSandboxDriverBody(), { status: 403 })
   }
@@ -240,13 +236,12 @@ async function localSandboxDriverMutationDenied(
   }
 }
 
-function sandboxDriverManagedSecret(id: SandboxDriverID, auth: Record<string, string>) {
-  const values = Object.fromEntries(
-    sandboxDriverCredentialFields[id].flatMap((field) => {
-      const value = auth[field.key]?.trim()
-      return value ? [[field.key, value]] : []
-    }),
-  )
-  if (Object.keys(values).length !== sandboxDriverCredentialFields[id].length) return
+function sandboxDriverManagedSecret(id: SandboxDriverID, auth: Record<string, string>): string | undefined {
+  const values: Record<string, string> = {}
+  for (const field of sandboxDriverCredentialFields[id]) {
+    const value = auth[field.key]?.trim()
+    if (value) values[field.key] = value
+  }
+  if (Object.keys(values).length !== sandboxDriverCredentialFields[id].length) return undefined
   return JSON.stringify(values)
 }

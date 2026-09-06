@@ -25,7 +25,7 @@ const matrix = readFileSync(
 /** `| \`name\` | owner | \`METHOD /path\` |` rows from the matrix. */
 function matrixRows() {
   return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*)` \|[^|]*\| `(GET|POST|PUT|PATCH|DELETE) ([^`]+)` \|/gm)].map(
-    (match) => ({ name: match[1]!, method: match[2]!, path: match[3]! }),
+    (match) => ({ name: match[1], method: match[2], path: match[3] }),
   )
 }
 
@@ -289,6 +289,23 @@ describe("resolveHostedOperation", () => {
     expect(() => resolveHostedOperation("workspace.lifecycle", { id: "ws_1" })).toThrow(MissingOperationParameter)
     expect(() => resolveHostedOperation("workspace.lifecycle", { id: "", operation: "start" })).toThrow(
       MissingOperationParameter,
+    )
+  })
+
+  test("refuses a non-scalar parameter instead of sending [object Object]", () => {
+    // A path segment, a query value and a header all used to be built with
+    // `String(value)`, so an object parameter became the literal
+    // `[object Object]` and travelled to the control plane as if the caller
+    // had meant it.
+    expect(() =>
+      resolveHostedOperation("workspace.lifecycle", { id: { evil: true }, operation: "start" }),
+    ).toThrow(MissingOperationParameter)
+    expect(() => resolveHostedOperation("session.list", { workspaceId: { evil: true } })).toThrow(
+      MissingOperationParameter,
+    )
+    // A number is still a legitimate parameter.
+    expect(resolveHostedOperation("workspace.lifecycle", { id: 7, operation: "start" }).path).toBe(
+      "/api/workspace/7/lifecycle/start",
     )
   })
 

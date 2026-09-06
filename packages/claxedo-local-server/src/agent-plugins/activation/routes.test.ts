@@ -76,7 +76,7 @@ describe("unsigned Agent Plugins public route contribution", () => {
   test("catalogs, retains, and re-enables from the artifact after its source disappears", async () => {
     const subject = await fixture()
     const first = await catalog(subject.app)
-    const candidate = first.candidates[0]!
+    const candidate = first.candidates[0]
     expect(JSON.stringify(first)).not.toContain(subject.root)
 
     let response = await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
@@ -145,7 +145,7 @@ describe("unsigned Agent Plugins public route contribution", () => {
 
   test("serves a skill's retained markdown and keeps serving it after the source disappears", async () => {
     const subject = await fixture()
-    const candidate = (await catalog(subject.app)).candidates[0]!
+    const candidate = (await catalog(subject.app)).candidates[0]
     const skillUrl = (skill: string) =>
       `http://local.test/api/claxedo/plugins/${encodeURIComponent(candidate.pluginInstanceId)}/skills/${encodeURIComponent(skill)}`
 
@@ -189,7 +189,7 @@ describe("unsigned Agent Plugins public route contribution", () => {
 
   test("Refresh is a fresh read that reports Update without mutating or reconciling", async () => {
     const subject = await fixture()
-    const candidate = (await catalog(subject.app)).candidates[0]!
+    const candidate = (await catalog(subject.app)).candidates[0]
     await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -208,14 +208,14 @@ describe("unsigned Agent Plugins public route contribution", () => {
 
   test("Update replaces only the retained pin and keeps the activation choice", async () => {
     const subject = await fixture()
-    const candidate = (await catalog(subject.app)).candidates[0]!
+    const candidate = (await catalog(subject.app)).candidates[0]
     await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ pluginInstanceId: candidate.pluginInstanceId, harnessIds: ["codex"], choice: true, expectedRevision: 0 }),
     })
     await fs.writeFile(path.join(subject.plugin, "marker.txt"), "version two")
-    const changed = (await catalog(subject.app, "/refresh")).candidates[0]!
+    const changed = (await catalog(subject.app, "/refresh")).candidates[0]
 
     const response = await subject.app.request("http://local.test/api/claxedo/plugins/update", {
       method: "POST",
@@ -233,7 +233,7 @@ describe("unsigned Agent Plugins public route contribution", () => {
 
   test("rejects project scope and stale revisions without a partial write", async () => {
     const subject = await fixture()
-    const candidate = (await catalog(subject.app)).candidates[0]!
+    const candidate = (await catalog(subject.app)).candidates[0]
     let response = await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
       method: "POST",
       headers: { "content-type": "application/json" },

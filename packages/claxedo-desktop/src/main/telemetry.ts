@@ -14,13 +14,29 @@
 import type { PostHog } from "posthog-node"
 
 /**
- * A client, its absence, or a still-resolving construction. `posthog-node` is
+ * What the fatal path asks of a client: record one exception, then flush.
+ *
+ * The main process never identifies a user, reads a feature flag, or shuts
+ * the client down — naming only the members it calls keeps that dependency
+ * honest, and lets a fake satisfy the parameter by implementing them rather
+ * than by claiming to be a whole `PostHog`.
+ */
+export type TelemetryFatalSink = Pick<PostHog, "captureException" | "flush">
+
+/** What the install report asks of a client: send one event, then flush.
+ *  See `install-telemetry.ts`, the only consumer. */
+export type TelemetryEventSink = Pick<PostHog, "capture" | "flush">
+
+/**
+ * A sink, its absence, or a still-resolving construction. `posthog-node` is
  * imported lazily inside `createTelemetryClient` (its axios dependency must
  * not load in the un-opted-in path every test and self-built run takes), so
  * the entry point holds a promise; every consumer awaits it, and the
  * synchronous fatal-handler registration below is unaffected.
  */
-export type TelemetryClientHandle = PostHog | undefined | Promise<PostHog | undefined>
+export type TelemetryHandle<Sink> = Sink | undefined | Promise<Sink | undefined>
+
+export type TelemetryClientHandle = TelemetryHandle<TelemetryFatalSink>
 
 export type TelemetryBaseProperties = {
   unit: "desktop-main"

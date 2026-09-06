@@ -375,7 +375,7 @@ describe("ClaxedoSessionReview", () => {
     over("src/loaded.ts", 30, 40)
     await rest()
     expect(primeDiffHighlight).toHaveBeenCalledTimes(1)
-    const [style, fileDiff] = primeDiffHighlight.mock.calls[0]!
+    const [style, fileDiff] = primeDiffHighlight.mock.calls[0]
     expect(style).toBe("unified")
     expect(fileDiff.name).toBe("src/loaded.ts")
     expect(fileDiff.cacheKey).toBeTypeOf("string")
@@ -403,7 +403,7 @@ describe("ClaxedoSessionReview", () => {
       ),
     )
     await waitFor(() => expect(primeDiffHighlight).toHaveBeenCalledTimes(1))
-    expect(primeDiffHighlight.mock.calls[0]![1].name).toBe("src/pending.ts")
+    expect(primeDiffHighlight.mock.calls[0][1].name).toBe("src/pending.ts")
 
     // A press that would show the large-diff guard or a media preview mounts
     // no diff, so there is nothing to highlight ahead of it.
@@ -439,7 +439,7 @@ describe("ClaxedoSessionReview", () => {
     // it, so the diff that press mounts is highlighted ahead of the press.
     setOpen([huge.file])
     await waitFor(() => expect(primeDiffHighlight).toHaveBeenCalledTimes(1))
-    expect(primeDiffHighlight.mock.calls[0]![1].name).toBe(huge.file)
+    expect(primeDiffHighlight.mock.calls[0][1].name).toBe(huge.file)
 
     // Priming is per content: the pane staying up asks for nothing more.
     primeDiffHighlight.mockClear()

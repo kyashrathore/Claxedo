@@ -21,6 +21,8 @@ import {
   type CertifiedHostedWorkerEnvironment,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { isTransientWranglerFailure } from "./prepare-better-auth-d1"
+import { fetchUrl } from "../../src/test-support/fetch-calls"
+import { asRecord, isRecordArray, numberField, parseJson, parseJsonRecords, readJsonRecord, stringField } from "../../src/platform/json/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const VERSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -668,8 +670,9 @@ html_handling = "auto-trailing-slash"
 }
 
 export function requireSecretInventory(output: string, requiredSecrets: string[]) {
-  const parsed = JSON.parse(output) as Array<{ name?: string }>
-  const available = new Set(parsed.map((item) => item.name))
+  const parsed = parseJsonRecords(output)
+  if (!parsed) throw new Error("Wrangler secret list did not return an array of records")
+  const available = new Set(parsed.map((item) => stringField(item, "name")))
   const missing = requiredSecrets.filter((name) => !available.has(name))
   if (missing.length > 0) throw new Error(`missing remote Worker secrets: ${missing.join(", ")}`)
 }
@@ -689,14 +692,14 @@ export async function verifyBootstrapGate(
 ) {
   const attempts = options.attempts ?? 120
   const intervalMs = options.intervalMs ?? 3_000
-  const fetcher = options.fetcher ?? ((input, init) => fetchReleaseProbe(String(input), init))
+  const fetcher = options.fetcher ?? ((input, init) => fetchReleaseProbe(fetchUrl(input), init))
   const wait = options.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
   let lastFailure: unknown = new Error("bootstrap gate was not queried")
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const response = await fetcher(apiOrigin, { signal: AbortSignal.timeout(15_000) })
-      const body = (await response.json()) as { error?: { code?: string } }
-      if (response.status === 503 && body.error?.code === "deployment_bootstrap") return
+      const body = await readJsonRecord(response)
+      if (response.status === 503 && stringField(asRecord(body?.error), "code") === "deployment_bootstrap") return
       lastFailure = new Error("bootstrap gate returned an unexpected response")
     } catch (error) {
       lastFailure = error
@@ -716,7 +719,7 @@ async function fetchHttpsAddress(url: string, address: string, init: RequestInit
       target,
       {
         method: init.method ?? "GET",
-        headers: init.headers as Record<string, string> | undefined,
+        headers: init.headers === undefined ? undefined : Object.fromEntries(new Headers(init.headers)),
         lookup: (_hostname, options, callback) => {
           if (typeof options === "object" && options.all) {
             callback(null, [{ address, family: 4 }])
@@ -732,7 +735,7 @@ async function fetchHttpsAddress(url: string, address: string, init: RequestInit
         response.on("end", () => {
           const headers = new Headers()
           for (let index = 0; index < response.rawHeaders.length; index += 2) {
-            headers.append(response.rawHeaders[index]!, response.rawHeaders[index + 1]!)
+            headers.append(response.rawHeaders[index], response.rawHeaders[index + 1])
           }
           resolve(
             new Response(Buffer.concat(chunks), {
@@ -776,9 +779,10 @@ export async function fetchReleaseProbe(
         lastFailure = error
       }
     }
-    throw new Error("release probe failed through normal and authoritative DNS resolution", {
-      cause: lastFailure,
-    })
+    throw new Error(
+      `release probe failed through normal and authoritative DNS resolution: ${lastFailure instanceof Error ? lastFailure.message : JSON.stringify(lastFailure)}`,
+      { cause: primaryFailure },
+    )
   }
 }
 
@@ -787,7 +791,8 @@ export function parseVersionUploadOutput(output: string, workerName: string) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .map((line) => asRecord(parseJson(line)))
+    .filter((record): record is Record<string, unknown> => record !== undefined)
   if (records.some((record) => record.type === "command-failed")) {
     throw new Error("Wrangler reported a failed version upload")
   }
@@ -810,15 +815,17 @@ export type WorkerDeploymentStatus = {
 }
 
 export function parseDeploymentStatus(output: string): WorkerDeploymentStatus {
-  const status = JSON.parse(output) as Partial<WorkerDeploymentStatus>
-  if (!Array.isArray(status.versions) || status.versions.length < 1 || status.versions.length > 2) {
+  const rows = asRecord(parseJson(output))?.versions
+  if (!isRecordArray(rows) || rows.length < 1 || rows.length > 2) {
     throw new Error("Worker deployment must contain one or two explicit versions")
   }
-  const versions = status.versions.map((version) => {
-    if (!VERSION_ID.test(version.version_id) || !Number.isFinite(version.percentage)) {
+  const versions = rows.map((version) => {
+    const versionId = stringField(version, "version_id")
+    const percentage = numberField(version, "percentage")
+    if (versionId === undefined || percentage === undefined || !VERSION_ID.test(versionId)) {
       throw new Error("Worker deployment status contains an invalid version allocation")
     }
-    return { version_id: version.version_id, percentage: version.percentage }
+    return { version_id: versionId, percentage }
   })
   const total = versions.reduce((sum, version) => sum + version.percentage, 0)
   if (Math.abs(total - 100) > 0.0001) throw new Error("Worker deployment traffic does not total 100 percent")
@@ -908,12 +915,12 @@ export async function resolveReleaseSecretsFile(env: NodeJS.ProcessEnv, required
 }
 
 export function taggedCandidateVersionId(output: string, tag: string) {
-  const versions = JSON.parse(output) as Array<{ id?: string; annotations?: Record<string, string> }>
-  if (!Array.isArray(versions)) throw new Error("Wrangler versions list did not return an array")
-  const matching = versions.filter((version) => version.annotations?.["workers/tag"] === tag)
+  const versions = parseJsonRecords(output)
+  if (!versions) throw new Error("Wrangler versions list did not return an array")
+  const matching = versions.filter((version) => stringField(asRecord(version.annotations), "workers/tag") === tag)
   if (matching.length === 0) return undefined
   if (matching.length !== 1) throw new Error("candidate version tag resolves to more than one Worker version")
-  const versionId = matching[0]?.id
+  const versionId = stringField(matching[0], "id")
   if (!versionId || !VERSION_ID.test(versionId)) throw new Error("tagged candidate version has an invalid ID")
   return versionId
 }
@@ -926,20 +933,17 @@ export function recoverCandidateVersion(input: {
   controlPlaneDatabaseId: string
   namespaceId: string
 }) {
-  const versions = JSON.parse(input.output) as Array<{
-    id?: string
-    annotations?: Record<string, string>
-    resources?: { bindings?: Array<Record<string, unknown>> }
-  }>
-  if (!Array.isArray(versions)) throw new Error("Wrangler versions list did not return an array")
-  const matching = versions.filter((version) => version.annotations?.["workers/tag"] === input.tag)
+  const versions = parseJsonRecords(input.output)
+  if (!versions) throw new Error("Wrangler versions list did not return an array")
+  const matching = versions.filter((version) => stringField(asRecord(version.annotations), "workers/tag") === input.tag)
   if (matching.length === 0) return undefined
   if (matching.length !== 1) throw new Error("candidate version tag resolves to more than one Worker version")
-  const version = matching[0]!
-  if (!version.id || !VERSION_ID.test(version.id) || !Array.isArray(version.resources?.bindings)) {
+  const version = matching[0]
+  const versionId = stringField(version, "id")
+  const bindings = asRecord(version?.resources)?.bindings
+  if (!versionId || !VERSION_ID.test(versionId) || !isRecordArray(bindings)) {
     throw new Error("tagged candidate version has invalid resource metadata")
   }
-  const bindings = version.resources.bindings
   for (const [name, expected] of input.expectedVariables) {
     const found = bindings.find((binding) => binding.type === "plain_text" && binding.name === name)
     if (found?.text !== expected) throw new Error(`tagged candidate version has conflicting ${name}`)
@@ -962,13 +966,12 @@ export function recoverCandidateVersion(input: {
   if (bindings.some((binding) => /document/i.test(String(binding.name)))) {
     throw new Error("tagged candidate version contains an optional-service binding")
   }
-  return version.id
+  return versionId
 }
 
 export function workerVersionHasLiveSyncRoom(output: string) {
-  const version = JSON.parse(output) as { resources?: { bindings?: Array<Record<string, unknown>> } }
-  const bindings = version.resources?.bindings
-  if (!Array.isArray(bindings)) throw new Error("Worker version omitted resource bindings")
+  const bindings = asRecord(asRecord(parseJson(output))?.resources)?.bindings
+  if (!isRecordArray(bindings)) throw new Error("Worker version omitted resource bindings")
   return bindings.some(
     (binding) =>
       binding.type === "durable_object_namespace" &&
@@ -1057,7 +1060,7 @@ async function ensureCutoverLiveSyncLifecycle(input: {
   if (status.versions.length !== 1) {
     throw new Error("the LiveSyncRoom lifecycle bridge refuses an existing split deployment")
   }
-  const incumbentVersionId = status.versions[0]!.version_id
+  const incumbentVersionId = status.versions[0].version_id
   requireDeploymentTraffic(status, [{ versionId: incumbentVersionId, percentage: 100 }])
   const incumbent = await run(["wrangler", "versions", "view", incumbentVersionId, ...input.configArgs, "--json"], {
     capture: true,
@@ -1099,7 +1102,7 @@ async function ensureCutoverLiveSyncLifecycle(input: {
   if (installedStatus.versions.length !== 1) {
     throw new Error("the LiveSyncRoom lifecycle bridge did not produce one atomic deployment")
   }
-  const bridgeVersionId = installedStatus.versions[0]!.version_id
+  const bridgeVersionId = installedStatus.versions[0].version_id
   requireDeploymentTraffic(installedStatus, [{ versionId: bridgeVersionId, percentage: 100 }])
   const bridgeVersion = await run(["wrangler", "versions", "view", bridgeVersionId, ...bridgeConfigArgs, "--json"], {
     capture: true,
@@ -1129,16 +1132,14 @@ async function verifyHealth(input: {
           : undefined,
         signal: AbortSignal.timeout(15_000),
       })
-      const body = (await response.json()) as {
-        platformVersionId?: string
-        release?: { workerBuildId?: string; releaseId?: string; authConfigurationId?: string }
-      }
+      const body = await readJsonRecord(response)
+      const release = asRecord(body?.release)
       if (
         response.ok &&
-        body.platformVersionId === input.versionId &&
-        body.release?.workerBuildId === input.buildId &&
-        body.release.releaseId === input.releaseId &&
-        body.release.authConfigurationId === input.authConfigurationId
+        stringField(body, "platformVersionId") === input.versionId &&
+        stringField(release, "workerBuildId") === input.buildId &&
+        stringField(release, "releaseId") === input.releaseId &&
+        stringField(release, "authConfigurationId") === input.authConfigurationId
       ) {
         return
       }
@@ -1157,8 +1158,8 @@ async function verifyHealth(input: {
 
 async function verifyRestoredIncumbent(apiOrigin: string, versionId: string) {
   const response = await fetchReleaseProbe(`${apiOrigin}/health`, { signal: AbortSignal.timeout(15_000) })
-  const body = (await response.json()) as { status?: string; platformVersionId?: string }
-  if (!response.ok || body.status !== "locked" || body.platformVersionId !== versionId) {
+  const body = await readJsonRecord(response)
+  if (!response.ok || stringField(body, "status") !== "locked" || stringField(body, "platformVersionId") !== versionId) {
     throw new Error("restored incumbent did not recover locked health")
   }
 }
@@ -1167,8 +1168,8 @@ async function verifyBrowserArtifact(appOrigin: string, browserBuildId: string) 
   const response = await fetchReleaseProbe(`${appOrigin}/${BROWSER_BUILD_ATTESTATION}`, {
     signal: AbortSignal.timeout(15_000),
   })
-  const body = (await response.json()) as { browserBuildId?: string }
-  if (!response.ok || body.browserBuildId !== browserBuildId) {
+  const body = await readJsonRecord(response)
+  if (!response.ok || stringField(body, "browserBuildId") !== browserBuildId) {
     throw new Error("deployed browser did not serve the exact release-bound build identity")
   }
 }

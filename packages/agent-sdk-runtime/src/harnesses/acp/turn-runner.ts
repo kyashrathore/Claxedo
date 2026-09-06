@@ -300,7 +300,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       return
     }
     let agentSessionId = current
-    const session = this.store.getSession(id) as { title?: string | null } | null
+    const session = this.store.getSession(id)
     let created = Date.now()
     log.info("sendMessage: found session in store", { id, agentSessionId })
     if (input.model?.modelID) {
@@ -316,7 +316,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       fresh = result.isNew
     } catch (err) {
       log.error("sendMessage: failed to get/spawn ACP process", { err, directory })
-      yield sessionError(`Failed to start ACP process: ${err}`, id)
+      yield sessionError(`Failed to start ACP process: ${errorMessage(err)}`, id)
       return
     }
     const processKey = this.sessionProcessMap().get(id) ?? this.keyForSession(id, directory)
@@ -528,7 +528,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       }
       const stop = (stopReason: StopReason) => {
         log.info("sendMessage: prompt resolved", { stopReason, ms: Date.now() - t0 })
-        for (const runtimeEvent of translateStopReason(stopReason as Parameters<typeof translateStopReason>[0], id)) {
+        for (const runtimeEvent of translateStopReason(stopReason, id)) {
           router.project(runtimeEvent, {
             dir: "in",
             method: "prompt.stop",
@@ -753,7 +753,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       ...(input.variant ? { variant: input.variant } : {}),
     })
     return [
-      ...(recoveryMessage ? [start[0]!] : []),
+      ...(recoveryMessage ? [start[0]] : []),
       ...committed.events.filter((event) => !recoveryMessage || event.type !== "session.status"),
     ]
   }

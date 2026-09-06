@@ -12,6 +12,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import type { AgentPluginHttpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { HostedDynamicConnectionIntegrations } from "../../connections/hosted-d1/types"
+import { readJsonRecord } from "../../platform/json/index"
 import { hostedMcpCatalogAuthentication } from "./catalog-auth"
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -33,10 +34,6 @@ export type HostedMcpOAuthConfiguration = Readonly<{
 type RetainedServer = {
   pluginInstanceId: string
   server: AgentPluginHttpServer
-}
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 async function retainedServers(
@@ -63,8 +60,7 @@ async function retainedServers(
 
 async function requestedIssuer(request: Request | undefined): Promise<string | undefined> {
   if (!request || request.method !== "POST") return undefined
-  const raw: unknown = await request.clone().json().catch(() => undefined)
-  const value = record(raw) ? raw : undefined
+  const value = await readJsonRecord(request.clone())
   if (value?.issuer === undefined) return undefined
   if (typeof value.issuer !== "string" || value.issuer.length > 2_048) throw new Error("MCP authorization server selection is invalid")
   return value.issuer

@@ -151,7 +151,7 @@ describe("session diff", () => {
       const second = resolveFileDiff({ file: "stable.ts", patch: patch(body) })
 
       expect(second).toBe(first)
-      expect(second.cacheKey).toBe(first.cacheKey!)
+      expect(second.cacheKey).toBe(first.cacheKey)
     })
 
     test("mints a new key when the same file's content changes", () => {

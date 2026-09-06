@@ -1,10 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxc-project.github.io/refs/heads/json-schema/src/public/.oxlintrc.schema.json",
   "categories": {
-    "suspicious": "warn"
+    // Every enabled rule is a hard error: `bun run lint` (prepush + CI) fails on any finding.
+    // Editor squiggles and the gate therefore agree. Test globs relax two type rules in
+    // `overrides` below; nothing else is exempt.
+    "correctness": "error",
+    "suspicious": "error"
   },
   "rules": {
-    "typescript/no-base-to-string": "warn",
+    "typescript/no-base-to-string": "error",
     // Effect uses `function*` with Effect.gen/Effect.fnUntraced that don't always yield
     "require-yield": "off",
     // SolidJS uses `let ref: T | undefined` for JSX ref bindings assigned at runtime
@@ -34,12 +38,210 @@
     "no-new": "off",
 
     // Type-aware: catch unhandled promises
-    "typescript/no-floating-promises": "warn",
+    "typescript/no-floating-promises": "error",
     // Warn when spreading non-plain objects (Headers, class instances, etc.)
-    "typescript/no-misused-spread": "warn"
+    "typescript/no-misused-spread": "error"
   },
   "options": {
     "typeAware": true
   },
+  "overrides": [
+    {
+      // Test code: type narrowing at fixture/JSON boundaries is deliberate, and
+      // bun:test types `expect(...).rejects.*` as non-thenable although awaiting
+      // it is required at runtime. Everything else stays enforced in tests.
+      "files": [
+        "**/*.test.ts", "**/*.test.tsx", "**/*.test.mjs",
+        "**/*.vitest.ts", "**/*.vitest.tsx", "**/*.spec.ts",
+        "**/e2e/**", "**/test-support/**", "**/__tests__/**", "**/tests/**"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/await-thenable": "off"
+      }
+    },
+    {
+      // claxedo-app tests only. The type-aware pass cannot see these files:
+      // claxedo-app/tsconfig.json excludes every test glob, so an `@/...` import
+      // inside a test resolves to an error type and this rule reports
+      // "is an 'error' type that acts as 'any'" about working code.
+      //
+      // The exclusion is not arbitrary. The package runs bun:test AND vitest, and
+      // their global type sets conflict — adding `bun` to `types` breaks 74 things
+      // in production sources — so no single program can cover both runners. The
+      // real fix is the pending one-test-runner-per-package decision, not a lint
+      // edit. Scoped to this package so the rule keeps catching genuine redundancy
+      // in every other package's tests.
+      "files": [
+        "packages/claxedo-app/**/*.test.ts", "packages/claxedo-app/**/*.test.tsx",
+        "packages/claxedo-app/**/*.vitest.ts", "packages/claxedo-app/**/*.vitest.tsx",
+        "packages/claxedo-app/e2e/**", "packages/claxedo-app/**/test-support/**",
+        "packages/claxedo-app/**/tests/**"
+      ],
+      "rules": {
+        "typescript/no-redundant-type-constituents": "off"
+      }
+    },
+    {
+      // The branded-identifier mints, and nothing else. A brand
+      // (`string & { readonly __brand: T }`) exists only in the type system, so
+      // turning a stored `TEXT` column into one is an assertion by construction
+      // — there is no runtime shape a predicate could check, and a predicate
+      // that returned `true` would only hide the same claim from this rule.
+      //
+      // Scoped to the exact file whose entire job is minting, so nothing else
+      // can shelter behind it: it declares the brands and the two `as` lines
+      // that produce them. Every other module reaches for a mint instead of
+      // asserting, and stays fully enforced.
+      "files": ["packages/claxedo-server-core/src/platform/auth/branded-id.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The relay's upstream WebSocket constructor, and nothing else. Bun's
+      // global `WebSocket` accepts `(url, { headers })`, but `bun-types` yields
+      // its declaration to `lib.dom` whenever `lib.dom` is loaded
+      // (`Bun.__internal.UseLibDomIfAvailable`), and `lib.dom` declares only the
+      // `(url, protocols)` overload on a `declare var` that cannot be augmented.
+      // Dropping `lib.dom` removes `Request`'s `URL` input, which this package
+      // and its tests rely on — so the real constructor shape is genuinely
+      // inexpressible, not lazily typed.
+      //
+      // Scoped to the exact file that exists to own that one assertion, so the
+      // 4,000-line `bun.ts` consuming it stays fully enforced.
+      "files": ["packages/workspace-relay/src/upstream-websocket.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The server client's single HTTP trust boundary, and nothing else.
+      // `call<T>` turns a parsed JSON body into the type its operation declares.
+      // `T` is not free: it is pinned by the `ClaxedoServerClient` contract in
+      // this same file, so no caller can name an arbitrary type. But nothing
+      // checks that the server actually sent that shape, and at an HTTP boundary
+      // nothing can without a validator.
+      //
+      // This exception is WEAKER than the two above and is admitted on different
+      // grounds, which the next reader should not have to reverse-engineer. A
+      // brand has no runtime shadow and the relay's constructor is genuinely
+      // inexpressible; this claim, by contrast, IS checkable — it just needs a
+      // per-operation decoder for all 43 operations, the way
+      // `platform/account/hosted-operations.ts` already does it there. That is
+      // real work with real safety value, not a lint concern, and it is the
+      // recorded follow-up.
+      //
+      // What was rejected: widening `responseJson` to `unknown` and narrowing at
+      // each call site. It satisfies the rule while adding zero validation, and
+      // it cost 23 type errors across `workspace-panel.tsx`, `project-actions.tsx`
+      // and `usage-api.ts` where concrete types collapsed to `{}`. That moves the
+      // unsoundness outward and multiplies it; keeping it on one line, named, is
+      // honest about where untrusted data enters.
+      //
+      // Scoped to the exact file so every other module stays fully enforced.
+      "files": ["packages/claxedo-app/src/platform/api/server-client-contract.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // Building a total `Record<Key, Value>` by iteration, and nothing else.
+      // The object is partial on every line until the loop ends, and TypeScript
+      // has no way to observe that the loop covered the key union. Neither
+      // escape hatch helps: `Object.fromEntries` returns `{ [k: string]: Value }`,
+      // which is not assignable to a record of named keys, and starting from
+      // `{} as Record<Key, Value>` makes the same claim with worse locality.
+      //
+      // Weaker than the brand above, and admitted on a condition. A brand has no
+      // runtime shadow, so nothing could ever check it; totality here is real but
+      // is guaranteed by the CALLER's manifest — pass a list that enumerates the
+      // key union and the result is total, pass a filtered list and it is not.
+      // So every call site names the manifest it trusts in a comment
+      // (`i18n/provider.tsx` names LOCALE_ENTRIES, `architecture/scanners.ts`
+      // names the metric registry), and a caller that cannot name one must hold
+      // a `Partial<Record<Key, Value>>` instead of routing through here.
+      "files": ["packages/claxedo-app/src/lib/total-record.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The app-side nominal-brand mint, and nothing else — the same concession
+      // as `branded-id.ts` above, in the package that must not depend on it.
+      // These brands are a different vocabulary: `DirectoryRef` is a filesystem
+      // path and `WorkspaceId` is a control-plane id, the sense-1/sense-2 split
+      // `VOCABULARY.md` names and `architecture/directory-named-workspace.guard.test.ts`
+      // pins. Server-core's identically-named `WorkspaceId` is the control-plane
+      // port's, and the dependency direction between the two packages runs the
+      // other way, so merging them to save an override would be the trap a sweep
+      // like this manufactures, not a consolidation.
+      "files": ["packages/claxedo-app/src/platform/identity/brand.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The two things that cannot be done to a Solid store, and nothing else.
+      // `SetStoreFunction<T>` is not one call signature but nine overloads whose
+      // argument lists are derived from `T`'s own shape. TypeScript can neither
+      // erase `T` from it (nothing is assignable to all nine) nor rebuild it
+      // around a wrapper (no generic can reconstruct them), so handing a store
+      // to a library that takes `unknown` and taking it back is inexpressible.
+      //
+      // `restoreStoreTuple<T>` is only sound if it restores the `T` that
+      // `eraseStoreTuple` erased, and that is not a promise in a comment: the
+      // pair is called ten lines apart inside one function in
+      // `platform/persistence/persist.ts` (`:622` erases, `:632` restores).
+      // Split them across owners and this override stops being earned.
+      "files": ["packages/claxedo-app/src/platform/persistence/solid-store-erasure.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The in-memory Chat SDK state adapter, and nothing else. The vendor
+      // `StateAdapter` interface puts an unconstrained type parameter on the
+      // READER — `get<T = unknown>(key): Promise<T | null>` — over a store
+      // every writer fills through `set(key, value: unknown)`. No implementation
+      // of that interface can prove what comes back out, so the unsoundness is
+      // the vendor's shape, not this adapter's, and `T` is not known at runtime
+      // for a check to substitute.
+      //
+      // The file states the three exits that were measured and rejected: typing
+      // the map once as `Map<string, T>` (T belongs to each call, not the
+      // adapter), implementing `get` non-generically (TypeScript checks the
+      // target against a fresh `T`), and hoisting the reads into a shared
+      // `storedValue<T>` (a reusable unsound cast anything can import, which
+      // this rule and `no-unnecessary-type-parameters` both flag again).
+      //
+      // Scoped to the exact file whose only export is that vendor interface's
+      // implementation, so the override cannot widen without the file becoming
+      // more of the same adapter.
+      "files": ["packages/claxedo-channels/src/transport/chat-sdk-memory-state.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The claxedo-app vitest config, and nothing else. vitest 2.1.9 bundles
+      // its own copy of vite@5's declarations while this package and
+      // `vite-plugin-solid` build against the workspace's vite@7. `solid()`
+      // returns the same object at runtime; the two `.d.ts` copies disagree
+      // only nominally, on the `UserConfig` inside `Plugin["apply"]`. There is
+      // no way to state "these are the same type" and no runtime difference to
+      // check — dropping the assertion fails typecheck with TS2769, which is
+      // how this entry was earned rather than assumed.
+      //
+      // This is a dependency-graph artifact, not a claim about the code, and it
+      // disappears when vitest reaches a vite@7-compatible major — not before.
+      // The config is typechecked (`tsconfig.json` includes it), so the skew is
+      // real and cannot be sidestepped by excluding the file.
+      "files": ["packages/claxedo-app/vitest.config.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/*.astro", "**/*.d.ts", "**/sdk.gen.ts"]
 }

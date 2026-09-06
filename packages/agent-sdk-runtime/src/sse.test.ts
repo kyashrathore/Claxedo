@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "./sse"
-import { fakeSetInterval } from "./test-utils/class-internals"
 
 type TestEvent = { type: "delta" | "idle"; value: string }
+
+/** A heartbeat clock that schedules nothing and hands back a recognisable handle. */
+function fakeHeartbeatClock(onSchedule?: (fn: () => void) => void) {
+  let cleared: unknown
+  return {
+    setInterval: (fn: () => void) => {
+      onSchedule?.(fn)
+      return "heartbeat-timer"
+    },
+    clearInterval: (handle: unknown) => { cleared = handle },
+    get cleared() { return cleared },
+  }
+}
 
 test("SSE responses cannot enter the browser HTTP cache", () => {
   expect(sseHeaders()["Cache-Control"]).toBe("no-store")
@@ -10,298 +22,251 @@ test("SSE responses cannot enter the browser HTTP cache", () => {
 
 describe("attachSseFanout", () => {
   test("unsubscribes and clears heartbeat on cleanup", () => {
-    const prevSetInterval = globalThis.setInterval
-    const prevClearInterval = globalThis.clearInterval
     let subscriber: ((event: string) => void) | undefined
-    let cleared: unknown
+    const clock = fakeHeartbeatClock()
     const written: unknown[] = []
 
-    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
-    globalThis.clearInterval = ((id: unknown) => {
-      cleared = id
-    }) as typeof clearInterval
+    const cleanup = attachSseFanout({
+      subscribe(fn) {
+        subscriber = fn
+        return () => {
+          subscriber = undefined
+        }
+      },
+      write(event) {
+        written.push(event)
+      },
+      heartbeat: { type: "heartbeat" },
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+    })
 
-    try {
-      const cleanup = attachSseFanout({
-        subscribe(fn) {
-          subscriber = fn
-          return () => {
-            subscriber = undefined
-          }
-        },
-        write(event) {
-          written.push(event)
-        },
-        heartbeat: { type: "heartbeat" },
-        heartbeatMs: 1000,
-      })
+    subscriber?.("event-1")
+    cleanup()
+    subscriber?.("event-2")
 
-      subscriber?.("event-1")
-      cleanup()
-      subscriber?.("event-2")
-
-      expect(written).toEqual(["event-1"])
-      expect(cleared).toBe("heartbeat-timer")
-      expect(subscriber).toBeUndefined()
-    } finally {
-      globalThis.setInterval = prevSetInterval
-      globalThis.clearInterval = prevClearInterval
-    }
+    expect(written).toEqual(["event-1"])
+    expect(clock.cleared).toBe("heartbeat-timer")
+    expect(subscriber).toBeUndefined()
   })
 
   test("bounds pending writes for slow consumers", async () => {
-    const prevSetInterval = globalThis.setInterval
-    const prevClearInterval = globalThis.clearInterval
+    const clock = fakeHeartbeatClock()
     let subscriber: ((event: string) => void) | undefined
     const written: string[] = []
     const dropped: unknown[] = []
     const resolvers: Array<() => void> = []
 
-    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    const cleanup = attachSseFanout({
+      subscribe(fn) {
+        subscriber = fn
+        return () => {
+          subscriber = undefined
+        }
+      },
+      write(event) {
+        written.push(event as string)
+        return new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+      },
+      heartbeat: { type: "heartbeat" },
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      maxPending: 2,
+      onDrop(event) {
+        dropped.push(event)
+      },
+    })
 
-    try {
-      const cleanup = attachSseFanout({
-        subscribe(fn) {
-          subscriber = fn
-          return () => {
-            subscriber = undefined
-          }
-        },
-        write(event) {
-          written.push(event as string)
-          return new Promise<void>((resolve) => {
-            resolvers.push(resolve)
-          })
-        },
-        heartbeat: { type: "heartbeat" },
-        heartbeatMs: 1000,
-        maxPending: 2,
-        onDrop(event) {
-          dropped.push(event)
-        },
-      })
+    subscriber?.("event-1")
+    subscriber?.("event-2")
+    subscriber?.("event-3")
+    subscriber?.("event-4")
 
-      subscriber?.("event-1")
-      subscriber?.("event-2")
-      subscriber?.("event-3")
-      subscriber?.("event-4")
+    expect(written).toEqual(["event-1"])
+    expect(dropped).toEqual(["event-2"])
 
-      expect(written).toEqual(["event-1"])
-      expect(dropped).toEqual(["event-2"])
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written).toEqual(["event-1", "event-3"])
 
-      resolvers.shift()?.()
-      await Promise.resolve()
-      expect(written).toEqual(["event-1", "event-3"])
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written).toEqual(["event-1", "event-3", "event-4"])
 
-      resolvers.shift()?.()
-      await Promise.resolve()
-      expect(written).toEqual(["event-1", "event-3", "event-4"])
-
-      resolvers.shift()?.()
-      cleanup()
-    } finally {
-      globalThis.setInterval = prevSetInterval
-      globalThis.clearInterval = prevClearInterval
-    }
+    resolvers.shift()?.()
+    cleanup()
   })
 
   test("preserves terminal pending events when slow consumers overflow", async () => {
-    const prevSetInterval = globalThis.setInterval
-    const prevClearInterval = globalThis.clearInterval
+    const clock = fakeHeartbeatClock()
     let subscriber: ((event: TestEvent) => void) | undefined
     const written: TestEvent[] = []
     const dropped: unknown[] = []
     const resolvers: Array<() => void> = []
 
-    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    const cleanup = attachSseFanout<TestEvent>({
+      subscribe(fn) {
+        subscriber = fn
+        return () => {
+          subscriber = undefined
+        }
+      },
+      write(event) {
+        written.push(event as TestEvent)
+        return new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+      },
+      heartbeat: { type: "heartbeat" },
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      maxPending: 2,
+      isTerminal: (event) => event.type === "idle",
+      onDrop(event) {
+        dropped.push(event)
+      },
+    })
 
-    try {
-      const cleanup = attachSseFanout<TestEvent>({
-        subscribe(fn) {
-          subscriber = fn
-          return () => {
-            subscriber = undefined
-          }
-        },
-        write(event) {
-          written.push(event as TestEvent)
-          return new Promise<void>((resolve) => {
-            resolvers.push(resolve)
-          })
-        },
-        heartbeat: { type: "heartbeat" },
-        heartbeatMs: 1000,
-        maxPending: 2,
-        isTerminal: (event) => event.type === "idle",
-        onDrop(event) {
-          dropped.push(event)
-        },
-      })
+    subscriber?.({ type: "delta", value: "1" })
+    subscriber?.({ type: "delta", value: "2" })
+    subscriber?.({ type: "idle", value: "done" })
+    subscriber?.({ type: "delta", value: "3" })
 
-      subscriber?.({ type: "delta", value: "1" })
-      subscriber?.({ type: "delta", value: "2" })
-      subscriber?.({ type: "idle", value: "done" })
-      subscriber?.({ type: "delta", value: "3" })
+    expect(written).toEqual([{ type: "delta", value: "1" }])
+    expect(dropped).toEqual([{ type: "delta", value: "2" }])
 
-      expect(written).toEqual([{ type: "delta", value: "1" }])
-      expect(dropped).toEqual([{ type: "delta", value: "2" }])
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written).toEqual([{ type: "delta", value: "1" }, { type: "idle", value: "done" }])
 
-      resolvers.shift()?.()
-      await Promise.resolve()
-      expect(written).toEqual([{ type: "delta", value: "1" }, { type: "idle", value: "done" }])
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written).toEqual([{ type: "delta", value: "1" }, { type: "idle", value: "done" }, { type: "delta", value: "3" }])
 
-      resolvers.shift()?.()
-      await Promise.resolve()
-      expect(written).toEqual([{ type: "delta", value: "1" }, { type: "idle", value: "done" }, { type: "delta", value: "3" }])
-
-      resolvers.shift()?.()
-      cleanup()
-    } finally {
-      globalThis.setInterval = prevSetInterval
-      globalThis.clearInterval = prevClearInterval
-    }
+    resolvers.shift()?.()
+    cleanup()
   })
 
   test("drops pending heartbeats before real events for slow consumers", async () => {
-    const prevSetInterval = globalThis.setInterval
-    const prevClearInterval = globalThis.clearInterval
     let subscriber: ((event: string) => void) | undefined
     let heartbeatTick: (() => void) | undefined
+    const clock = fakeHeartbeatClock((fn) => { heartbeatTick = fn })
     const written: unknown[] = []
     const dropped: unknown[] = []
     const resolvers: Array<() => void> = []
     const heartbeat = { type: "heartbeat" } as const
 
-    globalThis.setInterval = fakeSetInterval("heartbeat-timer", (fn) => {
-      heartbeatTick = fn
+    const cleanup = attachSseFanout({
+      subscribe(fn) {
+        subscriber = fn
+        return () => {
+          subscriber = undefined
+        }
+      },
+      write(event) {
+        written.push(event)
+        return new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+      },
+      heartbeat,
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      maxPending: 2,
+      onDrop(event) {
+        dropped.push(event)
+      },
     })
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
 
-    try {
-      const cleanup = attachSseFanout({
-        subscribe(fn) {
-          subscriber = fn
-          return () => {
-            subscriber = undefined
-          }
-        },
-        write(event) {
-          written.push(event)
-          return new Promise<void>((resolve) => {
-            resolvers.push(resolve)
-          })
-        },
-        heartbeat,
-        heartbeatMs: 1000,
-        maxPending: 2,
-        onDrop(event) {
-          dropped.push(event)
-        },
-      })
+    subscriber?.("event-1")
+    subscriber?.("event-2")
+    heartbeatTick?.()
+    subscriber?.("event-3")
 
-      subscriber?.("event-1")
-      subscriber?.("event-2")
-      heartbeatTick?.()
-      subscriber?.("event-3")
+    expect(written).toEqual(["event-1"])
+    expect(dropped).toEqual([heartbeat])
 
-      expect(written).toEqual(["event-1"])
-      expect(dropped).toEqual([heartbeat])
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written).toEqual(["event-1", "event-2"])
 
-      resolvers.shift()?.()
-      await Promise.resolve()
-      expect(written).toEqual(["event-1", "event-2"])
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written).toEqual(["event-1", "event-2", "event-3"])
 
-      resolvers.shift()?.()
-      await Promise.resolve()
-      expect(written).toEqual(["event-1", "event-2", "event-3"])
-
-      resolvers.shift()?.()
-      cleanup()
-    } finally {
-      globalThis.setInterval = prevSetInterval
-      globalThis.clearInterval = prevClearInterval
-    }
+    resolvers.shift()?.()
+    cleanup()
   })
 
   test("subscribes before replay and deduplicates setup-gap live events", async () => {
-    const prevSetInterval = globalThis.setInterval
-    const prevClearInterval = globalThis.clearInterval
+    const clock = fakeHeartbeatClock()
     const replay = createSseReplayBuffer<TestEvent>()
     replay.push({ type: "delta", value: "old" })
     const written: Array<{ event: TestEvent; id?: string }> = []
 
-    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    const cleanup = attachSseFanout<TestEvent>({
+      subscribe(fn) {
+        const live = { type: "delta", value: "live" } as const
+        replay.push(live)
+        fn(live)
+        return () => {}
+      },
+      write(event, meta) {
+        written.push({ event: event as TestEvent, id: meta?.id })
+      },
+      heartbeat: { type: "heartbeat" },
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      lastEventId: "0",
+      replay,
+      replayLive: false,
+    })
+    await Promise.resolve()
 
-    try {
-      const cleanup = attachSseFanout<TestEvent>({
-        subscribe(fn) {
-          const live = { type: "delta", value: "live" } as const
-          replay.push(live)
-          fn(live)
-          return () => {}
-        },
-        write(event, meta) {
-          written.push({ event: event as TestEvent, id: meta?.id })
-        },
-        heartbeat: { type: "heartbeat" },
-        heartbeatMs: 1000,
-        lastEventId: "0",
-        replay,
-        replayLive: false,
-      })
-      await Promise.resolve()
-
-      expect(written).toEqual([
-        { event: { type: "delta", value: "old" }, id: "1" },
-        { event: { type: "delta", value: "live" }, id: "2" },
-      ])
-      cleanup()
-    } finally {
-      globalThis.setInterval = prevSetInterval
-      globalThis.clearInterval = prevClearInterval
-    }
+    expect(written).toEqual([
+      { event: { type: "delta", value: "old" }, id: "1" },
+      { event: { type: "delta", value: "live" }, id: "2" },
+    ])
+    cleanup()
   })
 
   test("emits a replay gap payload instead of partial stale replay", async () => {
-    const prevSetInterval = globalThis.setInterval
-    const prevClearInterval = globalThis.clearInterval
+    const clock = fakeHeartbeatClock()
     const replay = createSseReplayBuffer<TestEvent>({ maxEvents: 1 })
     replay.push({ type: "delta", value: "1" })
     replay.push({ type: "delta", value: "2" })
     replay.push({ type: "delta", value: "3" })
     const written: unknown[] = []
 
-    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    const cleanup = attachSseFanout<TestEvent>({
+      subscribe() {
+        return () => {}
+      },
+      write(event) {
+        written.push(event)
+      },
+      heartbeat: { type: "heartbeat" },
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      lastEventId: "1",
+      replay,
+      replayGap: ({ lastEventId, throughId }) => ({
+        type: "delta",
+        value: `gap:${lastEventId}:${throughId}`,
+      }),
+    })
+    await Promise.resolve()
 
-    try {
-      const cleanup = attachSseFanout<TestEvent>({
-        subscribe() {
-          return () => {}
-        },
-        write(event) {
-          written.push(event)
-        },
-        heartbeat: { type: "heartbeat" },
-        heartbeatMs: 1000,
-        lastEventId: "1",
-        replay,
-        replayGap: ({ lastEventId, throughId }) => ({
-          type: "delta",
-          value: `gap:${lastEventId}:${throughId}`,
-        }),
-      })
-      await Promise.resolve()
-
-      expect(written).toEqual([{ type: "delta", value: "gap:1:3" }])
-      cleanup()
-    } finally {
-      globalThis.setInterval = prevSetInterval
-      globalThis.clearInterval = prevClearInterval
-    }
+    expect(written).toEqual([{ type: "delta", value: "gap:1:3" }])
+    cleanup()
   })
 })
 

@@ -94,13 +94,13 @@ describe("diagnostics child owner transport", () => {
     transport.observer.register(descriptor, { stopGracefully: async () => undefined })
     const registrations = sent.filter((message) => message.type === "owner-registered")
     expect(registrations).toHaveLength(2)
-    expect(registrations[0]!.descriptor.ownerOperationId).not.toBe(registrations[1]!.descriptor.ownerOperationId)
+    expect(registrations[0].descriptor.ownerOperationId).not.toBe(registrations[1].descriptor.ownerOperationId)
 
     await transport.onMessage({
       type: "owner-operation-request",
       binding,
       requestId: "request-old-operation",
-      ownerOperationId: registrations[0]!.descriptor.ownerOperationId,
+      ownerOperationId: registrations[0].descriptor.ownerOperationId,
       ownerGeneration: "owner-generation",
       operation: "stop",
       identity: { pid: 75, creation: "start-ticks" },

@@ -1,5 +1,6 @@
 import path from "node:path"
-import { contextKey, evidenceMatches, type MeasurementEvidence } from "./measurement-context"
+import { contextKey, evidenceMatches, parseMeasurementEvidence, type MeasurementEvidence } from "./measurement-context"
+import { isRecord, numberField, recordField, textField } from "./json-fields"
 import { dataRoot, readJson, writeJson } from "./storage"
 import { METRICS, type PerfRecord } from "./perf-record"
 import type { AuthoritativeSourceIdentity } from "./measurement-provenance"
@@ -26,8 +27,60 @@ export function baselineFile(input: { profile: string; stack: string; lane: stri
   return path.join(dataRoot, "baselines", input.profile, input.stack, input.lane, input.suite, `${input.flow}.json`)
 }
 
+/**
+ * Read a stored baseline.
+ *
+ * A file that does not carry the identity fields a comparison is keyed on is
+ * treated as absent: an unreadable baseline must not silently become a
+ * comparison against `undefined` metrics.
+ */
+function parseBaseline(value: unknown): Baseline | undefined {
+  if (!isRecord(value)) return undefined
+  const profile = textField(value, "profile")
+  const stack = textField(value, "stack")
+  const lane = textField(value, "lane")
+  const flow = textField(value, "flow")
+  const suite = textField(value, "suite")
+  const accepted_at = textField(value, "accepted_at")
+  const metrics = recordField(value, "metrics")
+  if (
+    profile === undefined ||
+    stack === undefined ||
+    lane === undefined ||
+    flow === undefined ||
+    suite === undefined ||
+    accepted_at === undefined ||
+    !metrics
+  ) {
+    return undefined
+  }
+  return {
+    ...value,
+    profile,
+    stack,
+    lane,
+    flow,
+    suite,
+    accepted_at,
+    // A metric body with no readable samples is dropped rather than compared:
+    // an empty `samples` and an unreadable one are different answers.
+    metrics: Object.fromEntries(
+      Object.entries(metrics).flatMap(([name, body]) => {
+        if (!isRecord(body) || !Array.isArray(body.samples)) return []
+        const evidence = parseMeasurementEvidence(body.evidence)
+        return [[name, {
+          value: numberField(body, "value"),
+          samples: body.samples.filter((sample) => typeof sample === "number"),
+          absentReason: textField(body, "absentReason"),
+          ...(evidence ? { evidence } : {}),
+        }]]
+      }),
+    ),
+  }
+}
+
 export async function readBaselineFor(input: { profile: string; stack: string; lane: string; flow: string; suite: string }) {
-  return readJson<Baseline | undefined>(baselineFile(input), undefined)
+  return readJson<Baseline | undefined>(baselineFile(input), undefined, parseBaseline)
 }
 
 export function baselineFromRecords(

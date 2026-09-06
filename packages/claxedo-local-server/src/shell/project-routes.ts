@@ -2,7 +2,8 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { listProjects, resolveWorkspace, updateProjectMetadata } from "@claxedo/server-core/workspace/store/index"
 import { ControlPlaneAuthError, controlPlaneAuthContext, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority, type ProjectAction, type ProjectId } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type ProjectAction } from "@claxedo/server-core/platform/auth/authority"
+import { asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import type { ControlPlaneRouteAuthOptions } from "../platform/http/control-plane-route-auth"
 import { workspaceInput } from "./request-context"
@@ -20,7 +21,7 @@ async function projectAccess(request: Request, options: ProjectRouteOptions) {
   const authority = requireAuthority(options.services)
   return {
     local: false,
-    allowed: async (id: string, action: ProjectAction) => (await authority.authorizeProject(auth, { projectId: id as ProjectId, action })).ok,
+    allowed: async (id: string, action: ProjectAction) => (await authority.authorizeProject(auth, { projectId: asProjectId(id), action })).ok,
   }
 }
 

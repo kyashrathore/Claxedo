@@ -1,3 +1,4 @@
+import { readNumber, readString } from "../shared/json-read"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
 type RequestFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -112,12 +113,10 @@ export async function holdClaxedoDaemonLease(
 }
 
 function parseLease(value: unknown) {
-  if (!value || typeof value !== "object") throw new Error("daemon returned an invalid lease")
-  const lease = value as Record<string, unknown>
-  if (typeof lease.id !== "string" || !lease.id || typeof lease.expiresAt !== "number" || !Number.isFinite(lease.expiresAt)) {
-    throw new Error("daemon returned an invalid lease")
-  }
-  return { id: lease.id, expiresAt: lease.expiresAt }
+  const id = readString(value, "id")
+  const expiresAt = readNumber(value, "expiresAt")
+  if (!id || expiresAt === undefined) throw new Error("daemon returned an invalid lease")
+  return { id, expiresAt }
 }
 
 function positive(value: number | undefined, fallback: number) {

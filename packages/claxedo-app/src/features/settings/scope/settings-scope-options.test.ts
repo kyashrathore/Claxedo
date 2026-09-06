@@ -70,13 +70,13 @@ describe("defaultSettingsWorkspace", () => {
   })
 
   test("without a focus, a local workspace is chosen before anything remote", () => {
-    const cloudFirst = settingsWorkspaceOptions([catalog[1]!, catalog[0]!])
-    expect(cloudFirst[0]!.key).toBe("ws_cloud")
+    const cloudFirst = settingsWorkspaceOptions([catalog[1], catalog[0]])
+    expect(cloudFirst[0].key).toBe("ws_cloud")
     expect(defaultSettingsWorkspace(cloudFirst)?.key).toBe("/repo")
   })
 
   test("with no local workspace, the first catalog row is chosen", () => {
-    const remote = settingsWorkspaceOptions([catalog[1]!])
+    const remote = settingsWorkspaceOptions([catalog[1]])
     expect(defaultSettingsWorkspace(remote)?.key).toBe("ws_cloud")
   })
 

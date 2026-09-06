@@ -46,7 +46,7 @@ export function modelKeySignature(model: ModelKey | undefined) {
 }
 
 export function modelKeyFromPickerSelection(input: { providerID?: string; modelID?: string } | undefined): ModelKey | undefined {
-  if (!input?.providerID || !input.modelID) return
+  if (!input?.providerID || !input.modelID) return undefined
   return { providerID: input.providerID, modelID: input.modelID }
 }
 

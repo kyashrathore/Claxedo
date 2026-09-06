@@ -20,6 +20,7 @@ import {
   type SessionListQuery,
   type SessionListResponse,
 } from "../query/session-list"
+import { asRecord } from "@/lib/record"
 
 /**
  * Where one workspace's sessions are read from, chosen by the catalog row's
@@ -56,7 +57,6 @@ const COMPOSED_CENTRAL_MEMBER = "central"
 
 /** Rows the runtime answers with are re-shaped once and paged from memory. */
 const USER_HOSTED_SESSION_LIST_STALE_MS = 30_000
-
 
 /**
  * The app's own central server's list: the daemon's on a local surface, the
@@ -227,9 +227,9 @@ async function composedSessionListPage(input: {
 /** The per-member cursors a composed page handed out, or nothing on page one. */
 function composedCursors(cursor: string | undefined): Record<string, string> | undefined {
   if (cursor === undefined) return undefined
-  const parsed = parseJson(cursor)
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
-  return Object.fromEntries(Object.entries(parsed as Record<string, unknown>)
+  const parsed = asRecord(parseJson(cursor))
+  if (!parsed) return {}
+  return Object.fromEntries(Object.entries(parsed)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }
 
@@ -272,7 +272,7 @@ async function userHostedSessionRows(input: {
         ...(input.request ? { request: input.request, relayRequest: input.request } : {}),
       })
       const list = agentRuntimeSessionListUrl({ serverUrl, roots: true })
-      const rows = await runtime.json<unknown>(`${list.pathname}${list.search}`)
+      const rows = await runtime.json(`${list.pathname}${list.search}`)
       return (Array.isArray(rows) ? rows : []).flatMap((row) => {
         const item = userHostedNavigationRow(row, input.source)
         return item ? [item] : []
@@ -285,10 +285,10 @@ function userHostedNavigationRow(
   row: unknown,
   source: Extract<SessionSource, { kind: "user-hosted" }>,
 ): SessionNavigationRow | undefined {
-  const item = rec(row)
+  const item = asRecord(row)
   const sessionId = txt(item?.id)
-  if (!sessionId) return
-  const time = rec(item?.time)
+  if (!sessionId) return undefined
+  const time = asRecord(item?.time)
   const createdAt = num(time?.created) ?? 0
   const updatedAt = num(time?.updated) ?? createdAt
   const archivedAt = num(time?.archived)
@@ -363,10 +363,6 @@ function rowMatchesView(row: SessionNavigationRow, query: SessionListQuery) {
   if (query.status?.length || query.environment?.length || query.git?.length) return false
   if (query.search && !row.title.toLowerCase().includes(query.search.toLowerCase())) return false
   return true
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 function txt(input: unknown) {

@@ -19,9 +19,32 @@
 import { request as httpsRequest } from "node:https"
 import { request as httpRequest } from "node:http"
 import type { IncomingMessage } from "node:http"
-import { Readable } from "node:stream"
 
 const BODYLESS_STATUS = new Set([204, 205, 304])
+
+function incomingBody(incoming: IncomingMessage): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      incoming.pause()
+      incoming.on("data", (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk))
+        if ((controller.desiredSize ?? 0) <= 0) incoming.pause()
+      })
+      incoming.once("end", () => {
+        controller.close()
+      })
+      incoming.once("error", (error) => {
+        controller.error(error)
+      })
+    },
+    pull() {
+      incoming.resume()
+    },
+    cancel() {
+      incoming.destroy()
+    },
+  })
+}
 
 function toResponse(incoming: IncomingMessage, method: string): Response {
   const headers = new Headers()
@@ -33,7 +56,12 @@ function toResponse(incoming: IncomingMessage, method: string): Response {
   const status = incoming.statusCode ?? 0
   const bodyless = method === "HEAD" || BODYLESS_STATUS.has(status)
   if (bodyless) incoming.resume()
-  return new Response(bodyless ? null : (Readable.toWeb(incoming) as ReadableStream), {
+  // Built from the socket rather than handed over by `Readable.toWeb`: that
+  // answers `node:stream/web`'s ReadableStream, which is NOT the global
+  // `ReadableStream` a `Response` body has to be, and the two were previously
+  // reconciled with an assertion. Backpressure is preserved — the socket stays
+  // paused until the consumer pulls.
+  return new Response(bodyless ? null : incomingBody(incoming), {
     status,
     statusText: incoming.statusMessage ?? "",
     headers,

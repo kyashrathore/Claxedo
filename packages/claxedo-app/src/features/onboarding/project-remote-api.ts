@@ -1,4 +1,5 @@
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { readBoolean, readField, readString } from "@/lib/record"
 
 /**
  * The git remote a picked folder would be cloned from, read from the local-only
@@ -54,18 +55,17 @@ export async function readProjectRemote(input: {
 }
 
 export function parseProjectRemote(value: unknown): ProjectRemoteResult {
-  if (!value || typeof value !== "object") return { kind: "unavailable" }
-  const body = value as Record<string, unknown>
-  if (body.kind === "no_remote" || body.kind === "not_a_repo" || body.kind === "git_timeout") {
-    return { kind: body.kind }
+  const kind = readString(value, "kind")
+  if (kind === "no_remote" || kind === "not_a_repo" || kind === "git_timeout") {
+    return { kind }
   }
-  if (body.kind === "origin") {
-    const remote = parseRemote(body.remote)
+  if (kind === "origin") {
+    const remote = parseRemote(readField(value, "remote"))
     if (!remote) return { kind: "unavailable" }
-    return { kind: "origin", remote, remotes: parseRemotes(body.remotes) }
+    return { kind: "origin", remote, remotes: parseRemotes(readField(value, "remotes")) }
   }
-  if (body.kind === "ambiguous") {
-    const remotes = parseRemotes(body.remotes)
+  if (kind === "ambiguous") {
+    const remotes = parseRemotes(readField(value, "remotes"))
     // Ambiguous with nothing to pick from is not a choice we can present.
     if (remotes.length === 0) return { kind: "no_remote" }
     return { kind: "ambiguous", remotes }
@@ -82,18 +82,19 @@ function parseRemotes(value: unknown): DerivedRemote[] {
 }
 
 function parseRemote(value: unknown): DerivedRemote | undefined {
-  if (!value || typeof value !== "object") return
-  const remote = value as Record<string, unknown>
-  if (typeof remote.name !== "string" || typeof remote.url !== "string") return
+  const name = readString(value, "name")
+  const url = readString(value, "url")
   // A remote with no `display` is dropped rather than shown: falling back to
   // `url` is exactly how an embedded credential would reach the screen.
-  if (typeof remote.display !== "string" || !remote.display) return
+  const display = readString(value, "display")
+  if (name === undefined || url === undefined || !display) return undefined
+  const transport = readField(value, "transport")
   return {
-    name: remote.name,
-    url: remote.url,
-    display: remote.display,
-    transport: isTransport(remote.transport) ? remote.transport : "other",
-    credentialsStripped: remote.credentials_stripped === true,
+    name,
+    url,
+    display,
+    transport: isTransport(transport) ? transport : "other",
+    credentialsStripped: readBoolean(value, "credentials_stripped") === true,
   }
 }
 
@@ -202,6 +203,6 @@ function hostOf(display: string) {
   try {
     return new URL(display).host.toLowerCase()
   } catch {
-    return
+    return undefined
   }
 }

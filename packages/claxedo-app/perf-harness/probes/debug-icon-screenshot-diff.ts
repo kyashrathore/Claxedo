@@ -57,7 +57,7 @@ const comparePixels = async (a: string, b: string) =>
       for (let index = 0; index < first.length; index += 4) {
         let delta = 0
         for (let channel = 0; channel < 4; channel++) {
-          delta = Math.max(delta, Math.abs(first[index + channel]! - second[index + channel]!))
+          delta = Math.max(delta, Math.abs(first[index + channel] - second[index + channel]))
         }
         if (delta === 0) continue
         differing += 1
@@ -110,12 +110,15 @@ for (const scheme of ["light", "dark"]) {
       `data:image/png;base64,${readFileSync(a).toString("base64")}`,
       `data:image/png;base64,${readFileSync(b).toString("base64")}`,
     )
-    if ("sizeMismatch" in result && result.sizeMismatch) {
+    // `in` alone discriminates the union `comparePixels` returns; the extra
+    // truthiness test left the other branch un-narrowed, which is why the
+    // pixel result had to be asserted back.
+    if ("sizeMismatch" in result) {
       console.log(`  ${file.padEnd(32)} SIZE CHANGED ${result.sizeMismatch}`)
       changed += 1
       continue
     }
-    const pixels = result as { differing: number; total: number; maxChannel: number; box?: { x: number; y: number; w: number; h: number } }
+    const pixels = result
     if (pixels.differing === 0) {
       console.log(`  ${file.padEnd(32)} EQUAL PIXELS (bytes differ only)`)
       identical += 1

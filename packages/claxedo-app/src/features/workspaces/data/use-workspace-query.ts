@@ -20,7 +20,7 @@ export type WorkspaceQueryOptions<
   TError = DefaultError,
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
-> = SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey> & {
+> = Omit<SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey>, "initialData"> & {
   // The workspaceId whose connection gates this query. A relay-backed workspace
   // (cloud / user-hosted) supplies its real id and the query is gated on the
   // authority flipping that id to `ready`.
@@ -56,14 +56,15 @@ export function useWorkspaceQuery<
     const ready = workspaceId === undefined
       ? gateWhenUnbacked !== true
       : isWorkspaceReady(workspaceId)
-    return {
+    // Workspace queries never seed initialData — the options type omits it, so
+    // this lands on `useQuery`'s no-initial-data overload without an assertion.
+    const resolved: SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey> & { initialData?: undefined } = {
       ...rest,
       // AND with caller-supplied enabled — never widens it.
       enabled: ready && (opts.enabled ?? true),
       // Do not retry while offline; the authority owns retry/backoff.
       retry: opts.retry ?? false,
-      // Workspace queries never seed initialData — narrow to the
-      // no-initial-data overload so the generic spread resolves.
-    } as SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey> & { initialData?: undefined }
+    }
+    return resolved
   })
 }

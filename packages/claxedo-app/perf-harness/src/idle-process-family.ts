@@ -136,7 +136,7 @@ export function parseIdleProcessTable(output: string): IdleProcessRow[] {
     )
     if (!match) return []
     const startedAtMs = Date.parse(`${match[5]} ${match[6]} ${match[7]} ${match[8]} ${match[9]}`)
-    const cpuSeconds = parseCpuTime(match[4]!)
+    const cpuSeconds = parseCpuTime(match[4])
     if (!Number.isFinite(startedAtMs) || !Number.isFinite(cpuSeconds)) return []
     return [{
       pid: Number(match[1]),
@@ -144,7 +144,7 @@ export function parseIdleProcessTable(output: string): IdleProcessRow[] {
       rssBytes: Number(match[3]) * 1_024,
       cpuSeconds,
       startedAtMs,
-      command: match[10]!,
+      command: match[10],
     }]
   })
 }
@@ -158,10 +158,10 @@ export function summarizeIdleResourceWindow(
   if (!(requestedDurationMs > 0) || !(requestedIntervalMs > 0)) invalidReasons.push("invalid-window")
   if (observations.length < 2) invalidReasons.push("insufficient-samples")
   const ordered = observations.toSorted((left, right) => left.atMs - right.atMs)
-  const gaps = ordered.slice(1).map((sample, index) => sample.atMs - ordered[index]!.atMs)
+  const gaps = ordered.slice(1).map((sample, index) => sample.atMs - ordered[index].atMs)
   const maxSampleGapMs = gaps.length === 0 ? 0 : Math.max(...gaps)
   if (gaps.some((gap) => gap <= 0 || gap > requestedIntervalMs * 2)) invalidReasons.push("sample-gap")
-  const coveredDurationMs = ordered.length < 2 ? 0 : ordered.at(-1)!.atMs - ordered[0]!.atMs
+  const coveredDurationMs = ordered.length < 2 ? 0 : ordered.at(-1)!.atMs - ordered[0].atMs
   if (coveredDurationMs < requestedDurationMs * 0.99) invalidReasons.push("short-window")
 
   const expectedCpuSamples = Math.ceil(requestedDurationMs / requestedIntervalMs)
@@ -188,7 +188,7 @@ function parseCpuTime(value: string) {
   if (clock.some((part) => !Number.isFinite(part)) || clock.length < 2 || clock.length > 3) return Number.NaN
   const seconds = clock.at(-1)!
   const minutes = clock.at(-2)!
-  const hours = clock.length === 3 ? clock[0]! : 0
+  const hours = clock.length === 3 ? clock[0] : 0
   return days * 86_400 + hours * 3_600 + minutes * 60 + seconds
 }
 
@@ -196,5 +196,5 @@ function nearestRank(values: number[], rank: number) {
   if (values.length === 0) return 0
   const ordered = values.toSorted((left, right) => left - right)
   const index = Math.max(0, Math.ceil((rank / 100) * ordered.length) - 1)
-  return ordered[Math.min(index, ordered.length - 1)]!
+  return ordered[Math.min(index, ordered.length - 1)]
 }

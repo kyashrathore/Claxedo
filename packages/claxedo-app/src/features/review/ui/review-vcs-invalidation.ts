@@ -1,3 +1,5 @@
+import { asRecord, readField, readString } from "@/lib/record"
+
 export type ReviewVcsEvent = {
   type: string
   properties?: unknown
@@ -12,8 +14,18 @@ export type ReviewVcsInvalidation = {
 
 const NOTHING: ReviewVcsInvalidation = { diffs: false, branch: false }
 
-function record(properties: unknown) {
-  return typeof properties === "object" && properties ? (properties as Record<string, unknown>) : undefined
+/**
+ * The two fields both classifiers read off a `session.status` payload. Each
+ * used to restate the shape as its own inline assertion; there is one reading
+ * of it now, and `status.type` defaults here rather than at each call site.
+ */
+function sessionStatus(properties: unknown) {
+  const body = asRecord(properties)
+  if (!body) return undefined
+  return {
+    sessionID: readString(body, "sessionID"),
+    type: readString(readField(body, "status"), "type") ?? "idle",
+  }
 }
 
 /**
@@ -62,16 +74,16 @@ export function reviewVcsInvalidationFromEvent(input: {
 }): ReviewVcsInvalidation & { nextSessionStatusType?: string } {
   const { event } = input
   if (event.type === "session.status") {
-    const properties = record(event.properties) as { sessionID?: string; status?: { type?: string } } | undefined
-    if (!properties || properties.sessionID !== input.sessionId) return NOTHING
-    const next = properties.status?.type ?? "idle"
+    const status = sessionStatus(event.properties)
+    if (!status || status.sessionID !== input.sessionId) return NOTHING
+    const next = status.type
     // A turn that just finished is the moment its edits are complete.
     const settled = next === "idle" && !!input.lastSessionStatusType && input.lastSessionStatusType !== "idle"
     return { diffs: settled, branch: false, nextSessionStatusType: next }
   }
   if (event.type === "vcs.branch.updated") return { diffs: true, branch: true }
   if (event.type !== "file.watcher.updated") return NOTHING
-  return watcherFileInvalidation(record(event.properties)?.file) ?? NOTHING
+  return watcherFileInvalidation(readField(event.properties, "file")) ?? NOTHING
 }
 
 /**
@@ -92,12 +104,10 @@ export function createReviewVcsDirectoryClassifier() {
   const statusBySession = new Map<string, string>()
   return (event: ReviewVcsEvent): ReviewVcsInvalidation => {
     if (event.type === "session.status") {
-      const properties = record(event.properties) as
-        | { sessionID?: string; status?: { type?: string } }
-        | undefined
-      const sessionID = properties?.sessionID
+      const status = sessionStatus(event.properties)
+      const sessionID = status?.sessionID
       if (!sessionID) return NOTHING
-      const next = properties.status?.type ?? "idle"
+      const next = status.type
       const previous = statusBySession.get(sessionID)
       statusBySession.delete(sessionID)
       statusBySession.set(sessionID, next)
@@ -112,6 +122,6 @@ export function createReviewVcsDirectoryClassifier() {
     }
     if (event.type === "vcs.branch.updated") return { diffs: true, branch: true }
     if (event.type !== "file.watcher.updated") return NOTHING
-    return watcherFileInvalidation(record(event.properties)?.file) ?? NOTHING
+    return watcherFileInvalidation(readField(event.properties, "file")) ?? NOTHING
   }
 }

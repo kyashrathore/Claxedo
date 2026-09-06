@@ -62,14 +62,14 @@ test("schedules once through the public machine route and delivers once with a s
   const sends = f.runtime.request.mock.calls.filter(([, resource]) => resource === "prompt_async")
   expect(sends).toHaveLength(1)
   expect(JSON.parse((sends[0] as unknown as [string, string, RequestInit])[2].body as string)).toMatchObject({
-    messageID: `wake:${pending[0]!.id}`,
+    messageID: `wake:${pending[0].id}`,
   })
 })
 test("enforces session ownership on cancellation and machine access before scheduling", async () => {
   const f = fixture()
   await f.call("session", "schedule_followup", { when: "+1s" })
   const [wake] = await f.controller.wakes.listForSession("session")
-  expect(await (await f.call("other", "cancel_wake", { wake_id: wake!.id })).json()).toMatchObject({ ok: false })
+  expect(await (await f.call("other", "cancel_wake", { wake_id: wake.id })).json()).toMatchObject({ ok: false })
   f.runtime.authorize.mockRejectedValueOnce(Object.assign(new Error("private session denied"), { status: 403 }))
   expect((await f.call("session", "schedule_followup", { when: "+1s" }, "new-call")).status).toBe(403)
   expect(await f.controller.wakes.listForSession("session")).toHaveLength(1)

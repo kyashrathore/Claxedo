@@ -48,8 +48,10 @@ describe("runtime projection lifetime", () => {
     const first = projectRuntimeEventEnvelope(envelope({ type: "text-delta", delta: "hello" }), projections)
     const next = projectRuntimeEventEnvelope(envelope({ type: "text-delta", delta: " again" }), projections)
     expect(next.map((event) => event.payload.type)).toEqual(["message.part.delta"])
+    const opened = first.at(-1)?.payload.properties
+    if (!opened || typeof opened.partID !== "string") throw new Error("the opening delta announced no partID")
     expect(next[0]?.payload.properties).toMatchObject({
-      partID: (first.at(-1)?.payload.properties as { partID: string }).partID,
+      partID: opened.partID,
       delta: " again",
     })
     expect(projections.size).toBe(1)

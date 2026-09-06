@@ -7,6 +7,7 @@ import { useServer } from "@/app/connection/server"
 import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { same } from "@/lib/same"
+import { isRecord } from "@/lib/record"
 import { createScrollPersistence, type SessionScroll } from "@/app/providers/layout-scroll"
 import { validProjectRef } from "@/platform/sync/worktree"
 import {
@@ -33,7 +34,7 @@ export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "true"
 
 export function getAvatarColors(key?: string) {
-  if (key && AVATAR_COLOR_KEYS.includes(key as AvatarColorKey)) {
+  if (key && (AVATAR_COLOR_KEYS as readonly string[]).includes(key)) {
     return {
       background: `var(--avatar-background-${key})`,
       foreground: `var(--avatar-text-${key})`,
@@ -87,9 +88,6 @@ function createLayoutContextValue() {
         directory,
       })
     }
-
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      typeof value === "object" && value !== null && !Array.isArray(value)
 
     const migrate = (value: unknown) => {
       if (!isRecord(value)) return value
@@ -261,7 +259,7 @@ function createLayoutContextValue() {
           return
         }
 
-        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...(prev ?? {}), ...next }))
+        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...prev, ...next }))
         prune(keep)
       },
     })
@@ -314,7 +312,7 @@ function createLayoutContextValue() {
         local?.icon?.color !== undefined
 
       const base = {
-        ...(metadata ?? {}),
+        ...metadata,
         ...project,
         icon: {
           url: metadata?.icon?.url,
@@ -649,7 +647,7 @@ function createLayoutContextValue() {
           const current = store.sessionView[sessionKey]
           const message = current?.pendingMessage
           const at = current?.pendingMessageAt
-          if (!message || !at) return
+          if (!message || !at) return undefined
 
           setStore(
             "sessionView",
@@ -660,7 +658,7 @@ function createLayoutContextValue() {
             }),
           )
 
-          if (Date.now() - at > PENDING_MESSAGE_TTL_MS) return
+          if (Date.now() - at > PENDING_MESSAGE_TTL_MS) return undefined
           return message
         },
       },

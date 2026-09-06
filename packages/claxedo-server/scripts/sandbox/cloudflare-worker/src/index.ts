@@ -4,7 +4,13 @@
  * Deploy: cd cloudflare-worker && npm install && wrangler deploy
  * Set secret: wrangler secret put API_TOKEN
  */
-import { ContainerProxy, getSandbox, Sandbox as CloudflareSandbox } from "@cloudflare/sandbox"
+import {
+  ContainerProxy,
+  getSandbox,
+  Sandbox as CloudflareSandbox,
+  type SandboxOperations,
+  type SandboxProcess,
+} from "@cloudflare/sandbox"
 import { EGRESS_TARGET_HEADER, handleEgressRequest, mintEgressToken } from "./egress"
 
 // Cloudflare routes intercepted container HTTP(S) through this Worker
@@ -13,14 +19,15 @@ import { EGRESS_TARGET_HEADER, handleEgressRequest, mintEgressToken } from "./eg
 export { ContainerProxy }
 
 // Local export is required for Wrangler's [[containers]].class_name binding to
-// attach this Worker's Dockerfile to the Durable Object class.
-const CloudflareSandboxBase = CloudflareSandbox as new (...args: never[]) => object
-export class Sandbox extends CloudflareSandboxBase {
+// attach this Worker's Dockerfile to the Durable Object class. The process
+// operations `this` is passed to live on the ambient `@cloudflare/sandbox`
+// declaration, so no call site re-asserts `this`.
+export class Sandbox extends CloudflareSandbox {
   private workspaceRuntimeEnsure?: Promise<boolean>
 
   ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number) {
     if (this.workspaceRuntimeEnsure) return this.workspaceRuntimeEnsure
-    const operation = ensureRuntimeProcess(this as unknown as SandboxOperations, command, env, port)
+    const operation = ensureRuntimeProcess(this, command, env, port)
     this.workspaceRuntimeEnsure = operation
     return operation.finally(() => {
       if (this.workspaceRuntimeEnsure === operation) this.workspaceRuntimeEnsure = undefined
@@ -28,7 +35,7 @@ export class Sandbox extends CloudflareSandboxBase {
   }
 
   async workspaceRuntimeReady(port: number) {
-    const process = await runtimeProcess(this as unknown as SandboxOperations)
+    const process = await runtimeProcess(this)
     return Boolean(process && await runtimeReady(process, port, 2_000))
   }
 }
@@ -139,7 +146,7 @@ type EgressRegistration = { hosts: string[]; header: string; value: string }
 async function resolveEgressSecret(env: Env, sandboxId: string, host: string) {
   const raw = await env.EGRESS_SECRETS?.get(sandboxId)
   if (!raw) return undefined
-  const registrations = JSON.parse(raw) as EgressRegistration[]
+  const registrations = egressRegistrations(parseJsonValue(raw))
   const match = registrations.find((reg) => reg.hosts.includes(host))
   return match ? { header: match.header, value: match.value } : undefined
 }
@@ -165,36 +172,6 @@ const SANDBOX_OPTIONS = {
     portReadyTimeoutMS: SANDBOX_PORT_TIMEOUT_MS,
   },
 } as const
-
-interface SandboxProcess {
-  id: string
-  status: "starting" | "running" | "completed" | "failed" | "killed" | "error"
-  kill(signal?: string): Promise<void>
-  getStatus(): Promise<SandboxProcess["status"]>
-  getLogs(): Promise<{ stdout: string; stderr: string }>
-  waitForPort(port: number, options: {
-    mode: "http"
-    path: string
-    status: { min: number; max: number }
-    timeout: number
-  }): Promise<void>
-}
-
-interface SandboxOperations {
-  listProcesses(): Promise<SandboxProcess[]>
-  startProcess(command: string, options: {
-    env: Record<string, string>
-    processId: string
-  }): Promise<SandboxProcess>
-  cleanupCompletedProcesses(): Promise<number>
-}
-
-interface ManagedSandbox {
-  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number): Promise<boolean>
-  workspaceRuntimeReady(port: number): Promise<boolean>
-  createBackup(options: { dir: string }): Promise<{ id: string; dir: string }>
-  restoreBackup(backup: { id: string; dir: string }): Promise<void>
-}
 
 function roundedMs(value: number) {
   return Math.round(value * 100) / 100
@@ -400,7 +377,7 @@ export default {
 
     const sandboxId = parts[1]
     const action = parts[2] || ""
-    const sandbox = getSandbox(env.Sandbox, sandboxId, SANDBOX_OPTIONS) as ReturnType<typeof getSandbox> & ManagedSandbox
+    const sandbox = getSandbox(env.Sandbox, sandboxId, SANDBOX_OPTIONS)
 
     try {
       // DELETE /sandbox/:id
@@ -418,7 +395,7 @@ export default {
         return json({ error: "method not allowed" }, 405)
       }
 
-      const body = await request.json().catch(() => ({})) as Record<string, any>
+      const body = asRecord(await request.json().catch(() => undefined)) ?? {}
 
       switch (action) {
         // Idempotent runtime bring-up that SandboxDriver.ensureHost() calls:
@@ -430,7 +407,7 @@ export default {
         // deployment needs no custom domain or wildcard cert. Returns
         // { ready, url } so a thin edge provider needs ONE round-trip.
         case "ensure-runtime": {
-          const containerEnv = (body.env ?? {}) as Record<string, string>
+          const containerEnv = stringMap(body.env)
           const port: number = typeof body.port === "number" ? body.port : WORKSPACE_RUNTIME_PORT
           const command: string = typeof body.command === "string" ? body.command : ""
           if (!command) return json({ error: "ensure-runtime requires `command`" }, 400)
@@ -442,7 +419,8 @@ export default {
           // Brokered secrets: store the raw values in KV (out of the container)
           // and give the container only the proxy URL + a short-lived JWT +
           // the brokered host list — never the values.
-          const egress = Array.isArray(body.egress) ? (body.egress as EgressRegistration[]) : undefined
+          const registrations = egressRegistrations(body.egress)
+          const egress = registrations.length > 0 ? registrations : undefined
           if (egress?.length) {
             if (!env.EGRESS_SIGNING_SECRET || !env.EGRESS_SECRETS) {
               return json({ error: "egress broker not configured (set EGRESS_SIGNING_SECRET + EGRESS_SECRETS)" }, 503)
@@ -462,7 +440,7 @@ export default {
             // Cloudflare backup mounts are ephemeral and restoring over an
             // active writer is unsafe. Stop the old runtime before mounting
             // the requested backup, then boot against the restored directory.
-            await stopRuntimeProcess(sandbox as unknown as SandboxOperations)
+            await stopRuntimeProcess(sandbox)
             await sandbox.restoreBackup({ id: restore.backupId, dir: restore.directory })
           }
           // Runtime bring-up is a Durable Object RPC with a per-sandbox
@@ -475,7 +453,7 @@ export default {
           // Register only once the sandbox is really up, and carry the labels
           // the control plane sent so GC can apply its own ownership and
           // identity checks against real provider state.
-          await registerSandbox(env, sandboxId, (body.labels ?? {}) as Record<string, string>)
+          await registerSandbox(env, sandboxId, stringMap(body.labels))
           const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
           return json({ ready: true, url: proxyUrl, port })
         }
@@ -506,16 +484,62 @@ export default {
 }
 
 function singleDirectory(input: unknown) {
-  if (!Array.isArray(input) || input.length !== 1 || typeof input[0] !== "string") return
+  if (!Array.isArray(input) || input.length !== 1 || typeof input[0] !== "string") return undefined
   const directory = input[0]
-  if (!directory.startsWith("/") || directory.split("/").includes("..")) return
+  if (!directory.startsWith("/") || directory.split("/").includes("..")) return undefined
   return directory
 }
 
 function directoryRestore(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  const restore = input as Record<string, unknown>
+  const restore = asRecord(input)
+  if (!restore) return undefined
   const directory = singleDirectory(restore.directories)
-  if (!directory || typeof restore.backupId !== "string" || !restore.backupId) return
+  if (!directory || typeof restore.backupId !== "string" || !restore.backupId) return undefined
   return { backupId: restore.backupId, directory }
+}
+
+
+// ── Boundary narrowing ───────────────────────────────────────────────────────
+// This Worker is its own deployable package and cannot reach the control
+// plane's shared `platform/json` guards, so the same three checks live here.
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+function parseJsonValue(text: string): unknown {
+  const parsed: unknown = JSON.parse(text)
+  return parsed
+}
+
+/** Only the string entries of an object; a non-string env or label value is not one. */
+function stringMap(value: unknown): Record<string, string> {
+  const record = asRecord(value)
+  if (!record) return {}
+  return Object.fromEntries(
+    Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
+}
+
+/** Registrations that carry every field the broker uses; a malformed one is dropped rather than trusted. */
+function egressRegistrations(value: unknown): EgressRegistration[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const record = asRecord(entry)
+    const hosts = record?.hosts
+    if (
+      !record ||
+      typeof record.header !== "string" ||
+      typeof record.value !== "string" ||
+      !Array.isArray(hosts) ||
+      !hosts.every((host): host is string => typeof host === "string")
+    ) {
+      return []
+    }
+    return [{ header: record.header, value: record.value, hosts }]
+  })
 }

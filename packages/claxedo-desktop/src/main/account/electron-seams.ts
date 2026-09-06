@@ -17,6 +17,9 @@ import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
 import type { RefreshOutcome } from "./desktop-native-auth"
 import { fetchWithDeadline } from "./hosted-transport"
 
+import { isRecord, readNumber, readString } from "../../shared/json-read"
+import { nodeErrorCode } from "../../shared/node-error"
+
 /**
  * A loopback listener on an OS-assigned port.
  *
@@ -71,7 +74,7 @@ export function readCredentialFile(path: string, read: (path: string, encoding: 
   try {
     return read(path, "utf8")
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (nodeErrorCode(error) === "ENOENT") return undefined
     throw error
   }
 }
@@ -114,7 +117,7 @@ export function credentialFile(userDataDir: string): CredentialFile {
         renameSync(path, join(userDataDir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-${randomUUID()}`))
         syncDirectory()
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        if (nodeErrorCode(error) !== "ENOENT") throw error
       }
     },
     clear: () => {
@@ -229,7 +232,8 @@ async function postToTokenEndpoint(
  * dropping it there would silently downgrade the session to unrenewable — the
  * next expiry would sign the user out and nothing would explain why.
  */
-function decodeTokenPayload(payload: TokenPayload, fallbackRefreshToken?: string): TokenSet | undefined {
+function decodeTokenPayload(payload: TokenPayload | undefined, fallbackRefreshToken?: string): TokenSet | undefined {
+  if (!payload) return undefined
   const accessToken = controlPlaneBearerFromTokenPayload(payload)
   if (
     !accessToken ||
@@ -268,7 +272,7 @@ export function tokenExchange(
       input.signal,
     )
     if (!response.ok) throw new Error(`token exchange failed: ${response.status}`)
-    const tokens = decodeTokenPayload((await response.json()) as TokenPayload)
+    const tokens = decodeTokenPayload(parseTokenPayload(await response.json()))
     // Throwing, unlike the refresh grant below: this one runs inside a sign-in
     // attempt that already has a failure channel, and there is no existing
     // session whose fate depends on telling the causes apart.
@@ -350,9 +354,29 @@ export function refreshExchange(
 
 function parseTokenBody(body: string): TokenPayload | undefined {
   try {
-    const parsed = JSON.parse(body) as unknown
-    return parsed && typeof parsed === "object" ? (parsed as TokenPayload) : undefined
+    return parseTokenPayload(JSON.parse(body))
   } catch {
     return undefined
+  }
+}
+
+/**
+ * The one reader for a token endpoint's answer, on either grant.
+ *
+ * Both call sites used to assert `as TokenPayload` over `JSON.parse`/`.json()`
+ * output, which claims six typed fields the server never promised — and the
+ * consumers below then re-checked those types anyway. Reading the fields here
+ * makes that check the ONLY one, and a hostile body simply loses the members
+ * whose type is wrong instead of arriving mistyped.
+ */
+function parseTokenPayload(value: unknown): TokenPayload | undefined {
+  if (!isRecord(value)) return undefined
+  return {
+    access_token: readString(value, "access_token"),
+    id_token: readString(value, "id_token"),
+    refresh_token: readString(value, "refresh_token"),
+    expires_in: readNumber(value, "expires_in"),
+    token_type: readString(value, "token_type"),
+    error: readString(value, "error"),
   }
 }

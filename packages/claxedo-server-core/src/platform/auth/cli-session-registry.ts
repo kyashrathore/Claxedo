@@ -22,6 +22,7 @@
 
 /** Access tokens authenticate API calls; refresh tokens only mint new pairs. */
 import { ClaxedoError } from "../errors/base"
+import { isOneOf, jsonRecord, jsonString } from "../runtime/lib/json"
 
 export type CliSessionTokenKind = "access" | "refresh"
 
@@ -51,11 +52,14 @@ export type CliSessionTokenRecord = {
   sessionExpiresAt: number
 }
 
-export type CliSessionTokenInactiveCode =
-  | "cli_session_token_unknown"
-  | "cli_session_token_revoked"
-  | "cli_session_token_expired"
-  | "cli_session_token_mismatch"
+export const CLI_SESSION_TOKEN_INACTIVE_CODES = [
+  "cli_session_token_unknown",
+  "cli_session_token_revoked",
+  "cli_session_token_expired",
+  "cli_session_token_mismatch",
+] as const
+
+export type CliSessionTokenInactiveCode = (typeof CLI_SESSION_TOKEN_INACTIVE_CODES)[number]
 
 export type CliSessionTokenStatus =
   | { active: true; record: CliSessionTokenRecord }
@@ -266,8 +270,20 @@ export type CliSessionTokenAuthority = {
 }
 
 function revokedCount(result: unknown) {
-  const value = (result as { revoked?: unknown } | undefined)?.revoked
+  const value = jsonRecord(result)?.revoked
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+/**
+ * The authority's rejection code, when it is one this contract declares.
+ *
+ * An unrecognized code reads as `undefined` so the caller substitutes
+ * `cli_session_token_unknown`: the answer is a rejection either way, and the
+ * status type promises a member of the union rather than whatever string the
+ * authority happened to send.
+ */
+function inactiveCode(value: unknown): CliSessionTokenInactiveCode | undefined {
+  return isOneOf(value, CLI_SESSION_TOKEN_INACTIVE_CODES) ? value : undefined
 }
 
 function inactive(code: CliSessionTokenInactiveCode, reason: string): CliSessionTokenStatus {
@@ -299,69 +315,71 @@ export function authorityCliSessionTokenRegistry(
       return { ok: true }
     },
     async rotate(args) {
-      const result = (await authority.rotateCliSessionTokens({
-        previous_jti: args.previous.jti,
-        token_identifier: args.previous.tokenIdentifier,
-        minted: args.minted.map(wire),
-      })) as { ok?: unknown; code?: unknown; reason?: unknown } | undefined
+      const result = jsonRecord(
+        await authority.rotateCliSessionTokens({
+          previous_jti: args.previous.jti,
+          token_identifier: args.previous.tokenIdentifier,
+          minted: args.minted.map(wire),
+        }),
+      )
       // Same posture as `active`: only an unambiguous `ok: true` counts. A
       // malformed or partial answer means we do not know whether the burn
       // landed, and the caller must throw the signed tokens away.
       if (result?.ok === true) return { ok: true }
       return {
         ok: false,
-        code:
-          typeof result?.code === "string"
-            ? (result.code as CliSessionTokenInactiveCode)
-            : "cli_session_token_unknown",
-        reason: typeof result?.reason === "string" ? result.reason : "CLI session token could not be rotated",
+        code: inactiveCode(result?.code) ?? "cli_session_token_unknown",
+        reason: jsonString(result?.reason) ?? "CLI session token could not be rotated",
       }
     },
     async active(args) {
-      const result = (await authority.cliSessionTokenActive({
-        jti: args.jti,
-        kind: args.kind,
-        token_identifier: args.tokenIdentifier,
-      })) as
-        | { active?: unknown; code?: unknown; reason?: unknown; record?: Partial<CliSessionTokenRecord> }
-        | undefined
+      const result = jsonRecord(
+        await authority.cliSessionTokenActive({
+          jti: args.jti,
+          kind: args.kind,
+          token_identifier: args.tokenIdentifier,
+        }),
+      )
       if (result?.active !== true) {
-        const code = typeof result?.code === "string" ? (result.code as CliSessionTokenInactiveCode) : undefined
         return inactive(
-          code ?? "cli_session_token_unknown",
-          typeof result?.reason === "string" ? result.reason : "CLI session token is not active",
+          inactiveCode(result?.code) ?? "cli_session_token_unknown",
+          jsonString(result?.reason) ?? "CLI session token is not active",
         )
       }
-      const record = result.record
+      const record = jsonRecord(result.record)
+      const sessionId = jsonString(record?.sessionId)
+      const expiresAt = record?.expiresAt
+      const sessionExpiresAt = record?.sessionExpiresAt
       if (
-        record?.jti !== args.jti ||
-        record.kind !== args.kind ||
-        record.tokenIdentifier !== args.tokenIdentifier ||
-        typeof record.sessionId !== "string" ||
-        !record.sessionId.trim() ||
-        typeof record.expiresAt !== "number" ||
-        !Number.isFinite(record.expiresAt) ||
-        typeof record.sessionExpiresAt !== "number" ||
-        !Number.isFinite(record.sessionExpiresAt)
+        jsonString(record?.jti) !== args.jti ||
+        jsonString(record?.kind) !== args.kind ||
+        jsonString(record?.tokenIdentifier) !== args.tokenIdentifier ||
+        !sessionId?.trim() ||
+        typeof expiresAt !== "number" ||
+        !Number.isFinite(expiresAt) ||
+        typeof sessionExpiresAt !== "number" ||
+        !Number.isFinite(sessionExpiresAt)
       ) {
         return inactive(
           "cli_session_token_mismatch",
           "CLI session token registry returned an invalid or mismatched record",
         )
       }
-      if (record.expiresAt <= Date.now() || record.sessionExpiresAt <= Date.now()) {
+      if (expiresAt <= Date.now() || sessionExpiresAt <= Date.now()) {
         return inactive("cli_session_token_expired", "CLI session token has expired")
       }
+      // The three identity fields were just proven equal to the arguments, so
+      // the argument values carry their declared types into the record.
       return {
         active: true,
         record: {
-          jti: record.jti,
-          kind: record.kind,
-          tokenIdentifier: record.tokenIdentifier,
-          subject: record.subject ?? record.tokenIdentifier,
-          sessionId: record.sessionId,
-          expiresAt: record.expiresAt,
-          sessionExpiresAt: record.sessionExpiresAt,
+          jti: args.jti,
+          kind: args.kind,
+          tokenIdentifier: args.tokenIdentifier,
+          subject: jsonString(record?.subject) ?? args.tokenIdentifier,
+          sessionId,
+          expiresAt,
+          sessionExpiresAt,
         },
       }
     },

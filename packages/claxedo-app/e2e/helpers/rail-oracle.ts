@@ -1,38 +1,6 @@
-// Rail sidebar assertions for scenario group B (session lifecycle & rail) from
-// `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`. Every spec that claims a
-// rail row is visible, retitled, reordered, unique, or status-transitioned proves it
-// through this module — never through a bare `page.locator`/`getByText` on the rail DOM,
-// the same discipline `turn-oracle.ts` enforces for assistant replies (see
-// `e2e/INVARIANTS.md`, "The Oracle").
-//
-// DOM contract, captured from the live app 2026-08-06 (exact strings, not paraphrased):
-//   row:    [data-testid="rail-sidebar-session-row"][data-session-id="<id>"]
-//   title:  [data-slot="session-navigation-title"]
-//   time:   [data-slot="session-navigation-time"]
-//   dot:    [data-sidebar-status]  values: working|permission|done
-//   glyph:  [data-slot="navigation-row-glyph"]  (the dot's containing column)
-//   terminal row: [data-testid="rail-sidebar-terminal-row"][data-terminal-id="<id>"]
-//
-// None of these helpers query without an exact `data-session-id`/`data-terminal-id`, and
-// none fall back to `.first()` on that scoped locator. Open issue #14 (plan line 187-192)
-// makes a `session.lifecycle` frame carrying `info.workspaceID` render TWICE — once under
-// a project section, once under a workspace section. `.first()` hides that by picking
-// whichever copy happens to work; a strict-mode Playwright assertion on the un-narrowed
-// locator surfaces it as a hard failure instead, which is what `expectRailRowUnique`
-// exists to name explicitly. `.first()` is used ONLY where the assertion's subject really
-// is "whichever row is first" (`expectRailRowMovesToTop`) — never as a workaround for
-// row-identity ambiguity.
 import { expect, type Locator, type Page } from "@playwright/test"
 import { captureEvidence, type Evidence } from "./visual-evidence"
 
-// Evidence wiring (Phase 5 closure, plan line 259-262 / INVARIANTS.md rule #2): every
-// function below now accepts an OPTIONAL `evidence?: Evidence` field and, when present,
-// writes `test-results/evidence/<spec>/<scenario>.png` via `captureEvidence` at the exact
-// point each function makes its claim. Optional and additive on purpose — every existing
-// caller (`desktop-unsigned-embedded.spec.ts`, `real-harness-local.spec.ts`) passes opts
-// objects without `evidence` today, and `if (evidence) …` below means those calls are
-// unaffected; only a caller that opts in pays for the screenshot.
-//
 // Capture ALWAYS precedes the assertion it documents, never follows it. This inverts
 // `turn-oracle.ts`'s existing order (there, `captureEvidence` is the LAST step, after
 // `domTruth`/`thinkingRowGone`/`submitControlReady`/`geometricTruth` have all already
@@ -58,7 +26,6 @@ export const SELECTORS = {
 
 const DEFAULT_TIMEOUT = 15_000
 
-/** The create-time placeholder titles; a settled title is anything else. */
 const PLACEHOLDER_TITLE = /^(New Session|Untitled session)$/
 
 /**
@@ -82,10 +49,6 @@ export async function expectRailRowVisible(opts: {
   const { page, sessionId, index, timeout = DEFAULT_TIMEOUT, evidence } = opts
   const row = page.locator(SELECTORS.sessionRow(sessionId))
 
-  // Capture BEFORE the wait/assert below (see file header): if the row never appears,
-  // `toBeVisible` throws on timeout and this is the only screenshot this call will ever
-  // produce — it must exist already, showing the rail in whatever state defects 1/2/7
-  // left it (row absent, or present pre-reload-only).
   if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
 
   await expect(
@@ -103,7 +66,6 @@ export async function expectRailRowVisible(opts: {
   return row
 }
 
-/** A settled/idle row must not retain a stale lifecycle dot. */
 export async function expectRailStatusAbsent(opts: {
   page: Page
   sessionId: string
@@ -145,18 +107,10 @@ export async function expectRailTitleSettled(opts: {
   for (;;) {
     const text = (await title.textContent().catch(() => null))?.trim() ?? ""
     if (text.length > 0 && !PLACEHOLDER_TITLE.test(text)) {
-      // Capture at the instant the claim ("title left the placeholder") becomes true —
-      // this success path has no `expect()` of its own (the function just returns), so
-      // this is the only place to place the capture-before-the-claim call on the happy
-      // path. A caller that immediately asserts on the returned string still gets a
-      // screenshot proving the DOM state that produced it.
       if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
       return text
     }
     if (Date.now() > deadline) {
-      // Failure path: capture BEFORE the two expects below, which is what actually
-      // throws defect 8's error. Without this, a timed-out title-settle proof would be
-      // the one case in this module with an assertion and zero evidence.
       if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
       expect(text.length, `rail title for session "${sessionId}" never rendered any text within ${timeout}ms`).toBeGreaterThan(0)
       expect(
@@ -183,9 +137,6 @@ export async function expectRailRowMovesToTop(opts: {
   evidence?: Evidence
 }): Promise<void> {
   const { page, sessionId, timeout = DEFAULT_TIMEOUT, evidence } = opts
-  // Capture before the assert (file header rationale): a failure here means "the WRONG
-  // row is at index 0", and the screenshot is the only artifact that shows which row that
-  // actually is without a reviewer re-running the spec under a debugger.
   if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
   await expect(
     page.locator(SELECTORS.allSessionRows).first(),
@@ -208,10 +159,6 @@ export async function expectRailRowUnique(opts: {
   evidence?: Evidence
 }): Promise<void> {
   const { page, sessionId, timeout = DEFAULT_TIMEOUT, evidence } = opts
-  // Capture before the assert (file header rationale): a duplicate-row failure is exactly
-  // the kind of defect a screenshot settles at a glance (two rows for the same session,
-  // one under each section) where the count-mismatch error message alone does not show
-  // WHERE the second row rendered.
   if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
   await expect(
     page.locator(SELECTORS.sessionRow(sessionId)),
@@ -256,9 +203,6 @@ export async function expectRailStatus(opts: {
   const row = page.locator(SELECTORS.sessionRow(sessionId))
   await expect(row, `rail row for session "${sessionId}" is not visible`).toBeVisible({ timeout })
 
-  // Mount-while-idle proof (the defect-12 gate): the dot must be ABSENT right now,
-  // before any status is driven, or this scenario cannot tell a working transition
-  // apart from a component that only ever renders whatever status it saw at mount.
   await expect(
     row.locator(SELECTORS.statusDot),
     `rail row for session "${sessionId}" already carries a status dot before this oracle drove one — the idle-mount precondition the defect-12 proof depends on does not hold`,
@@ -295,14 +239,9 @@ export async function expectRailStatus(opts: {
 
   await driveDone()
 
-  // Same reasoning as the working-side capture above, suffixed "-done" for the second
-  // claim of this two-claim scenario.
   const doneEvidence = withSuffix(evidence, "done")
   if (doneEvidence) await captureEvidence({ page, spec: doneEvidence.spec, scenario: doneEvidence.scenario })
 
-  // Never focused by this oracle's caller (that's the scenario's whole point), so a
-  // settled turn must land on "done" (unseen), never silently revert to no-dot idle —
-  // the invariant `core-sidebar-tree.spec.ts` behavior 4 documents.
   await expect(
     row.locator(`${SELECTORS.statusDot}[data-sidebar-status="done"]`),
     `rail row for session "${sessionId}" never settled to "done" after driveDone (expected the unseen-done state for a completed, unfocused turn)`,

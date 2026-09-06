@@ -15,6 +15,7 @@ import {
   type DocumentIndexScope,
 } from "../../index-contract"
 import { mapBounded } from "../../map-bounded"
+import { asRecord, parseJson } from "../../../platform/json/index"
 
 type Locator = Readonly<{
   version: 1
@@ -404,15 +405,15 @@ function digest(value: string) {
   let forward = 0x811c9dc5
   let backward = 0x01000193
   for (let position = 0; position < bytes.length; position++) {
-    forward = Math.imul(forward ^ bytes[position]!, 0x01000193) >>> 0
-    backward = Math.imul(backward ^ bytes[bytes.length - 1 - position]!, 0x811c9dc5) >>> 0
+    forward = Math.imul(forward ^ bytes[position], 0x01000193) >>> 0
+    backward = Math.imul(backward ^ bytes[bytes.length - 1 - position], 0x811c9dc5) >>> 0
   }
   return `${forward.toString(16).padStart(8, "0")}${backward.toString(16).padStart(8, "0")}${bytes.length.toString(16)}`
 }
 
 function parseRepositoryPointer(body: Uint8Array) {
   try {
-    const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as Record<string, unknown>
+    const value = asRecord(parseJson(new TextDecoder("utf-8", { fatal: true }).decode(body)))
     return value?.version === 1 && typeof value.documentId === "string" && /^[A-Za-z0-9_-]+$/.test(value.documentId)
       ? value.documentId
       : undefined
@@ -453,15 +454,15 @@ function parse(body: Uint8Array, expected: Readonly<{ orgId: string; projectId: 
 }
 
 function parseLocator(body: Uint8Array, orgId: string, documentId: string): Locator {
-  const value = JSON.parse(new TextDecoder().decode(body)) as unknown
-  if (!value || typeof value !== "object") throw corruptLocator()
-  const locator = value as Record<string, unknown>
+  const locator = asRecord(parseJson(new TextDecoder().decode(body)))
+  if (!locator) throw corruptLocator()
+  const state = locator.state
   if (
     Object.keys(locator).some(
       (field) => !["version", "state", "orgId", "projectId", "documentId", "objectKey"].includes(field),
     ) ||
     locator.version !== 1 ||
-    !["active", "deleting", "deleted"].includes(locator.state as string) ||
+    (state !== "active" && state !== "deleting" && state !== "deleted") ||
     locator.orgId !== orgId ||
     locator.documentId !== documentId ||
     typeof locator.projectId !== "string" ||
@@ -476,12 +477,20 @@ function parseLocator(body: Uint8Array, orgId: string, documentId: string): Loca
   ) {
     throw corruptLocator()
   }
-  return locator as Locator
+  // Every field the type promises has just been checked one line at a time.
+  return {
+    version: 1,
+    state,
+    orgId,
+    projectId: locator.projectId,
+    documentId,
+    objectKey: locator.objectKey,
+  }
 }
 
 function documentIdFromKey(objectKey: string, scope: DocumentIndexScope) {
   const relative = objectKey.slice(prefix(scope.orgId, scope.projectId).length)
-  return relative.includes("/") ? relative.split("/", 1)[0]! : relative.slice(0, -5)
+  return relative.includes("/") ? relative.split("/", 1)[0] : relative.slice(0, -5)
 }
 
 function duplicate(documentId: string) {

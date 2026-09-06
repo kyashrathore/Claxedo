@@ -36,6 +36,7 @@
 //   CLAXEDO_VISUAL_GOLDEN_DIR     default <package>/e2e/goldens
 import path from "node:path"
 import { comparePng, parseEvidenceRelativePath, type Evidence } from "../e2e/helpers/visual-evidence"
+import { readBoolean, readString } from "../src/lib/record"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const EVIDENCE_DIR = path.resolve(Bun.env.CLAXEDO_VISUAL_EVIDENCE_DIR ?? path.join(PACKAGE_DIR, "test-results/evidence"))
@@ -115,7 +116,19 @@ async function loadAdjudicatorFromArg() {
     console.error(`--adjudicator module ${resolved} has no default export or named "adjudicate" export`)
     process.exit(2)
   }
-  adjudicateWith(candidate as VisualAdjudicator)
+  // The module is loaded at runtime, so its signature cannot be checked here.
+  // Wrap it: the adapter has the declared type, and a module that answers with
+  // something other than a verdict fails loudly at its own call site rather
+  // than silently reporting a diff as verified.
+  adjudicateWith(async (request) => {
+    const verdict: unknown = await candidate(request)
+    const verified = readBoolean(verdict, "verified")
+    const reason = readString(verdict, "reason")
+    if (verified === undefined || reason === undefined) {
+      throw new Error(`--adjudicator module ${resolved} did not return { verified, reason }`)
+    }
+    return { verified, reason }
+  })
 }
 
 // --- Walking evidence ----------------------------------------------------------------

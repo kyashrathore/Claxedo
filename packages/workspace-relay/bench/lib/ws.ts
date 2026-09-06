@@ -63,20 +63,19 @@ export async function probeWebSocket(options: WsProbeOptions): Promise<WsProbeRe
   // both `protocols` and `headers` (custom headers like Origin and the trace
   // opt-in ride here). The plain DOM form `new WebSocket(url, protocols)` can't
   // send headers, so we always use the object form when headers are present.
-  const ctor = WebSocket as unknown as {
-    new (url: string, options?: string[] | { protocols?: string[]; headers?: Record<string, string> }): WebSocket
-  }
+  // `bench/tsconfig.json` leaves `lib.dom` out precisely so this signature is
+  // the one TypeScript sees.
   let socket: WebSocket
   try {
     if (options.headers) {
-      socket = new ctor(options.url, {
+      socket = new WebSocket(options.url, {
         ...(options.protocols ? { protocols: options.protocols } : {}),
         headers: options.headers,
       })
     } else if (options.protocols) {
-      socket = new ctor(options.url, options.protocols)
+      socket = new WebSocket(options.url, options.protocols)
     } else {
-      socket = new ctor(options.url)
+      socket = new WebSocket(options.url)
     }
   } catch (err) {
     result.failureCode = err instanceof Error ? err.message : "construct_failed"

@@ -86,7 +86,7 @@ async function settle() {
 describe("document persistence controller", () => {
   test("recovery drafts rewrite content on each edit without rewriting an unchanged version index", () => {
     const storage = memoryStorage()
-    const setItem = storage.setItem
+    const setItem = storage.setItem.bind(storage)
     let versionIndexWrites = 0
     storage.setItem = (key, value) => {
       if (key.endsWith(":versions")) versionIndexWrites++

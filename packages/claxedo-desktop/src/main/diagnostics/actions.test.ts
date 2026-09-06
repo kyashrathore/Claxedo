@@ -67,7 +67,7 @@ describe("diagnostics owner actions", () => {
     expect(eligibility.state).toBe("eligible")
     if (eligibility.state !== "eligible") throw new Error("expected eligible action")
     expect(eligibility.actions.map((grant) => grant.action)).toEqual(["stop", "kill"])
-    const stop = actions.claim({ action: "stop", token: eligibility.actions[0]!.token })
+    const stop = actions.claim({ action: "stop", token: eligibility.actions[0].token })
     expect(stop.ok).toBeTrue()
     if (!stop.ok) throw new Error("expected action claim")
     expect(await actions.execute({
@@ -77,7 +77,7 @@ describe("diagnostics owner actions", () => {
     })).toEqual({ ok: true })
     expect(invoked).toEqual(["stop"])
 
-    const kill = actions.claim({ action: "kill", token: eligibility.actions[1]!.token })
+    const kill = actions.claim({ action: "kill", token: eligibility.actions[1].token })
     expect(kill.ok).toBeTrue()
     if (!kill.ok) throw new Error("expected action claim")
     expect(await actions.execute({
@@ -103,11 +103,11 @@ describe("diagnostics owner actions", () => {
     const eligibility = actions.eligibility(processRecord, owner)
     if (eligibility.state !== "eligible") throw new Error("expected eligible action")
     at = 1_011
-    expect(actions.claim({ action: "stop", token: eligibility.actions[0]!.token })).toEqual({
+    expect(actions.claim({ action: "stop", token: eligibility.actions[0].token })).toEqual({
       ok: false,
       result: { ok: false, action: "stop", code: "expired-token" },
     })
-    expect(actions.claim({ action: "stop", token: eligibility.actions[0]!.token })).toEqual({
+    expect(actions.claim({ action: "stop", token: eligibility.actions[0].token })).toEqual({
       ok: false,
       result: { ok: false, action: "stop", code: "invalid-token" },
     })
@@ -124,7 +124,7 @@ describe("diagnostics owner actions", () => {
     actions.register(descriptor, async () => "completed")
     const eligibility = actions.eligibility(processRecord, owner)
     if (eligibility.state !== "eligible") throw new Error("expected eligible action")
-    const claimed = actions.claim({ action: "stop", token: eligibility.actions[0]!.token })
+    const claimed = actions.claim({ action: "stop", token: eligibility.actions[0].token })
     if (!claimed.ok) throw new Error("expected action claim")
     expect(await actions.execute({
       claim: claimed.claim,

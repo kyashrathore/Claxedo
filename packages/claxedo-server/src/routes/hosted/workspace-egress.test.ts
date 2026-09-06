@@ -133,14 +133,14 @@ describe("POST /create hands the driver a restricted egress policy", () => {
     expect(seen).toHaveLength(1)
     // The assertion that fails without the fix: this was `undefined`, and
     // `undefined` means allow-all.
-    expect(seen[0]!.net).toBeDefined()
-    expect(seen[0]!.net!.mode).toBe("restricted")
+    expect(seen[0].net).toBeDefined()
+    expect(seen[0].net!.mode).toBe("restricted")
   })
 
   test("the allowlist carries the hosts a hosted sandbox genuinely needs", async () => {
     const { app, seen } = buildApp("hosts-and-cidrs")
     await create(app)
-    const hosts = seen[0]!.net!.hosts ?? []
+    const hosts = seen[0].net!.hosts ?? []
 
     // Its own control plane and relay: the runtime tunnels through the relay,
     // fetches the relay JWKS, and reports register/heartbeat back to the
@@ -156,7 +156,7 @@ describe("POST /create hands the driver a restricted egress policy", () => {
   test("the allowlist is not a rubber stamp — object storage stays out", async () => {
     const { app, seen } = buildApp("hosts-and-cidrs")
     await create(app)
-    const hosts = seen[0]!.net!.hosts ?? []
+    const hosts = seen[0].net!.hosts ?? []
 
     // An allowlist that includes anywhere a file can be uploaded is not an
     // allowlist. These are the plausible exfiltration destinations.
@@ -171,7 +171,7 @@ describe("POST /create hands the driver a restricted egress policy", () => {
       sandboxEgressExtraHosts: ["models.internal.acme.test"],
     })
     await create(app)
-    expect(seen[0]!.net!.hosts).toContain("models.internal.acme.test")
+    expect(seen[0].net!.hosts).toContain("models.internal.acme.test")
   })
 })
 
@@ -201,7 +201,7 @@ describe("POST /create with a driver that cannot contain egress", () => {
     // The load-bearing assertion: withheld, not passed through and not
     // downgraded. A driver that throws on a restricted policy cannot throw.
     expect(seen).toHaveLength(1)
-    expect(seen[0]!.net).toBeUndefined()
+    expect(seen[0].net).toBeUndefined()
     expect(await leaseStore.get(body.workspaceId!)).toMatchObject({ status: "ready" })
   })
 

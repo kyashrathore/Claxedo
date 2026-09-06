@@ -55,10 +55,9 @@ export async function hostedConnectionInfo(
   if (options.requireCloudWorkspaceEntitlement) {
     const denied = await options.requireCloudWorkspaceEntitlement(auth)
     if (denied) {
-      const body = denied.body as { error?: { code: string; message: string } } | undefined
       return {
         error:
-          body?.error ??
+          denied.body.error ??
           apiError("billing_entitlement_required", "An active Claxedo Cloud subscription is required"),
         status: denied.status,
       } as const

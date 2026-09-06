@@ -4,25 +4,14 @@ import { $ } from "bun"
 import { createRequire } from "node:module"
 import path from "node:path"
 
+import { isRecord, readString, readUnknown } from "../src/shared/json-read"
+
 type JsonObject = Record<string, unknown>
 
 type DevtoolsTarget = {
   type: string
   url: string
   webSocketDebuggerUrl?: string
-}
-
-type ScreenshotResult = {
-  data?: string
-}
-
-type Readiness = {
-  ready?: boolean
-  fatal?: unknown
-  href?: string
-  text?: string
-  hasSplash?: boolean
-  html?: string
 }
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
@@ -81,22 +70,25 @@ try {
   })
 
   const readiness = await waitForReady(client)
-  if (readiness.fatal) {
-    throw new Error(`desktop renderer reported fatal error: ${JSON.stringify(readiness.fatal)}`)
+  const fatal = readUnknown(readiness, "fatal")
+  if (fatal) {
+    throw new Error(`desktop renderer reported fatal error: ${JSON.stringify(fatal)}`)
   }
   await client.send("Page.bringToFront")
   await delay(1_000)
 
-  const screenshot = asObject<ScreenshotResult>(await client.send("Page.captureScreenshot", {
+  const screenshot = asObject(await client.send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: false,
   }))
-  if (!screenshot.data) throw new Error("Page.captureScreenshot returned no image data")
+  const data = readString(screenshot, "data")
+  if (!data) throw new Error("Page.captureScreenshot returned no image data")
 
-  await Bun.write(screenshotPath, Buffer.from(screenshot.data, "base64"))
+  await Bun.write(screenshotPath, Buffer.from(data, "base64"))
   console.log(`desktop screenshot saved: ${screenshotPath}`)
-  console.log(`renderer: ${readiness.href ?? target.url}`)
-  if (readiness.text) console.log(`text: ${readiness.text.slice(0, 160).replace(/\s+/g, " ")}`)
+  console.log(`renderer: ${readString(readiness, "href") ?? target.url}`)
+  const text = readString(readiness, "text")
+  if (text) console.log(`text: ${text.slice(0, 160).replace(/\s+/g, " ")}`)
 
   client.close()
 } catch (error) {
@@ -187,7 +179,7 @@ async function connectCdp(target: DevtoolsTarget) {
 async function waitForReady(client: Awaited<ReturnType<typeof connectCdp>>) {
   for (let i = 0; i < 160; i++) {
     const readiness = await evaluateReadiness(client)
-    if (readiness.fatal || readiness.ready) return readiness
+    if (readUnknown(readiness, "fatal") || readUnknown(readiness, "ready")) return readiness
     await delay(250)
   }
   const readiness = await evaluateReadiness(client)
@@ -214,13 +206,11 @@ async function evaluateReadiness(client: Awaited<ReturnType<typeof connectCdp>>)
     })()`,
     returnByValue: true,
   }))
-  return asObject<Readiness>(asObject(asObject(result).result).value)
+  return asObject(asObject(asObject(result).result).value)
 }
 
 function isTarget(input: unknown): input is DevtoolsTarget {
-  if (!input || typeof input !== "object") return false
-  const item = input as JsonObject
-  return typeof item.type === "string" && typeof item.url === "string"
+  return readString(input, "type") !== undefined && readString(input, "url") !== undefined
 }
 
 function parseJsonObject(input: string) {
@@ -228,9 +218,14 @@ function parseJsonObject(input: string) {
   return asObject(parsed)
 }
 
-function asObject<T extends JsonObject = JsonObject>(input: unknown) {
-  if (!input || typeof input !== "object") return {} as T
-  return input as T
+/**
+ * A total reader for a CDP reply: anything that is not an object reads as an
+ * empty one, so the callers above can go straight to naming the field they
+ * want. It used to be generic over the shape the caller expected and assert
+ * the value into it, which claimed fields CDP never promised.
+ */
+function asObject(input: unknown): JsonObject {
+  return isRecord(input) ? input : {}
 }
 
 function delay(ms: number) {

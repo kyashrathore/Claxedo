@@ -111,7 +111,7 @@ function SpringSubmessage(props: { text: string; visible: boolean; visualDuratio
       requestAnimationFrame(() => {
         ref?.setAttribute("data-visible", "")
         animate(
-          widthRef!,
+          widthRef,
           { width: "auto" },
           { type: "spring", visualDuration: props.visualDuration, bounce: props.bounce },
         )

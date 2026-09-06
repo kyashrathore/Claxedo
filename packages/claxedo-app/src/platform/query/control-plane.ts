@@ -1,8 +1,9 @@
-import type { ClaxedoCommand as Command, ClaxedoProject as Project, ClaxedoProviderAuth as ProviderAuthResponse, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoCommand as Command, ClaxedoProject as Project, ClaxedoProviderAuth as ProviderAuthResponse, ClaxedoProviderAuthMethod, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
-import { mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
+import { isProviderListResponse, mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
+import { asRecord } from "@/lib/record"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 
 export type { ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
@@ -126,18 +127,62 @@ export function providerListQuery(input: {
     // state after the bounded attempts and is never cached as an empty list.
     retry: 2,
     retryDelay: 250,
-    structuralSharing: (previous: unknown, index: unknown) => mergeProviderIndexWithDetails(
-      previous as Parameters<typeof mergeProviderIndexWithDetails>[0],
-      index as Parameters<typeof mergeProviderIndexWithDetails>[1],
-    ),
+    structuralSharing: (
+      previous: Parameters<typeof mergeProviderIndexWithDetails>[0],
+      index: Parameters<typeof mergeProviderIndexWithDetails>[1],
+    ) => mergeProviderIndexWithDetails(previous, index),
     queryFn: async () => {
       const url = new URL("/api/claxedo/agent-config/providers", input.baseUrl ?? getClaxedoServerUrl())
       url.searchParams.set("nativeHarness", input.harnessType)
       const response = await (input.request ?? authFetch)(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} models`)
-      return normalizeProviderList(await response.json() as ProviderListResponse)
+      return normalizeProviderList(providerCatalogBody(await response.json(), input.harnessType))
     },
   }
+}
+
+/**
+ * A provider catalog body, or a throw naming the harness whose catalog was
+ * wrong. Throwing rather than normalising an unrecognisable body keeps the
+ * query in an error state its own `retry` can act on, instead of caching an
+ * empty catalog that looks like "this harness has no models".
+ */
+function providerCatalogBody(body: unknown, harnessType: string): ProviderListResponse {
+  if (!isProviderListResponse(body)) throw new Error(`Received an unreadable ${harnessType} provider catalog`)
+  return body
+}
+
+type AuthPrompt = NonNullable<ClaxedoProviderAuthMethod["prompts"]>[number]
+
+const AUTH_METHOD_TYPES = ["oauth", "api"] as const
+const AUTH_PROMPT_TYPES = ["text", "select"] as const
+
+function isAuthPrompt(value: unknown): value is AuthPrompt {
+  const prompt = asRecord(value)
+  if (!prompt || !AUTH_PROMPT_TYPES.some((kind) => kind === prompt.type)) return false
+  return typeof prompt.key === "string" && typeof prompt.message === "string"
+}
+
+function isAuthMethod(value: unknown): value is ClaxedoProviderAuthMethod {
+  const method = asRecord(value)
+  if (!method || !AUTH_METHOD_TYPES.some((kind) => kind === method.type)) return false
+  if (method.label !== undefined && typeof method.label !== "string") return false
+  return method.prompts === undefined || (Array.isArray(method.prompts) && method.prompts.every(isAuthPrompt))
+}
+
+/**
+ * Whether a body from `/agent-config/providers/auth` is the provider-auth map.
+ *
+ * Checks everything the connect form binds to — a method's kind and label, and
+ * each prompt's kind, key and message — and passes the body through rather than
+ * rebuilding it, so a field this app does not read today still reaches a build
+ * that does. A body that fails this cannot drive the form at all, so the query
+ * errors instead of rendering controls bound to nothing.
+ */
+export function isProviderAuthResponse(value: unknown): value is ProviderAuthResponse {
+  const auth = asRecord(value)
+  if (!auth) return false
+  return Object.values(auth).every((methods) => Array.isArray(methods) && methods.every(isAuthMethod))
 }
 
 /**
@@ -162,7 +207,11 @@ export function providerAuthQuery(input: {
       url.searchParams.set("nativeHarness", input.harnessType)
       const response = await (input.request ?? authFetch)(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} provider authentication`)
-      return await response.json() as ProviderAuthResponse
+      const body: unknown = await response.json()
+      if (!isProviderAuthResponse(body)) {
+        throw new Error(`Received unreadable ${input.harnessType} provider authentication`)
+      }
+      return body
     },
   }
 }
@@ -182,7 +231,7 @@ export function providerDetailsQuery(input: {
       url.searchParams.set("nativeHarness", input.harnessType)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.providerId} models`)
-      return normalizeProviderList(await response.json() as ProviderListResponse)
+      return normalizeProviderList(providerCatalogBody(await response.json(), input.harnessType))
     },
   }
 }

@@ -261,8 +261,8 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
     selectTimer = undefined
   }
 
-  const select = (event: MouseEvent, item: SwitcherItem) => {
-    paintSelectedTab(event.currentTarget as HTMLElement)
+  const select = (event: { currentTarget: HTMLElement }, item: SwitcherItem) => {
+    paintSelectedTab(event.currentTarget)
     // Any explicit click supersedes a still-pending debounced selection — both
     // the immediate (active) path and a fresh debounce must drop the stale one,
     // otherwise the earlier scrub commits after this click and wins.

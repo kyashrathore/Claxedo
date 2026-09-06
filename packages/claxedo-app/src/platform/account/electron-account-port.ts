@@ -1,8 +1,9 @@
 // target layer: account
 
-import { createSignal, onCleanup, type Accessor } from "solid-js"
+import { createSignal, onCleanup } from "solid-js"
 import type { AccountPort, AccountState, HostedOperationName } from "./account-port"
 import { decodeHostedResult } from "./hosted-operations"
+import { hasBridgeMembers, preloadAccountBridge } from "./preload-bridge"
 
 /**
  * The desktop's `AccountPort`: every answer comes from Electron main.
@@ -69,7 +70,7 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
   void refresh()
 
   return {
-    state: state as Accessor<AccountState>,
+    state: state,
     refresh,
     // The options (browser redirectUrl) are deliberately dropped: main owns
     // the desktop OAuth flow end to end, and the bridge takes no arguments.
@@ -78,9 +79,9 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
     // Decoded at the boundary. Main returns whatever the server sent; a shape
     // that changed should fail HERE, naming the operation, rather than three
     // components later as `undefined is not an object`.
-    run: (async <T,>(operation: HostedOperationName, input?: Record<string, unknown>) => {
+    run: async (operation, input) => {
       try {
-        return decodeHostedResult<T>(operation, await bridge.run(operation, input))
+        return decodeHostedResult(operation, await bridge.run(operation, input))
       } catch (error) {
         // Main may have rejected the credential while serving this operation.
         // Reconcile before the caller observes the failure so hosted surfaces
@@ -88,7 +89,7 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
         await refresh()
         throw error
       }
-    }) as AccountPort["run"],
+    },
   }
 }
 
@@ -100,13 +101,8 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
  * exercise.
  */
 export function accountBridge(scope: unknown = globalThis): AccountBridge | undefined {
-  const api = (scope as { api?: { account?: AccountBridge } }).api?.account
-  if (!api) return undefined
-  // All four or none. A partial bridge is a preload that changed under a
-  // renderer that did not, and calling the missing half would fail at the worst
-  // moment rather than at startup.
-  for (const member of ["state", "onState", "signIn", "signOut", "run"] as const) {
-    if (typeof api[member] !== "function") return undefined
-  }
-  return api
+  const api = preloadAccountBridge(scope)
+  // All five or none — see `hasBridgeMembers` for why a partial bridge is worse
+  // than no bridge.
+  return hasBridgeMembers<AccountBridge>(api, ["state", "onState", "signIn", "signOut", "run"]) ? api : undefined
 }

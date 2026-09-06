@@ -59,7 +59,7 @@ type Options = {
 
 async function routeAuth(request: Request, options: Options) {
   const config = options.authConfig ?? controlPlaneAuthConfig()
-  if (!config.enabled && config.mode === "local-only" && !bearerToken(request.headers.get("authorization"))) return
+  if (!config.enabled && config.mode === "local-only" && !bearerToken(request.headers.get("authorization"))) return undefined
   const context = await controlPlaneAuthContext(request, {
     config,
     verifier: options.verifier,

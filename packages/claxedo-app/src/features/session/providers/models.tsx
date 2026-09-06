@@ -1,3 +1,4 @@
+import { asRecord, readString } from "@/lib/record"
 import { createMemo, createRoot, getOwner, runWithOwner, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { uniqueBy } from "remeda"
@@ -39,41 +40,46 @@ const STORE_KEY = "model"
 
 function visibilityRows(value: unknown): User[] {
   if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return []
-    const row = item as Partial<User>
-    if (typeof row.providerID !== "string" || typeof row.modelID !== "string") return []
-    if (row.visibility !== "show" && row.visibility !== "hide") return []
-    return [{ providerID: row.providerID, modelID: row.modelID, visibility: row.visibility }]
+  return value.flatMap((item: unknown) => {
+    const row = asRecord(item)
+    const providerID = readString(row, "providerID")
+    const modelID = readString(row, "modelID")
+    if (!providerID || !modelID) return []
+    if (row?.visibility !== "show" && row?.visibility !== "hide") return []
+    return [{ providerID, modelID, visibility: row.visibility }]
   })
 }
 
 function variantMap(value: unknown): Record<string, string | undefined> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const row = asRecord(value)
+  if (!row) return {}
   return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   )
 }
 
 /** Validates the workspace-owned, harness-keyed preference record. */
 export function decodeModelStoreRecord(value: unknown): ModelStoreRecord {
   const empty: ModelStoreRecord = { user: {}, recent: [], variant: {} }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return empty
-  const row = value as Record<string, unknown>
+  const row = asRecord(value)
+  if (!row) return empty
   if (Array.isArray(row.user)) return empty
-  const user = row.user && typeof row.user === "object" && !Array.isArray(row.user)
-    ? Object.fromEntries(Object.entries(row.user).map(([harness, rows]) => [harness, visibilityRows(rows)]))
+  const userRow = asRecord(row.user)
+  const user = userRow
+    ? Object.fromEntries(Object.entries(userRow).map(([harness, rows]) => [harness, visibilityRows(rows)]))
     : {}
-  const variant = row.variant && typeof row.variant === "object" && !Array.isArray(row.variant)
-    ? Object.fromEntries(Object.entries(row.variant).map(([harness, map]) => [harness, variantMap(map)]))
+  const variantRow = asRecord(row.variant)
+  const variant = variantRow
+    ? Object.fromEntries(Object.entries(variantRow).map(([harness, map]) => [harness, variantMap(map)]))
     : {}
   const recent = Array.isArray(row.recent)
-    ? row.recent.flatMap((item) => {
-      if (!item || typeof item !== "object") return []
-      const entry = item as Partial<RecentModel>
-      if (typeof entry.providerID !== "string" || typeof entry.modelID !== "string") return []
-      if (typeof entry.harness !== "string" || !entry.harness) return []
-      return [{ providerID: entry.providerID, modelID: entry.modelID, harness: entry.harness }]
+    ? row.recent.flatMap((item: unknown) => {
+      const entry = asRecord(item)
+      const providerID = readString(entry, "providerID")
+      const modelID = readString(entry, "modelID")
+      const harness = readString(entry, "harness")
+      if (!providerID || !modelID || !harness) return []
+      return [{ providerID, modelID, harness }]
     })
     : []
   return { user, recent, variant }

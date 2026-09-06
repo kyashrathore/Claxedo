@@ -37,7 +37,7 @@ function makeFetch(responses: Record<string, { status: number; body: unknown }>)
 } {
   const calls: FetchArgs[] = []
   const fn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input.toString()
+    const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.toString()
     const method = (init?.method ?? "GET").toUpperCase()
     const headersRec: Record<string, string> = {}
     if (init?.headers) {
@@ -53,7 +53,7 @@ function makeFetch(responses: Record<string, { status: number; body: unknown }>)
     if (!match) {
       return new Response(`no route for ${url}`, { status: 404 })
     }
-    const { status, body: respBody } = responses[match]!
+    const { status, body: respBody } = responses[match]
     return new Response(JSON.stringify(respBody), {
       status,
       headers: { "Content-Type": "application/json" },
@@ -392,12 +392,10 @@ describe("registerBrowserTools", () => {
   test("registers all five tools on the fake server", () => {
     type Registered = { name: string; description: string }
     const registered: Registered[] = []
-    const fakeServer = {
-      registerTool: (name: string, spec: { description: string; inputSchema: unknown }) => {
-        registered.push({ name, description: spec.description })
-      },
+    const register: Parameters<typeof registerBrowserTools>[0] = (name, config) => {
+      registered.push({ name, description: config.description })
     }
-    registerBrowserTools(fakeServer as unknown as Parameters<typeof registerBrowserTools>[0])
+    registerBrowserTools(register)
     const names = registered.map((r) => r.name)
     expect(names).toEqual([
       "browser_list_tabs",
@@ -411,12 +409,10 @@ describe("registerBrowserTools", () => {
   test("read-only mode omits browser JS evaluation and navigation", () => {
     type Registered = { name: string; description: string }
     const registered: Registered[] = []
-    const fakeServer = {
-      registerTool: (name: string, spec: { description: string; inputSchema: unknown }) => {
-        registered.push({ name, description: spec.description })
-      },
+    const register: Parameters<typeof registerBrowserTools>[0] = (name, config) => {
+      registered.push({ name, description: config.description })
     }
-    registerBrowserTools(fakeServer as unknown as Parameters<typeof registerBrowserTools>[0], { readOnly: true })
+    registerBrowserTools(register, { readOnly: true })
     expect(registered.map((r) => r.name)).toEqual([
       "browser_list_tabs",
       "browser_screenshot",

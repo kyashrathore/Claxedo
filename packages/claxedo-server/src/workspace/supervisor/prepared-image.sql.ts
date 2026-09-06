@@ -96,7 +96,7 @@ function rowToSnapshot(row: typeof ClaxedoRuntimeSnapshotTable.$inferSelect): Ru
     source_sha: row.source_sha,
     reason: row.reason,
     size_bytes: row.size_bytes,
-    status: row.status as SnapshotStatus,
+    status: snapshotStatus(row.status),
     created_at: row.created_at,
   }
 }
@@ -120,17 +120,18 @@ function snapshotToRow(snapshot: RuntimeSnapshot): typeof ClaxedoRuntimeSnapshot
 
 export function getPreparedImage(id: string): PreparedImage | undefined {
   return ClaxedoDB.use((db) => {
-    return db
+    const row = db
       .select()
       .from(ClaxedoPreparedImageTable)
       .where(eq(ClaxedoPreparedImageTable.id, id))
-      .get() as PreparedImage | undefined
+      .get()
+    return row ? rowToPreparedImage(row) : undefined
   })
 }
 
 export function getLatestPreparedImage(workspaceKey: string): PreparedImage | undefined {
   return ClaxedoDB.use((db) => {
-    return db
+    const row = db
       .select()
       .from(ClaxedoPreparedImageTable)
       .where(
@@ -141,7 +142,8 @@ export function getLatestPreparedImage(workspaceKey: string): PreparedImage | un
       )
       .orderBy(desc(ClaxedoPreparedImageTable.created_at))
       .limit(1)
-      .get() as PreparedImage | undefined
+      .get()
+    return row ? rowToPreparedImage(row) : undefined
   })
 }
 
@@ -152,7 +154,8 @@ export function listPreparedImages(workspaceKey: string): PreparedImage[] {
       .from(ClaxedoPreparedImageTable)
       .where(eq(ClaxedoPreparedImageTable.workspace_key, workspaceKey))
       .orderBy(desc(ClaxedoPreparedImageTable.created_at))
-      .all() as PreparedImage[]
+      .all()
+      .map(rowToPreparedImage)
   })
 }
 
@@ -260,4 +263,27 @@ export function deleteSnapshotsByWorkspace(workspaceId: string): void {
       .where(eq(ClaxedoRuntimeSnapshotTable.workspace_id, workspaceId))
       .run()
   })
+}
+
+
+const PREPARED_IMAGE_STATUSES: readonly PreparedImageStatus[] = ["pending", "building", "ready", "failed", "expired"]
+const SNAPSHOT_STATUSES: readonly SnapshotStatus[] = ["pending", "capturing", "ready", "failed", "expired"]
+
+/**
+ * The status columns are plain SQLite text, so drizzle types them `string` and
+ * both readers used to assert their way back to the union. An unreadable status
+ * reads as `"failed"`: a prepared image or snapshot nobody can classify must
+ * never be selected as `"ready"`.
+ */
+function preparedImageStatus(value: string): PreparedImageStatus {
+  return PREPARED_IMAGE_STATUSES.find((status) => status === value) ?? "failed"
+}
+
+function snapshotStatus(value: string): SnapshotStatus {
+  return SNAPSHOT_STATUSES.find((status) => status === value) ?? "failed"
+}
+
+/** The drizzle row mapped onto the port type, with the status column narrowed. */
+function rowToPreparedImage(row: typeof ClaxedoPreparedImageTable.$inferSelect): PreparedImage {
+  return { ...row, status: preparedImageStatus(row.status) }
 }

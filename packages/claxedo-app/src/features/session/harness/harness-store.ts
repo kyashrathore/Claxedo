@@ -51,7 +51,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const touch = (scope: string) => {
     seed(scope)
-    return store[scope]!
+    return store[scope]
   }
 
   const applyPatch = (scope: string, patch: HarnessStorePatch) => {
@@ -205,7 +205,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
         draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
         draftDefaultServerUrl: identity.serverUrl,
         draftDefaultWorkspaceKey: identity.workspaceKey,
-        draftDefault: { harness: type, ...(choice ?? {}) },
+        draftDefault: { harness: type, ...choice },
         draftDefaultState: choice?.model || !harnessHasConfigOptions(type) ? "ready" : undefined,
         configError: undefined,
       } satisfies HarnessStorePatch,
@@ -220,7 +220,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
   ) => {
     seed(scope)
     const { choice, patch } = draftHarnessChoicePatch(scope, identity, type)
-    const persisted = draftDefaults.save(identity, { harness: type, ...(choice ?? {}) })
+    const persisted = draftDefaults.save(identity, { harness: type, ...choice })
     // The switch flow already put the selection where it belongs; only the
     // remembered pair is this call's business.
     setStore(scope, patch)

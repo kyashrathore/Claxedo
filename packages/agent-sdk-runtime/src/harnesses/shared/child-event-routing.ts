@@ -182,7 +182,7 @@ export function createChildEventRouter(options: {
       }
       routeChild(event, source, route.correlationKey)
     },
-    associate(correlationKey: string, target: ChildProjectionTarget) {
+    associate: (correlationKey: string, target: ChildProjectionTarget) => {
       if (disposed) throw new Error("child event router is disposed")
       if (!correlationKey) throw new Error("child projection correlation key is required")
       const existing = bindings.get(correlationKey)
@@ -214,16 +214,10 @@ export function createChildEventRouter(options: {
         childProjector(target).project(buffered.event, buffered.source)
       }
     },
-    terminalizeParent(message: string, source: RuntimeAppendSource) {
-      return options.parent.terminalizeOpenTools(message, source)
-    },
-    assistantMessageId() {
-      return options.parent.assistantMessageId()
-    },
-    created() {
-      return options.parent.created()
-    },
-    dispose() {
+    terminalizeParent: (message: string, source: RuntimeAppendSource) => options.parent.terminalizeOpenTools(message, source),
+    assistantMessageId: () => options.parent.assistantMessageId(),
+    created: () => options.parent.created(),
+    dispose: () => {
       if (disposed) return
       disposed = true
       for (const correlationKey of buffers.keys()) {
@@ -248,12 +242,12 @@ function sameTarget(left: ChildProjectionTarget, right: ChildProjectionTarget) {
     left.input.variant === right.input.variant
 }
 
-function serializedBytes(value: unknown) {
+function serializedBytes(value: unknown): number | undefined {
   try {
     const serialized = JSON.stringify(value)
-    if (serialized === undefined) return
+    if (serialized === undefined) return undefined
     return new TextEncoder().encode(serialized).byteLength
   } catch {
-    return
+    return undefined
   }
 }

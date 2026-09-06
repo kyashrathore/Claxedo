@@ -1,5 +1,7 @@
 import type { CDPSession, Page } from "playwright-core"
 
+import type { RendererPhase } from "./browser/page-globals"
+
 // Renderer-production targets. Missing these windows makes the target refresh
 // rate impossible, although passing them does not prove compositor presentation.
 export const FRAME_120HZ_MS = 1000 / 120 // 8.333ms — the 120hz goal
@@ -66,7 +68,7 @@ export type FrameCausalMetric = {
       detail?: string
     }>
   }>
-  rendererPhases?: Array<{ name: string; durationMs: number }>
+  rendererPhases?: RendererPhase[]
 }
 
 export type DomMutationSnapshot = Pick<
@@ -74,9 +76,52 @@ export type DomMutationSnapshot = Pick<
   "attributesChanged" | "nodesAdded" | "nodesRemoved"
 >
 
-type TimedDuration = {
+export type TimedDuration = {
   startTime: number
   duration: number
+}
+
+/**
+ * The in-page recorder this module installs for one measured interaction.
+ *
+ * Node-side and page-side used to describe it separately at each of six call
+ * sites, each naming only the members it happened to touch, so a member the
+ * recorder had stopped publishing would still typecheck everywhere. This is the
+ * whole contract, stated once.
+ */
+export type FrameRecorder = {
+  frames: TimedDuration[]
+  loaf: TimedDuration[]
+  eventLoop: TimedDuration[]
+  causal?: FrameCausalMetric
+  /** Start (or restart) the measured window; returns the page clock it started on. */
+  arm: (at?: number, dropPendingMutations?: boolean) => number
+  /** Defer arming to the next trusted pointerdown, marking it with `mark`. */
+  armOnNextTrustedPointerdown: (mark: string) => void
+  /** The page clock of the trusted pointerdown that armed the window, if one has landed. */
+  trustedPointerdownAt: () => number | undefined
+  cancelTrustedPointerdownArm: () => void
+  stop: (completionMs?: number) => void
+}
+
+/**
+ * The page-load recorder: the same intervals, sampled across a navigation
+ * rather than an interaction, so it has no arming or interaction contract.
+ */
+export type PageLoadRecorder = {
+  frames: TimedDuration[]
+  loaf: TimedDuration[]
+  eventLoop: TimedDuration[]
+  stop: () => void
+}
+
+declare global {
+  interface Window {
+    /** Installed by {@link startRecorder}; read back by {@link stopRecorder}. */
+    __perfFrames?: FrameRecorder
+    /** Installed by {@link installPageLoadRecorder}; read back by {@link stopPageLoadRecorder}. */
+    __perfPageLoadFrames?: PageLoadRecorder
+  }
 }
 
 // One measured interaction. These are renderer scheduling intervals, not
@@ -158,14 +203,12 @@ export async function startRecorder(
   },
 ) {
   await page.evaluate(({ captureCausal, captureHeartbeat, captureTrace }: { captureCausal: boolean; captureHeartbeat: boolean; captureTrace: boolean }) => {
-    const w = window as unknown as Record<string, unknown>
     // Arm tracing AFTER retiring a still-running recorder: that recorder's
     // stop() clears the trace flag and phase list, so arming first left every
     // interaction after the first one silently un-traced.
-    const existing = w.__perfFrames as { stop?: () => void } | undefined
-    existing?.stop?.()
-    w.__claxedoPerfTrace = captureTrace
-    w.__claxedoPerfRendererPhases = []
+    window.__perfFrames?.stop()
+    window.__claxedoPerfTrace = captureTrace
+    window.__claxedoPerfRendererPhases = []
     const frames: TimedDuration[] = []
     const loaf: TimedDuration[] = []
     const longAnimationFrames: FrameCausalMetric["longAnimationFrames"] = []
@@ -222,28 +265,14 @@ export async function startRecorder(
           if (entry.startTime < armedAt) continue
           loaf.push({ startTime: entry.startTime, duration: entry.duration })
           if (!captureCausal) continue
-          const frame = entry as PerformanceEntry & {
-            blockingDuration?: number
-            renderStart?: number
-            styleAndLayoutStart?: number
-            scripts?: Array<{
-              duration?: number
-              forcedStyleAndLayoutDuration?: number
-              invoker?: string
-              invokerType?: string
-              sourceURL?: string
-              sourceFunctionName?: string
-              sourceCharPosition?: number
-            }>
-          }
           longAnimationFrames.push({
-            startTime: frame.startTime,
-            duration: frame.duration,
-            blockingDuration: frame.blockingDuration ?? 0,
-            renderStart: frame.renderStart ?? 0,
-            styleAndLayoutStart: frame.styleAndLayoutStart ?? 0,
-            scripts: (frame.scripts ?? []).map((script) => ({
-              duration: script.duration ?? 0,
+            startTime: entry.startTime,
+            duration: entry.duration,
+            blockingDuration: entry.blockingDuration ?? 0,
+            renderStart: entry.renderStart ?? 0,
+            styleAndLayoutStart: entry.styleAndLayoutStart ?? 0,
+            scripts: (entry.scripts ?? []).map((script) => ({
+              duration: script.duration,
               forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration ?? 0,
               invoker: script.invoker ?? "",
               invokerType: script.invokerType ?? "",
@@ -275,11 +304,15 @@ export async function startRecorder(
     }
     observe("longtask", (entry) => longTasks.push({ name: entry.name, startTime: entry.startTime, duration: entry.duration }))
     observe("event", (entry) => {
-      const event = entry as PerformanceEntry & { interactionId?: number }
-      events.push({ name: event.name, startTime: event.startTime, duration: event.duration, interactionId: event.interactionId ?? 0 })
+      events.push({
+        name: entry.name,
+        startTime: entry.startTime,
+        duration: entry.duration,
+        interactionId: (entry instanceof PerformanceEventTiming ? entry.interactionId : undefined) ?? 0,
+      })
     })
-    observe("resource", (entry) => {
-      const resource = entry as PerformanceResourceTiming
+    observe("resource", (resource) => {
+      if (!(resource instanceof PerformanceResourceTiming)) return
       resources.push({
         name: resource.name,
         startTime: resource.startTime,
@@ -332,12 +365,12 @@ export async function startRecorder(
       dom.nodesAdded = 0
       dom.nodesRemoved = 0
       dom.attributesChanged = 0
-      w.__claxedoPerfRendererPhases = []
+      window.__claxedoPerfRendererPhases = []
       last = at
       eventLoopLast = at
       return at
     }
-    w.__perfFrames = {
+    window.__perfFrames = {
       frames,
       loaf,
       eventLoop,
@@ -373,12 +406,12 @@ export async function startRecorder(
         clearTrustedPointerdownListener()
         const endedAt = completionMs === undefined || trustedPointerdownAt === undefined ? undefined : trustedPointerdownAt + completionMs
         if (endedAt !== undefined) {
-          const retain = <T extends { startTime: number }>(entries: T[]) => {
+          const retain = (entries: Array<{ startTime: number }>) => {
             const retained = entries
               .filter((entry) => entry.startTime < endedAt)
               .map((entry) => "duration" in entry && typeof entry.duration === "number"
                 ? { ...entry, duration: Math.min(entry.duration, endedAt - entry.startTime) }
-                : entry) as T[]
+                : entry)
             entries.splice(0, entries.length, ...retained)
           }
           retain(frames)
@@ -405,10 +438,10 @@ export async function startRecorder(
         // pointerdown interactions too is what gives the per-cell probes their
         // in-app attribution.
         if (causal) {
-          causal.rendererPhases = (w.__claxedoPerfRendererPhases as FrameCausalMetric["rendererPhases"] | undefined) ?? []
+          causal.rendererPhases = window.__claxedoPerfRendererPhases ?? []
         }
-        delete w.__claxedoPerfTrace
-        delete w.__claxedoPerfRendererPhases
+        delete window.__claxedoPerfTrace
+        delete window.__claxedoPerfRendererPhases
       },
     }
   }, recorderOptions)
@@ -416,13 +449,8 @@ export async function startRecorder(
 
 export async function readDomMutationSnapshot(page: Page): Promise<DomMutationSnapshot | undefined> {
   return await page.evaluate(() => {
-    const recorder = (window as unknown as Record<string, unknown>).__perfFrames as
-      | {
-          causal?: { dom?: DomMutationSnapshot }
-        }
-      | undefined
-    const dom = recorder?.causal?.dom
-    if (!dom) return
+    const dom = window.__perfFrames?.causal?.dom
+    if (!dom) return undefined
     return {
       attributesChanged: dom.attributesChanged,
       nodesAdded: dom.nodesAdded,
@@ -434,14 +462,7 @@ export async function readDomMutationSnapshot(page: Page): Promise<DomMutationSn
 async function stopRecorder(page: Page, completionMs?: number) {
   return await page
     .evaluate((completionMs) => {
-      const w = window as unknown as Record<string, unknown>
-      const rec = w.__perfFrames as {
-        frames: TimedDuration[]
-        loaf: TimedDuration[]
-        eventLoop: TimedDuration[]
-        causal?: FrameCausalMetric
-        stop: (completionMs?: number) => void
-      } | undefined
+      const rec = window.__perfFrames
       if (!rec) return { frames: [] as TimedDuration[], loaf: [] as TimedDuration[], eventLoop: [] as TimedDuration[], causal: undefined }
       rec.stop(completionMs)
       return { frames: rec.frames, loaf: rec.loaf, eventLoop: rec.eventLoop, causal: rec.causal }
@@ -485,7 +506,7 @@ export async function measureInteraction(
   const traceEvents: TraceEvent[] = []
   await cdp.send("Performance.enable")
   cdp.on("Tracing.dataCollected", (event) => {
-    traceEvents.push(...event.value as unknown as TraceEvent[])
+    traceEvents.push(...traceEventsFrom(event))
   })
   // Blink's invalidation tracking emits one instant event per invalidated
   // element, which is heavy enough to distort the very timings it explains —
@@ -512,12 +533,9 @@ export async function measureInteraction(
   // excludes Playwright transport/delivery overhead from both completion time
   // and the renderer/causal samples.
   await page.evaluate(({ armAt, trustedTraceMark }) => {
-    const rec = (window as unknown as Record<string, unknown>).__perfFrames as {
-      arm?: () => void
-      armOnNextTrustedPointerdown?: (mark: string) => void
-    } | undefined
-    if (armAt === "trusted-pointerdown" && trustedTraceMark) rec?.armOnNextTrustedPointerdown?.(trustedTraceMark)
-    else rec?.arm?.()
+    const rec = window.__perfFrames
+    if (armAt === "trusted-pointerdown" && trustedTraceMark) rec?.armOnNextTrustedPointerdown(trustedTraceMark)
+    else rec?.arm()
   }, { armAt: options.armAt ?? "action", trustedTraceMark })
   const started = performance.now()
   const actionResult = await action()
@@ -526,12 +544,9 @@ export async function measureInteraction(
   let completionMs = actionBoundaryCompletionMs
   if (options.armAt === "trusted-pointerdown") {
     const trustedPointerdownAt = await page.evaluate(() => {
-      const rec = (window as unknown as Record<string, unknown>).__perfFrames as {
-        trustedPointerdownAt?: () => number | undefined
-        cancelTrustedPointerdownArm?: () => void
-      } | undefined
-      const at = rec?.trustedPointerdownAt?.()
-      rec?.cancelTrustedPointerdownArm?.()
+      const rec = window.__perfFrames
+      const at = rec?.trustedPointerdownAt()
+      rec?.cancelTrustedPointerdownArm()
       return at
     })
     if (trustedPointerdownAt === undefined) {
@@ -602,8 +617,7 @@ export async function measureInteraction(
       "LayoutInvalidationTracking",
       "InvalidateLayout",
     ])
-    const rows = (measuredTraceEvents as unknown as Array<Record<string, unknown>>)
-      .filter((event) => wanted.has(event.name as string))
+    const rows = measuredTraceEvents.filter((event) => wanted.has(event.name))
     await Bun.write(`${styleDumpPath}.${label}.jsonl`, rows.map((row) => JSON.stringify(row)).join("\n"))
   }
   // CDP Performance.getMetrics and the CPU sampler are aggregate counters and
@@ -662,6 +676,26 @@ export type TraceEvent = {
       columnNumber?: number
     }
   }
+}
+
+/**
+ * Read one `Tracing.dataCollected` payload as trace events.
+ *
+ * CDP hands the listener an untyped envelope. Both collectors used to assert
+ * `event.value as unknown as TraceEvent[]`, so a protocol change would have
+ * been discovered as a runtime `undefined` deep inside a summarizer. Events
+ * that do not carry the fields every reader depends on are dropped here.
+ */
+export function traceEventsFrom(payload: unknown): TraceEvent[] {
+  if (!payload || typeof payload !== "object" || !("value" in payload) || !Array.isArray(payload.value)) return []
+  return payload.value.filter((event): event is TraceEvent =>
+    !!event &&
+    typeof event === "object" &&
+    "name" in event && typeof event.name === "string" &&
+    "ph" in event && typeof event.ph === "string" &&
+    "ts" in event && typeof event.ts === "number" &&
+    "pid" in event && typeof event.pid === "number" &&
+    "tid" in event && typeof event.tid === "number")
 }
 
 export type TrustedWindowRendererPerformance = {
@@ -777,8 +811,8 @@ function intersectIntervals(left: TraceInterval[], right: TraceInterval[]) {
   let leftIndex = 0
   let rightIndex = 0
   while (leftIndex < left.length && rightIndex < right.length) {
-    const a = left[leftIndex]!
-    const b = right[rightIndex]!
+    const a = left[leftIndex]
+    const b = right[rightIndex]
     const start = Math.max(a.start, b.start)
     const end = Math.min(a.end, b.end)
     if (end > start) intersections.push({ start, end })
@@ -904,10 +938,10 @@ function summarizeTraceTasks(events: TraceEvent[]) {
     .slice(0, 20)
 }
 
-function traceDetail(event: TraceEvent) {
+function traceDetail(event: TraceEvent): string | undefined {
   const source = event.args?.data?.scriptName || event.args?.data?.url
   if (!source) {
-    if (!event.name.startsWith("v8.")) return
+    if (!event.name.startsWith("v8.")) return undefined
     const detail = JSON.stringify(event.args ?? {})
     return detail === "{}" ? undefined : detail.slice(0, 500)
   }
@@ -995,10 +1029,9 @@ const pageLoadTraces = new WeakMap<Page, {
 export async function installPageLoadRecorder(page: Page) {
   await page.addInitScript(({ trace }) => {
     if (window !== window.top) return
-    const w = window as unknown as Record<string, unknown>
     if (trace) {
-      w.__claxedoPerfTrace = true
-      w.__claxedoPerfRendererPhases = []
+      window.__claxedoPerfTrace = true
+      window.__claxedoPerfRendererPhases = []
     }
     const frames: TimedDuration[] = []
     const loaf: TimedDuration[] = []
@@ -1029,7 +1062,7 @@ export async function installPageLoadRecorder(page: Page) {
       })
       observer.observe({ type: "long-animation-frame", buffered: true } as PerformanceObserverInit)
     } catch {}
-    w.__perfPageLoadFrames = {
+    window.__perfPageLoadFrames = {
       frames,
       loaf,
       eventLoop,
@@ -1050,7 +1083,7 @@ export async function installPageLoadRecorder(page: Page) {
     await cdp.send("Profiler.start")
   }
   cdp.on("Tracing.dataCollected", (event) => {
-    events.push(...event.value as unknown as TraceEvent[])
+    events.push(...traceEventsFrom(event))
   })
   await cdp.send("Tracing.start", {
     categories: process.env.CLAXEDO_PERF_TRACE === "1"
@@ -1068,25 +1101,20 @@ export async function installPageLoadRecorder(page: Page) {
 
 export async function stopPageLoadRecorder(page: Page, label: string, completionMs: number) {
   const result = await page.evaluate(() => {
-    const rec = (window as unknown as Record<string, unknown>).__perfPageLoadFrames as {
-      frames: TimedDuration[]
-      loaf: TimedDuration[]
-      eventLoop: TimedDuration[]
-      stop: () => void
-    } | undefined
-    const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
+    const rec = window.__perfPageLoadFrames
+    const phases = window.__claxedoPerfRendererPhases
     if (!rec) return {
       frames: [] as TimedDuration[],
       loaf: [] as TimedDuration[],
       eventLoop: [] as TimedDuration[],
-      phases: [] as Array<{ name: string; durationMs: number }>,
+      phases: [] as RendererPhase[],
     }
     rec.stop()
     return {
       frames: rec.frames,
       loaf: rec.loaf,
       eventLoop: rec.eventLoop,
-      phases: Array.isArray(phases) ? phases as Array<{ name: string; durationMs: number }> : [],
+      phases: phases ?? [],
     }
   })
   const trace = pageLoadTraces.get(page)
@@ -1258,7 +1286,7 @@ function timingsOverlap(left: TimedDuration, right: TimedDuration) {
 }
 
 export function mergeFrameMetrics(label: string, metrics: FrameMetric[]): FrameMetric {
-  if (metrics.length === 1) return metrics[0]!
+  if (metrics.length === 1) return metrics[0]
   const worstFrameMs = Math.max(0, ...metrics.map((metric) => metric.worstFrameMs))
   const observedFrameIntervalsMs = metrics.flatMap((metric) => metric.observedFrameIntervalsMs ?? [])
   const mainThreadTasksMs = metrics.flatMap((metric) => metric.mainThreadTasksMs ?? [])
@@ -1382,7 +1410,7 @@ function percentile(values: number[], rank: number) {
   if (values.length === 0) return 0
   const sorted = values.toSorted((a, b) => a - b)
   const index = Math.ceil((rank / 100) * sorted.length) - 1
-  return sorted[Math.max(0, Math.min(sorted.length - 1, index))]!
+  return sorted[Math.max(0, Math.min(sorted.length - 1, index))]
 }
 
 function round(value: number) {

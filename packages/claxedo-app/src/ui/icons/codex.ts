@@ -4,7 +4,7 @@
 // desktop app; it is NOT from the Apache-2.0 `openai/codex` repository. Known
 // and accepted for now. Switching `ACTIVE_ICON_LIBRARY` in ./config.ts to
 // "opencode" reverts the app to the unencumbered upstream set.
-import { APP_ICONS, type AppIconName } from "@/ui/icons/catalog"
+import { appIconNames, type AppIconName } from "@/ui/icons/catalog"
 import { defineIconLibrary } from "@/ui/icons/registry"
 
 type CodexSpriteGlyph = `codex-20-${string}`
@@ -246,6 +246,6 @@ export const CODEX_ICON_TRANSFORMS = {
 
 export const codexIconLibrary = defineIconLibrary<AppIconName, CodexGlyphName>({
   name: "codex",
-  glyphs: [...new Set(Object.keys(APP_ICONS).map((name) => CODEX_ICON_ALIASES[name as AppIconName]))],
+  glyphs: [...new Set(appIconNames.map((name) => CODEX_ICON_ALIASES[name]))],
   aliases: CODEX_ICON_ALIASES,
 })

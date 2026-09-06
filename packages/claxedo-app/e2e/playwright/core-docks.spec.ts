@@ -240,11 +240,6 @@ async function sendMessage(page: Page, text: string) {
   await page.locator(SELECTORS.submitControl).last().click()
 }
 
-// ---------------------------------------------------------------------------
-// Permission/question mutation overrides add server-sourced settling events and
-// per-test counters on top of the shared runtime's canonical route shapes.
-// ---------------------------------------------------------------------------
-
 type DockRequestCounters = {
   permissionRespond: { count: number; bodies: unknown[] }
   questionReply: { count: number; bodies: unknown[] }
@@ -372,7 +367,6 @@ test.describe("core docks — permission @core", () => {
     )
     await expect(page.locator('[data-slot="permission-patterns"]')).toContainText("src/**/*.ts")
 
-    // Behavior 1: composer surface, not merely disabled, is entirely absent.
     await expect(composerTextbox(page)).toHaveCount(0)
     await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)
 
@@ -485,7 +479,6 @@ test.describe("core docks — permission @core", () => {
 
     await expect(permissionDock(page)).toBeVisible({ timeout: 20_000 })
     await expect(composerTextbox(page)).toHaveCount(0)
-    // Surfaced, not answered: the counter has NOT moved past the `read` above.
     expect(counters.permissionRespond.count).toBe(2)
   })
 })
@@ -791,7 +784,6 @@ test.describe("core docks — question wizard @core", () => {
     mock.emit({ type: "question.asked", properties: { ...questionProps } })
 
     await expect(questionDock(page)).toBeVisible({ timeout: 20_000 })
-    // The wizard is restored on tab 2 (not reset to tab 1).
     await expect(page.locator('[data-slot="question-header-title"]')).toHaveText("2 of 2 questions")
 
     await page.getByRole("button", { name: "Back", exact: true }).click()
@@ -830,14 +822,11 @@ test.describe("core docks — todo tray @core", () => {
     await expect(list.locator('[data-component="checkbox"]')).toHaveCount(3)
     await expect(list.locator('[data-component="checkbox"][data-state="in_progress"]')).toContainText("Wire the API")
 
-    // Behavior 11 (collapsed preview): toggle collapse, the preview line takes over.
     await page.locator('[data-action="session-todo-toggle-button"]').click()
     await expect(list).toHaveAttribute("aria-hidden", "true", { timeout: 10_000 })
     const preview = page.locator('[data-slot="session-todo-preview"] [data-component="text-reveal"]')
     await expect(preview).toHaveAttribute("aria-label", "Wire the API", { timeout: 10_000 })
 
-    // Behavior 12: every todo reaches a terminal status while still live -> the dock
-    // auto-closes without any user action.
     mock.emit({
       type: "todo.updated",
       properties: {

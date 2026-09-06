@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, exportJWK, importJWK, importPKCS8, importSPKI } from "jose"
+import { createRemoteJWKSet, exportJWK, importPKCS8, importSPKI } from "jose"
 import {
   createWorkspaceRelayDurableObjectGateway,
   createWorkspaceRelayDurableObjectRoom,
@@ -14,10 +14,12 @@ import type { RelayHostPublicKey, RuntimeAccessTokenActiveResult, WorkspaceRelay
 import {
   createCachedRevocationClient,
   createCachedTargetClient,
+  parseRuntimeAccessTokenActiveResult,
+  parseWorkspaceRelayTarget,
   type RevocationLookup,
   type TargetLookup,
 } from "./server"
-import type { RelayKey, RuntimeAccessTokenClaims } from "./auth"
+import { deriveRelayHostKid, deriveRelayHostPublicKey, type RelayKey, type RuntimeAccessTokenClaims } from "./auth"
 
 export type WorkspaceRelayWorkerEnv = Record<string, unknown> & {
   WORKSPACE_RELAY_ROOM?: WorkspaceRelayDurableObjectNamespace
@@ -87,21 +89,10 @@ async function relayHostJwksResponse(env: WorkspaceRelayWorkerEnv) {
   })
 }
 
-function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWorkerEnv & string) {
+function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWorkerEnv  ) {
   const value = clean(env[name])
   if (!value) throw new Error(`${name} is required`)
   return value
-}
-
-function hex(bytes: ArrayBuffer) {
-  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-}
-
-async function deriveKidFromPublicKey(publicKey: CryptoKey) {
-  const jwk = await exportJWK(publicKey)
-  const material = String(jwk.x ?? jwk.n ?? "")
-  if (!material) throw new Error("Cannot derive kid: public key has no public component")
-  return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material))).slice(0, 16)
 }
 
 export function workspaceRelayWorkerResolverUrl(env: WorkspaceRelayWorkerEnv) {
@@ -129,21 +120,17 @@ async function loadRelayHostKeys(env: WorkspaceRelayWorkerEnv) {
   const explicitPublicPem = pem(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_PEM)
   const publicKey = explicitPublicPem
     ? await importSPKI(explicitPublicPem, "EdDSA", { extractable: true })
-    : await importJWK(
-        ((jwk) => ({ kty: jwk.kty, crv: jwk.crv, x: jwk.x }))(await exportJWK(privateKey)),
-        "EdDSA",
-        { extractable: true },
-      ) as CryptoKey
+    : await deriveRelayHostPublicKey(privateKey)
   const current: RelayHostPublicKey = {
     publicKey,
-    kid: clean(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveKidFromPublicKey(publicKey),
+    kid: clean(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveRelayHostKid(publicKey),
   }
   const nextPem = pem(env.CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM)
   const nextPublicKey = nextPem ? await importSPKI(nextPem, "EdDSA", { extractable: true }) : undefined
-  const next = nextPem
+  const next = nextPublicKey
     ? {
-        publicKey: nextPublicKey!,
-        kid: clean(env.CLAXEDO_RELAY_HOST_NEXT_KID) ?? await deriveKidFromPublicKey(nextPublicKey!),
+        publicKey: nextPublicKey,
+        kid: clean(env.CLAXEDO_RELAY_HOST_NEXT_KID) ?? await deriveRelayHostKid(nextPublicKey),
       }
     : undefined
   return { privateKey, publicKeys: next ? [current, next] : [current], currentKid: current.kid }
@@ -160,7 +147,9 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
     const res = await fetcher(url, { headers })
     if (res.status === 404 || res.status === 409) return undefined
     if (!res.ok) throw new Error(`relay target resolver failed: ${res.status}`)
-    return await res.json() as WorkspaceRelayTarget
+    const target = parseWorkspaceRelayTarget(await res.json())
+    if (!target) throw new Error("relay target resolver returned a malformed target")
+    return target
   }
   const revocationUncached: RevocationLookup = async (args) => {
     const url = new URL(`${root}/revocation`)
@@ -175,16 +164,14 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
         reason: `revocation resolver returned ${res.status}`,
       }
     }
-    return await res.json() as RuntimeAccessTokenActiveResult
+    const result = parseRuntimeAccessTokenActiveResult(await res.json())
+    if (!result) throw new Error("relay revocation resolver returned a malformed result")
+    return result
   }
   const targetCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS)
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)
-  const target = createCachedTargetClient(targetUncached, {
-    ...(targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}),
-  })
-  const revocation = createCachedRevocationClient(revocationUncached, {
-    ...(revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}),
-  })
+  const target = createCachedTargetClient(targetUncached, (targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}))
+  const revocation = createCachedRevocationClient(revocationUncached, (revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}))
   return {
     target: (workspaceId, hostId) => target({ workspaceId, hostId }),
     revocation,
@@ -221,24 +208,41 @@ export async function workspaceRelayDurableObjectOptions(
   }
 }
 
+/**
+ * The `DurableObjectState` workerd hands a room, modelled structurally like the
+ * rest of this package's Cloudflare surface (see `./cloudflare`) — this package
+ * deliberately carries no `@cloudflare/workers-types` dependency.
+ *
+ * Everything is optional because `cloudflare.ts` treats hibernation and alarms
+ * as capabilities to DETECT: an older runtime, or a harness standing in for
+ * one, may provide neither, and the room degrades rather than failing.
+ */
+export type WorkspaceRelayRoomState = {
+  acceptWebSocket?: (socket: WorkspaceRelayDurableObjectSocket) => void
+  getWebSockets?: () => WorkspaceRelayDurableObjectSocket[]
+  storage?: {
+    getAlarm?: () => Promise<number | null>
+    setAlarm?: (scheduledTime: number) => Promise<void>
+    deleteAlarm?: () => Promise<void>
+  }
+}
+
 export class WorkspaceRelayRoom {
   private room?: ReturnType<typeof createWorkspaceRelayDurableObjectRoom>
   private loading?: Promise<ReturnType<typeof createWorkspaceRelayDurableObjectRoom>>
 
   constructor(
-    private state: unknown,
+    private state: WorkspaceRelayRoomState,
     private env: WorkspaceRelayWorkerEnv,
   ) {}
 
   private hibernation(): WorkspaceRelayDurableObjectHibernation | undefined {
-    const state = this.state as {
-      acceptWebSocket?: (socket: WorkspaceRelayDurableObjectSocket) => void
-      getWebSockets?: () => WorkspaceRelayDurableObjectSocket[]
-    }
-    if (!state.acceptWebSocket || !state.getWebSockets) return
+    const state = this.state
+    const { acceptWebSocket, getWebSockets } = state
+    if (!acceptWebSocket || !getWebSockets) return undefined
     return {
-      acceptWebSocket: (socket) => state.acceptWebSocket!(socket),
-      getWebSockets: () => state.getWebSockets!(),
+      acceptWebSocket: (socket) => acceptWebSocket.call(state, socket),
+      getWebSockets: () => getWebSockets.call(state),
     }
   }
 
@@ -248,18 +252,14 @@ export class WorkspaceRelayRoom {
    * what enforces revocation on an idle hibernated connection.
    */
   private alarms(): WorkspaceRelayDurableObjectAlarms | undefined {
-    const storage = (this.state as {
-      storage?: {
-        getAlarm?: () => Promise<number | null>
-        setAlarm?: (scheduledTime: number) => Promise<void>
-        deleteAlarm?: () => Promise<void>
-      }
-    }).storage
-    if (!storage?.getAlarm || !storage.setAlarm) return
+    const storage = this.state.storage
+    if (!storage) return undefined
+    const { getAlarm, setAlarm, deleteAlarm } = storage
+    if (!getAlarm || !setAlarm) return undefined
     return {
-      getAlarm: () => storage.getAlarm!(),
-      setAlarm: (scheduledTime) => storage.setAlarm!(scheduledTime),
-      ...(storage.deleteAlarm ? { deleteAlarm: () => storage.deleteAlarm!() } : {}),
+      getAlarm: () => getAlarm.call(storage),
+      setAlarm: (scheduledTime) => setAlarm.call(storage, scheduledTime),
+      ...(deleteAlarm ? { deleteAlarm: () => deleteAlarm.call(storage) } : {}),
     }
   }
 

@@ -23,6 +23,9 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   type Group = { category: string; items: [T, ...T[]] }
   const empty: Group[] = []
 
+  /** Search key for a list of plain strings, where each item is already its own text. */
+  const itemText = (item: T) => (typeof item === "string" ? item : "")
+
   const [grouped, { refetch }] = createResource(
     () => ({
       filter: store.filter,
@@ -39,9 +42,11 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
           const skipFilter = props.skipFilter
           const filterable = skipFilter ? x.filter((item) => !skipFilter(item)) : x
           const skipped = skipFilter ? x.filter(skipFilter) : []
+          // A list of plain strings is its own search text: search it through the same
+          // key-based overload as everything else, so both branches yield the item itself.
           const filtered =
-            !props.filterKeys && Array.isArray(filterable) && filterable.every((e) => typeof e === "string")
-              ? (fuzzysort.go(needle, filterable).map((x) => x.target) as T[])
+            !props.filterKeys && filterable.every((e) => typeof e === "string")
+              ? fuzzysort.go(needle, filterable, { key: itemText }).map((x) => x.obj)
               : fuzzysort.go(needle, filterable, { keys: props.filterKeys! }).map((x) => x.obj)
           return skipped.length ? [...filtered, ...skipped] : filtered
         },

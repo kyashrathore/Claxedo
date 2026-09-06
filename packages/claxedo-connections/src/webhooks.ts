@@ -1,3 +1,5 @@
+import { num, own, record, text } from "./json.js"
+
 export type ConnectionWebhookRequest = Readonly<{
   connectionId: string
   provider: string
@@ -72,7 +74,10 @@ export function githubConnectionWebhookVerifier(): ConnectionWebhookProviderVeri
       const repository = record(body.repository)
       const issue = record(body.issue)
       const labels = Array.isArray(issue?.labels)
-        ? issue.labels.flatMap((label) => typeof label === "string" ? [label] : typeof record(label)?.name === "string" ? [record(label)!.name as string] : [])
+        ? issue.labels.flatMap((label) => {
+            const name = typeof label === "string" ? label : text(record(label)?.name)
+            return name ? [name] : []
+          })
         : []
       return {
         deliveryId,
@@ -99,8 +104,8 @@ export function linearConnectionWebhookVerifier(input: Readonly<{ maxAgeMs?: num
       if (!signature || !deliveryId || !event || !headerTimestamp) return undefined
       if (!await verifySha256(request.secret, request.body, signature)) return undefined
       const body = jsonRecord(request.body)
-      if (!body || !Number.isSafeInteger(body.webhookTimestamp)) return undefined
-      const webhookTimestamp = body.webhookTimestamp as number
+      const webhookTimestamp = num(body?.webhookTimestamp)
+      if (!body || webhookTimestamp === undefined || !Number.isSafeInteger(webhookTimestamp)) return undefined
       if (headerTimestamp !== String(webhookTimestamp) || Math.abs(request.receivedAt - webhookTimestamp) > maxAgeMs) return undefined
       const data = record(body.data)
       const team = record(data?.team)
@@ -143,7 +148,9 @@ export function jiraConnectionWebhookVerifier(): ConnectionWebhookProviderVerifi
         ? changelog.items.flatMap((value) => {
             const item = record(value)
             if (typeof item?.field !== "string" || item.field.toLowerCase() !== "project") return []
-            return [item.from, item.fromString, item.to, item.toString]
+            // Read OWN properties only: `item.toString` on a parsed JSON object
+            // resolves to Object.prototype.toString when Jira omits the field.
+            return [own(item, "from"), own(item, "fromString"), own(item, "to"), own(item, "toString")]
               .filter((project): project is string => typeof project === "string")
           })
         : []
@@ -166,10 +173,7 @@ export function jiraConnectionWebhookVerifier(): ConnectionWebhookProviderVerifi
   }
 }
 
-function record(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  return value as Record<string, unknown>
-}
+
 
 function jsonRecord(value: Uint8Array) {
   try {

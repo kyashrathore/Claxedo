@@ -43,6 +43,7 @@ import {
 import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
+import { asRecord, isRecord, parseJson, stringField } from "../platform/json/index"
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
@@ -72,10 +73,6 @@ function required(value: string | undefined, name: string) {
   return clean
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function stringEnvironment(value: Record<string, unknown>): Record<string, string | undefined> {
   return Object.fromEntries(Object.entries(value)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string"))
@@ -85,18 +82,22 @@ function oauthClients(
   value: string | undefined,
 ): Record<string, { clientId: string; clientSecret?: string }> | undefined {
   if (!value?.trim()) return undefined
-  const parsed = JSON.parse(value) as unknown
-  if (!record(parsed)) {
+  // Deliberately NOT `parseJsonRecord`: malformed JSON must surface its own
+  // SyntaxError to the operator rather than be flattened into "not an object".
+  const parsed = parseJson(value)
+  if (!isRecord(parsed)) {
     throw new Error("CLAXEDO_MCP_OAUTH_CLIENTS must be a JSON object")
   }
   const result: Record<string, { clientId: string; clientSecret?: string }> = {}
   for (const [issuer, raw] of Object.entries(parsed)) {
-    if (!record(raw)) throw new Error(`MCP OAuth client for ${issuer} is invalid`)
-    const row = raw
-    if (typeof row.clientId !== "string" || !row.clientId.trim()) throw new Error(`MCP OAuth client for ${issuer} has no clientId`)
+    const row = asRecord(raw)
+    if (!row) throw new Error(`MCP OAuth client for ${issuer} is invalid`)
+    const clientId = stringField(row, "clientId")
+    if (!clientId?.trim()) throw new Error(`MCP OAuth client for ${issuer} has no clientId`)
+    const clientSecret = stringField(row, "clientSecret")
     result[new URL(issuer).toString()] = {
-      clientId: row.clientId,
-      ...(typeof row.clientSecret === "string" && row.clientSecret ? { clientSecret: row.clientSecret } : {}),
+      clientId,
+      ...(clientSecret ? { clientSecret } : {}),
     }
   }
   return result
@@ -152,7 +153,15 @@ export function createHostedAgentPluginsComposition(input: {
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.
-  const edgeCache = () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default
+  // Workers adds a `default` cache the DOM `CacheStorage` does not declare, and
+  // this module also builds outside a Worker isolate, where `caches` is absent
+  // entirely — hence the per-call lookup through a property read rather than a
+  // cast of the whole global.
+  const edgeCache = (): EdgeCache | undefined => {
+    const store: unknown = globalThis.caches
+    const candidate = asRecord(store)?.default
+    return isEdgeCache(candidate) ? candidate : undefined
+  }
   const githubFetch = githubEdgeCachedFetch({ cache: edgeCache })
   const claxedo = claxedoPublicGitHubCatalogSourceProvider(githubFetch)
   const sourceRegistry = new D1AgentPluginSourceStore({ database: input.database, authority })
@@ -342,4 +351,11 @@ export function createHostedAgentPluginsComposition(input: {
     prepareRuntime,
     provisionRuntime,
   }
+}
+
+
+/** The two methods `githubEdgeCachedFetch` calls on the Workers default cache. */
+function isEdgeCache(value: unknown): value is EdgeCache {
+  const candidate = asRecord(value)
+  return typeof candidate?.match === "function" && typeof candidate.put === "function"
 }

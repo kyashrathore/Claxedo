@@ -10,6 +10,9 @@
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
+import { requestBodyText } from "@/lib/url"
+import { recordOrEmpty } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 
 /** Path is relative to the /api/claxedo/integrations mount ("" for the root list). */
 export type ConnectionsRequest = (path: string, init?: RequestInit) => Promise<Response>
@@ -25,7 +28,7 @@ function hostedErrorResponse(error: unknown): Response {
   const hosted = parseHostedHttpError(error)
   if (hosted) return jsonResponse(hosted.body ?? { message: hosted.detail }, hosted.status)
   return jsonResponse(
-    { message: error instanceof Error ? error.message : String(error) },
+    { message: errorMessage(error) },
     500,
   )
 }
@@ -54,9 +57,9 @@ export function createIntegrationsRequest(baseUrl: string = getClaxedoServerUrl(
 
       const connect = /^\/([^/]+)\/connect$/.exec(path)
       if (connect && method === "POST") {
-        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
+        const body = init?.body ? recordOrEmpty(JSON.parse(requestBodyText(init.body))) : {}
         return jsonResponse(await runOp("connections.connect", {
-          id: decodeURIComponent(connect[1]!),
+          id: decodeURIComponent(connect[1]),
           ...body,
         }))
       }
@@ -64,28 +67,28 @@ export function createIntegrationsRequest(baseUrl: string = getClaxedoServerUrl(
       const attempt = /^\/attempts\/([^/]+)$/.exec(path)
       if (attempt && method === "GET") {
         return jsonResponse(await runOp("connections.attempt", {
-          state: decodeURIComponent(attempt[1]!),
+          state: decodeURIComponent(attempt[1]),
         }))
       }
 
       const repositories = /^\/connections\/([^/]+)\/repositories$/.exec(path)
       if (repositories && method === "GET") {
         return jsonResponse(await runOp("connections.repositories", {
-          id: decodeURIComponent(repositories[1]!),
+          id: decodeURIComponent(repositories[1]),
         }))
       }
 
       const reverify = /^\/connections\/([^/]+)\/reverify$/.exec(path)
       if (reverify && method === "POST") {
         return jsonResponse(await runOp("connections.reverify", {
-          id: decodeURIComponent(reverify[1]!),
+          id: decodeURIComponent(reverify[1]),
         }))
       }
 
       const disconnect = /^\/connections\/([^/]+)$/.exec(path)
       if (disconnect && method === "DELETE") {
         return jsonResponse(await runOp("connections.disconnect", {
-          id: decodeURIComponent(disconnect[1]!),
+          id: decodeURIComponent(disconnect[1]),
         }))
       }
 

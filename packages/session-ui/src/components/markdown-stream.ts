@@ -1,4 +1,4 @@
-import { marked, type Tokens } from "marked"
+import { marked, type Token } from "marked"
 import remend from "remend"
 
 export type Block = {
@@ -52,6 +52,23 @@ function language(value: string | undefined) {
   return value?.trim().split(/\s+/, 1)[0] || undefined
 }
 
+/**
+ * The fenced-code fields a block projection needs, or `undefined` when the token is not a fence.
+ *
+ * `marked`'s `Token` union ends in `Tokens.Generic` (`type: string`, every other field `any`),
+ * so comparing the discriminant never removes it and the variant cannot be narrowed to.
+ * Reading the two fields through one checked accessor is what the per-site casts stood in for.
+ */
+function codeBlock(token: Token): { text: string; lang: string | undefined } | undefined {
+  if (token.type !== "code") return undefined
+  const text: unknown = token.text
+  const lang: unknown = token.lang
+  return {
+    text: typeof text === "string" ? text : token.raw,
+    lang: typeof lang === "string" ? lang : undefined,
+  }
+}
+
 function openCode(raw: string) {
   const newline = raw.indexOf("\n")
   return newline < 0 ? "" : raw.slice(newline + 1)
@@ -89,13 +106,13 @@ function complete(text: string) {
       if (previous.mode === "full") previous.src += token.raw
       return result
     }
-    if (token.type === "code") {
-      const code = token as Tokens.Code
+    const fence = codeBlock(token)
+    if (fence) {
       result.push({
         raw: token.raw,
-        src: code.text,
+        src: fence.text,
         mode: "code",
-        language: language(code.lang),
+        language: language(fence.lang),
         complete: true,
       })
       return result
@@ -119,10 +136,10 @@ export function stream(text: string, live: boolean): Block[] {
     const token = tokens[index]
     if (!token || token.type === "space") continue
     let raw = token.raw
-    while (tokens[index + 1]?.type === "space" && index + 1 < tail) raw += tokens[++index]!.raw
-    if (token.type === "code") {
-      const code = token as Tokens.Code
-      result.push({ raw, src: code.text, mode: "code", language: language(code.lang), complete: true })
+    while (tokens[index + 1]?.type === "space" && index + 1 < tail) raw += tokens[++index].raw
+    const fence = codeBlock(token)
+    if (fence) {
+      result.push({ raw, src: fence.text, mode: "code", language: language(fence.lang), complete: true })
       continue
     }
     result.push({ raw, src: raw, mode: "full" })
@@ -132,16 +149,16 @@ export function stream(text: string, live: boolean): Block[] {
     .slice(tail)
     .map((token) => token.raw)
     .join("")
-  if (last.type !== "code") return withDefinitions([...result, { raw, src: heal(raw), mode: "live" }], defs)
+  const fence = codeBlock(last)
+  if (!fence) return withDefinitions([...result, { raw, src: heal(raw), mode: "live" }], defs)
 
-  const code = last as Tokens.Code
-  if (!open(code.raw))
+  if (!open(last.raw))
     return withDefinitions(
-      [...result, { raw, src: code.text, mode: "code", language: language(code.lang), complete: true }],
+      [...result, { raw, src: fence.text, mode: "code", language: language(fence.lang), complete: true }],
       defs,
     )
   return withDefinitions(
-    [...result, { raw, src: openCode(code.raw), mode: "code", language: language(code.lang) }],
+    [...result, { raw, src: openCode(last.raw), mode: "code", language: language(fence.lang) }],
     defs,
   )
 }

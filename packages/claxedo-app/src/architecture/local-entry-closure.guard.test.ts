@@ -126,7 +126,7 @@ describe("the local entry", () => {
     // names the modules it deliberately avoids. A guard that cannot tell an
     // import from a sentence about an import is not measuring the code.
     const source = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
-    const specifiers = [...source.matchAll(/from\s*["']([^"']+)["']/g)].map((match) => match[1]!)
+    const specifiers = [...source.matchAll(/from\s*["']([^"']+)["']/g)].map((match) => match[1])
 
     for (const forbidden of ["auth-client", "better-auth", "platform/api/api"]) {
       expect(

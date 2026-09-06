@@ -4,7 +4,7 @@ import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Event, IpcMainInvokeEvent, MessageBoxOptions } from "electron"
+import type { Event, MessageBoxOptions } from "electron"
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
 import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
@@ -63,8 +63,8 @@ import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "../shared/compile-cache"
-import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
+import { readString } from "../shared/json-read"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { claxedoServerForkOptions } from "./server-child-process"
 import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agent-plugins-signed-sync"
@@ -492,7 +492,7 @@ async function setupServerConnection(): Promise<ServerConnection> {
     return { variant: "existing", url: explicitDevelopmentUrl }
   }
 
-  const customUrl = await getSavedServerUrl()
+  const customUrl = getSavedServerUrl()
 
   if (customUrl && (await checkHealthOrAskRetry(customUrl))) {
     return { variant: "existing", url: customUrl }
@@ -604,15 +604,12 @@ function wireMenu() {
 installIpcCallerGuard({
   ipcMain,
   guard: mainIpcCallerGuard(),
-  readCaller: (event) => {
-    const ipc = event as IpcMainInvokeEvent
-    return {
-      senderId: ipc.sender.id,
-      // Null when the frame is already gone, which is not a top frame and so
-      // fails closed.
-      isMainFrame: ipc.senderFrame !== null && ipc.senderFrame === ipc.sender.mainFrame,
-    }
-  },
+  readCaller: (event) => ({
+    senderId: event.sender.id,
+    // Null when the frame is already gone, which is not a top frame and so
+    // fails closed.
+    isMainFrame: event.senderFrame !== null && event.senderFrame === event.sender.mainFrame,
+  }),
   onRejected: (channel, reason) => logger.warn(`[security] ${reason} (channel ${channel})`),
 })
 
@@ -733,18 +730,21 @@ void serverReady.promise.then(() => {
 // sync goes quiet; nothing here decides whether the feature exists.
 agentPluginsSync = setupAgentPluginsSignedSync({
   enabled: true,
-  runAccountOperation: (name, params) => account.run(name as never, params),
+  runAccountOperation: (name, params) => account.run(name, params),
   serverUrl: async () => (await serverReady.promise).url,
   log: { info: (message) => logger.log(message), warn: (message) => logger.warn(message) },
 })
 void account.ready.then(() => agentPluginsSync?.follow(account.state()))
 
 hostConnector = setupElectronHostConnector({
-  runAccountOperation: (name, params) => account.run(name as never, params),
+  runAccountOperation: (name, params) => account.run(name, params),
   describeWorkspace: async (workspaceId) => describeLocalWorkspace((await serverReady.promise).url, workspaceId),
   safeStorage,
   userDataDir: app.getPath("userData"),
-  fork: utilityProcess.fork,
+  // Bound, not passed bare: `fork` is a method on Electron's utilityProcess
+  // and needs its receiver. Bound rather than wrapped in an arrow so this stays
+  // ONE textual spawn seam — `diagnostics/spawn-inventory.ts` counts them.
+  fork: utilityProcess.fork.bind(utilityProcess),
   packaged: IS_PACKAGED,
   mainDir: MAIN_DIR,
   resourcesPath: process.resourcesPath,
@@ -770,10 +770,8 @@ hostConnector = setupElectronHostConnector({
     const server = await serverReady.promise
     const response = await fetch(new URL("/api/claxedo/host-serving", server.url))
     if (!response.ok) throw new Error(`HOSTED_HTTP ${String(response.status)} ${(await response.text()).slice(0, 200)}`)
-    const body = await response.json() as { sessionAuthority?: unknown }
-    return body.sessionAuthority === "local" || body.sessionAuthority === "managed-private"
-      ? body.sessionAuthority
-      : undefined
+    const sessionAuthority = readString(await response.json(), "sessionAuthority")
+    return sessionAuthority === "local" || sessionAuthority === "managed-private" ? sessionAuthority : undefined
   },
 })
 
@@ -837,9 +835,11 @@ const diagnosticsIpc = registerIpcHandlers({
     isAllowedUrl: isTrustedMainRendererUrl,
     async confirmAction(input) {
       if (process.env.CLAXEDO_DIAGNOSTICS_PACKAGED_SMOKE === "1") return true
-      const owner = BrowserWindow.fromWebContents(
-        input.webContents as Parameters<typeof BrowserWindow.fromWebContents>[0],
-      )
+      // Found by id rather than asserted: `confirmAction` receives the
+      // diagnostics port, which is a structural view of the sender and not the
+      // `WebContents` `fromWebContents` requires.
+      const owner =
+        BrowserWindow.getAllWindows().find((window) => window.webContents.id === input.webContents.id) ?? null
       const destructive = input.action === "kill"
       const options: MessageBoxOptions = {
         type: destructive ? "warning" : "question",
@@ -996,7 +996,7 @@ function createPackagedDiagnosticsFixtures() {
 }
 
 function registerDiagnosticsWindow(window: BrowserWindow) {
-  diagnosticsIpc.registerWebContents(window.webContents as unknown as DiagnosticsWebContents)
+  diagnosticsIpc.registerWebContents(window.webContents)
   diagnosticsProfiler.requestSample("lifecycle")
   window.once("ready-to-show", () => diagnosticsProfiler.markInteractive())
   window.once("closed", () => diagnosticsProfiler.requestSample("lifecycle"))

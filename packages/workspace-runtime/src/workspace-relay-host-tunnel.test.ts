@@ -10,6 +10,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelEvent } from "./workspace-relay-host-tunnel"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
+import { fetchUrl } from "./test-support/fetch-double"
 
 type DirectoryObserver = {
   waitForPresence(): Promise<NonNullable<ReturnType<WorkspaceRelayDirectory["activeHost"]>>>
@@ -63,7 +64,7 @@ function fakeTimers() {
   return {
     timers,
     setTimeout: (fn: () => void, delayMs?: number) => {
-      timers.push({ fn, delayMs: Number(delayMs ?? 0), cleared: false, fired: false })
+      timers.push({ fn, delayMs: delayMs ?? 0, cleared: false, fired: false })
       return timers.length as unknown as ReturnType<typeof globalThis.setTimeout>
     },
     clearTimeout: ((handle?: number | string | NodeJS.Timeout) => {
@@ -238,12 +239,12 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    sockets[0]!.open()
+    sockets[0].open()
 
     await tunnel.updateRegistration({ workspaceIds: ["ws_1", "ws_2"], token: "htt_2" })
 
     expect(sockets).toHaveLength(1)
-    expect(JSON.parse(sockets[0]!.sent.at(-1)!)).toEqual({
+    expect(JSON.parse(sockets[0].sent.at(-1)!)).toEqual({
       type: "host.registration.update",
       protocol: TUNNEL_PROTOCOL_VERSION,
       workspace_ids: ["ws_1", "ws_2"],
@@ -264,7 +265,7 @@ describe("workspace relay host tunnel client", () => {
         ? new URL(`/workspaces/${workspaceId}${path}`, "http://runtime.invalid")
         : undefined,
       request: async (target) => {
-        requests.push(String(target))
+        requests.push(fetchUrl(target))
         return new Response("ok")
       },
       webSocket: class extends FakeWebSocket {
@@ -274,7 +275,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
     socket.receive(JSON.stringify({
       type: "http.request",
@@ -320,7 +321,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
 
     expect(() => socket.receive("{not-json")).not.toThrow()
@@ -364,7 +365,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    sockets[0]!.open()
+    sockets[0].open()
 
     // No inbound traffic at all (half-open socket): after 3 ping intervals the
     // watchdog must tear the socket down and reconnect with a fresh socket.
@@ -417,12 +418,12 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    sockets[0]!.open()
+    sockets[0].open()
     await new Promise((resolve) => setTimeout(resolve, 25))
 
     expect(sockets).toHaveLength(1)
-    expect(sockets[0]!.pings).toBeGreaterThan(0)
-    expect(sockets[0]!.sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.type === "ping")).toEqual([])
+    expect(sockets[0].pings).toBeGreaterThan(0)
+    expect(sockets[0].sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.type === "ping")).toEqual([])
     tunnel.close()
   })
 
@@ -440,7 +441,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
     socket.receive(JSON.stringify({
       type: "ws.open",
@@ -450,7 +451,7 @@ describe("workspace relay host tunnel client", () => {
       path: "/api/ws",
       headers: {},
     }))
-    const upstream = sockets[1]!
+    const upstream = sockets[1]
 
     socket.receive(JSON.stringify({
       type: "ws.close",
@@ -498,7 +499,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
 
     socket.receive(JSON.stringify({
@@ -568,7 +569,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
 
     socket.receive(JSON.stringify({
@@ -616,7 +617,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
     socket.receive(JSON.stringify({
       type: "ws.open",
@@ -626,7 +627,7 @@ describe("workspace relay host tunnel client", () => {
       path: "/api/ws",
       headers: {},
     }))
-    const upstream = sockets[1]!
+    const upstream = sockets[1]
 
     // 200 keystroke-sized frames while the upstream is still CONNECTING. The
     // frame-count bound alone used to close the channel at 65 and deliver
@@ -667,7 +668,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
     socket.receive(JSON.stringify({
       type: "ws.open",
@@ -677,7 +678,7 @@ describe("workspace relay host tunnel client", () => {
       path: "/api/ws",
       headers: {},
     }))
-    const upstream = sockets[1]!
+    const upstream = sockets[1]
 
     socket.receive(JSON.stringify({
       type: "ws.frame",
@@ -734,7 +735,7 @@ describe("workspace relay host tunnel client", () => {
     // A transient relay 500 on the upgrade: `ws` emits 'error' and, with no
     // listener attached, Node treats it as fatal — the whole host process died
     // and the backoff path below never ran.
-    expect(() => sockets[0]!.error()).not.toThrow()
+    expect(() => sockets[0].error()).not.toThrow()
     timers.fireNext()
     await flush()
 
@@ -769,11 +770,11 @@ describe("workspace relay host tunnel client", () => {
       } as never,
     })
 
-    sockets[0]!.open()
+    sockets[0].open()
     // `ws` emits 'error' then 'close' for the same failure. Two reconnects for
     // one disconnect would halve the backoff and double the connect load.
-    sockets[0]!.error()
-    sockets[0]!.close(1006)
+    sockets[0].error()
+    sockets[0].close(1006)
 
     expect(events.filter((event) => event.type === "reconnecting")).toEqual([
       { type: "reconnecting", attempt: 2, delayMs: 10, reason: "closed" },
@@ -796,7 +797,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
     socket.receive(JSON.stringify({
       type: "ws.open",
@@ -806,7 +807,7 @@ describe("workspace relay host tunnel client", () => {
       path: "/api/ws",
       headers: {},
     }))
-    const upstream = sockets[1]!
+    const upstream = sockets[1]
 
     const close = await waitForSent(socket, "ws.close")
 
@@ -834,7 +835,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
     socket.receive(JSON.stringify({
       type: "ws.open",
@@ -844,7 +845,7 @@ describe("workspace relay host tunnel client", () => {
       path: "/api/ws",
       headers: {},
     }))
-    const upstream = sockets[1]!
+    const upstream = sockets[1]
     upstream.open()
 
     tunnel.close()
@@ -877,12 +878,12 @@ describe("workspace relay host tunnel client", () => {
         } as never,
       })
 
-      sockets[0]!.close()
+      sockets[0].close()
       timers.fireNext()
-      sockets[1]!.close()
+      sockets[1].close()
       timers.fireNext()
-      sockets[2]!.open()
-      sockets[2]!.close()
+      sockets[2].open()
+      sockets[2].close()
       timers.fireNext()
 
       expect(timers.fired()).toEqual([15, 30, 15])
@@ -917,17 +918,17 @@ describe("workspace relay host tunnel client", () => {
     })
 
     await flush()
-    expect(sockets[0]!.options.headers).toEqual({
+    expect(sockets[0].options.headers).toEqual({
       authorization: "Bearer token_1",
       "x-host-kind": "user-hosted",
     })
 
-    sockets[0]!.open()
-    sockets[0]!.close()
+    sockets[0].open()
+    sockets[0].close()
     timers.fireNext()
     await flush()
 
-    expect(sockets[1]!.options.headers).toEqual({
+    expect(sockets[1].options.headers).toEqual({
       authorization: "Bearer token_2",
       "x-host-kind": "user-hosted",
     })
@@ -969,10 +970,10 @@ describe("workspace relay host tunnel client", () => {
 
     expect(timers.fired()).toEqual([10])
     expect(sockets).toHaveLength(1)
-    expect(sockets[0]!.options.headers).toEqual({
+    expect(sockets[0].options.headers).toEqual({
       authorization: "Bearer fresh",
     })
-    sockets[0]!.open()
+    sockets[0].open()
     expect(events).toEqual([
       { type: "connecting", attempt: 1 },
       { type: "auth-failed", attempt: 1, error: "mint failed" },
@@ -1123,13 +1124,13 @@ describe("workspace relay host tunnel client", () => {
       } as never,
     })
 
-    sockets[0]!.open()
+    sockets[0].open()
     // 1008 (policy violation) is the relay's token-rejection close code.
-    sockets[0]!.close(1008, "Runtime Access Token expired")
+    sockets[0].close(1008, "Runtime Access Token expired")
     timers.fireNext()
-    sockets[1]!.open()
+    sockets[1].open()
     // Routine closes still reconnect with reason "closed".
-    sockets[1]!.close(1006)
+    sockets[1].close(1006)
 
     expect(events).toEqual([
       { type: "connecting", attempt: 1 },
@@ -1159,7 +1160,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
 
     const pauseFrame = JSON.stringify({
@@ -1223,7 +1224,7 @@ describe("workspace relay host tunnel client", () => {
         }
       } as never,
     })
-    const socket = sockets[0]!
+    const socket = sockets[0]
     socket.open()
 
     socket.receive(JSON.stringify({
@@ -1249,7 +1250,10 @@ describe("workspace relay host tunnel client", () => {
     }))
 
     const deadline = Date.now() + 1_000
-    while (!cancelled) {
+    // Re-read through a call: `cancelled` is set by the abort handler on
+    // another task, which a bare variable in the condition cannot express.
+    const stillRunning = () => !cancelled
+    while (stillRunning()) {
       if (Date.now() > deadline) throw new Error("Timed out waiting for the upstream reader to be aborted")
       await new Promise((resolve) => setTimeout(resolve, 1))
     }
@@ -1299,7 +1303,7 @@ describe("workspace relay host tunnel client", () => {
 
       expect(res.status).toBe(203)
       await expect(res.text()).resolves.toBe("host-ok")
-      await expect(verifyRelayHostToken(hostAuthorizations[0]!.replace(/^Bearer\s+/i, ""), relay.relayHost.publicKey, {
+      await expect(verifyRelayHostToken(hostAuthorizations[0].replace(/^Bearer\s+/i, ""), relay.relayHost.publicKey, {
         workspaceId: "ws_1",
         hostId: "host_1",
       })).resolves.toMatchObject({
@@ -1309,8 +1313,8 @@ describe("workspace relay host tunnel client", () => {
       expect(hostWorkspaces[0]).toBe("ws_1")
     } finally {
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1386,8 +1390,8 @@ describe("workspace relay host tunnel client", () => {
     } finally {
       releaseRest()
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1404,7 +1408,7 @@ describe("workspace relay host tunnel client", () => {
       },
       websocket: {
         message(ws, message) {
-          ws.send(`host:${message}`)
+          ws.send(`host:${typeof message === "string" ? message : Buffer.from(message).toString()}`)
         },
       },
     })
@@ -1446,8 +1450,8 @@ describe("workspace relay host tunnel client", () => {
     } finally {
       client?.close()
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1490,8 +1494,8 @@ describe("workspace relay host tunnel client", () => {
       })
     } finally {
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1522,7 +1526,7 @@ describe("workspace relay host tunnel client", () => {
     try {
       await relay.observer.waitForPresence()
       const port = Number(new URL(String(relay.relay.url)).port)
-      relay.relay.stop(true)
+      await relay.relay.stop(true)
       await relay.observer.waitForNoPresence()
       relay.relay = relay.startRelay(port)
 
@@ -1537,8 +1541,8 @@ describe("workspace relay host tunnel client", () => {
       await expect(res.text()).resolves.toBe("host-ok")
     } finally {
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 })
@@ -1576,7 +1580,7 @@ describe("workspace relay host tunnel region hint", () => {
         }
       } as never,
     })
-    return { tunnel, url: new URL(sockets[0]!.url.replace(/^ws/, "http")) }
+    return { tunnel, url: new URL(sockets[0].url.replace(/^ws/, "http")) }
   }
 
   test("carries the workspace region as a query param", async () => {
@@ -1658,11 +1662,11 @@ describe("U8 registration characterization", () => {
       clearTimeout: timers.clearTimeout as never,
     })
 
-    sockets[0]!.open()
+    sockets[0].open()
     await tunnel.updateRegistration({ workspaceIds: ["ws_a"], token: "htt_2" })
 
     // Force a reconnect and let the backoff timer fire.
-    sockets[0]!.close(1006, "relay restart")
+    sockets[0].close(1006, "relay restart")
     for (const timer of timers.timers) {
       if (!timer.cleared && !timer.fired) {
         timer.fired = true
@@ -1703,7 +1707,7 @@ describe("U8 registration characterization", () => {
         }
       } as never,
     })
-    sockets[0]!.open()
+    sockets[0].open()
 
     await expect(tunnel.updateRegistration({ workspaceIds: [], token: "htt_2" })).rejects.toThrow(
       /At least one workspace is required/,
@@ -1729,11 +1733,11 @@ describe("U8 registration characterization", () => {
         }
       } as never,
     })
-    sockets[0]!.open()
+    sockets[0].open()
 
     await tunnel.updateRegistration({ workspaceIds: ["ws_a", "ws_b", "ws_a"], token: "htt_2" })
 
-    expect(JSON.parse(sockets[0]!.sent.at(-1)!)).toMatchObject({
+    expect(JSON.parse(sockets[0].sent.at(-1)!)).toMatchObject({
       type: "host.registration.update",
       workspace_ids: ["ws_a", "ws_b"],
     })

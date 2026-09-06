@@ -3,6 +3,7 @@ import { List } from "@opencode-ai/ui/list"
 import { Popover } from "@opencode-ai/ui/popover"
 import { For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js"
 import { SemanticIcon } from "@/ui/semantic-icon"
+import { formatServerError } from "@/lib/server-errors"
 import { claxedoEventsPort } from "../app-ports"
 import {
   DocumentApiError,
@@ -138,9 +139,7 @@ export function createDocumentIndexController(input: {
     // the ratio.
     state.error =
       failure !== undefined && results.length > 0 && groups.length === 0
-        ? failure instanceof Error
-          ? failure.message
-          : String(failure)
+        ? formatServerError(failure)
         : undefined
     state.loading = false
     emit()
@@ -152,10 +151,14 @@ export function createDocumentIndexController(input: {
       return
     }
     refreshing = true
-    do {
+    // `stopped` and `refreshAgain` are both flipped by `stop()` and by a nudge
+    // arriving WHILE the await below is in flight, so each turn re-reads them
+    // rather than trusting a condition evaluated before the load started.
+    for (;;) {
       refreshAgain = false
       await load(false)
-    } while (refreshAgain && !stopped)
+      if (!refreshAgain || stopped) break
+    }
     refreshing = false
   }
 
@@ -189,7 +192,9 @@ export function createDocumentIndexController(input: {
     )
   }
 
-  const requestedProjects = new Set(input.queries.map((query) => query.projectId).filter(Boolean) as string[])
+  const requestedProjects = new Set(
+    input.queries.flatMap((query) => (query.projectId ? [query.projectId] : [])),
+  )
 
   const connect = () => {
     if (stopped) return
@@ -470,7 +475,7 @@ export function PageIndex(props: PageIndexProps) {
       props.onOpenPage(document, project.id)
     } catch (error) {
       if (disposed) return
-      setState({ ...state(), error: error instanceof Error ? error.message : String(error) })
+      setState({ ...state(), error: formatServerError(error) })
     } finally {
       setCreating(false)
     }

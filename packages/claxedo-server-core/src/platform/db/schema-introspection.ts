@@ -13,6 +13,7 @@
  * concrete driver, so a caller holding a `better-sqlite3` handle and a caller
  * holding the repair pass's structural handle can both use it.
  */
+import { jsonRecord } from "../runtime/lib/json"
 
 export type SqliteSchemaReader = {
   prepare(sql: string): {
@@ -32,8 +33,15 @@ export function hasTable(db: SqliteSchemaReader, table: string) {
 }
 
 /** `PRAGMA table_info` for `table`; empty when the table does not exist. */
-export function tableColumns(db: SqliteSchemaReader, table: string) {
-  return db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as SqliteColumnInfo[]
+export function tableColumns(db: SqliteSchemaReader, table: string): SqliteColumnInfo[] {
+  return db
+    .prepare(`PRAGMA table_info(\`${table}\`)`)
+    .all()
+    .flatMap((row): SqliteColumnInfo[] => {
+      const column = jsonRecord(row)
+      if (typeof column?.name !== "string") return []
+      return [{ name: column.name, ...(typeof column.notnull === "number" ? { notnull: column.notnull } : {}) }]
+    })
 }
 
 export function columnInfo(db: SqliteSchemaReader, table: string, column: string) {

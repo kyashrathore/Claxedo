@@ -9,6 +9,8 @@ import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
+import { record, text } from "../json"
+import { isTransientDriverError } from "./transient-error"
 
 // Box by ASCII (https://box.ascii.dev) exposes persistent Linux microVMs over a
 // small REST API. Unlike Daytona/Modal/Vercel, a Box boots a *fixed* base image
@@ -90,11 +92,11 @@ function clean(input: string | undefined | null) {
   return txt ? txt : undefined
 }
 
+/** Markers this driver's SDK has been seen to use for a retryable failure. */
+const TRANSIENT_MARKERS = ["timeout", "unavailable", "econnreset", "network"] as const
+
 function transientDriverError(err: unknown) {
-  const shaped = err as { status?: number; code?: string; name?: string; message?: string }
-  if (typeof shaped.status === "number" && shaped.status >= 500) return true
-  const text = `${shaped.code ?? ""} ${shaped.name ?? ""} ${shaped.message ?? ""}`.toLowerCase()
-  return text.includes("timeout") || text.includes("unavailable") || text.includes("econnreset") || text.includes("network")
+  return isTransientDriverError(err, TRANSIENT_MARKERS)
 }
 
 class BoxApiError extends Error {
@@ -120,7 +122,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
   const operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS
   const fetchImpl = options.fetchImpl ?? fetch
 
-  async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  async function api(path: string, init?: { method?: string; body?: unknown }): Promise<Record<string, unknown>> {
     let res: Response
     try {
       res = await fetchImpl(`${baseUrl}${path}`, {
@@ -135,13 +137,34 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     } catch (err) {
       throw new BoxApiError(err instanceof Error ? err.message : String(err))
     }
-    const text = await res.text()
-    const body = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+    const payload = await res.text()
+    const body = (payload ? record(JSON.parse(payload)) : undefined) ?? {}
     if (!res.ok || body.ok === false) {
-      const detail = clean(body.error as string) ?? clean(body.message as string) ?? res.statusText
+      const detail = clean(text(body.error)) ?? clean(text(body.message)) ?? res.statusText
       throw new BoxApiError(`Box API ${init?.method ?? "GET"} ${path} failed: ${detail}`, res.status)
     }
-    return body as T
+    return body
+  }
+
+  /**
+   * Every Box lifecycle call answers with a `{ box }` envelope. Reading `id`
+   * and `state` off an unchecked cast turned a malformed response into an
+   * `undefined.state` crash three frames away; this names the failure instead.
+   */
+  function boxOf(body: Record<string, unknown>): BoxApiBox {
+    const box = record(body.box)
+    const id = text(box?.id)
+    const state = text(box?.state)
+    if (!box || !id || !state) throw new BoxApiError("Box API response omitted its box envelope")
+    return {
+      id,
+      state,
+      ...(text(box.name) ? { name: text(box.name) } : {}),
+      ...(box.url === undefined ? {} : { url: text(box.url) ?? null }),
+      ...(box.ip === undefined ? {} : { ip: text(box.ip) ?? null }),
+      ...(box.subdomain === undefined ? {} : { subdomain: text(box.subdomain) ?? null }),
+      ...(box.createdAt === undefined ? {} : { createdAt: text(box.createdAt) ?? null }),
+    }
   }
 
   function runtimePort(input: SandboxDriverEnsureInput) {
@@ -171,11 +194,11 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
   }
 
   async function exec(boxId: string, command: string): Promise<BoxCommandResult> {
-    const body = await api<Record<string, unknown>>(`/boxes/${boxId}/commands`, {
+    const body = await api(`/boxes/${boxId}/commands`, {
       method: "POST",
       body: { command },
     })
-    const result = (body.result as BoxCommandResult | undefined) ?? (body as BoxCommandResult)
+    const result = record(body.result) ?? body
     return {
       stdout: typeof result.stdout === "string" ? result.stdout : "",
       stderr: typeof result.stderr === "string" ? result.stderr : "",
@@ -194,7 +217,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
   async function waitUntilReady(boxId: string): Promise<boolean> {
     const until = Date.now() + provisionTimeoutMs
     for (;;) {
-      const { box } = await api<{ box: BoxApiBox }>(`/boxes/${boxId}`)
+      const box = boxOf(await api(`/boxes/${boxId}`))
       if (READY_STATES.has(box.state)) return true
       if (!PENDING_STATES.has(box.state)) {
         throw new BoxApiError(`Box ${boxId} entered non-ready state: ${box.state}`)
@@ -271,7 +294,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
   async function ensureHost(input: SandboxDriverEnsureInput) {
     assertNetwork(input)
     const hostId = input.hostId ?? `box-${input.workspaceId}`
-    const created = await api<{ box: BoxApiBox }>("/boxes", {
+    const created = await api("/boxes", {
       method: "POST",
       body: { ttlSeconds },
     }).catch((err) => {
@@ -279,7 +302,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
       throw err
     })
     if (!created) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
-    const boxId = created.box.id
+    const boxId = boxOf(created).id
     const ready = await waitUntilReady(boxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     return boot(boxId, input, hostId)

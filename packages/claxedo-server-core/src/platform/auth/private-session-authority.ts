@@ -105,17 +105,25 @@ export type PrivateSessionRuntimeProof = PrivateSessionRuntimePrincipal & {
  * Normalize already-verified RHT claims for the authority boundary. Signature,
  * issuer, audience, and expiry verification remain the token verifier's job.
  */
-export function privateSessionRuntimeProof(claims: RelayHostPrivateSessionClaims): PrivateSessionRuntimeProof {
-  const principalKind = claims.principal_kind
-  const actorKind = claims.actor_kind
-  if (
-    (principalKind !== "user" && principalKind !== "service") ||
-    (actorKind !== "human" && actorKind !== "agent") ||
-    (principalKind === "user" && actorKind !== "human") ||
-    (principalKind === "service" && actorKind !== "agent")
-  )
-    throw new TypeError("Relay Host Token principal and actor kinds are inconsistent")
+/**
+ * The principal/actor pairing a Relay Host Token asserts.
+ *
+ * A user principal always acts as a human and a service always as an agent;
+ * the pairing is the discriminant, so choosing the union member here is what
+ * makes the proof below well-typed instead of asserted into shape.
+ */
+type RuntimePrincipalKinds =
+  | { principalKind: "user"; actorKind: "human" }
+  | { principalKind: "service"; actorKind: "agent" }
 
+function runtimePrincipalKinds(principalKind: unknown, actorKind: unknown): RuntimePrincipalKinds {
+  if (principalKind === "user" && actorKind === "human") return { principalKind, actorKind }
+  if (principalKind === "service" && actorKind === "agent") return { principalKind, actorKind }
+  throw new TypeError("Relay Host Token principal and actor kinds are inconsistent")
+}
+
+export function privateSessionRuntimeProof(claims: RelayHostPrivateSessionClaims): PrivateSessionRuntimeProof {
+  const kinds = runtimePrincipalKinds(claims.principal_kind, claims.actor_kind)
   const actorId = requiredClaim(claims.actor_id, "actor_id")
   const orgId = requiredClaim(claims.org_id, "org_id")
   const workspaceId = requiredClaim(claims.workspace_id, "workspace_id")
@@ -123,15 +131,14 @@ export function privateSessionRuntimeProof(claims: RelayHostPrivateSessionClaims
   const relayHostTokenJti = requiredClaim(claims.jti, "jti")
   const parentRuntimeAccessTokenJti = requiredClaim(claims.parent_jti, "parent_jti")
   return {
-    principalKind,
+    ...kinds,
     actorId,
-    actorKind,
     orgId,
     workspaceId,
     hostId,
     relayHostTokenJti,
     parentRuntimeAccessTokenJti,
-  } as PrivateSessionRuntimeProof
+  }
 }
 
 /**

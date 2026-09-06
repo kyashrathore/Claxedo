@@ -39,9 +39,13 @@ export type LineCommentAnchorProps = {
   variant?: LineCommentVariant
   icon?: "comment" | "plus"
   buttonLabel?: string
-  onClick?: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent>
-  onMouseEnter?: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent>
-  onPopoverFocusOut?: JSX.EventHandlerUnion<HTMLDivElement, FocusEvent>
+  // These are attached through Solid's `on:` namespace (a direct addEventListener,
+  // not the delegated `onClick`), so they take the handler union that slot accepts.
+  // The anchor hangs click/hover on its button in the default layout and on the popover
+  // div when `inline` hides that button, so neither may assume a specific element.
+  onClick?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
+  onMouseEnter?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
+  onPopoverFocusOut?: JSX.EventHandlerWithOptionsUnion<HTMLDivElement, FocusEvent>
   class?: string
   popoverClass?: string
   children?: JSX.Element
@@ -84,8 +88,8 @@ export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
               data-slot="line-comment-button"
               on:mousedown={(e) => e.stopPropagation()}
               on:mouseup={(e) => e.stopPropagation()}
-              on:click={props.onClick as any}
-              on:mouseenter={props.onMouseEnter as any}
+              on:click={props.onClick}
+              on:mouseenter={props.onMouseEnter}
             >
               <Show
                 when={props.inline}
@@ -101,7 +105,7 @@ export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
                   [props.popoverClass ?? ""]: !!props.popoverClass,
                 }}
                 on:mousedown={(e) => e.stopPropagation()}
-                on:focusout={props.onPopoverFocusOut as any}
+                on:focusout={props.onPopoverFocusOut}
               >
                 {props.children}
               </div>
@@ -116,9 +120,9 @@ export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
             [props.popoverClass ?? ""]: !!props.popoverClass,
           }}
           on:mousedown={(e) => e.stopPropagation()}
-          on:click={props.onClick as any}
-          on:mouseenter={props.onMouseEnter as any}
-          on:focusout={props.onPopoverFocusOut as any}
+          on:click={props.onClick}
+          on:mouseenter={props.onMouseEnter}
+          on:focusout={props.onPopoverFocusOut}
         >
           {props.children}
         </div>
@@ -245,12 +249,12 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
   })
 
   const focus = () => refs.textarea?.focus()
-  const hold: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (e) => {
+  const hold: JSX.EventHandlerWithOptionsUnion<HTMLButtonElement, MouseEvent> = (e) => {
     e.preventDefault()
     e.stopPropagation()
   }
   const click =
-    (fn: VoidFunction): JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> =>
+    (fn: VoidFunction): JSX.EventHandlerWithOptionsUnion<HTMLButtonElement, MouseEvent> =>
     (e) => {
       e.stopPropagation()
       fn()
@@ -263,13 +267,13 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
 
   const currentMention = () => {
     const textarea = refs.textarea
-    if (!textarea) return
-    if (!split.mention) return
-    if (textarea.selectionStart !== textarea.selectionEnd) return
+    if (!textarea) return undefined
+    if (!split.mention) return undefined
+    if (textarea.selectionStart !== textarea.selectionEnd) return undefined
 
     const end = textarea.selectionStart
     const match = textarea.value.slice(0, end).match(/@(\S*)$/)
-    if (!match) return
+    if (!match) return undefined
 
     return {
       query: match[1] ?? "",
@@ -407,8 +411,8 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
                   type="button"
                   data-slot="line-comment-action"
                   data-variant="ghost"
-                  on:mousedown={hold as any}
-                  on:click={click(split.onCancel) as any}
+                  on:mousedown={hold}
+                  on:click={click(split.onCancel)}
                 >
                   {split.cancelLabel ?? i18n.t("ui.common.cancel")}
                 </button>
@@ -417,8 +421,8 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
                   data-slot="line-comment-action"
                   data-variant="primary"
                   disabled={split.value.trim().length === 0}
-                  on:mousedown={hold as any}
-                  on:click={click(submit) as any}
+                  on:mousedown={hold}
+                  on:click={click(submit)}
                 >
                   {split.submitLabel ?? i18n.t("ui.lineComment.submit")}
                 </button>

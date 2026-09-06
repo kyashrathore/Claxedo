@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { closeContextAndSaveVideo } from "./capture-video"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import type { FetchLogEntry, ReviewLoadLogEntry } from "./capture-harness-window"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(
@@ -66,14 +67,13 @@ type InteractionSample = {
   fileListFetchUrls: string[]
 }
 
-type FetchLogEntry = {
-  url: string
-  atMs: number
-}
-
-type ReviewLoadLogEntry = {
-  atMs: number
-  detail: unknown
+declare global {
+  interface Window {
+    /** Installed by this harness's init script; read by every helper below. */
+    __CLAXEDO_HAS_VISIBLE_BUTTON__: (label: string) => boolean
+    __CLAXEDO_CLICK_VISIBLE_BUTTON__: (label: string) => boolean
+    __CLAXEDO_READ_SHELL_SNAPSHOT__: (name: string, startAt: number) => ShellSnapshot
+  }
 }
 
 await Bun.$`mkdir -p ${RESULT_DIR} ${RAW_VIDEO_DIR}`
@@ -84,17 +84,18 @@ const context = await browser.newContext({
   recordVideo: { dir: RAW_VIDEO_DIR, size: viewport },
 })
 await context.addInitScript(() => {
-  const w = window as unknown as Record<string, unknown>
-  w.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
-  w.__CLAXEDO_TEST_AUTH_USER__ = {
+  window.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
+  window.__CLAXEDO_TEST_AUTH_USER__ = {
     id: "app-shell-motion-user",
     primaryEmailAddress: { emailAddress: "app-shell-motion@claxedo.test" },
     fullName: "App Shell Motion",
   }
-  w.__CLAXEDO_FETCH_LOG__ = []
-  w.__CLAXEDO_REVIEW_LOAD_LOG__ = []
+  const fetchLog: FetchLogEntry[] = []
+  const reviewLoadLog: ReviewLoadLogEntry[] = []
+  window.__CLAXEDO_FETCH_LOG__ = fetchLog
+  window.__CLAXEDO_REVIEW_LOAD_LOG__ = reviewLoadLog
   window.addEventListener("claxedo:review-vcs-load", (event) => {
-    ;(w.__CLAXEDO_REVIEW_LOAD_LOG__ as ReviewLoadLogEntry[]).push({
+    reviewLoadLog.push({
       atMs: performance.now(),
       detail: event instanceof CustomEvent ? event.detail : undefined,
     })
@@ -123,7 +124,7 @@ await context.addInitScript(() => {
     }
   }
   const buttonsByLabel = (label: string) => {
-    const escaped = globalThis.CSS?.escape ? CSS.escape(label) : label.replaceAll('"', '\\"')
+    const escaped = typeof globalThis.CSS?.escape === "function" ? CSS.escape(label) : label.replaceAll('"', '\\"')
     return Array.from(document.querySelectorAll<HTMLButtonElement>(`button[aria-label="${escaped}"]`))
   }
   const buttonVisibleFast = (button: HTMLElement) => {
@@ -141,9 +142,9 @@ await context.addInitScript(() => {
       Number(style.opacity || "1") > 0.01 &&
       !button.closest('[hidden], [aria-hidden="true"]')
   }
-  w.__CLAXEDO_HAS_VISIBLE_BUTTON__ = (label: string) =>
+  window.__CLAXEDO_HAS_VISIBLE_BUTTON__ = (label: string) =>
     buttonsByLabel(label).some(buttonVisibleFast)
-  w.__CLAXEDO_CLICK_VISIBLE_BUTTON__ = (label: string) => {
+  window.__CLAXEDO_CLICK_VISIBLE_BUTTON__ = (label: string) => {
     const button = buttonsByLabel(label).find((item) => {
       if (!buttonVisibleFast(item)) return false
       const parentPanel = item.closest<HTMLElement>('[data-testid="workspace-panel-shell"]')
@@ -153,7 +154,7 @@ await context.addInitScript(() => {
     button?.click()
     return !!button
   }
-  w.__CLAXEDO_READ_SHELL_SNAPSHOT__ = (name: string, startAt: number) => {
+  window.__CLAXEDO_READ_SHELL_SNAPSHOT__ = (name: string, startAt: number) => {
     const workbench = rectSnapshot(document.querySelector<HTMLElement>('[data-testid="workbench-column"]'))
     const sidebar = rectSnapshot(document.querySelector<HTMLElement>('[data-testid="rail-sidebar"]'))
     const panelEl = document.querySelector<HTMLElement>('[data-testid="workspace-panel-shell"]')
@@ -197,11 +198,12 @@ await context.addInitScript(() => {
     }
   }
   const originalFetch = window.fetch.bind(window)
-  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = input instanceof Request ? input.url : String(input)
-    ;(w.__CLAXEDO_FETCH_LOG__ as FetchLogEntry[]).push({ url, atMs: performance.now() })
+  const logged: typeof window.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString()
+    fetchLog.push({ url, atMs: performance.now() })
     return originalFetch(input, init)
-  }) as typeof window.fetch
+  }
+  window.fetch = logged
 })
 
 const page = await context.newPage()
@@ -365,11 +367,8 @@ async function waitForPanelOpenState(page: Page, open: boolean) {
 
 async function waitForNavigatorControls(page: Page) {
   await page.waitForFunction(() => {
-    const helper = window as unknown as {
-      __CLAXEDO_HAS_VISIBLE_BUTTON__: (label: string) => boolean
-    }
-    return helper.__CLAXEDO_HAS_VISIBLE_BUTTON__("Open Files") ||
-      helper.__CLAXEDO_HAS_VISIBLE_BUTTON__("Close Files")
+    return window.__CLAXEDO_HAS_VISIBLE_BUTTON__("Open Files") ||
+      window.__CLAXEDO_HAS_VISIBLE_BUTTON__("Close Files")
   }, undefined, { timeout: 3_000 })
 }
 
@@ -408,19 +407,11 @@ async function waitForFileNavigatorWarm(page: Page) {
 }
 
 async function hasVisibleButton(page: Page, label: string) {
-  return await page.evaluate((label) =>
-    (window as unknown as { __CLAXEDO_HAS_VISIBLE_BUTTON__: (label: string) => boolean })
-      .__CLAXEDO_HAS_VISIBLE_BUTTON__(label),
-    label,
-  )
+  return await page.evaluate((label) => window.__CLAXEDO_HAS_VISIBLE_BUTTON__(label), label)
 }
 
 async function clickVisibleButton(page: Page, label: string) {
-  const clicked = await page.evaluate((label) =>
-    (window as unknown as { __CLAXEDO_CLICK_VISIBLE_BUTTON__: (label: string) => boolean })
-      .__CLAXEDO_CLICK_VISIBLE_BUTTON__(label),
-    label,
-  )
+  const clicked = await page.evaluate((label) => window.__CLAXEDO_CLICK_VISIBLE_BUTTON__(label), label)
   if (!clicked) throw new Error(`Visible button not found: ${label}`)
 }
 
@@ -430,14 +421,8 @@ async function measureSequence(
   steps: Array<{ label: string } | { waitMs: number }>,
 ): Promise<InteractionSample> {
   return await page.evaluate(async ({ name, steps, longFrameBudgetMs }) => {
-    const helper = window as unknown as {
-      __CLAXEDO_FETCH_LOG__?: FetchLogEntry[]
-      __CLAXEDO_REVIEW_LOAD_LOG__?: ReviewLoadLogEntry[]
-      __CLAXEDO_CLICK_VISIBLE_BUTTON__: (label: string) => boolean
-      __CLAXEDO_READ_SHELL_SNAPSHOT__: (name: string, startAt: number) => ShellSnapshot
-    }
-    const fetchLog = () => helper.__CLAXEDO_FETCH_LOG__ ?? []
-    const reviewLoadLog = () => helper.__CLAXEDO_REVIEW_LOAD_LOG__ ?? []
+    const fetchLog = () => window.__CLAXEDO_FETCH_LOG__ ?? []
+    const reviewLoadLog = () => window.__CLAXEDO_REVIEW_LOAD_LOG__ ?? []
     const reviewFetches = () => fetchLog().filter((entry) => /vcs|review-vcs|diff/i.test(entry.url))
     const fileListFetches = () => fetchLog().filter((entry) =>
       /file.*list|\/file\/list|file\.list|\/file\?/i.test(entry.url)
@@ -475,7 +460,7 @@ async function measureSequence(
         continue
       }
       const clickStart = performance.now()
-      if (!helper.__CLAXEDO_CLICK_VISIBLE_BUTTON__(step.label)) throw new Error(`Visible button not found: ${step.label}`)
+      if (!window.__CLAXEDO_CLICK_VISIBLE_BUTTON__(step.label)) throw new Error(`Visible button not found: ${step.label}`)
       await Promise.resolve()
       const ms = performance.now() - clickStart
       clickTimings.push({ label: step.label, ms })
@@ -484,7 +469,7 @@ async function measureSequence(
     await new Promise((resolve) => setTimeout(resolve, 260))
     running = false
     await frameLoop
-    snapshots.push(helper.__CLAXEDO_READ_SHELL_SNAPSHOT__(`${name} settled`, start))
+    snapshots.push(window.__CLAXEDO_READ_SHELL_SNAPSHOT__(`${name} settled`, start))
     const maxFrameDeltaMs = Math.max(0, ...frameDeltas)
     const interruptionBudgetMs = steps.reduce((sum, step) => sum + ("waitMs" in step ? step.waitMs : 0), 0) +
       Math.max(longFrameBudgetMs, 18)
@@ -511,9 +496,8 @@ async function measureSequence(
 }
 
 async function sampleShell(page: Page, name: string, startAt: number): Promise<ShellSnapshot> {
-  return await page.evaluate(({ name, startAt }) =>
-    (window as unknown as { __CLAXEDO_READ_SHELL_SNAPSHOT__: (name: string, startAt: number) => ShellSnapshot })
-      .__CLAXEDO_READ_SHELL_SNAPSHOT__(name, startAt),
-    { name, startAt },
-  )
+  return await page.evaluate(({ name, startAt }) => window.__CLAXEDO_READ_SHELL_SNAPSHOT__(name, startAt), {
+    name,
+    startAt,
+  })
 }

@@ -83,8 +83,14 @@ describe("workspace connection authority invariants", () => {
   test("one connecting screen: connecting UI is imported only inside the allowlist", async () => {
     // Match an actual import or JSX render of the connecting components — not a
     // mention in a comment (the authority's docstring names CloudStartupView).
+    // Each import STATEMENT is isolated before the name is looked for: this
+    // codebase writes no semicolons, so a wildcard bounded by `;` runs to the
+    // end of the file and pairs the first `import` with any later `from` —
+    // which made an unrelated prose "from" in a docstring read as an import.
+    const importStatements = (text: string) => text.match(/^import\b[\s\S]*?\bfrom\s+"[^"]+"/gm) ?? []
     const importsOrRenders = (text: string, name: string) =>
-      new RegExp(`import[^;]*\\b${name}\\b[^;]*from`).test(text) || new RegExp(`<${name}\\b`).test(text)
+      importStatements(text).some((statement) => new RegExp(`\\b${name}\\b`).test(statement)) ||
+      new RegExp(`<${name}\\b`).test(text)
 
     const offenders: string[] = []
     for (const file of await files()) {

@@ -118,6 +118,13 @@ export function BasicTool(props: BasicToolProps) {
   const elapsed = () =>
     typeof props.startedAt === "number" ? formatDuration(Math.max(0, nowMs() - props.startedAt)) : ""
   const dynamicTrigger = typeof props.trigger === "function" ? props.trigger(open) : undefined
+  /** The trigger when it is neither a render function nor a structured title: plain JSX. */
+  const plainTrigger = (): JSX.Element => {
+    const value = props.trigger
+    if (typeof value === "function") return undefined
+    if (isTriggerTitle(value)) return undefined
+    return value
+  }
 
   let cancelReady: (() => void) | undefined
 
@@ -275,7 +282,7 @@ export function BasicTool(props: BasicToolProps) {
                 </div>
               )}
             </Match>
-            <Match when={true}>{props.trigger as JSX.Element}</Match>
+            <Match when={true}>{plainTrigger()}</Match>
           </Switch>
         </div>
       </div>

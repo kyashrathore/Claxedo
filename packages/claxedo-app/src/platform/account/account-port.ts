@@ -133,11 +133,11 @@ export type HostedOperationName =
   | "team.members.add"
   | "team.members.remove"
   | "team.projects.grant"
-  | "connections.list"
-  | "connections.connect"
-  | "connections.attempt"
+   
+   
+   
   | "connections.repositories"
-  | "connections.disconnect"
+   
   | "connections.reverify"
   | "documents.list"
   | "documents.get"
@@ -179,8 +179,15 @@ export type AccountPort = {
    * No URL, no method, no headers — those are owned by whoever implements the
    * port. `input` is the operation's own parameters (a workspace id, a
    * lifecycle verb), never a request shape.
+   *
+   * The result is `unknown` on purpose. This used to be `<T = unknown>`, which
+   * let a CALLER name the result shape while no implementation could honour
+   * that promise: every port satisfied it with an assertion (`as never` in the
+   * browser port, `as AccountPort["run"]` in the Electron one). Callers narrow
+   * with `decodeHostedResult`, which reads the operation's own decoder out of
+   * `HOSTED_OPERATIONS` and names the operation when the shape is wrong.
    */
-  run: <T = unknown>(operation: HostedOperationName, input?: Record<string, unknown>) => Promise<T>
+  run: (operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
 }
 
 // There is deliberately no "unbound port" value here. `useAccountPort()` throws

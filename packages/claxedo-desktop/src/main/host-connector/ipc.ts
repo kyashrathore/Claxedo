@@ -42,6 +42,9 @@
  */
 
 import type { IpcMainInvokeEvent } from "electron"
+
+import { readString, readUnknown } from "../../shared/json-read"
+import type { HostConnectorSharedWorkspace } from "./child-protocol"
 import type { HostConnectorStatus } from "./child-supervisor"
 import { toStatusEvent, type HostConnectorStatusEvent } from "./status-channel"
 
@@ -64,8 +67,15 @@ export function hostConnectorChannel(operation: HostConnectorOperation) {
  * — outside an Electron process.
  */
 export type HostConnectorIpcTarget = {
-  handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): unknown
+  handle(channel: string, listener: HostConnectorIpcListener): unknown
 }
+
+/**
+ * One listener shape for every channel. Declared here so the registration
+ * below can pick its ARITY per operation without an assertion: only `share`
+ * and `unshare` declare a second parameter, and `ipc.test.ts` asserts that.
+ */
+export type HostConnectorIpcListener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
 /**
  * What this surface needs from the connector.
@@ -78,7 +88,7 @@ export type MachinePublication = {
   status: () => HostConnectorStatus
   start: () => Promise<HostConnectorStatus>
   /** Publish one workspace from this machine (owner assignment + machine consent). */
-  shareWorkspace: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorStatus>
+  shareWorkspace: (input: HostConnectorSharedWorkspace) => Promise<HostConnectorStatus>
   /** Withdraw one workspace: unassign at the control plane, drop consent. */
   unshareWorkspace: (workspaceId: string) => Promise<HostConnectorStatus>
   /** Stop beating, keep the identity. */
@@ -117,15 +127,14 @@ export function registerHostConnectorIpc(input: {
   // the route, the challenge flow, and the signature all live in main and the
   // child, so the confused-deputy rule above holds: a renderer picks which
   // fixed operation happens and, here, which workspace it happens to.
-  const shareInput = (value: unknown): { workspaceId: string; displayName?: string } | undefined => {
-    if (typeof value !== "object" || value === null) return
-    const input = value as { workspaceId?: unknown; displayName?: unknown }
-    if (typeof input.workspaceId !== "string" || !input.workspaceId) return
-    if (input.displayName !== undefined && typeof input.displayName !== "string") return
-    return {
-      workspaceId: input.workspaceId,
-      ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
-    }
+  const shareInput = (value: unknown): HostConnectorSharedWorkspace | undefined => {
+    const workspaceId = readString(value, "workspaceId")
+    if (!workspaceId) return undefined
+    // A label of the wrong type rejects the whole share rather than being
+    // silently dropped: the renderer does not get to send half a message.
+    const displayName = readUnknown(value, "displayName")
+    if (displayName !== undefined && typeof displayName !== "string") return undefined
+    return { workspaceId, ...(displayName === undefined ? {} : { displayName }) }
   }
 
   const handlers: Record<HostConnectorOperation, (payload?: unknown) => Promise<HostConnectorStatusEvent>> = {
@@ -197,12 +206,11 @@ export function registerHostConnectorIpc(input: {
     // which alone declares a place to receive its data-only payload — the
     // listener takes no arguments: a renderer chooses which channel to call,
     // not what that channel does.
-    ipcMain.handle(
-      channel,
-      (operation === "share" || operation === "unshare"
-        ? (_event: unknown, payload: unknown) => handlers[operation](payload)
-        : () => handlers[operation]()) as never,
-    )
+    const listener: HostConnectorIpcListener =
+      operation === "share" || operation === "unshare"
+        ? (_event, payload) => handlers[operation](payload)
+        : () => handlers[operation]()
+    ipcMain.handle(channel, listener)
   }
 
   return { channels }

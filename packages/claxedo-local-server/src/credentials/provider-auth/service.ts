@@ -2,6 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
+import { num, record, text } from "../../platform/json"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
 const OPENAI_DEVICE_REDIRECT_URI = `${OPENAI_ISSUER}/deviceauth/callback`
@@ -172,11 +173,7 @@ export function createProviderAuthService(
       throw new ProviderAuthError("provider_auth_authorize_failed", `Device authorization failed: ${response.status}`)
     }
 
-    const body = await response.json() as {
-      device_auth_id?: unknown
-      user_code?: unknown
-      interval?: unknown
-    }
+    const body = record(await response.json()) ?? {}
     if (typeof body.device_auth_id !== "string" || typeof body.user_code !== "string") {
       throw new ProviderAuthError("provider_auth_authorize_failed", "Device authorization returned an invalid body")
     }
@@ -286,10 +283,7 @@ async function exchangeDeviceTokens(
       throw new ProviderAuthError("provider_auth_callback_failed", `Device token polling failed: ${codeResponse.status}`)
     }
 
-    const code = await codeResponse.json() as {
-      authorization_code?: unknown
-      code_verifier?: unknown
-    }
+    const code = record(await codeResponse.json()) ?? {}
     if (typeof code.authorization_code !== "string" || typeof code.code_verifier !== "string") {
       throw new ProviderAuthError("provider_auth_callback_failed", "Device token polling returned an invalid body")
     }
@@ -309,38 +303,49 @@ async function exchangeDeviceTokens(
       throw new ProviderAuthError("provider_auth_callback_failed", `Token exchange failed: ${tokenResponse.status}`)
     }
 
-    const tokens = await tokenResponse.json() as Partial<TokenResponse>
-    if (!tokens.access_token || !tokens.refresh_token) {
-      throw new ProviderAuthError("provider_auth_callback_failed", "Token exchange returned an invalid body")
-    }
-    return tokens as TokenResponse
+    return tokenResponseFrom(await tokenResponse.json(), "provider_auth_callback_failed")
+  }
+}
+
+/** The one place an OAuth token body becomes a {@link TokenResponse}. */
+function tokenResponseFrom(value: unknown, code: ProviderAuthError["code"]): TokenResponse {
+  const body = record(value) ?? {}
+  const access_token = text(body.access_token)
+  const refresh_token = text(body.refresh_token)
+  if (!access_token || !refresh_token) {
+    throw new ProviderAuthError(code, "Token exchange returned an invalid body")
+  }
+  return {
+    access_token,
+    refresh_token,
+    ...(text(body.id_token) ? { id_token: text(body.id_token) } : {}),
+    ...(num(body.expires_in) === undefined ? {} : { expires_in: num(body.expires_in) }),
   }
 }
 
 function parseJwtClaims(token: string | undefined): Record<string, unknown> | undefined {
-  if (!token) return
+  if (!token) return undefined
   const parts = token.split(".")
-  if (parts.length !== 3 || !parts[1]) return
+  const payload = parts.length === 3 ? parts[1] : undefined
+  if (!payload) return undefined
   try {
-    return JSON.parse(Buffer.from(parts[1], "base64url").toString()) as Record<string, unknown>
+    return record(JSON.parse(Buffer.from(payload, "base64url").toString()))
   } catch {
-    return
+    return undefined
   }
 }
 
-function extractAccountIdFromClaims(claims: Record<string, unknown> | undefined) {
-  if (!claims) return
+function extractAccountIdFromClaims(claims: Record<string, unknown> | undefined): string | undefined {
+  if (!claims) return undefined
   if (typeof claims.chatgpt_account_id === "string") return claims.chatgpt_account_id
-  const openai = claims["https://api.openai.com/auth"]
-  if (openai && typeof openai === "object" && "chatgpt_account_id" in openai) {
-    const account = openai.chatgpt_account_id
-    if (typeof account === "string") return account
-  }
+  const openai = record(claims["https://api.openai.com/auth"])
+  if (typeof openai?.chatgpt_account_id === "string") return openai.chatgpt_account_id
   const organizations = claims.organizations
   if (Array.isArray(organizations)) {
-    const first = organizations[0]
-    if (first && typeof first === "object" && "id" in first && typeof first.id === "string") return first.id
+    const first = record(organizations[0])
+    if (typeof first?.id === "string") return first.id
   }
+  return undefined
 }
 
 function extractAccountId(tokens: TokenResponse) {

@@ -64,8 +64,8 @@ describe("Claxedo terminal workload", () => {
       expect(result.expectedSha256).toBe("f43e5bf0baeade571dec6540f3e7e827077ba171836bef63b1b0bf3ea77f518b")
       expect(result.expectedModelHash).toBe("8d7e396ae2659a881ed49361466059d43ea3b1dba210b9499e610b0be12aa330")
       expect(result.inputByteThresholds).toHaveLength(2)
-      expect(result.inputByteThresholds[0]!).toBeGreaterThan(70 * 1024 * 1024)
-      expect(result.inputByteThresholds[1]!).toBeGreaterThan(140 * 1024 * 1024)
+      expect(result.inputByteThresholds[0]).toBeGreaterThan(70 * 1024 * 1024)
+      expect(result.inputByteThresholds[1]).toBeGreaterThan(140 * 1024 * 1024)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -108,7 +108,7 @@ describe("Claxedo terminal workload", () => {
       // guessed duration races cold process startup on contended Linux hosts
       // and can send the probe before the child is ready to accept it.
       await readUntil("⟦input-ready:probe-1⟧")
-      child.stdin.write("probe-1\n")
+      await child.stdin.write("probe-1\n")
       await child.stdin.flush()
       await readUntil("⟦t3-benchmark-complete⟧")
       await Bun.sleep(20)
@@ -116,9 +116,9 @@ describe("Claxedo terminal workload", () => {
       expect(output).toContain("⟦t3-benchmark-complete⟧")
       expect(exited).toBe(false)
 
-      child.stdin.write("T3_TERMINAL_SHUTDOWN\n")
+      await child.stdin.write("T3_TERMINAL_SHUTDOWN\n")
       await child.stdin.flush()
-      child.stdin.end()
+      await child.stdin.end()
       expect(await child.exited).toBe(0)
       reader.releaseLock()
     } finally {

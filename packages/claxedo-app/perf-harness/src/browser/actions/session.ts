@@ -139,12 +139,8 @@ export async function measureInPageSessionFirstFoldSwitch(
   const result = await page.evaluate(async ({ id, debug, renderer, renderMermaid, mark, before }) => {
     const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
     if (started === undefined) throw new Error(`Trusted session switch did not emit pointerdown for ${id}`)
-    const traceWindow = window as unknown as {
-      __claxedoPerfTrace?: boolean
-      __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
-    }
-    if (traceWindow.__claxedoPerfTrace) {
-      traceWindow.__claxedoPerfRendererPhases?.push({
+    if (window.__claxedoPerfTrace) {
+      window.__claxedoPerfRendererPhases?.push({
         name: "sessionSwitch.click",
         durationMs: performance.now() - started,
       })

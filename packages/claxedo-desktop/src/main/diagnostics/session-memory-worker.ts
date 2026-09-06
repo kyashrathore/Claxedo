@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import { join } from "node:path"
 import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { readUnknown } from "../../shared/json-read"
 import type { SessionMemoryScanPaths } from "./session-memory-scan"
 
 export function createSessionMemoryScanner(options: {
@@ -44,12 +45,12 @@ export function createSessionMemoryScanner(options: {
       child.once("error", () => finish(new Error("session memory scanner unavailable")))
       child.once("exit", () => {
         try {
-          const response = JSON.parse(output.trim()) as { ok?: unknown; result?: unknown }
-          if (response.ok !== true) {
+          const response: unknown = JSON.parse(output.trim())
+          if (readUnknown(response, "ok") !== true) {
             finish(new Error("session memory scan failed"))
             return
           }
-          finish(undefined, LocalDiagnostics.SessionMemoryScanResult.parse(response.result))
+          finish(undefined, LocalDiagnostics.SessionMemoryScanResult.parse(readUnknown(response, "result")))
         } catch {
           finish(new Error("session memory scan returned invalid data"))
         }

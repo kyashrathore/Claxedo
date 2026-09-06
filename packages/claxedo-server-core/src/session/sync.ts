@@ -1,13 +1,10 @@
 import { ClaxedoDB, desc, eq } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable } from "./cloud.sql"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { jsonRecord as rec } from "@claxedo/server-core/platform/runtime/lib/json"
 
 function now() {
   return Date.now()
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
 }
 
 function txt(input: unknown) {
@@ -30,13 +27,14 @@ function cloud(ws: Workspace) {
   return ws.kind === "cloud"
 }
 
+/** Whether the cloud messages were written. A non-cloud workspace stores nothing. */
 export async function syncCloudMessages(
   ws: Workspace,
   session_id: string,
   messages: unknown[],
   options: { maxEventOrdinal?: number } = {},
-) {
-  if (!cloud(ws)) return
+): Promise<boolean> {
+  if (!cloud(ws)) return false
   const stamp = now()
   const rows = messages.map((item, ordinal) => ({
     message_id: messageId(item, session_id, ordinal),

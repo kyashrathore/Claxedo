@@ -1,14 +1,11 @@
+import { isRecord } from "@/lib/record"
 import { constructWorkbenchState } from "./construct"
 import type { Pane, Snapshot, SplitNode, SplitTree, WorkbenchState } from "./types"
 import { validRoot, makeSplitTree } from "./reducers/tree-helpers"
 import { snapshotIsValid } from "./reducers/snapshot-helpers"
 
-function isObject(x: unknown): x is Record<string, unknown> {
-  return typeof x === "object" && x !== null && !Array.isArray(x)
-}
-
 function validateSplitNode(node: unknown): SplitNode | undefined {
-  if (!isObject(node)) return undefined
+  if (!isRecord(node)) return undefined
   if (node.t === "leaf") {
     if (typeof node.id !== "string") return undefined
     return { t: "leaf", id: node.id }
@@ -29,7 +26,7 @@ function validateSplitNode(node: unknown): SplitNode | undefined {
 }
 
 function validateSplitTree(input: unknown): SplitTree {
-  if (!isObject(input)) return { direction: "h", sizes: [], root: undefined }
+  if (!isRecord(input)) return { direction: "h", sizes: [], root: undefined }
   const direction = input.direction === "v" ? "v" : "h"
   const sizes = Array.isArray(input.sizes) ? input.sizes.filter((n: unknown) => typeof n === "number") : []
   const root = validateSplitNode(input.root)
@@ -37,16 +34,16 @@ function validateSplitTree(input: unknown): SplitTree {
 }
 
 function validatePane(input: unknown): Pane | undefined {
-  if (!isObject(input)) return undefined
+  if (!isRecord(input)) return undefined
   if (typeof input.id !== "string") return undefined
   const contentId = typeof input.contentId === "string" ? input.contentId : null
   return { id: input.id, contentId }
 }
 
 function validateSnapshot(input: unknown): Snapshot | undefined {
-  if (!isObject(input)) return undefined
+  if (!isRecord(input)) return undefined
   const panes = Array.isArray(input.panes)
-    ? (input.panes.map(validatePane).filter(Boolean) as Pane[])
+    ? input.panes.map(validatePane).filter((pane): pane is Pane => pane !== undefined)
     : undefined
   if (!panes) return undefined
   const split = validateSplitTree(input.split)
@@ -55,7 +52,7 @@ function validateSnapshot(input: unknown): Snapshot | undefined {
 }
 
 export function validate(input: unknown): { state: WorkbenchState; dirty: boolean } {
-  if (!isObject(input)) {
+  if (!isRecord(input)) {
     return { state: constructWorkbenchState.empty(), dirty: true }
   }
 
@@ -142,7 +139,7 @@ export function validate(input: unknown): { state: WorkbenchState; dirty: boolea
   }
 
   // Snapshots.
-  const snapshotsInput = isObject(input.layoutSnapshots) ? input.layoutSnapshots : undefined
+  const snapshotsInput = isRecord(input.layoutSnapshots) ? input.layoutSnapshots : undefined
   const layoutSnapshots: Record<string, Snapshot> = {}
   if (snapshotsInput) {
     for (const [key, val] of Object.entries(snapshotsInput)) {

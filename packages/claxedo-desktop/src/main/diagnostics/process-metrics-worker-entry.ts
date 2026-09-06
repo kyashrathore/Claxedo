@@ -1,7 +1,8 @@
 import { createInterface } from "node:readline"
 
+import { readArray, readNumber, readUnknown } from "../../shared/json-read"
 import { validPid } from "./process-identity"
-import { lowerDiagnosticsWorkerPriority } from "./process-metrics-worker"
+import { isProcessTreeEntry, lowerDiagnosticsWorkerPriority } from "./process-metrics-worker"
 import { createPosixProcessMetricsWorker } from "./process-metrics-worker-runtime"
 
 const platform = process.env.CLAXEDO_DIAGNOSTICS_WORKER_PLATFORM
@@ -22,43 +23,37 @@ lines.on("line", (line) => {
 lines.once("close", () => worker.dispose())
 
 async function handle(line: string) {
-  let request: Record<string, unknown>
+  let request: unknown
   try {
-    request = JSON.parse(line) as Record<string, unknown>
+    request = JSON.parse(line)
   } catch {
     return
   }
-  if (!Number.isInteger(request.id)) return
+  const id = readNumber(request, "id")
+  if (id === undefined || !Number.isInteger(id)) return
   try {
     const value = await dispatch(request)
-    process.stdout.write(`${JSON.stringify({ id: request.id, ok: true, value })}\n`)
+    process.stdout.write(`${JSON.stringify({ id, ok: true, value })}\n`)
   } catch {
-    process.stdout.write(`${JSON.stringify({ id: request.id, ok: false })}\n`)
+    process.stdout.write(`${JSON.stringify({ id, ok: false })}\n`)
   }
 }
 
-function dispatch(request: Record<string, unknown>) {
-  if (request.method === "reconcile" && Array.isArray(request.rootPids)) {
-    return worker.reconcile(request.rootPids.filter(validPid))
+function dispatch(request: unknown): Promise<unknown> | void {
+  const method = readUnknown(request, "method")
+  if (method === "reconcile") {
+    const rootPids = readArray(request, "rootPids")
+    if (rootPids) return worker.reconcile(rootPids.filter(validPid))
   }
-  if (request.method === "sample" && Array.isArray(request.entries) && typeof request.at === "number") {
-    return worker.sample(request.entries.filter(validEntry), request.at)
+  if (method === "sample") {
+    const entries = readArray(request, "entries")
+    const at = readNumber(request, "at")
+    if (entries && at !== undefined) return worker.sample(entries.filter(isProcessTreeEntry), at)
   }
-  if (request.method === "probeCreation" && validPid(request.pid)) {
-    return worker.probeCreation(request.pid)
+  if (method === "probeCreation") {
+    const pid = readNumber(request, "pid")
+    if (validPid(pid)) return worker.probeCreation(pid)
   }
-  if (request.method === "clear") return worker.clear()
+  if (method === "clear") return worker.clear()
   return Promise.reject(new Error("invalid diagnostics worker request"))
-}
-
-function validEntry(value: unknown): value is { pid: number; ppid: number; rootPid: number } {
-  if (!value || typeof value !== "object") return false
-  const entry = value as Record<string, unknown>
-  return (
-    validPid(entry.pid) &&
-    typeof entry.ppid === "number" &&
-    Number.isInteger(entry.ppid) &&
-    entry.ppid >= 0 &&
-    validPid(entry.rootPid)
-  )
 }

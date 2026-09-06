@@ -17,6 +17,7 @@ import type {
   SnapshotRef,
   WriteResult,
 } from "../../port"
+import { toDocumentVersion, toSnapshotID } from "../../port"
 import {
   boundedSnapshotPins,
   expiredSnapshotLease,
@@ -24,6 +25,7 @@ import {
   requireBoundedSnapshotMetadata,
 } from "../../snapshot-pins"
 import { mapBounded } from "../../map-bounded"
+import { asRecord, parseJsonRecord } from "../../../platform/json"
 
 export const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50
@@ -47,13 +49,15 @@ export type ObjectListingItem = Readonly<{ key: string; etag: string; uploadedAt
  * `maxListObjects`) and a bounded listing that quietly looked complete would let callers treat a
  * prefix of a project as the whole project — so truncation is part of the value, not an exception.
  */
-export type ObjectListing = readonly ObjectListingItem[] & Readonly<{ truncated: boolean; cursor?: string }>
+export type ObjectListingState = Readonly<{ truncated: boolean; cursor?: string }>
+
+export type ObjectListing = readonly ObjectListingItem[] & ObjectListingState
 
 export function objectListing(
   items: readonly ObjectListingItem[],
-  state: Readonly<{ truncated: boolean; cursor?: string }> = { truncated: false },
+  state: ObjectListingState = { truncated: false },
 ): ObjectListing {
-  return Object.assign([...items], state) as unknown as ObjectListing
+  return Object.assign([...items], state)
 }
 
 export type ConditionalObjectStore = Readonly<{
@@ -139,7 +143,7 @@ export function createHostedManagedDocumentWorkspace(
       if (!created) throw new DocumentAlreadyExistsError(handle.documentId)
       return {
         markdown: request.markdown,
-        version: created.etag as DocumentVersion,
+        version: toDocumentVersion(created.etag),
         modifiedAt: created.uploadedAt,
         snapshot,
       }
@@ -152,7 +156,7 @@ export function createHostedManagedDocumentWorkspace(
       if (!object) throw new DocumentNotFoundError(handle.documentId)
       return {
         markdown: decode(object.body, handle.documentId),
-        version: object.etag as DocumentVersion,
+        version: toDocumentVersion(object.etag),
         modifiedAt: object.uploadedAt,
       }
     },
@@ -172,10 +176,7 @@ export function createHostedManagedDocumentWorkspace(
       const written = await options.store.put(handle.objectKey, encode(request.markdown, maxDocumentBytes), {
         etag: request.expectedVersion,
       })
-      if (!written)
-        throw new DocumentVersionConflictError(
-          ((await options.store.get(handle.objectKey))?.etag as DocumentVersion) ?? null,
-        )
+      if (!written) throw new DocumentVersionConflictError(await currentVersion(handle))
       await finalizeSnapshot(handle, snapshot.id).catch((error) => {
         console.error(`[hosted-documents] snapshot finalize failed for ${handle.documentId}:`, error)
       })
@@ -184,7 +185,7 @@ export function createHostedManagedDocumentWorkspace(
       })
       return {
         markdown: request.markdown,
-        version: written.etag as DocumentVersion,
+        version: toDocumentVersion(written.etag),
         modifiedAt: written.uploadedAt,
         snapshot,
       }
@@ -197,7 +198,7 @@ export function createHostedManagedDocumentWorkspace(
       const snapshot = await readSnapshot(handle, snapshotId)
       return {
         markdown: snapshot.markdown,
-        version: snapshot.object.etag as DocumentVersion,
+        version: toDocumentVersion(snapshot.object.etag),
         modifiedAt: snapshot.metadata.createdAt,
       }
     },
@@ -206,20 +207,17 @@ export function createHostedManagedDocumentWorkspace(
       const desired = await readSnapshot(handle, snapshotId)
       const current = await options.store.get(handle.objectKey)
       if ((current?.etag ?? null) !== request.expectedVersion) {
-        throw new DocumentVersionConflictError((current?.etag as DocumentVersion) ?? null)
+        throw new DocumentVersionConflictError(current ? toDocumentVersion(current.etag) : null)
       }
       const restored = await options.store.put(
         handle.objectKey,
         desired.object.body,
         current ? { etag: current.etag } : { absent: true },
       )
-      if (!restored)
-        throw new DocumentVersionConflictError(
-          ((await options.store.get(handle.objectKey))?.etag as DocumentVersion) ?? null,
-        )
+      if (!restored) throw new DocumentVersionConflictError(await currentVersion(handle))
       return {
         markdown: desired.markdown,
-        version: restored.etag as DocumentVersion,
+        version: toDocumentVersion(restored.etag),
         modifiedAt: restored.uploadedAt,
         snapshot: desired.metadata,
       }
@@ -251,6 +249,12 @@ export function createHostedManagedDocumentWorkspace(
     }
   }
 
+  /** The canonical version of the stored object, or null when nothing is stored. */
+  async function currentVersion(handle: HostedManagedHandle): Promise<DocumentVersion | null> {
+    const object = await options.store.get(handle.objectKey)
+    return object ? toDocumentVersion(object.etag) : null
+  }
+
   async function capture(
     handle: HostedManagedHandle,
     request: Readonly<{ reason: string; actor: DocumentActor; sessionId?: string }>,
@@ -267,7 +271,7 @@ export function createHostedManagedDocumentWorkspace(
     state: "active" | "pending" = "active",
   ) {
     const sha256 = await hash(markdown)
-    const id = sha256 as SnapshotID
+    const id = toSnapshotID(sha256)
     const contentKey = `${historyPrefix(handle)}${id}.md`
     const metadataKey = `${historyPrefix(handle)}${id}.json`
     const existing = await options.store.get(metadataKey)
@@ -319,7 +323,7 @@ export function createHostedManagedDocumentWorkspace(
         async (object) => {
           const value = await options.store.get(object.key)
           if (!value) return undefined
-          const snapshotId = object.key.split("/").at(-1)!.slice(0, -5) as SnapshotID
+          const snapshotId = toSnapshotID(object.key.split("/").at(-1)!.slice(0, -5))
           return { key: object.key, etag: value.etag, state: parseSnapshotState(value, snapshotId, maxDocumentBytes) }
         },
       )
@@ -525,14 +529,15 @@ function historyHeadKey(handle: HostedManagedHandle) {
 }
 
 function parseHistoryHead(body: Uint8Array) {
+  let value: Record<string, unknown> | undefined
   try {
-    const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as Record<string, unknown>
-    return value?.version === 1 && typeof value.createdAt === "number" && Number.isSafeInteger(value.createdAt)
-      ? value.createdAt
-      : undefined
+    value = parseJsonRecord(new TextDecoder("utf-8", { fatal: true }).decode(body))
   } catch {
     return undefined
   }
+  return value?.version === 1 && typeof value.createdAt === "number" && Number.isSafeInteger(value.createdAt)
+    ? value.createdAt
+    : undefined
 }
 
 function parseSnapshot(object: ConditionalObject, snapshotId: SnapshotID, maxDocumentBytes: number) {
@@ -562,45 +567,45 @@ type SnapshotState = SnapshotRef &
   }>
 
 function snapshotState(value: unknown, snapshotId: SnapshotID, maxDocumentBytes: number): SnapshotState | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  const record = value as Record<string, unknown>
-  if (record.id !== snapshotId || typeof record.id !== "string" || !/^[a-f0-9]{64}$/.test(record.id)) return
-  if (record.sha256 !== snapshotId || typeof record.sha256 !== "string") return
+  const record = asRecord(value)
+  if (!record) return undefined
+  if (record.id !== snapshotId || typeof record.id !== "string" || !/^[a-f0-9]{64}$/.test(record.id)) return undefined
+  if (record.sha256 !== snapshotId || typeof record.sha256 !== "string") return undefined
   if (
     typeof record.size !== "number" ||
     !Number.isSafeInteger(record.size) ||
     record.size < 0 ||
     record.size > maxDocumentBytes
   )
-    return
-  if (typeof record.reason !== "string" || !record.reason.trim()) return
-  if (!snapshotActor(record.actor)) return
-  if (typeof record.createdAt !== "number" || !validTimestamp(record.createdAt)) return
-  if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return
-  if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return
-  const pinValues = record.pins as string[]
+    return undefined
+  if (typeof record.reason !== "string" || !record.reason.trim()) return undefined
+  if (!snapshotActor(record.actor)) return undefined
+  if (typeof record.createdAt !== "number" || !validTimestamp(record.createdAt)) return undefined
+  if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return undefined
+  if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return undefined
+  const pinValues = record.pins
   const state = record.state ?? "active"
-  if (!isSnapshotState(state)) return
-  if (record.leaseUntil !== undefined && !validTimestamp(record.leaseUntil)) return
-  if (record.deleteAfter !== undefined && !validTimestamp(record.deleteAfter)) return
+  if (!isSnapshotState(state)) return undefined
+  if (record.leaseUntil !== undefined && !validTimestamp(record.leaseUntil)) return undefined
+  if (record.deleteAfter !== undefined && !validTimestamp(record.deleteAfter)) return undefined
   if (
     state === "pending"
       ? record.leaseUntil === undefined || record.deleteAfter !== undefined
       : record.leaseUntil !== undefined
   )
-    return
+    return undefined
   if (
     state === "deleting" || state === "deleting-final"
       ? record.deleteAfter === undefined
       : record.deleteAfter !== undefined
   )
-    return
+    return undefined
 
   try {
     const pins = boundedSnapshotPins(pinValues, Number.NEGATIVE_INFINITY)
-    if (pins.length !== pinValues.length || pins.some((pin, index) => pin !== pinValues[index])) return
+    if (pins.length !== pinValues.length || pins.some((pin, index) => pin !== pinValues[index])) return undefined
     return {
-      id: record.id as SnapshotID,
+      id: toSnapshotID(record.id),
       sha256: record.sha256,
       size: record.size,
       reason: record.reason,
@@ -613,7 +618,7 @@ function snapshotState(value: unknown, snapshotId: SnapshotID, maxDocumentBytes:
       ...(typeof record.deleteAfter === "number" ? { deleteAfter: record.deleteAfter } : {}),
     }
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -634,8 +639,8 @@ function snapshotActor(value: unknown): value is DocumentActor {
 }
 
 function parseClaim(object: ConditionalObject) {
-  const value = JSON.parse(new TextDecoder().decode(object.body)) as { sha256?: unknown }
-  return typeof value.sha256 === "string" ? { sha256: value.sha256 } : undefined
+  const value = parseJsonRecord(new TextDecoder().decode(object.body))
+  return typeof value?.sha256 === "string" ? { sha256: value.sha256 } : undefined
 }
 
 function publicSnapshot(value: ReturnType<typeof parseSnapshotState>) {

@@ -4,12 +4,20 @@ import { createEffect, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
-import oc2ThemeJson from "./themes/oc-2.json"
+import { oc2Theme } from "./default-themes"
 import { resolveThemeVariant, themeToCss } from "./resolve"
+import { ensureThemeStyleElement } from "./style-element"
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve"
 import type { DesktopTheme } from "./types"
 
-export type ColorScheme = "light" | "dark" | "system"
+const COLOR_SCHEMES = ["light", "dark", "system"] as const
+
+export type ColorScheme = (typeof COLOR_SCHEMES)[number]
+
+/** Storage and cross-tab `storage` events carry arbitrary strings. */
+function parseColorScheme(value: string | null | undefined): ColorScheme | undefined {
+  return COLOR_SCHEMES.find((scheme) => scheme === value)
+}
 
 const STORAGE_KEYS = {
   THEME_ID: "opencode-theme-id",
@@ -83,8 +91,6 @@ const names: Record<string, string> = {
   vesper: "Vesper",
   zenburn: "Zenburn",
 }
-const oc2Theme = oc2ThemeJson as DesktopTheme
-
 function normalize(id: string | null | undefined) {
   return id === "oc-1" ? "oc-2" : id
 }
@@ -117,15 +123,6 @@ function clear() {
   drop(STORAGE_KEYS.THEME_CSS_DARK)
 }
 
-function ensureThemeStyleElement(): HTMLStyleElement {
-  const existing = document.getElementById(THEME_STYLE_ID) as HTMLStyleElement | null
-  if (existing) return existing
-  const element = document.createElement("style")
-  element.id = THEME_STYLE_ID
-  document.head.appendChild(element)
-  return element
-}
-
 function getSystemMode(): "light" | "dark" {
   if (typeof window !== "object") return "light"
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
@@ -150,7 +147,7 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
 }`
 
   document.getElementById("oc-theme-preload")?.remove()
-  ensureThemeStyleElement().textContent = fullCss
+  ensureThemeStyleElement(THEME_STYLE_ID).textContent = fullCss
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
   const chromeColor = tokens["background-base"]
@@ -180,7 +177,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark", scheme: ColorScheme) => void
   }) => {
     const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
-    const colorScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
+    const colorScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
     const [store, setStore] = createStore({
       themes: {
@@ -249,8 +246,10 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
       }
       if (e.key === STORAGE_KEYS.COLOR_SCHEME && e.newValue) {
-        setStore("colorScheme", e.newValue as ColorScheme)
-        setStore("mode", e.newValue === "system" ? getSystemMode() : (e.newValue as "light" | "dark"))
+        const scheme = parseColorScheme(e.newValue)
+        if (!scheme) return
+        setStore("colorScheme", scheme)
+        setStore("mode", scheme === "system" ? getSystemMode() : scheme)
       }
     }
 
@@ -266,7 +265,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
       const rawTheme = read(STORAGE_KEYS.THEME_ID)
       const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
-      const savedScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
+      const savedScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
       if (rawTheme && rawTheme !== savedTheme) {
         write(STORAGE_KEYS.THEME_ID, savedTheme)
         clear()

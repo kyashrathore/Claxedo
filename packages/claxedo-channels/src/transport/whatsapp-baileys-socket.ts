@@ -2,13 +2,13 @@ import type {
   AuthenticationCreds,
   BaileysEventMap,
   SignalDataSet,
-  SignalDataTypeMap,
   SignalKeyStore,
   WAMessage,
   WASocket,
 } from "@whiskeysockets/baileys"
 import type { ChannelSink } from "../envelope"
 import type { WhatsAppBaileysFullSocket, WhatsAppBaileysInboundMessage } from "./whatsapp-baileys"
+import { record } from "../json"
 
 type BaileysModule = typeof import("@whiskeysockets/baileys")
 type BaileysLogger = Parameters<BaileysModule["makeWASocket"]>[0]["logger"]
@@ -102,15 +102,32 @@ export function createBaileysWhatsAppSocket(options: BaileysWhatsAppSocketOption
   }
 }
 
+/**
+ * Baileys wrote this blob through its own `BufferJSON` codec and Baileys reads
+ * it back; these guards check what this module is entitled to check — that the
+ * stored value is present and is an object — and leave the field-level contract
+ * to the SDK that owns it. Deliberately no stricter: requiring, say, `noiseKey`
+ * would make a partially-written file trigger a fresh QR pairing instead of
+ * reaching Baileys, which is a product decision, not a lint fix.
+ */
+function isAuthenticationCreds(value: unknown): value is AuthenticationCreds {
+  return record(value) !== undefined
+}
+
+/** Every key bucket is optional, so any object is a (possibly empty) set. */
+function isSignalDataSet(value: unknown): value is SignalDataSet {
+  return record(value) !== undefined
+}
+
 function createStoredAuthState(baileys: BaileysModule, raw: unknown): StoredAuthState {
   const revived = raw === undefined
     ? undefined
     : JSON.parse(JSON.stringify(raw), baileys.BufferJSON.reviver)
-  if (revived && typeof revived === "object" && "creds" in revived) {
-    const row = revived as { creds: AuthenticationCreds; keys?: SignalDataSet }
+  const row = record(revived)
+  if (isAuthenticationCreds(row?.creds)) {
     return {
       creds: row.creds,
-      keys: row.keys ?? {},
+      keys: isSignalDataSet(row.keys) ? row.keys : {},
     }
   }
   return {
@@ -125,40 +142,61 @@ function createSignalKeyStore(input: {
 }): SignalKeyStore {
   return {
     async get(type, ids) {
-      const values = (input.data[type] ?? {}) as Record<string, SignalDataTypeMap[typeof type] | undefined>
+      const values: NonNullable<SignalDataSet[typeof type]> = input.data[type] ?? {}
       return Object.fromEntries(
-        ids.flatMap((id) => values[id] === undefined ? [] : [[id, values[id]]]),
-      ) as {
-        [id: string]: SignalDataTypeMap[typeof type]
-      }
+        ids.flatMap((id) => {
+          const value = values[id]
+          return value === undefined || value === null ? [] : [[id, value]]
+        }),
+      )
     },
     async set(data) {
-      for (const type of Object.keys(data) as (keyof SignalDataSet)[]) {
-        const values = data[type]
+      // The merge is key-agnostic: it copies id-keyed buckets from one store
+      // into the other and never inspects a value, so both stores are viewed
+      // here as the string-keyed maps they are at runtime. `SignalDataSet`
+      // correlates the outer key with the value type, which `Object.keys`
+      // cannot carry — and this loop does not need the correlation.
+      const incoming: Record<string, Record<string, unknown> | undefined> = data
+      const store: Record<string, Record<string, unknown> | undefined> = input.data
+      for (const type of Object.keys(incoming)) {
+        const values = incoming[type]
         if (!values) continue
-        const current = (input.data[type] ?? {}) as Record<string, SignalDataTypeMap[typeof type]>
+        const current = store[type] ?? {}
         for (const id of Object.keys(values)) {
           const value = values[id]
           if (value === null) {
             delete current[id]
             continue
           }
-          current[id] = value as never
+          current[id] = value
         }
-        input.data[type] = current as never
+        store[type] = current
       }
       await input.onUpdate()
     },
   }
 }
 
+/**
+ * Baileys sends `messageTimestamp` as a number OR a protobuf Long. The Long
+ * branch used to be dropped by a bare `typeof === "number"` check, so those
+ * messages arrived with no receivedAt at all.
+ */
+function baileysTimestamp(input: WAMessage["messageTimestamp"]): number | undefined {
+  if (typeof input === "number") return input
+  const toNumber = record(input)?.toNumber
+  if (typeof toNumber !== "function") return undefined
+  const value: unknown = toNumber.call(input)
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
 function normalizeBaileysMessage(message: WAMessage): WhatsAppBaileysInboundMessage {
   return {
-    id: message.key.id ?? `${message.key.remoteJid ?? "unknown"}:${message.messageTimestamp ?? Date.now()}`,
+    id: message.key.id ?? `${message.key.remoteJid ?? "unknown"}:${baileysTimestamp(message.messageTimestamp) ?? Date.now()}`,
     chatId: message.key.remoteJid ?? "unknown",
     senderId: message.key.participant ?? message.key.remoteJid ?? undefined,
     text: baileysMessageText(message),
-    timestamp: typeof message.messageTimestamp === "number" ? message.messageTimestamp : undefined,
+    timestamp: baileysTimestamp(message.messageTimestamp),
     fromMe: message.key.fromMe === true ? true : message.key.fromMe === false ? false : undefined,
     raw: message,
   }

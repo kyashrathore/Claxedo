@@ -38,8 +38,16 @@ export type ServiceInstallationOperationIdentity = Readonly<{
 
 export type ServiceLocalLifecycleState = InstalledServiceState | "enabling"
 
-export type ServiceLifecycleMutationAction =
-  "initialize_disabled" | "record_probe" | "prepare_enable" | "commit_enable" | "disable" | "uninstall"
+export const SERVICE_LIFECYCLE_MUTATION_ACTIONS = [
+  "initialize_disabled",
+  "record_probe",
+  "prepare_enable",
+  "commit_enable",
+  "disable",
+  "uninstall",
+] as const
+
+export type ServiceLifecycleMutationAction = (typeof SERVICE_LIFECYCLE_MUTATION_ACTIONS)[number]
 
 /**
  * Deployment-only command sent over the private service-management binding.
@@ -147,6 +155,20 @@ export function isFirstPartyServiceId(value: unknown): value is FirstPartyServic
   return typeof value === "string" && (FIRST_PARTY_SERVICE_IDS as readonly string[]).includes(value)
 }
 
+export function isServiceLifecycleMutationAction(value: unknown): value is ServiceLifecycleMutationAction {
+  return typeof value === "string" && (SERVICE_LIFECYCLE_MUTATION_ACTIONS as readonly string[]).includes(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+/** The single object-shape gate for every untrusted payload this contract parses. */
+function requireRecord(value: unknown, message: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new ServiceContractError("invalid_descriptor", message)
+  return value
+}
+
 function requiredText(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() !== value || !value) {
     throw new ServiceContractError("invalid_descriptor", `${field} must be a non-empty, trimmed string`)
@@ -155,10 +177,7 @@ function requiredText(value: unknown, field: string): string {
 }
 
 export function requireServiceDescriptor(value: unknown): FirstPartyServiceDescriptor {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ServiceContractError("invalid_descriptor", "service descriptor must be an object")
-  }
-  const descriptor = value as Record<string, unknown>
+  const descriptor = requireRecord(value, "service descriptor must be an object")
   if (!isFirstPartyServiceId(descriptor.serviceId)) {
     throw new ServiceContractError("unknown_service", "serviceId must be documents")
   }
@@ -178,12 +197,10 @@ export function requireServiceDescriptor(value: unknown): FirstPartyServiceDescr
   if (descriptor.state !== "installed_disabled" && descriptor.state !== "enabled") {
     throw new ServiceContractError("invalid_descriptor", "state must be installed_disabled or enabled")
   }
-  const trust = descriptor.trust
-  if (!trust || typeof trust !== "object" || Array.isArray(trust)) {
-    throw new ServiceContractError("invalid_descriptor", "trust metadata must be an object")
-  }
-  const trustRecord = trust as Record<string, unknown>
-  const normalized = {
+  const trustRecord = requireRecord(descriptor.trust, "trust metadata must be an object")
+  const lastHealthProbe =
+    descriptor.lastHealthProbe === undefined ? undefined : requireServiceHealthProbe(descriptor.lastHealthProbe)
+  const normalized: FirstPartyServiceDescriptor = {
     serviceId,
     protocolVersion: SERVICE_PROTOCOL_VERSION,
     schemaVersion: Number(descriptor.schemaVersion),
@@ -195,18 +212,13 @@ export function requireServiceDescriptor(value: unknown): FirstPartyServiceDescr
       deploymentId: requiredText(trustRecord.deploymentId, "trust.deploymentId"),
       bindingProvenance: requiredText(trustRecord.bindingProvenance, "trust.bindingProvenance"),
     },
-    ...(descriptor.lastHealthProbe === undefined
-      ? {}
-      : { lastHealthProbe: requireServiceHealthProbe(descriptor.lastHealthProbe) }),
+    ...(lastHealthProbe === undefined ? {} : { lastHealthProbe }),
   }
-  return normalized as FirstPartyServiceDescriptor
+  return normalized
 }
 
 export function requireServiceHealthProbe(value: unknown): ServiceHealthProbe {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ServiceContractError("invalid_descriptor", "lastHealthProbe must be an object")
-  }
-  const probe = value as Record<string, unknown>
+  const probe = requireRecord(value, "lastHealthProbe must be an object")
   if (probe.status !== "ready" && probe.status !== "unhealthy") {
     throw new ServiceContractError("invalid_descriptor", "lastHealthProbe.status must be ready or unhealthy")
   }
@@ -217,12 +229,13 @@ export function requireServiceHealthProbe(value: unknown): ServiceHealthProbe {
   }
 }
 
-function requireOperationIdentity(value: ServiceInstallationOperationIdentity) {
+function requireOperationIdentity(value: unknown): ServiceInstallationOperationIdentity {
+  const identity = requireRecord(value, "identity must be an object")
   return {
-    environmentId: requiredText(value.environmentId, "identity.environmentId"),
-    deploymentId: requiredText(value.deploymentId, "identity.deploymentId"),
-    operationId: requiredText(value.operationId, "identity.operationId"),
-    occurredAt: requiredText(value.occurredAt, "identity.occurredAt"),
+    environmentId: requiredText(identity.environmentId, "identity.environmentId"),
+    deploymentId: requiredText(identity.deploymentId, "identity.deploymentId"),
+    operationId: requiredText(identity.operationId, "identity.operationId"),
+    occurredAt: requiredText(identity.occurredAt, "identity.occurredAt"),
   }
 }
 
@@ -248,25 +261,14 @@ function requireLifecycleExpectedRevision(value: number, action: ServiceLifecycl
 }
 
 export function requireServiceLifecycleMutationRequest(value: unknown): ServiceLifecycleMutationRequest {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ServiceContractError("invalid_descriptor", "service lifecycle mutation must be an object")
-  }
-  const request = value as Record<string, unknown>
-  const actions = new Set<ServiceLifecycleMutationAction>([
-    "initialize_disabled",
-    "record_probe",
-    "prepare_enable",
-    "commit_enable",
-    "disable",
-    "uninstall",
-  ])
-  if (!actions.has(request.action as ServiceLifecycleMutationAction)) {
+  const request = requireRecord(value, "service lifecycle mutation must be an object")
+  const action = request.action
+  if (!isServiceLifecycleMutationAction(action)) {
     throw new ServiceContractError("invalid_descriptor", "unknown service lifecycle mutation action")
   }
   if (!isFirstPartyServiceId(request.serviceId)) {
     throw new ServiceContractError("unknown_service", "serviceId must be documents")
   }
-  const action = request.action as ServiceLifecycleMutationAction
   const serviceId = request.serviceId
   if (request.protocolVersion !== SERVICE_PROTOCOL_VERSION) {
     throw new ServiceContractError("invalid_protocol", `protocolVersion must be ${SERVICE_PROTOCOL_VERSION}`)
@@ -277,11 +279,7 @@ export function requireServiceLifecycleMutationRequest(value: unknown): ServiceL
   if (request.bindingName !== SERVICE_BINDINGS[serviceId]) {
     throw new ServiceContractError("invalid_binding", `${serviceId} must use its fixed service binding`)
   }
-  const identityValue = request.identity
-  if (!identityValue || typeof identityValue !== "object" || Array.isArray(identityValue)) {
-    throw new ServiceContractError("invalid_descriptor", "identity must be an object")
-  }
-  const identity = requireOperationIdentity(identityValue as ServiceInstallationOperationIdentity)
+  const identity = requireOperationIdentity(request.identity)
   return Object.freeze({
     action,
     identity,
@@ -359,10 +357,7 @@ export function requireServiceCatalog(value: unknown): FirstPartyServiceCatalog 
 const BROWSER_SERVICE_DESCRIPTOR_KEYS = new Set(["serviceId", "protocolVersion", "schemaVersion", "state"])
 
 export function requireBrowserServiceDescriptor(value: unknown): BrowserServiceDescriptor {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ServiceContractError("invalid_descriptor", "browser service descriptor must be an object")
-  }
-  const descriptor = value as Record<string, unknown>
+  const descriptor = requireRecord(value, "browser service descriptor must be an object")
   if (Object.keys(descriptor).some((key) => !BROWSER_SERVICE_DESCRIPTOR_KEYS.has(key))) {
     throw new ServiceContractError("invalid_descriptor", "browser service descriptor contains operator-only fields")
   }

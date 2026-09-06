@@ -1,3 +1,6 @@
+// `node:test`'s `describe`/`test` return a promise the runner already owns: it
+// settles when the suite finishes and reports failures through the runner
+// rather than rejecting, so every registration below is deliberately `void`ed.
 import { afterEach, beforeEach, describe, test } from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
@@ -61,8 +64,8 @@ afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true })
 })
 
-describe("real pty spawn (no mocks)", { skip: !posix }, () => {
-  test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000 }, async () => {
+void describe("real pty spawn (no mocks)", { skip: !posix }, () => {
+  void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" })
     assert.equal(info.status, "running")

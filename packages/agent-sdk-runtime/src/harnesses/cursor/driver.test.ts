@@ -238,7 +238,7 @@ describe("Cursor SDK driver", () => {
     )
   })
 
-  test("keeps an SDK-only local root inferred and action-ineligible", () => {
+  test("keeps an SDK-only local root inferred and action-ineligible", async () => {
     const descriptors: AgentProcessDescriptor[] = []
     const processObserver: AgentProcessObserver = {
       register(descriptor) {
@@ -253,7 +253,7 @@ describe("Cursor SDK driver", () => {
       processObserver,
       bindSession() {},
     } as never)
-    driver.applyConfig({
+    await driver.applyConfig({
       mcp: {
         local: {
           name: "local",

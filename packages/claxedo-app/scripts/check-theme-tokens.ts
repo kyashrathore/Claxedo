@@ -251,9 +251,9 @@ function scanClasses(file: string, content: string) {
 function validateArbitraryDesignClass(value: string) {
   const utility = stripModifier(stripVariants(value).replace(/^!/, ""))
   const prefix = utility.slice(0, utility.indexOf("-["))
-  if (!arbitraryDesignPrefixes.has(prefix) || !utility.includes("-[")) return
+  if (!arbitraryDesignPrefixes.has(prefix) || !utility.includes("-[")) return undefined
   const body = utility.slice(prefix.length + 2, -1)
-  if (/var\(--[a-z0-9-]+\)/.test(body)) return
+  if (/var\(--[a-z0-9-]+\)/.test(body)) return undefined
   return "Arbitrary design utility must reference a theme token"
 }
 
@@ -344,30 +344,30 @@ function scanCssRawColors(file: string, content: string, source = content, offse
 function validateClass(value: string) {
   const utility = stripModifier(stripVariants(value).replace(/^!/, ""))
   const prefix = colorPrefixes.find((candidate) => utility.startsWith(`${candidate}-`))
-  if (!prefix) return
-  if (utility.includes("=")) return
+  if (!prefix) return undefined
+  if (utility.includes("=")) return undefined
 
   const body = normalizeBody(prefix, utility.slice(prefix.length + 1))
-  if (!body) return
-  if (allowedNonTokenColors.has(body)) return
-  if (tokenAliases.has(body)) return
+  if (!body) return undefined
+  if (allowedNonTokenColors.has(body)) return undefined
+  if (tokenAliases.has(body)) return undefined
 
   if (body.startsWith("[")) {
-    if (isNonColorArbitraryValue(prefix, body)) return
-    if (body.includes("var(--") && !body.includes("var(--color-")) return
+    if (isNonColorArbitraryValue(prefix, body)) return undefined
+    if (body.includes("var(--") && !body.includes("var(--color-")) return undefined
     if (/#(?:[0-9a-fA-F]{3,8})\b|rgba?\(|hsla?\(|oklch\(|color-mix\(/.test(body)) {
       return "Hardcoded arbitrary color utility"
     }
-    return
+    return undefined
   }
 
-  if (structuralByPrefix[prefix]?.test(body)) return
+  if (structuralByPrefix[prefix]?.test(body)) return undefined
 
   if (defaultPalette.some((color) => body === color || body.startsWith(`${color}-`))) {
     return "Default Tailwind palette color is not theme-aware"
   }
 
-  if (prefix === "text" && !colorFamilies.some((family) => body === family || body.startsWith(`${family}-`))) return
+  if (prefix === "text" && !colorFamilies.some((family) => body === family || body.startsWith(`${family}-`))) return undefined
   return "Unknown theme token utility"
 }
 

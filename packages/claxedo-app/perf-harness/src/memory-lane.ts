@@ -443,16 +443,19 @@ export async function runMemoryLane(options: {
         slopeBytesPerStep: Math.round(summary.slopeBytesPerStep!),
         slopeRangeBytesPerStep: [Math.round(summary.slopeMinBytesPerStep!), Math.round(summary.slopeMaxBytesPerStep!)],
         ...(snapshot?.status === "captured" ? { v8DetachedNodes: snapshot.detachedNodes } : {}),
-        listenerGrowth: lastObserved.liveListeners - sweep.samples[0]!.liveListeners,
+        listenerGrowth: lastObserved.liveListeners - sweep.samples[0].liveListeners,
         cacheCeilingSatisfied: summary.cacheCeilingSatisfied,
         settled: summary.allSettled,
         sourceStable: provenance.sourceStable,
         browserTeardowns,
         familyGrowth: Object.fromEntries(
           Object.keys({ ...firstFamilies, ...lastFamilies })
-            .map((family) => [family, (lastFamilies[family] ?? 0) - (firstFamilies[family] ?? 0)])
-            .filter(([, delta]) => (delta as number) !== 0)
-            .sort((a, b) => (b[1] as number) - (a[1] as number))
+            // Typed as a tuple so `delta` stays a number: `.map` to an array
+            // literal widens to `(string | number)[]`, which is why the sort
+            // and filter below each had to assert it back.
+            .map((family): [string, number] => [family, (lastFamilies[family] ?? 0) - (firstFamilies[family] ?? 0)])
+            .filter(([, delta]) => delta !== 0)
+            .sort(([, left], [, right]) => right - left)
             .slice(0, 8),
         ),
         ...(snapshot?.retainers.length ? { topRetainers: snapshot.retainers.slice(0, 5) } : {}),
@@ -464,7 +467,7 @@ export async function runMemoryLane(options: {
     const rows = observedSamples.map((item) =>
       `| ${item.step} | ${(item.heapBytes / MB).toFixed(1)} | ${item.documentElements} | ${item.liveDomNodes} | ` +
       `${item.liveListeners} | ${item.queries} | ${item.cachedSessions} | ${item.lightweightSessions} |`)
-    const firstSample = sweep.samples[0]!
+    const firstSample = sweep.samples[0]
     const listenerGrowth = lastObserved.liveListeners - firstSample.liveListeners
     // Did the sweep actually exercise the app? The false pass this lane exists
     // to avoid looks like every counter frozen at its boot value.

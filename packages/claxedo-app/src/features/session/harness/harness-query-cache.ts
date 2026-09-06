@@ -99,7 +99,7 @@ export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeI
     },
     fetchSessionConfig: async (input, run) => await queryClient.fetchQuery({
       queryKey: sessionConfigRawQueryKey({
-        sessionID: input.sessionId!,
+        sessionID: input.sessionId,
         directory: input.directory,
         sessionRef: input.sessionRef,
         serverUrl,

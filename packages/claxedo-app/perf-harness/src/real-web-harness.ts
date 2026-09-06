@@ -5,8 +5,9 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright"
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core"
 import { agentAppViewport } from "./agent-display-contract"
+import { isRecord, recordField, textField } from "./json-fields"
 import {
   installAgentBrowserObserver,
   measureSessionActivation,
@@ -94,15 +95,38 @@ export type RealWebHarnessOptions = {
   rendererTrace?: boolean
 }
 
-export type RendererPhase = { name: string; durationMs: number }
+export type { RendererPhase } from "./browser/page-globals"
 
 declare global {
   interface Window {
-    /** Armed by {@link startRealWebHarness} when `rendererTrace` is set. */
-    __claxedoPerfTrace?: boolean
-    /** Pre-created here so the app's tracer has somewhere to push. */
-    __claxedoPerfRendererPhases?: RendererPhase[]
+    /** The server the app should talk to, seeded before any app script runs. */
+    __CLAXEDO__?: { serverUrl: string; activeDirectory: string | undefined }
   }
+}
+
+/**
+ * Read the corpus manifest that identifies the load under measurement.
+ *
+ * Every field here is part of a run's provenance, so a manifest missing one is
+ * rejected rather than carried into an artifact as `undefined`.
+ */
+function parseCorpusManifest(value: unknown): CorpusManifest {
+  const sourceEventFormat = isRecord(value) ? recordField(value, "sourceEventFormat") : undefined
+  const corpusId = isRecord(value) ? textField(value, "corpusId") : undefined
+  const corpusDigestSha256 = isRecord(value) ? textField(value, "corpusDigestSha256") : undefined
+  const definitionDigestSha256 = isRecord(value) ? textField(value, "definitionDigestSha256") : undefined
+  const seed = isRecord(value) ? textField(value, "seed") : undefined
+  const schemaDigestSha256 = sourceEventFormat && textField(sourceEventFormat, "schemaDigestSha256")
+  if (
+    corpusId === undefined ||
+    corpusDigestSha256 === undefined ||
+    definitionDigestSha256 === undefined ||
+    seed === undefined ||
+    schemaDigestSha256 === undefined
+  ) {
+    throw new Error("real-web corpus manifest is missing its identity")
+  }
+  return { corpusId, corpusDigestSha256, definitionDigestSha256, seed, sourceEventFormat: { schemaDigestSha256 } }
 }
 
 export const repoRoot = path.resolve(import.meta.dir, "../../../..")
@@ -136,9 +160,7 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
   const ambientDirectory = path.join(stateRoot, "ambient")
   const corpus = options.actualSessionDatabasePath ? undefined : corpusDirectory()
   const manifestPath = corpus ? path.join(corpus, "manifest.json") : undefined
-  let manifest = manifestPath
-    ? JSON.parse(await readFile(manifestPath, "utf8")) as CorpusManifest
-    : undefined
+  let manifest = manifestPath ? parseCorpusManifest(JSON.parse(await readFile(manifestPath, "utf8"))) : undefined
   const sourceCommit = (await commandOutput("git", ["rev-parse", "HEAD"], repoRoot)).trim()
   const [workingTreeSha256, appAsarSha256, embeddedEngineSha256, buildContractSha256] = await Promise.all([
     workingTreeDigest(sourceCommit),
@@ -275,10 +297,7 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
     }
     await page.addInitScript(
       ({ serverUrl, directories }) => {
-        const state = window as typeof window & {
-          __CLAXEDO__?: { serverUrl: string; activeDirectory: string }
-        }
-        state.__CLAXEDO__ = { serverUrl, activeDirectory: directories[0]! }
+        window.__CLAXEDO__ = { serverUrl, activeDirectory: directories[0] }
         localStorage.clear()
         localStorage.setItem(
           "claxedo.global.dat:server",
@@ -293,7 +312,7 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
       },
       { serverUrl: backendUrl, directories: [workspaceA, workspaceB] },
     )
-    await installAgentBrowserObserver(page as never)
+    await installAgentBrowserObserver(page)
     await page.goto(previewUrl, { waitUntil: "domcontentloaded" })
     await page.waitForFunction(
       (ids) => ids.some((id) => document.querySelector(`[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`)),
@@ -318,7 +337,7 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
           root.dataset.sessionFirstFoldReady === "true" && root.dataset.sessionMessagesReady === "true"
       }, target.sessionId)
       if (await ready()) return
-      const result = await measureSessionActivation(page as never, target)
+      const result = await measureSessionActivation(page, target)
       // The preview may finish loading its initially selected control session
       // between the readiness probe above and the trusted setup click. In that
       // setup-only race the semantic observer can see two stable frames before

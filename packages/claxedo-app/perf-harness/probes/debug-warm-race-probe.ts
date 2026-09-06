@@ -143,7 +143,7 @@ page.on("console", (message) => {
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
 
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 console.log(`[probe] mode=${EARLY ? "early (click before any idle slice)" : "default"} corpus=${fixture.changedFiles.length}`)
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
@@ -280,7 +280,7 @@ const interrupt = await measureIsolatedInteraction<{
         name: entry.name.replace(/^https?:\/\/[^/]+/, ""),
         startMs: Math.round(entry.startTime - started),
         durationMs: Math.round(entry.duration),
-        initiator: (entry as PerformanceResourceTiming).initiatorType,
+        initiator: entry instanceof PerformanceResourceTiming ? entry.initiatorType : "",
       }))
     performance.clearMarks(mark)
     performance.clearMarks(openMark)

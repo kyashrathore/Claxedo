@@ -29,16 +29,16 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
     get state() {
       return store()
     },
-    setPrompt(prompt: PromptInputV2Prompt, cursor?: number) {
+    setPrompt: (prompt: PromptInputV2Prompt, cursor?: number) => {
       batch(() => {
         setStore()("prompt", prompt)
         if (cursor !== undefined) setStore()("cursor", cursor)
       })
     },
-    setCursor(cursor: number) {
+    setCursor: (cursor: number) => {
       setStore()("cursor", cursor)
     },
-    setText(content: string) {
+    setText: (content: string) => {
       batch(() => {
         setStore()("prompt", (prompt) => [
           { type: "text", content, start: 0, end: content.length },
@@ -47,33 +47,33 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
         setStore()("cursor", content.length)
       })
     },
-    addText(content: string) {
+    addText: (content: string) => {
       const cursor = store().cursor ?? promptLength(store().prompt)
       batch(() => {
         setStore()("prompt", (prompt) => insertText(prompt, cursor, content))
         setStore()("cursor", cursor + content.length)
       })
     },
-    reset() {
+    reset: () => {
       batch(() => {
         setStore()("prompt", [{ type: "text", content: "", start: 0, end: 0 }])
         setStore()("cursor", 0)
       })
     },
-    setModel(model: PromptInputV2Model | undefined) {
+    setModel: (model: PromptInputV2Model | undefined) => {
       setStore()("model", model)
     },
-    setVariant(variant: string | null) {
+    setVariant: (variant: string | null) => {
       if (store().model) setStore()("model", "variant", variant)
     },
-    addContext(item: PromptInputV2Comment) {
+    addContext: (item: PromptInputV2Comment) => {
       if (store().context.items.some((entry) => entry.key === item.key)) return
       setStore()("context", "items", (items) => [...items, item])
     },
-    removeContext(key: string) {
+    removeContext: (key: string) => {
       setStore()("context", "items", (items) => items.filter((item) => item.key !== key))
     },
-    addMention(mention: PromptInputV2FilePart | PromptInputV2AgentPart) {
+    addMention: (mention: PromptInputV2FilePart | PromptInputV2AgentPart) => {
       const text = store()
         .prompt.map((part) => ("content" in part ? part.content : ""))
         .join("")
@@ -82,10 +82,10 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
       setStore()("prompt", insertMention(store().prompt, start < 0 ? end : start, end, mention))
       setStore()("cursor", (start < 0 ? end : start) + mention.content.length + 1)
     },
-    addAttachment(attachment: PromptInputV2Attachment) {
+    addAttachment: (attachment: PromptInputV2Attachment) => {
       setStore()("prompt", (prompt) => [...prompt, attachment])
     },
-    removeAttachment(id: string) {
+    removeAttachment: (id: string) => {
       setStore()("prompt", (parts) => parts.filter((part) => part.type !== "image" || part.id !== id))
     },
   }

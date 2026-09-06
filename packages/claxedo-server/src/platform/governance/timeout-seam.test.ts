@@ -26,8 +26,8 @@ function importsOfAdapterTimeout(file: string) {
   const text = fs.readFileSync(file, "utf8")
   // Only `import ... from "<path ending in an adapter-scoped timeout>"`.
   return [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)]
-    .filter(([, , specifier]) => ADAPTER_TIMEOUT.test(specifier!))
-    .map(([, named]) => named!.split(",").map((part) => part.trim()).filter(Boolean))
+    .filter(([, , specifier]) => ADAPTER_TIMEOUT.test(specifier))
+    .map(([, named]) => named.split(",").map((part) => part.trim()).filter(Boolean))
 }
 
 describe("timeout seam", () => {

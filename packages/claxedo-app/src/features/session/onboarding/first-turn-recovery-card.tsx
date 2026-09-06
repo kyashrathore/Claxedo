@@ -163,7 +163,7 @@ export function FirstTurnRecoveryCard(props: {
   }
   const detail = () => {
     const value = props.detail?.trim()
-    if (!value || value === description().trim()) return
+    if (!value || value === description().trim()) return undefined
     return value
   }
   const [pending, setPending] = createSignal(false)

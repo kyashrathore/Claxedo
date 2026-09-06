@@ -1,6 +1,7 @@
 /** Reconcile Claxedo's credential authority into the public embedded SDK. */
 import fs from "node:fs"
 import path from "node:path"
+import { jsonRecord } from "../platform/runtime/lib/json"
 import { listCredentials, resolveSecret, SINGLE_TENANT_ORG, type CredentialOrgScope } from "../credentials/registry"
 import type { CredentialMetadata } from "../credentials/types"
 import { dataDir } from "../platform/runtime/lib/paths"
@@ -26,11 +27,19 @@ const ledgerFile = () => path.join(dataDir(), "opencode-sdk-credentials.json")
 type Ledger = Record<string, string[]>
 
 function readLedger(): Ledger {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(ledgerFile(), "utf8")) as unknown
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Ledger
-  } catch {}
-  return {}
+  const row = (() => {
+    try {
+      return jsonRecord(JSON.parse(fs.readFileSync(ledgerFile(), "utf8")))
+    } catch {
+      return undefined
+    }
+  })()
+  if (!row) return {}
+  const ledger: Ledger = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (Array.isArray(value)) ledger[key] = value.filter((entry) => typeof entry === "string")
+  }
+  return ledger
 }
 
 function writeLedger(ledger: Ledger) {

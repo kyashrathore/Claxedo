@@ -85,8 +85,8 @@ describe("customer.state_changed translation", () => {
       },
       PRODUCTS,
     )
-    expect(args!.org_states[0]!.state).toMatchObject({ plan: "pro", preserve_seats: true })
-    expect(args!.org_states[0]!.state.seats_licensed).toBeUndefined()
+    expect(args!.org_states[0].state).toMatchObject({ plan: "pro", preserve_seats: true })
+    expect(args!.org_states[0].state.seats_licensed).toBeUndefined()
   })
 
   test("accepts SDK-shaped (camelCase, Date) customer state — the reconciliation path", () => {
@@ -153,7 +153,8 @@ describe("customer.state_changed translation", () => {
       },
       PRODUCTS,
     )
-    expect(args!.org_states.map((entry) => entry.org_id).sort()).toEqual(["org_doc_1", "org_doc_2"])
+    expect(args!.org_states.map((entry) => entry.org_id).sort((left, right) => String(left).localeCompare(String(right))))
+      .toEqual(["org_doc_1", "org_doc_2"])
   })
 })
 
@@ -161,12 +162,12 @@ describe("subscription.* event translation", () => {
   test("entitling statuses map to pro; terminal statuses map to free with the status recorded", () => {
     for (const status of ["active", "trialing", "past_due"]) {
       const args = subscriptionEventToApplyArgs(wireSubscription({ status }), PRODUCTS)
-      expect(args!.org_states[0]!.state).toMatchObject({ plan: "pro", subscription_status: status })
+      expect(args!.org_states[0].state).toMatchObject({ plan: "pro", subscription_status: status })
       expect(args!.source).toBe("subscription_event")
     }
     for (const status of ["canceled", "revoked", "unpaid", "incomplete_expired"]) {
       const args = subscriptionEventToApplyArgs(wireSubscription({ status }), PRODUCTS)
-      expect(args!.org_states[0]!.state).toMatchObject({ plan: "free", subscription_status: status })
+      expect(args!.org_states[0].state).toMatchObject({ plan: "free", subscription_status: status })
     }
   })
 

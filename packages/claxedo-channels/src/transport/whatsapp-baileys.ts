@@ -21,11 +21,12 @@ export type WhatsAppBaileysSocket = {
   stop?: () => Promise<void> | void
   onMessage: (handler: ChannelSink<[WhatsAppBaileysInboundMessage]>) => (() => void) | void
   onAuthState?: (handler: ChannelSink<[unknown]>) => (() => void) | void
-  sendMessage: (chatId: string, text: string) => Promise<unknown> | unknown
+  /** Adapters return a promise, a message handle, or nothing — the caller only awaits it. */
+  sendMessage: (chatId: string, text: string) => unknown
 }
 
 export type WhatsAppBaileysAuthStateStore = {
-  load: () => Promise<unknown> | unknown
+  load: () => unknown
   save: ChannelSink<[unknown]>
 }
 
@@ -81,7 +82,7 @@ function envelope(input: {
   botName?: string
 }): InboundEnvelope | undefined {
   const text = input.message.text?.trim()
-  if (input.message.fromMe || !text) return
+  if (input.message.fromMe || !text) return undefined
   const nextReceivedAt = receivedAt(input.message.timestamp)
   const repo = repoTargetFromText(text)
   const botMentions = mentions(text, input.botName)
@@ -220,9 +221,7 @@ export function createWhatsAppBaileysTransport(input: {
       state.running = true
       state.unsubscribeMessage = input.socket.onMessage(handleMessage) ?? undefined
       state.unsubscribeAuth = input.socket.onAuthState?.(queueAuthState) ?? undefined
-      await input.socket.start?.({
-        ...(input.authStateStore ? { authState: await input.authStateStore.load() } : {}),
-      })
+      await input.socket.start?.((input.authStateStore ? { authState: await input.authStateStore.load() } : {}))
     },
     async stop() {
       state.running = false

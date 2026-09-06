@@ -28,15 +28,18 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   setOptionsLoading(scope: string, value: boolean): void
   readState?(scope: string): { readiness?: string; configError?: string } | undefined
   errorMessage(res: Response, fallback: string): Promise<string>
-  scheduleRetry?(run: () => void): HarnessOptionsTimer
-  clearRetry?(timer: HarnessOptionsTimer): void
+  // Arrow properties, not methods: both are passed around as bare references
+  // below (`input.clearRetry ?? clearTimeout`), which is only sound for a
+  // function that carries no `this`.
+  scheduleRetry?: (run: () => void) => HarnessOptionsTimer
+  clearRetry?: (timer: HarnessOptionsTimer) => void
   cache: HarnessOptionsLoaderCache
 }) {
   const optionTimers = new Map<string, HarnessOptionsTimer>()
 
   const clearTimer = (scope: string) => {
     const timer = optionTimers.get(scope)
-    if (timer !== undefined) (input.clearRetry ?? clearTimeout)(timer)
+    if (timer !== undefined) (input.clearRetry ?? ((handle) => clearTimeout(handle)))(timer)
     optionTimers.delete(scope)
   }
 

@@ -14,7 +14,6 @@ import {
   query,
   type CanUseTool,
   type McpServerConfig,
-  type PermissionMode,
   type PermissionResult,
   type PermissionUpdate,
   type Query,
@@ -29,7 +28,7 @@ import {
 import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { goalCapabilities } from "../../capabilities"
-import type { ResolvedMcpServer } from "../../mcp-resolver"
+import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
@@ -41,6 +40,7 @@ import {
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
+  stringRecord,
 } from "../shared/sdk-runtime-adapter"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
@@ -51,6 +51,7 @@ import {
   CLAUDE_PERMISSION_MODES,
   PermissionModeSelection,
 } from "../shared/permission-modes"
+import { isClaudeSdkPermissionMode } from "./permission-mode-parity"
 import {
   observeAgentProcess,
   type AgentProcessObserver,
@@ -226,11 +227,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 
   applyConfig(config: Record<string, unknown>) {
     const previous = this.auth.anthropic
-    const auth = record(config.auth) as Record<string, string> | undefined
+    const auth = stringRecord(config.auth)
     this.auth = {
       anthropic: claudeAuthValue(auth),
     }
-    this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.currentPlugins = claudePluginConfigs(config.launch)
     if (this.auth.anthropic !== previous) this.modelSource.invalidate()
     // Held, not applied here: the SDK takes `effort` as a per-query option, so
@@ -352,6 +353,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       input.input.variant,
     )
     const systemPrompt = claudeSystemPrompt(input.input.system)
+    const permissionModeId = this.permissionSelection.currentId(input.sessionId)
     const q: Query = (this.driverOptions.query ?? query)({
       prompt,
       options: {
@@ -369,10 +371,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // a prompt, so under `bypassPermissions` it never runs at all. Policy that
         // must hold in every mode therefore cannot live in the callback — it lives
         // in the deny floor below.
-        permissionMode: this.permissionSelection.currentId(input.sessionId) as PermissionMode | undefined,
-        ...(this.permissionSelection.currentId(input.sessionId) === "bypassPermissions"
-          ? { allowDangerouslySkipPermissions: true as const }
-          : {}),
+        ...(isClaudeSdkPermissionMode(permissionModeId) ? { permissionMode: permissionModeId } : {}),
+        ...(permissionModeId === "bypassPermissions" ? { allowDangerouslySkipPermissions: true as const } : {}),
         settings: { permissions: { deny: [...CLAUDE_DENY_FLOOR] } },
         canUseTool: requestPermission,
         ...(input.input.agent ? { agent: input.input.agent } : {}),
@@ -635,7 +635,7 @@ function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
 
 function turnModel(input: string | undefined, configuredModel: string) {
   const value = text(input) ?? text(configuredModel)
-  if (!value || value === "default") return
+  if (!value || value === "default") return undefined
   return value
 }
 

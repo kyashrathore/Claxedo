@@ -67,7 +67,28 @@ export const serverSelfHosted: Policy = {
   // composition for operator-configured external OpenCode connections; no
   // OpenCode engine is bundled. Re-measured after the generic-harness merge;
   // the values below are exact, not summed.
-  ceilings: { modules: 125, packages: 36 },
+  // +7 modules / 0 packages (2026-09-06, oxlint type-aware sweep). Two distinct
+  // causes, both intentional. Four are new value imports of a canonical owner
+  // that replaced a local copy: platform/json/index.ts and platform/http/status.ts
+  // from session/machine-wakes.ts, platform/errors/index.ts from
+  // documents/session-hydration.ts, channels/channel-id.ts from
+  // channels/control-plane.ts, and authority/composed-authority.ts from
+  // self-hosted-node/app.ts. The other two were ALREADY imported here, but as
+  // `import type`, which erases and so never entered the walk: documents/port.ts
+  // and sandbox/stores/lease-row.ts now also carry the runtime converters
+  // (`toDocumentVersion`, `toSnapshotID`, `toSandboxLeaseRow`, `holdOwnerType`)
+  // that replaced the casts at those two seams. A checked conversion is a
+  // runtime module where a cast was free; that cost is the point.
+  // Every module is inside packages/claxedo-server itself, so the package count
+  // is unchanged at 36.
+  // +1 module: connections/stored-columns.ts. Both connection backends persist
+  // the same two JSON columns; the decoders first landed in store-adapter.ts,
+  // which pulled the SQLite-only `connection.sql` Drizzle table into the hosted
+  // D1 worker's graph, where wrangler emitted it as an unloadable additional
+  // module. The decoders own a shared concept with no schema dependency, so
+  // they are their own file, imported by store-adapter.ts and hosted-d1/.
+  // Re-measured, no headroom.
+  ceilings: { modules: 133, packages: 36 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

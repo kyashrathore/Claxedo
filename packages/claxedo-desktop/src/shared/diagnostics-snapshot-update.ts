@@ -3,15 +3,15 @@ import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 export function applyDiagnosticsSnapshotUpdate(
   current: LocalDiagnostics.RetainedSnapshot | undefined,
   input: unknown,
-) {
+): LocalDiagnostics.RetainedSnapshot | undefined {
   const update = LocalDiagnostics.SnapshotUpdate.safeParse(input)
-  if (!update.success) return
+  if (!update.success) return undefined
   if (update.data.kind === "full") return update.data.snapshot
   if (
     !current ||
     current.generation !== update.data.delta.generation ||
     current.capturedAt !== update.data.delta.baseCapturedAt
-  ) return
+  ) return undefined
   const removedSamples = new Set(
     update.data.delta.sampleRemovals.map((sample) => sampleKey(sample)),
   )

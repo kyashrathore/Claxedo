@@ -7,6 +7,8 @@ import {
   harnessKey,
   normalizeHarnessIdentity,
 } from "@claxedo/agent-sdk-runtime"
+import { AGENT_HARNESS_ACCESSES } from "@claxedo/agent-sdk-runtime"
+import { isOneOf, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
 export type SessionHarness = AgentSessionHarness
@@ -58,6 +60,44 @@ function merge(input: SessionConfig): SessionConfig {
   }
 }
 
+/**
+ * Read one persisted session config.
+ *
+ * This module's own `save()` is the only writer, so a well-formed file round
+ * trips; anything else (a hand-edited file, a downgrade) reads as `undefined`
+ * and the row is skipped, which is what `load()`'s guards already did for the
+ * surrounding fields.
+ */
+function sessionConfig(value: unknown): SessionConfig | undefined {
+  const row = jsonRecord(value)
+  const harness = jsonRecord(row?.harness)
+  const id = harness && jsonString(harness.id)
+  if (!row || !id || !isOneOf(harness.access, AGENT_HARNESS_ACCESSES)) return undefined
+  const model = jsonRecord(row.model)
+  const providerID = model && jsonString(model.providerID)
+  const modelID = model && jsonString(model.modelID)
+  const handoff = jsonRecord(row.handoff)
+  const from = jsonRecord(handoff?.from)
+  const fromId = from && jsonString(from.id)
+  return {
+    harness: { id, access: harness.access },
+    ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
+    ...(typeof row.variant === "string" || row.variant === null ? { variant: row.variant } : {}),
+    ...(typeof row.agent === "string" || row.agent === null ? { agent: row.agent } : {}),
+    ...(row.handoff === null
+      ? { handoff: null }
+      : fromId && isOneOf(from.access, AGENT_HARNESS_ACCESSES) && typeof handoff?.transcript === "string"
+        ? {
+            handoff: {
+              from: { id: fromId, access: from.access },
+              pending: true as const,
+              transcript: handoff.transcript,
+            },
+          }
+        : {}),
+  }
+}
+
 function load() {
   const root = rootDir()
   const previous = cacheRoot === root ? cache : undefined
@@ -66,16 +106,20 @@ function load() {
   if (previous && loadedAt - cacheLoadedAt < CACHE_TTL_MS) return previous
   try {
     const next = new Map<string, Row>()
-    const rows = JSON.parse(fs.readFileSync(filePath(root), "utf8")) as Row[]
-    for (const row of rows) {
-      if (!row?.workspaceId || !row?.sessionId || typeof row.updatedAt !== "number") continue
-      const config = row.config
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath(root), "utf8"))
+    for (const item of Array.isArray(parsed) ? parsed : []) {
+      const row = jsonRecord(item)
+      const workspaceId = row && jsonString(row.workspaceId)
+      const sessionId = row && jsonString(row.sessionId)
+      const updatedAt = row?.updatedAt
+      if (!workspaceId || !sessionId || typeof updatedAt !== "number") continue
+      const config = sessionConfig(row.config)
       if (!config?.harness?.id) continue
-      next.set(key(row.workspaceId, row.sessionId), {
-        workspaceId: row.workspaceId,
-        sessionId: row.sessionId,
+      next.set(key(workspaceId, sessionId), {
+        workspaceId,
+        sessionId,
         config: merge(config),
-        updatedAt: row.updatedAt,
+        updatedAt,
       })
     }
     cache = next
@@ -124,7 +168,7 @@ export function setSessionConfig(workspaceId: string, sessionId: string, config:
 export function updateSessionConfig(workspaceId: string, sessionId: string, update: SessionConfigUpdate) {
   const prev = getSessionConfig(workspaceId, sessionId)
   const harness = update.harness ?? prev?.harness
-  if (!harness) return
+  if (!harness) return undefined
   const next = merge({
     harness,
     ...(update.model === undefined

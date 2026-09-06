@@ -87,7 +87,7 @@ function shellRoutes(options: ShellRouteOptions) {
         resolveRuntimeActor(authority, auth),
         authority.openWorkspace(auth, { workspaceId }),
       ])
-      const orgId = String(workspace.workspace?.org_id ?? "")
+      const orgId = workspace.workspace?.org_id ?? ""
       const principal = eventScopePrincipal(auth, orgId || undefined)
       return {
         identity: {

@@ -41,15 +41,16 @@ describe("local production spawn inventory", () => {
         // claim is that every child this app can start is enumerated here.
         ...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*[^\n]*?\?\?\s*([A-Za-z_$][\w$]*)\s*$/gm),
       ]
-        .filter((match) => names.has(match[2]!))
-        .map((match) => match[1]!)
+        .filter((match) => names.has(match[2]))
+        .map((match) => match[1])
       ;[...names, ...aliases].forEach((name) => {
         const calls = count(text, new RegExp(`\\b${escape(name)}\\s*\\(`, "g"))
         if (calls > 0) discovered.set(`${file}:${name}`, calls)
       })
     }
     specialSeams(classified).forEach(([key, calls]) => discovered.set(key, calls))
-    expect([...discovered.entries()].sort()).toEqual([...classified.entries()].sort())
+    const byKey = (a: [string, number], b: [string, number]) => a[0].localeCompare(b[0])
+    expect([...discovered.entries()].sort(byKey)).toEqual([...classified.entries()].sort(byKey))
   }, 30_000)
 
   test("derives native, ACP, probe, and MCP scenarios from every harness definition", () => {
@@ -108,7 +109,7 @@ async function productionFiles() {
 function childProcessNames(text: string) {
   const names = new Set<string>()
   for (const match of text.matchAll(/import\s*\{([^}]+)\}\s*from\s*["'](?:node:)?child_process["']/g)) {
-    match[1]!.split(",").forEach((entry) => {
+    match[1].split(",").forEach((entry) => {
       const parts = entry
         .trim()
         .replace(/^type\s+/, "")
@@ -119,7 +120,7 @@ function childProcessNames(text: string) {
   for (const match of text.matchAll(
     /\bconst\s*\{([^}]+)\}\s*=\s*(?:await\s+)?(?:import|require)\(\s*["'](?:node:)?child_process["']\s*\)/g,
   )) {
-    match[1]!.split(",").forEach((entry) => {
+    match[1].split(",").forEach((entry) => {
       const parts = entry.trim().split(/\s*:\s*/)
       if (parts[0]) names.add(parts[1] ?? parts[0])
     })
@@ -175,7 +176,7 @@ function stripComments(text: string) {
   let index = 0
   let quote: string | undefined
   while (index < text.length) {
-    const char = text[index]!
+    const char = text[index]
     if (quote) {
       if (char === "\\") {
         out += char + (text[index + 1] ?? "")

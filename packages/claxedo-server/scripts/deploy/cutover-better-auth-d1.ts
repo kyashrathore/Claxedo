@@ -8,6 +8,7 @@ import {
   fetchReleaseProbe,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
+import { asRecord, numberField, readJsonRecord, stringField } from "../../src/platform/json/index"
 
 const ACTIONS = [
   "status",
@@ -187,9 +188,64 @@ async function operatorFetch(apiOrigin: string, secret: string, request: BetterA
     ...(request.body ? { body: JSON.stringify(request.body) } : {}),
     signal: AbortSignal.timeout(15_000),
   })
-  const body = (await response.json()) as { release?: OperatorRelease; error?: { code?: string } }
-  if (!response.ok) throw new Error(`cutover operator rejected the request (${body.error?.code ?? response.status})`)
-  return body
+  const body = await readJsonRecord(response)
+  if (!response.ok) {
+    throw new Error(
+      `cutover operator rejected the request (${stringField(asRecord(body?.error), "code") ?? response.status})`,
+    )
+  }
+  return { body, release: parseOperatorRelease(body?.release) }
+}
+
+const OPERATOR_RELEASE_IDS = [
+  "deploymentId",
+  "releaseId",
+  "workerBuildId",
+  "platformVersionId",
+  "browserBuildId",
+  "relayBuildId",
+  "authConfigurationId",
+  "serviceManifestId",
+] as const
+
+const PRODUCT_POSTURES = ["claxedo-hosted", "user-deployed"] as const
+const SANDBOX_POSTURES = ["control-plane-only", "full-hosted"] as const
+const RELEASE_PHASES = ["locked", "canary", "provider_sync", "multiplayer_validation", "open"] as const
+
+/**
+ * The operator's persisted release binding, checked field by field.
+ *
+ * `betterAuthD1OperatorRequest` gates a cutover on `phase` and forwards the
+ * whole record back as the request's `binding`, so a status response missing a
+ * field used to send `undefined` to the operator inside a value the type said
+ * was complete.
+ */
+function parseOperatorRelease(value: unknown): OperatorRelease | undefined {
+  const record = asRecord(value)
+  const stateRevision = numberField(record, "stateRevision")
+  const phaseRevision = numberField(record, "phaseRevision")
+  const productPosture = PRODUCT_POSTURES.find((posture) => posture === record?.productPosture)
+  const sandboxPosture = SANDBOX_POSTURES.find((posture) => posture === record?.sandboxPosture)
+  const phase = RELEASE_PHASES.find((candidate) => candidate === record?.phase)
+  const ids = OPERATOR_RELEASE_IDS.map((key) => stringField(record, key))
+  const [
+    deploymentId, releaseId, workerBuildId, platformVersionId,
+    browserBuildId, relayBuildId, authConfigurationId, serviceManifestId,
+  ] = ids
+  if (
+    ids.some((id) => id === undefined) ||
+    deploymentId === undefined || releaseId === undefined || workerBuildId === undefined ||
+    platformVersionId === undefined || browserBuildId === undefined || relayBuildId === undefined ||
+    authConfigurationId === undefined || serviceManifestId === undefined ||
+    record?.adapterProfile !== "better-auth-d1" ||
+    !productPosture || !sandboxPosture || !phase ||
+    stateRevision === undefined || phaseRevision === undefined
+  ) return undefined
+  return {
+    deploymentId, releaseId, workerBuildId, platformVersionId, browserBuildId, relayBuildId,
+    authConfigurationId, adapterProfile: "better-auth-d1", productPosture, sandboxPosture,
+    serviceManifestId, stateRevision, phase, phaseRevision,
+  }
 }
 
 async function main() {
@@ -210,7 +266,7 @@ async function main() {
   }
   const request = betterAuthD1OperatorRequest(action, process.env, status.release)
   const result = await operatorFetch(releaseInput.apiOrigin, operatorSecret, request)
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+  process.stdout.write(`${JSON.stringify(result.body, null, 2)}\n`)
 }
 
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) await main()

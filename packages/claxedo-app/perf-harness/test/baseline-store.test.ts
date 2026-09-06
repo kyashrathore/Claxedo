@@ -90,15 +90,15 @@ test("comparisons refuse host, method, suite and legacy evidence mismatches", ()
     { ...current, evidence: { ...current.evidence!, context: { ...context, suite: "attribution" as const } } },
     { ...current, evidence: { ...current.evidence!, context: { ...context, host: { ...context.host, cores: 99 } } } },
     { ...current, evidence: { ...current.evidence!, context: { ...context, workload: "different-seed" } } },
-  ]) expect(compareToBaseline([changed], baseline)[0]!.verdict).toBe("incompatible")
+  ]) expect(compareToBaseline([changed], baseline)[0].verdict).toBe("incompatible")
   const legacy = { ...baseline, metrics: { flow_complete_ms: { value: 400, samples: [400] } } }
-  expect(compareToBaseline([current], legacy)[0]!.verdict).toBe("incompatible")
+  expect(compareToBaseline([current], legacy)[0].verdict).toBe("incompatible")
 })
 
 test("zero baselines classify movement without NaN or Infinity", () => {
   const baseline = baselineFromRecords([record("visual_stability", 0)])!
   expect(compareToBaseline([record("visual_stability", 0)], baseline)[0]).toMatchObject({ verdict: "unchanged", deltaPct: 0 })
-  const regression = compareToBaseline([record("visual_stability", 0.1)], baseline)[0]!
+  const regression = compareToBaseline([record("visual_stability", 0.1)], baseline)[0]
   expect(regression.verdict).toBe("regressed")
   expect(regression.deltaPct).toBeUndefined()
 })

@@ -10,11 +10,23 @@ import fs from "fs"
 import path from "path"
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from "crypto"
 import type { SecretBackend } from "../types"
+import { isJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
 const ALGORITHM = "aes-256-gcm"
 const IV_LEN = 12
 const TAG_LEN = 16
+
+/**
+ * A filesystem error meaning the path is simply not there.
+ *
+ * `catch` binds `unknown`, and Node's errno errors carry `code` without a type
+ * that says so. Testing the property is the check; asserting the shape only
+ * assumed it.
+ */
+function isMissingFile(error: unknown): boolean {
+  return isJsonRecord(error) && error.code === "ENOENT"
+}
 
 function storeDir() {
   return path.join(dataDir(), "credentials")
@@ -112,7 +124,7 @@ export function createLocalBackend(): SecretBackend {
         const data = fs.readFileSync(secretPath(ref))
         return decrypt(getKey(), data)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+        if (isMissingFile(error)) return null
         throw error
       }
     },
@@ -121,7 +133,7 @@ export function createLocalBackend(): SecretBackend {
       try {
         fs.unlinkSync(secretPath(ref))
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+        if (isMissingFile(error)) return
         throw error
       }
     },

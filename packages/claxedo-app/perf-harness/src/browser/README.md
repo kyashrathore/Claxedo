@@ -11,6 +11,7 @@ connects the flow catalog to the scenario functions here.
 | `mock-api.ts` | Register HTTP/WebSocket routes, enforce response and paging contracts, and account for requests |
 | `mock-streams.ts` | Serve persistent SSE with canonical route envelopes and isolated page leases; app shutdown closes the listener |
 | `state.ts` | Install initial persisted workbench state and construct navigation paths |
+| `page-globals.ts` | The `window` contract between Node-side harness code and the page it drives |
 | `page-validation.ts` | Collect browser errors and validate visible application/transcript evidence |
 | `diagnostics.ts` | Start, sample, stop, and merge the real process-tree profiler |
 | `actions/` | Reusable navigation, session, review, workspace, and terminal operations |
@@ -43,7 +44,15 @@ VCS, file, and workspace data to be reused.
 Functions passed to Playwright `evaluate` or `waitForFunction` run in the page.
 Their runtime dependencies must remain inside the serialized function or be
 supplied through its argument; importing a Node-side helper into that callback
-does not make the helper available in the browser.
+does not make the helper available in the browser. Types are the exception:
+they erase, so `page-globals.ts` can describe what the harness installs on
+`window` and both ends read the same declaration.
+
+A page global read or written by more than one module is declared in
+`page-globals.ts`. One private to a single module is declared in that module,
+in its own `declare global` block, beside the types it stores. Never through a
+cast: `window as unknown as { __thing: ... }` lets the writer and the reader
+disagree with nothing to catch it.
 
 `topology.test.ts` enforces an acyclic browser module graph and prevents
 memory/probe imports of the orchestrator. `mock-api.test.ts` exercises installed

@@ -1,17 +1,19 @@
 import { applyRegisteredConversationEvent } from "../../../features/session/conversation/conversation-registry"
-import { isConversationEventType } from "../../../features/session/conversation/conversation-event"
+import { isConversationEventType, type ConversationEventFrame } from "../../../features/session/conversation/conversation-event"
 import { applySessionStatusSseEvent } from "../../../features/session/store/session-status-dispatcher"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
 import { applyDirectorySessionCacheEvent } from "../../../features/session/data/sync/session-list-events"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { invalidateSessionPrefetchFromEvent } from "@/platform/sync/session-prefetch"
+import { asRecord } from "@/lib/record"
 
 export type StreamSyncAction =
   | {
       type: "conversation"
       sessionId?: string
-      event: RoutableEvent
+      /** Classified by `isConversationEventType`, so the discriminant is known. */
+      event: ConversationEventFrame
     }
   | {
       type: "targeted"
@@ -39,11 +41,12 @@ export type DirectoryEventRouterSinks = {
 }
 
 export function classifyStreamEvent(event: RoutableEvent): StreamSyncAction {
-  if (isConversationEventType(event.type)) {
+  const type = event.type
+  if (isConversationEventType(type)) {
     return {
       type: "conversation",
       sessionId: sessionIdFromEvent(event),
-      event,
+      event: { ...event, type },
     }
   }
 
@@ -72,7 +75,7 @@ export function routeDirectoryEvent(input: {
     if (action.sessionId) invalidateSessionPrefetchFromEvent(input.directory, action.sessionId)
     applyRegisteredConversationEvent({
       directory: input.directory,
-      event: input.event as Parameters<typeof applyRegisteredConversationEvent>[0]["event"],
+      event: action.event,
     })
   }
 
@@ -92,7 +95,7 @@ export function routeDirectoryEvent(input: {
 }
 
 function targetedQueryKeys(event: RoutableEvent) {
-  const props = record(event.properties)
+  const props = asRecord(event.properties)
   const sessionId = sessionIdFromEvent(event)
   if (sessionId && (
     event.type === "permission.asked" ||
@@ -137,15 +140,11 @@ function targetedQueryKeys(event: RoutableEvent) {
 }
 
 function sessionIdFromEvent(event: RoutableEvent) {
-  const props = record(event.properties)
+  const props = asRecord(event.properties)
   return text(props?.sessionID) ??
     text(props?.sessionId) ??
-    text(record(props?.info)?.sessionID) ??
-    text(record(props?.session)?.id)
-}
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+    text(asRecord(props?.info)?.sessionID) ??
+    text(asRecord(props?.session)?.id)
 }
 
 function text(input: unknown) {

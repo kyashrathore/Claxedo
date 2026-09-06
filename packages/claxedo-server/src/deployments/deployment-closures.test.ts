@@ -138,7 +138,13 @@ describe("server deployment entry closures", () => {
     // +1 settled-composition-cache.ts (2026-08-31): the per-isolate rule that a
     // Better Auth composition may be reused only after its lazy init settled —
     // the fix for the live wedged-isolate outage; reviewed owner of that rule.
-    expect(result.modules.length).toBeLessThanOrEqual(14)
+    // +1 platform/json/index.ts (2026-09-06): the package's one owner of
+    // boundary narrowing. `better-auth-d1-operator.cf.ts` reads the operator
+    // request body through it instead of asserting `JSON.parse` into a record.
+    // The module imports nothing, so it adds one file and no packages — the
+    // `packages.length` ceiling below is unchanged, which is what keeps this
+    // edge dependency-neutral.
+    expect(result.modules.length).toBeLessThanOrEqual(15)
     // +1 dependency-neutral package: the release identity now reads the
     // canonical empty-service manifest ID from @claxedo/service-contract
     // instead of owning a second string. No service implementation enters the

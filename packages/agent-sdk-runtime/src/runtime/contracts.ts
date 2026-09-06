@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import type {
   AgentRuntimeStreamEvent,
   PromptInput,
@@ -10,19 +11,12 @@ import type { CompatEvent } from "../compat-events"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "../harnesses/shared/runtime-store"
 
-declare const agentRuntimeStore: unique symbol
-declare const agentHarnessFactory: unique symbol
-
-export type AgentRuntimeStore = {
-  readonly [agentRuntimeStore]: true
-}
-
-export type RuntimeStoreInternal = AgentRuntimeStoreWithRecovery
-export type InternalAgentHarnessFactory = {
-  id: SessionHarness["id"]
-  access: SessionHarness["access"]
-  create(context: AgentHarnessFactoryContext): AgentHarnessAdapter
-}
+/**
+ * The store a runtime runs on. It states exactly what the runtime calls,
+ * recovery and owner operations included, so a caller-supplied store fails to
+ * typecheck rather than failing at the first recovery path.
+ */
+export type AgentRuntimeStore = AgentRuntimeStoreWithRecovery
 
 export type AgentRuntimeAbortResult =
   | { ok: true; status: "cancelled" | "already_idle" }
@@ -46,14 +40,19 @@ export type AgentRuntimeHealth = {
 }
 
 export type AgentHarnessFactoryContext = {
-  store: RuntimeStoreInternal
+  store: AgentRuntimeStore
   eventHub: RuntimeEventHub
 }
 
+/**
+ * A harness a runtime can create adapters from. It states the creation the
+ * runtime performs, so a factory that cannot serve it fails to typecheck rather
+ * than at the first session.
+ */
 export type AgentHarnessFactory = {
   id: SessionHarness["id"]
   access: SessionHarness["access"]
-  readonly [agentHarnessFactory]: true
+  create(context: AgentHarnessFactoryContext): AgentHarnessAdapter
 }
 
 export type CreateAgentRuntimeInput = {
@@ -175,11 +174,9 @@ export class AgentRuntimeGoalError extends Error {
 }
 
 export function isAgentRuntimeGoalError(error: unknown): error is AgentRuntimeGoalError {
-  return error instanceof AgentRuntimeGoalError || (
-    !!error && typeof error === "object" &&
-    typeof (error as { code?: unknown }).code === "string" &&
-    (error as { code: string }).code.startsWith("goal_")
-  )
+  if (error instanceof AgentRuntimeGoalError) return true
+  const code = asRecord(error)?.code
+  return typeof code === "string" && code.startsWith("goal_")
 }
 
 export const AGENT_RUNTIME_TURN_CONFLICT_CODE = "session_turn_in_progress"

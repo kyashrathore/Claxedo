@@ -57,6 +57,7 @@ import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/ser
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
+import { raw, record } from "../platform/json"
 
 /**
  * Paths whose responses carry credential material.
@@ -151,7 +152,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   if (!services.localExecution.enabled) {
     throw new Error("createLocalApp is the desktop-local composition; it requires localExecution")
   }
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
+  // `@hono/node-ws` declares `injectWebSocket` with method syntax, so it is
+  // called through the object rather than detached from it. `upgradeWebSocket`
+  // is a plain property and is safe to pull off.
+  const nodeWebSocket = createNodeWebSocket({ app })
+  const { upgradeWebSocket } = nodeWebSocket
   const runtimeProxyOptions = options.runtimeProxyOptions ?? {}
 
   app.use(localSecurityHeaders())
@@ -242,11 +247,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     })
     app.post("/api/claxedo/daemon/shutdown", async (c) => {
       if (!authorized(c.req.header("authorization"))) return unauthorized(c)
-      const body = await c.req.json().catch(() => undefined) as { leaseId?: unknown } | undefined
-      if (typeof body?.leaseId !== "string" || !body.leaseId) {
+      const leaseId = raw(record(await c.req.json().catch(() => undefined))?.leaseId)
+      if (!leaseId) {
         return c.json({ error: { code: "daemon_shutdown_invalid_body", message: "A lease ID is required" } }, 400)
       }
-      return c.json(lifecycle.requestShutdown(body.leaseId))
+      return c.json(lifecycle.requestShutdown(leaseId))
     })
   }
 
@@ -327,7 +332,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     mount: (contribution) => app.route(contribution.path, contribution.routes),
   })
 
-  return { injectWebSocket }
+  return { injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => nodeWebSocket.injectWebSocket(server) }
 }
 
 export function createLocalApp(options: LocalAppOptions) {

@@ -27,14 +27,37 @@ export function createTextFragment(content: string): DocumentFragment {
   return fragment
 }
 
+/**
+ * The prompt editor's `Node` narrowings, in one place.
+ *
+ * Every caller used to pair `nodeType === Node.ELEMENT_NODE` with an
+ * `as HTMLElement` assertion \u2014 which is also wrong for an SVG element, whose
+ * nodeType is ELEMENT_NODE but which has no `dataset`. `instanceof HTMLElement`
+ * states the real test and narrows, so no assertion is needed.
+ */
+export function asElement(node: Node | null | undefined): HTMLElement | undefined {
+  return node instanceof HTMLElement ? node : undefined
+}
+
+/** The editor's hard line break. */
+export function isBreakNode(node: Node | null | undefined): boolean {
+  return asElement(node)?.tagName === "BR"
+}
+
+/** A file or agent pill: one atomic character to the caret model. */
+export function isPillNode(node: Node | null | undefined): boolean {
+  const type = asElement(node)?.dataset.type
+  return type === "file" || type === "agent"
+}
+
 export function getNodeLength(node: Node): number {
-  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
+  if (isBreakNode(node)) return 1
   return (node.textContent ?? "").replace(/\u200B/g, "").length
 }
 
 export function getTextLength(node: Node): number {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200B/g, "").length
-  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
+  if (isBreakNode(node)) return 1
   let length = 0
   for (const child of Array.from(node.childNodes)) {
     length += getTextLength(child)
@@ -87,10 +110,8 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
   while (node) {
     const length = getNodeLength(node)
     const isText = node.nodeType === Node.TEXT_NODE
-    const isPill =
-      node.nodeType === Node.ELEMENT_NODE &&
-      ((node as HTMLElement).dataset.type === "file" || (node as HTMLElement).dataset.type === "agent")
-    const isBreak = node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR"
+    const isPill = isPillNode(node)
+    const isBreak = isBreakNode(node)
 
     if (isText && remaining <= length) {
       const range = document.createRange()
@@ -152,10 +173,8 @@ export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | 
   for (const node of nodes) {
     const length = getNodeLength(node)
     const isText = node.nodeType === Node.TEXT_NODE
-    const isPill =
-      node.nodeType === Node.ELEMENT_NODE &&
-      ((node as HTMLElement).dataset.type === "file" || (node as HTMLElement).dataset.type === "agent")
-    const isBreak = node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR"
+    const isPill = isPillNode(node)
+    const isBreak = isBreakNode(node)
 
     if (isText && remaining <= length) {
       if (edge === "start") range.setStart(node, remaining)

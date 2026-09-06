@@ -3,6 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
+import { parseJsonObject, record, stringList, stringRecord, text } from "../json"
 import { REPO_ROOT } from "./closure"
 import { emittedManifestFindings, readBuildManifest } from "./emitted-manifest"
 import type { Policy } from "./policy"
@@ -21,6 +22,11 @@ const ROOT_FILES = [
   "script/fix-node-pty.ts",
   // workspace-runtime's build stages the SDK patch installer for the sandbox image.
   "script/apply-dependency-patches.ts",
+  // ...which reads its manifests through the repo's checked JSON helpers.
+  "script/json.ts",
+  // Package build scripts run their Bun.build calls through the repo's one
+  // failure-reporting wrapper.
+  "script/bun-build.ts",
 ]
 const STRIPPED_STUB_FIELDS = ["exports", "main", "module", "types", "bin", "scripts", "files"]
 
@@ -38,12 +44,9 @@ function copy(source: string, destination: string) {
  * from the stub set fails the frozen install with "Workspace not found".
  */
 function workspacePackageDirs(root: string): string[] {
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
-    workspaces?: string[] | { packages?: string[] }
-  }
-  const patterns = Array.isArray(manifest.workspaces)
-    ? manifest.workspaces
-    : manifest.workspaces?.packages ?? ["packages/*"]
+  const file = path.join(root, "package.json")
+  const workspaces = parseJsonObject(fs.readFileSync(file, "utf8"), file).workspaces
+  const patterns = stringList(workspaces) ?? stringList(record(workspaces)?.packages) ?? ["packages/*"]
   const dirs: string[] = []
   for (const pattern of patterns) {
     const normalized = pattern.replace(/\/+$/, "")
@@ -65,17 +68,30 @@ function workspacePackageDirs(root: string): string[] {
 }
 
 function writeStub(source: string, destination: string) {
-  const manifest = JSON.parse(fs.readFileSync(source, "utf8")) as Record<string, unknown>
+  const manifest = parseJsonObject(fs.readFileSync(source, "utf8"), source)
   for (const field of STRIPPED_STUB_FIELDS) delete manifest[field]
   fs.mkdirSync(path.dirname(destination), { recursive: true })
   fs.writeFileSync(destination, `${JSON.stringify(manifest, null, 2)}\n`)
 }
 
 type WorkspaceManifest = {
-  name?: string
-  dependencies?: Record<string, string>
-  optionalDependencies?: Record<string, string>
-  peerDependencies?: Record<string, string>
+  name: string | undefined
+  dependencies: Record<string, string>
+  optionalDependencies: Record<string, string>
+  peerDependencies: Record<string, string>
+  /** Repository-owned build scripts may import workspace tools declared here. */
+  devDependencies: Record<string, string>
+}
+
+function readWorkspaceManifest(file: string): WorkspaceManifest {
+  const manifest = parseJsonObject(fs.readFileSync(file, "utf8"), file)
+  return {
+    name: text(manifest.name),
+    dependencies: stringRecord(manifest.dependencies),
+    optionalDependencies: stringRecord(manifest.optionalDependencies),
+    peerDependencies: stringRecord(manifest.peerDependencies),
+    devDependencies: stringRecord(manifest.devDependencies),
+  }
 }
 
 function matchesPackage(specifier: string, name: string) {
@@ -85,7 +101,7 @@ function matchesPackage(specifier: string, name: string) {
 /** A product cannot declare a forbidden runtime role even when it is unused. */
 export function productManifestRoleFindings(policy: Policy, root = REPO_ROOT): string[] {
   const file = path.join(root, policy.packageDir, "package.json")
-  const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as WorkspaceManifest
+  const manifest = readWorkspaceManifest(file)
   const dependencies = Object.keys({
     ...manifest.dependencies,
     ...manifest.optionalDependencies,
@@ -114,7 +130,7 @@ export function workspaceClosureFromBuildManifest(policy: Policy, root = REPO_RO
 function workspaceBuildInputClosure(packageDirs: string[], root: string): string[] {
   const byName = new Map<string, string>()
   for (const dir of workspacePackageDirs(root)) {
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, dir, "package.json"), "utf8")) as WorkspaceManifest
+    const manifest = readWorkspaceManifest(path.join(root, dir, "package.json"))
     if (manifest.name) byName.set(manifest.name, dir)
   }
   const closure = new Set<string>()
@@ -125,14 +141,12 @@ function workspaceBuildInputClosure(packageDirs: string[], root: string): string
     const file = path.join(root, dir, "package.json")
     if (!fs.existsSync(file)) throw new Error(`isolation build input is not a workspace: ${dir}`)
     closure.add(dir)
-    const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as WorkspaceManifest
+    const manifest = readWorkspaceManifest(file)
     for (const name of Object.keys({
       ...manifest.dependencies,
       ...manifest.optionalDependencies,
       ...manifest.peerDependencies,
-      // Repository-owned build scripts may import workspace tools declared as
-      // dev dependencies.
-      ...(manifest as WorkspaceManifest & { devDependencies?: Record<string, string> }).devDependencies,
+      ...manifest.devDependencies,
     })) {
       const dependency = byName.get(name)
       if (dependency && !closure.has(dependency)) frontier.push(dependency)
@@ -156,11 +170,9 @@ function restrictPackageExports(
   restriction: NonNullable<NonNullable<Policy["isolation"]>["packageExports"]>[number],
 ) {
   const file = path.join(destination, restriction.packageDir, "package.json")
-  const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
-  if (!manifest.exports || typeof manifest.exports !== "object" || Array.isArray(manifest.exports)) {
-    throw new Error(`${restriction.packageDir} has no subpath export map to restrict`)
-  }
-  const existing = manifest.exports as Record<string, unknown>
+  const manifest = parseJsonObject(fs.readFileSync(file, "utf8"), file)
+  const existing = record(manifest.exports)
+  if (!existing) throw new Error(`${restriction.packageDir} has no subpath export map to restrict`)
   const selected: Record<string, unknown> = {}
   for (const name of restriction.exports) {
     if (!(name in existing)) throw new Error(`${restriction.packageDir} does not export ${name}`)
@@ -237,11 +249,10 @@ export function materializeIsolatedWorkspace(policy: Policy, destination: string
   }
   for (const buildPackage of policy.isolation.buildPackages ?? []) {
     const dir = buildPackage.packageDir
-    const manifest = JSON.parse(fs.readFileSync(path.join(destination, dir, "package.json"), "utf8")) as {
-      scripts?: Record<string, string>
-    }
+    const manifestFile = path.join(destination, dir, "package.json")
+    const scripts = stringRecord(parseJsonObject(fs.readFileSync(manifestFile, "utf8"), manifestFile).scripts)
     const script = buildPackage.script ?? "build"
-    if (!manifest.scripts?.[script]) {
+    if (!scripts[script]) {
       throw new Error(`${policy.id} isolation build package has no declared ${script} script: ${dir}`)
     }
   }

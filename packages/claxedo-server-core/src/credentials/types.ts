@@ -1,20 +1,37 @@
+// The runtime lists below are the single source for these unions: the SQLite
+// column declarations are built from them, so a row reads back already typed
+// instead of being asserted into shape at every boundary.
+
 /** Credential kind — what type of auth material this represents. */
-export type CredentialKind = "api_key" | "oauth_token" | "subscription_session" | "sandbox_driver"
+export const CREDENTIAL_KINDS = ["api_key", "oauth_token", "subscription_session", "sandbox_driver"] as const
+export type CredentialKind = (typeof CREDENTIAL_KINDS)[number]
 
 /** Credential source — how the credential was obtained. */
-export type CredentialSource = "managed" | "local_only" | "env" | "upstream_sync"
+export const CREDENTIAL_SOURCES = ["managed", "local_only", "env", "upstream_sync"] as const
+export type CredentialSource = (typeof CREDENTIAL_SOURCES)[number]
 
 /** Credential status — current lifecycle state. */
-export type CredentialStatus = "available" | "expired" | "revoked" | "error"
+export const CREDENTIAL_STATUSES = ["available", "expired", "revoked", "error"] as const
+export type CredentialStatus = (typeof CREDENTIAL_STATUSES)[number]
 
 /** Last provider-backed verification result shown across credential surfaces. */
-export type CredentialHealth = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"
+export const CREDENTIAL_HEALTHS = ["ok", "auth_failed", "no_billing", "rate_capped", "expired"] as const
+export type CredentialHealth = (typeof CREDENTIAL_HEALTHS)[number]
 
-export type CredentialScope = "local" | "shared"
+export const CREDENTIAL_SCOPES = ["local", "shared"] as const
+export type CredentialScope = (typeof CREDENTIAL_SCOPES)[number]
+
+export const CREDENTIAL_CONSENT_SURFACES = [
+  "desktop_discovery",
+  "api_key",
+  "scope_change",
+  "cli",
+  "migration",
+] as const
 
 export type CredentialConsent = {
   at: number
-  surface: "desktop_discovery" | "api_key" | "scope_change" | "cli" | "migration"
+  surface: (typeof CREDENTIAL_CONSENT_SURFACES)[number]
 }
 
 /** Metadata stored in claxedo.db — never contains raw secret material. */

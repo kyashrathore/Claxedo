@@ -35,7 +35,7 @@ function stubPorts() {
 
 /** Drives `view` the way both real callers do, so Back and branching work. */
 function Harness(props: Partial<Parameters<typeof AIConnectSurface>[0]> & { initialView?: AIConnectView }) {
-  const [view, setView] = createSignal<AIConnectView>(props.initialView ?? { kind: "chooser" })
+  const [view, setView] = createSignal(props.initialView ?? { kind: "chooser" })
   return (
     <AIConnectSurface
       localDiscovery
@@ -276,7 +276,7 @@ describe("AIConnectSurface", () => {
 
     // ...and the save still writes both bindings, or one harness would be left
     // unable to resolve auth.
-    expect(JSON.parse(String(stub.calls[1].init?.body))).toEqual({
+    expect(requestJson(stub.calls[1].init)).toEqual({
       discovery_id: "discovery-1",
       items: [
         { provider_id: "claude-acp", scope: "local" },
@@ -475,3 +475,8 @@ describe("AIConnectSurface", () => {
     expect(screen.getByRole("button", { name: "Anthropic" })).toBeInTheDocument()
   })
 })
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

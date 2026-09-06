@@ -48,13 +48,14 @@ export function RailWorkbenchCanvas(props: {
   onProjectCreated?: (project: NewSessionProjectSelection) => void
 }) {
   const onboardingOverlayDirectory = createMemo(() => {
-    if (!ONBOARDING_V1) return
+    if (!ONBOARDING_V1) return undefined
     const projectDirectory = props.emptyDraftDirectory()
-    if (!projectDirectory) return
+    if (!projectDirectory) return undefined
     const contentId = props.state.wb.selectors.focusedContent()
     if (!contentId) return projectDirectory
     const content = props.state.meta.get(contentId)
     if (content?.type === "session" && content.sessionId === "new") return projectDirectory
+    return undefined
   })
 
   // Keep only the three most-recent hidden sessions mounted. The bounded

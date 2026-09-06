@@ -2,7 +2,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { CDPSession } from "playwright"
+import type { CDPSession } from "playwright-core"
 import { measureSessionActivation } from "./agent-browser-observer"
 import { armMessageResponseObservation, type MessageResponseObservation } from "./message-response-observer"
 import {
@@ -177,7 +177,7 @@ try {
     let coverage: CoverageEntry[] = []
     const phaseCursor = await page.evaluate(() => window.__claxedoPerfRendererPhases?.length ?? 0)
     const finishMessageResponse = armMessageResponseObservation(page, destination.sessionId)
-    const measured = await measureSessionActivation(page as never, destination, {
+    const measured = await measureSessionActivation(page, destination, {
       onArmed: async () => {
         // Counts, not time. Precise coverage resets on start, so each activation
         // reports exactly the invocations its own click caused — the one thing a
@@ -188,7 +188,7 @@ try {
         await cdp.send("Profiler.start")
       },
       onPainted: async () => {
-        profile = (await stopProfiler(cdp)) as Profile
+        profile = (await stopProfiler(cdp))
         if (collectCoverage) coverage = await takeInvocationCounts(cdp, attributor, offsets)
       },
     })
@@ -408,7 +408,7 @@ function analyzeOccupancy(
     clock += deltas[index] ?? 0
     if (clock < window.startTime || clock > window.endTime) continue
     const micros = Math.max(0, deltas[index] ?? 0)
-    const name = byId.get(samples[index]!)?.callFrame.functionName
+    const name = byId.get(samples[index])?.callFrame.functionName
     if (name === "(idle)") {
       occupancy.idleMicros += micros
       if (inFlight(toPageMs(clock))) occupancy.networkBlockedIdleMicros += micros
@@ -429,10 +429,22 @@ function analyzeOccupancy(
 }
 
 function meanOccupancy(values: readonly Occupancy[]): Occupancy {
-  const keys = Object.keys(values[0] ?? {}) as Array<keyof Occupancy>
-  return Object.fromEntries(
-    keys.map((key) => [key, values.reduce((sum, item) => sum + item[key], 0) / values.length]),
-  ) as Occupancy
+  const mean = (key: keyof Occupancy) => values.reduce((sum, item) => sum + item[key], 0) / values.length
+  // Built key by key: `Object.keys` returns `string[]` and `Object.fromEntries`
+  // an open record, so the previous version asserted twice to claim a shape
+  // neither call could produce. A new `Occupancy` field now fails here.
+  return {
+    windowMicros: mean("windowMicros"),
+    idleMicros: mean("idleMicros"),
+    programMicros: mean("programMicros"),
+    gcMicros: mean("gcMicros"),
+    scriptMicros: mean("scriptMicros"),
+    networkBlockedIdleMicros: mean("networkBlockedIdleMicros"),
+    unblockedIdleMicros: mean("unblockedIdleMicros"),
+    tailIdleMicros: mean("tailIdleMicros"),
+    longestIdleRunMicros: mean("longestIdleRunMicros"),
+    idleRunCount: mean("idleRunCount"),
+  }
 }
 
 async function takeInvocationCounts(
@@ -493,7 +505,7 @@ function analyzeProfile(
   let rawProfiledMicros = 0
   let timestamp = profile.startTime
   for (let index = 0; index < samples.length; index++) {
-    const id = samples[index]!
+    const id = samples[index]
     const delta = Math.max(0, deltas[index] ?? 0)
     const previousTimestamp = timestamp
     timestamp += delta
@@ -665,8 +677,8 @@ function percentile(values: number[], quantile: number) {
   const index = (values.length - 1) * quantile
   const lower = Math.floor(index)
   const upper = Math.ceil(index)
-  if (lower === upper) return values[lower]!
-  return values[lower]! + (values[upper]! - values[lower]!) * (index - lower)
+  if (lower === upper) return values[lower]
+  return values[lower] + (values[upper] - values[lower]) * (index - lower)
 }
 
 /**

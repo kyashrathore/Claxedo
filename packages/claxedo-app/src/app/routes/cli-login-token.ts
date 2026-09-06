@@ -2,6 +2,7 @@
 // `cli-login.tsx` so the localhost-only callback restriction, the token
 // exchange, and the form construction can be tested directly.
 import { getClaxedoServerUrl } from "@/platform/api/api"
+import { asRecord, readField } from "@/lib/record"
 
 /**
  * Return a normalized callback URL only when it is an `http:` loopback
@@ -10,14 +11,14 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
  * CLI listener.
  */
 export function localCallback(input: string | null): string | undefined {
-  if (!input) return
+  if (!input) return undefined
   try {
     const url = new URL(input)
-    if (url.protocol !== "http:") return
-    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return
+    if (url.protocol !== "http:") return undefined
+    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return undefined
     return url.toString()
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -61,11 +62,10 @@ export async function cliToken(browserToken: string): Promise<CliTokenResult> {
   })
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const error = body && typeof body === "object" && "error" in body ? (body.error as Record<string, unknown>) : undefined
-    throw new Error(text(error?.message) ?? "CLI token exchange failed.")
+    throw new Error(text(readField(readField(body, "error"), "message")) ?? "CLI token exchange failed.")
   }
-  if (!body || typeof body !== "object") throw new Error("CLI token exchange returned an invalid response.")
-  const row = body as Record<string, unknown>
+  const row = asRecord(body)
+  if (!row) throw new Error("CLI token exchange returned an invalid response.")
   const accessToken = text(row.access_token) ?? text(row.accessToken)
   if (!accessToken) throw new Error("CLI token exchange did not return an access token.")
   return {

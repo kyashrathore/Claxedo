@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
+import { isRecord } from "./json-fields"
 
 export type HostState = {
   capturedAt: string;
@@ -82,8 +83,9 @@ async function captureDarwinState(commands: HostCommands): Promise<HostState> {
   if (!/No thermal warning level has been recorded/u.test(thermal) || !/No performance warning level has been recorded/u.test(thermal)) {
     throw new Error(`preflight requires known nominal thermal and performance state: ${thermal.trim()}`);
   }
-  const parsed = JSON.parse(displays) as { SPDisplaysDataType?: unknown[] };
-  if (!Array.isArray(parsed.SPDisplaysDataType) || parsed.SPDisplaysDataType.length === 0) throw new Error("preflight could not identify a display");
+  const parsed: unknown = JSON.parse(displays);
+  const displayData = isRecord(parsed) ? parsed.SPDisplaysDataType : undefined;
+  if (!Array.isArray(displayData) || displayData.length === 0) throw new Error("preflight could not identify a display");
   assertQuietHost(await checked(commands, ["uptime"]));
   return state(power, thermal, displays);
 }

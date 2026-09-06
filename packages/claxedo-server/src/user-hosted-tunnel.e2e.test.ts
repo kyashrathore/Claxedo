@@ -28,7 +28,7 @@ let previousRelayHostPublicKey: string | undefined
 let previousRelayJwtAlg: string | undefined
 
 async function run(cwd: string, ...args: string[]) {
-  await execFileAsync(args[0]!, args.slice(1), { cwd })
+  await execFileAsync(args[0], args.slice(1), { cwd })
 }
 
 async function closeServer(server: { close(callback?: (err?: Error) => void): unknown }) {
@@ -149,7 +149,8 @@ async function startRelayFixture(input: {
     const fail = (err: Error) => {
       if (settled) return
       settled = true
-      stopChild(child).finally(() => reject(err))
+      // `stopChild` resolves on exit or after a SIGKILL deadline; it never rejects.
+      void stopChild(child).finally(() => reject(err))
     }
     const timeout = setTimeout(() => {
       fail(new Error(`Workspace Relay fixture did not start\n${logs.join("")}`))

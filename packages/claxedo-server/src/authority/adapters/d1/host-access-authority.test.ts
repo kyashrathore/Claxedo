@@ -177,8 +177,8 @@ function base64Url(value: Uint8Array) {
 describe("D1 host access and workspace sharing authority", () => {
   test("preserves direct membership data while replacing the legacy table with the grant-aware view", async () => {
     const { database } = await emptyDatabase()
-    await applyMigration(database, MIGRATIONS[0]!)
-    await applyMigration(database, MIGRATIONS[1]!)
+    await applyMigration(database, MIGRATIONS[0])
+    await applyMigration(database, MIGRATIONS[1])
     await database.batch([
       database.prepare(`insert into users values ('user-owner', 'active', 1, 1, null, null)`),
       database.prepare(`insert into users values ('user-member', 'active', 1, 1, null, null)`),
@@ -204,8 +204,8 @@ describe("D1 host access and workspace sharing authority", () => {
         insert into workspace_memberships values ('workspace-upgrade', 'user-member', 'editor', 1, 1, null)
       `),
     ])
-    await applyMigration(database, MIGRATIONS[2]!)
-    await applyMigration(database, MIGRATIONS[3]!)
+    await applyMigration(database, MIGRATIONS[2])
+    await applyMigration(database, MIGRATIONS[3])
 
     expect(await database.prepare(`
       select role from workspace_direct_memberships

@@ -35,13 +35,13 @@ describe("cursorAgentPluginAdapter", () => {
 
     const enabled = await adapter.project({ generationRoot: source, plugins: [await generationPlugin(source, "v1")] })
     expect(enabled.pluginRoots).toHaveLength(1)
-    expect(enabled.pluginRoots[0]!.root).toContain(path.join(".cursor", "plugins", "local", "claxedo--"))
-    expect(await fs.readFile(path.join(enabled.pluginRoots[0]!.root, "marker.txt"), "utf8")).toBe("v1")
+    expect(enabled.pluginRoots[0].root).toContain(path.join(".cursor", "plugins", "local", "claxedo--"))
+    expect(await fs.readFile(path.join(enabled.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v1")
     expect(await fs.readFile(path.join(userPlugin, "keep.txt"), "utf8")).toBe("keep")
 
     const disabled = await adapter.project({ generationRoot: source, plugins: [] })
     expect(disabled.pluginRoots).toEqual([])
-    await expect(fs.stat(enabled.pluginRoots[0]!.root)).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(fs.stat(enabled.pluginRoots[0].root)).rejects.toMatchObject({ code: "ENOENT" })
     expect(await fs.readFile(path.join(userPlugin, "keep.txt"), "utf8")).toBe("keep")
   })
 
@@ -51,10 +51,10 @@ describe("cursorAgentPluginAdapter", () => {
     const adapter = cursorAgentPluginAdapter({ userHomeDirectory: home })
     const plugin = await generationPlugin(source, "v1")
     const first = await adapter.project({ generationRoot: source, plugins: [plugin] })
-    await fs.rm(path.join(first.pluginRoots[0]!.root, ".claxedo-agent-plugin.json"))
+    await fs.rm(path.join(first.pluginRoots[0].root, ".claxedo-agent-plugin.json"))
 
     await expect(adapter.project({ generationRoot: source, plugins: [plugin] }))
       .rejects.toThrow("is not owned by Claxedo")
-    expect(await fs.readFile(path.join(first.pluginRoots[0]!.root, "marker.txt"), "utf8")).toBe("v1")
+    expect(await fs.readFile(path.join(first.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v1")
   })
 })

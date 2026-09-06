@@ -27,6 +27,7 @@
  */
 import type { OpenCodeHost } from "./host"
 import { assertLocationInScope, type WorkspaceScope } from "./scope"
+import { arr, num, rec, str } from "../json-value"
 
 /** Identity used by the runtime's transcript projection for SDK message content. */
 export function openCodePartId(messageID: string, role: string, content: { id?: unknown }, ordinal: number): string {
@@ -70,7 +71,12 @@ export type PromptRequest = Readonly<{
   files?: readonly PromptAttachment[]
   agents?: readonly PromptAttachment[]
   skills?: readonly PromptAttachment[]
-  metadata?: Readonly<Record<string, unknown>>
+  /**
+   * Turn metadata forwarded verbatim to the engine. `JsonObject`, not
+   * `Record<string, unknown>`: the SDK serializes this, so a value it cannot
+   * encode is a caller bug the type should catch here rather than at the wire.
+   */
+  metadata?: JsonObject
   /**
    * How V2 admits the turn. `steer` interrupts the running turn with this
    * text; `queue` waits for it to finish. Claxedo's "send while running"
@@ -144,41 +150,62 @@ export type OpenCodeSessionPort = Readonly<{
   ): Promise<MessagePage>
 }>
 
-/** Project an SDK session record, refusing anything outside the caller's scope. */
-function project(scope: WorkspaceScope, row: {
-  id: string
-  title?: string
-  parentID?: string
-  location?: { directory?: string }
-  time: { created: number; updated: number }
-}): SessionSummary {
-  assertLocationInScope(scope, row.location?.directory)
+/**
+ * A value that survives the SDK's JSON transport, matching the SDK's own
+ * `JsonValue` structurally (mutable array and index signature included) so the
+ * two are assignable without a conversion.
+ */
+export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject
+export type JsonObject = { [key: string]: JsonValue }
+
+/**
+ * Project an SDK session record, refusing anything outside the caller's scope.
+ *
+ * Takes `unknown` and reads each field: the SDK's own row types drift between
+ * pinned versions, and declaring the shape here made every call site convert
+ * with `as never` — which silenced the drift instead of surviving it.
+ */
+function project(scope: WorkspaceScope, input: unknown): SessionSummary {
+  const row = rec(input) ?? {}
+  const time = rec(row.time)
+  assertLocationInScope(scope, str(rec(row.location)?.directory))
+  const title = str(row.title)
+  const parentID = str(row.parentID)
   return {
-    id: row.id,
-    ...(row.title === undefined ? {} : { title: row.title }),
-    ...(row.parentID === undefined ? {} : { parentID: row.parentID }),
+    id: str(row.id) ?? "",
+    ...(title === undefined ? {} : { title }),
+    ...(parentID === undefined ? {} : { parentID }),
     directory: scope.directory,
-    createdAt: row.time.created,
-    updatedAt: row.time.updated,
+    createdAt: num(time?.created) ?? 0,
+    updatedAt: num(time?.updated) ?? 0,
   }
 }
 
 /** Project one message record. Assistant content stays opaque to the port. */
-function projectMessage(row: Record<string, unknown>): SessionMessage {
-  const time = (row.time ?? {}) as { created?: number; completed?: number }
-  const model = row.model as { providerID?: string; id?: string } | undefined
+function projectMessage(input: unknown): SessionMessage {
+  const row = rec(input) ?? {}
+  const time = rec(row.time)
+  const model = rec(row.model)
+  const providerID = str(model?.providerID)
+  const modelId = str(model?.id)
+  const text = str(row.text)
+  const agent = str(row.agent)
+  const finish = str(row.finish)
+  const content = arr(row.content)
+  const metadata = rec(row.metadata)
+  const completedAt = num(time?.completed)
   return {
-    id: String(row.id),
-    type: String(row.type),
-    createdAt: Number(time.created ?? 0),
-    ...(typeof row.text === "string" ? { text: row.text } : {}),
-    ...(typeof row.agent === "string" ? { agent: row.agent } : {}),
-    ...(model?.providerID && model.id ? { model: { providerID: model.providerID, id: model.id } } : {}),
-    ...(Array.isArray(row.content) ? { content: row.content as readonly unknown[] } : {}),
-    ...(typeof row.finish === "string" ? { finish: row.finish } : {}),
+    id: str(row.id) ?? "",
+    type: str(row.type) ?? "",
+    createdAt: num(time?.created) ?? 0,
+    ...(text === undefined ? {} : { text }),
+    ...(agent === undefined ? {} : { agent }),
+    ...(providerID && modelId ? { model: { providerID, id: modelId } } : {}),
+    ...(content === undefined ? {} : { content }),
+    ...(finish === undefined ? {} : { finish }),
     ...(row.error === undefined ? {} : { error: row.error }),
-    ...(row.metadata === undefined ? {} : { metadata: row.metadata as Record<string, unknown> }),
-    ...(typeof time.completed === "number" ? { completedAt: time.completed } : {}),
+    ...(metadata === undefined ? {} : { metadata }),
+    ...(completedAt === undefined ? {} : { completedAt }),
   }
 }
 
@@ -193,11 +220,27 @@ function fileAttachment(item: PromptAttachment) {
 }
 
 /** Agents key on `name`, skills on `id`; neither carries a description. */
-function refAttachment(key: "name" | "id") {
-  return (item: PromptAttachment) => ({
-    [key]: item.ref,
+/**
+ * V2's agent attachment: the agent `name` plus the optional mention span.
+ *
+ * Written out rather than shared with the skill builder through a `key`
+ * parameter: a computed key typed `"name" | "id"` makes BOTH properties
+ * optional, so the SDK saw an object with no required `name` and the call site
+ * had to convert with `as never` — which is what hid it.
+ */
+function agentAttachment(item: PromptAttachment) {
+  return {
+    name: item.ref,
     ...(item.mention === undefined ? {} : { mention: item.mention }),
-  })
+  }
+}
+
+/** V2's skill attachment: the skill `id` plus the optional mention span. */
+function skillAttachment(item: PromptAttachment) {
+  return {
+    id: item.ref,
+    ...(item.mention === undefined ? {} : { mention: item.mention }),
+  }
 }
 
 export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
@@ -209,7 +252,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
         ...(input?.id ? { id: input.id } : {}),
         ...(input?.title ? { title: input.title } : {}),
       })
-      return project(scope, created as never)
+      return project(scope, created)
     },
 
     async get(scope, sessionID) {
@@ -218,7 +261,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
       // re-validates the returned location against the authorized scope, so a
       // cross-workspace id fails closed instead of leaking.
       const row = await client.sessions.get({ sessionID })
-      return project(scope, row as never)
+      return project(scope, row)
     },
 
     async list(scope, input) {
@@ -231,7 +274,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
         ...(input?.cursor === undefined ? {} : { cursor: input.cursor }),
       })
       return {
-        sessions: page.data.map((row) => project(scope, row as never)),
+        sessions: page.data.map((row) => project(scope, row)),
         ...(page.cursor.previous ? { previous: page.cursor.previous } : {}),
         ...(page.cursor.next ? { next: page.cursor.next } : {}),
       }
@@ -254,7 +297,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
       const client = await host.client()
       await port.get(scope, sessionID)
       const forked = await client.sessions.fork({ sessionID, boundary })
-      return project(scope, forked as never)
+      return project(scope, forked)
     },
 
     async switchAgent(scope, sessionID, agent) {
@@ -277,25 +320,23 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
         text: request.text,
         ...(request.id === undefined ? {} : { id: request.id }),
         ...(request.files === undefined ? {} : { files: request.files.map(fileAttachment) }),
-        ...(request.agents === undefined ? {} : { agents: request.agents.map(refAttachment("name")) }),
-        ...(request.skills === undefined ? {} : { skills: request.skills.map(refAttachment("id")) }),
+        ...(request.agents === undefined ? {} : { agents: request.agents.map(agentAttachment) }),
+        ...(request.skills === undefined ? {} : { skills: request.skills.map(skillAttachment) }),
         ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
         ...(request.delivery === undefined ? {} : { delivery: request.delivery }),
         ...(request.resume === undefined ? {} : { resume: request.resume }),
-      } as never)
-      const row = admitted as unknown as {
-        id: string
-        sessionID: string
-        timeCreated: number
-        payload?: { text?: string }
-        delivery?: "steer" | "queue"
-      }
+      })
+      // Read rather than re-declared: the admission record is the SDK's, and
+      // asserting its shape here would hide a pinned-version change instead of
+      // degrading to the request's own text.
+      const row = rec(admitted) ?? {}
+      const delivery = str(row.delivery)
       return {
-        id: row.id,
-        sessionID: row.sessionID,
-        createdAt: row.timeCreated,
-        text: row.payload?.text ?? request.text,
-        ...(row.delivery === undefined ? {} : { delivery: row.delivery }),
+        id: str(row.id) ?? "",
+        sessionID: str(row.sessionID) ?? sessionID,
+        createdAt: num(row.timeCreated) ?? 0,
+        text: str(rec(row.payload)?.text) ?? request.text,
+        ...(delivery === "steer" || delivery === "queue" ? { delivery } : {}),
       }
     },
 
@@ -345,7 +386,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
         ...(page?.order === undefined ? {} : { order: page.order }),
       })
       return {
-        messages: response.data.map((row) => projectMessage(row as never)),
+        messages: response.data.map((row) => projectMessage(row)),
         ...(response.cursor.previous ? { previous: response.cursor.previous } : {}),
         ...(response.cursor.next ? { next: response.cursor.next } : {}),
       }

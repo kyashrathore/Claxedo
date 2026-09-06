@@ -53,10 +53,10 @@ export const SettingsProviders: Component = () => {
   const providerItems = createMemo(() => Array.from(providerList().all.values()))
 
   const source = (item: ProviderItem): ProviderSource | undefined => {
-    if (!("source" in item)) return
+    if (!("source" in item)) return undefined
     const value = item.source
     if (value === "env" || value === "api" || value === "config" || value === "custom") return value
-    return
+    return undefined
   }
 
   const [search, setSearch] = createSignal("")

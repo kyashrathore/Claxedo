@@ -28,7 +28,7 @@ export const OrgTeamSettingsSection: Component = () => {
   const [selectedTeamId, setSelectedTeamId] = createSignal(readActiveTeamId())
   const signedAccountKey = createMemo(() => {
     const state = account.state()
-    if (state.status !== "signed") return
+    if (state.status !== "signed") return undefined
     return state.identity.userId || "signed-account"
   })
   const [orgs, { refetch: refetchOrgs }] = createResource(signedAccountKey, () => listOrgs())

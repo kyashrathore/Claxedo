@@ -16,7 +16,7 @@ import type {
 import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { goalCapabilities } from "../../capabilities"
-import type { ResolvedMcpServer } from "../../mcp-resolver"
+import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
@@ -35,6 +35,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTranscriptRegistrar,
   type SdkRuntimeTurnInput,
+  stringRecord,
 } from "../shared/sdk-runtime-adapter"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
@@ -59,10 +60,14 @@ type CursorEntry = {
 export function cursorPluginRoots(launch: unknown) {
   const roots = record(record(launch)?.config)?.pluginRoots ?? record(launch)?.pluginRoots
   if (roots === undefined) return []
-  if (!Array.isArray(roots) || roots.some((root) => typeof root !== "string" || root.trim().length === 0)) {
+  if (!Array.isArray(roots)) {
     throw new Error("Cursor Agent Plugins launch config requires pluginRoots to be an array of non-empty paths")
   }
-  return [...new Set(roots)] as string[]
+  const paths = roots.filter((root): root is string => typeof root === "string" && root.trim().length > 0)
+  if (paths.length !== roots.length) {
+    throw new Error("Cursor Agent Plugins launch config requires pluginRoots to be an array of non-empty paths")
+  }
+  return [...new Set(paths)]
 }
 
 export function cursorPluginLocalOptions(pluginRoots: readonly string[]) {
@@ -149,11 +154,11 @@ class CursorSdkDriver implements SdkRuntimeDriver {
 
   applyConfig(config: Record<string, unknown>) {
     const previous = this.auth.cursor
-    const auth = record(config.auth) as Record<string, string> | undefined
+    const auth = stringRecord(config.auth)
     this.auth = {
       cursor: auth?.["cursor-sdk"],
     }
-    this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     if (this.auth.cursor !== previous) this.modelSource.invalidate()
     // Plugin roots are read by `Agent.create`, so a changed set only reaches
     // Cursor through a new agent — the live ones are disposed to force it.
@@ -567,9 +572,9 @@ function cursorTranscript(
 }
 
 function cursorTaskTranscriptPath(message: SDKMessage) {
-  if (message.type !== "tool_call" || message.name.toLowerCase() !== "task" || message.status !== "completed") return
+  if (message.type !== "tool_call" || message.name.toLowerCase() !== "task" || message.status !== "completed") return undefined
   const result = record(message.result)
-  if (result?.status !== "success") return
+  if (result?.status !== "success") return undefined
   return text(record(result.value)?.transcriptPath)
 }
 

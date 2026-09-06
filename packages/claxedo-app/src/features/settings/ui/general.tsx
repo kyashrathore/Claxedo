@@ -304,7 +304,7 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => o.label}
                 onSelect={(option) => option && theme.setColorScheme(option.value)}
                 onHighlight={(option) => {
-                  if (!option) return
+                  if (!option) return undefined
                   theme.previewColorScheme(option.value)
                   return () => theme.cancelPreview()
                 }}
@@ -336,7 +336,7 @@ export const SettingsGeneral: Component = () => {
                   theme.setTheme(option.id)
                 }}
                 onHighlight={(option) => {
-                  if (!option) return
+                  if (!option) return undefined
                   theme.previewTheme(option.id)
                   return () => theme.cancelPreview()
                 }}

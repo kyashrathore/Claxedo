@@ -1,4 +1,5 @@
-import { ClaxedoDB, and, eq, inArray } from "../../platform/db"
+import { isJsonRecord } from "../../platform/runtime/lib/json"
+import { ClaxedoDB, and, eq, inArray, textColumns } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
@@ -356,9 +357,10 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
         ORDER BY m.${orderKey} DESC, m.session_ref DESC
         LIMIT ?
       `)
-      .all(...params, Math.max(0, input.limit)) as Array<{ session_ref: string }>,
+      .all(...params, Math.max(0, input.limit))
+      .filter(isJsonRecord),
   )
-  const hit = rows.map((item) => item.session_ref)
+  const hit = textColumns(rows, "session_ref")
   const meta = await sessionMetaMapByRef(hit)
   return hit
     .map((item) => meta.get(item))
@@ -393,7 +395,7 @@ export function applySessionMeta(input: Array<Record<string, unknown>>) {
         ...(hit?.projectID ? { projectID: hit.projectID } : {}),
         ...(parentID ? { parentID } : {}),
         rootID: root(id, links),
-        ...(archived !== undefined ? { time: { ...(rec(item.time) ?? {}), archived } } : {}),
+        ...(archived !== undefined ? { time: { ...rec(item.time), archived } } : {}),
         tags: hit?.tags ?? [],
         attachments: hit?.attachments ?? [],
       }

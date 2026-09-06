@@ -138,7 +138,7 @@ describe("session status telemetry", () => {
     expect(gate.canDisablePolling).toBe(true)
     expect(gate.matchingPollCount).toBe(matchesRequired)
 
-    const row = getSessionStatusTelemetrySnapshot(now + matchesRequired + 1).sessions[0]!
+    const row = getSessionStatusTelemetrySnapshot(now + matchesRequired + 1).sessions[0]
     expect(row.key).toBe("ses_root")
     expect(row.sessionID).toBe("ses_root")
     expect(row.directory).toBe("/repo/linked-worktree")
@@ -283,7 +283,7 @@ describe("session status telemetry", () => {
       matchesRequired: SESSION_STATUS_TELEMETRY_CONFIG.matchesRequired,
     })
     expect(snap.sessions).toHaveLength(1)
-    const row = snap.sessions[0]!
+    const row = snap.sessions[0]
     expect(row.directory).toBe("/repo/main")
     expect(row.key).toBe("ses_snap")
     expect(row.sessionID).toBe("ses_snap")

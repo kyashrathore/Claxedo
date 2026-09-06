@@ -153,7 +153,7 @@ describe("ACP advertised modes", () => {
       modes: { currentModeId: "a", availableModes: [{ id: "a", name: "A", description: null }] },
     })
     expect(state.modes).toEqual([{ id: "a", name: "A" }])
-    expect("description" in state.modes[0]!).toBe(false)
+    expect("description" in state.modes[0]).toBe(false)
   })
 
   test("an explicit null modes field clears them; undefined leaves them alone", () => {

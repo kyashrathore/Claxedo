@@ -12,7 +12,7 @@ import {
 } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
-import type { ResolvedMcpServer } from "../../mcp-resolver"
+import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
 import {
@@ -27,6 +27,7 @@ import {
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
+  stringRecord,
 } from "../shared/sdk-runtime-adapter"
 import {
   CODEX_PERMISSION_MODES,
@@ -169,13 +170,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const nextPluginLaunch = codexPluginLaunch(config.launch)
     await this.applyPluginLaunch(nextPluginLaunch)
     const previous = this.authSignature()
-    const auth = record(config.auth) as Record<string, string> | undefined
+    const auth = stringRecord(config.auth)
     const source = auth?.["codex-app-server"] ?? auth?.openai
     this.codexAuth = sourceCodexAuthValue(source)
     this.auth = {
       openai: sourceAuthValue(source),
     }
-    this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     if (this.authSignature() !== previous) {
       this.authRevision++
       this.modelSource.invalidate()
@@ -193,7 +194,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.lifecycleRevision++
     this.processStartupAbort?.abort()
     const startup = this.processStartup
-    this.process?.dispose()
+    await this.process?.dispose()
     this.process = null
     if (startup) await startup.catch(() => undefined)
   }
@@ -215,7 +216,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
     // under the default rung rather than whatever `thread/start` would assume.
-    const settings = CODEX_SETTINGS[DEFAULT_CODEX_MODE]!
+    const settings = CODEX_SETTINGS[DEFAULT_CODEX_MODE]
     const result = await proc.request("thread/start", {
       cwd: input.directory,
       approvalPolicy: settings.approvalPolicy,
@@ -224,7 +225,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
-    }) as JsonRecord
+    }).then((response) => record(response) ?? {})
     const thread = record(result.thread)
     const threadId = text(thread?.id)
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
@@ -344,7 +345,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
-    const startTurn = () => proc.request("turn/start", {
+    const startTurn = async (): Promise<JsonRecord> => record(await proc.request("turn/start", {
       threadId,
       input: codexUserInput(input.input.parts),
       cwd: input.directory,
@@ -356,7 +357,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ),
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
-    }) as Promise<JsonRecord>
+    })) ?? {}
 
     try {
       const result = await Promise.race([
@@ -469,11 +470,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     log.info("codex app-server idle timeout, disposing", { idleMs: this.idleMs })
     this.processGoalUnsubscribe?.()
     this.processGoalUnsubscribe = null
-    this.process.dispose()
+    // The idle timer is not awaited by anyone; `dispose()` never rejects.
+    void this.process.dispose()
     this.process = null
   }
 
-  dispose() {
+  /** Resolves once every app-server process this driver owns has exited. */
+  async dispose() {
     if (this.disposed) return
     this.disposed = true
     this.idle.cancel()
@@ -483,9 +486,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.processGoalUnsubscribe?.()
     this.processGoalUnsubscribe = null
     this.processStartupAbort?.abort()
-    this.process?.dispose()
+    const running = this.process
+    const startup = this.processStartup
     this.process = null
-    void this.processStartup?.then((proc) => proc.dispose(), () => {})
+    await Promise.all([running?.dispose(), startup?.then((proc) => proc.dispose(), () => undefined)])
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
@@ -518,7 +522,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private async ensureProcess(directory: string) {
     if (this.disposed) throw new Error("Codex app-server driver is disposed")
     if (!this.process?.alive && !this.processStartup) {
-      this.process?.dispose()
+      // Replacing a dead process; nothing waits on the old one's teardown.
+      void this.process?.dispose()
       const revision = this.lifecycleRevision
       const abort = new AbortController()
       this.processStartupAbort = abort
@@ -559,7 +564,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       },
     })
     if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
-      started.dispose()
+      await started.dispose()
       throw new Error("Codex app-server driver was disposed during startup")
     }
     this.process = started
@@ -570,7 +575,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.processError = null
     await this.syncProcessAuth(started)
     if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
-      started.dispose()
+      await started.dispose()
       if (this.process === started) this.process = null
       throw new Error("Codex app-server driver was disposed during startup")
     }
@@ -589,7 +594,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
           await proc.request("account/logout", null)
         }
       } catch (err) {
-        throw new Error(`Codex auth could not initialize: ${errorMessage(err)}`)
+        throw new Error(`Codex auth could not initialize: ${errorMessage(err)}`, { cause: err })
       }
       if (this.process === proc) {
         this.processAuthWasExplicit = !!params
@@ -609,7 +614,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private loginParams() {
     if (this.auth.openai) return { type: "apiKey", apiKey: this.auth.openai }
     const tokens = codexChatgptAuthTokens(this.codexAuth)
-    if (!tokens) return
+    if (!tokens) return undefined
     return {
       type: "chatgptAuthTokens",
       accessToken: tokens.access,

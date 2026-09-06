@@ -5,29 +5,28 @@ import type {
   AgentPresentationMessage as Message,
 } from "@claxedo/agent-runtime-contract"
 import { message as clean } from "@/lib/diffs"
+import { asRecord, readArray } from "@/lib/record"
 
 const SKIP_PART_TYPES = new Set(["patch", "step-start", "step-finish"])
-
-export type MessageRow = {
-  info?: Message
-  parts?: Part[]
-}
 
 type ValidMessageRow = {
   info: Message
   parts?: Part[]
 }
 
-export function messageRows(data: unknown) {
-  if (Array.isArray(data)) return data as MessageRow[]
-  if (!data || typeof data !== "object") return []
-  const value = (data as { messages?: unknown }).messages
-  if (!Array.isArray(value)) return []
-  return value as MessageRow[]
+/** The rows of a message page, which arrives either bare or under `messages`. */
+export function messageRows(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data
+  return readArray(data, "messages") ?? []
 }
 
-function validMessageRow(row: MessageRow): row is ValidMessageRow {
-  return !!row?.info?.id
+/**
+ * A row with the one field every consumer dereferences. The page is an untyped
+ * HTTP body, so this predicate — not an assertion at the array — is what admits
+ * a row into `ValidMessageRow` shape.
+ */
+function validMessageRow(row: unknown): row is ValidMessageRow {
+  return typeof asRecord(asRecord(row)?.info)?.id === "string"
 }
 
 export function sortMessageParts(parts: Part[]) {

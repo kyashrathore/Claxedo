@@ -20,13 +20,13 @@ import { afterAll, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 
 const realApi = { ...(await import(`${import.meta.dir}/../../platform/api/api.ts?events-cursor`)) }
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApi)
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApi)
 })
 
 const connections: Array<string | null> = []
 
-mock.module("@/platform/api/api", () => ({
+await mock.module("@/platform/api/api", () => ({
   ...realApi,
   getClaxedoServerUrl: () => "http://127.0.0.1:3001",
   authFetch: async (_input: string | URL | Request, init?: RequestInit) => {

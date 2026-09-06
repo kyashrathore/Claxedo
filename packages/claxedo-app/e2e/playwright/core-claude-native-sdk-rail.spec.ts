@@ -237,23 +237,6 @@ test.describe("rail — claude native-SDK harness @core", () => {
    * "New Session" — in the WRONG sort position, since the row's `updated` was
    * stale too — until some unrelated refetch happened to land (observed
    * self-correcting ~2 minutes later, which is why this reads as intermittent).
-   *
-   * After the fix, verified live in the running app with no reload:
-   *   t+46.3s  row appears as "Untitled session" at index 0
-   *   t+52.4s  row reads "Say LIVEFIX and nothing else."
-   *
-   * Reproduced live on 2026-08-06: `GET /session/:id` reported
-   * `"title":"Reply with exactly the word SIDEBARPROBE and nothing else."`
-   * while the rail row still read "Untitled session", and a page reload was
-   * the only thing that ever fixed it.
-   *
-   * The scenario gives the app EVERY signal the real server actually emits for
-   * a completed turn — Busy, then Idle — with the server-side title already
-   * moved underneath. It deliberately does NOT emit a title-carrying event,
-   * because no such event exists on the wire; inventing one here would test a
-   * fix rather than the behaviour. The assertion is the user-visible outcome
-   * (row shows the real title), which leaves the fix free to be either a new
-   * event or a refetch on turn-settle.
    */
   test("a native-SDK session's rail title follows the server once its first turn settles", async ({ page }) => {
     const mock = await installMockRuntime(page, {
@@ -416,7 +399,6 @@ test.describe("rail — claude native-SDK harness @core", () => {
 
     const row = sessionRow(page, targetId)
     await expect(row).toBeVisible({ timeout: 15_000 })
-    // Idle rows render a relative-time label and no dot at all.
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
 
     // Same transport contract as core-sidebar-tree behavior 4; claude-sdk harness

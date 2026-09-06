@@ -27,6 +27,7 @@
  * stream is reliable.
  */
 import type { OpenCodeHost } from "./host"
+import { num, rec, str } from "../json-value"
 
 /** A projected OpenCode event, with its durability made explicit. */
 export type ProjectedEvent = Readonly<{
@@ -81,8 +82,18 @@ const DEFAULT_BACKOFF = [100, 500, 2_000, 5_000] as const
  * Everything else is a hint. We decide this from the event shape rather than a
  * hardcoded type list so a new durable event type works without a code change.
  */
-function isDurable(event: { durable?: { aggregateID?: string; seq?: number } }): boolean {
-  return typeof event.durable?.aggregateID === "string" && typeof event.durable.seq === "number"
+/**
+ * The durable coordinates of an engine event, when it carries a complete pair.
+ *
+ * A predicate that answered "is it durable?" left the caller to re-read and
+ * assert both fields; returning the pair means the checkpoint values come from
+ * the same check that validated them.
+ */
+function durableCursor(input: unknown): { aggregateID: string; seq: number } | undefined {
+  const durable = rec(input)
+  const aggregateID = str(durable?.aggregateID)
+  const seq = num(durable?.seq)
+  return aggregateID !== undefined && seq !== undefined ? { aggregateID, seq } : undefined
 }
 
 export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): EventPump {
@@ -99,25 +110,28 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
     markReady = resolve
   })
 
-  function project(raw: Record<string, unknown>): ProjectedEvent {
-    const durableRaw = raw.durable as { aggregateID?: string; seq?: number } | undefined
-    const durable = isDurable({ durable: durableRaw })
-      ? { aggregateID: durableRaw!.aggregateID as string, seq: durableRaw!.seq as number }
-      : undefined
-    const location = raw.location as { directory?: string } | undefined
+  function project(input: unknown): ProjectedEvent {
+    const raw = rec(input) ?? {}
+    const durable = durableCursor(raw.durable)
+    const directory = str(rec(raw.location)?.directory)
     return {
-      id: String(raw.id),
-      type: String(raw.type),
-      ...(location?.directory ? { directory: location.directory } : {}),
+      id: str(raw.id) ?? "",
+      type: str(raw.type) ?? "",
+      ...(directory ? { directory } : {}),
       ...(durable ? { durable } : {}),
       hintOnly: durable === undefined,
       data: raw.data,
     }
   }
 
+  /** `stop()` sets `stopped`; every wait below re-reads it through this. */
+  function pumpActive(): boolean {
+    return !stopped
+  }
+
   async function consume(): Promise<void> {
     let attempt = 0
-    while (!stopped) {
+    while (pumpActive()) {
       try {
         const client = await host.client()
         if (stopped) return
@@ -134,7 +148,7 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
           // A healthy delivery resets the backoff ladder.
           attempt = 0
           host.setEventHealth("healthy")
-          const event = project(raw as unknown as Record<string, unknown>)
+          const event = project(raw)
           if (event.durable) {
             const seen = checkpoints.get(event.durable.aggregateID)
             // Monotonic per aggregate: a replayed lower seq is a duplicate.

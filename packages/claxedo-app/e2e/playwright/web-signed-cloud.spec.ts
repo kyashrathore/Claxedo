@@ -144,7 +144,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
   // DIAGNOSTIC, permanent — see the identical note in `web-signed-userhosted
   // .spec.ts`: surfaces the fixture's own server log on any non-green result,
   // which is otherwise invisible from a client-side Playwright error alone.
-  test.afterEach(async ({}, testInfo) => {
+  test.afterEach(async (_fixtures, testInfo) => {
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
     console.log(
       `\n[web-signed-cloud] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
@@ -174,7 +174,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
         `ready cloud workspace) against a BUILT web bundle instead of that spec's dev-server one, ruling out the ` +
         `build-vs-dev-server axis as the cause. See docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md, ` +
         `real-cloud-relay.spec.ts's HARNESS NOTES "REMAINING BLOCKER".`
-      throw new Error(`GATING: ${gateProbeError}`)
+      throw new Error(`GATING: ${gateProbeError}`, { cause: err })
     }
   })
 

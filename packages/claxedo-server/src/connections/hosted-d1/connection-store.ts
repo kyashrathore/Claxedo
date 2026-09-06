@@ -11,7 +11,9 @@
  * `user:{ownerUserId}` or `org:{orgId}`.
  */
 import type { D1Database } from "@cloudflare/workers-types"
-import type { ConnectionRow, ConnectionStorePort, IntegrationCapability } from "@claxedo/connections"
+import type { ConnectionRow, ConnectionStorePort } from "@claxedo/connections"
+import { errorMessage } from "../../platform/errors/index"
+import { storedCapabilities, storedFields } from "../stored-columns"
 
 export type D1ConnectionStoreInput = Readonly<{
   database: D1Database
@@ -74,7 +76,7 @@ export class HostedConnectionExistsError extends Error {}
  * this statement means a duplicate row for this partition and nothing else.
  */
 function isPartitionUniqueViolation(cause: unknown): boolean {
-  const text = cause instanceof Error ? `${cause.message} ${String((cause.cause as Error | undefined)?.message ?? "")}` : String(cause)
+  const text = cause instanceof Error ? `${cause.message} ${errorMessage(cause.cause)}` : String(cause)
   return /unique constraint failed/i.test(text)
 }
 
@@ -88,8 +90,8 @@ export function createD1ConnectionStore(input: D1ConnectionStoreInput): Connecti
     integrationId: kitIntegrationId(record.integration_id),
     owner: record.owner_user_id ? `user:${record.owner_user_id}` : `org:${record.org_id}`,
     ...(record.account_label ? { accountLabel: record.account_label } : {}),
-    grantedCapabilities: JSON.parse(record.granted_capabilities_json) as IntegrationCapability[],
-    fields: JSON.parse(record.fields_json) as Record<string, string>,
+    grantedCapabilities: storedCapabilities(record.granted_capabilities_json),
+    fields: storedFields(record.fields_json),
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   })

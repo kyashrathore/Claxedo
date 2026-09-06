@@ -111,7 +111,7 @@ export function createSessionMessageActions(input: {
 
   const restore = (id: string) => {
     const currentSessionID = input.sessionID()
-    if (!currentSessionID || input.restoring()) return
+    if (!currentSessionID || input.restoring()) return undefined
 
     const next = input.userMessages().find((item) => item.id > id)
     input.setRestoring(id)

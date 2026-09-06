@@ -1,12 +1,17 @@
 import { existsSync } from "node:fs"
 import { e2eAppViteEnvironment, resolveE2EAuthMode } from "../e2e/auth-mode"
+import { readString } from "../src/lib/record"
 
 const modes = ["dev", "build-preview", "preview"] as const
 type Mode = (typeof modes)[number]
 
+function isMode(value: string): value is Mode {
+  return (modes as readonly string[]).includes(value)
+}
+
 const mode = process.argv[2] ?? "dev"
 const port = process.argv[3] ?? "4455"
-if (!modes.includes(mode as Mode)) {
+if (!isMode(mode)) {
   console.error(`Unknown E2E serve mode "${mode}". Expected one of: ${modes.join(", ")}.`)
   process.exit(2)
 }
@@ -52,13 +57,15 @@ if (mode === "preview" || mode === "build-preview") {
     console.error("E2E preview requires dist/claxedo-e2e-build.json so it cannot serve an unverified build.")
     process.exit(2)
   }
-  const manifest = (await manifestFile.json()) as { authMode?: string; gitSha?: string | null }
-  if (manifest.authMode !== authMode) {
-    console.error(`E2E artifact auth mode is "${manifest.authMode ?? "missing"}", expected "${authMode}".`)
+  const manifest: unknown = await manifestFile.json()
+  const manifestAuthMode = readString(manifest, "authMode")
+  const manifestGitSha = readString(manifest, "gitSha")
+  if (manifestAuthMode !== authMode) {
+    console.error(`E2E artifact auth mode is "${manifestAuthMode ?? "missing"}", expected "${authMode}".`)
     process.exit(2)
   }
-  if (process.env.GITHUB_SHA && manifest.gitSha !== process.env.GITHUB_SHA) {
-    console.error(`E2E artifact commit is "${manifest.gitSha ?? "missing"}", expected "${process.env.GITHUB_SHA}".`)
+  if (process.env.GITHUB_SHA && manifestGitSha !== process.env.GITHUB_SHA) {
+    console.error(`E2E artifact commit is "${manifestGitSha ?? "missing"}", expected "${process.env.GITHUB_SHA}".`)
     process.exit(2)
   }
   process.exit(

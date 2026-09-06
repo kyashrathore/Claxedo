@@ -218,8 +218,8 @@ describe("workspace display helpers", () => {
       routeId: undefined,
       directory: "/workspace",
     })
-    expect(workspaceRouteIdentity([projects[0]!], "/workspace")?.routeId).toBe("workspace-a")
-    expect(workspaceRouteIdentity([projects[1]!], "/workspace")?.routeId).toBe("project-b")
+    expect(workspaceRouteIdentity([projects[0]], "/workspace")?.routeId).toBe("workspace-a")
+    expect(workspaceRouteIdentity([projects[1]], "/workspace")?.routeId).toBe("project-b")
   })
 
   // A path-keyed workspace record that carries no `id`/`workspaceId` used to
@@ -282,7 +282,7 @@ describe("workspace display helpers", () => {
     expect(routeKey).toBe("/private/tmp/claxedo-portability/ws_cleantest1-dir")
     expect(routeId).toBe("ws_cleantest1")
     expect(routeId).not.toBe(routeKey)
-    expect(workspaceRouteWithId(route, routeId!)).toBe("/w/ws_cleantest1/session")
+    expect(workspaceRouteWithId(route, routeId)).toBe("/w/ws_cleantest1/session")
   })
 
   test("canonicalizes the first navigation instead of exposing a path and swapping later", () => {

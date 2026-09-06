@@ -73,7 +73,7 @@ describe("destination copy", () => {
     // The register the owner rejected: copy that explains what setup needs
     // rather than what the user gets.
     for (const option of onboardingDestinationOptions) {
-      expect(option.consequence).not.toMatch(/setup (asks|needs)|this decides|we(\'ll)? need/i)
+      expect(option.consequence).not.toMatch(/setup (asks|needs)|this decides|we('ll)? need/i)
       expect(option.consequence).not.toMatch(/no Claxedo account|takes no cut/i)
     }
   })

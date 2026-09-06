@@ -1,5 +1,6 @@
 import { Component, For, Show, createMemo, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
+import { parseKeybindMap, type KeybindMap } from "./keybind-map"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -23,7 +24,6 @@ type KeybindMeta = {
   group: KeybindGroup
 }
 
-type KeybindMap = Record<string, string | undefined>
 type CommandContext = ReturnType<typeof useCommand>
 
 const GROUPS: KeybindGroup[] = ["General", "Session", "Navigation", "Model and agent", "Terminal", "Prompt"]
@@ -75,7 +75,7 @@ function normalizeKey(key: string) {
 }
 
 function recordKeybind(event: KeyboardEvent) {
-  if (isModifier(event.key)) return
+  if (isModifier(event.key)) return undefined
 
   const parts: string[] = []
 
@@ -88,7 +88,7 @@ function recordKeybind(event: KeyboardEvent) {
   if (event.shiftKey) parts.push("shift")
 
   const key = normalizeKey(event.key)
-  if (!key) return
+  if (!key) return undefined
   parts.push(key)
 
   return parts.join("+")
@@ -110,11 +110,6 @@ function signatures(config: string | undefined) {
   }
 
   return sigs
-}
-
-function keybinds(value: unknown): KeybindMap {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
-  return value as KeybindMap
 }
 
 function listFor(command: CommandContext, map: KeybindMap, palette: string) {
@@ -285,7 +280,7 @@ export const SettingsKeybinds: Component = () => {
     command.keybinds(false)
   }
 
-  const map = createMemo(() => keybinds(settings.current.keybinds))
+  const map = createMemo(() => parseKeybindMap(settings.current.keybinds))
 
   const hasOverrides = createMemo(() => Object.values(map()).some((x) => typeof x === "string"))
 

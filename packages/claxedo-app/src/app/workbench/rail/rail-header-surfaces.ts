@@ -93,7 +93,7 @@ export function useRailHeaderSurfaces(input: {
     })
     const titleSelection = createMemo(() => {
       const current = meta()
-      if (current?.type !== "session" || !current.sessionId) return
+      if (current?.type !== "session" || !current.sessionId) return undefined
       return sessionTitles.select({
         sessionId: current.sessionId,
         ...(current.directory ? { directory: current.directory } : {}),
@@ -124,14 +124,16 @@ export function useRailHeaderSurfaces(input: {
       const workspaceDir = base()?.workspaceDir
       return workspaceDir ? input.worktreeInfo(workspaceDir) : undefined
     })
-    const item = {} as SwitcherItem
+    // Every member is a getter, so the object is defined rather than built:
+    // `Object.create` types as `any`, and the shape is restored by ASSIGNMENT.
+    const item: SwitcherItem = Object.create(null)
     Object.defineProperties(item, {
       contentId: { enumerable: true, get: () => contentId },
-      kind: { enumerable: true, get: () => base()!.kind },
-      title: { enumerable: true, get: () => base()!.title },
-      workspaceDir: { enumerable: true, get: () => base()!.workspaceDir },
+      kind: { enumerable: true, get: () => base().kind },
+      title: { enumerable: true, get: () => base().title },
+      workspaceDir: { enumerable: true, get: () => base().workspaceDir },
       active: { enumerable: true, get: () => isHeaderContentActive(contentId) },
-      closable: { enumerable: true, get: () => base()!.closable },
+      closable: { enumerable: true, get: () => base().closable },
       status: { enumerable: true, get: status },
       projectLabel: { enumerable: true, get: () => info()?.projectName },
       projectWorktree: { enumerable: true, get: () => info()?.projectWorktree },

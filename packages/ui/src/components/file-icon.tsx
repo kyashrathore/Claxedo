@@ -1,7 +1,7 @@
 import type { Component, JSX } from "solid-js"
 import { createEffect, createMemo, createUniqueId, splitProps, Show } from "solid-js"
 import spriteURL from "./file-icons/sprite.svg?url"
-import type { IconName } from "./file-icons/types"
+import { iconNames, type IconName } from "./file-icons/types"
 import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
 
 export const fileIconSprite = createLazyInlineSvgSprite("file-icon-sprite", async () => {
@@ -549,12 +549,20 @@ const ICON_MAPS: IconMaps = {
   },
 }
 
+const knownIconNames = new Set<string>(iconNames)
+
+/** The open-folder sibling of a folder icon, when the sprite actually ships one. */
 const toOpenVariant = (icon: IconName): IconName => {
   if (!icon.startsWith("Folder")) return icon
-  if (icon.endsWith("_light")) return icon.replace("_light", "Open_light") as IconName
-  if (!icon.endsWith("Open")) return (icon + "Open") as IconName
-  return icon
+  const open = icon.endsWith("_light")
+    ? icon.replace("_light", "Open_light")
+    : icon.endsWith("Open")
+      ? icon
+      : icon + "Open"
+  return knownIconNames.has(open) && isIconName(open) ? open : icon
 }
+
+const isIconName = (value: string): value is IconName => knownIconNames.has(value)
 
 const basenameOf = (p: string) => p.split("\\").join("/").split("/").filter(Boolean).pop() ?? ""
 

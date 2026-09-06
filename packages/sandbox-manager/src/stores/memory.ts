@@ -51,14 +51,14 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
     },
     async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) {
       const current = leases.get(workspaceId)
-      if (!current || current.epoch !== expectedEpoch) return
+      if (!current || current.epoch !== expectedEpoch) return undefined
       const next = applySandboxLeasePatch(current, patch, Date.now())
       leases.set(workspaceId, next)
       return next
     },
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       const current = leases.get(workspaceId)
-      if (!current || current.epoch !== expectedEpoch) return
+      if (!current || current.epoch !== expectedEpoch) return undefined
       const next = {
         ...current,
         status: "unavailable" as const,

@@ -14,6 +14,8 @@ type LifecycleEvent = {
   sequence?: unknown
   atMs?: unknown
   type?: unknown
+  /** Present on `message-part-revision`; read through the guard below. */
+  content?: unknown
 }
 
 /**
@@ -47,7 +49,7 @@ export async function runControlledStreamScenario(input: {
   const finalRevision = [...events]
     .reverse()
     .find((event): event is LifecycleEvent & { content: string } =>
-      event.type === "message-part-revision" && typeof (event as { content?: unknown }).content === "string")
+      event.type === "message-part-revision" && typeof event.content === "string")
 
   const materializedSessionId = input.materializedSessions.get(session.id)
   if (!materializedSessionId) throw new Error(`controlled stream session was not materialized: ${session.id}`)

@@ -14,11 +14,11 @@ export function formatSelectedLineLabel(range: LineSpan, t: (key: SelectionKey, 
   return t("ui.sessionReview.selection.lines", { start, end })
 }
 
-export function previewSelectedLines(source: string, range: LineSpan) {
+export function previewSelectedLines(source: string, range: LineSpan): string | undefined {
   const start = Math.max(1, Math.min(range.start, range.end))
   const end = Math.max(range.start, range.end)
   const lines = source.split("\n").slice(start - 1, end)
-  if (lines.length === 0) return
+  if (lines.length === 0) return undefined
   return lines.slice(0, 2).join("\n")
 }
 
@@ -64,12 +64,26 @@ export function toRange(source: Range | StaticRange): Range {
   return range
 }
 
+/**
+ * `ShadowRoot.getSelection()` is a Chromium extension that lib.dom does not declare.
+ * Widening the handle to an optional method is enough to call it safely — a root
+ * without it simply reads as `undefined`.
+ */
+interface SelectionCapableRoot extends ShadowRoot {
+  getSelection?: () => Selection | null
+}
+
+/** The selection scoped to `root` where the browser supports it, otherwise the document's. */
+export function shadowSelection(root: ShadowRoot): Selection | null {
+  const scoped: SelectionCapableRoot = root
+  return scoped.getSelection?.() ?? window.getSelection()
+}
+
 export function restoreShadowTextSelection(root: ShadowRoot | undefined, range: Range | undefined) {
   if (!root || !range) return
 
   requestAnimationFrame(() => {
-    const selection =
-      (root as unknown as { getSelection?: () => Selection | null }).getSelection?.() ?? window.getSelection()
+    const selection = shadowSelection(root)
     if (!selection) return
 
     try {

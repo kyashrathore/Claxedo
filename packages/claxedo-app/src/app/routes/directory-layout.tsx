@@ -63,13 +63,13 @@ export default function Layout(props: ParentProps) {
 
   createEffect(() => {
     const current = server.url
-    if (!current) return
-    if (isLocalPersonalScope({ serverUrl: current, directory: directory() })) return
+    if (!current) return undefined
+    if (isLocalPersonalScope({ serverUrl: current, directory: directory() })) return undefined
 
     const pathname = location.pathname
     const match = pathname.match(/\/session\/([^/]+)$/)
     const sessionId = match?.[1]
-    if (!sessionId || sessionId === "new") return
+    if (!sessionId || sessionId === "new") return undefined
 
     let cancelled = false
     void resolveSessionUrl(sessionId, config).then((gatewayUrl) => {

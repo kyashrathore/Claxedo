@@ -11,11 +11,12 @@ import { OAuth2RequestError } from "./vendor/arctic/request.js"
 import {
   ConnectionsUnavailableError,
   connectionProviderId,
-  type ConnectionErrorCode,
+  type ConnectionTokenFailureCode,
   type ConnectionRow,
   type ConnectionTokenResponse,
   type CredentialStorePort,
 } from "./types.js"
+import { record, text } from "./json.js"
 
 const REFRESH_BUFFER_MS = 5 * 60_000
 
@@ -25,7 +26,7 @@ export class DefinitiveRefreshError extends Error {}
 
 export class ConnectionTokenError extends Error {
   status: 403 | 404 | 409 | 503
-  code: ConnectionErrorCode | "connection_refresh_transient"
+  code: ConnectionTokenFailureCode
   credentialStatus?: string
 
   constructor(status: 403 | 404 | 409 | 503, code: ConnectionTokenError["code"], credentialStatus?: string) {
@@ -40,9 +41,10 @@ type OAuthEnvelope = { access: string; refresh?: string }
 
 function parseEnvelope(secret: string): OAuthEnvelope | undefined {
   try {
-    const data = JSON.parse(secret) as { access?: unknown; refresh?: unknown }
-    if (typeof data.access !== "string") return undefined
-    return { access: data.access, ...(typeof data.refresh === "string" ? { refresh: data.refresh } : {}) }
+    const data = record(JSON.parse(secret))
+    const access = text(data?.access)
+    if (!access) return undefined
+    return { access, ...(text(data?.refresh) ? { refresh: text(data?.refresh) } : {}) }
   } catch {
     return undefined
   }

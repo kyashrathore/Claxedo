@@ -94,23 +94,23 @@ function samePanelState(current: WorkspacePanelState, next: WorkspacePanelState)
 
 export type WorkspacePanelSliceApi = {
   state: Accessor<WorkspacePanelState>
-  open(...args: OpenArgs): void
-  close(): void
-  toggle(...args: OpenArgs): void
-  retarget(target?: WorkspacePanelTarget): void
-  rememberSession(sessionId: string | undefined): void
-  restoreSession(sessionId: string | undefined, target?: WorkspacePanelTarget): boolean
+  open: (...args: OpenArgs) => void
+  close: () => void
+  toggle: (...args: OpenArgs) => void
+  retarget: (target?: WorkspacePanelTarget) => void
+  rememberSession: (sessionId: string | undefined) => void
+  restoreSession: (sessionId: string | undefined, target?: WorkspacePanelTarget) => boolean
   /** Switch the active mode in place without re-opening or moving focus. */
-  select(mode: WorkspacePanelMode): void
-  setNavigatorHidden(hidden: boolean): void
+  select: (mode: WorkspacePanelMode) => void
+  setNavigatorHidden: (hidden: boolean) => void
   /**
    * Open the panel to a global-navigation mode that is NOT bound to any
    * workspace. Clears every workspace binding (dir/pane/navigator/focus) so the
    * active global surface owns the panel content.
    */
-  openGlobal(mode: WorkspacePanelMode): void
+  openGlobal: (mode: WorkspacePanelMode) => void
   /** Toggle a global-navigation mode: closes if that exact mode is open, else opens it. */
-  toggleGlobal(mode: WorkspacePanelMode): void
+  toggleGlobal: (mode: WorkspacePanelMode) => void
   /**
    * Retained Review working sets (tab DTOs, active tab, semantic Review
    * scroll), keyed by `reviewWorkspaceWorkingSetKey`.

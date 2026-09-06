@@ -1,4 +1,4 @@
-import { SignJWT, errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
+import { SignJWT, errors, exportJWK, importJWK, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
 
 const algorithms = ["EdDSA", "ES256", "RS256"] as const
 
@@ -136,7 +136,8 @@ function seconds(input = Date.now()) {
 }
 
 function requireAlgorithm(input: string): RelayJwtAlgorithm {
-  if (algorithms.includes(input as RelayJwtAlgorithm)) return input as RelayJwtAlgorithm
+  const algorithm = algorithms.find((candidate) => candidate === input)
+  if (algorithm) return algorithm
   throw new WorkspaceRelayAuthError("invalid_relay_token", "Unsupported relay token algorithm")
 }
 
@@ -165,7 +166,7 @@ function actorProfileClaims(payload: JWTPayload) {
   const actor_name = stringClaim(payload, "actor_name")
   const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
   if (!actor_public_id && !actor_name && !actor_avatar_url) return {}
-  if (!actor_public_id || !actor_name) return
+  if (!actor_public_id || !actor_name) return undefined
   return { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
 }
 
@@ -220,6 +221,40 @@ function checkTarget(payload: JWTPayload, expected: ExpectedTarget) {
 export type RelayKeyResolver = JWTVerifyGetKey
 
 export type RelayKey = CryptoKey | Uint8Array | RelayKeyResolver
+
+/**
+ * Re-imports the PUBLIC half of an EdDSA relay-host signing key.
+ *
+ * `importJWK` is declared `Promise<CryptoKey | Uint8Array>` because a symmetric
+ * (`oct`) JWK imports as raw bytes. An EdDSA public JWK never does, so the byte
+ * branch is a configuration error worth failing loudly on — the two callers
+ * (`main.ts` for Bun, `worker.ts` for Cloudflare) previously asserted it away
+ * with their own copies of this round-trip.
+ */
+export async function deriveRelayHostPublicKey(privateKey: CryptoKey): Promise<CryptoKey> {
+  const jwk = await exportJWK(privateKey)
+  const imported = await importJWK({ kty: jwk.kty, crv: jwk.crv, x: jwk.x }, "EdDSA", { extractable: true })
+  if (imported instanceof Uint8Array) {
+    throw new Error("Relay host public key imported as raw bytes; expected an EdDSA public key")
+  }
+  return imported
+}
+
+/**
+ * The relay-host key id, derived from the key's public component.
+ *
+ * ONE implementation on purpose: a Bun relay and a Cloudflare relay signing
+ * with the same key must publish the same `kid`, or a token minted by one fails
+ * key lookup at the other. It is written against WebCrypto rather than
+ * `node:crypto` so the workerd bundle can use it too.
+ */
+export async function deriveRelayHostKid(publicKey: CryptoKey): Promise<string> {
+  const jwk = await exportJWK(publicKey)
+  const material = jwk.x ?? jwk.n ?? ""
+  if (!material) throw new Error("Cannot derive kid: public key has no public component")
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 16)
+}
 
 async function verifyJwt(token: string, key: RelayKey, input: {
   issuer: string
@@ -404,9 +439,9 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     || (actor_kind !== "human" && actor_kind !== "agent")
     || (principal_kind === "user" && actor_kind !== "human")
     || (principal_kind === "service" && actor_kind !== "agent")
-  ) return
+  ) return undefined
   const actorProfile = actorProfileClaims(payload)
-  if (!actorProfile) return
+  if (!actorProfile) return undefined
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
@@ -434,7 +469,7 @@ function relayHostClaims(payload: JWTPayload): RelayHostTokenClaims | undefined 
   const backing = stringClaim(payload, "backing")
   const parent_jti = stringClaim(payload, "parent_jti")
   const pair = { access, backing }
-  if (!base || !parent_jti || !isRelayClaimPair(pair)) return
+  if (!base || !parent_jti || !isRelayClaimPair(pair)) return undefined
   return {
     ...base,
     iss: relayHostTokenIssuer,
@@ -451,7 +486,7 @@ function hostTunnelClaims(payload: JWTPayload): HostTunnelTokenClaims | undefine
   const jti = stringClaim(payload, "jti")
   const host_id = stringClaim(payload, "host_id")
   const workspace_ids = stringArrayClaim(payload, "workspace_ids")
-  if (!exp || !iat || !sub || !jti || !host_id || !workspace_ids?.length) return
+  if (!exp || !iat || !sub || !jti || !host_id || !workspace_ids?.length) return undefined
   return {
     iss: runtimeAccessTokenIssuer,
     aud: hostTunnelTokenAudience,

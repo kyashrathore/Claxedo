@@ -1,4 +1,11 @@
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
+import {
+  CREDENTIAL_HEALTHS,
+  CREDENTIAL_KINDS,
+  CREDENTIAL_SCOPES,
+  CREDENTIAL_SOURCES,
+  CREDENTIAL_STATUSES,
+} from "./types"
 
 /**
  * The named single-tenant credential partition.
@@ -27,16 +34,16 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
      */
     org_id: text().notNull().default(SINGLE_TENANT_ORG),
     provider_id: text().notNull(),
-    kind: text().notNull(), // api_key | oauth_token | subscription_session | sandbox_driver
-    source: text().notNull(), // managed | local_only | env | upstream_sync
+    kind: text({ enum: CREDENTIAL_KINDS }).notNull(),
+    source: text({ enum: CREDENTIAL_SOURCES }).notNull(),
     label: text(),
     account_id: text(),
     secure_ref: text(), // opaque backend reference — never contains raw secret material
-    status: text().notNull().default("available"), // available | expired | revoked | error
-    health: text(), // ok | auth_failed | no_billing | rate_capped | expired
+    status: text({ enum: CREDENTIAL_STATUSES }).notNull().default("available"),
+    health: text({ enum: CREDENTIAL_HEALTHS }),
     expires_at: integer(),
     last_validated_at: integer(),
-    scope: text().notNull().default("local"), // local | shared
+    scope: text({ enum: CREDENTIAL_SCOPES }).notNull().default("local"),
     consent_json: text(),
     last_used_at: integer(),
     last_error: text(),

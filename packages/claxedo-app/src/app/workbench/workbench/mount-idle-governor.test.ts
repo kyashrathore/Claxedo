@@ -22,7 +22,7 @@ function fakeClock() {
     },
     // Exact interval semantics: fire each live timer at its scheduled times,
     // in order, exactly as often as its period fits in the advanced span.
-    advance(ms: number) {
+    advance: (ms: number) => {
       const end = now + ms
       while (true) {
         let due: Timer | undefined

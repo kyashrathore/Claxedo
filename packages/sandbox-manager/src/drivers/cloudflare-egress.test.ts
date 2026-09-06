@@ -47,7 +47,7 @@ describe("cloudflare egress broker", () => {
   test("injects the brokered credential and never exposes it to the sandbox", async () => {
     const forwarded: Array<{ url: string; headers: Headers }> = []
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      forwarded.push({ url: String(url), headers: new Headers(init?.headers) })
+      forwarded.push({ url: url instanceof Request ? url.url : url.toString(), headers: new Headers(init?.headers) })
       return new Response("ok", { headers: { "x-echo": "1" } })
     }) as unknown as typeof fetch
 
@@ -64,11 +64,11 @@ describe("cloudflare egress broker", () => {
     )
 
     expect(res.status).toBe(200)
-    expect(forwarded[0]!.url).toBe("https://api.notion.com/v1/users/me")
+    expect(forwarded[0].url).toBe("https://api.notion.com/v1/users/me")
     // Credential injected on the upstream request…
-    expect(forwarded[0]!.headers.get("authorization")).toBe("Bearer ntn-secret")
+    expect(forwarded[0].headers.get("authorization")).toBe("Bearer ntn-secret")
     // …and the sandbox-facing egress token/target headers are stripped.
-    expect(forwarded[0]!.headers.get(EGRESS_TARGET_HEADER)).toBeNull()
+    expect(forwarded[0].headers.get(EGRESS_TARGET_HEADER)).toBeNull()
   })
 
   test("rejects a host outside the token's allowlist", async () => {

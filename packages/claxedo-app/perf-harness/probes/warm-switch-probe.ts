@@ -21,7 +21,10 @@ import { createHash } from "node:crypto";
 import {
   materializeClaxedoCorpus,
   readCanonicalCorpusDigest,
+  readCorpus,
 } from "../src/agent-corpus-materializer";
+import { readNumber, readRecords, readText } from "../src/page-value";
+import type { LoafSample } from "../src/browser/page-globals";
 import type { SessionReadinessTarget } from "../src/agent-browser-observer";
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
@@ -51,9 +54,7 @@ const passes = Number(argValue("--passes") ?? 1);
 const digest = await readCanonicalCorpusDigest(corpusPath);
 // Turn counts come from the corpus itself so any corpus works (the graded
 // table is just its own ramp); materialization emits targets in session order.
-const corpusJson = JSON.parse(await Bun.file(corpusPath).text()) as {
-  sessions: Array<{ order: number; turns: Array<unknown> }>;
-};
+const corpusJson = await readCorpus(corpusPath);
 const TURNS_BY_ORDER = corpusJson.sessions
   .toSorted((left, right) => left.order - right.order)
   .map((session) => session.turns.length);
@@ -81,7 +82,7 @@ try {
     readinessTargets: targets,
   });
   try {
-    const plan = warmSwitchPlan(targets, Number(new Uint32Array(createHash("sha256").update(seed).digest().buffer)[0]));
+    const plan = warmSwitchPlan(targets, new Uint32Array(createHash("sha256").update(seed).digest().buffer)[0]);
     for (const target of plan.warmup) {
       const warmed = await measureSessionActivation(launch.page, target);
       if (warmed.state !== "exact") throw new Error(`warmup failed: ${"reason" in warmed ? warmed.reason : "?"}`);
@@ -91,21 +92,31 @@ try {
     const loafByTurn = new Map<number, Array<{ duration: number; source: string }>>();
     for (let pass = 0; pass < passes; pass++) {
       for (let index = 0; index < plan.measured.length; index++) {
-        const target = plan.measured[index]!;
+        const target = plan.measured[index];
         const turns = TURNS_BY_ORDER[targets.indexOf(target)] ?? -1;
         if (wantLoaf) {
           await launch.page.evaluate(() => {
-            const host = window as unknown as {
-              __loafObserver?: PerformanceObserver;
-              __loaf: Array<PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> }>;
-            };
-            host.__loaf = [];
-            host.__loafObserver?.disconnect();
+            const samples: LoafSample[] = [];
+            window.__loaf = samples;
+            window.__loafObserver?.disconnect();
             const observer = new PerformanceObserver((list) => {
-              for (const entry of list.getEntries()) host.__loaf.push(entry);
+              for (const loaf of list.getEntries()) {
+                samples.push({
+                  startTime: loaf.startTime,
+                  duration: loaf.duration,
+                  blockingDuration: loaf.blockingDuration,
+                  renderStart: loaf.renderStart,
+                  styleAndLayoutStart: loaf.styleAndLayoutStart,
+                  scripts: (loaf.scripts ?? []).map((script) => ({
+                    duration: script.duration,
+                    invoker: script.invoker,
+                    name: script.name,
+                  })),
+                });
+              }
             });
             observer.observe({ type: "long-animation-frame", buffered: false });
-            host.__loafObserver = observer;
+            window.__loafObserver = observer;
           });
         }
         const result = await measureSessionActivation(launch.page, target);
@@ -116,23 +127,37 @@ try {
             // LoAF entries are delivered on the frame after the long task; give
             // the queue a beat, then drain whatever the observer holds.
             await new Promise((resolve) => setTimeout(resolve, 120));
-            const host = window as unknown as {
-              __loafObserver?: PerformanceObserver;
-              __loaf: Array<PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> }>;
-            };
-            for (const entry of host.__loafObserver?.takeRecords() ?? []) {
-              host.__loaf.push(entry as PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> });
+            const samples = (window.__loaf ??= []);
+            for (const loaf of window.__loafObserver?.takeRecords() ?? []) {
+              samples.push({
+                startTime: loaf.startTime,
+                duration: loaf.duration,
+                blockingDuration: loaf.blockingDuration,
+                renderStart: loaf.renderStart,
+                styleAndLayoutStart: loaf.styleAndLayoutStart,
+                scripts: (loaf.scripts ?? []).map((script) => ({
+                  duration: script.duration,
+                  invoker: script.invoker,
+                  name: script.name,
+                })),
+              });
             }
-            return host.__loaf.map((entry) => ({
-              duration: entry.duration,
-              source: entry.scripts
-                ?.map((script) => script.invoker ?? script.name ?? "?")
+            return samples.map((sample) => ({
+              duration: sample.duration,
+              source: sample.scripts
+                .map((script) => script.invoker ?? script.name ?? "?")
                 .filter(Boolean)
                 .join("|")
                 .slice(0, 160),
             }));
           });
-          loafByTurn.set(turns, entries.flatMap((item) => (item.source ? [{ duration: item.duration, source: item.source }] : [])));
+          loafByTurn.set(
+            turns,
+            readRecords(entries).flatMap((item) => {
+              const source = readText(item.source);
+              return source ? [{ duration: readNumber(item.duration), source }] : [];
+            }),
+          );
         }
         console.log(`p${pass} ${String(turns).padStart(4)} turns  ${result.durationMs.toFixed(1)} ms`);
       }
@@ -140,13 +165,13 @@ try {
     const median = (ms: number[]) => {
       if (!ms.length) return NaN;
       const ordered = [...ms].sort((a, b) => a - b);
-      return ordered[Math.floor(ordered.length / 2)]!;
+      return ordered[Math.floor(ordered.length / 2)];
     };
     const bucketMedian = (predicate: (turns: number) => boolean) =>
       median(rows.filter((row) => predicate(row.turns)).map((row) => row.ms)).toFixed(1);
     const perTurnPooled = rows.map((row) => row.ms);
     const orderedAll = [...perTurnPooled].sort((a, b) => a - b);
-    const p95 = orderedAll[Math.min(orderedAll.length - 1, Math.ceil(orderedAll.length * 0.95) - 1)]!;
+    const p95 = orderedAll[Math.min(orderedAll.length - 1, Math.ceil(orderedAll.length * 0.95) - 1)];
     console.log(
       `buckets light/mid/heavy MEDIAN over ${passes} passes: ${bucketMedian((t) => t <= 40)}/${bucketMedian((t) => t > 40 && t <= 160)}/${bucketMedian((t) => t > 160)}`,
     );
@@ -155,7 +180,7 @@ try {
       const totals = new Map<string, { count: number; ms: number }>();
       for (const entries of loafByTurn.values()) {
         for (const entry of entries) {
-          const key = entry.source.split("|")[0]!.slice(0, 80);
+          const key = entry.source.split("|")[0].slice(0, 80);
           const hit = totals.get(key) ?? { count: 0, ms: 0 };
           hit.count += 1;
           hit.ms += entry.duration;

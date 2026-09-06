@@ -18,13 +18,13 @@ function pick(event: ClaxedoEvent): Event | undefined {
     case "process.config.changed":
       return event
     default:
-      return
+      return undefined
   }
 }
 
 export function shape(event: ClaxedoEvent): GlobalEvent | undefined {
   const hit = pick(event)
-  if (!hit?.directory) return
+  if (!hit?.directory) return undefined
   const { type, directory, ...properties } = hit
   return {
     directory,

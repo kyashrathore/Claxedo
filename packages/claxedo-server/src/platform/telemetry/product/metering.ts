@@ -41,6 +41,7 @@ export type {
   TurnUsageSettlement,
   TurnUsageStatus,
 } from "@claxedo/server-core/usage/contracts"
+import { asRecord } from "../../json/index"
 
 export const SANDBOX_LEASE_OPENED = "sandbox.lease_opened"
 export const SANDBOX_LEASE_CLOSED = "sandbox.lease_closed"
@@ -68,6 +69,26 @@ function count(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
 }
 
+/** The compat token block, read off a boundary message; every field is normalized by `count`. */
+function compatTokens(value: unknown): CompatTokens | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  const cache = asRecord(record.cache)
+  return {
+    ...(typeof record.input === "number" ? { input: record.input } : {}),
+    ...(typeof record.output === "number" ? { output: record.output } : {}),
+    ...(typeof record.reasoning === "number" ? { reasoning: record.reasoning } : {}),
+    ...(cache
+      ? {
+          cache: {
+            ...(typeof cache.read === "number" ? { read: cache.read } : {}),
+            ...(typeof cache.write === "number" ? { write: cache.write } : {}),
+          },
+        }
+      : {}),
+  }
+}
+
 /** Normalize the compat token block into the flat, non-negative event shape. */
 export function tokenProperties(tokens: CompatTokens | undefined) {
   return {
@@ -91,31 +112,23 @@ export function llmTurnRecord(input: {
   message: unknown
   harness: string
 }): LlmTurnRecord | undefined {
-  const info = input.message as {
-    role?: unknown
-    id?: unknown
-    sessionID?: unknown
-    providerID?: unknown
-    modelID?: unknown
-    tokens?: CompatTokens
-    error?: unknown
-    time?: { created?: unknown; completed?: unknown }
-  } | null
-  if (!info || info.role !== "assistant") return undefined
+  const info = asRecord(input.message)
+  if (info?.role !== "assistant") return undefined
   const messageId = typeof info.id === "string" ? info.id : undefined
   if (!messageId) return undefined
-  const completed = info.time?.completed
+  const time = asRecord(info.time)
+  const completed = time?.completed
   if (typeof completed !== "number") return undefined
   const sessionId = typeof info.sessionID === "string" ? info.sessionID : undefined
   if (!sessionId) return undefined
-  const created = typeof info.time?.created === "number" ? info.time.created : completed
+  const created = typeof time?.created === "number" ? time.created : completed
   return {
     message_id: messageId,
     session_id: sessionId,
     harness: input.harness,
     provider_id: typeof info.providerID === "string" ? info.providerID : "unknown",
     model_id: typeof info.modelID === "string" ? info.modelID : "unknown",
-    ...tokenProperties(info.tokens),
+    ...tokenProperties(compatTokens(info.tokens)),
     turn_status: info.error ? "error" : "ok",
     latency_ms: Math.max(0, completed - created),
   }

@@ -9,6 +9,7 @@
  */
 import { createStore } from "solid-js/store"
 import type { ConnectionsRequest } from "@/platform/account/integrations-request"
+import { readArray, readBoolean, readField, readFiniteNumber, readString, recordOrEmpty } from "@/lib/record"
 
 export type { ConnectionsRequest }
 
@@ -40,8 +41,65 @@ export type ConnectionInfo = {
 }
 
 async function jsonOf(response: Response): Promise<Record<string, unknown>> {
-  const body = await response.json().catch(() => undefined)
-  return body && typeof body === "object" ? (body as Record<string, unknown>) : {}
+  return recordOrEmpty(await response.json().catch(() => undefined))
+}
+
+/**
+ * The integrations list is untrusted JSON, so each row is READ rather than
+ * declared: a row missing an id is dropped, and unknown method or status
+ * values are refused instead of reaching the UI as strings it cannot render.
+ *
+ * `onboarding/code-host-api.ts` parses the same route separately and on
+ * purpose — onboarding cannot import this feature — but it reads only the
+ * clone-capable subset, so the two parsers answer different questions.
+ */
+function parseIntegration(value: unknown): IntegrationInfo[] {
+  const id = readString(value, "id")
+  if (id === undefined) return []
+  return [{
+    id,
+    name: readString(value, "name") ?? id,
+    methods: (readArray(value, "methods") ?? [])
+      .filter((method): method is "key" | "oauth" => method === "key" || method === "oauth"),
+    capabilities: (readArray(value, "capabilities") ?? [])
+      .filter((capability): capability is string => typeof capability === "string"),
+    prompts: (readArray(value, "prompts") ?? []).flatMap(parsePrompt),
+  }]
+}
+
+function parsePrompt(value: unknown): IntegrationPrompt[] {
+  const id = readString(value, "id")
+  if (id === undefined) return []
+  const placeholder = readString(value, "placeholder")
+  return [{
+    id,
+    label: readString(value, "label") ?? id,
+    ...(placeholder === undefined ? {} : { placeholder }),
+    secret: readBoolean(value, "secret") === true,
+  }]
+}
+
+function parseConnection(value: unknown): ConnectionInfo[] {
+  const id = readString(value, "id")
+  const integrationId = readString(value, "integrationId")
+  const status = readString(value, "status")
+  if (id === undefined || integrationId === undefined) return []
+  const accountLabel = readString(value, "accountLabel")
+  return [{
+    id,
+    integrationId,
+    scope: readString(value, "scope") === "personal" ? "personal" : "team",
+    ...(accountLabel === undefined ? {} : { accountLabel }),
+    grantedCapabilities: (readArray(value, "grantedCapabilities") ?? [])
+      .filter((capability): capability is string => typeof capability === "string"),
+    fields: Object.fromEntries(
+      Object.entries(recordOrEmpty(readField(value, "fields")))
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    ),
+    status: status === "connected" || status === "degraded" ? status : "broken",
+    createdAt: readFiniteNumber(value, "createdAt") ?? 0,
+    updatedAt: readFiniteNumber(value, "updatedAt") ?? 0,
+  }]
 }
 
 function verifyFailedMessage(reason: unknown): string {
@@ -86,8 +144,8 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
         loading: false,
         loaded: true,
         error: undefined,
-        integrations: Array.isArray(body.integrations) ? (body.integrations as IntegrationInfo[]) : [],
-        connections: Array.isArray(body.connections) ? (body.connections as ConnectionInfo[]) : [],
+        integrations: (readArray(body, "integrations") ?? []).flatMap(parseIntegration),
+        connections: (readArray(body, "connections") ?? []).flatMap(parseConnection),
         personalScopeEnabled: body.personalScopeEnabled === true,
       })
     } catch (err) {

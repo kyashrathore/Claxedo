@@ -58,7 +58,7 @@ export async function resolveSubmitDirectory(
 
   if (input.draftId && !input.projectDirectory && input.worktreeSelection === "main") {
     input.showMissingWorkspace()
-    return
+    return undefined
   }
 
   // user-hosted rides the same "resolve an existing remote workspace" path as
@@ -74,15 +74,15 @@ export async function resolveSubmitDirectory(
       input.fallbackDirectory,
       input.workspaceKind,
     )
-    if (!cloudDirectory) return
+    if (!cloudDirectory) return undefined
     sessionDirectory = cloudDirectory
     const prepared = await input.prepareCloudSessionDirectory(sessionDirectory)
-    if (!prepared) return
+    if (!prepared) return undefined
     if (typeof prepared === "string") sessionDirectory = prepared
     input.publishCloudHandoff("loading_models", "Runtime ready. Loading models.")
   } else if (input.worktreeSelection === "create") {
     const localDirectory = await input.createLocalWorktree(input.projectDirectory ?? input.fallbackDirectory)
-    if (!localDirectory) return
+    if (!localDirectory) return undefined
     sessionDirectory = localDirectory
   } else if (input.worktreeSelection !== "main" && input.worktreeSelection !== "create") {
     sessionDirectory = input.worktreeSelection
@@ -90,7 +90,7 @@ export async function resolveSubmitDirectory(
 
   if (input.draftId && !sessionDirectory) {
     input.showMissingWorkspace()
-    return
+    return undefined
   }
 
   return { directory: sessionDirectory ?? input.defaultDirectory }
@@ -104,7 +104,7 @@ export function resolveSubmitMode(input: { mode: SubmitMode; setMode: (mode: Sub
 export function resolveSubmittedConfig(
   input: ResolveSubmittedConfigContext,
 ): SubmittedConfig | undefined {
-  if (!input.harnessModelKey) return
+  if (!input.harnessModelKey) return undefined
   const variant = input.variant ?? input.harnessModelKey.variant
   return {
     model: { modelID: input.harnessModelKey.modelID, providerID: input.harnessModelKey.providerID },

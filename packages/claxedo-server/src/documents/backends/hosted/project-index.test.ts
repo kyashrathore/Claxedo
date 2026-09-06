@@ -276,7 +276,7 @@ describe("hosted project index", () => {
     expect(entryObjects()).toHaveLength(1)
 
     // A genuine orphan from an older code path is collected by the next read.
-    const live = entryObjects()[0]!
+    const live = entryObjects()[0]
     const orphan = `document-index/org_1/project_1/document_1/${crypto.randomUUID()}.json`
     await storage.store.put(orphan, storage.objects.get(live)!.body, { absent: true })
     storage.objects.delete(projectIndexKey(scope))
@@ -472,7 +472,7 @@ describe("Listing bound", () => {
     // A backend that always enumerates fully has no listPage; the service must not claim truncation.
     const complete = createHostedDocumentIndex(countingStore().store)
     await complete.create(entry(1))
-    const { listPage: _listPage, ...withoutListPage } = complete
+    const withoutListPage = { ...complete, listPage: undefined }
     const plain = createDocumentsService({
       index: withoutListPage,
       workspace: {} as never,

@@ -1,3 +1,5 @@
+import { brand, type Brand } from "@/platform/identity/brand"
+
 export namespace ServerConnection {
   type Base = { displayName?: string }
 
@@ -11,8 +13,8 @@ export namespace ServerConnection {
   export type Sidecar = { type: "sidecar"; http: HttpBase } & ({ variant: "base" } | { variant: "wsl"; distro: string }) & Base
   export type Any = Http | Sidecar
 
-  export type Key = string & { _brand: "Key" }
-  export const Key = { make: (value: string) => value as Key }
+  export type Key = Brand<string, "ServerConnectionKey">
+  export const Key = { make: (value: string): Key => brand(value) }
 
   export const key = (connection: Any): Key => {
     if (connection.type === "http") return Key.make(connection.http.url)

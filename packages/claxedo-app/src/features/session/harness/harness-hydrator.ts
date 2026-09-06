@@ -94,14 +94,19 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       !input.runtime.useLocalHarnessConfig(params) &&
       !(known?.workspaceRuntime ?? input.workspaceRuntime(params))
     ) return undefined
-    if (!params?.directory) return undefined
-    if (params.sessionId && params.sessionId !== "new") {
-      const config = await input.cache.fetchSessionConfig(params as HydratedSessionInput<ScopeInput>, async () => {
+    const directory = params?.directory
+    if (!params || !directory) return undefined
+    const sessionId = params.sessionId
+    if (sessionId && sessionId !== "new") {
+      // Built rather than asserted: the two guards above are exactly what
+      // `HydratedSessionInput` requires, so the hydrated scope states them.
+      const hydrated: HydratedSessionInput<ScopeInput> = { ...params, directory, sessionId }
+      const config = await input.cache.fetchSessionConfig(hydrated, async () => {
         const res = await input.runtime.harnessSessionFetch(params)(
           sessionResourceUrl({
             serverUrl: input.base,
-            sessionID: params.sessionId!,
-            directory: params.directory!,
+            sessionID: sessionId,
+            directory,
             resource: "config",
           }),
         )

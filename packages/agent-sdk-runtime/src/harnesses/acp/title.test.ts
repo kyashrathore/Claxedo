@@ -11,7 +11,7 @@ describe("ACP title generation", () => {
     const events: CompatEvent[] = []
     const event = maybeAutoTitle({
       store: {
-        getSession: () => ({ title: "New session - 2026-07-08T09:09:30.378Z" }),
+        getSession: () => ({ id: "s1", title: "New session - 2026-07-08T09:09:30.378Z" }),
         appendEvent: (input) => events.push(input.payload),
       },
       getOrSpawnProcess: async () => {
@@ -30,7 +30,7 @@ describe("ACP title generation", () => {
     const events: CompatEvent[] = []
     const event = maybeAutoTitle({
       store: {
-        getSession: () => ({ title: "Manual title" }),
+        getSession: () => ({ id: "s1", title: "Manual title" }),
         appendEvent: (input) => events.push(input.payload),
       },
       getOrSpawnProcess: async () => {

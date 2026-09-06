@@ -27,7 +27,6 @@
 import { guardedWaitUntil } from "@claxedo/server-core/platform/http/background-work"
 import { Hono } from "hono"
 import type { Context } from "hono"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -53,6 +52,8 @@ import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+import { asRecord } from "../../platform/json/index"
+import { readJsonRecord, stringField } from "../../platform/json/index"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -79,7 +80,12 @@ export type HostedShellRouteOptions = {
    * where org-scoped events stay invisible fail-closed.
    */
   resolveOrgId?: (auth: SignedControlPlaneAuth) => Promise<string>
-  piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<unknown>
+  /**
+   * Typed as a record rather than `unknown`: the route serves the value
+   * verbatim, and `unknown` only forced a `c.json(… as never)` at the one place
+   * that does.
+   */
+  piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
   /** Idempotent owner setup scheduled only from signed bootstrap on Worker waitUntil. */
@@ -119,10 +125,6 @@ export type HostedHarnessProbe = {
   model?: string | null
   error?: string
   harnessHealth?: { status: "ok" | "degraded" | "unavailable"; reason?: string }
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 function txt(input: unknown) {
@@ -219,7 +221,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     updated: number
   }>()
   for (const workspace of workspaces) {
-    const row = rec(workspace)
+    const row = asRecord(workspace)
     const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
     if (!workspaceId) continue
     // A workspace served elsewhere is addressed by its id; the host's own path
@@ -314,15 +316,15 @@ function relayRoleOf(input: unknown): RelayRole | undefined {
 // shape-mirror in this file reads a runtime/authority payload: an untyped
 // wire response, never a value this module minted itself.
 function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
-  const row = rec(input)
-  const health = rec(row?.harnessHealth)
+  const row = asRecord(input)
+  const health = asRecord(row?.harnessHealth)
   const healthStatus = health?.status
   return {
     ...(typeof row?.ok === "boolean" ? { ok: row.ok } : {}),
     ...(txt(row?.status) ? { status: txt(row?.status) } : {}),
     ...(decodeHarnessSelection(row?.harness) ? { harness: decodeHarnessSelection(row?.harness) } : {}),
     ...(decodeHarnessSelection(row?.activeHarness) ? { activeHarness: decodeHarnessSelection(row?.activeHarness) } : {}),
-    ...(typeof row?.model === "string" || row?.model === null ? { model: row.model as string | null } : {}),
+    ...(typeof row?.model === "string" || row?.model === null ? { model: row.model } : {}),
     ...(txt(row?.error) ? { error: txt(row?.error) } : {}),
     ...(healthStatus === "ok" || healthStatus === "degraded" || healthStatus === "unavailable"
       ? { harnessHealth: { status: healthStatus, ...(txt(health?.reason) ? { reason: txt(health?.reason) } : {}) } }
@@ -405,7 +407,12 @@ async function harnessRelayFetch(
   )
 }
 
-async function harnessRuntimeJson<T>(
+/**
+ * The parsed body, as `unknown`. Every caller either wants a record (and reaches
+ * it through `asRecord`) or passes the value straight to a schema, so the
+ * caller-chosen `<T>` this used to carry only asserted a shape nobody checked.
+ */
+async function harnessRuntimeJson(
   services: ControlPlaneServices,
   auth: SignedControlPlaneAuth,
   input: Parameters<typeof harnessRelayFetch>[2],
@@ -417,7 +424,7 @@ async function harnessRuntimeJson<T>(
   if (!res.ok) {
     throw new Error((await res.text().catch(() => "")) || `Workspace runtime pull failed: ${res.status}`)
   }
-  return (await res.json()) as T
+  return await res.json().catch(() => undefined)
 }
 
 export function hostedHarnessRuntimeStatus(
@@ -449,17 +456,17 @@ export function hostedHarnessRuntimeStatus(
     try {
       // The identity probe first: refuse to trust a relay target that does
       // not answer for the workspace we asked about.
-      const identity = await harnessRuntimeJson<Record<string, unknown>>(
+      const identity = asRecord(await harnessRuntimeJson(
         services,
         auth,
         { ...target, path: WORKSPACE_RUNTIME_IDENTITY_PATH },
         testOptions.runtimeFetch,
-      )
-      if (txt(identity.workspaceId) !== input.workspaceId) {
+      ))
+      if (txt(identity?.workspaceId) !== input.workspaceId) {
         throw new Error("Workspace runtime identity does not match requested workspace")
       }
       // MUTATION-CHECK: runtime health call short-circuited on purpose.
-      const health = await harnessRuntimeJson<Record<string, unknown>>(
+      const health = asRecord(await harnessRuntimeJson(
         services,
         auth,
         {
@@ -467,7 +474,7 @@ export function hostedHarnessRuntimeStatus(
           path: input.sessionId ? `/api/wr/health?sessionId=${encodeURIComponent(input.sessionId)}` : "/api/wr/health",
         },
         testOptions.runtimeFetch,
-      )
+      ))
       return decodeSandboxHealth(health)
     } catch (err) {
       return { ok: false, status: "error", error: err instanceof Error ? err.message : String(err) }
@@ -476,13 +483,14 @@ export function hostedHarnessRuntimeStatus(
 }
 
 function decodeHarnessSelection(input: unknown): RuntimeHarnessSelection | undefined {
-  const row = rec(input)
+  const row = asRecord(input)
   if (row?.kind === "connection" && typeof row.connectionId === "string" && row.connectionId.trim()) {
     return { kind: "connection", connectionId: row.connectionId }
   }
   if (row?.kind === "native" && (row.harnessId === "claude" || row.harnessId === "codex" || row.harnessId === "cursor" || row.harnessId === "pi")) {
     return { kind: "native", harnessId: row.harnessId }
   }
+  return undefined
 }
 
 function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string, sessionId?: string) {
@@ -557,7 +565,7 @@ async function signedServiceCatalogState(c: Context, options: HostedShellRouteOp
 
 function authErrorResponse(c: Context, err: unknown) {
   if (err instanceof ControlPlaneAuthError) {
-    return c.json(controlPlaneAuthErrorBody(err), err.status as ContentfulStatusCode)
+    return c.json(controlPlaneAuthErrorBody(err), err.status)
   }
   throw err
 }
@@ -730,7 +738,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
         if (c.req.query("nativeHarness") !== "pi" || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi" } }, 400)
         if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
-        return c.json(await options.piProviderCatalog(auth) as never)
+        return c.json(await options.piProviderCatalog(auth))
       } catch (err) {
         return authErrorResponse(c, err)
       }
@@ -750,9 +758,9 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        const body = await c.req.json().catch(() => undefined) as { auth?: { key?: string } } | undefined
-        if (!body?.auth?.key) return c.json({ error: { code: "pi_auth_key_required", message: "auth.key is required" } }, 400)
-        await options.putPiCredential(auth, c.req.param("providerID"), body.auth.key)
+        const key = stringField(asRecord((await readJsonRecord(c.req.raw))?.auth), "key")
+        if (!key) return c.json({ error: { code: "pi_auth_key_required", message: "auth.key is required" } }, 400)
+        await options.putPiCredential(auth, c.req.param("providerID"), key)
         return c.json({})
       } catch (err) {
         return authErrorResponse(c, err)

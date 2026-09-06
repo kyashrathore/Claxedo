@@ -252,11 +252,11 @@ test.describe("U8 packaged product boundary @core @tier-real @surface-desktop", 
       .toMatchObject({ status: "signed" })
     await expect.poll(() => hostedRequests, { timeout: 30_000 }).toHaveLength(1)
 
-    expect(oauth!.authorizeRequests).toHaveLength(1)
-    expect(oauth!.authorizeRequests[0]!.searchParams.get("code_challenge_method")).toBe("S256")
-    expect(oauth!.tokenRequests).toHaveLength(1)
-    expect(oauth!.tokenRequests[0]!.get("client_id")).toBe("claxedo-desktop-e2e")
-    expect(oauth!.tokenRequests[0]!.get("resource")).toBe(`${oauth!.origin}/control-plane`)
+    expect(oauth.authorizeRequests).toHaveLength(1)
+    expect(oauth.authorizeRequests[0].searchParams.get("code_challenge_method")).toBe("S256")
+    expect(oauth.tokenRequests).toHaveLength(1)
+    expect(oauth.tokenRequests[0].get("client_id")).toBe("claxedo-desktop-e2e")
+    expect(oauth.tokenRequests[0].get("resource")).toBe(`${oauth.origin}/control-plane`)
     expect(
       await packaged.page.evaluate(
         async () =>

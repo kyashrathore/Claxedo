@@ -25,7 +25,7 @@ describe("onboarding funnel telemetry", () => {
       deployment: "hosted",
       capture: (name, properties) => captured.push({ name, properties }),
     })
-    events.forEach(funnel.emit)
+    events.forEach((event) => funnel.emit(event))
     expect(captured.map((event) => event.name)).toEqual(events.map((event) => event.name))
     expect(captured[3]).toEqual({ name: "step_done", properties: { step: "ai", surface: "desktop" } })
   })

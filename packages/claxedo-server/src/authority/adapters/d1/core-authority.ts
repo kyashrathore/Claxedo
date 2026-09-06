@@ -117,12 +117,33 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
   }
 }
 
-function bindMethods<T extends object, K extends keyof T>(source: T, names: readonly K[]): Pick<T, K> {
-  return Object.fromEntries(
-    names.map((name) => {
-      const method = source[name]
-      if (typeof method !== "function") throw new TypeError(`Authority capability ${String(name)} is not callable`)
-      return [name, method.bind(source)]
-    }),
-  ) as Pick<T, K>
+/**
+ * The named methods of `source`, bound to it, as a value the compiler accepts
+ * as `Pick<T, K>`.
+ *
+ * `Object.fromEntries` is typed `{ [k: string]: V }` — TypeScript cannot carry
+ * "these entries are exactly these keys" through it — so the record is built
+ * loosely and then CHECKED: `carriesBoundMethods` confirms every requested name
+ * resolved to a callable, which is the whole of what `Pick<T, K>` claims here,
+ * and composition fails at the composition site rather than at the first call.
+ */
+function bindMethods<T extends object, K extends keyof T & string>(source: T, names: readonly K[]): Pick<T, K> {
+  const bound: Record<string, unknown> = {}
+  for (const name of names) {
+    const method: unknown = source[name]
+    if (typeof method === "function") bound[name] = method.bind(source)
+  }
+  if (!carriesBoundMethods<T, K>(bound, names)) {
+    const missing = names.filter((name) => typeof bound[name] !== "function")
+    throw new TypeError(`Authority capability is not callable: ${missing.join(", ")}`)
+  }
+  return bound
+}
+
+/** Every requested name resolved to a callable, so the record IS that capability set. */
+function carriesBoundMethods<T extends object, K extends keyof T & string>(
+  value: Record<string, unknown>,
+  names: readonly K[],
+): value is Record<string, unknown> & Pick<T, K> {
+  return names.every((name) => typeof value[name] === "function")
 }

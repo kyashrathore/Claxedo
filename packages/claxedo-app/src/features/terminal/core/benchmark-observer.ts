@@ -15,13 +15,26 @@ export type TerminalBenchmarkAcceptedWrite = {
   acceptedAtMs: number
 }
 
+/**
+ * The observer surface a benchmark page installs on the global object before
+ * the app boots. Declared as a real global rather than asserted onto
+ * `globalThis` at each call site: the property genuinely exists on the window
+ * these functions read, and saying so is what lets the default argument be a
+ * plain `globalThis`.
+ */
+export type TerminalBenchmarkSurface = {
+  terminalWriteAccepted?: (
+    receipt: TerminalBenchmarkAcceptedWrite & { terminalId: string; instanceId: string },
+  ) => void
+  terminalWriteParsed?: (receipt: TerminalBenchmarkReceipt) => void
+}
+
+declare global {
+  var __CLAXEDO_AGENT_APP_BENCHMARK__: TerminalBenchmarkSurface | undefined
+}
+
 type BenchmarkTarget = {
-  __CLAXEDO_AGENT_APP_BENCHMARK__?: {
-    terminalWriteAccepted?: (
-      receipt: TerminalBenchmarkAcceptedWrite & { terminalId: string; instanceId: string },
-    ) => void
-    terminalWriteParsed?: (receipt: TerminalBenchmarkReceipt) => void
-  }
+  __CLAXEDO_AGENT_APP_BENCHMARK__?: TerminalBenchmarkSurface
 }
 
 /**
@@ -36,7 +49,7 @@ type BenchmarkTarget = {
 export function terminalBenchmarkWriteObserver(
   terminalId: string,
   instanceId: string,
-  target: BenchmarkTarget = globalThis as BenchmarkTarget,
+  target: BenchmarkTarget = globalThis,
 ) {
   const listener = target.__CLAXEDO_AGENT_APP_BENCHMARK__?.terminalWriteParsed
   if (!listener) return undefined
@@ -46,7 +59,7 @@ export function terminalBenchmarkWriteObserver(
 export function terminalBenchmarkWriteAcceptedObserver(
   terminalId: string,
   instanceId: string,
-  target: BenchmarkTarget = globalThis as BenchmarkTarget,
+  target: BenchmarkTarget = globalThis,
 ) {
   const listener = target.__CLAXEDO_AGENT_APP_BENCHMARK__?.terminalWriteAccepted
   if (!listener) return undefined
@@ -61,7 +74,7 @@ export function terminalBenchmarkWriteAcceptedObserver(
 export function terminalBenchmarkBackendObservers(
   terminalId: string,
   instanceId: string,
-  target: BenchmarkTarget = globalThis as BenchmarkTarget,
+  target: BenchmarkTarget = globalThis,
 ) {
   const onWriteAccepted = terminalBenchmarkWriteAcceptedObserver(terminalId, instanceId, target)
   const onWriteParsed = terminalBenchmarkWriteObserver(terminalId, instanceId, target)

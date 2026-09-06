@@ -14,6 +14,7 @@ import type { ControlPlaneServices } from "../../../authority/services"
 import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
 import type { DocumentIndexEntry } from "../../index-store"
 import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { fetchUrl, fetchBodyText } from "../../../test-support/fetch-calls"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {
@@ -49,7 +50,7 @@ describe("hosted document runtime broker", () => {
       } },
     } as unknown as ControlPlaneServices
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      const body = JSON.parse(fetchBodyText(init?.body)) as Record<string, unknown>
       expect(body).toMatchObject({ documentId: "document_1", markdown: "selected", baseVersion: "v1" })
       expect(JSON.stringify(body)).not.toContain("document_2")
       expect(body.writeback).toMatchObject({ url: expect.stringMatching(/^https:\/\/control\.test\//) })
@@ -73,7 +74,7 @@ describe("hosted document runtime broker", () => {
     const received = Promise.withResolvers<void>()
     const hydration = Promise.withResolvers<Response>()
     const opened = createHostedDocumentRuntimeBroker(fixture.services, fixture.env, async (_input, init) => {
-      const body = JSON.parse(String(init?.body))
+      const body = JSON.parse(fetchBodyText(init?.body))
       if ("writeback" in body) {
         order.push("hydrate")
         expect(body).toMatchObject({ writeback: { token: expect.any(String) } })
@@ -98,7 +99,7 @@ describe("hosted document runtime broker", () => {
     const registerCapability = vi.fn(async () => undefined)
     let runtimeToken = ""
     await expect(createHostedDocumentRuntimeBroker(fixture.services, fixture.env, async (_input, init) => {
-      runtimeToken = (JSON.parse(String(init?.body)) as { writeback: { token: string } }).writeback.token
+      runtimeToken = (JSON.parse(fetchBodyText(init?.body)) as { writeback: { token: string } }).writeback.token
       return new Response("hydration rejected", { status: 503 })
     }).open({ ...fixture.input, registerCapability })).rejects.toThrow("hydration failed: 503")
     expect(runtimeToken).not.toBe("")
@@ -167,7 +168,7 @@ describe("hosted document runtime broker", () => {
       } },
     } as unknown as ControlPlaneServices
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as {
+      const body = JSON.parse(fetchBodyText(init?.body)) as {
         strategy: string; remoteVersion: string; remoteMarkdown?: string
         job: { token: string }
       }
@@ -213,7 +214,7 @@ describe("hosted document runtime broker", () => {
     globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const expected = new Headers(init?.headers).get("if-match")
       if (expected !== version) return new Response("conflict", { status: 409 })
-      canonical = (JSON.parse(String(init?.body)) as { markdown: string }).markdown
+      canonical = (JSON.parse(fetchBodyText(init?.body)) as { markdown: string }).markdown
       version = "v2"
       return Response.json({ version })
     }) as unknown as typeof fetch
@@ -237,7 +238,7 @@ describe("hosted document runtime broker", () => {
         CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
         CLAXEDO_PUBLIC_URL: "https://control.test",
       }, async (input, init) => {
-        const pathname = new URL(String(input)).pathname
+        const pathname = new URL(fetchUrl(input)).pathname
         return await runtime.app.fetch(new Request(`http://runtime.test${pathname.slice(pathname.indexOf("/api/wr/"))}`, init))
       })
       const opened = await broker.open({
@@ -307,7 +308,7 @@ describe("hosted document runtime broker", () => {
       )
       if (claims.jti !== activeJti) return new Response("inactive", { status: 403 })
       if (new Headers(init?.headers).get("if-match") !== version) return new Response("conflict", { status: 409 })
-      canonical = (JSON.parse(String(init?.body)) as { markdown: string }).markdown
+      canonical = (JSON.parse(fetchBodyText(init?.body)) as { markdown: string }).markdown
       version = "v2"
       return Response.json({ version })
     }) as unknown as typeof fetch
@@ -336,7 +337,7 @@ describe("hosted document runtime broker", () => {
         },
       } as unknown as ControlPlaneServices
       const relay = async (input: string | URL | Request, init?: RequestInit) => {
-        const pathname = new URL(String(input)).pathname
+        const pathname = new URL(fetchUrl(input)).pathname
         const runtimePath = pathname.slice(pathname.indexOf("/api/wr/"))
         order.push(runtimePath.endsWith("/activate") ? "activate" : "hydrate")
         return await runtime.app.fetch(new Request(`http://runtime.test${runtimePath}`, init))
@@ -400,7 +401,7 @@ describe("hosted document runtime broker", () => {
     let runtimeToken = ""
     await expect(createHostedDocumentRuntimeBroker(fixture.services, fixture.env, async (_input, init) => {
       signal = init?.signal ?? undefined
-      runtimeToken = (JSON.parse(String(init?.body)) as { writeback: { token: string } }).writeback.token
+      runtimeToken = (JSON.parse(fetchBodyText(init?.body)) as { writeback: { token: string } }).writeback.token
       return await new Promise<Response>(() => undefined)
     }, { requestTimeoutMs: 10 }).open({ ...fixture.input, registerCapability })).rejects.toThrow("timed out")
     expect(runtimeToken).not.toBe("")

@@ -99,6 +99,9 @@ export class CodexAppServerProcess {
   private stderrListeners = new Set<(message: string) => void>()
   private observation: AgentProcessObserverHandle
   private observationExited = false
+  /** Resolves once the child has actually exited, so `dispose()` can mean "gone". */
+  private readonly exited: Promise<void>
+  private resolveExited!: () => void
 
   private constructor(
     binary: string,
@@ -109,6 +112,7 @@ export class CodexAppServerProcess {
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
+    this.exited = new Promise<void>((resolve) => { this.resolveExited = resolve })
     const command = codexAppServerCommand(binary)
     const windowsShim = isWindowsShimBinary(command.command)
     this.proc = spawn(windowsShim ? `"${command.command}"` : command.command, command.args, {
@@ -157,7 +161,7 @@ export class CodexAppServerProcess {
       input.processObserver,
       input.mcp,
     )
-    const onAbort = () => process.dispose()
+    const onAbort = () => void process.dispose()
     try {
       if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
       input.signal?.addEventListener("abort", onAbort, { once: true })
@@ -169,7 +173,9 @@ export class CodexAppServerProcess {
       process.observation.update({ lifecycle: "ready" })
       return process
     } catch (cause) {
-      process.dispose()
+      // The caller is waiting on a failed startup; the child's teardown runs on
+      // its own and `dispose()` never rejects.
+      void process.dispose()
       throw cause
     } finally {
       input.signal?.removeEventListener("abort", onAbort)
@@ -206,23 +212,30 @@ export class CodexAppServerProcess {
     this.write({ id, result })
   }
 
-  dispose() {
-    if (this.disposed) return
+  /**
+   * Terminates the child and resolves once it is gone — SIGTERM first, SIGKILL
+   * a second later for a child that ignores it. An owner that awaits this may
+   * then delete the directory the child was writing to.
+   */
+  dispose(): Promise<void> {
+    if (this.disposed) return this.exited
     this.disposed = true
     this.exitObservation({ reason: "disposed" })
     const error = new Error("codex app-server process was disposed")
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
-    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
+    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return this.exited
     killHarnessProcess(this.proc, "SIGTERM")
     this.killTimer = setTimeout(() => {
       if (this.proc.exitCode === null && this.proc.signalCode === null) killHarnessProcess(this.proc, "SIGKILL")
     }, 1_000)
     this.killTimer.unref()
+    return this.exited
   }
 
   private handleExit(error: Error, reason: "error" | "exited", exitCode?: number) {
     if (this.killTimer) clearTimeout(this.killTimer)
+    this.resolveExited()
     this.exitObservation({ reason, ...(exitCode !== undefined ? { exitCode } : {}) })
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
@@ -251,10 +264,13 @@ export class CodexAppServerProcess {
   }
 
   private handleLine(line: string) {
-    let message: JsonRecord
+    let message: JsonRecord | undefined
     try {
-      message = JSON.parse(line) as JsonRecord
+      message = record(JSON.parse(line))
     } catch {
+      message = undefined
+    }
+    if (!message) {
       log.warn("codex app-server emitted non-json line", { line })
       return
     }

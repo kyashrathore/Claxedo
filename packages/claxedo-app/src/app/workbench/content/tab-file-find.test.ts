@@ -35,7 +35,7 @@ const highlights = new Map<string, StubHighlight>()
 // read-only accessor, and `Highlight` does not exist there at all.
 Object.defineProperty(globalThis, "Highlight", { value: StubHighlight, configurable: true, writable: true })
 Object.defineProperty(globalThis, "CSS", {
-  value: { ...(globalThis.CSS ?? {}), highlights },
+  value: { ...globalThis.CSS, highlights },
   configurable: true,
   writable: true,
 })

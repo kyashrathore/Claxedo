@@ -22,11 +22,8 @@ import {
   NewSessionDesignView,
   type NewSessionProjectSelection,
 } from "@/features/session/ui/components/session-new-design-view"
-import {
-  CREATE_WORKTREE,
-  MAIN_WORKTREE,
-  type NewSessionWorkspaceKind,
-} from "@/features/session/ui/components/session-new-workspace-options"
+import { CREATE_WORKTREE, MAIN_WORKTREE } from "@/features/session/ui/components/session-new-workspace-options"
+import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { getTerminalCommands } from "@/features/settings/ui/terminals"
 import { terminalLaunchers, type TerminalLauncher } from "./terminal-launchers"
@@ -34,6 +31,7 @@ import { useTerminalWorkspaceProvisioning } from "./terminal-workspace-provision
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import { useConfigOptional } from "@/app/providers/config"
 import "./terminal-new-view.css"
+import { errorMessage } from "@/lib/server-errors"
 
 /**
  * Same local alias `project-actions.tsx` and `workspace-recovery.tsx` use: a
@@ -62,8 +60,8 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   const provisioning = useTerminalWorkspaceProvisioning()
   const projectsQuery = useQuery(() => queryOptions.projects())
 
-  const [worktree, setWorktree] = createSignal<string>(MAIN_WORKTREE)
-  const [workspaceKind, setWorkspaceKind] = createSignal<NewSessionWorkspaceKind>("local")
+  const [worktree, setWorktree] = createSignal(MAIN_WORKTREE)
+  const [workspaceKind, setWorkspaceKind] = createSignal<WorkspaceKind>("local")
   const [selectedProject, setSelectedProject] = createSignal<NewSessionProjectSelection>()
   /** The launcher id currently starting, so only that row shows progress. */
   const [starting, setStarting] = createSignal<string | undefined>()
@@ -102,7 +100,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
     props.onRetarget(target)
   }
 
-  const changeWorkspaceKind = (value: NewSessionWorkspaceKind) => {
+  const changeWorkspaceKind = (value: WorkspaceKind) => {
     setError(undefined)
     setWorkspaceKind(value)
     // A pending "create" selection is kind-agnostic (it just changes which of
@@ -155,7 +153,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
       }
       props.onLaunch({ directory: target, workspaceId, command: launcher.command, title: launcher.title })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setStarting(undefined)
     }

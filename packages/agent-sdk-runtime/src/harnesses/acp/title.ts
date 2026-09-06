@@ -1,3 +1,5 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeAppendEventInput, AgentRuntimeStoreCore } from "../shared/runtime-store"
 import type { CompatEvent } from "../../compat-events"
 import { sessionUpdated, withDir } from "../../compat-events"
 import type { PromptInput } from "../../index"
@@ -9,19 +11,13 @@ import type { ACPProcess, SessionUpdate } from "./process"
 
 const log = Log.create({ service: "acp-adapter" })
 
-type ACPTitleStore = {
-  getSession(id: string): unknown | null
-  appendEvent(input: {
-    sessionId: string
-    agentSessionId?: string
-    payload: CompatEvent
-    source?: {
-      dir: "in" | "out"
-      method: string
-      requestId?: string
-      frame?: unknown
-    }
-  }): void
+/**
+ * The store operations auto-titling needs, as the runtime store declares them.
+ * The append receipt is unread here, so a caller may hand over a store that
+ * returns nothing from it.
+ */
+type ACPTitleStore = Pick<AgentRuntimeStoreCore, "getSession"> & {
+  appendEvent(input: AgentRuntimeAppendEventInput): unknown
 }
 
 export type ACPTitleDeps = {
@@ -39,24 +35,25 @@ export const deriveSessionTitle = (text: string) => {
   return source.length > 72 ? source.slice(0, 72).trimEnd() + "…" : source
 }
 
-export function chunkDelta(input: unknown) {
-  if (!input || typeof input !== "object") return
-  const row = input as { sessionUpdate?: unknown; delta?: unknown }
-  if (row.sessionUpdate !== "agent_message_chunk") return
-  if (typeof row.delta !== "string") return
-  return row.delta
+/** The text of an agent message chunk, when `input` is one. */
+export function chunkDelta(input: unknown): string | undefined {
+  const row = asRecord(input)
+  if (row?.sessionUpdate !== "agent_message_chunk") return undefined
+  return typeof row.delta === "string" ? row.delta : undefined
 }
 
-/** Extract plain text from prompt parts for title generation. */
-export function extractTextFromParts(parts: unknown[]): string {
+/**
+ * The first text a prompt carries, for title generation.
+ *
+ * Deliberately not `extractTextFromParts` from `shared/sdk-runtime-values`: that
+ * one joins every part, and an ACP title is derived from the opening line.
+ */
+export function firstPromptText(parts: unknown[]): string {
   for (const part of parts) {
-    if (!part || typeof part !== "object") continue
-    const p = part as Record<string, unknown>
-    if (p.type === "text" && typeof p.text === "string") return p.text.trim()
-    // InputText variant
-    if (p.type === "input_text" && typeof p.text === "string") return p.text.trim()
-    // Plain string content
-    if (typeof p.content === "string") return p.content.trim()
+    const row = asRecord(part)
+    if (!row) continue
+    if ((row.type === "text" || row.type === "input_text") && typeof row.text === "string") return row.text.trim()
+    if (typeof row.content === "string") return row.content.trim()
   }
   return ""
 }
@@ -70,9 +67,9 @@ export function maybeAutoTitle(
   parts: unknown[],
 ): CompatEvent | null {
   try {
-    const session = deps.store.getSession(id) as { title?: string | null } | null
+    const session = deps.store.getSession(id)
     if (hasConcreteSessionTitle(session?.title)) return null
-    const text = extractTextFromParts(parts)
+    const text = firstPromptText(parts)
     if (!text) return null
 
     const derivedTitle = deriveSessionTitle(text)
@@ -156,7 +153,7 @@ export async function generateAITitle(
 
   // Check current title hasn't been manually set in the meantime
   const derivedTitle = deriveSessionTitle(userText)
-  const current = deps.store.getSession(sessionId) as { title?: string | null } | null
+  const current = deps.store.getSession(sessionId)
   if (hasConcreteSessionTitle(current?.title) && current?.title !== derivedTitle) {
     return // title was manually updated, don't overwrite
   }

@@ -11,6 +11,10 @@ const harness = vi.hoisted(() => ({
   }>,
 }))
 
+const unusedGoalTransport = vi.hoisted(() => () => {
+  throw new Error("the capabilities suite does not drive goal mutations")
+})
+
 // Query lifetime owns deduplication/cancellation; transport placement has its
 // own public-route tests. Control only the response timing at this boundary.
 vi.mock("./session-transport", () => ({
@@ -19,6 +23,12 @@ vi.mock("./session-transport", () => ({
     pending.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
     harness.pending.push(pending)
   }).then(response => response.json()),
+  // `session-goal-query` binds these four into a module-level mutation record, so
+  // the mock must define them even though this suite never drives a goal mutation.
+  pauseSessionGoalByTransport: unusedGoalTransport,
+  resumeSessionGoalByTransport: unusedGoalTransport,
+  stopSessionGoalByTransport: unusedGoalTransport,
+  deleteSessionGoalByTransport: unusedGoalTransport,
 }))
 
 import {
@@ -85,7 +95,7 @@ describe("session capabilities query ownership", () => {
 
     currentSessionID = "ses_b"
     currentDirectory = "/repo/b"
-    harness.pending[0]!.resolve(Response.json(capabilities))
+    harness.pending[0].resolve(Response.json(capabilities))
     await expect(first).resolves.toBe(false)
 
     expect(queryClient.getQueryCache().find({ queryKey: requestKey })).toBeUndefined()
@@ -99,7 +109,7 @@ describe("session capabilities query ownership", () => {
       currentDirectory: () => currentDirectory,
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
-    harness.pending[1]!.resolve(Response.json(capabilities))
+    harness.pending[1].resolve(Response.json(capabilities))
     await expect(second).resolves.toBe(true)
 
     const canonical = queryClient.getQueryCache().find({
@@ -144,7 +154,7 @@ describe("session capabilities query ownership", () => {
     await expect(first).resolves.toBe(false)
     expect(harness.pending[0]?.signal?.aborted).toBe(false)
 
-    harness.pending[0]!.resolve(Response.json(capabilities))
+    harness.pending[0].resolve(Response.json(capabilities))
     await expect(second).resolves.toBe(true)
     expect(queryClient.getQueryData(capabilityKey(request))).toEqual(capabilities)
     await vi.waitFor(() => expect(queryClient.getQueryCache().find({
@@ -188,7 +198,7 @@ describe("session capabilities query ownership", () => {
     await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
     expect(harness.pending[0]?.signal?.aborted).toBe(true)
 
-    harness.pending[1]!.resolve(Response.json(capabilities))
+    harness.pending[1].resolve(Response.json(capabilities))
     await expect(second).resolves.toBe(true)
     await vi.waitFor(() => expect(queryClient.getQueryCache().find({ queryKey: requestKey })).toBeUndefined())
     cancelSpy.mockRestore()
@@ -209,7 +219,7 @@ describe("session capabilities query ownership", () => {
     const secondKey = sessionCapabilitiesTransportRequestKey(secondRequest)
 
     expect(firstKey).toEqual(secondKey)
-    harness.pending[0]!.resolve(Response.json(capabilities))
+    harness.pending[0].resolve(Response.json(capabilities))
     await expect(Promise.all([first, second])).resolves.toEqual([true, true])
   })
 
@@ -226,8 +236,8 @@ describe("session capabilities query ownership", () => {
     await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
 
     const secondCapabilities = { ...capabilities, reconnect: true }
-    harness.pending[0]!.resolve(Response.json(capabilities))
-    harness.pending[1]!.resolve(Response.json(secondCapabilities))
+    harness.pending[0].resolve(Response.json(capabilities))
+    harness.pending[1].resolve(Response.json(secondCapabilities))
     await expect(Promise.all([first, second])).resolves.toEqual([true, true])
 
     expect(sessionCapabilitiesTransportRequestKey(firstRequest)).not.toEqual(
@@ -253,7 +263,7 @@ describe("session capabilities query ownership", () => {
       currentDirectory: () => request.directory,
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
-    harness.pending[0]!.resolve(Response.json(capabilities))
+    harness.pending[0].resolve(Response.json(capabilities))
     await expect(first).resolves.toBe(true)
 
     const secondCapabilities = { ...capabilities, reconnect: true }
@@ -263,7 +273,7 @@ describe("session capabilities query ownership", () => {
       currentDirectory: () => request.directory,
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
-    harness.pending[1]!.resolve(Response.json(secondCapabilities))
+    harness.pending[1].resolve(Response.json(secondCapabilities))
     await expect(second).resolves.toBe(true)
 
     expect(capabilityKey(firstRequest)).not.toEqual(capabilityKey(secondRequest))

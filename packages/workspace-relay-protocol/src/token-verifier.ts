@@ -15,6 +15,8 @@
 
 import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from "jose"
 
+import { isRecord } from "./record"
+
 export type TokenVerifierBaseClaims = {
   iss: string
   aud: string
@@ -129,7 +131,7 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
           method: "POST",
           headers: {
             "content-type": "application/json",
-            ...(options.headers ?? {}),
+            ...options.headers,
           },
           body: JSON.stringify({ token }),
           signal: controller.signal,
@@ -141,24 +143,29 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
             status: res.status === 401 || res.status === 403 ? res.status : 503,
           })
         }
-        const body = (await res.json().catch(() => null)) as
-          | { subject?: string; scopes?: string[]; claims?: Record<string, unknown> }
-          | null
-        if (!body || typeof body.subject !== "string" || !body.subject) {
+        const body: unknown = await res.json().catch(() => null)
+        if (!isRecord(body)) {
+          throw new TokenVerifierError({
+            code: "verifier_response_invalid",
+            message: "Verifier response is missing a subject",
+          })
+        }
+        const subject = stringClaim(body, "subject")
+        if (!subject) {
           throw new TokenVerifierError({
             code: "verifier_response_invalid",
             message: "Verifier response is missing a subject",
           })
         }
         const claims = tokenVerifierBaseClaims(body.claims)
-        if (!claims || claims.sub !== body.subject) {
+        if (!claims || claims.sub !== subject) {
           throw new TokenVerifierError({
             code: "verifier_response_invalid",
             message: "Verifier response is missing required token claims",
           })
         }
         return {
-          subject: body.subject,
+          subject,
           scopes: Array.isArray(body.scopes) ? body.scopes.filter((s): s is string => typeof s === "string") : [],
           claims,
         }
@@ -249,14 +256,14 @@ export type StaticTokenVerifierOptions<TClaims extends Record<string, unknown> =
 export function createStaticTokenVerifier<TClaims extends Record<string, unknown> = Record<string, unknown>>(
   options: StaticTokenVerifierOptions<TClaims>,
 ): TokenVerifier<TClaims> {
-  // Copied into a null-prototype map so a token string can only ever match an
-  // entry the caller supplied. A plain object lookup also resolves inherited
-  // keys, which would make "constructor", "toString", or "__proto__" verify
-  // successfully and return an Object.prototype member instead of claims.
-  const tokens = Object.assign(Object.create(null) as Record<string, TokenClaims<TClaims>>, options.tokens)
+  // Copied into a Map so a token string can only ever match an entry the caller
+  // supplied. A plain object lookup also resolves inherited keys, which would
+  // make "constructor", "toString", or "__proto__" verify successfully and
+  // return an Object.prototype member instead of claims.
+  const tokens = new Map<string, TokenClaims<TClaims>>(Object.entries(options.tokens))
   return {
     async verify(token) {
-      const claims = tokens[token]
+      const claims = tokens.get(token)
       if (!claims) {
         throw new TokenVerifierError({
           code: "token_not_in_static_table",
@@ -278,8 +285,8 @@ function numberClaim(input: Record<string, unknown>, key: string) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
-function tokenVerifierBaseClaims(input: Record<string, unknown> | undefined): TokenVerifierBaseClaims | undefined {
-  if (!input || typeof input !== "object") return
+function tokenVerifierBaseClaims(input: unknown): TokenVerifierBaseClaims | undefined {
+  if (!isRecord(input)) return undefined
   const iss = stringClaim(input, "iss")
   const aud = stringClaim(input, "aud")
   const sub = stringClaim(input, "sub")
@@ -288,7 +295,7 @@ function tokenVerifierBaseClaims(input: Record<string, unknown> | undefined): To
   const exp = numberClaim(input, "exp")
   const iat = numberClaim(input, "iat")
   const jti = stringClaim(input, "jti")
-  if (!iss || !aud || !sub || !workspace_id || !host_id || !exp || !iat || !jti) return
+  if (!iss || !aud || !sub || !workspace_id || !host_id || !exp || !iat || !jti) return undefined
   return {
     ...input,
     iss,
@@ -303,7 +310,10 @@ function tokenVerifierBaseClaims(input: Record<string, unknown> | undefined): To
 }
 
 function oidcClaims(input: JWTPayload): OidcTokenVerifierClaims | undefined {
-  if (!input.iss || !input.sub || !input.exp) return
+  if (!input.iss || !input.sub || !input.exp) return undefined
+  const sid = stringClaim(input, "sid")
+  const org_id = stringClaim(input, "org_id")
+  const orgId = stringClaim(input, "orgId")
   return {
     ...input,
     iss: input.iss,
@@ -311,9 +321,9 @@ function oidcClaims(input: JWTPayload): OidcTokenVerifierClaims | undefined {
     exp: input.exp,
     ...(input.iat ? { iat: input.iat } : {}),
     ...(typeof input.jti === "string" ? { jti: input.jti } : {}),
-    ...(stringClaim(input, "sid") ? { sid: stringClaim(input, "sid") } : {}),
-    ...(stringClaim(input, "org_id") ? { org_id: stringClaim(input, "org_id") } : {}),
-    ...(stringClaim(input, "orgId") ? { orgId: stringClaim(input, "orgId") } : {}),
+    ...(sid ? { sid } : {}),
+    ...(org_id ? { org_id } : {}),
+    ...(orgId ? { orgId } : {}),
   }
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { workspaceScopedResourceList } from "./agent-config-routes"
+import { requestUrl } from "@/lib/url"
 
 // workspaceScopedResourceList is the single implementation of the 3-way
 // transport branch shared by agentListQuery (directory.ts) and
@@ -19,7 +20,7 @@ describe("workspaceScopedResourceList", () => {
       directory: "/tmp/ws",
       harnessType: "opencode",
       request: (async (input: string | URL | Request) => {
-        calls.push(String(input))
+        calls.push(requestUrl(input))
         return new Response(JSON.stringify([{ name: "build" }]), { status: 200 })
       }) as typeof fetch,
       workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
@@ -38,7 +39,7 @@ describe("workspaceScopedResourceList", () => {
       directory: "/tmp/ws",
       harnessType: "opencode",
       request: (async (input: string | URL | Request) => {
-        calls.push(String(input))
+        calls.push(requestUrl(input))
         return new Response(JSON.stringify([{ name: "lint" }]), { status: 200 })
       }) as typeof fetch,
       workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },

@@ -4,7 +4,7 @@ import type { ProjectMeta } from "../../features/session/data/query/types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 
-mock.module("@/platform/runtime/platform-provider", () => ({
+await mock.module("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ platform: "web" }),
 }))
 

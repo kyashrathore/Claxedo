@@ -192,9 +192,9 @@ describe("credential writes are bound to the token's owner, not the request's cl
       expect(res.status).toBe(200)
       expect(puts).toHaveLength(1)
       // The credential is stored against the identity the TOKEN proved.
-      expect(puts[0]!.auth.user.subject).toBe("user_a")
-      expect(puts[0]!.auth.user.orgId).toBe("org_a")
-      expect(puts[0]!.auth.token).toBe("token-a")
+      expect(puts[0].auth.user.subject).toBe("user_a")
+      expect(puts[0].auth.user.orgId).toBe("org_a")
+      expect(puts[0].auth.token).toBe("token-a")
     },
   )
 
@@ -204,8 +204,8 @@ describe("credential writes are bound to the token's owner, not the request's cl
       const res = await del({ token: "token-a", ...init })
       expect(res.status).toBe(200)
       expect(deletes).toHaveLength(1)
-      expect(deletes[0]!.auth.user.subject).toBe("user_a")
-      expect(deletes[0]!.auth.user.orgId).toBe("org_a")
+      expect(deletes[0].auth.user.subject).toBe("user_a")
+      expect(deletes[0].auth.user.orgId).toBe("org_a")
     },
   )
 
@@ -213,8 +213,8 @@ describe("credential writes are bound to the token's owner, not the request's cl
     // Without this, a handler that hardcoded/ignored the identity would still
     // pass every case above.
     await put({ token: "token-b" })
-    expect(puts[0]!.auth.user.subject).toBe("user_b")
-    expect(puts[0]!.auth.user.orgId).toBe("org_b")
+    expect(puts[0].auth.user.subject).toBe("user_b")
+    expect(puts[0].auth.user.orgId).toBe("org_b")
   })
 })
 

@@ -2,9 +2,9 @@ import { expect, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { parseSkill } from "./launch-policy"
+import { parseSkill } from "./skill-info"
 import { createOpenCodeRuntime } from "./runtime"
-import { authorizeWorkspace } from "./scope"
+import { WorkspaceScope } from "./scope"
 
 function data(response: unknown): unknown {
   return response && typeof response === "object" && "data" in response ? (response as { data?: unknown }).data : response
@@ -26,8 +26,8 @@ test("launch policy exposes skill directories and MCP servers to one workspace a
   fs.mkdirSync(b)
   fs.mkdirSync(path.join(skills, "code-review"), { recursive: true })
   fs.writeFileSync(path.join(skills, "code-review", "SKILL.md"), "---\nname: code-review\ndescription: Review code\n---\nReview the diff.\n")
-  const scopeA = authorizeWorkspace({ workspaceID: "a", directory: a })
-  authorizeWorkspace({ workspaceID: "b", directory: b })
+  const scopeA = WorkspaceScope.authorize({ workspaceID: "a", directory: a })
+  WorkspaceScope.authorize({ workspaceID: "b", directory: b })
   const runtime = createOpenCodeRuntime({ databasePath: path.join(root, "opencode.db") })
   const client = await runtime.host.client()
   const skillIds = async (directory: string) =>

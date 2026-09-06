@@ -30,6 +30,7 @@ import { createPathHelpers } from "@/platform/files/path"
 import type { LineComment } from "@/platform/comments/provider"
 import { fileHeaderActionsSlot } from "@/ui/controls/portal-slot"
 import { cachedFileReadRequest, peekCachedFileReadRequest, type FileRequestRuntime } from "@/platform/files/file-request-cache"
+import { errorMessage } from "@/lib/server-errors"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
@@ -178,7 +179,7 @@ export function TabFile(props: TabFileProps) {
       })
       .catch((e: unknown) => {
         if (seq !== loadSeq) return
-        if (!opts?.silent) setError(e instanceof Error ? e.message : String(e))
+        if (!opts?.silent) setError(errorMessage(e))
         setLoading(false)
       })
   }
@@ -331,9 +332,23 @@ export function TabFile(props: TabFileProps) {
     },
     editSubmitLabel: language.t("common.save"),
   })
-  const commentAnnotations = createMemo(() => commentsUi.annotations() as TextFileProps<unknown>["annotations"])
-  const renderAnnotation = (annotation: { metadata: unknown }) =>
-    commentsUi.renderAnnotation(annotation as { metadata: LineCommentAnnotationMeta<LineComment> })
+  // `File` is generic in its annotation metadata, and the metadata here is the
+  // comment controller's own — so the viewer is given that type rather than
+  // pinned to `unknown`, which is what forced the renderer below to assert the
+  // metadata back out of `unknown` on every row.
+  //
+  // The rows are re-emitted through the `kind` discriminant because
+  // `@pierre/diffs` builds `LineAnnotation<T>` from a DISTRIBUTIVE conditional
+  // (`OptionalMetadata<T> = T extends undefined ? … : { metadata: T }`): for a
+  // union `T` that expands to `{ metadata: comment } | { metadata: draft }`, and
+  // a row still holding the whole union matches neither arm until it is
+  // narrowed. Narrowing is what this does; the values are unchanged.
+  const commentAnnotations = createMemo<TextFileProps<LineCommentAnnotationMeta<LineComment>>["annotations"]>(
+    () => commentsUi.annotations().map(({ lineNumber, metadata }) =>
+      metadata.kind === "comment" ? { lineNumber, metadata } : { lineNumber, metadata }
+    ),
+  )
+  const renderAnnotation = commentsUi.renderAnnotation
   const renderGutterUtility = (getHoveredRow: () => { lineNumber: number } | undefined) =>
     commentsUi.renderGutterUtility(getHoveredRow) ?? null
 

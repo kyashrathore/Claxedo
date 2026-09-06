@@ -240,7 +240,7 @@ describe("tail slope", () => {
   test("does not reduce the tail to its two endpoints", () => {
     const values = [0, 0, 0, 10, 20, 30, 5].map((mb) => mb * MB)
     const samples = sweepSamples(values)
-    const endpointSlope = (values.at(-1)! - values[2]!) / (samples.at(-1)!.step - samples[2]!.step)
+    const endpointSlope = (values.at(-1)! - values[2]) / (samples.at(-1)!.step - samples[2].step)
     expect(tailSlope(samples)).not.toBeCloseTo(endpointSlope)
   })
 

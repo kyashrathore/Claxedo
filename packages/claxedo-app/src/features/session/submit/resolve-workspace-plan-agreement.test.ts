@@ -62,6 +62,7 @@ function classifyPlan(input: Input): SharedDecision {
     case "provision-cloud-workspace":
       return "remote-handled"
   }
+  return undefined
 }
 
 async function classifyOrchestrator(input: {

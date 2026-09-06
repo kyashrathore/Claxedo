@@ -1,20 +1,28 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
-import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message, AgentContentPart as Part, AgentToolState as ToolState } from "@claxedo/agent-runtime-contract"
+import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
+import type { ConversationEventFrame } from "./conversation-event"
 export type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
 import { preserveMessageFields, withPreservedAuthor } from "./conversation-snapshot"
+import { asRecord } from "@/lib/record"
+import {
+  agentMessageToChatMessage,
+  agentPartId,
+  agentPartToChatParts,
+  type ConversationUIMessage,
+  chatMessageToAgentMessage,
+  chatPartToAgentPart,
+  type ProjectedAgentMessage,
+  isAgentMessage,
+  isAgentPart,
+  storedMessage,
+} from "./agent-conversation-codec"
 
 export type ConversationChatHandle = {
   messages: () => UIMessage[]
   setMessages: (messages: UIMessage[]) => void
 }
 
-type ConversationUIMessage = UIMessage & {
-  metadata?: {
-    agentMessage?: Message
-    optimistic?: boolean
-  }
-}
 
 // A live event can outrun a REST snapshot that started before it. This marker is
 // deliberately process-local (WeakSet, not persisted metadata): it protects the
@@ -22,13 +30,6 @@ type ConversationUIMessage = UIMessage & {
 // row immortal after reload.
 const unpersistedLiveMessages = new WeakSet<UIMessage>()
 
-type ConversationMessagePart = MessagePart & {
-  metadata?: {
-    agentPartId?: string
-    agentPart?: Part
-    [key: string]: unknown
-  }
-}
 
 export function agentConversationSnapshot(input: {
   messages: Message[]
@@ -48,7 +49,7 @@ export function agentConversationSnapshot(input: {
 // re-running the per-part mapping. During streaming only the last message has a
 // new reference, so projection cost is O(changed) rather than O(all messages)
 // per token. WeakMap → entries are GC'd when a message object is replaced.
-const projectionCache = new WeakMap<UIMessage, { message: Message; parts: Part[] }>()
+const projectionCache = new WeakMap<UIMessage, { message: ProjectedAgentMessage; parts: Part[] }>()
 
 export function agentConversationProjection(messages: UIMessage[]) {
   const parts: Record<string, Part[] | undefined> = {}
@@ -97,7 +98,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
     // between the halves). See `assistantTurnIndex`.
     const index = assistantTurnIndex(
       merged,
-      storedMessage(message) ?? ({ id: message.id, role: message.role } as Message),
+      storedMessage(message) ?? { id: message.id, role: message.role },
       indexById,
       options?.canonicalMessageIDs,
       distinctSnapshotReplies,
@@ -108,7 +109,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
       changed = true
       continue
     }
-    const existing = merged[index]!
+    const existing = merged[index]
     // Snapshot refetches mostly re-deliver identical settled content. Compare
     // one message at a time so unchanged rows preserve their object identity,
     // while equal-length text changes and same-rank tool updates still reach
@@ -182,14 +183,12 @@ function unchangedSnapshotMessage(existing: UIMessage, snapshot: UIMessage): boo
   const storedSnapshot = storedMessage(snapshot)
   if (!storedExisting || !storedSnapshot) return false
   if (!sameSerializableValue(storedExisting, storedSnapshot)) return false
-  const timeSnapshot = storedSnapshot.time as { completed?: number } | undefined
-  if (storedSnapshot.role === "assistant") {
-    if (typeof timeSnapshot?.completed !== "number") return false
-  }
+  // Narrow on the discriminant: only the assistant arm carries `time.completed`.
+  if (storedSnapshot.role === "assistant" && typeof storedSnapshot.time.completed !== "number") return false
   if (existing.parts.length !== snapshot.parts.length) return false
   for (let index = 0; index < snapshot.parts.length; index++) {
-    const left = existing.parts[index]!
-    const right = snapshot.parts[index]!
+    const left = existing.parts[index]
+    const right = snapshot.parts[index]
     if (!sameSerializableValue(left, right)) return false
   }
   return true
@@ -213,21 +212,21 @@ function sameSerializableValue(left: unknown, right: unknown) {
   }
 }
 
-export function applyAgentConversationEvent(chat: ConversationChatHandle, event: Event) {
+export function applyAgentConversationEvent(chat: ConversationChatHandle, event: ConversationEventFrame) {
   if (event.type === "message.updated") {
-    return upsertMessage(chat, propertyRecord(event.properties)?.info as Message | undefined)
+    return upsertMessage(chat, agentMessageFromEvent(event.properties))
   }
   if (event.type === "message.removed") {
     return removeMessage(chat, messageIdFromEvent(event))
   }
   if (event.type === "message.part.updated") {
-    return upsertPart(chat, propertyRecord(event.properties)?.part as Part | undefined)
+    return upsertPart(chat, agentPartFromEvent(event.properties))
   }
   if (event.type === "message.part.removed") {
     return removePart(chat, messageIdFromEvent(event), partIdFromEvent(event))
   }
   if (event.type === "message.part.delta") {
-    const props = propertyRecord(event.properties)
+    const props = asRecord(event.properties)
     return appendPartDelta(
       chat,
       text(props?.messageID),
@@ -238,9 +237,6 @@ export function applyAgentConversationEvent(chat: ConversationChatHandle, event:
   return false
 }
 
-function storedMessage(message: UIMessage | undefined) {
-  return (message as ConversationUIMessage | undefined)?.metadata?.agentMessage
-}
 
 function mergeChatMessage(
   current: UIMessage,
@@ -299,7 +295,7 @@ function mergeChatParts(current: MessagePart[], snapshot: MessagePart[]) {
       next.push(part)
       continue
     }
-    next[index] = mergeChatPart(part, next[index]!)
+    next[index] = mergeChatPart(part, next[index])
   }
   return next
 }
@@ -370,9 +366,16 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
  * would silently lose a real message. The `_r` convention is what makes "these
  * two are the same reply" a fact rather than a guess.
  */
+/**
+ * The turn slot a message belongs to.
+ *
+ * Takes only the three fields it reads rather than a whole `Message`, so a
+ * caller that has just an id/role pair (a chat row with no stored agent message)
+ * can ask without inventing the rest of the contract shape.
+ */
 function assistantTurnIndex(
   current: UIMessage[],
-  message: Message,
+  message: { id: string; role: string; parentID?: string },
   indexById?: Map<string, number>,
   canonicalMessageIDs?: ReadonlySet<string>,
   distinctSnapshotReplies?: ReadonlySet<string>,
@@ -381,8 +384,8 @@ function assistantTurnIndex(
   if (byId !== -1) return byId
   if (distinctSnapshotReplies?.has(message.id)) return -1
   if (message.role !== "assistant") return -1
-  const parentID = (message as { parentID?: unknown }).parentID
-  if (typeof parentID !== "string" || !parentID) return -1
+  const parentID = message.parentID
+  if (!parentID) return -1
   const announced = assistantMessageIdForTurn(parentID)
   const aliasIndex = (index: number) =>
     index !== -1 && assistantTaskStep(current[index]) ? -1 : index
@@ -391,12 +394,12 @@ function assistantTurnIndex(
   if (message.id === announced) {
     const candidates = current.flatMap((item, index) => {
       const stored = storedMessage(item)
-      return stored?.role === "assistant" && (stored as { parentID?: unknown }).parentID === parentID
+      return stored?.role === "assistant" && stored.parentID === parentID
         && !(canonicalMessageIDs?.has(message.id) && canonicalMessageIDs.has(stored.id))
         ? [index]
         : []
     })
-    return candidates.length === 1 ? aliasIndex(candidates[0]!) : -1
+    return candidates.length === 1 ? aliasIndex(candidates[0]) : -1
   }
   return aliasIndex(indexById ? (indexById.get(announced) ?? -1) : current.findIndex((item) => item.id === announced))
 }
@@ -421,7 +424,7 @@ function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === part.messageID)
   if (index === -1) return false
-  const message = current[index]!
+  const message = current[index]
   // A settled assistant message only accepts updates to parts it already has —
   // a late-delivered streamed part (delayed SSE batch arriving after the REST
   // history refetch landed the completed message) must not append a second
@@ -439,7 +442,7 @@ function removePart(chat: ConversationChatHandle, messageID: string | undefined,
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === messageID)
   if (index === -1) return false
-  const message = current[index]!
+  const message = current[index]
   const nextParts = message.parts.filter((part) => agentPartId(part) !== partID)
   if (nextParts.length === message.parts.length) return false
   chat.setMessages(replaceAt(current, index, markUnpersistedLive({
@@ -459,7 +462,7 @@ function appendPartDelta(
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === messageID)
   if (index === -1) return false
-  const message = current[index]!
+  const message = current[index]
   // Same settled-message guard as upsertPart: a delta for a part the settled
   // message does not have would create a fresh part and duplicate the reply.
   if (settledAssistantMessage(message) && !hasChatPart(message, partID)) return false
@@ -475,101 +478,7 @@ function markUnpersistedLive(message: UIMessage): UIMessage {
   return message
 }
 
-function agentMessageToChatMessage(input: {
-  message: Message
-  parts: Array<Part | MessagePart>
-}): UIMessage {
-  return {
-    id: input.message.id,
-    role: input.message.role,
-    createdAt: new Date(input.message.time.created),
-    metadata: { agentMessage: input.message },
-    parts: input.parts.flatMap((part) => isAgentPart(part) ? agentPartToChatParts(part) : [part]),
-  } as UIMessage
-}
 
-function agentPartToChatParts(part: Part): MessagePart[] {
-  if (part.type === "text") {
-    return [{
-      type: "text",
-      content: part.text,
-      metadata: { agentPartId: part.id, agentPart: part },
-    }]
-  }
-  if (part.type === "reasoning") {
-    return [{
-      type: "thinking",
-      stepId: part.id,
-      content: part.text,
-      signature: typeof part.metadata?.signature === "string" ? part.metadata.signature : undefined,
-      metadata: { agentPartId: part.id, agentPart: part },
-    } as MessagePart]
-  }
-  if (part.type === "file") {
-    const source = {
-      type: "url" as const,
-      value: part.url,
-      mimeType: part.mime,
-    }
-    if (part.mime.startsWith("image/")) {
-      return [{
-        type: "image",
-        source,
-        metadata: { agentPartId: part.id, agentPart: part, filename: part.filename },
-      }]
-    }
-    return [{
-      type: "document",
-      source,
-      metadata: { agentPartId: part.id, agentPart: part, filename: part.filename },
-    }]
-  }
-  if (part.type === "tool") {
-    return [{
-      type: "tool-call",
-      id: part.callID,
-      name: part.tool,
-      arguments: JSON.stringify(part.state.input ?? {}),
-      state: toolCallState(part.state),
-      output: toolOutput(part.state),
-      metadata: { ...part.metadata, agentPartId: part.id, agentPart: part },
-    }]
-  }
-  if ((part.type as string) === "handoff") {
-    return [{
-      // TanStack has no handoff part. Carry the canonical agent part on an
-      // empty text envelope so it survives projection without rendering copy.
-      type: "text",
-      content: "",
-      metadata: { agentPartId: part.id, agentPart: part },
-    }]
-  }
-  // Compaction markers carry no payload beyond their type/id. TanStack's MessagePart
-  // union has no "compaction" variant, so (like "agent") we carry it as a custom-typed
-  // part and stash the original for a lossless round-trip. Dropping it here silently
-  // hid the assistant-timeline compaction divider (PART_MAPPING["compaction"]).
-  if (part.type === "compaction") {
-    return [{
-      type: "compaction",
-      metadata: { agentPartId: part.id, agentPart: part },
-      // as-any: MessagePart union has no "compaction" variant; carry it as a custom part.
-    } as unknown as MessagePart]
-  }
-  // @-mention parts. TanStack's MessagePart union has no "agent" variant, so we
-  // carry the mention as a custom-typed part (cast, like "thinking") and stash
-  // the original AgentPart in metadata for a lossless round-trip back to
-  // OpenCode. Dropping this here silently hid mentions in the timeline.
-  if (part.type === "agent") {
-    return [{
-      type: "agent",
-      name: part.name,
-      ...(part.source ? { source: part.source } : {}),
-      metadata: { agentPartId: part.id, agentPart: part },
-      // as-any: MessagePart union has no "agent" variant; carry it as a custom part (like "thinking").
-    } as unknown as MessagePart]
-  }
-  return []
-}
 
 function upsertChatParts(current: MessagePart[], partID: string, next: MessagePart[]) {
   const index = current.findIndex((part) => agentPartId(part) === partID)
@@ -589,7 +498,7 @@ function appendTextDelta(parts: MessagePart[], partID: string, delta: string) {
       { type: "text" as const, content: delta, metadata: { agentPartId: partID } },
     ]
   }
-  const part = parts[index]!
+  const part = parts[index]
   if (part.type === "text") {
     return replaceAt(parts, index, {
       ...part,
@@ -605,122 +514,8 @@ function appendTextDelta(parts: MessagePart[], partID: string, delta: string) {
   return parts
 }
 
-function agentPartId(part: MessagePart) {
-  if (part.type === "thinking") return part.stepId
-  const metadata = propertyRecord((part as { metadata?: unknown }).metadata)
-  return text(metadata?.agentPartId)
-}
 
-function chatMessageToAgentMessage(message: UIMessage) {
-  const stored = ((message as ConversationUIMessage).metadata?.agentMessage)
-  if (stored) return {
-    ...stored,
-    role: message.role,
-    time: {
-      ...stored.time,
-      created: message.createdAt?.getTime() ?? stored.time.created,
-    },
-  } as Message
-  return {
-    id: message.id,
-    role: message.role,
-    sessionID: "",
-    time: { created: message.createdAt?.getTime() ?? 0 },
-  } as Message
-}
 
-function chatPartToAgentPart(message: UIMessage, part: MessagePart) {
-  const metadata = (part as ConversationMessagePart).metadata
-  const stored = metadata?.agentPart
-  if (stored && (stored.type as string) === "handoff") {
-    return [{ ...stored, messageID: message.id }]
-  }
-  if (part.type === "text") {
-    return [stored ? {
-      ...stored,
-      type: "text",
-      messageID: message.id,
-      text: part.content,
-    } as Part : {
-      id: metadata?.agentPartId ?? `${message.id}:text`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "text",
-      text: part.content,
-    } as Part]
-  }
-  if (part.type === "thinking") {
-    return [stored ? {
-      ...stored,
-      type: "reasoning",
-      messageID: message.id,
-      text: part.content,
-    } as Part : {
-      id: part.stepId ?? `${message.id}:reasoning`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "reasoning",
-      text: part.content,
-      time: { start: message.createdAt?.getTime() ?? 0 },
-    } as Part]
-  }
-  if (part.type === "tool-call" && stored) {
-    return [{
-      ...stored,
-      messageID: message.id,
-    }]
-  }
-  if ((part.type === "image" || part.type === "document") && stored) {
-    return [{
-      ...stored,
-      messageID: message.id,
-    }]
-  }
-  // Compaction marker → agent compaction part. Reuse the stored original when
-  // present (lossless); otherwise reconstruct the minimal envelope.
-  if ((part.type as string) === "compaction") {
-    return [stored ? { ...stored, messageID: message.id } : {
-      id: metadata?.agentPartId ?? `${message.id}:compaction`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "compaction",
-      auto: false,
-    } as Part]
-  }
-  // Agent mention → agent mention part. Reuse the stored original when present
-  // (lossless); otherwise reconstruct from the carried name/source (the path a
-  // freshly-composed optimistic user message takes before the server echoes it).
-  if ((part.type as string) === "agent") {
-    // as-any: read the custom "agent" MessagePart's carried fields (outside TanStack's union) to rebuild the AgentPart.
-    const agent = part as unknown as { name?: string; source?: { value: string; start: number; end: number } }
-    return [stored ? { ...stored, messageID: message.id } : {
-      id: metadata?.agentPartId ?? `${message.id}:agent`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "agent",
-      name: agent.name ?? "",
-      ...(agent.source ? { source: agent.source } : {}),
-    } as Part]
-  }
-  return []
-}
-
-function chatMessageSessionId(message: UIMessage) {
-  const stored = (message as ConversationUIMessage).metadata?.agentMessage
-  return stored?.sessionID ?? ""
-}
-
-function toolCallState(state: ToolState) {
-  if (state.status === "pending") return "awaiting-input"
-  if (state.status === "running") return "input-complete"
-  return "complete"
-}
-
-function toolOutput(state: ToolState) {
-  if (state.status === "completed") return state.output
-  if (state.status === "error") return state.error
-  return undefined
-}
 
 function replaceAt<T>(items: T[], index: number, value: T) {
   return [
@@ -730,27 +525,39 @@ function replaceAt<T>(items: T[], index: number, value: T) {
   ]
 }
 
-function messageIdFromEvent(event: Event) {
-  const props = propertyRecord(event.properties)
+function messageIdFromEvent(event: ConversationEventFrame) {
+  const props = asRecord(event.properties)
   return text(props?.messageID) ??
     text(props?.messageId) ??
-    text(propertyRecord(props?.info)?.id) ??
-    text(propertyRecord(props?.part)?.messageID)
+    text(asRecord(props?.info)?.id) ??
+    text(asRecord(props?.part)?.messageID)
 }
 
-function partIdFromEvent(event: Event) {
-  const props = propertyRecord(event.properties)
+function partIdFromEvent(event: ConversationEventFrame) {
+  const props = asRecord(event.properties)
   return text(props?.partID) ??
     text(props?.partId) ??
-    text(propertyRecord(props?.part)?.id)
+    text(asRecord(props?.part)?.id)
 }
 
-function isAgentPart(part: Part | MessagePart): part is Part {
-  return "messageID" in part && "sessionID" in part
+
+/**
+ * `properties.info` of a `message.*` event.
+ *
+ * The frame is untyped, and `upsertMessage` branches on `role`, so the guard
+ * establishes exactly the identity and discriminant it needs. The rest of the
+ * contract shape is carried through as-is.
+ */
+function agentMessageFromEvent(properties: unknown): Message | undefined {
+  const info = asRecord(properties)?.info
+  return isAgentMessage(info) ? info : undefined
 }
 
-function propertyRecord(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+
+/** `properties.part` of a `message.part.*` event. */
+function agentPartFromEvent(properties: unknown): Part | undefined {
+  const part = asRecord(properties)?.part
+  return isAgentPart(part) ? part : undefined
 }
 
 function text(input: unknown) {

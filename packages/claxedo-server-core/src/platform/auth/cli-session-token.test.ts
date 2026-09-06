@@ -99,8 +99,9 @@ describe("minted CLI session tokens are nameable", () => {
     const refresh = decodeJwt(minted.refresh_token.slice(REFRESH_PREFIX.length))
 
     const rows = registry.rows()
-    expect(rows.map((row) => row.jti).sort()).toEqual([access.jti, refresh.jti].sort())
-    expect(rows.map((row) => row.kind).sort()).toEqual(["access", "refresh"])
+    const byText = (a: string | undefined, b: string | undefined) => (a ?? "").localeCompare(b ?? "")
+    expect(rows.map((row) => row.jti).toSorted(byText)).toEqual([access.jti, refresh.jti].toSorted(byText))
+    expect(rows.map((row) => row.kind).toSorted(byText)).toEqual(["access", "refresh"])
     for (const row of rows) {
       expect(row.tokenIdentifier).toBe("https://issuer.test|user_1")
       expect(row.revokedAt).toBeUndefined()

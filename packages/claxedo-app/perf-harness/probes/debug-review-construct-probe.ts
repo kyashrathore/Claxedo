@@ -93,6 +93,40 @@ type ProbeMode =
   | { kind: "large-diff-guard"; filePath: string }
   | { kind: "force-large-diff"; filePath: string; renderedHunksBefore: number }
 
+/**
+ * The live `@pierre/diffs` Virtualizer, which the library assigns to
+ * `window.__INSTANCE` in `setup`.
+ *
+ * A description of a third-party debug surface, not a contract the app owns —
+ * hence every member optional. It is the ground truth for "how many rows did
+ * the renderer decide to build", as opposed to counting the DOM it produced.
+ */
+type DiffVirtualizer = {
+  observers?: Map<HTMLElement, DiffVirtualizerObserver>
+  windowSpecs?: { top?: number; bottom?: number }
+  height?: number
+  config?: { overscrollSize?: number }
+}
+
+type DiffVirtualizerObserver = {
+  renderRange?: { totalLines?: number; startingLine?: number }
+  metrics?: { hunkLineCount?: number; lineHeight?: number }
+  cache?: { totalLines?: number }
+  getDiffStyle?: () => string
+}
+
+declare global {
+  interface Window {
+    /** The live diff Virtualizer; see {@link DiffVirtualizer}. */
+    __INSTANCE?: DiffVirtualizer
+    /**
+     * The review row element stamped before a click, so the probe can tell a
+     * row that was REUSED from one that was rebuilt.
+     */
+    __claxedoPerfRow?: HTMLElement
+  }
+}
+
 type ProbeObservation = IsolatedInteractionObservation & {
   /**
    * Page-clock time of the trusted pointerdown. The causal recorder reports
@@ -226,27 +260,24 @@ const observeReviewInteraction = async (params: {
   }
   const renderRangeReport = () => {
     const row = diffRow()
-    const virtualizer = (window as unknown as { __INSTANCE?: Record<string, unknown> }).__INSTANCE
-    const observers = virtualizer?.observers as Map<HTMLElement, Record<string, unknown>> | undefined
+    const virtualizer = window.__INSTANCE
+    const observers = virtualizer?.observers
     if (!row || !observers) return undefined
     const parts: string[] = []
     for (const [container, instance] of observers.entries()) {
       if (!row.contains(container)) continue
-      const range = instance.renderRange as Record<string, number> | undefined
-      const metrics = instance.metrics as Record<string, number> | undefined
-      const cache = instance.cache as Record<string, number> | undefined
-      const specs = virtualizer!.windowSpecs as Record<string, number> | undefined
+      const specs = virtualizer.windowSpecs
       parts.push(
         [
-          `totalLines=${range?.totalLines}`,
-          `startingLine=${range?.startingLine}`,
-          `hunkLineCount=${metrics?.hunkLineCount}`,
-          `lineHeight=${metrics?.lineHeight}`,
-          `cacheTotalLines=${cache?.totalLines}`,
-          `diffStyle=${String(instance.getDiffStyle ? (instance.getDiffStyle as () => string).call(instance) : "?")}`,
+          `totalLines=${instance.renderRange?.totalLines}`,
+          `startingLine=${instance.renderRange?.startingLine}`,
+          `hunkLineCount=${instance.metrics?.hunkLineCount}`,
+          `lineHeight=${instance.metrics?.lineHeight}`,
+          `cacheTotalLines=${instance.cache?.totalLines}`,
+          `diffStyle=${instance.getDiffStyle?.() ?? "?"}`,
           `window=${specs?.top}..${specs?.bottom}`,
-          `vHeight=${virtualizer!.height}`,
-          `overscroll=${(virtualizer!.config as Record<string, number> | undefined)?.overscrollSize}`,
+          `vHeight=${virtualizer.height}`,
+          `overscroll=${virtualizer.config?.overscrollSize}`,
         ].join(" "),
       )
     }
@@ -286,6 +317,11 @@ const observeReviewInteraction = async (params: {
       case "force-large-diff":
         return !rowState().largeDiffGuard
     }
+    // The switch covers every `mode.kind`, so this is unreachable. Stating it
+    // gives the function one return contract, and a new mode fails to compile
+    // here rather than silently reading as "not yet".
+    const unhandled: never = mode
+    throw new Error(`review-construct probe mode is not implemented: ${JSON.stringify(unhandled)}`)
   }
   const ready = (): boolean => {
     switch (mode.kind) {
@@ -320,6 +356,11 @@ const observeReviewInteraction = async (params: {
           renderedHunks() > mode.renderedHunksBefore
       }
     }
+    // The switch covers every `mode.kind`, so this is unreachable. Stating it
+    // gives the function one return contract, and a new mode fails to compile
+    // here rather than silently reading as "not yet".
+    const unhandled: never = mode
+    throw new Error(`review-construct probe mode is not implemented: ${JSON.stringify(unhandled)}`)
   }
   let acknowledgedMs: number | undefined
   let stableFrames = 0
@@ -339,7 +380,7 @@ const observeReviewInteraction = async (params: {
   })
   performance.clearMarks(params.mark)
   const settled = rowState()
-  const stampedRow = (window as unknown as { __claxedoPerfRow?: HTMLElement }).__claxedoPerfRow
+  const stampedRow = window.__claxedoPerfRow
   const currentRow = diffRow()
   return {
     completionMs,
@@ -428,8 +469,8 @@ async function openWorkspaceFileTab(page: Page, filePath: string) {
 const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))
 const expectedTotal = fixture.changedFiles.length
-const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.file
-const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.file
+const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX].file
+const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX].file
 const [fileA, fileB] = WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS
 const browser = await chromium.launch({ headless: true, args: frameSamplingLaunchArgs, timeout: 30_000 })
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
@@ -444,7 +485,7 @@ const elapsed = () => `${Math.round(performance.now() - probeStarted)}ms`
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
 
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} corpus=${expectedTotal} files expand=${expandPath}`)
 
 await launchTo(page, app, sessionPath(session, session.id))
@@ -470,13 +511,12 @@ const runCell = async (input: {
   await control.scrollIntoViewIfNeeded().catch(() => undefined)
   // Row identity across the click, for the diff modes.
   await page.evaluate((filePath) => {
-    const target = window as unknown as { __claxedoPerfRow?: HTMLElement }
-    delete target.__claxedoPerfRow
+    delete window.__claxedoPerfRow
     if (!filePath) return
     const row = document.querySelector<HTMLElement>(
       `[data-testid='review-pane-root'] [data-review-file="${CSS.escape(filePath)}"]`,
     )
-    if (row) target.__claxedoPerfRow = row
+    if (row) window.__claxedoPerfRow = row
   }, "filePath" in input.mode ? input.mode.filePath : undefined)
   const prepared = await prepareTrustedInteraction(page, control, input.cell)
   if (HOVER_DWELL_MS > 0) {
@@ -527,7 +567,7 @@ await waitForWorkspaceReviewContent(page, expectedTotal)
 
 // --- Precondition: two file tabs open (the driver's Files<->Review material).
 await openFilesNavigator(page)
-for (const filePath of [fileA!, fileB!]) await openWorkspaceFileTab(page, filePath)
+for (const filePath of [fileA, fileB]) await openWorkspaceFileTab(page, filePath)
 await settleBeforeNextInteraction(page)
 console.log(`[probe] file tabs open, active=${fileB} (${elapsed()})`)
 
@@ -609,8 +649,8 @@ if (guard.observation.rowLargeDiffGuard) {
 // --- 5. Review -> Files, back onto an open, already-loaded file tab.
 await runCell({
   cell: "review_to_files",
-  control: fileTabButton(fileB!),
-  mode: { kind: "activate-file", filePath: fileB! },
+  control: fileTabButton(fileB),
+  mode: { kind: "activate-file", filePath: fileB },
 })
 
 // --- Per-click attribution.

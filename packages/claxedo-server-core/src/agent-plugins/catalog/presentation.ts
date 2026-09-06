@@ -48,7 +48,7 @@ function monogram(name: string) {
     .split(/[^A-Za-z0-9]+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((word) => word[0]!)
+    .map((word) => word[0])
     .join("")
     .toUpperCase()
 }

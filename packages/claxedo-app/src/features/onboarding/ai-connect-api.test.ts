@@ -59,7 +59,7 @@ describe("AI connect API", () => {
       items: [{ providerId: "anthropic", scope: "local" }],
       request: stub.request,
     })).resolves.toEqual([{ credentialId: "cred-anthropic", providerId: "anthropic", result: "ok" }])
-    expect(JSON.parse(String(stub.calls[0].init?.body))).toEqual({
+    expect(requestJson(stub.calls[0].init)).toEqual({
       discovery_id: "discovery-1",
       items: [{ provider_id: "anthropic", scope: "local" }],
     })
@@ -97,3 +97,8 @@ describe("AI connect API", () => {
     expect(stub.calls[1].input).toMatchObject({ credentialId: "cred-openai", action: "verify" })
   })
 })
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

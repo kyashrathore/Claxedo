@@ -4,17 +4,14 @@ import os from "node:os"
 import path from "node:path"
 import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
 import { writeProjectedMcpFile } from "./mcp-projection"
+import { isRecord } from "../../../platform/json"
 
 const OWNER = "claxedo-agent-plugins"
 const PREFIX = "claxedo--"
 const MARKER = ".claxedo-agent-plugin.json"
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function errorCode(value: unknown): string | undefined {
-  return record(value) && typeof value.code === "string" ? value.code : undefined
+  return isRecord(value) && typeof value.code === "string" ? value.code : undefined
 }
 
 function managedName(plugin: GenerationPluginRoot) {
@@ -31,7 +28,7 @@ async function ownedDirectory(root: string, name: string) {
   if (!name.startsWith(PREFIX)) return false
   try {
     const marker = JSON.parse(await fs.readFile(path.join(root, name, MARKER), "utf8")) as unknown
-    return record(marker)
+    return isRecord(marker)
       && marker.owner === OWNER
       && marker.directory === name
   } catch {

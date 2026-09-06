@@ -20,7 +20,7 @@ import { createOpenCodeHost, type OpenCodeHost } from "./host"
 import { createCatalogPort, type OpenCodeCatalogPort } from "./catalog-port"
 import { createInteractionPort, type OpenCodeInteractionPort } from "./interaction-port"
 import { createSessionPort, type OpenCodeSessionPort } from "./session-port"
-import { authorizeWorkspace, WorkspaceScopeError, type WorkspaceScope } from "./scope"
+import { WorkspaceScope, WorkspaceScopeError } from "./scope"
 
 let root: string
 let host: OpenCodeHost
@@ -43,8 +43,8 @@ beforeAll(async () => {
   sessions = createSessionPort(host)
   catalog = createCatalogPort(host)
   interactions = createInteractionPort(host)
-  alpha = authorizeWorkspace({ workspaceID: "ws-alpha", directory: workspace("alpha") })
-  beta = authorizeWorkspace({ workspaceID: "ws-beta", directory: workspace("beta") })
+  alpha = WorkspaceScope.authorize({ workspaceID: "ws-alpha", directory: workspace("alpha") })
+  beta = WorkspaceScope.authorize({ workspaceID: "ws-beta", directory: workspace("beta") })
   await host.client()
 })
 

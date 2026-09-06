@@ -42,7 +42,7 @@ test("workspace runtime mounts a host-supplied transcript resolver", async () =>
   const response = await runtime.app.request(
     "http://localhost/api/wr/subagent-transcripts/opaque-handle?parentSessionId=parent-a",
   )
-  runtime.dispose()
+  await runtime.dispose()
 
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual({ state: "empty", messages: [] })

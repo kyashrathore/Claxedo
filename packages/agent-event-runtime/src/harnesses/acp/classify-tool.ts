@@ -1,4 +1,3 @@
-import { object } from "../value"
 import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
 import type { ToolIntent as AcpIntent } from "../../contracts/agent-runtime-event"
 import type { ToolView } from "./state"
@@ -11,9 +10,8 @@ export type AcpToolClassification =
   | { kind: "mcp"; payload: ToolView }
   | { kind: "generic"; payload: ToolView }
 
-export function acpIntent(metadata: Record<string, unknown>): AcpIntent | undefined {
-  const acp = object(metadata.acp)
-  return acp?.intent as AcpIntent | undefined
+export function acpIntent(tool: ToolView): AcpIntent {
+  return tool.metadata.acp.intent
 }
 
 export function isSessionSurface(classification: AcpToolClassification) {
@@ -21,7 +19,7 @@ export function isSessionSurface(classification: AcpToolClassification) {
 }
 
 export function classifyToolCall(tool: ToolView, _diagnostics: AcpDiagnostics): AcpToolClassification {
-  const intent = acpIntent(tool.metadata) ?? "generic"
+  const intent = acpIntent(tool)
   if (intent === "generic") {
     return { kind: "generic", payload: tool }
   }

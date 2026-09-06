@@ -22,12 +22,12 @@ function resolveTemplate(text: string, params?: UiI18nParams) {
 const fallback: UiI18n = {
   locale: () => "en",
   t: (key, params) => {
-    const value = en[key] ?? String(key)
+    const value = en[key] ?? key
     return resolveTemplate(value, params)
   },
 }
 
-const Context = createContext<UiI18n>(fallback)
+const Context = createContext(fallback)
 
 export function I18nProvider(props: ParentProps<{ value: UiI18n }>) {
   return <Context.Provider value={props.value}>{props.children}</Context.Provider>

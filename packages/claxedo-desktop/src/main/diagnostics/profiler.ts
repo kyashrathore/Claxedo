@@ -39,10 +39,17 @@ export type DiagnosticsSource = {
   dispose?(): void
 }
 
+/**
+ * What a `setTimeout` hands back: a Node handle in the app, a number in a fake
+ * clock. Declared instead of `unknown` so `realClock` can pass the handle
+ * straight to `clearTimeout` rather than asserting its type back.
+ */
+export type DiagnosticsTimerHandle = ReturnType<typeof setTimeout> | number
+
 export type DiagnosticsClock = {
   now(): number
-  setTimeout(callback: () => void, delayMs: number): unknown
-  clearTimeout(id: unknown): void
+  setTimeout(callback: () => void, delayMs: number): DiagnosticsTimerHandle
+  clearTimeout(id: DiagnosticsTimerHandle): void
 }
 
 type UtilityProcessLike = {
@@ -104,8 +111,8 @@ export function createProfiler(options: {
     ...sourceBase,
     state: "warming-up",
   }
-  let timer: unknown
-  let burstTimer: unknown
+  let timer: DiagnosticsTimerHandle | undefined
+  let burstTimer: DiagnosticsTimerHandle | undefined
   let inFlight = false
   let burstPending = false
   let disposed = false
@@ -124,7 +131,9 @@ export function createProfiler(options: {
   >()
   const actions = createDiagnosticsActions({
     generation,
-    now: clock.now,
+    // Wrapped, not passed: `DiagnosticsClock.now` is a method, so handing the
+    // reference over would detach it from whichever clock implements it.
+    now: () => clock.now(),
     ...(options.actionToken ? { token: options.actionToken } : {}),
     ...(options.actionTtlMs ? { ttlMs: options.actionTtlMs } : {}),
   })
@@ -262,7 +271,7 @@ export function createProfiler(options: {
     const previous = findPreviousSample(observation.point.processId, observation.point.at)
     const existing = findCurrentSample(observation.point)
     if (existing >= 0) {
-      samples[existing] = mergeMetricPoints(samples[existing]!, observation.point)
+      samples[existing] = mergeMetricPoints(samples[existing], observation.point)
       recordSpikes(observation, previous)
       return
     }
@@ -272,10 +281,11 @@ export function createProfiler(options: {
 
   function findPreviousSample(processId: string, at: number) {
     for (let index = samples.length - 1; index >= 0; index--) {
-      const sample = samples[index]!
+      const sample = samples[index]
       if (sample.at >= at || sample.processId !== processId) continue
       return sample
     }
+    return undefined
   }
 
   function recordSpikes(observation: DiagnosticsObservation, previous: LocalDiagnostics.MetricPoint | undefined) {
@@ -294,8 +304,8 @@ export function createProfiler(options: {
 
     function recordSpike(
       metric: LocalDiagnostics.SpikeMarker["metric"],
-      current: LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading,
-      prior: LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading,
+      current: LocalDiagnostics.CpuMachinePercent  ,
+      prior: LocalDiagnostics.CpuMachinePercent  ,
       threshold: number,
     ) {
       if (current.state !== "available" || prior.state !== "available") return
@@ -320,7 +330,7 @@ export function createProfiler(options: {
 
   function findCurrentSample(point: LocalDiagnostics.MetricPoint) {
     for (let index = samples.length - 1; index >= 0; index--) {
-      const sample = samples[index]!
+      const sample = samples[index]
       if (sample.at < point.at) return -1
       if (sample.at === point.at && sample.processId === point.processId) return index
     }
@@ -385,8 +395,10 @@ export function createProfiler(options: {
     markers.push(marker)
   }
 
-  function recordLifecycle(marker: Omit<LocalDiagnostics.LifecycleMarker, "type" | "id" | "at"> & { at?: number }) {
-    if (disposed) return
+  function recordLifecycle(
+    marker: Omit<LocalDiagnostics.LifecycleMarker, "type" | "id" | "at"> & { at?: number },
+  ): string | undefined {
+    if (disposed) return undefined
     const id = nextMarkerId()
     appendMarker({
       type: "lifecycle",
@@ -557,7 +569,7 @@ export function createProfiler(options: {
         ...stats,
         averageSourceDurationMs:
           stats.sourceAttempts > 0 ? stats.totalSourceDurationMs / stats.sourceAttempts : 0,
-        ...(options.source.getStats?.() ?? {}),
+        ...options.source.getStats?.(),
       }
     },
     subscribe(listener: (snapshot: LocalDiagnostics.RetainedSnapshot) => void) {
@@ -913,7 +925,7 @@ export function aggregateInterval(input: {
         peakRssBytes: maxByteReading(rssValues),
         rssChangeBytes:
           rssValues.length > 1
-            ? { state: "available" as const, value: rssValues.at(-1)! - rssValues[0]! }
+            ? { state: "available" as const, value: rssValues.at(-1)! - rssValues[0] }
             : { state: "unavailable" as const, reason: "not-sampled" as const },
       }
     })
@@ -933,7 +945,7 @@ export function aggregateInterval(input: {
       peakRssBytes: maxByteReading(rssTotals ?? []),
       rssChangeBytes:
         rssTotals && rssTotals.length > 1
-          ? { state: "available", value: rssTotals.at(-1)! - rssTotals[0]! }
+          ? { state: "available", value: rssTotals.at(-1)! - rssTotals[0] }
           : { state: "unavailable", reason: "not-sampled" },
     },
     contributors,
@@ -957,8 +969,8 @@ function mergeMetricPoints(
 }
 
 function sumAvailable(
-  readings: Array<LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading>,
-): LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading {
+  readings: Array<LocalDiagnostics.CpuMachinePercent  >,
+): LocalDiagnostics.CpuMachinePercent   {
   const values = completeValues(readings)
   if (!values || values.length === 0) return { state: "unavailable", reason: "not-sampled" }
   return { state: "available", value: values.reduce((sum, value) => sum + value, 0) }
@@ -972,7 +984,7 @@ function sumAvailable(
  * would silently bias the combination.
  */
 function availableValues(
-  readings: Array<LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading>,
+  readings: Array<LocalDiagnostics.CpuMachinePercent  >,
 ) {
   return readings
     .filter((reading): reading is Extract<typeof reading, { state: "available" }> => reading.state === "available")
@@ -980,12 +992,12 @@ function availableValues(
 }
 
 function completeValues(
-  readings: Array<LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading>,
+  readings: Array<LocalDiagnostics.CpuMachinePercent  >,
 ) {
   const values = readings
     .filter((reading): reading is Extract<typeof reading, { state: "available" }> => reading.state === "available")
     .map((reading) => reading.value)
-  if (values.length !== readings.length) return
+  if (values.length !== readings.length) return undefined
   return values
 }
 
@@ -1069,5 +1081,5 @@ function byteLength(value: unknown) {
 const realClock: DiagnosticsClock = {
   now: () => Date.now(),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+  clearTimeout: (id) => clearTimeout(id),
 }

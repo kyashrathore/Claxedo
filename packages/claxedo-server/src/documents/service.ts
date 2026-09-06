@@ -8,7 +8,7 @@ import {
 } from "./backend"
 import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
 import { DocumentVersionConflictError } from "./errors"
-import type { DocumentActor, DocumentEntry, DocumentHandle, DocumentVersion, SnapshotID } from "./port"
+import { toDocumentVersion, type DocumentActor, type DocumentEntry, type DocumentHandle, type DocumentVersion, type SnapshotID } from "./port"
 
 export type DocumentsServiceScope = DocumentIndexScope & Readonly<{ actor: DocumentActor }>
 type Awaitable<T> = T | Promise<T>
@@ -279,7 +279,7 @@ export function createDocumentsService<H extends DocumentHandle>(
         const entry = await requireEntry(scope, documentId, true)
         const availability = await repositoryFor(entry).availability(
           portEntry(entry),
-          entry.last_known_file_version ? (entry.last_known_file_version as DocumentVersion) : undefined,
+          entry.last_known_file_version ? toDocumentVersion(entry.last_known_file_version) : undefined,
         )
         if (availability.state === "available" && entry.last_known_file_version !== availability.version) {
           await backend.index.update(scope, documentId, { last_known_file_version: availability.version })
@@ -324,7 +324,9 @@ export function createDocumentsService<H extends DocumentHandle>(
           scope,
           documentId,
           "document.moved_to_repository",
-          moved.last_known_file_version as DocumentVersion,
+          // The index column is nullable; the previous cast published `null`
+          // typed as a version, and `publish` already treats absent as absent.
+          moved.last_known_file_version ? toDocumentVersion(moved.last_known_file_version) : undefined,
         )
         return moved
       })
@@ -645,7 +647,7 @@ function notFound() {
 async function indexOrRollbackCanonicalWrite(input: Readonly<{
   documentId: string
   committedMarkdown: string
-  update: () => Promise<unknown> | unknown
+  update: () => unknown
   rollback: () => Promise<unknown>
   read: () => Promise<Readonly<{ markdown: string }>>
 }>) {

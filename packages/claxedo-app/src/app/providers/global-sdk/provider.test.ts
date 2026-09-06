@@ -30,6 +30,7 @@ import { createSubagentRegistry } from "@/features/session/subagents/subagent-re
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { sessionGoalKey, type SessionGoalData } from "@/features/session/store/session-goal-query"
+import { requestUrl } from "@/lib/url"
 
 afterEach(() => {
   queryClient.clear()
@@ -388,6 +389,9 @@ describe("global sdk event fetch", () => {
   test("parses compat SSE envelopes without treating heartbeat frames as events", () => {
     expect(compatEventEnvelope({ type: "heartbeat" })).toBeUndefined()
     expect(compatEventEnvelope({ payload: { type: "server.heartbeat", properties: {} } })).toBeUndefined()
+    // A type named by neither contract is dropped at the boundary rather than
+    // enqueued: subscribers are keyed by the union, so nothing could read it.
+    expect(compatEventEnvelope({ payload: { type: "workspace.invented", properties: {} } })).toBeUndefined()
     expect(compatEventEnvelope({
       directory: "/repo/main",
       payload: {
@@ -750,7 +754,7 @@ describe("global sdk event fetch", () => {
   test("runtime event transport rejects route sentinels before requesting a private stream", () => {
     const calls: string[] = []
     const request = (async (input: RequestInfo | URL) => {
-      calls.push(String(input))
+      calls.push(requestUrl(input))
       return new Response("")
     }) as typeof fetch
     for (const sessionID of ["route", "", " "]) {

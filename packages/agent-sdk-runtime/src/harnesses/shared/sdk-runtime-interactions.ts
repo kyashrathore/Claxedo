@@ -19,7 +19,7 @@ export class SdkRuntimeInteractions {
   listPermissions(directory: string): AgentPermission[] {
     directory = requireWorkspaceDirectory(directory)
     return this.store.listPermissions(directory)
-      .filter((row) => this.permissions.has(row.id)) as AgentPermission[]
+      .filter((row) => this.permissions.has(row.id))
   }
 
   respondPermission(
@@ -55,7 +55,7 @@ export class SdkRuntimeInteractions {
   listQuestions(directory: string): AgentQuestion[] {
     directory = requireWorkspaceDirectory(directory)
     return this.store.listQuestions(directory)
-      .filter((row) => this.questions.has(row.id)) as AgentQuestion[]
+      .filter((row) => this.questions.has(row.id))
   }
 
   replyQuestion(binding: AgentExecutionBinding, questionId: string, answers: AgentQuestionAnswer[]): AgentInteractionResult | void {
@@ -93,7 +93,9 @@ export class SdkRuntimeInteractions {
   }
 
   resolvePermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
-    for (const [id, item] of [...this.permissions.entries()]) {
+    // Snapshot: the loop deletes from the same map it walks.
+    const entries = Array.from(this.permissions)
+    for (const [id, item] of entries) {
       if (sessionId && item.sessionId !== sessionId) continue
       this.store.appendEvent({
         sessionId: item.sessionId,

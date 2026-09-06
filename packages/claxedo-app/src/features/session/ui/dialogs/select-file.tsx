@@ -300,7 +300,7 @@ export function DialogSelectFile(props: {
   const projectDirectory = createMemo(() => props.directory)
   const project = createMemo(() => {
     const directory = projectDirectory()
-    if (!directory) return
+    if (!directory) return undefined
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   })
   const workspaces = createMemo(() => {
@@ -389,8 +389,11 @@ export function DialogSelectFile(props: {
     }
 
     const value = file().tab(path)
-    tabs().open(value)
-    file().load(path)
+    // Fire-and-forget: opening a tab and loading its contents are Solid
+    // transitions whose promises only report when the transition settles; both
+    // surface their own failures through the file store's state.
+    void tabs().open(value)
+    void file().load(path)
     if (!view().reviewPanel.opened()) view().reviewPanel.open()
     layout.fileTree.setTab("all")
     props.onOpenFile?.(path)

@@ -75,6 +75,41 @@ export type WebVitals = {
 }
 
 /**
+ * The raw evidence the in-page collector accumulates.
+ *
+ * The collector and {@link readWebVitals} sit on opposite sides of a
+ * `page.evaluate` boundary and each used to describe this separately — the
+ * writer as `Record<string, unknown>`, the reader as a hand-written shape.
+ * Neither end could tell if the other had changed.
+ */
+type VitalsState = {
+  lcpMs?: number
+  fcpMs?: number
+  ttfbMs?: number
+  /**
+   * Shifts are kept raw rather than folded into a running CLS, so the same
+   * windowing function can score them twice — once as observed, and once with
+   * the shifts a real user's input would have excused removed. Two inline
+   * accumulators would be two implementations of one rule.
+   */
+  shifts: Array<{ t: number; value: number }>
+  shiftsTruncated: boolean
+  untrustedInputTimes: number[]
+  interactions: Map<number, number>
+  /** Every candidate, capped so a long flow cannot grow this without bound. */
+  lcpCandidates: Array<{ t: number; size: number; el: string; url?: string }>
+  firstTrustedInputMs?: number
+  firstUntrustedInputMs?: number
+}
+
+declare global {
+  interface Window {
+    /** Installed by {@link installWebVitals}; drained by {@link readWebVitals}. */
+    __claxedoVitals?: VitalsState
+  }
+}
+
+/**
  * Install before any app script runs, so nothing is missed.
  *
  * `buffered: true` recovers entries dispatched before the observer attached,
@@ -83,25 +118,14 @@ export type WebVitals = {
  */
 export async function installWebVitals(page: Page) {
   await page.addInitScript(() => {
-    const w = window as typeof window & { __claxedoVitals?: Record<string, unknown> }
-    const state = {
-      lcpMs: undefined as number | undefined,
-      fcpMs: undefined as number | undefined,
-      ttfbMs: undefined as number | undefined,
-      // Shifts are kept raw rather than folded into a running CLS, so the same
-      // windowing function can score them twice — once as observed, and once
-      // with the shifts a real user's input would have excused removed. Two
-      // inline accumulators would be two implementations of one rule.
-      shifts: [] as { t: number; value: number }[],
+    const state: VitalsState = {
+      shifts: [],
       shiftsTruncated: false,
-      untrustedInputTimes: [] as number[],
-      interactions: new Map<number, number>(),
-      // Every candidate, capped so a long flow cannot grow this without bound.
-      lcpCandidates: [] as { t: number; size: number; el: string; url?: string }[],
-      firstTrustedInputMs: undefined as number | undefined,
-      firstUntrustedInputMs: undefined as number | undefined,
+      untrustedInputTimes: [],
+      interactions: new Map(),
+      lcpCandidates: [],
     }
-    w.__claxedoVitals = state as unknown as Record<string, unknown>
+    window.__claxedoVitals = state
 
     const observe = (type: string, cb: (entry: PerformanceEntry) => void, extra?: Record<string, unknown>) => {
       try {
@@ -162,10 +186,9 @@ export async function installWebVitals(page: Page) {
       if (entry.name === "first-contentful-paint") state.fcpMs = entry.startTime
     })
     observe("navigation", (entry) => {
-      state.ttfbMs = (entry as PerformanceNavigationTiming).responseStart
+      if (entry instanceof PerformanceNavigationTiming) state.ttfbMs = entry.responseStart
     })
-    observe("layout-shift", (entry) => {
-      const shift = entry as PerformanceEntry & { value: number; hadRecentInput: boolean }
+    observe("layout-shift", (shift) => {
       // Shifts within 500ms of a real input are the user's doing, not the app's.
       // Chromium already applied that rule here — but only for TRUSTED input.
       if (shift.hadRecentInput) return
@@ -173,17 +196,16 @@ export async function installWebVitals(page: Page) {
       // recorded rather than silent: a capped buffer under-reports CLS, and an
       // under-report that looks like an improvement is the worst failure mode.
       if (state.shifts.length >= 2000) { state.shiftsTruncated = true; return }
-      state.shifts.push({ t: shift.startTime, value: shift.value })
+      state.shifts.push({ t: shift.startTime, value: shift.value ?? 0 })
     })
     // `durationThreshold: 0` reports every interaction; the default (104ms)
     // would hide exactly the sub-threshold spread INP is meant to summarise.
-    observe("event", (entry) => {
-      const event = entry as PerformanceEntry & { interactionId?: number }
-      if (!event.interactionId) return
+    observe("event", (event) => {
+      if (!(event instanceof PerformanceEventTiming) || !event.interactionId) return
       const previous = state.interactions.get(event.interactionId) ?? 0
       // One interaction spans several events (pointerdown/up/click); its
       // latency is the longest of them, not their sum.
-      if (entry.duration > previous) state.interactions.set(event.interactionId, entry.duration)
+      if (event.duration > previous) state.interactions.set(event.interactionId, event.duration)
     }, { durationThreshold: 0 })
   })
 }
@@ -240,21 +262,7 @@ export async function readWebVitals(page: Page): Promise<WebVitals> {
   // of `page.evaluate` is what lets one implementation of the CLS rule be unit
   // tested — a function serialised into the page cannot be called from a test.
   const raw = await page.evaluate(() => {
-    const w = window as typeof window & {
-      __claxedoVitals?: {
-        lcpMs?: number
-        fcpMs?: number
-        ttfbMs?: number
-        shifts: { t: number; value: number }[]
-        shiftsTruncated: boolean
-        untrustedInputTimes: number[]
-        interactions: Map<number, number>
-        lcpCandidates: { t: number; size: number; el: string; url?: string }[]
-        firstTrustedInputMs?: number
-        firstUntrustedInputMs?: number
-      }
-    }
-    const state = w.__claxedoVitals
+    const state = window.__claxedoVitals
     if (!state) return undefined
     return {
       lcpMs: state.lcpMs,
@@ -285,7 +293,7 @@ export async function readWebVitals(page: Page): Promise<WebVitals> {
   const frozen = trusted === undefined ? undefined : candidates.filter((c) => c.t <= trusted).pop()
 
   return {
-    lcpElement: candidates.length ? candidates[candidates.length - 1]!.el : undefined,
+    lcpElement: candidates.length ? candidates[candidates.length - 1].el : undefined,
     lcpCandidateCount: candidates.length,
     lcpAtFirstTrustedInputMs: frozen?.t,
     lcpAtFirstTrustedInputElement: frozen?.el,
@@ -351,7 +359,7 @@ export function mergeWebVitals(runs: readonly WebVitals[]): WebVitals {
   // another run's timing would invent a story no single run told. So the whole
   // attribution set comes from the one run that produced the reported LCP.
   const lcpMs = p75((item) => item.lcpMs)
-  const lcpRun = present.find((item) => item.lcpMs === lcpMs) ?? present[present.length - 1]!
+  const lcpRun = present.find((item) => item.lcpMs === lcpMs) ?? present[present.length - 1]
   const frozenLcpMs = p75((item) => item.lcpAtFirstTrustedInputMs)
   const frozenRun = frozenLcpMs === undefined ? undefined : present.find((item) => item.lcpAtFirstTrustedInputMs === frozenLcpMs)
   return {

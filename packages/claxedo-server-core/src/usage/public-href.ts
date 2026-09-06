@@ -1,5 +1,6 @@
-function opaqueWorkspaceId(value: string) {
-  if (!value || value.includes("/") || value.includes("\\") || value.includes("%")) return
+/** A workspace id that is safe to place in a path segment, or nothing. */
+function opaqueWorkspaceId(value: string): string | undefined {
+  if (!value || value.includes("/") || value.includes("\\") || value.includes("%")) return undefined
   return value
 }
 

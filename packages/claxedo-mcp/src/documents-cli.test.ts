@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
 import { runDocumentsCli } from "./documents-cli"
 
+/** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
+function jsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error(`expected a JSON string request body, got ${typeof body}`)
+  return JSON.parse(body)
+}
+
 describe("documents CLI", () => {
   it("lists project documents with the configured directory default", async () => {
     const request = vi.fn(async () => [{ id: "document-1", display_name: "Plan" }])
@@ -16,7 +22,7 @@ describe("documents CLI", () => {
   it("opens a compact reference using the current session default", async () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path.includes("archived=all")) return [{ id: "document-1", display_name: "Plan", archived_at: null }]
-      expect(JSON.parse(String(init?.body))).toEqual({ session_id: "session-current" })
+      expect(jsonBody(init?.body)).toEqual({ session_id: "session-current" })
       return { document_id: "document-1", display_name: "Plan", path: "/repo/plan.md" }
     })
     const stdout = vi.fn()

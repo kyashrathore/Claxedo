@@ -488,7 +488,7 @@ describe("workspace store integrity", () => {
       const matching = projects.filter((p) => p.id === "proj_clax")
       expect(matching).toHaveLength(1)
 
-      const proj = matching[0]!
+      const proj = matching[0]
 
       // The local git checkout directory must be the project worktree (it has real git data)
       expect(proj.worktree).toBe(git.dir)
@@ -756,7 +756,7 @@ describe("workspace store integrity", () => {
       const matching = projects.filter((p) => p.git.repo === "wt-grouping")
       expect(matching).toHaveLength(1)
 
-      const proj = matching[0]!
+      const proj = matching[0]
       // Main checkout directory is the worktree
       expect(proj.worktree).toBe(main.directory)
       expect(proj.workspaces[main.id]?.directory).toBe(main.directory)
@@ -810,7 +810,7 @@ describe("workspace store integrity", () => {
       const matching = projects.filter((p) => p.git.repo === "multi-wt")
       expect(matching).toHaveLength(1)
 
-      const proj = matching[0]!
+      const proj = matching[0]
       expect(proj.worktree).toBe(main.directory)
       expect(proj.workspaces[main.id]?.directory).toBe(main.directory)
       expect(proj.sandboxes).toContain(wt1.id)
@@ -959,7 +959,7 @@ describe("workspace store integrity", () => {
       const matching = projects.filter((p) => p.id === projectId)
       expect(matching).toHaveLength(1)
 
-      const proj = matching[0]!
+      const proj = matching[0]
       // Local directory is worktree, both cloud dirs are sandboxes
       expect(proj.worktree).toBe(main.directory)
       expect(proj.workspaces[main.id]?.directory).toBe(main.directory)
@@ -1059,7 +1059,7 @@ describe("workspace store integrity", () => {
       projects = await mod.listProjects()
       const matching = projects.filter((p) => p.id === projectId)
       expect(matching).toHaveLength(1)
-      expect(matching[0]!.sandboxes).toHaveLength(originalSandboxCount)
+      expect(matching[0].sandboxes).toHaveLength(originalSandboxCount)
     })
 
     test("re-ensuring via resolveWorkspace(create=true) deduplicates", async () => {
@@ -1169,7 +1169,7 @@ describe("workspace store integrity", () => {
       const projects = await mod.listProjects()
       const matching = projects.filter((p) => p.id === projectId)
       expect(matching).toHaveLength(1)
-      expect(matching[0]!.sandboxes).toHaveLength(1)
+      expect(matching[0].sandboxes).toHaveLength(1)
     })
   })
 

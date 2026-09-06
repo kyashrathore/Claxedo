@@ -16,9 +16,9 @@ beforeEach(() => configureAppPortsForTest())
 const realGlobalSdkModule = { ...(await import(`${import.meta.dir}/../../../app/providers/global-sdk/provider.tsx?session-commands-restore`)) }
 const realSelectModelModule = { ...(await import(`${import.meta.dir}/model/select-model.tsx?session-commands-restore`)) }
 
-afterAll(() => {
-  mock.module("@/app/providers/global-sdk/provider", () => realGlobalSdkModule)
-  mock.module("@/features/session/ui/model/select-model", () => realSelectModelModule)
+afterAll(async () => {
+  await mock.module("@/app/providers/global-sdk/provider", () => realGlobalSdkModule)
+  await mock.module("@/features/session/ui/model/select-model", () => realSelectModelModule)
 })
 
 const testGlobal = globalThis as typeof globalThis & {
@@ -107,7 +107,7 @@ function setSessionInfo(value: { id: string; revert?: { messageID: string }; sha
   })
 }
 
-mock.module("@solidjs/router", () => ({
+await mock.module("@solidjs/router", () => ({
   useNavigate: () => (path: string) => {
     navigateCalls.push(path)
   },
@@ -118,7 +118,7 @@ mock.module("@solidjs/router", () => ({
   useLocation: () => ({ pathname: "/", search: "", hash: "" }),
 }))
 
-mock.module("@/app/providers/command", () => ({
+await mock.module("@/app/providers/command", () => ({
   useCommand: () => ({
     register: (_group: string, factory: () => any[]) => {
       registered.push(factory)
@@ -127,7 +127,7 @@ mock.module("@/app/providers/command", () => ({
   }),
 }))
 
-mock.module("@opencode-ai/ui/context/dialog", () => ({
+await mock.module("@opencode-ai/ui/context/dialog", () => ({
   useDialog: () => ({
     show: (factory: () => unknown) => {
       dialogFactories.push(factory)
@@ -135,24 +135,24 @@ mock.module("@opencode-ai/ui/context/dialog", () => ({
   }),
 }))
 
-mock.module("@/features/session/ui/dialogs/select-file", () => ({
+await mock.module("@/features/session/ui/dialogs/select-file", () => ({
   DialogSelectFile: (props: { mode?: "all" | "files"; directory: string; sessionId?: string }) => {
     fileDialogProps.push(props)
   },
 }))
 
-mock.module("@/features/session/ui/model/select-model", () => ({
+await mock.module("@/features/session/ui/model/select-model", () => ({
   ...realSelectModelModule,
   DialogSelectModel: (props: { model?: CapturedPicker }) => {
     modelDialogProps.push(props)
   },
 }))
 
-mock.module("@/features/session/ui/dialogs/fork", () => ({
+await mock.module("@/features/session/ui/dialogs/fork", () => ({
   DialogFork: () => undefined,
 }))
 
-mock.module("@/app/providers/file", () => ({
+await mock.module("@/app/providers/file", () => ({
   useFile: () => ({
     get: () => undefined,
     pathFromTab: (tab: string) => filePathFromTab(tab),
@@ -161,13 +161,13 @@ mock.module("@/app/providers/file", () => ({
   selectionFromLines: () => ({ startLine: 1, endLine: 1 }),
 }))
 
-mock.module("@/platform/i18n/provider", () => ({
+await mock.module("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
     t: (key: string) => key,
   }),
 }))
 
-mock.module("@/app/providers/layout", () => ({
+await mock.module("@/app/providers/layout", () => ({
   getAvatarColors: () => ({
     background: "var(--surface-info-base)",
     foreground: "var(--text-base)",
@@ -186,7 +186,7 @@ mock.module("@/app/providers/layout", () => ({
   }),
 }))
 
-mock.module("@/features/session/providers/session-selection", () => ({
+await mock.module("@/features/session/providers/session-selection", () => ({
   useLocal: () => ({
     agent: {
       move: () => undefined,
@@ -195,7 +195,7 @@ mock.module("@/features/session/providers/session-selection", () => ({
   }),
 }))
 
-mock.module("@/features/session/providers/permission", () => ({
+await mock.module("@/features/session/providers/permission", () => ({
   usePermission: () => ({
     permissionsEnabled: () => true,
     isAutoAccepting: () => false,
@@ -209,7 +209,7 @@ mock.module("@/features/session/providers/permission", () => ({
 // later test files that import the pure exports (DEFAULT_PROMPT,
 // isPromptEqual, …) would otherwise crash with "Export not found".
 const realPrompt = await import("@/features/session/providers/prompt")
-mock.module("@/features/session/providers/prompt", () => ({
+await mock.module("@/features/session/providers/prompt", () => ({
   ...realPrompt,
   usePrompt: () => ({
     set: (value: unknown) => {
@@ -222,7 +222,7 @@ mock.module("@/features/session/providers/prompt", () => ({
   }),
 }))
 
-mock.module("@/app/providers/sdk/sdk", () => ({
+await mock.module("@/app/providers/sdk/sdk", () => ({
   useSDK: () => ({
     url: "http://localhost:4096",
     directory: "/repo",
@@ -252,7 +252,7 @@ mock.module("@/app/providers/sdk/sdk", () => ({
   }),
 }))
 
-mock.module("@/app/providers/global-sdk/provider", () => ({
+await mock.module("@/app/providers/global-sdk/provider", () => ({
   useGlobalSDK: () => ({
     client: {
       session: {
@@ -269,7 +269,7 @@ mock.module("@/app/providers/global-sdk/provider", () => ({
   }),
 }))
 
-mock.module("@/context/sync", () => ({
+await mock.module("@/context/sync", () => ({
   mergeParts: (parts: Array<{ id: string }> | undefined, want: Array<{ id: string }>) => {
     if (!parts) return want.slice().sort((a, b) => a.id.localeCompare(b.id))
     const next = parts.slice().sort((a, b) => a.id.localeCompare(b.id))
@@ -290,7 +290,7 @@ mock.module("@/context/sync", () => ({
   }),
 }))
 
-mock.module("@/app/workbench/state", () => ({
+await mock.module("@/app/workbench/state", () => ({
   realDirectory: (dir?: string | null) => (!dir || dir === "__process__" ? undefined : dir),
   useClaxedoState: () => {
     if (mockClaxedoState) return mockClaxedoState
@@ -298,14 +298,14 @@ mock.module("@/app/workbench/state", () => ({
   },
 }))
 
-mock.module("@/platform/telemetry/analytics", () => ({
+await mock.module("@/platform/telemetry/analytics", () => ({
   capture: (event: string, properties: Record<string, unknown>) => {
     captured.push({ event, properties })
   },
   identityProps: () => ({ org_id: "anon", user_id: "anon", deployment_mode: "self-host" }),
 }))
 
-mock.module("@opencode-ai/ui/toast", () => ({
+await mock.module("@opencode-ai/ui/toast", () => ({
   showToast: () => undefined,
 }))
 

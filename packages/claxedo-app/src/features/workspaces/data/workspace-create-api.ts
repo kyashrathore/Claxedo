@@ -1,3 +1,4 @@
+import z from "zod"
 import { api } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
 import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -12,6 +13,26 @@ export type CreateCloudWorkspaceResult = {
   kind?: string
   status?: string | null
 }
+
+/**
+ * The wire form of the result above, checked on whichever branch answered.
+ *
+ * `hostedControlCall` has two producers. `workspace.create`'s hosted decoder
+ * proves `workspaceId` and `directory` are non-empty strings and stops there,
+ * and `api.post` proves nothing; neither is a `CreateCloudWorkspaceResult`
+ * until this parses one. The annotation ties the schema to the exported type,
+ * so adding a field to one without the other is a compile error.
+ */
+const CreateCloudWorkspaceResultSchema: z.ZodType<CreateCloudWorkspaceResult> = z.object({
+  workspaceId: z.string(),
+  projectId: z.string().optional(),
+  directory: z.string().optional(),
+  workspaceBaseUrl: z.string().optional(),
+  workspaceName: z.string().nullable().optional(),
+  provider: z.string().optional(),
+  kind: z.string().optional(),
+  status: z.string().nullable().optional(),
+})
 
 export type CreateCloudWorkspaceInput = {
   projectId?: string
@@ -46,7 +67,7 @@ export async function createCloudWorkspace(
     params.repoFullName = input.repo.fullName
   }
 
-  return hostedControlCall(
+  return CreateCloudWorkspaceResultSchema.parse(await hostedControlCall(
     "workspace.create",
     params,
     async () => {
@@ -62,10 +83,10 @@ export async function createCloudWorkspace(
       if (input.driver) body.driver = input.driver
       if (input.gitBranch) body.gitBranch = input.gitBranch
 
-      return api.post<CreateCloudWorkspaceResult>(
+      return api.post(
         workspaceCreateUrl({ baseUrl: input.baseUrl }),
         body,
       )
     },
-  )
+  ))
 }

@@ -114,7 +114,7 @@ await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("
 await installSeedState(page, app, fixture)
 
 const sessions = fixture.sessions
-const home = sessions[0]!
+const home = sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} corpus=${expectedTotal} files`)
 console.log(`[probe] workspace A=${fixture.workspaceDirectories[0]}  workspace B=${fixture.workspaceDirectories[1]}`)
 
@@ -141,7 +141,7 @@ async function dumpReviewClauses(page2: Page, label: string) {
         const corpus = root.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
         const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]"))
         const first = rows[0]
-        const host = root.closest("[data-testid='workspace-panel-body']") as HTMLElement | null
+        const host = root.closest<HTMLElement>("[data-testid='workspace-panel-body']")
         return {
           rootVisible: visible(root),
           rootRect: { w: Math.round(root.getBoundingClientRect().width), h: Math.round(root.getBoundingClientRect().height) },
@@ -154,7 +154,7 @@ async function dumpReviewClauses(page2: Page, label: string) {
           visibleRows: rows.filter(visible).length,
           firstRow: first ? { rect: { w: Math.round(first.getBoundingClientRect().width), h: Math.round(first.getBoundingClientRect().height) }, cv: getComputedStyle(first).contentVisibility, display: getComputedStyle(first).display, ariaAncestor: !!first.closest("[aria-hidden='true']") } : null,
           ariaOwner: (() => {
-            const owner = first?.closest("[aria-hidden='true']") as HTMLElement | null
+            const owner = first?.closest<HTMLElement>("[aria-hidden='true']")
             if (!owner) return null
             const dataset = Object.fromEntries(Object.entries(owner.dataset).slice(0, 8))
             return { tag: owner.tagName, cls: owner.className.slice(0, 120), dataset, cv: getComputedStyle(owner).contentVisibility, inert: owner.hasAttribute("inert") }
@@ -199,11 +199,11 @@ await page.waitForTimeout(500)
 // In-app switch via the rail, exactly like the scenario driver — a page
 // reload would reset the in-memory panel state and prove nothing.
 {
-  const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessions[2]!.id}"]`).first()
+  const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessions[2].id}"]`).first()
   const activate = row.locator('[data-slot="navigation-row-activate"]').first()
   await ((await activate.count()) ? activate : row).click()
 }
-await waitForTranscript(page, fixture, sessions[2]!.id, sessions[2]!.title)
+await waitForTranscript(page, fixture, sessions[2].id, sessions[2].title)
 console.log(`[repro] switched to session 2 (${elapsed()})`)
 const tabStrip = await page.evaluate(() => {
   const visible = (element: Element) => {
@@ -250,11 +250,11 @@ const railSwitch = async (target: (typeof sessions)[number]) => {
   await waitForTranscript(page, fixture, target.id, target.title)
   await page.waitForTimeout(400)
 }
-await railSwitch(sessions[4]!)
+await railSwitch(sessions[4])
 console.log(`[repro] within cold done (${elapsed()})`)
 await railSwitch(home)
 console.log(`[repro] within warm done (${elapsed()})`)
-await railSwitch(sessions[3]!)
+await railSwitch(sessions[3])
 console.log(`[repro] ACROSS cold done (${elapsed()})`)
 await railSwitch(home)
 console.log(`[repro] ACROSS warm done (${elapsed()})`)

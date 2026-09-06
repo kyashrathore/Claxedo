@@ -368,11 +368,16 @@ export function jsonReport(results: ScenarioResult[]) {
 export function perClickNavigationRows(results: ScenarioResult[]): PerClickNavigationRow[] {
   return results.flatMap((result) => {
     const metrics = new Map(result.metrics.map((metric) => [metric.metric, metric.samples]))
-    const clicks = result.metrics.flatMap((metric) => {
+    const clicks = result.metrics.flatMap((metric): Array<{
+      click: number
+      state: PerClickNavigationRow["state"]
+      samples: number[]
+    }> => {
       const match = /^switch_(\d+)_(cold|warm)_completion_ms$/.exec(metric.metric)
-      return match
-        ? [{ click: Number(match[1]), state: match[2] as PerClickNavigationRow["state"], samples: metric.samples }]
-        : []
+      // The capture group is `cold|warm`, which the regex cannot tell the type
+      // system; matching it against the two states says so without asserting.
+      const state = match?.[2] === "cold" ? "cold" : match?.[2] === "warm" ? "warm" : undefined
+      return match && state ? [{ click: Number(match[1]), state, samples: metric.samples }] : []
     }).toSorted((left, right) => left.click - right.click)
     const sampleCount = Math.max(0, ...clicks.map((click) => click.samples.length))
 

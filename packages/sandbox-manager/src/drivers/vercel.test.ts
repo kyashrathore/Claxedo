@@ -76,7 +76,7 @@ describe("VercelSandboxDriver", () => {
       expect.anything(),
     )
     // The secret value is NOT in the create-time env passed to the sandbox.
-    const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(JSON.stringify(createArg.env)).not.toContain("ntn-secret")
   })
 
@@ -95,10 +95,10 @@ describe("VercelSandboxDriver", () => {
       secrets: [{ name: "ANTHROPIC", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key" }],
     })
 
-    const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(createArg.networkPolicy).toEqual({ allow: ["github.com", "registry.npmjs.org"] })
 
-    const merged = (created.updateNetworkPolicy as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    const merged = (created.updateNetworkPolicy as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(Object.keys(merged.allow).sort()).toEqual([
       "api.anthropic.com",
       "github.com",
@@ -156,7 +156,7 @@ describe("VercelSandboxDriver", () => {
       secrets: [{ name: "ANTHROPIC", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key" }],
     })
 
-    expect((vercel.create as ReturnType<typeof vi.fn>).mock.calls[0]![0].networkPolicy).toBe("deny-all")
+    expect((vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0].networkPolicy).toBe("deny-all")
     expect(created.updateNetworkPolicy).toHaveBeenCalledWith(
       { allow: { "api.anthropic.com": [{ transform: [{ headers: { "x-api-key": "sk-ant" } }] }] } },
       expect.anything(),
@@ -355,7 +355,7 @@ describe("VercelSandboxDriver", () => {
       create: vi.fn(async () => {
         creates += 1
         if (creates === 1) return builder
-        return runtimes[creates - 2]!
+        return runtimes[creates - 2]
       }),
     })
     const driver = createVercelSandboxDriver({

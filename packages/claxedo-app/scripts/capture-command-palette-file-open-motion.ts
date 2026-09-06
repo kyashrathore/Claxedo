@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { closeContextAndSaveVideo } from "./capture-video"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import type { FetchLogEntry, ReviewLoadLogEntry } from "./capture-harness-window"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(
@@ -16,17 +17,6 @@ const baseURL = workspaceCaptureUrl({
 const viewport = { width: 1280, height: 800 }
 const targetFile = "packages/claxedo-app/package.json"
 const query = "package.json"
-
-type FetchLogEntry = {
-  url: string
-  atMs: number
-  stack?: string
-}
-
-type ReviewLoadLogEntry = {
-  atMs: number
-  detail: unknown
-}
 
 type Snapshot = {
   name: string
@@ -60,25 +50,26 @@ const context = await browser.newContext({
   recordVideo: { dir: RAW_VIDEO_DIR, size: viewport },
 })
 await context.addInitScript(() => {
-  const w = window as unknown as Record<string, unknown>
-  w.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
-  w.__CLAXEDO_TEST_AUTH_USER__ = {
+  window.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
+  window.__CLAXEDO_TEST_AUTH_USER__ = {
     id: "command-palette-file-open-user",
     primaryEmailAddress: { emailAddress: "command-palette-file-open@claxedo.test" },
     fullName: "Command Palette File Open",
   }
-  w.__CLAXEDO_FETCH_LOG__ = []
-  w.__CLAXEDO_REVIEW_LOAD_LOG__ = []
+  const fetchLog: FetchLogEntry[] = []
+  const reviewLoadLog: ReviewLoadLogEntry[] = []
+  window.__CLAXEDO_FETCH_LOG__ = fetchLog
+  window.__CLAXEDO_REVIEW_LOAD_LOG__ = reviewLoadLog
   window.addEventListener("claxedo:review-vcs-load", (event) => {
-    ;(w.__CLAXEDO_REVIEW_LOAD_LOG__ as ReviewLoadLogEntry[]).push({
+    reviewLoadLog.push({
       atMs: performance.now(),
       detail: event instanceof CustomEvent ? event.detail : undefined,
     })
   })
   const originalFetch = window.fetch.bind(window)
-  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = input instanceof Request ? input.url : String(input)
-    ;(w.__CLAXEDO_FETCH_LOG__ as FetchLogEntry[]).push({
+  const logged: typeof window.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString()
+    fetchLog.push({
       url,
       atMs: performance.now(),
       ...(/\/session\?/.test(url) && /[?&]directory=(?:workspace%3A)?[0-9a-f-]{36}(?:&|$)/i.test(url)
@@ -86,7 +77,8 @@ await context.addInitScript(() => {
         : {}),
     })
     return originalFetch(input, init)
-  }) as typeof window.fetch
+  }
+  window.fetch = logged
 })
 
 const page = await context.newPage()
@@ -97,7 +89,7 @@ const badRequestInitiators: unknown[] = []
 const cdp = await context.newCDPSession(page)
 await cdp.send("Network.enable")
 cdp.on("Network.requestWillBeSent", (event) => {
-  const url = String(event.request?.url ?? "")
+  const url = event.request?.url ?? ""
   if (/\/session\?/.test(url) && /[?&]directory=(?:workspace%3A)?[0-9a-f-]{36}(?:&|$)/i.test(url)) {
     badRequestInitiators.push({
       url,
@@ -433,13 +425,9 @@ async function clickFileResultAndMeasure(page: Page, file: string) {
 
 async function readLogs(page: Page) {
   return await page.evaluate(() => {
-    const w = window as unknown as {
-      __CLAXEDO_FETCH_LOG__?: FetchLogEntry[]
-      __CLAXEDO_REVIEW_LOAD_LOG__?: ReviewLoadLogEntry[]
-    }
     return {
-      fetch: [...(w.__CLAXEDO_FETCH_LOG__ ?? [])],
-      review: [...(w.__CLAXEDO_REVIEW_LOAD_LOG__ ?? [])],
+      fetch: [...(window.__CLAXEDO_FETCH_LOG__ ?? [])],
+      review: [...(window.__CLAXEDO_REVIEW_LOAD_LOG__ ?? [])],
     }
   })
 }

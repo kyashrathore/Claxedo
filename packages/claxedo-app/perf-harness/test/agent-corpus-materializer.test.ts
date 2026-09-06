@@ -198,8 +198,8 @@ describe("Claxedo agent-app corpus materializer", () => {
           })
         }
         expect(parts.map((event) => event.properties.part.id).filter((id) =>
-          result.readinessTargets[0]!.expectedPartIds!.includes(id),
-        )).toEqual([...result.readinessTargets[0]!.expectedPartIds!])
+          result.readinessTargets[0].expectedPartIds.includes(id),
+        )).toEqual([...result.readinessTargets[0].expectedPartIds])
       } finally {
         journal.close()
       }

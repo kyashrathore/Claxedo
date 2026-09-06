@@ -91,7 +91,7 @@ const observeSessionSwitch = async (params: {
       .some((row) => (row.textContent ?? "").trim())
   }
   const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
-  const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  const oldContent = window.__claxedoPerfOldPanelContent
   // The old surface stops being the user's surface either by leaving the
   // document, or by being retained under a body host the panel has PROVED
   // inert: marked not-displayed, hidden from the accessibility tree, and
@@ -167,7 +167,7 @@ const observeSessionSwitch = async (params: {
     requestAnimationFrame(tick)
   })
   performance.clearMarks(params.mark)
-  delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  delete window.__claxedoPerfOldPanelContent
   return {
     completionMs,
     acknowledgedMs,
@@ -184,7 +184,7 @@ const SESSION_SWITCH_PANEL_CONTENT_SELECTOR = "[data-testid='review-pane-root']"
 
 export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
   const sessions = fixture.sessions
-  const home = sessions[0]!
+  const home = sessions[0]
   await launchTo(page, app, sessionPath(home, home.id))
   await waitForTranscript(page, fixture, home.id, home.title)
   await showSessionInventory(page, fixture, Math.min(sessions.length, 8), { settle: "frame" })
@@ -244,7 +244,7 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
       const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
       if (presentation === "closed") {
         if (shell) throw new Error(`${cell} expected a closed source workspace panel`)
-        delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+        delete window.__claxedoPerfOldPanelContent
         return
       }
       const activeTab = shell?.querySelector<HTMLElement>("[data-slot='workspace-tab'][data-selected='true']")
@@ -265,7 +265,7 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
       })
       if (!content) throw new Error(`${cell} source has no displayed workspace surface`)
-      ;(window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent = content
+      window.__claxedoPerfOldPanelContent = content
     }, { contentSelector: SESSION_SWITCH_PANEL_CONTENT_SELECTOR, presentation, cell,
       filePath: SESSION_SWITCH_SUBSTANTIAL_FILE_PATH, fileLines: SESSION_SWITCH_SUBSTANTIAL_FILE_LINES })
   }
@@ -348,9 +348,9 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
 
   // Block A — workspace closed.
   await settleStabilityRequestStarts("session_switch_closed_precondition")
-  await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2]! })
+  await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2] })
   await runCell({ block: "closed", scope: "within", temperature: "warm", target: home })
-  await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]! })
+  await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1] })
   await runCell({ block: "closed", scope: "across", temperature: "warm", target: home })
 
   // Block B — leave home's substantial file for a first-visit closed panel;
@@ -361,9 +361,9 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
   await openWorkspaceFileTab(page, fixture, SESSION_SWITCH_SUBSTANTIAL_FILE_PATH)
   await settleGate("session_switch_open_file_precondition")
   await settleStabilityRequestStarts("session_switch_open_file_precondition")
-  await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]! })
+  await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4] })
   await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home })
-  await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]! })
+  await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3] })
   await runCell({ block: "open_file", scope: "across", temperature: "warm", target: home })
 
   // Block C — leave/restore home on a large review (500-file corpus, one
@@ -379,9 +379,9 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
   await waitForReviewStable(page)
   await settleGate("session_switch_open_review_precondition")
   await settleStabilityRequestStarts("session_switch_open_review_precondition")
-  await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6]! })
+  await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6] })
   await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home })
-  await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]! })
+  await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5] })
   await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home })
 
   // The workspace-open penalty, first-class per {within/across}x{cold/warm}

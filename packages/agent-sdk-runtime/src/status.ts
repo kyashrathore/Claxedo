@@ -32,7 +32,7 @@ export function live(input: RetryRow, defaultMessage: string, now = Date.now()):
   if (input.status === "recovering") {
     return recovering(typeof input.message === "string" ? input.message : typeof input.recovery_error === "string" ? input.recovery_error : defaultMessage)
   }
-  if (input.status !== "retry") return
+  if (input.status !== "retry") return undefined
   return {
     type: "retry",
     attempt: typeof input.attempt === "number" ? input.attempt : 1,

@@ -9,6 +9,7 @@ import type { HarnessSelectionSnapshot } from "@/features/session/harness/contro
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
+import { asRecord } from "@/lib/record"
 
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
 export type FirstTurnMessage =
@@ -24,13 +25,13 @@ export function nextHarnessRecoveryModel(
     if (selection.harness?.kind === "connection") return !!model.providerID && model.providerID !== current.providerID
     return selection.harness?.kind === "native" && isCatalogHarnessId(selection.harness.harnessId) && model.providerID !== current.providerID
   })
-  if (!next) return
+  if (!next) return undefined
   const providerID = selection.harness?.kind === "connection"
     ? next.providerID ?? harnessSelectionValue(selection.harness)
     : selection.harness?.kind === "native" && isCatalogHarnessId(selection.harness.harnessId)
     ? next.providerID
     : selection.harness ? harnessSelectionValue(selection.harness) : undefined
-  if (!providerID) return
+  if (!providerID) return undefined
   return { providerID, modelID: next.id }
 }
 
@@ -89,7 +90,7 @@ export function sessionRecoveryDescription(
 }
 
 export function sessionRecoveryClass(error: unknown): SessionErrorClass {
-  const data = record(record(error)?.data)
+  const data = asRecord(asRecord(error)?.data)
   const classified = data?.firstTurnErrorClass
   if (
     classified === "credential" || classified === "harness" || classified === "model" || classified === "usage_limit" ||
@@ -106,7 +107,7 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
 }
 
 export function isTurnAdmissionConflict(error: unknown) {
-  const data = record(record(error)?.data)
+  const data = asRecord(asRecord(error)?.data)
   return data?.code === "turn_already_active" ||
     data?.code === "session_turn_in_progress" ||
     data?.message === "Session is already processing a message"
@@ -114,11 +115,11 @@ export function isTurnAdmissionConflict(error: unknown) {
 
 export function firstTurnOutcome(messages: FirstTurnMessage[]) {
   const first = messages.find((message): message is Extract<FirstTurnMessage, { role: "user" }> => message.role === "user")
-  if (!first) return
+  if (!first) return undefined
   const assistant = messages.find((message): message is Extract<FirstTurnMessage, { role: "assistant" }> =>
     message.role === "assistant" && message.parentID === first.id,
   )
-  if (!assistant || (typeof assistant.time.completed !== "number" && !assistant.error)) return
+  if (!assistant || (typeof assistant.time.completed !== "number" && !assistant.error)) return undefined
   if (!assistant.error) return { name: "first_turn_ok" as const }
   return { name: "first_turn_failed" as const, class: sessionRecoveryClass(assistant.error) }
 }
@@ -130,7 +131,3 @@ export function firstTurnFunnelEvents(messages: FirstTurnMessage[], cloud: boole
   return [outcome, { name: "first_cloud_turn_ok" as const }]
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
-}

@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type {
   AgentPermission as PermissionRequest,
-  AgentPresentationMessage as Message,
   AgentQuestion as QuestionRequest,
   AgentRuntimeStatus as SessionStatus,
 } from "@claxedo/agent-runtime-contract"
@@ -377,10 +376,10 @@ export function createSessionController(input: {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
     const snapshot = activeConversation()
-    if (!snapshot) return
-    if (snapshot.messages.length > 0) return snapshot.messages as Message[]
+    if (!snapshot) return undefined
+    if (snapshot.messages.length > 0) return snapshot.messages
     if (historyMeta().limit[sessionHistoryKey({ sessionID, directory: input.directory() })] !== undefined) {
-      return snapshot.messages as Message[]
+      return snapshot.messages
     }
     return undefined
   })

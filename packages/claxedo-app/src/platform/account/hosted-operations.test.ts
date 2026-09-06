@@ -31,7 +31,7 @@ const matrix = readFileSync(
 )
 
 function matrixNames() {
-  return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*)` \|/gm)].map((match) => match[1]!)
+  return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*)` \|/gm)].map((match) => match[1])
 }
 
 describe("the registry", () => {
@@ -54,7 +54,7 @@ describe("the registry", () => {
     // it. Scoped to the table literal so unrelated string keys elsewhere in
     // the file cannot join the list.
     const table = mainTable.slice(mainTable.indexOf("HOSTED_OPERATIONS = {"), mainTable.indexOf("} as const satisfies"))
-    const mainNames = [...table.matchAll(/^ {2}"([a-z][\w.]*)":/gm)].map((match) => match[1]!)
+    const mainNames = [...table.matchAll(/^ {2}"([a-z][\w.]*)":/gm)].map((match) => match[1])
 
     expect(mainNames.length).toBeGreaterThan(10)
     expect(hostedOperationNames().toSorted()).toEqual(mainNames.toSorted())

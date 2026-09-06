@@ -1,6 +1,7 @@
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-codex-auth-file" })
@@ -43,15 +44,15 @@ export function shouldMirrorCodexTokens(credential: { provider_id: string; kind:
 
 /** Pull the renewed material out of a stored secret, if it is complete. */
 export function renewedCodexTokens(secret: string, accountId: string | undefined | null): RenewedCodexTokens | undefined {
-  if (!accountId) return
-  const value = jsonRecord(secret)
-  if (!value) return
-  const tokens = record(value.tokens)
-  const oauth = record(value.oauth)
-  const access = text(value.access) ?? text(tokens?.access_token) ?? text(oauth?.access)
-  const refresh = text(value.refresh) ?? text(tokens?.refresh_token) ?? text(oauth?.refresh)
-  if (!access || !refresh) return
-  const idToken = text(tokens?.id_token) ?? text(value.id_token)
+  if (!accountId) return undefined
+  const value = parseJsonRecord(secret)
+  if (!value) return undefined
+  const tokens = jsonRecord(value.tokens)
+  const oauth = jsonRecord(value.oauth)
+  const access = jsonString(value.access) ?? jsonString(tokens?.access_token) ?? jsonString(oauth?.access)
+  const refresh = jsonString(value.refresh) ?? jsonString(tokens?.refresh_token) ?? jsonString(oauth?.refresh)
+  if (!access || !refresh) return undefined
+  const idToken = jsonString(tokens?.id_token) ?? jsonString(value.id_token)
   return { accountId, access, refresh, ...(idToken ? { idToken } : {}) }
 }
 
@@ -80,18 +81,20 @@ export function mirrorCodexTokens(next: RenewedCodexTokens, homeDir = home()): s
   for (const file of codexAuthFileCandidates(homeDir)) {
     const current = readJsonFile(file)
     if (!current) continue
-    const tokens = record(current.tokens)
-    if (text(tokens?.account_id) !== next.accountId) continue
-    if (text(tokens?.access_token) === next.access && text(tokens?.refresh_token) === next.refresh) continue
+    const tokens = jsonRecord(current.tokens)
+    if (jsonString(tokens?.account_id) !== next.accountId) continue
+    if (jsonString(tokens?.access_token) === next.access && jsonString(tokens?.refresh_token) === next.refresh)
+      continue
 
+    const idToken = next.idToken ?? jsonString(tokens?.id_token)
     const updated: JsonRecord = {
       ...current,
       tokens: {
-        ...(tokens ?? {}),
+        ...tokens,
         access_token: next.access,
         refresh_token: next.refresh,
         // Codex (>=0.143) requires `tokens.id_token`; never regress it to absent.
-        ...(next.idToken ?? text(tokens?.id_token) ? { id_token: next.idToken ?? text(tokens?.id_token) } : {}),
+        ...(idToken ? { id_token: idToken } : {}),
       },
       last_refresh: new Date().toISOString(),
     }
@@ -117,11 +120,11 @@ function writeAtomic(file: string, contents: string) {
   }
 }
 
-function readJsonFile(file: string) {
+function readJsonFile(file: string): JsonRecord | undefined {
   try {
-    return record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown)
+    return parseJsonRecord(fs.readFileSync(file, "utf8"))
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -129,19 +132,3 @@ function home() {
   return process.env.HOME ?? os.homedir()
 }
 
-function text(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
-}
-
-function jsonRecord(input: string) {
-  try {
-    return record(JSON.parse(input) as unknown)
-  } catch {
-    return
-  }
-}
-
-function record(input: unknown): JsonRecord | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as JsonRecord
-}

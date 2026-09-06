@@ -10,7 +10,6 @@ import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createMemoryRuntimeStore } from "../../stores/memory"
-import { storeRows } from "../../test-utils/store-internals"
 import { createAgentRuntime, type AgentHarnessFactory } from "../../runtime"
 import type { AgentHarnessFactoryContext } from "../../runtime/contracts"
 import { createSqliteRuntimeStore } from "../../stores/sqlite"
@@ -246,7 +245,7 @@ async function runWithModels(input: {
   adapter.setModel(input.globalModel)
   const session = await adapter.createSession(fake.dir)
   for await (const _event of executeTestTurn(adapter, session.id, prompt(input.promptModel ?? input.globalModel), fake.dir)) {}
-  adapter.dispose()
+  await adapter.dispose()
   return fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
     method: string
     params?: Record<string, unknown>
@@ -261,7 +260,7 @@ test("public Codex first turn uses the created upstream thread and persists hist
   const fake = await makeFakeCodex()
   const root = path.join(fake.dir, "public-runtime-store")
   const store = createSqliteRuntimeStore({ root })
-  const rows = storeRows(store)
+  const rows = store
   const runtime = createAgentRuntime({
     store,
     harnesses: [{
@@ -299,13 +298,13 @@ test("public Codex first turn uses the created upstream thread and persists hist
     expect(requests.filter((request) => request.method === "turn/start")).toMatchObject([{ params: { threadId: "thread-1" } }])
   } finally {
     await runtime.dispose()
-    rows.close()
+    rows.close?.()
   }
-  const reopened = storeRows(createSqliteRuntimeStore({ root }))
+  const reopened = createSqliteRuntimeStore({ root })
   try {
     expect(reopened.getExecutionBinding(sessionId)?.upstreamSessionId).toBe("thread-1")
     expect(JSON.stringify(reopened.getMessages(sessionId))).toContain("OK")
-  } finally { reopened.close() }
+  } finally { reopened.close?.() }
 })
 
 describe("CodexHarnessAdapter", () => {
@@ -324,7 +323,7 @@ describe("CodexHarnessAdapter", () => {
       adapter.createSession(fake.dir),
       adapter.probeConfigOptions(fake.dir),
     ])
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       method: string
@@ -346,7 +345,7 @@ describe("CodexHarnessAdapter", () => {
       creation,
       adapter.applyConfig({ auth: { "codex-app-server": "sk-during-startup" } }),
     ])
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       id?: number
@@ -379,7 +378,7 @@ describe("CodexHarnessAdapter", () => {
     expect(applied).toBe(false)
     await config
     await adapter.createSession(fake.dir)
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       method?: string
@@ -407,7 +406,7 @@ describe("CodexHarnessAdapter", () => {
       .map((line) => JSON.parse(line) as { event?: string; pid?: number })
       .find((row) => row.event === "started")?.pid
     if (!pid) throw new Error("Fake Codex process did not record its PID")
-    adapter.dispose()
+    await adapter.dispose()
 
     await expect(creation).rejects.toThrow()
     // The sigterm log row comes from the fake's POSIX signal handler. Windows
@@ -443,7 +442,7 @@ describe("CodexHarnessAdapter", () => {
     const transcript = '<session-handoff from="claude">\nUser:\nMy dog is Tommy.\n</session-handoff>'
 
     await adapter.createHandoffSession(fake.dir, undefined, "ses_handoff", { system: transcript })
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       method?: string
@@ -463,7 +462,7 @@ describe("CodexHarnessAdapter", () => {
     const prepared = await adapter.createHandoffSession(fake.dir, undefined, "ses_handoff", { system: "handoff" })
     await prepared.rollback()
     await prepared.rollback()
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       id?: number
@@ -511,7 +510,7 @@ describe("CodexHarnessAdapter", () => {
         { id: "xhigh", name: "Xhigh" },
       ],
     })
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("passes the selected reasoning effort to Codex turn/start", async () => {
@@ -527,7 +526,7 @@ describe("CodexHarnessAdapter", () => {
     await adapter.probeConfigOptions(fake.dir)
     const session = await adapter.createSession(fake.dir)
     for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5", "minimal"), fake.dir)) {}
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       method: string
@@ -545,7 +544,7 @@ describe("CodexHarnessAdapter", () => {
       // Isolate refresh writes from the developer's Codex home.
       codexHome,
       fetch: async (_url, init) => {
-        refreshBodies.push(String(init?.body))
+        refreshBodies.push(typeof init?.body === "string" ? init.body : "")
         return Response.json({
           access_token: "fresh-access-token",
           refresh_token: "fresh-refresh-token",
@@ -574,7 +573,7 @@ describe("CodexHarnessAdapter", () => {
 
     const session = await adapter.createSession(fake.dir)
     for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       id?: number
@@ -604,7 +603,7 @@ describe("CodexHarnessAdapter", () => {
 
   test("projects MCP URL elicitations as questions and returns the user's acceptance", async () => {
     const fake = await makeFakeCodex({ mcpElicitation: true })
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
       store,
@@ -634,7 +633,7 @@ describe("CodexHarnessAdapter", () => {
 
     await adapter.replyQuestion(executionBinding(session.id, fake.dir), "901", [["I've finished connecting"]])
     await turn
-    adapter.dispose()
+    await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       id?: number
@@ -655,7 +654,7 @@ describe("CodexHarnessAdapter", () => {
     const session = await adapter.createSession(fake.dir)
     const events = []
     for await (const event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) events.push(event)
-    adapter.dispose()
+    await adapter.dispose()
 
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
   })
@@ -665,7 +664,7 @@ describe("CodexHarnessAdapter", () => {
     const eventHub = createRuntimeEventHub()
     const runtimeEvents: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
       eventHub,
@@ -676,7 +675,7 @@ describe("CodexHarnessAdapter", () => {
 
     const session = await adapter.createSession(fake.dir)
     for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
-    adapter.dispose()
+    await adapter.dispose()
 
     const lifecycle = runtimeEvents.filter((event) => event.payload.type === "subagent-updated")
     const childOne = lifecycle.filter((event) => event.payload.type === "subagent-updated" && event.payload.providerId === "thread-child-1")
@@ -696,7 +695,8 @@ describe("CodexHarnessAdapter", () => {
     expect(childSessions).toHaveLength(2)
     expect(childSessions.map((item) => item.id)).not.toContain("thread-child-1")
     expect(childSessions.map((item) => item.id)).not.toContain("thread-child-2")
-    expect(childSessions.map((item) => item.agent_session_id).sort()).toEqual(["thread-child-1", "thread-child-2"])
+    expect(childSessions.map((item) => item.agent_session_id ?? "").sort((a, b) => a.localeCompare(b)))
+      .toEqual(["thread-child-1", "thread-child-2"])
     expect(JSON.stringify(store.getMessages(session.id))).not.toContain("CHILD-ONLY")
     expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("CHILD-ONLY"))).toBe(true)
     expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("SECOND-CHILD-ONLY"))).toBe(true)

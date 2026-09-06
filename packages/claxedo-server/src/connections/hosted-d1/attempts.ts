@@ -37,6 +37,7 @@
  */
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Attempts } from "@claxedo/connections"
+import { storedFields } from "../stored-columns"
 
 /** Mirrors the kit's `ttlMs` default: how long a pending attempt may be finished. */
 export const HOSTED_ATTEMPT_TTL_MS = 10 * 60_000
@@ -108,8 +109,7 @@ function randomToken() {
 }
 
 function decodeRecord(value: string | null): Record<string, string> | undefined {
-  if (value === null) return undefined
-  return JSON.parse(value) as Record<string, string>
+  return value === null ? undefined : storedFields(value)
 }
 
 export function createD1ConnectionAttempts(input: D1ConnectionAttemptsInput): HostedConnectionAttempts {

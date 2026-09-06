@@ -95,7 +95,6 @@ export function submitWorkspaceBacking(input: {
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
   input: SubmitTransportPlacementInput<Client>,
 ) {
-  const sessionRef = () => input.sessionRef?.()
   const runtimeTransport = (dir: SubmitDirectory) => submitTransportForPlacement({
     serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
     workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
@@ -180,8 +179,11 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     }
     return {
       ...runtimePromptClient,
-      getGoalCapabilities: runtimeClient.getGoalCapabilities,
-      startGoal: runtimeClient.startGoal,
+      // Wrapped rather than passed bare: both are methods on the agent runtime
+      // client, so detaching them from their receiver is unsound.
+      getGoalCapabilities: (goalInput: Parameters<typeof runtimeClient.getGoalCapabilities>[0]) =>
+        runtimeClient.getGoalCapabilities(goalInput),
+      startGoal: (goalInput: Parameters<typeof runtimeClient.startGoal>[0]) => runtimeClient.startGoal(goalInput),
     }
   }
 
@@ -279,6 +281,6 @@ function sessionConfigPath(input: Pick<SaveSessionConfigInput, "sessionID" | "di
 /** Compare cached configuration and writes using the same canonical PATCH representation. */
 function sessionConfigSignature(input: unknown) {
   const parsed = parseExistingSessionConfig(input)
-  if (!parsed) return
+  if (!parsed) return undefined
   return JSON.stringify(sessionConfigBody(parsed))
 }

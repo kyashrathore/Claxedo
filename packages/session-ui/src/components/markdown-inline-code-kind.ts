@@ -1890,12 +1890,12 @@ const pathFileNamePrefixes = new Set([
 
 export function inlineCodeKind(text: string): "path" | "path-candidate" | "url" | undefined {
   if (/^https?:\/\//i.test(text)) return "url"
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return
-  if (/\s/.test(text)) return
-  if (/[()\[\]{}*+=<>|&^"';]/.test(text)) return
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return undefined
+  if (/\s/.test(text)) return undefined
+  if (/[()[\]{}*+=<>|&^"';]/.test(text)) return undefined
   // `~/…` can't be expanded client-side, so the file panel refuses it
   // (workspace-file-focus.ts). Marking it a path is a dead affordance.
-  if (text.startsWith("~")) return
+  if (text.startsWith("~")) return undefined
   return filePathKind(text)
 }
 
@@ -1910,11 +1910,12 @@ function filePathKind(text: string): "path" | "path-candidate" | undefined {
   // Chips carry the timeline's `:line[:col]` suffix (`src/foo.ts:42`); it isn't
   // part of the filename. Same suffix resolveWorkspaceFileFocus() parses off.
   const base = text.replace(/:\d+(?::\d+)?$/, "")
-  if (!base || base === "/" || /^\/[a-z][a-z0-9-]*$/i.test(base) || /[/\\]$/.test(base)) return
-  if (base.split(/[/\\]/).some((segment) => segment === "..")) return
+  if (!base || base === "/" || /^\/[a-z][a-z0-9-]*$/i.test(base) || /[/\\]$/.test(base)) return undefined
+  if (base.split(/[/\\]/).some((segment) => segment === "..")) return undefined
   const name = base.split(/[/\\]/).pop() ?? ""
   if (hasPathExtension(name) || hasPathFileName(name)) return "path"
   if (/[/\\]/.test(base)) return "path-candidate"
+  return undefined
 }
 
 function hasPathExtension(text: string) {

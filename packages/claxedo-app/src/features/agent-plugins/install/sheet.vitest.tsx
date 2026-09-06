@@ -82,11 +82,11 @@ function harness(input: {
   withConnections?: boolean
 } = {}) {
   const order: string[] = []
-  const activation = vi.fn(async (body: ActivationBody) => {
+  const activation = vi.fn(async (_body: ActivationBody) => {
     order.push("activation")
     return { revision: 8, reconciliation: input.reconciliation ?? { state: "applied" } }
   })
-  const organizationDefault = vi.fn(async (body: OrganizationBody) => {
+  const organizationDefault = vi.fn(async (_body: OrganizationBody) => {
     order.push("organizationDefault")
     return { revision: 9, reconciliation: { state: "applied" } }
   })
@@ -144,7 +144,7 @@ describe("install sheet — where it goes", () => {
     await click("Add plugin")
 
     await waitFor(() => expect(activation).toHaveBeenCalledTimes(1))
-    expect(activation.mock.calls[0]![0]).toEqual({
+    expect(activation.mock.calls[0][0]).toEqual({
       pluginInstanceId: "[\"claxedo\",\"composio\"]",
       harnessIds: HARNESSES,
       choice: true,
@@ -160,7 +160,7 @@ describe("install sheet — where it goes", () => {
     await click("Add plugin")
 
     await waitFor(() => expect(activation).toHaveBeenCalledTimes(1))
-    expect(activation.mock.calls[0]![0].target).toEqual({ scope: "all-projects" })
+    expect(activation.mock.calls[0][0].target).toEqual({ scope: "all-projects" })
   })
 
   test("signed sends the chosen project ids", async () => {
@@ -171,7 +171,7 @@ describe("install sheet — where it goes", () => {
     await click("Add plugin")
 
     await waitFor(() => expect(activation).toHaveBeenCalledTimes(1))
-    expect(activation.mock.calls[0]![0].target).toEqual({ scope: "projects", projectIds: ["project-2"] })
+    expect(activation.mock.calls[0][0].target).toEqual({ scope: "projects", projectIds: ["project-2"] })
   })
 
   test("an empty project selection is refused before any request", async () => {
@@ -191,7 +191,7 @@ describe("install sheet — where it goes", () => {
     await click("Add plugin")
 
     await waitFor(() => expect(activation).toHaveBeenCalledTimes(1))
-    expect(activation.mock.calls[0]![0].harnessIds).toEqual(["opencode", "claude", "cursor"])
+    expect(activation.mock.calls[0][0].harnessIds).toEqual(["opencode", "claude", "cursor"])
   })
 
   test("a harness the candidate cannot serve is disabled with its reason and is not sent", async () => {
@@ -203,7 +203,7 @@ describe("install sheet — where it goes", () => {
     await click("Add plugin")
 
     await waitFor(() => expect(activation).toHaveBeenCalledTimes(1))
-    expect(activation.mock.calls[0]![0].harnessIds).toEqual(["opencode", "claude", "codex"])
+    expect(activation.mock.calls[0][0].harnessIds).toEqual(["opencode", "claude", "codex"])
   })
 
   test("a failed reconciliation is reported as a pending runtime sync", async () => {
@@ -248,20 +248,20 @@ describe("install sheet — authentication", () => {
 
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1))
     expect(order).toEqual(["activation", "organizationDefault", "connections.open"])
-    expect(organizationDefault.mock.calls[0]![0]).toEqual({
+    expect(organizationDefault.mock.calls[0][0]).toEqual({
       pluginInstanceId: "[\"claxedo\",\"composio\"]",
       harnessIds: HARNESSES,
       choice: true,
       // the receipt of step 1, not the catalog revision the sheet opened with
       expectedRevision: 8,
     })
-    expect(open.mock.calls[0]![0]).toEqual(expect.objectContaining({
+    expect(open.mock.calls[0][0]).toEqual(expect.objectContaining({
       integrationId: "mcp-composio",
       name: "composio MCP",
       scope: "team",
       teamScopeEnabled: true,
     }))
-    expect(activation.mock.calls[0]![0].expectedRevision).toBe(4)
+    expect(activation.mock.calls[0][0].expectedRevision).toBe(4)
     expect(onDone).toHaveBeenCalledWith({ installed: true, revision: 9 })
   })
 
@@ -276,7 +276,7 @@ describe("install sheet — authentication", () => {
 
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1))
     expect(organizationDefault).not.toHaveBeenCalled()
-    expect(open.mock.calls[0]![0]).toEqual(expect.objectContaining({ scope: "personal" }))
+    expect(open.mock.calls[0][0]).toEqual(expect.objectContaining({ scope: "personal" }))
     expect(onDone).toHaveBeenCalledWith({ installed: true, revision: 8 })
   })
 

@@ -30,7 +30,23 @@ import type {
   SandboxTarget,
 } from ".."
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
+import { record, text } from "../json"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
+
+/**
+ * The Worker's sandbox registry rows. Every value is a label string, so a row
+ * with a non-string value is a Worker on a different contract: drop the value
+ * rather than let it reach GC's ownership checks as something other than text.
+ */
+function registryEntries(input: unknown): Record<string, string>[] {
+  if (!Array.isArray(input)) return []
+  return input.flatMap((item) => {
+    const row = record(item)
+    if (!row) return []
+    const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    return [Object.fromEntries(entries)]
+  })
+}
 
 export type CloudflareSandboxDriverOptions = {
   /** Base URL of the deployed Cloudflare Sandbox Worker (e.g. https://sbx.example.com). */
@@ -146,12 +162,12 @@ export function createCloudflareSandboxDriver(
     "Content-Type": "application/json",
   }
 
-  async function call<T = unknown>(
+  async function call(
     sandboxId: string,
     action: string,
     body: Record<string, unknown>,
     method: "POST" | "DELETE" = "POST",
-  ): Promise<{ status: number; data: T }> {
+  ): Promise<{ status: number; data: Record<string, unknown> }> {
     const url = `${base}/sandbox/${encodeURIComponent(sandboxId)}${action ? `/${action}` : ""}`
     const deadline = deadlineSignal(action === "ensure-runtime" ? ensureTimeoutMs : timeoutMs)
     try {
@@ -161,7 +177,7 @@ export function createCloudflareSandboxDriver(
         ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
         signal: deadline.signal,
       })
-      const data = (await res.json().catch(() => ({}))) as T
+      const data = record(await res.json().catch(() => ({}))) ?? {}
       return { status: res.status, data }
     } finally {
       deadline.cleanup()
@@ -218,7 +234,7 @@ export function createCloudflareSandboxDriver(
     const sandboxId = sandboxIdFor(input.workspaceId)
     const hostId = sandboxId
     const egress = egressRegistrations(input)
-    const response = await call<{ ready?: boolean; url?: string; error?: string }>(
+    const response = await call(
       sandboxId,
       "ensure-runtime",
       {
@@ -244,16 +260,17 @@ export function createCloudflareSandboxDriver(
     // Do not launder every server-side configuration or runtime failure into
     // "provisioning": a missing broker binding, for example, will never heal
     // by polling and must reach the caller as the authoritative error.
-    if (status === 503 && data?.error === "workspace-runtime did not become ready") {
+    const runtimeUrl = text(data.url)
+    if (status === 503 && data.error === "workspace-runtime did not become ready") {
       return { provisioning: true as const, retryAfterMs: 2_000 }
     }
-    if (status >= 400 || !data?.url) {
-      throw new Error(`Cloudflare ensure-runtime failed (${status}): ${data?.error ?? "no runtime url"}`)
+    if (status >= 400 || !runtimeUrl) {
+      throw new Error(`Cloudflare ensure-runtime failed (${status}): ${text(data.error) ?? "no runtime url"}`)
     }
     const targetOut: SandboxTarget = {
       workspaceId: input.workspaceId,
       sandboxId,
-      url: data.url,
+      url: runtimeUrl,
       hostId,
       driverResourceId: sandboxId,
       driver: {
@@ -306,22 +323,18 @@ export function createCloudflareSandboxDriver(
           headers,
           signal: deadline.signal,
         })
-        const data = await res.json().catch(() => ({})) as {
-          supported?: boolean
-          sandboxes?: Array<Record<string, string>>
-          error?: string
-        }
-        if (res.status === 404 || res.status === 501 || data?.supported === false) {
+        const data = record(await res.json().catch(() => ({}))) ?? {}
+        if (res.status === 404 || res.status === 501 || data.supported === false) {
           throw new CloudflareSandboxListingUnsupportedError(
-            data?.error
+            text(data.error)
               ?? `Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}) — `
                 + "deploy a Worker with the /sandboxes registry route and an R2 BACKUP_BUCKET binding",
           )
         }
         if (!res.ok) {
-          throw new Error(`Cloudflare sandbox listing failed (${res.status}): ${data?.error ?? "unknown error"}`)
+          throw new Error(`Cloudflare sandbox listing failed (${res.status}): ${text(data.error) ?? "unknown error"}`)
         }
-        return (data.sandboxes ?? []).flatMap((entry) => {
+        return registryEntries(data.sandboxes).flatMap((entry) => {
           const sandboxId = entry.sandboxId
           if (!sandboxId) return []
           // Labels come from the registry as the Worker recorded them, so GC's
@@ -378,15 +391,16 @@ export function createCloudflareSandboxDriver(
 
     async snapshot(target) {
       const directory = target.labels?.[WORKSPACE_DIRECTORY_LABEL] ?? workspaceDir
-      const { status, data } = await call<{ backupId?: string; error?: string }>(
+      const { status, data } = await call(
         target.sandboxId,
         "backup",
         { directories: captureDirectories(directory) },
       )
-      if (status >= 400 || !data.backupId) {
-        throw new Error(`Cloudflare backup failed (${status}): ${data.error ?? "no backup id"}`)
+      const backupId = text(data.backupId)
+      if (status >= 400 || !backupId) {
+        throw new Error(`Cloudflare backup failed (${status}): ${text(data.error) ?? "no backup id"}`)
       }
-      return { snapshotId: data.backupId }
+      return { snapshotId: backupId }
     },
   }
 }

@@ -1,33 +1,20 @@
 /**
- * SPEC: desktop lane — unsigned, embedded workspace (packaged Electron)
+ * The packaged Electron renderer is a `file://` document, and that one fact is
+ * what this lane exists to cover: on `file://` the page's own origin is not a
+ * usable API base, `history.pushState` throws, and a WebSocket handshake sends
+ * `Origin: file://`, which the server's loopback gate rejects. Every other
+ * Playwright lane points a browser at an `http://localhost` dev server, where
+ * `window.location.protocol` is `https?:` and that whole class of failure
+ * cannot occur.
  *
- * PURPOSE — this is the surface no lane had ever run. Four defects shipped to
- * users in v0.0.65 and every one traced to a single fact, *the packaged
- * renderer is a `file://` document*:
- *
- *   1  that `file://` page became its own API base, so creating a session and
- *      switching harness failed
- *   3  `history.pushState` on a `file://` document threw, so a reload broke the
- *      packaged app entirely
- *   4  a WebSocket handshake always sends an `Origin` header — `file://` — which
- *      the server's loopback gate rejected, leaving terminals in
- *      "[Reconnecting... n/6]"
- *
- * None of the three were merely uncaught. They were **undetectable**: every
- * other Playwright lane points a browser at an `http://localhost` dev server,
- * where `window.location.protocol` is `https?:` and the whole class evaporates.
- * See `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`.
- *
- * WHAT IS REAL HERE — everything the user runs: the packaged app (asar-packed,
+ * Everything here is what the user runs: the packaged app (asar-packed,
  * `file://` renderer), its own embedded claxedo-server, the real
- * workspace-runtime, a real git worktree. Per the plan's owner decision, the
- * ONLY fake permitted anywhere in this lane is the AI model HTTP endpoint.
+ * workspace-runtime, a real git worktree. The AI model HTTP endpoint is the
+ * only fake permitted in this lane.
  *
- * ASSERTION DOCTRINE — `INVARIANTS.md`: an assertion that can pass while the
- * feature is unusable is a defect in the suite. "The shell rendered" would have
- * been green through all three defects above; the owner only found them when
- * CREATING A SESSION or CREATING A TERMINAL. So the coverage in this file sits
- * on server-touching mutations, and the boot check is labelled a diagnostic.
+ * Coverage sits on server-touching mutations — creating a session, creating a
+ * terminal. An assertion like "the shell rendered" stays green through all
+ * three failures above.
  */
 
 import { expect, test, type Locator, type Page } from "@playwright/test"
@@ -207,12 +194,11 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   })
 
   /**
-   * PHASE-2 PREMISE GUARD. Not a feature test — it exists so that a lane which
-   * has silently degraded to an http renderer fails here, loudly, instead of
-   * reporting green from every scenario below while testing an application
-   * nobody ships. `launchPackagedApp` already asserts the protocol internally;
-   * this pins it as an explicit, named scenario so the failure is legible in CI
-   * output rather than buried in a helper.
+   * A premise guard, not a feature test: a lane that has silently degraded to
+   * an http renderer fails here instead of reporting green from every scenario
+   * below while testing an application nobody ships. `launchPackagedApp`
+   * asserts the protocol internally too; naming it as its own scenario keeps
+   * the failure legible in CI output rather than buried in a helper.
    */
   test("the launched app is the packaged one: renderer origin is file://", async () => {
     packaged = await launchPackagedApp({ timeoutMs: BOOT_TIMEOUT })
@@ -339,8 +325,6 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     ).toBeGreaterThan(0)
     expect(backgrounded.state).toBe("running")
 
-    // Coming back to the foreground changes nothing either: the same daemon
-    // keeps serving, with no restart and no adoption of a new generation.
     await mainBrowserWindow.evaluate((browserWindow) => browserWindow.restore())
     await expect
       .poll(windowState, { message: "the window never came back, so the return leg tests nothing" })
@@ -354,8 +338,6 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       "the daemon was replaced across the background/focus cycle instead of surviving it",
     ).toEqual({ pid: booted.pid, generation: booted.generation })
 
-    // The renderer is still bound to that same daemon, through the same public
-    // entrypoint its boot resolved.
     await expect.poll(() => packaged!.page.evaluate(async () => {
       const desktopApi = (window as typeof window & {
         api: { awaitInitialization: (onStep: () => void) => Promise<{ url: string }> }
@@ -440,7 +422,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       }),
     )
     expect(diagnosticsTabs.every((button) => button.scrollWidth <= button.clientWidth + 1)).toBe(true)
-    expect(diagnosticsTabs.slice(1).every((button, index) => diagnosticsTabs[index]!.right <= button.left)).toBe(true)
+    expect(diagnosticsTabs.slice(1).every((button, index) => diagnosticsTabs[index].right <= button.left)).toBe(true)
     const diagnosticsDesign = await workspacePageDesignSignature(diagnostics)
     expect(diagnosticsDesign).toEqual(usageDesign)
 
@@ -450,45 +432,18 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   })
 
   /**
-   * BOOT-ERROR REGRESSION GUARD — NOT a diagnostic, unlike A1 above. This is
-   * the assertion this task exists to add: the "Failed to load sessions for
-   * opencode / 404 / 503" toast pair (see this file's header + the plan's
-   * "Error-toast audit" section) rendered and auto-dismissed during boot on
-   * every desktop run before `CLAXEDO_DESKTOP_USER_DATA_DIR` +
-   * `CLAXEDO_DATA_DIR` were isolated (Phase 2), and NOTHING in this file's
-   * other scenarios would have caught it: B1 etc. only touch the SUCCESS path
-   * (a session gets created and its row renders), and a transient toast that
-   * dismisses itself before the next assertion runs leaves no trace in final
-   * DOM state. `boot-observer.ts` exists precisely because a sampled
-   * screenshot or an end-state DOM query both miss a self-dismissing toast.
+   * The "Failed to load sessions for opencode / 404 / 503" toast pair renders
+   * and auto-dismisses during boot, which is why nothing else in this file can
+   * see it: the other scenarios assert on success-path end state, and a toast
+   * that dismisses itself leaves no trace in final DOM state for either a
+   * sampled screenshot or an end-state DOM query. `boot-observer.ts` exists
+   * for that reason.
    *
-   * Unlike A1 ("shell renders" / "a request landed"), this fails on the
-   * user-observable symptom itself (an error toast actually appearing, or a
-   * real non-2xx response) rather than on the absence of a *successful*
-   * signal — so per this task's plan doctrine (Phase 0: "an assertion that
-   * can pass while the feature is unusable is a defect in the suite") this
-   * one counts as real coverage of the boot-health class of defect, not a
-   * demoted diagnostic. It does not replace B1/D1 (which cover the create-a-
-   * session/create-a-terminal mutations the owner actually needs); it exists
-   * beside them as the earliest, most precise signal for THIS specific defect
-   * shape.
-   *
-   * WIRING NOTE (why this needs `beforeShellWindow`, not a plain
-   * `page.addInitScript`): `boot-observer.ts`'s own doc explains why a
-   * `Page`-level install is structurally too late on this harness —
-   * `launchPackagedApp` only ever hands back a page from `waitForShellWindow()`,
-   * which resolves after `index.html` has already loaded and already run its
-   * own boot fetches/toasts. `electron-app.ts`'s `beforeShellWindow` hook
-   * (added by this task, additive-only) is the earliest point this harness
-   * exposes: it fires immediately after `electron.launch()`, before either
-   * window (splash or shell) exists, so `context().addInitScript(...)`
-   * genuinely precedes the shell's first navigation. VERIFIED to bite, not
-   * just to pass: run with `CLAXEDO_DESKTOP_USER_DATA_DIR` pointed at the
-   * real Dev channel's already-populated store (reproducing the
-   * `data_dir_already_owned` 409 this task's own header describes), this
-   * assertion goes RED, quoting the exact toast text and the 404/503
-   * responses — see this task's report for the two runs (green fixed /
-   * red reverted). Restored to the correct, isolated env below.
+   * This fails on the user-observable symptom itself — an error toast actually
+   * appearing, or a real non-2xx response — rather than on the absence of a
+   * successful signal, so unlike A1 it is coverage and not a diagnostic. It
+   * does not replace B1/D1, which cover the create-a-session and
+   * create-a-terminal mutations.
    */
   test("boot produces no error-shaped toast and no non-2xx server response", async () => {
     const model = await startScriptedModelServer()
@@ -509,51 +464,38 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     // shell repainting is not the same as the async project-list/session
     // fetches settling, and it's exactly THAT settling window
     // (`bootstrap-orchestrator.ts`'s `fetchQuery` rejection path) that
-    // produces the toast this test exists to catch. Mirrors the plan's own
-    // "Error-toast audit" sampling window (t=3/8/15/25s) rather than reading
-    // immediately after first paint.
+    // produces the toast this test exists to catch.
     await expect(packaged.page.locator("[data-claxedo]"), "shell never painted during boot").toBeVisible({
       timeout: 30_000,
     })
     await expectServerReachable(packaged, 45_000)
     await packaged.page.waitForTimeout(5_000)
 
-    // The real assertion. `expectNoBootErrors` throws with the FULL captured
-    // toast text / failed-request list on failure — that text IS the
-    // evidence, not a bare count mismatch.
     await expectNoBootErrors(packaged.page)
   })
 
-  // ===========================================================================
-  // B/C/D/A2 HARNESS — everything below drives the REAL UI: a real scratch git
-  // worktree, a real `POST /api/workspace/resolve`, a real composer send, a
-  // real PTY. The scripted model server (scripted-model-server.ts) is the ONE
-  // permitted fake, standing where api.anthropic.com would.
+  // Everything below drives the REAL UI: a real scratch git worktree, a real
+  // `POST /api/workspace/resolve`, a real composer send, a real PTY. The
+  // scripted model server (scripted-model-server.ts) is the one permitted fake,
+  // standing where api.anthropic.com would.
   //
-  // WHY THESE HELPERS EXIST, NOT `page.goto()` — verified live against this
-  // exact build, 2026-08-06: the packaged renderer runs on Solid Router's
-  // `MemoryRouter`, never on the document URL. `urlRoutingEnabled()`
-  // (`src/lib/runtime-mode.ts:14-29`) is false for any `file://` document, so
-  // there is nothing for `page.goto()` to navigate TO on this surface — that
-  // hazard is defect 3 itself (a written route survives nothing on reload).
-  // The only real way onto a workspace is the rail's own "recent projects"
-  // list, seeded through the app's real persistence bridge
-  // (`window.api.storeSet`, `preload/index.ts:147-148`, contextBridge-exposed
-  // into the SAME main-world context `page.evaluate` runs in) — desktop
-  // persists through electron-store via this IPC call, never through
-  // `window.localStorage` the way the web lane's `seedOneProject`
-  // (`real-harness-local.spec.ts`) can (`persist.ts`'s `isDesktop` branch).
+  // These helpers exist instead of `page.goto()` because the packaged renderer
+  // runs on Solid Router's `MemoryRouter`: `urlRoutingEnabled()`
+  // (`src/lib/runtime-mode.ts`) is false for any `file://` document, so there
+  // is nothing for `page.goto()` to navigate TO on this surface. The only real
+  // way onto a workspace is the rail's own "recent projects" list, seeded
+  // through the app's real persistence bridge (`window.api.storeSet` in
+  // `preload/index.ts`, contextBridge-exposed into the SAME main-world context
+  // `page.evaluate` runs in) — desktop persists through electron-store via this
+  // IPC call, never through `window.localStorage` the way the web lane's
+  // `seedOneProject` (`real-harness-local.spec.ts`) can (`persist.ts`'s
+  // `isDesktop` branch).
   //
-  // WHY NOT THE APP'S OWN BAKED-IN DEFAULT PROJECT — a fresh profile boots
-  // with ONE project already open: this exact repository's own checkout
-  // (measured 2026-08-06, independent of both `--user-data-dir` and the spawn
-  // `cwd`, so it is very likely a build-time constant of this Dev-channel
-  // artifact rather than a runtime discovery). Reusing it would run every
-  // session/terminal this file creates against the SAME working tree other
-  // concurrent agents are editing — forbidden by this task's own file-ownership
-  // rule. Every helper below therefore points the app at its own scratch
-  // `git init` worktree and never touches that default project.
-  // ===========================================================================
+  // A fresh profile boots with ONE project already open: this repository's own
+  // checkout, independent of both `--user-data-dir` and the spawn `cwd`.
+  // Reusing it would run every session and terminal this file creates against
+  // the same working tree other concurrent agents are editing, so every helper
+  // below points the app at its own scratch `git init` worktree instead.
 
   /**
    * A scratch git worktree, isolated per scenario. `-b main` is not
@@ -591,7 +533,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     if (!res.ok) {
       throw new Error(
         `GATING: failed to register workspace ${dir} via ${url} (${res.status}) — ` +
-          `${await res.text().catch(() => "<no body>")}`,
+          (await res.text().catch(() => "<no body>")),
       )
     }
     const json = (await res.json()) as { workspaceId: string }
@@ -744,31 +686,21 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     return input
   }
 
-  /**
-   * Types `text` into a draft/session composer, verifying it actually landed.
-   *
-   * `.fill()` on this contenteditable sometimes writes the DOM node without
-   * firing the input events the composer's own reactive state reads —
-   * measured 2026-08-06: `toContainText` passed immediately afterward, yet
-   * the submit control stayed on `aria-label="Type a message to get started"`
-   * (i.e. the app still believed the draft was empty). Real keystrokes are
-   * the always-correct fallback; mirrors `real-harness-local.spec.ts`'s
-   * `composePrompt`.
-   */
   async function selectNativeClaudeHarness(page: Page) {
     const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
     await expect(control).toBeEnabled({ timeout: 20_000 })
     await control.click()
     const picker = page.locator('[data-component="harness-model-picker"]')
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
-    // "Claude" is unique now: the first-party ACP rows left the picker when
-    // operator-configured ACP connections became the ACP group.
+    // Exactly one picker row is named "Claude": the ACP group lists
+    // operator-configured connections, not first-party rows.
     const nativeClaude = picker.getByRole("button", { name: /^Claude$/ }).first()
     await nativeClaude.click()
-    // Harness switching is asynchronous. A stale OpenCode model can remain in
-    // the trigger briefly and used to satisfy the model-ready assertion below,
-    // letting this test pick an OpenCode Sonnet while claiming native Claude.
-    // Reopen Harness and require the Native SDK row itself to own selection.
+    // Harness switching is asynchronous, and a stale OpenCode model lingers in
+    // the trigger long enough to satisfy the model-ready assertion below — this
+    // test can end up on an OpenCode Sonnet while believing it selected native
+    // Claude. Reopening Harness and requiring the Native SDK row itself to own
+    // selection closes that window.
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
     await expect(nativeClaude, "native Claude never became the selected harness").toHaveAttribute(
       "aria-current",
@@ -914,7 +846,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     }
   }
 
-  /** Boots the packaged app with native Pi and fixture-local provider credentials. */
   async function launchScriptedApp(
     extraEnv: Record<string, string> = {},
   ): Promise<{ app: PackagedApp; model: ScriptedModelServer }> {
@@ -974,9 +905,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const marker1 = "B1B2_MARKER"
     await composeText(packaged.page, input, `Reply with exactly this one token, nothing else: ${marker1}`)
 
-    // B1 wire diagnostic: `POST .../session -> 201` is actually observed on
-    // the real wire (plan line 108), not merely inferred from the DOM.
-    // Registered BEFORE the click so the response can't race the listener.
+    // Registered BEFORE the click so the 201 response cannot race the listener.
     const sessionPostSeen = packaged.page.waitForResponse(
       (res) =>
         res.request().method() === "POST" && new URL(res.url()).pathname.endsWith("/session") && res.status() === 201,
@@ -989,11 +918,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       )
     })
 
-    // B1: the row becomes visible, LIVE, with no reload, at index 0.
     const sessionId = await waitForNewSessionId(packaged.page, before)
     await expectRailRowVisible({ page: packaged.page, sessionId, index: 0 })
 
-    // B2: the assistant reply is visibly rendered (full three-layer oracle).
     await expectAssistantReplyVisible(packaged.page, marker1, {
       spec: "desktop-unsigned-embedded",
       scenario: "b2-first-turn",
@@ -1027,7 +954,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       scenario: "b4-second-turn",
     })
 
-    // Both native Pi turns must reach the scripted provider exactly once.
     expect(
       scripted.counts().responses,
       "each rendered turn must correspond to one real Responses request",
@@ -1061,10 +987,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       sessionIds.push(sessionId)
     }
 
-    // sessionIds[0] is the OLDEST of the four — three newer rows now outrank
-    // it, i.e. index 3, matching the plan's B5 row ("re-prompt an older row
-    // (index >= 3)").
-    const target = sessionIds[0]!
+    // sessionIds[0] is the OLDEST of the four, so the three newer rows outrank
+    // it and it now sits at index 3.
+    const target = sessionIds[0]
     await expectRailRowVisible({ page: packaged.page, sessionId: target, index: 3 })
 
     // Re-prompt it: focus its row, then send another message. Switching to an
@@ -1087,7 +1012,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     )
     await visibleSubmit(packaged.page).click()
 
-    // B5 (defect 10 / open issue #13): the re-prompted row reaches index 0.
     await expectRailRowMovesToTop({ page: packaged.page, sessionId: target })
 
     // B6 (open issue #14): exactly one row renders for it, not a second copy
@@ -1100,44 +1024,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     })
   })
 
-  // Historical B7 investigation — this timing-dependent observation is not an executable contract. After two real
-  // attempts against a real backend. `expectRailStatus`'s own precondition
-  // (rail-oracle.ts, "the dot must be ABSENT right now, before any status is
-  // driven") needs a row that is genuinely, structurally idle — and on
-  // SESSIONS (unlike terminals) that state turns out to be unreachable a
-  // second time and unwinnable the first time, verified two different ways:
-  //   1. SOURCE-CODE FACT, not a guess: `agent-status-listener.ts` implements
-  //      `useClearAttentionOnFocus` / `clearSeen(id)` ONLY for
-  //      `state.terminal` (`terminal.ts:35,139`) — grepped the whole tree for
-  //      `clearSeen`/`clearAttentionOnFocus`, zero hits for anything
-  //      session-shaped. The file's own comment names the consequence
-  //      precisely: "Setting `idle` alone leaves a stale `seen` flag ... so
-  //      the sidebar 'done' dot sticks forever and never disappears." Matches
-  //      what this file's own two attempts measured directly: a session's
-  //      dot, once "done", stayed rendered (count 1)
-  //      across 15s of polling, a full second session's create+turn+reply
-  //      cycle, and a manual re-click of its own row — nothing this file
-  //      could drive from the real UI ever took it back to absent. So a
-  //      session cannot be REUSED for this proof the way B9's redesign below
-  //      reuses a compact-switcher tab.
-  //   2. TIMING FACT: a session's row and its FIRST busy dot both come from
-  //      the SAME real event delivery this lane cannot slow down or step
-  //      through (unlike the mocked `core-claude-native-sdk-rail.spec.ts`
-  //      sibling this oracle generalizes, whose "visible -> assert no dot ->
-  //      emit busy -> assert dot" sequence works only because the mock holds
-  //      the busy event back until the test code says so). Fast-polling this
-  //      lane's actual creation race (10ms interval, JS-side, no artificial
-  //      wait) still could not reliably observe a session between "row
-  //      exists" and "dot present" against the scripted server's near-zero
-  //      latency — the two arrive together often enough that the precondition
-  //      the oracle depends on is not reliably constructible here, honestly.
-  // B9 below proves the SAME defect-12 shape (freeze-at-idle-mount) on the
-  // compact-switcher instead, using a construction that sidesteps this exact
-  // race by ordering (the tab mounts before the session exists at all,
-  // instead of racing to catch it) — so the underlying defect is not
-  // unguarded, only this specific RAIL row/no-second-idle-state combination.
-  // An honest fixme beats a fake pass — this task's own instructions permit
-  // exactly this when a scenario cannot bite without a weak assertion.
   test("B8: reload preserves rail title, order, and status", async () => {
     const dir = await makeScratchWorkspace("b8")
     const started = await launchScriptedApp()
@@ -1166,33 +1052,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       timeout: 30_000,
     })
 
-    // B8: title, order, AND status all survive the reload (defect 3's fix —
-    // pre-fix, a reload broke the packaged app outright).
     await expectRailRowVisible({ page: packaged.page, sessionId, index: 0 })
     const titleAfter = await expectRailTitleSettled({ page: packaged.page, sessionId })
     expect(titleAfter, "rail title changed across a reload with no new activity").toBe(titleBefore)
     await expectRailStatusAbsent({ page: packaged.page, sessionId })
   })
-
-  // Historical B9 investigation — this failed interaction has no retained executable scenario. After three
-  // real, reproducible attempts. Everything up to and including
-  // `closeSidebar()` works exactly as designed (verified: the rail row is
-  // read correctly, the matching compact-switcher tab is found by title, the
-  // FIRST turn's baseline status reads back and matches between the two
-  // surfaces). The SECOND send is what never lands: `composeText` +
-  // `visibleSubmit(page).click()`, the exact same pair every other scenario
-  // in this file uses successfully, leaves the session's REAL rail status
-  // reading `idle` for the entire 15s poll window three separate times —
-  // not a different-but-wrong value, not a timeout on a slow transition,
-  // literally never-sent. The most likely cause (not confirmed, out of
-  // remaining budget to chase further): the workbench layout `closeSidebar`
-  // produces (rail collapsed into the compact-switcher strip) puts a SECOND
-  // element matching this file's `:visible` composer/submit locators
-  // somewhere in the DOM that is syntactically visible but not the
-  // functional one — the same class of duplicate-DOM hazard this file's
-  // `visibleSubmit`/`composerInput` docs already record for the normal
-  // (sidebar-open) layout, just not fully solved for this OTHER layout in
-  // the time available. An honest fixme beats a fake pass.
 
   test("C1: a new draft resolves harness/model within 5s with no reload needed", async () => {
     const dir = await makeScratchWorkspace("c1")
@@ -1386,7 +1250,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const projectGroup = await openWorkspaceProject(packaged, dir, workspaceId)
 
     // Navigate INTO the project before touching the terminal toolbar.
-    // `rail-sidebar.tsx:2320-2326` gates the whole `[data-testid="project-
+    // `rail-sidebar.tsx` gates the whole `[data-testid="project-
     // group"]` row list (terminals AND sessions alike) behind a `<Show
     // when={open()}>`, and `open()` only flips true reactively once
     // `projectMatches(section.project)` does (a `createEffect`, not a
@@ -1416,7 +1280,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
 
     const terminalId = await waitForNewTerminalId(projectGroup, beforeIds, 20_000)
 
-    // D1: streams a live prompt within 10s.
     const pane = packaged.page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
     await expect(pane, "terminal pane never mounted").toBeVisible({ timeout: 10_000 })
     const xtermRows = pane.locator(".xterm-rows").first()
@@ -1439,22 +1302,16 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       await packaged.page.waitForTimeout(500)
     }
 
-    // PORT FIX VERIFICATION — direct proof the terminal's own `CLAXEDO_PORT`
-    // mirrors the app's REAL embedded-server port, not a hardcoded fallback.
-    // This file used to name that fallback as "defect 6" (a portless
-    // synthetic origin producing `CLAXEDO_PORT=80`); `provider.tsx`'s
-    // `claxedoPort` now derives the port from the actual `claxedoServerUrl`
-    // instead of ever guessing a constant. (A same-shaped-looking divergence
-    // was chased in D2 in an earlier pass of this task and turned out to be
-    // a false lead — comparing against `CLAXEDO_DESKTOP_URL`, an unrelated
-    // MCP-bridge server on its own independent port, not the real
-    // claxedo-server D2's own terminal correctly used; see this task's
-    // report. `serverBase` below, not `CLAXEDO_DESKTOP_URL`, is the only
-    // valid ground truth.) `serverBase` above is the SAME url
-    // `expectServerReachable` already proved live moments ago — its `.port`
-    // is the ground truth to compare the terminal's own env against. Read
-    // via a real typed shell command and the DOM-rendered buffer, not a
-    // mocked env snapshot.
+    // Direct proof the terminal's own `CLAXEDO_PORT` mirrors the app's REAL
+    // embedded-server port rather than a hardcoded fallback: `provider.tsx`'s
+    // `claxedoPort` derives the port from the actual `claxedoServerUrl` instead
+    // of ever guessing a constant. `CLAXEDO_DESKTOP_URL` is NOT the ground truth
+    // to compare against — it is an unrelated local MCP-tool bridge
+    // (`packages/claxedo-desktop/src/main/browser/setup.ts`) on its own
+    // independent port. `serverBase` above is the SAME url
+    // `expectServerReachable` already proved live, and its `.port` is what the
+    // terminal's own env has to match. Read via a real typed shell command and
+    // the DOM-rendered buffer, not a mocked env snapshot.
     const expectedPort = new URL(serverBase).port
     await pane.click()
     const portEchoCommand =
@@ -1516,105 +1373,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await expectRowGeometry({ page: packaged.page })
   })
 
-  // Historical D2 investigation — no executable regression scenario was retained. This scenario
-  // has now been through three real strategy changes, and THREE of its FOUR
-  // original suspects are fully resolved. Only one genuinely unexplained
-  // blocker remains, and it is narrower and more precise than anything
-  // recorded before.
-  //
-  // (1) DIALOG SUPPRESSION — SOLVED, unchanged since the previous pass.
-  // Pre-seeding the CLI's own persisted acceptance state in a scratch
-  // `CLAUDE_CONFIG_DIR` before `claude` ever runs (`hasCompletedOnboarding`,
-  // `skipDangerousModePermissionPrompt`, `CLAUDE_CODE_SANDBOXED=1`) makes
-  // every interactive dialog never appear at all — proven live again this
-  // pass, zero keystrokes sent to fight anything. Full citation trail
-  // (`~/.local/share/claude/versions/2.1.223`'s bundled JS: `EE()`, `yoe()`/
-  // `jba()`, `r5b()`, `HV()`) is in this file's own history.
-  //
-  // (2) AUTH PRECEDENCE — SOLVED THIS PASS, and this is the headline fix.
-  // `TR()` (the bundle's own function deciding which credential source an
-  // actual API request uses) checks, IN ORDER: `apiKeyHelper` (host-managed
-  // only) -> `ANTHROPIC_AUTH_TOKEN` -> `CLAUDE_CODE_OAUTH_TOKEN` -> a managed
-  // OAuth-token file -> `apiKeyHelper` again -> a stored `profile` ->
-  // finally the stored `claude.ai` OAuth session. `ANTHROPIC_API_KEY` — what
-  // every prior pass seeded — DOES NOT APPEAR IN THIS FUNCTION AT ALL, so it
-  // never pre-empted an already-logged-in `claude.ai` session on this
-  // machine; the CLI fell to the bottom of `TR()` and used the real
-  // subscription every time, matching this file's own C4 diagnosis for
-  // claude-acp/sdk. `ANTHROPIC_AUTH_TOKEN` is checked SECOND, before every
-  // OAuth branch. CONFIRMED LIVE, repeatedly: with it seeded (see
-  // `seedClaudeConfigDir` below), the terminal buffer shows a real scripted
-  // reply (`⏺ D2_MARK`) and the scripted server's own request counter goes
-  // non-zero — the non-negotiable guard below now passes on every run.
-  // Isolating `HOME`/`XDG_CONFIG_HOME` alongside this did NOT help (see
-  // `seedClaudeConfigDir`'s doc for why it was dropped) — `ANTHROPIC_
-  // AUTH_TOKEN` alone was sufficient.
-  //
-  // (3) `CLAXEDO_PORT` — NOT A BUG. RETRACTED. An earlier pass of this same
-  // task diagnosed a "port divergence" between this scenario and D1/D3,
-  // citing this scenario's terminal env carrying `CLAXEDO_PORT=3001` against
-  // `CLAXEDO_DESKTOP_URL` showing a different port and concluding the fix in
-  // `provider.tsx` didn't cover this flow. That diagnosis was WRONG, found
-  // and corrected within the same task: `CLAXEDO_DESKTOP_URL` is a
-  // completely unrelated server — a local MCP-tool bridge
-  // (`packages/claxedo-desktop/src/main/browser/setup.ts:149`), independent
-  // of and on a different port than the real claxedo-server this scenario's
-  // terminal actually uses. The valid ground truth is `serverBase`
-  // (`expectServerReachable`'s own observed value, from REAL app traffic) —
-  // and a direct, live comparison confirmed `new URL(serverBase).port` and
-  // the terminal's own `$CLAXEDO_PORT` MATCH EXACTLY (both `3001`, because
-  // `main/index.ts`'s `getFreePort(process.env.CLAXEDO_SERVER_PORT ?? 3001)`
-  // legitimately binds 3001 when it's free, which it normally is). D1/D3's
-  // own port-verification assertion (this file, a few scenarios up) remains
-  // correct and worth keeping as a regression guard for the REAL fix in
-  // `provider.tsx`; it just never proved a divergence from this scenario,
-  // because there wasn't one.
-  //
-  // (4) TIMING/RACE — TESTED AND RULED OUT, not merely retried. The owner's
-  // own correction for this pass: a session/terminal can go busy -> idle
-  // FASTER than any polling loop can straddle against this mock's normal
-  // near-instant reply, which can look exactly like "the dot never moved"
-  // even when the hook pipeline is fine — this file's own B7 scenario
-  // documents the identical shape for sessions. `scripted-model-server.ts`
-  // gained a `setReplyDelayMs(ms)` method this pass (no delay/slow-mode
-  // existed there before; OFF/0 by default, every other spec unaffected) —
-  // the request is counted the INSTANT it's received, only the response
-  // WRITE is held back, so a real `claude` turn stays genuinely in-flight
-  // for the whole delay. Used here with a 5s hold and an 8s observation
-  // window (generous relative to the delay) specifically to rule timing out
-  // as a cause. Result: the counter went non-zero almost immediately (auth
-  // fix confirmed again), but the rail dot NEVER showed "working" even
-  // once — not "arrived and left before the poll," genuinely absent for the
-  // entire 8s the reply was deliberately held open. A pure race would have
-  // been fixed by this; it was not. The SAME null result was independently
-  // reproduced with NO claude involved at all, in an earlier pass: a
-  // synthetic `echo '{"hook_event_name":"SessionStart"}' | bash
-  // "$CLAXEDO_HOME_DIR/hooks/notify.sh"` typed straight into a plain shell
-  // terminal, polled continuously for 8s, also never moved the dot.
-  //
-  // WHAT REMAINS, NARROWED TO ONE QUESTION: with dialogs, auth, port, and
-  // timing all eliminated, the `notify.sh` -> this app's real embedded
-  // server -> rail-dot pipeline itself does not update a TERMINAL row's
-  // status for an agent running inside it, on this build, for a reason this
-  // task did not have budget left to isolate further (candidates not yet
-  // checked: whether `/api/wr/hook/agent-lifecycle`'s `tabId`/`terminalId`
-  // resolution genuinely matches what `notify.sh` sends, whether the SSE/
-  // event-stream leg from server to rail actually carries `agent.lifecycle`
-  // for terminals the same way `core-terminal.spec.ts`'s mocked lane proves
-  // it should, or something specific to how Claude Code's own hook runner
-  // invokes commands vs an interactively-typed one). This is now a single,
-  // precise, reproducible defect — not a bundle of maybes — and a fresh,
-  // focused investigation starting from `routes/agent-hook.ts`'s
-  // `/agent-lifecycle` handler and `agent-status-listener.ts`'s consumption
-  // of it is the natural next step.
-  //
-  // An honest fixme beats a fake pass — this task's own instructions
-  // explicitly require exactly this evidence trail: real counter values
-  // (non-zero, repeatedly, once auth was fixed), a real terminal buffer
-  // showing the scripted reply, a corrected retraction of a false lead
-  // (port) with the evidence that overturned it, and a ruled-out timing
-  // hypothesis with the exact mechanism (`setReplyDelayMs`) used to rule it
-  // out rather than merely re-asserted.
   test("A2: reload mid-session still renders the transcript and completes a further turn", async () => {
     const dir = await makeScratchWorkspace("a2")
     const started = await launchScriptedApp()
@@ -1647,17 +1405,14 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       timeout: 30_000,
     })
 
-    // Transcript still rendered.
     await expectAssistantReplyVisible(packaged.page, marker1, {
       spec: "desktop-unsigned-embedded",
       scenario: "a2-after-reload-transcript",
     })
 
-    // A SUBSEQUENT SEND completes a full turn — the owner's own correction
-    // (plan lines 42-46): "app was booting earlier also ... only when i was
-    // creating a terminal or i was creating a session i was getting to know
-    // it is broken." A reload that merely repaints the OLD transcript is not
-    // enough; the mutation has to keep working post-reload too.
+    // A reload that merely repaints the OLD transcript is not enough: creating
+    // a session is where the packaged-app breakage was actually observable, so
+    // the mutation has to keep working post-reload too.
     const marker2 = "A2_TURN2"
     await composeText(
       packaged.page,
@@ -1670,32 +1425,4 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       scenario: "a2-after-reload-turn2",
     })
   })
-
-  // Historical A3 investigation — packaged desktop has no session-by-id deep-link contract. The plan's
-  // literal scenario ("Cold deep link `/w/<ws>/session/<id>` — that session
-  // loads", docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md line
-  // 98) has no real implementation to exercise on the packaged desktop
-  // surface, verified live 2026-08-06:
-  //   1. `urlRoutingEnabled()` (`src/lib/runtime-mode.ts:14-29`) is false for
-  //      any `file://` document — the packaged renderer runs on Solid
-  //      Router's `MemoryRouter` and never writes route state to the actual
-  //      window URL, so `/w/<ws>/session/<id>` is not a `page.goto()`-able
-  //      target here at all (only true of the web lanes, whose documents are
-  //      http(s)).
-  //   2. The only real deep-link surface on desktop is the OS `claxedo://`
-  //      protocol (`electron-builder.config.ts:220`, `main/index.ts:191`,
-  //      `app.setAsDefaultProtocolClient("claxedo")`), and its parser
-  //      (`route-deep-links.ts:3-31`) implements exactly two intents,
-  //      `open-project` and `new-session` — there is no `open-session-by-id`
-  //      deep link anywhere in this codebase to test against.
-  //   3. DIAGNOSTIC, not asserted as fact (outside this plan's 18-defect
-  //      table, so not claimed as a proven bug here): `route-deep-links.ts:4`
-  //      recognizes only an `opencode://` scheme, while the desktop app
-  //      registers and builds ONLY `claxedo://`
-  //      (`electron-builder.config.ts:220`, `main/index.ts:191`) — a real
-  //      `claxedo://open-project?...` link therefore appears to no-op
-  //      end-to-end today. Worth a follow-up; fixing it is out of this file's
-  //      scope (route-deep-links.ts is app source, not e2e).
-  // An honest fixme beats a fake pass — this task's own instructions permit
-  // exactly this when a scenario cannot bite without a weak assertion.
 })

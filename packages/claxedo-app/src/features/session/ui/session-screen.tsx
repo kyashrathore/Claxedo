@@ -1,4 +1,5 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
+import { requestErrorMessage } from "../lib/request-error-message"
 import {
   onCleanup,
   onMount,
@@ -26,23 +27,27 @@ import {
   usePaneId,
   useSDK,
   useServer,
-  useTerminal,
 } from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLocation, useNavigate } from "@solidjs/router"
-import type { AgentRuntimeStatus as SessionStatus, AgentSnapshotFileDiff as SnapshotFileDiff, AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus as SessionStatus, AgentSnapshotFileDiff as SnapshotFileDiff } from "@claxedo/agent-runtime-contract"
+// The screen's user rows come from the projection, which also holds the
+// optimistic stub for a turn the runtime has not echoed back yet; the two sites
+// that genuinely need contract fields narrow with `isRuntimeAgentMessage`.
+import type { ProjectedUserMessage as UserMessage } from "@/features/session/conversation/agent-conversation-codec"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
 import { pickProjectFolderWith } from "./components/session-pick-project-folder"
-import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
+import { NewSessionDesignView, SessionHeader } from "@/features/session/ui/components"
+import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
 import { same } from "@/lib/same"
+import { isRuntimeAgentMessage } from "@/features/session/conversation/agent-conversation-codec"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff } from "@/features/session/ui/prompt-preview-handoff"
-import { terminalTabLabel } from "@/features/session/ui/terminal-label"
 import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { MessageTimeline, PromptInput, SessionComposerRegion } from "@/features/session/ui/session-screen-lazy"
 import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
@@ -96,6 +101,7 @@ import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/s
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
 import { createSessionScreenKeydownHandler } from "@/features/session/ui/session-screen-keydown"
 import { createSessionMessageActions } from "@/features/session/ui/session-message-actions"
+import type { FirstTurnMessage } from "@/features/session/onboarding/first-turn-recovery"
 import { createFirstTurnOnboarding, firstTurnHarnessRecovery } from "@/features/session/onboarding/first-turn-onboarding"
 import { DeferredSessionSecondaryStatus } from "@/features/session/ui/components/session-secondary-status"
 import { createActiveLocationSnapshot } from "@/features/session/ui/active-location-snapshot"
@@ -118,7 +124,6 @@ export default function SessionPage() {
   const layout = useLayout()
   const local = useLocal()
   const server = useServer()
-  const terminal = useTerminal()
   const config = useConfigOptional()
   const dialog = useDialog()
   const language = useLanguage()
@@ -140,7 +145,7 @@ export default function SessionPage() {
   const promptHarnessControllers = usePromptHarnessControllersOptional()
   const contentMetaSource = createMemo(() => {
     const surfaceId = sessionParams.surfaceId?.()
-    if (!surfaceId) return
+    if (!surfaceId) return undefined
     return claxedoState.meta.get(surfaceId)
   })
   const activeContentMeta = createActivePaneProjection({ active: paneActive, read: contentMetaSource, initial: undefined as ReturnType<typeof contentMetaSource> })
@@ -177,7 +182,7 @@ export default function SessionPage() {
   const routeDirectory = createMemo(() => sessionParams.directory())
   const sessionTitleTarget = createMemo(() => {
     const sessionId = sessionID()
-    if (!sessionId) return
+    if (!sessionId) return undefined
     const route = parseShellRoute(paneLocation().pathname)
     const sessionRef = activeSessionRef()
     const central = route.kind === "session"
@@ -291,7 +296,7 @@ export default function SessionPage() {
     if (fromDirectory) return fromDirectory
     return signedRuntimeWorkspace()?.kind
   })
-  const routeWorkspaceKind = createMemo<NewSessionWorkspaceKind>(() => {
+  const routeWorkspaceKind = createMemo<WorkspaceKind>(() => {
     // On a fresh DRAFT nav the inventory hasn't resolved yet and the only signal
     // is the directory-ref fallback — resolveDraftWorkspaceKind carries the ref's
     // OWN kind through instead of collapsing every ref to "cloud" (the collapse
@@ -486,7 +491,7 @@ export default function SessionPage() {
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
-    stableSessionMessages(prev as Parameters<typeof stableSessionMessages>[0], sessionKey(), sessionController.messages()),
+    stableSessionMessages(prev, sessionKey(), sessionController.messages()),
   )
   const messages = createMemo(() => messageState()?.value ?? [])
   const conversation = createActiveConversationSnapshot({ directory: dir, sessionID, active: paneActive })
@@ -559,23 +564,28 @@ export default function SessionPage() {
     if (!id) return false
     return sessionController.historyLoading()
   })
-  const errorMessage = (err: unknown) => {
-    if (err && typeof err === "object" && "data" in err) {
-      const data = (err as { data?: { message?: string } }).data
-      if (data?.message) return data.message
-    }
-    if (err instanceof Error) return err.message
-    return language.t("common.requestFailed")
-  }
+  const errorMessage = (err: unknown) => requestErrorMessage(err, language.t("common.requestFailed"))
 
   const userMessages = createMemo(
     () => sessionUserMessages(messages()),
     emptyUserMessages,
     { equals: same },
   )
+  // `FirstTurnMessage`'s user arm is `{id, role, time}`, which the optimistic
+  // stub satisfies; only its assistant arm carries `parentID`, which a stub has
+  // no value for. Keeping user stubs is what lets the funnel see the very first
+  // turn as it is sent, so only an unreconciled assistant row waits for the echo.
+  const firstTurnMessages = createMemo(() => {
+    const rows: FirstTurnMessage[] = []
+    for (const message of messages()) {
+      if (isRuntimeAgentMessage(message)) rows.push(message)
+      else if (message.role === "user") rows.push({ id: message.id, role: "user", time: message.time })
+    }
+    return rows
+  })
   const firstTurnOnboarding = createFirstTurnOnboarding({
     directory: dir,
-    messages,
+    messages: firstTurnMessages,
     cloud: () => resolvedWorkspaceKind() === "cloud",
     onStartNewSession: () => navigateSession(),
     harnessRecovery: () => firstTurnHarnessRecovery(promptHarnessControllers.selection, dir(), sessionID(), sessionParams.surfaceId?.(), activeSessionRef()),
@@ -606,7 +616,9 @@ export default function SessionPage() {
   createEffect(() => {
     if (!paneActive()) return
     const msg = lastUserMessage()
-    if (!msg) return
+    // Restores the composer from the turn's own agent and model, which only a
+    // row the runtime echoed back carries.
+    if (!msg || !isRuntimeAgentMessage(msg)) return
     local.session.restore(msg)
   })
 
@@ -667,7 +679,7 @@ export default function SessionPage() {
       navigate(`${current.pathname}${search}${current.hash}`, { replace: true })
     },
   })
-  const newSessionWorkspaceState = (kind: NewSessionWorkspaceKind) => {
+  const newSessionWorkspaceState = (kind: WorkspaceKind) => {
     const project = activeProject()
     return createNewSessionWorkspaceState({
       projectRoot: project?.worktree ?? sdk.directory,
@@ -677,10 +689,10 @@ export default function SessionPage() {
       workspaces: ((project as (typeof project & { workspaces?: Record<string, ProjectWorkspace> }) | undefined)?.workspaces ?? {}),
     })
   }
-  const newSessionWorkspaceOptions = (kind: NewSessionWorkspaceKind) => {
+  const newSessionWorkspaceOptions = (kind: WorkspaceKind) => {
     return newSessionWorkspaceState(kind).options
   }
-  const setNewSessionWorkspaceKind = (value: NewSessionWorkspaceKind) => {
+  const setNewSessionWorkspaceKind = (value: WorkspaceKind) => {
     // The web composer never offers "local" (no local machine behind the
     // renderer). Guard here too so a stale/deep-linked selection cannot route a
     // hosted web draft into an environment it can never run in.
@@ -962,7 +974,7 @@ export default function SessionPage() {
     const list = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
       .map((el) => {
         const id = el.dataset.messageId
-        if (!id) return
+        if (!id) return undefined
 
         const rect = el.getBoundingClientRect()
         return { id, top: rect.top, bottom: rect.bottom }
@@ -1132,7 +1144,9 @@ export default function SessionPage() {
     anchor,
     revealMessage: historyWindow.revealTurn,
     scheduleScrollState,
-    consumePendingMessage: layout.pendingMessage.consume,
+    // Wrapped rather than passed bare: `pendingMessage` is a method object owned
+    // by app/providers/layout.tsx, so detaching `consume` from it is unsound.
+    consumePendingMessage: (sessionKey: string) => layout.pendingMessage.consume(sessionKey),
   })
 
   onMount(() => {

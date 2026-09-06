@@ -5,7 +5,7 @@ export { isLocalPersonalScope } from "@/platform/runtime/transport"
 
 export function decodeDirectory(dir: string): DirectoryRef | undefined {
   const decoded = decode64(dir)
-  if (!decoded) return
+  if (!decoded) return undefined
   return asDirectoryRef(decoded)
 }
 

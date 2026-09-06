@@ -6,6 +6,7 @@ import path from "node:path"
 
 import { messagePartUpdated } from "../src/compat-events"
 import { RuntimeStore } from "../src/store"
+import { num, rec } from "../src/json-value"
 
 const roots: string[] = []
 
@@ -15,16 +16,35 @@ function tmp() {
   return root
 }
 
-function database(store: RuntimeStore) {
-  return (store as unknown as {
-    db: {
-      exec(sql: string): unknown
-      prepare(sql: string): {
-        run(...params: unknown[]): unknown
-        get(...params: unknown[]): unknown
-      }
-    }
-  }).db
+/** The SQL surface this harness bulk-inserts through. */
+type PerfDatabase = {
+  exec(sql: string): unknown
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown
+    get(...params: unknown[]): unknown
+  }
+}
+
+function hasPerfDatabase(value: unknown): value is { db: PerfDatabase } {
+  const db = rec(rec(value)?.db)
+  return typeof db?.exec === "function" && typeof db.prepare === "function"
+}
+
+/**
+ * The store's own SQLite handle.
+ *
+ * These benchmarks seed tens of thousands of rows and must do it on the SAME
+ * connection the store uses — a second connection would contend for the write
+ * lock and measure the lock, not the store. The reach is CHECKED rather than
+ * asserted, so a renamed field fails here with a sentence instead of at an
+ * `undefined.prepare` several lines later.
+ */
+function database(store: RuntimeStore): PerfDatabase {
+  const handle: unknown = store
+  if (!hasPerfDatabase(handle)) {
+    throw new Error("RuntimeStore no longer exposes a `db` handle; the perf harness seeds rows through it")
+  }
+  return handle.db
 }
 
 afterEach(() => {
@@ -144,15 +164,17 @@ describe("RuntimeStore performance", () => {
       })
     }
 
-    const row = database(store).prepare(`
+    const row = rec(database(store).prepare(`
       SELECT COUNT(*) AS count, SUM(LENGTH(payload_json)) AS bytes
       FROM runtime_journal
       WHERE session_id = ?
         AND type = 'message.part.updated'
         AND part_id = ?
-    `).get("s1", "tool-snapshot") as { count: number; bytes: number }
-    assert.equal(row.count, 1)
-    assert(row.bytes < 600 * 1024, `snapshot journal retained ${(row.bytes / 1024 / 1024).toFixed(1)} MiB`)
+    `).get("s1", "tool-snapshot"))
+    const count = num(row?.count) ?? 0
+    const bytes = num(row?.bytes) ?? 0
+    assert.equal(count, 1)
+    assert(bytes < 600 * 1024, `snapshot journal retained ${(bytes / 1024 / 1024).toFixed(1)} MiB`)
     store.close()
   })
 })

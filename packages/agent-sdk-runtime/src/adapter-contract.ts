@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
@@ -217,7 +218,7 @@ export interface AgentGoalResource {
   pause(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
   resume(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
   /** Disable future continuation before interrupting active work. */
-  stop(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot | null>>
+  stop(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult>
   delete(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<null>>
 }
 
@@ -225,11 +226,11 @@ export interface SupportsGoals {
   readonly goals: AgentGoalResource
 }
 
+const GOAL_RESOURCE_METHODS = ["readCapabilities", "read", "start", "pause", "resume", "stop", "delete"] as const
+
 function isGoalResource(value: unknown): value is AgentGoalResource {
-  if (!value || typeof value !== "object") return false
-  const resource = value as Partial<Record<keyof AgentGoalResource, unknown>>
-  return ["readCapabilities", "read", "start", "pause", "resume", "stop", "delete"]
-    .every((method) => typeof resource[method as keyof AgentGoalResource] === "function")
+  if (!isRecord(value)) return false
+  return GOAL_RESOURCE_METHODS.every((method) => typeof value[method] === "function")
 }
 
 export function requireGoalResource(adapter: AgentHarnessAdapter): AgentGoalResource {

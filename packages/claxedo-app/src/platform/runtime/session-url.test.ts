@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { resolveSessionUrl } from "./session-url"
-
-function requestUrl(input: RequestInfo | URL) {
-  if (input instanceof Request) return input.url
-  if (input instanceof URL) return input.href
-  return input
-}
+import { requestUrl } from "@/lib/url"
 
 describe("upstream contract", () => {
   test("keeps upstream behavior by leaving local sessions on the current SDK URL", async () => {

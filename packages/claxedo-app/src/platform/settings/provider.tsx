@@ -3,6 +3,7 @@ import { createEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { persisted } from "@/platform/persistence/persist"
 import { DEFAULT_SOUND_ID, isSoundID } from "@/platform/notifications/sound"
+import { asRecord } from "@/lib/record"
 
 export interface NotificationSettings {
   agent: boolean
@@ -149,12 +150,11 @@ const defaultSettings: Settings = {
 }
 
 export function migrateSettings(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return value
-  const settings = value as Record<string, unknown>
-  const sounds = settings.sounds
-  if (!sounds || typeof sounds !== "object" || Array.isArray(sounds)) return value
+  const settings = asRecord(value)
+  if (!settings) return value
+  const stored = asRecord(settings.sounds)
+  if (!stored) return value
 
-  const stored = sounds as Record<string, unknown>
   const invalid = (["agent", "permissions", "errors"] as const).filter(
     (key) => key in stored && !isSoundID(stored[key]),
   )

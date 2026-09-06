@@ -24,7 +24,7 @@ export function verifyOpenCodeSdkResources(resources: string, expected: Record<s
   }
   for (const [name, version] of Object.entries(expected)) {
     const matches = entries.filter((entry) => entry.name === name)
-    if (matches.length !== 1 || matches[0]!.version !== version) throw new Error("Expected one pinned embedded dependency: " + name + "@" + version)
+    if (matches.length !== 1 || matches[0].version !== version) throw new Error("Expected one pinned embedded dependency: " + name + "@" + version)
   }
   function walk(directory: string) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

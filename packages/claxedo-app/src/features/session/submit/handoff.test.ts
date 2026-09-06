@@ -14,13 +14,6 @@ const localSessionRef = (sessionId: string) => ({
   toolSandbox: { kind: "local" as const, cwd: "/repo/main" },
 })
 
-const cloudSessionRef = (sessionId: string) => ({
-  sessionId,
-  host: "workspace" as const,
-  workspaceId: "ws_cloud",
-  toolSandbox: { kind: "workspace" as const, workspaceId: "ws_cloud", hosting: "cloud" as const },
-})
-
 // Rubric T2: per-phase tests for handoff.ts. Focused on the decision tree
 // (which callbacks fire under which conditions), not on the deep Workbench
 // state plumbing — that's covered by the orchestration tests in

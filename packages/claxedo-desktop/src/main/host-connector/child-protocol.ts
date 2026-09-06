@@ -6,6 +6,8 @@
  * environment variables, renderer IPC values, or log fields.
  */
 
+import { asRecord, isNonEmptyString, readUnknown } from "../../shared/json-read"
+
 export type HostConnectorChildState =
   | { status: "idle" }
   | {
@@ -83,51 +85,47 @@ export type HostConnectorChildMessage =
   | { type: "response"; requestId: string; ok: true; status: HostConnectorChildState }
   | { type: "response"; requestId: string; ok: false; error: string }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-}
-
-function nonemptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0
-}
-
 function requestId(input: Record<string, unknown>): string | undefined {
-  return nonemptyString(input.requestId) ? input.requestId : undefined
+  return isNonEmptyString(input.requestId) ? input.requestId : undefined
 }
 
-function isJwk(value: unknown): value is JsonWebKey {
-  const input = record(value)
-  return !!input && nonemptyString(input.kty)
+/**
+ * The one JWK guard for this protocol.
+ *
+ * `JsonWebKey` declares every member optional, so there is no shape to check
+ * beyond the key type; callers that need the PRIVATE material check `d`
+ * themselves (see `identity-store.ts`).
+ */
+export function isJsonWebKey(value: unknown): value is JsonWebKey {
+  return isNonEmptyString(readUnknown(value, "kty"))
 }
 
 function identity(value: unknown): HostConnectorBootstrapIdentity | undefined {
-  const input = record(value)
-  if (!input || !nonemptyString(input.hostId) || !isJwk(input.privateKeyJwk)) return
+  const input = asRecord(value)
+  if (!input || !isNonEmptyString(input.hostId) || !isJsonWebKey(input.privateKeyJwk)) return undefined
   return { hostId: input.hostId, privateKeyJwk: input.privateKeyJwk }
 }
 
 function connectorState(value: unknown): HostConnectorChildState | undefined {
-  const input = record(value)
-  if (!input || !nonemptyString(input.status)) return
+  const input = asRecord(value)
+  if (!input) return undefined
   if (input.status === "idle") return { status: "idle" }
   if (input.status === "enrolled") {
-    const enrollment = record(input.enrollment)
+    const enrollment = asRecord(input.enrollment)
     if (
       !enrollment ||
-      !nonemptyString(enrollment.enrollment_id) ||
-      !nonemptyString(enrollment.host_id) ||
+      !isNonEmptyString(enrollment.enrollment_id) ||
+      !isNonEmptyString(enrollment.host_id) ||
       typeof enrollment.expires_at !== "number" ||
       !Number.isFinite(enrollment.expires_at)
     ) {
-      return
+      return undefined
     }
     const shared = Array.isArray(input.sharedWorkspaceIds)
-      && input.sharedWorkspaceIds.every((entry) => nonemptyString(entry))
-      ? (input.sharedWorkspaceIds as string[])
+      && input.sharedWorkspaceIds.every((entry) => isNonEmptyString(entry))
+      ? (input.sharedWorkspaceIds)
       : undefined
-    if (input.sharedWorkspaceIds !== undefined && !shared) return
+    if (input.sharedWorkspaceIds !== undefined && !shared) return undefined
     return {
       status: "enrolled",
       enrollment: {
@@ -143,28 +141,29 @@ function connectorState(value: unknown): HostConnectorChildState | undefined {
       (input.reason !== "revoked" && input.reason !== "error" && input.reason !== "closed") ||
       typeof input.detail !== "string"
     ) {
-      return
+      return undefined
     }
     return { status: "stopped", reason: input.reason, detail: input.detail }
   }
+  return undefined
 }
 
 export function parseHostConnectorParentMessage(value: unknown): HostConnectorParentMessage | undefined {
-  const input = record(value)
-  if (!input || !nonemptyString(input.type)) return
+  const input = asRecord(value)
+  if (!input || !isNonEmptyString(input.type)) return undefined
 
   if (input.type === "bootstrap") {
     const id = requestId(input)
-    if (!id || typeof input.heartbeatIntervalMs !== "number" || !Number.isFinite(input.heartbeatIntervalMs)) return
+    if (!id || typeof input.heartbeatIntervalMs !== "number" || !Number.isFinite(input.heartbeatIntervalMs)) return undefined
     const restored = input.identity === undefined ? undefined : identity(input.identity)
-    if (input.identity !== undefined && !restored) return
-    if (input.displayName !== undefined && typeof input.displayName !== "string") return
+    if (input.identity !== undefined && !restored) return undefined
+    if (input.displayName !== undefined && typeof input.displayName !== "string") return undefined
     const shares = input.sharedWorkspaces === undefined
       ? undefined
       : Array.isArray(input.sharedWorkspaces)
         ? input.sharedWorkspaces.flatMap((entry) => {
-            const share = record(entry)
-            if (!share || !nonemptyString(share.workspaceId)) return []
+            const share = asRecord(entry)
+            if (!share || !isNonEmptyString(share.workspaceId)) return []
             if (share.displayName !== undefined && typeof share.displayName !== "string") return []
             return [{
               workspaceId: share.workspaceId,
@@ -172,11 +171,11 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
             }]
           })
         : undefined
-    if (input.sharedWorkspaces !== undefined && shares === undefined) return
+    if (input.sharedWorkspaces !== undefined && shares === undefined) return undefined
     const sessionAuthority = input.sessionAuthority === "local" || input.sessionAuthority === "managed-private"
       ? input.sessionAuthority
       : undefined
-    if (input.sessionAuthority !== undefined && sessionAuthority === undefined) return
+    if (input.sessionAuthority !== undefined && sessionAuthority === undefined) return undefined
     return {
       type: "bootstrap",
       requestId: id,
@@ -190,8 +189,8 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
 
   if (input.type === "share-workspace") {
     const id = requestId(input)
-    if (!id || !nonemptyString(input.workspaceId)) return
-    if (input.displayName !== undefined && typeof input.displayName !== "string") return
+    if (!id || !isNonEmptyString(input.workspaceId)) return undefined
+    if (input.displayName !== undefined && typeof input.displayName !== "string") return undefined
     return {
       type: "share-workspace",
       requestId: id,
@@ -202,7 +201,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
 
   if (input.type === "unshare-workspace") {
     const id = requestId(input)
-    if (!id || !nonemptyString(input.workspaceId)) return
+    if (!id || !isNonEmptyString(input.workspaceId)) return undefined
     return { type: "unshare-workspace", requestId: id, workspaceId: input.workspaceId }
   }
 
@@ -213,23 +212,25 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
 
   if (input.type === "account-result") {
     const id = requestId(input)
-    if (!id || typeof input.ok !== "boolean") return
+    if (!id || typeof input.ok !== "boolean") return undefined
     return input.ok
       ? { type: "account-result", requestId: id, ok: true, value: input.value }
       : typeof input.error === "string"
         ? { type: "account-result", requestId: id, ok: false, error: input.error }
         : undefined
   }
+
+  return undefined
 }
 
 export function parseHostConnectorChildMessage(value: unknown): HostConnectorChildMessage | undefined {
-  const input = record(value)
-  if (!input || !nonemptyString(input.type)) return
+  const input = asRecord(value)
+  if (!input || !isNonEmptyString(input.type)) return undefined
   if (input.type === "ready") return { type: "ready" }
 
   if (input.type === "serving") {
     if (input.tunnel === null) return { type: "serving", tunnel: null }
-    const tunnel = record(input.tunnel)
+    const tunnel = asRecord(input.tunnel)
     return tunnel ? { type: "serving", tunnel } : undefined
   }
 
@@ -242,8 +243,8 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   if (input.type === "account-operation") {
     const id = requestId(input)
     const operation = Object.values(HOST_ENROLLMENT_OPERATIONS).find((name) => name === input.name)
-    const operationInput = input.input === undefined ? undefined : record(input.input)
-    if (!id || !operation || (input.input !== undefined && !operationInput)) return
+    const operationInput = input.input === undefined ? undefined : asRecord(input.input)
+    if (!id || !operation || (input.input !== undefined && !operationInput)) return undefined
     return {
       type: "account-operation",
       requestId: id,
@@ -259,9 +260,11 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
 
   if (input.type === "response") {
     const id = requestId(input)
-    if (!id || typeof input.ok !== "boolean") return
+    if (!id || typeof input.ok !== "boolean") return undefined
     if (!input.ok) return typeof input.error === "string" ? { type: "response", requestId: id, ok: false, error: input.error } : undefined
     const status = connectorState(input.status)
     return status ? { type: "response", requestId: id, ok: true, status } : undefined
   }
+
+  return undefined
 }

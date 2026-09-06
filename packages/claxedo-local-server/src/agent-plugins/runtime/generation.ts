@@ -1,15 +1,12 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import { isRecord } from "../../platform/json"
 
 const GENERATION_ID = /^generation-[0-9]+-[a-f0-9-]+$/
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function errorCode(value: unknown): string | undefined {
-  return record(value) && typeof value.code === "string" ? value.code : undefined
+  return isRecord(value) && typeof value.code === "string" ? value.code : undefined
 }
 
 function generationRevision(generationId: string) {
@@ -60,7 +57,7 @@ export async function readActiveGeneration(runtimeRoot: string): Promise<ActiveA
     if (errorCode(error) === "ENOENT") return undefined
     throw new AgentPluginGenerationError("invalid-generation", `Agent Plugins active pointer is invalid: ${String(error)}`)
   }
-  if (!record(raw)) {
+  if (!isRecord(raw)) {
     throw new AgentPluginGenerationError("invalid-generation", "Agent Plugins active pointer must be an object")
   }
   const value = raw

@@ -55,33 +55,39 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof WorkspacesAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as WorkspacesAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: WorkspacesAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
-export const useServer = bind("useServer")
-export const checkServerHealth = bind("checkServerHealth")
-export const useGlobalSDK = bind("useGlobalSDK")
-export const getAvatarColors = bind("getAvatarColors")
-export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")
-export const useClaxedoEvents = bind("useClaxedoEvents")
-export const useConfigOptional = bind("useConfigOptional")
-export const emitTerminalFit = bind("emitTerminalFit")
-export const DialogRecoverWorkspace = bind("DialogRecoverWorkspace")
-export const DialogDeleteWorkspace = bind("DialogDeleteWorkspace")
-export const DialogSettings = bind("DialogSettings")
-export const DialogSelectDirectory = bind("DialogSelectDirectory")
-export const ensureDirectorySessionCache = bind("ensureDirectorySessionCache")
-export const findProjectForWorkspace = bind("findProjectForWorkspace")
-export const message = bind("message")
-export const missingLocalWorkspace = bind("missingLocalWorkspace")
-export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
-export const directorySessionCacheQueryOptions = bind("directorySessionCacheQueryOptions")
-export const realDirectory = bind("realDirectory")
-export const useDirectorySessionCacheActions = bind("useDirectorySessionCacheActions")
-export const CloudStartupView = bind("CloudStartupView")
-export const WorkspaceAccessDeniedView = bind("WorkspaceAccessDeniedView")
-export const WorkspaceStateShell = bind("WorkspaceStateShell")
-export const WorkspaceStateNote = bind("WorkspaceStateNote")
-export const WorkspaceStateButton = bind("WorkspaceStateButton")
-export const isForbiddenConnectionError = bind("isForbiddenConnectionError")
+export const useServer = bind((ports) => ports.useServer)
+export const checkServerHealth = bind((ports) => ports.checkServerHealth)
+export const useGlobalSDK = bind((ports) => ports.useGlobalSDK)
+export const getAvatarColors = bind((ports) => ports.getAvatarColors)
+export const useClaxedoEventsOptional = bind((ports) => ports.useClaxedoEventsOptional)
+export const useClaxedoEvents = bind((ports) => ports.useClaxedoEvents)
+export const useConfigOptional = bind((ports) => ports.useConfigOptional)
+export const emitTerminalFit = bind((ports) => ports.emitTerminalFit)
+export const DialogRecoverWorkspace = bind((ports) => ports.DialogRecoverWorkspace)
+export const DialogDeleteWorkspace = bind((ports) => ports.DialogDeleteWorkspace)
+export const DialogSettings = bind((ports) => ports.DialogSettings)
+export const DialogSelectDirectory = bind((ports) => ports.DialogSelectDirectory)
+export const ensureDirectorySessionCache = bind((ports) => ports.ensureDirectorySessionCache)
+export const findProjectForWorkspace = bind((ports) => ports.findProjectForWorkspace)
+export const message = bind((ports) => ports.message)
+export const missingLocalWorkspace = bind((ports) => ports.missingLocalWorkspace)
+export const sessionRefForActionWorkspace = bind((ports) => ports.sessionRefForActionWorkspace)
+export const directorySessionCacheQueryOptions = bind((ports) => ports.directorySessionCacheQueryOptions)
+export const realDirectory = bind((ports) => ports.realDirectory)
+export const useDirectorySessionCacheActions = bind((ports) => ports.useDirectorySessionCacheActions)
+export const CloudStartupView = bind((ports) => ports.CloudStartupView)
+export const WorkspaceAccessDeniedView = bind((ports) => ports.WorkspaceAccessDeniedView)
+export const WorkspaceStateShell = bind((ports) => ports.WorkspaceStateShell)
+export const WorkspaceStateNote = bind((ports) => ports.WorkspaceStateNote)
+export const WorkspaceStateButton = bind((ports) => ports.WorkspaceStateButton)
+export const isForbiddenConnectionError = bind((ports) => ports.isForbiddenConnectionError)

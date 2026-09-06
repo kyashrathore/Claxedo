@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
+import { isRecord } from "@/lib/record"
 
 const TERMINAL_COMMANDS_KEY = "claxedo.terminalCommands"
 
@@ -21,10 +22,6 @@ export type TerminalCommands = {
   claude: string
   codex: string
   custom: CustomCommand[]
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
 }
 
 function isCustomCommand(input: unknown): input is CustomCommand {

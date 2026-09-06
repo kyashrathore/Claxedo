@@ -17,12 +17,16 @@ function stubRect(el: Element, width: number, height: number) {
 /** Route hit-testing (`document.elementFromPoint`) to a chosen element; jsdom's
  *  own implementation always returns null. */
 function withElementFromPoint<T>(el: Element, run: () => T): T {
-  const original = document.elementFromPoint
-  document.elementFromPoint = () => el as Element
+  // jsdom does not implement `elementFromPoint`, so this INSTALLS one rather
+  // than replacing one (`vi.spyOn` needs an existing member). Saving and
+  // restoring the property descriptor also means no unbound method is held.
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint")
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, writable: true, value: () => el })
   try {
     return run()
   } finally {
-    document.elementFromPoint = original
+    if (original) Object.defineProperty(document, "elementFromPoint", original)
+    else Reflect.deleteProperty(document, "elementFromPoint")
   }
 }
 
@@ -55,8 +59,8 @@ describe("H. drag & drop (pointer)", () => {
     h.api().contents.add("a")
     h.api().navigation.show("a")
     const paneId = h.api().selectors.contentPane("a")!
-    const grip = h.utils.queryByTestId(`pane-handle-${paneId}`)! as HTMLElement
-    const zone = h.utils.queryByTestId(`pane-handle-zone-${paneId}`)! as HTMLElement
+    const grip = h.utils.queryByTestId(`pane-handle-${paneId}`)!
+    const zone = h.utils.queryByTestId(`pane-handle-zone-${paneId}`)!
 
     // The grip (the element carrying the drag source) is hit-testable...
     expect(grip.style.pointerEvents).toBe("auto")

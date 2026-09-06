@@ -345,7 +345,7 @@ function describeTransition(state: PromptMachineState, effects: readonly { name:
 function createPromptMachine(input?: {
   readonly runEffect?: (effect: PromptMachineTransition["effects"][number], transition: PromptMachineTransition) => void
 }) {
-  const [state, setState] = createSignal<PromptMachineState>(initialPromptMachineState())
+  const [state, setState] = createSignal(initialPromptMachineState())
   const dispatch = (event: PromptMachineEvent) => {
     const transition = transitionPromptMachine(state(), event)
     if (transition.next !== state()) setState(transition.next)

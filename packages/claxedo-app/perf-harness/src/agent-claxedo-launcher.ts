@@ -1,17 +1,25 @@
 import { mkdir, readFile } from "node:fs/promises";
+import { isRecord, numberField, textField } from "./json-fields";
 import path from "node:path";
 import net from "node:net";
 import { installAgentBrowserObserver, measureSessionActivation, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
 import { readProcessTable, sameProcessIdentity, toIdleRows, type ProcessSnapshot } from "./agent-process-family";
 import { IdleProcessFamilyTracker } from "./idle-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
+import { optionalRecord, readBoolean, readFlag, readNumber, readRecord, readRecords, readSize, readText } from "./page-value";
 import { AGENT_APP_WINDOW } from "./agent-display-contract";
 import { writeJson } from "./storage";
 
 export type OwnedProcess = {
   pid: number;
   startTimeMs: number;
-  owner: "application" | "harness";
+  /**
+   * Always the application: this launcher only ever accounts for processes it
+   * started as the app under measurement. The union used to also admit
+   * `"harness"`, which nothing produced, and which forced every consumer with
+   * an application-only contract to assert the value back down.
+   */
+  owner: "application";
   category: string;
 };
 
@@ -132,16 +140,33 @@ export function startupClockLead(input: {
   };
 }
 
+/** Keep the scalar fields of a startup-clock event's detail; drop the rest. */
+function startupDetail(detail: Record<string, unknown>): Record<string, number | string | boolean> {
+  return Object.fromEntries(
+    Object.entries(detail).flatMap(([name, value]) =>
+      typeof value === "number" || typeof value === "string" || typeof value === "boolean" ? [[name, value]] : [],
+    ),
+  );
+}
+
 export function parseStartupClockLog(contents: string): StartupClockEvent[] {
   return contents
     .split("\n")
     .filter((line) => line.trim().length > 0)
     .flatMap((line) => {
       try {
-        const parsed = JSON.parse(line) as Partial<StartupClockEvent>;
-        return typeof parsed.event === "string" && typeof parsed.epochMs === "number"
-          ? [parsed as StartupClockEvent]
-          : [];
+        const parsed: unknown = JSON.parse(line);
+        if (!isRecord(parsed)) return [];
+        const event = textField(parsed, "event");
+        const epochMs = numberField(parsed, "epochMs");
+        if (event === undefined || epochMs === undefined) return [];
+        return [{
+          event,
+          epochMs,
+          pid: numberField(parsed, "pid") ?? -1,
+          processStartEpochMs: numberField(parsed, "processStartEpochMs") ?? -1,
+          ...(isRecord(parsed.detail) ? { detail: startupDetail(parsed.detail) } : {}),
+        }];
       } catch {
         return [];
       }
@@ -152,14 +177,18 @@ export function startupClockPath(runDirectory: string) {
   return path.join(runDirectory, "startup-clock.jsonl");
 }
 
-async function captureStartupClock(runDirectory: string, snapshot: {
-  timeOrigin: number;
-  resources: readonly { name: string; startTime: number }[];
-}) {
+async function captureStartupClock(runDirectory: string, snapshot: Record<string, unknown>) {
   if (!startupClockEnabled()) return;
   const events = parseStartupClockLog(await readFile(startupClockPath(runDirectory), "utf8"));
   await writeJson(path.join(runDirectory, "startup-clock-lead.json"), {
-    ...startupClockLead({ events, ...snapshot }),
+    ...startupClockLead({
+      events,
+      timeOrigin: readNumber(snapshot.timeOrigin),
+      resources: readRecords(snapshot.resources).map((entry) => ({
+        name: readText(entry.name),
+        startTime: readNumber(entry.startTime),
+      })),
+    }),
     events,
   });
 }
@@ -171,7 +200,7 @@ async function captureColdReadyDiagnostics(input: {
   phase: string;
   coldReadyMs: number;
 }) {
-  const snapshot = await input.page.evaluate(() => ({
+  const snapshot = readRecord(await input.page.evaluate(() => ({
     timeOrigin: performance.timeOrigin,
     now: performance.now(),
     marks: performance
@@ -179,25 +208,27 @@ async function captureColdReadyDiagnostics(input: {
       .map((entry) => ({
         name: entry.name,
         startTime: entry.startTime,
-        detail: (entry as PerformanceMark).detail ?? null,
+        detail: entry instanceof PerformanceMark ? entry.detail : null,
       })),
     paints: performance
       .getEntriesByType("paint")
       .map((entry) => ({ name: entry.name, startTime: entry.startTime })),
-    navigation: performance.getEntriesByType("navigation").map((entry) => {
-      const nav = entry as PerformanceNavigationTiming;
-      return {
+    navigation: performance.getEntriesByType("navigation").flatMap((entry) => {
+      if (!(entry instanceof PerformanceNavigationTiming)) return [];
+      const nav = entry;
+      return [{
         startTime: nav.startTime,
         fetchStart: nav.fetchStart,
         responseEnd: nav.responseEnd,
         domContentLoadedEventEnd: nav.domContentLoadedEventEnd,
         loadEventEnd: nav.loadEventEnd,
         duration: nav.duration,
-      };
+      }];
     }),
-    resources: performance.getEntriesByType("resource").map((entry) => {
-      const res = entry as PerformanceResourceTiming;
-      return {
+    resources: performance.getEntriesByType("resource").flatMap((entry) => {
+      if (!(entry instanceof PerformanceResourceTiming)) return [];
+      const res = entry;
+      return [{
         name: res.name,
         initiatorType: res.initiatorType,
         startTime: res.startTime,
@@ -207,9 +238,9 @@ async function captureColdReadyDiagnostics(input: {
         duration: res.duration,
         transferSize: res.transferSize,
         decodedBodySize: res.decodedBodySize,
-      };
+      }];
     }),
-  }));
+  })));
   const file = path.join(
     input.runDirectory,
     `cold-ready-diagnostics-${String(input.serial).padStart(3, "0")}-${input.phase}.json`,
@@ -305,7 +336,7 @@ export async function launchPackagedClaxedo(input: {
       CLAXEDO_SERVER_PORT: String(serverPort),
       CLAXEDO_DEVTOOLS: "0",
       GOMAXPROCS: process.env.GOMAXPROCS ?? "2",
-      ...(input.extraEnv ?? {}),
+      ...input.extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -356,7 +387,8 @@ export async function launchPackagedClaxedo(input: {
       for (const item of survivors) {
         forced.set(`${item.pid}:${item.startTimeMs}`, ownedRecord(item));
         try { process.kill(item.pid, "SIGKILL"); } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          // ESRCH means the process is already gone, which is the goal here.
+          if (!isRecord(error) || error.code !== "ESRCH") throw error;
         }
       }
       await Bun.sleep(50);
@@ -396,7 +428,7 @@ export async function launchPackagedClaxedo(input: {
       const sessionIds = input.readinessTargets.map((target) => target.sessionId);
       const deadline = performance.now() + timeoutMs;
       while (performance.now() < deadline) {
-        const visible = await connectedPage.evaluate((ids) => {
+        const visible = readFlag(await connectedPage.evaluate((ids) => {
           return ids.some((sessionId) => {
             const row = document.querySelector<HTMLElement>(
               `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(sessionId)}"]`,
@@ -409,7 +441,7 @@ export async function launchPackagedClaxedo(input: {
               getComputedStyle(row).visibility !== "hidden"
             );
           });
-        }, sessionIds);
+        }, sessionIds));
         if (visible) break;
         // Inactive project groups start closed and do not fetch session-list
         // until opened. Drive that through the same header click a user would.
@@ -427,7 +459,7 @@ export async function launchPackagedClaxedo(input: {
           .catch(() => undefined);
         await Bun.sleep(200);
       }
-      const visible = await connectedPage.evaluate((ids) => {
+      const visible = readFlag(await connectedPage.evaluate((ids) => {
         return ids.some((sessionId) => {
           const row = document.querySelector<HTMLElement>(
             `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(sessionId)}"]`,
@@ -440,7 +472,7 @@ export async function launchPackagedClaxedo(input: {
             getComputedStyle(row).visibility !== "hidden"
           );
         });
-      }, sessionIds);
+      }, sessionIds));
       if (!visible) throw new Error("benchmark session rows never became visible");
     } catch (error) {
       const snapshot = await connectedPage.evaluate(() => ({
@@ -471,10 +503,10 @@ export async function launchPackagedClaxedo(input: {
     // dynamic for the machine instead of silently benchmarking two geometries.
     const requestedViewport = await stableAgentAppBenchmarkViewport(connectedPage);
     // [PERF-DIAG TEMPORARY] renderer clock at the exact semantic-readiness row paint.
-    const rowVisibleRendererNow = await connectedPage.evaluate(() => performance.now());
+    const rowVisibleRendererNow = readNumber(await connectedPage.evaluate(() => performance.now()));
     // Check after the first production session row so electron-window-state has
     // completed its startup bounds work before any measured action begins.
-    const exactViewport = await connectedPage.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    const exactViewport = readSize(await connectedPage.evaluate(() => ({ width: innerWidth, height: innerHeight })));
     if (
       exactViewport.width !== requestedViewport.width ||
       exactViewport.height !== requestedViewport.height
@@ -495,12 +527,13 @@ export async function launchPackagedClaxedo(input: {
       token,
     );
     await connectedPage.keyboard.press("Tab");
-    const trusted = await connectedPage.evaluate(
-      async (value) =>
-        await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(value),
-      token,
+    const trusted = optionalRecord(
+      await connectedPage.evaluate(
+        async (value) => await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(value),
+        token,
+      ),
     );
-    if (!trusted || trusted.state !== "exact")
+    if (trusted?.state !== "exact")
       throw new Error(
         "Claxedo did not accept the cold-ready trusted input probe",
       );
@@ -546,12 +579,14 @@ export async function launchPackagedClaxedo(input: {
       },
       async inspect() {
         const [surface, processes] = await Promise.all([
-          connectedPage.evaluate(() => ({
-            visibilityState: document.visibilityState,
-            focused: document.hasFocus(),
-            hidden: document.hidden,
-            viewport: { width: innerWidth, height: innerHeight },
-          })),
+          connectedPage
+            .evaluate(() => ({
+              visibilityState: document.visibilityState,
+              focused: document.hasFocus(),
+              hidden: document.hidden,
+              viewport: { width: innerWidth, height: innerHeight },
+            }))
+            .then(readSurfaceSnapshot),
           refreshKnown(),
         ]);
         return { surface, processes };
@@ -559,11 +594,17 @@ export async function launchPackagedClaxedo(input: {
       shutdown,
     };
   } catch (error) {
+    // Cleanup runs because the launch failed, so both failures are real and the
+    // launch failure names why cleanup ran at all. Report whichever failure the
+    // caller has to act on, and keep the other one in the cause chain.
+    let survivors: OwnedProcess[];
     try {
-      const result = await shutdown();
-      if (result.survivors.length) throw new Error(`Claxedo failed launch left ${result.survivors.length} application processes`);
+      ({ survivors } = await shutdown());
     } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], `Claxedo launch failed: ${String(error)}; cleanup failed: ${String(cleanupError)}`);
+      throw new Error(`Claxedo launch failed: ${String(error)}; cleanup failed: ${String(cleanupError)}`, { cause: cleanupError });
+    }
+    if (survivors.length) {
+      throw new Error(`Claxedo failed launch left ${survivors.length} application processes`, { cause: error });
     }
     throw error;
   }
@@ -593,8 +634,19 @@ async function stablePaint(page: BenchmarkPage) {
   );
 }
 
+/** The surface facts `inspect()` publishes, read off the renderer's JSON answer. */
+function readSurfaceSnapshot(value: unknown) {
+  const record = readRecord(value);
+  return {
+    visibilityState: readText(record.visibilityState),
+    focused: readBoolean(record.focused),
+    hidden: readBoolean(record.hidden),
+    viewport: readSize(record.viewport),
+  };
+}
+
 async function stableAgentAppBenchmarkViewport(page: BenchmarkPage) {
-  return page.evaluate(
+  return readSize(await page.evaluate(
     () =>
       new Promise<{ width: number; height: number }>((resolve, reject) => {
         let previous = "";
@@ -614,7 +666,7 @@ async function stableAgentAppBenchmarkViewport(page: BenchmarkPage) {
         };
         requestAnimationFrame(sample);
       }),
-  );
+  ));
 }
 
 async function drain(stream: ReadableStream<Uint8Array>, sink?: string) {
@@ -624,7 +676,10 @@ async function drain(stream: ReadableStream<Uint8Array>, sink?: string) {
     for (;;) {
       const chunk = await reader.read();
       if (chunk.done) break;
-      if (file && chunk.value) file.write(chunk.value);
+      // Awaited so the sink applies backpressure: `FileSink.write` returns a
+      // promise once its buffer needs flushing, and dropping it let a chatty
+      // app outrun the log file.
+      if (file && chunk.value) await file.write(chunk.value);
     }
   } finally {
     await file?.end();

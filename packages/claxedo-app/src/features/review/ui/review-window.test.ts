@@ -66,8 +66,8 @@ describe("review window segments", () => {
     // Everything else is one trailing gap that preserves total height.
     const gaps = segments.filter((segment) => segment.kind === "gap")
     expect(gaps).toHaveLength(1)
-    expect(gaps[0]!.count).toBe(500 - rows.length)
-    expect(gaps[0]!.height).toBe((500 - rows.length) * 40)
+    expect(gaps[0].count).toBe(500 - rows.length)
+    expect(gaps[0].height).toBe((500 - rows.length) * 40)
   })
 
   test("follows the scroll position to a deep neighborhood", () => {
@@ -77,7 +77,7 @@ describe("review window segments", () => {
     expect(rows).toContain(350)
     expect(rows.length).toBeLessThanOrEqual(REVIEW_MAX_WINDOW_ROWS)
     // A leading gap and a trailing gap bracket the window.
-    expect(segments[0]!.kind).toBe("gap")
+    expect(segments[0].kind).toBe("gap")
     expect(segments.at(-1)!.kind).toBe("gap")
     const total = segments.reduce(
       (sum, segment) => sum + (segment.kind === "gap" ? segment.height : 40),

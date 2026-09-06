@@ -66,7 +66,7 @@ export const SettingsConnections: Component = () => {
   })
   const unsupportedReason = createMemo(() => {
     const catalog = agentConnections.data()
-    if (catalog?.status !== "unsupported") return
+    if (catalog?.status !== "unsupported") return undefined
     return catalog.reason === "operator_local_configuration"
       ? "Agent connections are configured by the operator on the local host."
       : catalog.reason
@@ -79,7 +79,7 @@ export const SettingsConnections: Component = () => {
   onMount(() => void agentConnections.refresh())
 
   const openConnect = (integration: IntegrationInfo, scope?: ConnectionInfo["scope"]) => {
-    dialog.show(() => (
+    void dialog.show(() => (
       <DialogConnectIntegration
         integration={integration}
         request={integrationsRequest}

@@ -133,7 +133,7 @@ export function resolveDeploymentProfile(input: DeploymentProfileInput): Deploym
   if (productPosture === "user-deployed" && adapterProfile !== "better-auth-d1") {
     throw new DeploymentProfileError(
       "uncertified_profile",
-      `${productPosture} + ${adapterProfile} is not a certified deployment profile`,
+      `${JSON.stringify(productPosture)} + ${JSON.stringify(adapterProfile)} is not a certified deployment profile`,
     )
   }
 

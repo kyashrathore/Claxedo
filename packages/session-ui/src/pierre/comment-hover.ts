@@ -7,8 +7,8 @@ export function createHoverCommentUtility(props: {
   label: string
   getHoveredLine: () => HoverCommentLine | undefined
   onSelect: (line: HoverCommentLine) => void
-}) {
-  if (typeof document === "undefined") return
+}): HTMLButtonElement | undefined {
+  if (typeof document === "undefined") return undefined
 
   const button = document.createElement("button")
   button.type = "button"

@@ -5,7 +5,7 @@ import {
   type Prompt,
 } from "@/features/session/providers/prompt"
 import type { FileSelection } from "@/platform/files/types"
-import { createTextFragment } from "@/features/session/composer/ui/editor-dom"
+import { asElement, createTextFragment, isBreakNode } from "@/features/session/composer/ui/editor-dom"
 
 export function createPromptPill(part: FileAttachmentPart | AgentPart) {
   const pill = document.createElement("span")
@@ -36,11 +36,10 @@ export function isNormalizedPromptEditor(editor: HTMLElement) {
 
       const prev = node.previousSibling
       const next = node.nextSibling
-      const prevIsBr = prev?.nodeType === Node.ELEMENT_NODE && (prev as HTMLElement).tagName === "BR"
-      return !!prevIsBr && !next
+      return isBreakNode(prev) && !next
     }
-    if (node.nodeType !== Node.ELEMENT_NODE) return false
-    const el = node as HTMLElement
+    const el = asElement(node)
+    if (!el) return false
     if (el.dataset.type === "file") return !!el.dataset.path && hasValidSelectionDataset(el)
     if (el.dataset.type === "agent") return !!el.dataset.name
     return el.tagName === "BR"
@@ -59,8 +58,7 @@ export function renderPromptEditor(editor: HTMLElement, parts: Prompt) {
     }
   }
 
-  const last = editor.lastChild
-  if (last?.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR") {
+  if (isBreakNode(editor.lastChild)) {
     editor.appendChild(document.createTextNode("\u200B"))
   }
 }
@@ -110,9 +108,8 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
       buffer += node.textContent ?? ""
       return
     }
-    if (node.nodeType !== Node.ELEMENT_NODE) return
-
-    const el = node as HTMLElement
+    const el = asElement(node)
+    if (!el) return
     if (el.dataset.type === "file") {
       flushText()
       pushFile(el)
@@ -135,7 +132,8 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
 
   const children = Array.from(editor.childNodes)
   children.forEach((child, index) => {
-    const isBlock = child.nodeType === Node.ELEMENT_NODE && ["DIV", "P"].includes((child as HTMLElement).tagName)
+    const childTag = asElement(child)?.tagName
+    const isBlock = childTag === "DIV" || childTag === "P"
     visit(child)
     if (isBlock && index < children.length - 1) {
       buffer += "\n"

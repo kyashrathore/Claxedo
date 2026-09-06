@@ -153,9 +153,12 @@ export function PromptInputV2(props: PromptInputV2Props) {
             contenteditable={!props.disabled && !props.readOnly}
             autocapitalize={state.mode === "normal" ? "sentences" : "off"}
             autocorrect={state.mode === "normal" ? "on" : "off"}
+            // `autocapitalize`, `autocorrect` and `spellcheck` above are global
+            // attributes and apply to a contenteditable host. `autocomplete` is
+            // not: it belongs to form controls (input/textarea/select/form), which
+            // is why Solid's `HTMLAttributes` omits it and why it was suppressed
+            // here. It had no effect on this div, so it is gone rather than cast.
             spellcheck={state.mode === "normal"}
-            // @ts-expect-error
-            autocomplete="off"
             class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-compact font-body leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\u200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
             classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
             onInput={(event) => {

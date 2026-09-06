@@ -2,6 +2,20 @@ import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
 import { reviewLoadedDiffIdentity } from "../../src/features/review/ui/review-loaded-diff-identity"
 
 import type { BenchmarkPage as Page } from "./agent-cdp-page"
+// The trace-event shape and its CDP reader have one owner; this module used to
+// keep a third, all-optional copy of the shape and its own inline reader.
+import { traceEventsFrom, type TraceEvent } from "./frame-sampler"
+import {
+  optionalText,
+  readBooleanFields,
+  readList,
+  readLiteral,
+  readNumber,
+  readNumberFields,
+  readRecord,
+  readRecords,
+  readText,
+} from "./page-value"
 import {
   measureSessionActivation,
   type ActivationHooks,
@@ -78,6 +92,49 @@ type Clock = {
   end: number
 }
 
+/**
+ * Readiness clocks for one traced Files-panel open, filled frame by frame.
+ */
+type PanelOpenReadiness = {
+  expectedFiles: number
+  shellVisible?: number
+  animationSettled?: number
+  dataReady?: number
+  aboveFoldPainted?: number
+  lastSignature: string
+  stable: number
+}
+
+/**
+ * The in-page recorder behind every traced panel measurement.
+ *
+ * Thirteen call sites reached it through `(window as any)`, so no reader was
+ * checked against what {@link beginTrace} actually publishes, and the readiness
+ * clocks below existed only in the shape of the object literal.
+ */
+type PublicPanelTrace = {
+  active: boolean
+  frames: number[]
+  milestones: Array<{ id: string; at: number }>
+  loafs: RendererTrace["longAnimationFrames"]
+  /** Page clock of the first trusted pointerdown; absent until one lands. */
+  trustedInputAt?: number
+  lastTrustedInputAt?: number
+  /** Present only when the caller asked for Files-open readiness. */
+  openFiles?: PanelOpenReadiness
+  pointer: (event: PointerEvent) => void
+  /** The rAF callback; `at` is the frame timestamp requestAnimationFrame supplies. */
+  frame: (at: number) => void
+  observer?: PerformanceObserver
+}
+
+declare global {
+  interface Window {
+    /** Installed by `beginTrace`, removed by `finishMeasuredTrace`/`abortTrace`. */
+    __claxedoPublicPanelTrace?: PublicPanelTrace
+  }
+}
+
 type RendererTrace = {
   clock: "performance.now"
   transitionMode: "animated" | "none"
@@ -106,15 +163,6 @@ type RendererTrace = {
   }
 }
 
-type TraceEvent = {
-  name?: string
-  ph?: string
-  ts?: number
-  dur?: number
-  pid?: number
-  tid?: number
-}
-
 type TraceRecording = {
   events: TraceEvent[]
   complete: Promise<void>
@@ -136,7 +184,7 @@ export function publicPanelLoadPresets(input: {
   if (!cases || typeof cases !== "object" || Array.isArray(cases)) {
     throw new Error("Claxedo public panel scenario is missing cases")
   }
-  const panelLoads = (cases as Record<string, unknown>).panelLoads
+  const panelLoads = "panelLoads" in cases ? cases.panelLoads : undefined
   if (!Array.isArray(panelLoads)) {
     throw new Error("Claxedo public panel scenario is missing cases.panelLoads")
   }
@@ -148,21 +196,21 @@ export function publicPanelLoadPresets(input: {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error("Claxedo public panel load preset must be an object")
     }
-    const value = raw as Record<string, unknown>
-    if (!PUBLIC_PANEL_LOAD_PROFILES.includes(value.id as PublicPanelLoadProfile)) {
-      throw new Error(`Claxedo public panel load preset has unknown id ${String(value.id)}`)
+    const declaredId = "id" in raw ? raw.id : undefined
+    const id = PUBLIC_PANEL_LOAD_PROFILES.find((profile) => profile === declaredId)
+    if (!id) {
+      throw new Error(`Claxedo public panel load preset has unknown id ${JSON.stringify(declaredId)}`)
     }
-    const id = value.id as PublicPanelLoadProfile
     if (id !== PUBLIC_PANEL_LOAD_PROFILES[index]) {
       throw new Error("Claxedo public panel load presets must be ordered light, moderate, heavy")
     }
     if (parsed.has(id)) throw new Error(`Claxedo public panel load preset ${id} is duplicated`)
     const integer = (name: keyof Omit<PublicPanelLoadPreset, "id">) => {
-      const found = value[name]
-      if (!Number.isSafeInteger(found) || Number(found) <= 0) {
+      const found = name in raw ? raw[name] : undefined
+      if (typeof found !== "number" || !Number.isSafeInteger(found) || found <= 0) {
         throw new Error(`Claxedo public panel load preset ${id}.${name} must be a positive safe integer`)
       }
-      return Number(found)
+      return found
     }
     const preset: PublicPanelLoadPreset = {
       id,
@@ -184,7 +232,14 @@ export function publicPanelLoadPresets(input: {
   if (parsed.size !== PUBLIC_PANEL_LOAD_PROFILES.length) {
     throw new Error("Claxedo public panel scenario must define light, moderate, and heavy load presets")
   }
-  return Object.fromEntries(PUBLIC_PANEL_LOAD_PROFILES.map((id) => [id, parsed.get(id)!])) as PublicPanelLoadPresets
+  // Built explicitly rather than through `Object.fromEntries`, whose return
+  // type cannot express "one entry per profile" and so needed an assertion.
+  const preset = (id: PublicPanelLoadProfile) => {
+    const found = parsed.get(id)
+    if (!found) throw new Error(`Claxedo public panel scenario is missing the ${id} load preset`)
+    return found
+  }
+  return { light: preset("light"), moderate: preset("moderate"), heavy: preset("heavy") }
 }
 
 export function fixtureEvidence(manifest: WorkspaceFixtureManifest): FixtureEvidence {
@@ -243,12 +298,12 @@ export async function executeWorkspacePanelAction(input: {
     case "switch-file-tab": {
       await ensureFilesOpen(page, fixture)
       const [first, second] = fixture.openFiles
-      await clickFileTab(page, first!)
-      await waitForPaintedFile(page, first!)
+      await clickFileTab(page, first)
+      await waitForPaintedFile(page, first)
       return measurePrearmedSettledAction(
         page,
-        async () => waitForPaintedFile(page, second!, true),
-        async () => clickFileTab(page, second!),
+        async () => waitForPaintedFile(page, second, true),
+        async () => clickFileTab(page, second),
       )
     }
     case "expand-all":
@@ -268,6 +323,12 @@ export async function executeWorkspacePanelAction(input: {
         async () => clickVisible(page, COLLAPSE_ALL_SELECTOR),
       )
   }
+  // The switch covers every `WorkspacePanelAction`, so this is unreachable.
+  // Saying so gives the function one return contract, and adding an action to
+  // the union without a case here now fails to compile rather than silently
+  // measuring nothing.
+  const unhandled: never = benchmarkCase.action
+  throw new Error(`Claxedo workspace panel action is not implemented: ${JSON.stringify(unhandled)}`)
 }
 
 export async function executeSessionNavigation(input: {
@@ -456,7 +517,7 @@ async function seedExpandedDirectories(page: Page, fixture: FixtureEvidence, cou
 
 async function collapseVisibleDirectories(page: Page) {
   for (;;) {
-    const found = await page.evaluate(() => {
+    const found = readNumber(await page.evaluate(() => {
       const visible = Array.from(document.querySelectorAll<HTMLElement>(
         "[data-testid='workspace-files-navigator'][data-mode='files'] [role='treeitem'][aria-expanded='true']",
       )).filter((row) => {
@@ -471,7 +532,7 @@ async function collapseVisibleDirectories(page: Page) {
         if (current >= level) { selected = index; level = current }
       })
       return selected
-    })
+    }))
     if (found < 0) return
     await page.locator(
       "[data-testid='workspace-files-navigator'][data-mode='files'] [role='treeitem'][aria-expanded='true']",
@@ -489,12 +550,12 @@ async function retainCanonicalFileTabs(page: Page, fixture: FixtureEvidence, cou
     await waitForPaintedFile(page, file)
   }
   for (;;) {
-    const extra = await page.evaluate((basenames) => {
+    const extra = readNumber(await page.evaluate((basenames) => {
       const tabs = Array.from(document.querySelectorAll<HTMLElement>(
         "[data-slot='workspace-tab'][data-workspace-tab-kind='file']",
       ))
       return tabs.findIndex((tab) => !basenames.some((basename) => tab.innerText.includes(basename)))
-    }, desired.map((file) => file.slice(file.lastIndexOf("/") + 1)))
+    }, desired.map((file) => file.slice(file.lastIndexOf("/") + 1))))
     if (extra < 0) break
     const tab = page.locator("[data-slot='workspace-tab'][data-workspace-tab-kind='file']").nth(extra)
     await tab.locator("button").click()
@@ -538,7 +599,7 @@ async function prepareDataWarmFileOpen(
 
 async function assertFileSurfaceAbsent(page: Page, file: string) {
   await twoPresentationTimestamp(page)
-  const state = await page.evaluate((expected) => {
+  const state = readBooleanFields(await page.evaluate((expected) => {
     const tabs = Array.from(document.querySelectorAll<HTMLElement>("[data-slot='workspace-tab'][data-workspace-tab-kind='file']"))
     const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='tab-file-root']"))
     const matches = (candidate: string) => candidate === expected || candidate.endsWith(`/${expected}`)
@@ -546,7 +607,7 @@ async function assertFileSurfaceAbsent(page: Page, file: string) {
       tab: tabs.some((tab) => matches(tab.dataset.workspaceTabId ?? "") || tab.innerText.includes(expected.slice(expected.lastIndexOf("/") + 1))),
       root: roots.some((root) => matches(root.dataset.tabFilePath ?? "")),
     }
-  }, file)
+  }, file), ["tab", "root"])
   if (state.tab || state.root) throw new Error(`Claxedo data-warm open-file target surface was mounted: ${file}; ${JSON.stringify(state)}`)
 }
 
@@ -626,13 +687,13 @@ async function ensurePanelClosed(page: Page, requireDisposed = false) {
   await waitForPanelClosed(page)
   if (requireDisposed) {
     await Bun.sleep(180)
-    const owned = await page.evaluate(() => document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='workspace-files-navigator'], [data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length)
+    const owned = readNumber(await page.evaluate(() => document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='workspace-files-navigator'], [data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length))
     if (owned !== 0) throw new Error(`Claxedo closed panel retained ${owned} heavy surface roots`)
   }
 }
 
 async function panelState(page: Page) {
-  return page.evaluate(() => {
+  const state = readRecord(await page.evaluate(() => {
     const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
     const navigator = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator']"))
       .find((item) => item.getBoundingClientRect().width > 0 && getComputedStyle(item).visibility !== "hidden")
@@ -641,11 +702,14 @@ async function panelState(page: Page) {
       navigator: navigator?.dataset.mode ??
         (document.querySelector("button[aria-label='Close Changes'][aria-pressed='true']") ? "changes" : undefined),
     }
-  })
+  }))
+  // `navigator` is absent whenever no navigator is laid out yet, which every
+  // caller branches on; `open` is a fact the shell always states.
+  return { open: state.open === true, navigator: optionalText(state.navigator) }
 }
 
 async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireActiveTrace = false) {
-  return page.evaluate(async ({ expectedFiles, requireActiveTrace }) => {
+  return readNumberFields(await page.evaluate(async ({ expectedFiles, requireActiveTrace }) => {
     const deadline = performance.now() + 30_000
     let shellVisible: number | undefined
     let animationSettled: number | undefined
@@ -660,7 +724,7 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireAct
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
       }
       const frame = () => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         if (requireActiveTrace) {
           if (!trace?.active) return reject(new Error("Claxedo prearmed Files readiness observer lost its active trace"))
           if (!Number.isFinite(trace.trustedInputAt)) {
@@ -685,8 +749,8 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireAct
           return
         }
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Files panel did not reach stable above-fold readiness: ${JSON.stringify({
-          shell: shell ? { ...shell.dataset } : undefined,
-          navigator: navigator ? { ...navigator.dataset } : undefined,
+          shell: shell ? Object.fromEntries(Object.entries(shell.dataset)) : undefined,
+          navigator: navigator ? Object.fromEntries(Object.entries(navigator.dataset)) : undefined,
           rows,
           stable,
         })}`))
@@ -694,7 +758,8 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireAct
       }
       requestAnimationFrame(frame)
     })
-  }, { expectedFiles: fixture.files.length, requireActiveTrace })
+  }, { expectedFiles: fixture.files.length, requireActiveTrace }),
+  ["shellVisible", "animationSettled", "dataReady", "aboveFoldPainted"])
 }
 
 async function waitForPanelProfile(
@@ -705,13 +770,13 @@ async function waitForPanelProfile(
   requireActiveTrace = false,
 ) {
   if (profile === "files") return (await waitForOpenFiles(page, fixture, requireActiveTrace)).aboveFoldPainted
-  return page.evaluate(async ({ changed, expectedReviewOpenCount, expectedReviewIdentity, requireActiveTrace, scrollSelector }) => {
+  return readNumber(await page.evaluate(async ({ changed, expectedReviewOpenCount, expectedReviewIdentity, requireActiveTrace, scrollSelector }) => {
     const deadline = performance.now() + 30_000
     let prior = ""
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         if (requireActiveTrace) {
           if (!trace?.active) return reject(new Error("Claxedo prearmed Review readiness observer lost its active trace"))
           if (!Number.isFinite(trace.trustedInputAt)) {
@@ -768,14 +833,17 @@ async function waitForPanelProfile(
         const signature = ready ? JSON.stringify([rendered, openCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, root.innerText.length]) : ""
         stable = ready && signature === prior ? stable + 1 : ready ? 1 : 0
         prior = signature
+        // `requireActiveTrace` has already rejected a missing or un-armed
+        // trace above; naming that here is what lets the count be typed.
+        const inputAt = trace?.trustedInputAt
         const tracedPresentations = requireActiveTrace
-          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          ? (trace?.frames ?? []).filter((frameAt) => inputAt !== undefined && frameAt >= inputAt && frameAt <= at).length
           : 2
         if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Diff panel did not reach stable canonical readiness: ${JSON.stringify({
-          shell: shell ? { ...shell.dataset } : undefined,
-          root: root ? { ...root.dataset } : undefined,
-          corpus: corpus ? { ...corpus.dataset } : undefined,
+          shell: shell ? Object.fromEntries(Object.entries(shell.dataset)) : undefined,
+          root: root ? Object.fromEntries(Object.entries(root.dataset)) : undefined,
+          corpus: corpus ? Object.fromEntries(Object.entries(corpus.dataset)) : undefined,
           rendered,
           stable,
         })}`))
@@ -789,16 +857,16 @@ async function waitForPanelProfile(
     expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
     requireActiveTrace,
     scrollSelector: REVIEW_SCROLL_SELECTOR,
-  })
+  }))
 }
 
 async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
-  return page.evaluate(async (mustHaveTrace) => {
+  return readNumber(await page.evaluate(async (mustHaveTrace) => {
     const deadline = performance.now() + 30_000
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         if (mustHaveTrace) {
           if (!trace?.active) return reject(new Error("Claxedo prearmed panel-close observer lost its active trace"))
           if (!Number.isFinite(trace.trustedInputAt)) {
@@ -810,12 +878,15 @@ async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
         const rect = shell?.getBoundingClientRect()
         const closed = !shell || (shell.dataset.open === "false" && !!rect && rect.left >= window.innerWidth - 1)
         stable = closed ? stable + 1 : 0
+        // `mustHaveTrace` has already rejected a missing or un-armed trace
+        // above; naming that here is what lets the count be typed.
+        const inputAt = trace?.trustedInputAt
         const tracedPresentations = mustHaveTrace
-          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          ? (trace?.frames ?? []).filter((frameAt) => inputAt !== undefined && frameAt >= inputAt && frameAt <= at).length
           : 2
         if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) return reject(new Error(`Claxedo workspace panel did not close: ${JSON.stringify(shell ? {
-          data: { ...shell.dataset },
+          data: Object.fromEntries(Object.entries(shell.dataset)),
           rect: rect ? { left: rect.left, right: rect.right, width: rect.width } : undefined,
           transform: getComputedStyle(shell).transform,
           transition: getComputedStyle(shell).transition,
@@ -824,7 +895,7 @@ async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
       }
       requestAnimationFrame(frame)
     })
-  }, requireActiveTrace)
+  }, requireActiveTrace))
 }
 
 export async function waitForPanelOwner(
@@ -834,7 +905,7 @@ export async function waitForPanelOwner(
   fixture: FixtureEvidence,
   options: { markEnd?: boolean; expectedReviewOpenCount?: number; observerToken?: string } = {},
 ) {
-  return page.evaluate(async ({
+  return readNumber(await page.evaluate(async ({
     profile,
     sessionId,
     directory,
@@ -873,7 +944,7 @@ export async function waitForPanelOwner(
       }
       if (observerToken) observers.set(observerToken, () => fail(new Error("Claxedo panel owner observer was cancelled")))
       const frame = () => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         if (trace?.active && !Number.isFinite(trace.trustedInputAt)) {
           frameRequest = requestAnimationFrame(frame)
           return
@@ -986,7 +1057,7 @@ export async function waitForPanelOwner(
         stable = ready && signature === previousSignature ? stable + 1 : ready ? 1 : 0
         previousSignature = signature
         if (stable >= 2) {
-          const trace = (window as any).__claxedoPublicPanelTrace
+          const trace = window.__claxedoPublicPanelTrace
           const terminal = trace?.active && markEnd
             ? (performance.clearMarks(endMark), performance.mark(endMark).startTime)
             : performance.now()
@@ -994,7 +1065,7 @@ export async function waitForPanelOwner(
         }
         if (performance.now() >= deadline) return fail(new Error(`Claxedo workspace panel did not reach atomic destination readiness: ${JSON.stringify({
           profile,
-          shell: shell ? { ...shell.dataset } : undefined,
+          shell: shell ? Object.fromEntries(Object.entries(shell.dataset)) : undefined,
           signature,
           stable,
         })}`))
@@ -1014,7 +1085,7 @@ export async function waitForPanelOwner(
     expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
     observerToken: options.observerToken,
     scrollSelector: REVIEW_SCROLL_SELECTOR,
-  })
+  }))
 }
 
 async function cancelPanelOwnerObserver(page: Page, observerToken: string) {
@@ -1029,7 +1100,7 @@ async function revealFileInNavigator(page: Page, file: string) {
   if (clear) await clear.click()
   const segments = file.split("/")
   for (let index = 0; index < segments.length - 1; index += 1) {
-    const directory = await directoryRowLocator(page, segments[index]!, index + 1)
+    const directory = await directoryRowLocator(page, segments[index], index + 1)
     if ((await directory.getAttribute("aria-expanded")) !== "true") await directory.click()
   }
   await waitForTreePath(page, file)
@@ -1040,13 +1111,13 @@ async function clickFileRow(page: Page, file: string) {
 }
 
 async function waitForPaintedFile(page: Page, file: string, requireActiveTrace = false) {
-  return page.evaluate(async ({ expected, requireActiveTrace }) => {
+  return readNumber(await page.evaluate(async ({ expected, requireActiveTrace }) => {
     const deadline = performance.now() + 30_000
     let previous = ""
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         if (requireActiveTrace) {
           if (!trace?.active) return reject(new Error("Claxedo prearmed file readiness observer lost its active trace"))
           if (!Number.isFinite(trace.trustedInputAt)) {
@@ -1064,8 +1135,11 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
         const signature = ready ? JSON.stringify([rect.width, rect.height, element.dataset.tabFileRenderedCacheKey]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
+        // `requireActiveTrace` has already rejected a missing or un-armed
+        // trace above; naming that here is what lets the count be typed.
+        const inputAt = trace?.trustedInputAt
         const tracedPresentations = requireActiveTrace
-          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          ? (trace?.frames ?? []).filter((frameAt) => inputAt !== undefined && frameAt >= inputAt && frameAt <= at).length
           : 2
         if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) {
@@ -1093,7 +1167,7 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
       }
       requestAnimationFrame(frame)
     })
-  }, { expected: file, requireActiveTrace })
+  }, { expected: file, requireActiveTrace }))
 }
 
 async function fileRowLocator(page: Page, file: string) {
@@ -1172,7 +1246,7 @@ async function ensureAllDiffs(page: Page, fixture: FixtureEvidence, expanded: bo
 }
 
 async function readDiffState(page: Page) {
-  return page.evaluate(() => {
+  const state = readRecord(await page.evaluate(() => {
     const root = document.querySelector<HTMLElement>("[data-testid='review-pane-root'] [data-review-diff-style]")
     return {
       style: root?.dataset.reviewDiffStyle,
@@ -1180,7 +1254,13 @@ async function readDiffState(page: Page) {
       loadedCount: Number(root?.dataset.reviewLoadedDiffCount ?? -1),
       renderedHunks: Number(root?.dataset.reviewRenderedHunks ?? -1),
     }
-  })
+  }))
+  // `style` is absent until the Review pane mounts; the counts are `-1` for
+  // that same state, which is why they are numbers rather than optional.
+  return {
+    style: optionalText(state.style),
+    ...readNumberFields(state, ["openCount", "loadedCount", "renderedHunks"]),
+  }
 }
 
 async function waitForDiffState(
@@ -1189,13 +1269,13 @@ async function waitForDiffState(
   expected: { style?: "unified" | "split"; openCount?: number },
   requireActiveTrace = false,
 ) {
-  return page.evaluate(async ({ changed, expected, expectedReviewIdentity, requireActiveTrace, scrollSelector }) => {
+  return readNumber(await page.evaluate(async ({ changed, expected, expectedReviewIdentity, requireActiveTrace, scrollSelector }) => {
     const deadline = performance.now() + 30_000
     let stable = 0
     let previous = ""
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         if (requireActiveTrace) {
           if (!trace?.active) return reject(new Error("Claxedo prearmed Diff readiness observer lost its active trace"))
           if (!Number.isFinite(trace.trustedInputAt)) {
@@ -1247,13 +1327,16 @@ async function waitForDiffState(
         const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
+        // `requireActiveTrace` has already rejected a missing or un-armed
+        // trace above; naming that here is what lets the count be typed.
+        const inputAt = trace?.trustedInputAt
         const tracedPresentations = requireActiveTrace
-          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          ? (trace?.frames ?? []).filter((frameAt) => inputAt !== undefined && frameAt >= inputAt && frameAt <= at).length
           : 2
         if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Diff state did not reach its authoritative endpoint: ${JSON.stringify({
           expected,
-          root: root ? { ...root.dataset } : undefined,
+          root: root ? Object.fromEntries(Object.entries(root.dataset)) : undefined,
           openCount,
           loadedCount,
           canonicalRows: canonicalRows.length,
@@ -1273,11 +1356,11 @@ async function waitForDiffState(
     expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
     requireActiveTrace,
     scrollSelector: REVIEW_SCROLL_SELECTOR,
-  })
+  }))
 }
 
 async function twoPresentationTimestamp(page: Page) {
-  return page.evaluate(() => new Promise<number>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  return readNumber(await page.evaluate(() => new Promise<number>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))))
 }
 
 async function clickVisible(page: Page, selector: string) {
@@ -1293,16 +1376,16 @@ async function waitForVisibleSelector(page: Page, selector: string) {
 }
 
 async function optionalVisibleLocator(page: Page, selector: string) {
-  const index = await page.evaluate((query) => {
+  const index = readNumber(await page.evaluate((query) => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>(query))
     for (let index = elements.length - 1; index >= 0; index -= 1) {
-      const element = elements[index]!
+      const element = elements[index]
       const rect = element.getBoundingClientRect()
       const style = getComputedStyle(element)
       if (rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden") return index
     }
     return -1
-  }, selector)
+  }, selector))
   return index < 0 ? undefined : page.locator(selector).nth(index)
 }
 
@@ -1313,7 +1396,7 @@ async function visibleLocator(page: Page, selector: string) {
 }
 
 async function indexByText(page: Page, selector: string, text: string, visible = false) {
-  return page.evaluate(({ selector: query, text: expected, visible: requireVisible }) => {
+  return readNumber(await page.evaluate(({ selector: query, text: expected, visible: requireVisible }) => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>(query))
     return elements.findIndex((element) => {
       if (!element.innerText.includes(expected)) return false
@@ -1322,7 +1405,7 @@ async function indexByText(page: Page, selector: string, text: string, visible =
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     })
-  }, { selector, text, visible })
+  }, { selector, text, visible }))
 }
 
 async function activateExact(page: Page, target: PanelTarget, hooks?: ActivationHooks) {
@@ -1345,31 +1428,29 @@ async function beginTrace(
   const events: TraceEvent[] = []
   let resolveComplete = () => {}
   const complete = new Promise<void>((resolve) => { resolveComplete = resolve })
-  const stopData = page.onProtocolEvent("Tracing.dataCollected", (event) => events.push(...((event as { value?: TraceEvent[] }).value ?? [])))
+  const stopData = page.onProtocolEvent("Tracing.dataCollected", (event) => events.push(...traceEventsFrom(event)))
   const stopComplete = page.onProtocolEvent("Tracing.tracingComplete", resolveComplete)
   await page.rawCommand("Tracing.start", { categories: "devtools.timeline,blink.user_timing,toplevel", transferMode: "ReportEvents", options: "record-until-full" })
   await page.evaluate(({ startMark, endMark, openFilesExpectedCount }) => {
-    const root = window as typeof window & { __claxedoPublicPanelTrace?: any }
-    if (root.__claxedoPublicPanelTrace) throw new Error("A Claxedo public renderer trace is already active")
+    if (window.__claxedoPublicPanelTrace) throw new Error("A Claxedo public renderer trace is already active")
     performance.clearMarks(endMark)
-    const trace: any = {
+    // `pointer` and `frame` are function declarations so the trace object can
+    // be complete at construction: they are hoisted, and their bodies only read
+    // `trace` when the browser calls them, after it is assigned.
+    const trace: PublicPanelTrace = {
       active: true,
       frames: [],
       milestones: [],
       loafs: [],
-      trustedInputAt: undefined,
-      lastTrustedInputAt: undefined,
       openFiles: openFilesExpectedCount === undefined ? undefined : {
         expectedFiles: openFilesExpectedCount,
-        shellVisible: undefined,
-        animationSettled: undefined,
-        dataReady: undefined,
-        aboveFoldPainted: undefined,
         lastSignature: "",
         stable: 0,
       },
+      pointer,
+      frame,
     }
-    trace.pointer = (event: PointerEvent) => {
+    function pointer(event: PointerEvent) {
       if (!event.isTrusted) return
       const at = performance.now()
       trace.lastTrustedInputAt = at
@@ -1379,7 +1460,7 @@ async function beginTrace(
       trace.milestones.push({ id: "trusted-input", at: trace.trustedInputAt })
     }
     document.addEventListener("pointerdown", trace.pointer, true)
-    trace.frame = (at: number) => {
+    function frame(at: number) {
       if (!trace.active) return
       if (trace.frames.length < 600) trace.frames.push(at)
       const openFiles = trace.openFiles
@@ -1414,42 +1495,43 @@ async function beginTrace(
     }
     if (typeof PerformanceObserver === "function" && PerformanceObserver.supportedEntryTypes.includes("long-animation-frame")) {
       trace.observer = new PerformanceObserver((list: PerformanceObserverEntryList) => {
-        for (const raw of list.getEntries() as any) {
+        for (const raw of list.getEntries()) {
           if (trace.loafs.length >= 100) break
           trace.loafs.push({
             start: raw.startTime, duration: raw.duration, blockingDuration: raw.blockingDuration ?? 0,
-            renderStart: Number(raw.renderStart ?? raw.startTime), styleAndLayoutStart: Number(raw.styleAndLayoutStart ?? raw.startTime),
-            scripts: Array.from(raw.scripts ?? []).slice(0, 32).map((script: any) => ({
-              sourceURL: (() => { const value = String(script.sourceURL ?? ""); try { return new URL(value).pathname.split("/").slice(-3).join("/").slice(0, 500) } catch { return value.split("/").slice(-3).join("/").slice(0, 500) } })(),
-              functionName: String(script.sourceFunctionName ?? "").slice(0, 300), invokerType: String(script.invokerType ?? script.invoker ?? "").slice(0, 120),
-              duration: Number(script.duration ?? 0), forcedStyleAndLayoutDuration: Number(script.forcedStyleAndLayoutDuration ?? 0),
+            renderStart: raw.renderStart ?? raw.startTime, styleAndLayoutStart: raw.styleAndLayoutStart ?? raw.startTime,
+            scripts: (raw.scripts ?? []).slice(0, 32).map((script) => ({
+              sourceURL: (() => { const value = script.sourceURL ?? ""; try { return new URL(value).pathname.split("/").slice(-3).join("/").slice(0, 500) } catch { return value.split("/").slice(-3).join("/").slice(0, 500) } })(),
+              functionName: (script.sourceFunctionName ?? "").slice(0, 300), invokerType: (script.invokerType ?? script.invoker ?? "").slice(0, 120),
+              duration: script.duration, forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration ?? 0,
             })),
           })
         }
       })
       trace.observer.observe({ type: "long-animation-frame", buffered: false } as PerformanceObserverInit)
     }
-    root.__claxedoPublicPanelTrace = trace
+    window.__claxedoPublicPanelTrace = trace
     requestAnimationFrame(trace.frame)
   }, { startMark: COUNTER_START_MARK, endMark: COUNTER_END_MARK, openFilesExpectedCount: options.openFilesExpectedCount })
   return { events, complete, stopListening: () => { stopData(); stopComplete() } }
 }
 
 async function waitForTracedOpenFiles(page: Page) {
-  return page.evaluate(async () => {
+  return readNumberFields(await page.evaluate(async () => {
     const deadline = performance.now() + 30_000
     return new Promise<{ shellVisible: number; animationSettled: number; dataReady: number; aboveFoldPainted: number }>((resolve, reject) => {
       const frame = () => {
-        const trace = (window as any).__claxedoPublicPanelTrace
+        const trace = window.__claxedoPublicPanelTrace
         const readiness = trace?.openFiles
         if (!trace?.active || !readiness) return reject(new Error("Claxedo panel-open readiness observer was not armed before input"))
-        if ([readiness.shellVisible, readiness.animationSettled, readiness.dataReady, readiness.aboveFoldPainted].every(Number.isFinite)) {
-          return resolve({
-            shellVisible: readiness.shellVisible,
-            animationSettled: readiness.animationSettled,
-            dataReady: readiness.dataReady,
-            aboveFoldPainted: readiness.aboveFoldPainted,
-          })
+        const { shellVisible, animationSettled, dataReady, aboveFoldPainted } = readiness
+        if (
+          Number.isFinite(shellVisible) && shellVisible !== undefined &&
+          Number.isFinite(animationSettled) && animationSettled !== undefined &&
+          Number.isFinite(dataReady) && dataReady !== undefined &&
+          Number.isFinite(aboveFoldPainted) && aboveFoldPainted !== undefined
+        ) {
+          return resolve({ shellVisible, animationSettled, dataReady, aboveFoldPainted })
         }
         if (performance.now() >= deadline) {
           return reject(new Error(`Claxedo prearmed panel-open observer did not reach readiness: ${JSON.stringify(readiness)}`))
@@ -1458,36 +1540,39 @@ async function waitForTracedOpenFiles(page: Page) {
       }
       frame()
     })
-  })
+  }), ["shellVisible", "animationSettled", "dataReady", "aboveFoldPainted"])
 }
 
 async function addMilestones(page: Page, milestones: Array<{ id: string; at: number }>) {
   await page.evaluate((items) => {
-    const trace = (window as any).__claxedoPublicPanelTrace
+    const trace = window.__claxedoPublicPanelTrace
     if (!trace?.active) throw new Error("No active Claxedo public renderer trace")
     trace.milestones.push(...items)
   }, milestones)
 }
 
 async function finishMeasuredTrace(page: Page, recording: TraceRecording) {
-  const trace = await page.evaluate(({ endMark }) => {
-    const current = (window as any).__claxedoPublicPanelTrace
-    if (!current?.active || !Number.isFinite(current.trustedInputAt)) throw new Error("Claxedo measured action has no trusted input")
+  const trace = readMeasuredTrace(await page.evaluate(({ endMark }) => {
+    const current = window.__claxedoPublicPanelTrace
+    const startedAt = current?.trustedInputAt
+    if (!current?.active || startedAt === undefined || !Number.isFinite(startedAt)) {
+      throw new Error("Claxedo measured action has no trusted input")
+    }
     const end = performance.getEntriesByName(endMark, "mark").at(-1)?.startTime ?? performance.mark(endMark).startTime
     current.milestones.push({ id: "interactive", at: end }, { id: "complete", at: end })
     current.active = false
     document.removeEventListener("pointerdown", current.pointer, true)
     current.observer?.disconnect()
-    delete (window as any).__claxedoPublicPanelTrace
+    delete window.__claxedoPublicPanelTrace
     return {
       clock: "performance.now" as const,
       transitionMode: "animated" as const,
-      milestones: current.milestones.toSorted((a: any, b: any) => a.at - b.at),
-      frameTimestampsMs: current.frames.filter((at: number) => at >= current.trustedInputAt && at <= end),
-      longAnimationFrames: current.loafs.filter((entry: any) => entry.start >= current.trustedInputAt && entry.start + entry.duration <= end + 0.5),
-      counterInterval: { start: current.trustedInputAt, end },
+      milestones: current.milestones.toSorted((left, right) => left.at - right.at),
+      frameTimestampsMs: current.frames.filter((at) => at >= startedAt && at <= end),
+      longAnimationFrames: current.loafs.filter((entry) => entry.start >= startedAt && entry.start + entry.duration <= end + 0.5),
+      counterInterval: { start: startedAt, end },
     }
-  }, { endMark: COUNTER_END_MARK })
+  }, { endMark: COUNTER_END_MARK }))
   await page.rawCommand("Tracing.end")
   await Promise.race([recording.complete, new Promise((_, reject) => setTimeout(() => reject(new Error("Claxedo renderer trace did not finish")), READINESS_TIMEOUT_MS))])
   recording.stopListening()
@@ -1496,14 +1581,49 @@ async function finishMeasuredTrace(page: Page, recording: TraceRecording) {
   return { clock, rendererTrace }
 }
 
+/**
+ * The measured trace the renderer hands back, read into `RendererTrace`.
+ *
+ * The page builds this from live `PerformanceEntry` data and it crosses as
+ * JSON, so `clock` and `transitionMode` are verified rather than echoed: a
+ * renderer answering a different clock would otherwise be published as if it
+ * had answered `performance.now`.
+ */
+function readMeasuredTrace(value: unknown) {
+  const record = readRecord(value)
+  return {
+    clock: readLiteral(record.clock, ["performance.now"]),
+    transitionMode: readLiteral(record.transitionMode, ["animated", "none"]),
+    milestones: readRecords(record.milestones).map((milestone) => ({
+      id: readText(milestone.id),
+      at: readNumber(milestone.at),
+    })),
+    frameTimestampsMs: readList(record.frameTimestampsMs).map(readNumber),
+    longAnimationFrames: readLongAnimationFrames(record.longAnimationFrames),
+    counterInterval: readNumberFields(record.counterInterval, ["start", "end"]),
+  }
+}
+
+function readLongAnimationFrames(value: unknown): RendererTrace["longAnimationFrames"] {
+  return readRecords(value).map((entry) => ({
+    ...readNumberFields(entry, ["start", "duration", "blockingDuration", "renderStart", "styleAndLayoutStart"]),
+    scripts: readRecords(entry.scripts).map((script) => ({
+      sourceURL: readText(script.sourceURL),
+      functionName: readText(script.functionName),
+      invokerType: readText(script.invokerType),
+      ...readNumberFields(script, ["duration", "forcedStyleAndLayoutDuration"]),
+    })),
+  }))
+}
+
 async function abortTrace(page: Page, recording: TraceRecording) {
   await page.evaluate(() => {
-    const trace = (window as any).__claxedoPublicPanelTrace
+    const trace = window.__claxedoPublicPanelTrace
     if (trace) {
       trace.active = false
       document.removeEventListener("pointerdown", trace.pointer, true)
       trace.observer?.disconnect()
-      delete (window as any).__claxedoPublicPanelTrace
+      delete window.__claxedoPublicPanelTrace
     }
   }).catch(() => undefined)
   await page.rawCommand("Tracing.end").catch(() => undefined)
@@ -1526,7 +1646,7 @@ function rendererCounters(events: TraceEvent[]) {
 function traceDuration(events: TraceEvent[], names: Set<string>, start: TraceEvent, end: TraceEvent) {
   const intervals = events
     .filter((event) => event.pid === start.pid && event.tid === start.tid && event.ph === "X" && Number.isFinite(event.ts) && Number.isFinite(event.dur) && [...names].some((name) => event.name === name || event.name?.endsWith(`::${name}`)))
-    .map((event) => [Math.max(start.ts!, event.ts!), Math.min(end.ts!, event.ts! + event.dur!)] as const)
+    .map((event) => [Math.max(start.ts, event.ts), Math.min(end.ts, event.ts + (event.dur ?? 0))] as const)
     .filter(([left, right]) => right > left)
     .toSorted(([left], [right]) => left - right)
   let total = 0

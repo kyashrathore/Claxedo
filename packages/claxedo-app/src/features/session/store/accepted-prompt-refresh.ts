@@ -67,6 +67,7 @@ export function promptRefreshDelay(delay: number, signal?: AbortSignal) {
       clearTimeout(timer)
       resolve(false)
     }, { once: true })
+    return undefined
   })
 }
 
@@ -83,7 +84,7 @@ export async function readAcceptedPromptStatus(input: {
   }
 }) {
   const result = await input.client.session.status(undefined, { signal: input.signal }).catch(() => undefined)
-  if (input.signal?.aborted) return
-  if (!result?.data) return
+  if (input.signal?.aborted) return undefined
+  if (!result?.data) return undefined
   return result.data[input.sessionID] ?? idleSessionStatus
 }

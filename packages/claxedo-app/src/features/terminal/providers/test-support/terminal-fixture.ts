@@ -1,11 +1,55 @@
 /**
  * Shared test infrastructure for terminal tests.
  *
- * Provides a mock SDK, in-memory storage, and a fetch interceptor that
- * mimics the claxedo server's /api/wr/pty endpoints.
+ * Provides a mock SDK, in-memory storage, a fetch interceptor that
+ * mimics the claxedo server's /api/wr/pty endpoints, and the shared
+ * `@/platform/api/api` stand-in every terminal suite registers.
  */
 
+import { createMockApi, type ApiModuleShape } from "@/architecture/test-support/mock-api"
+
 type Listener = (event: any) => void
+
+/**
+ * Nothing in the terminal suites should reach the JSON client: they drive the
+ * transport through `globalThis.fetch` and assert on the requests it sees.
+ * The fixture's default client would route through the passthrough `authFetch`
+ * below and quietly make a real request, so fail loudly instead.
+ */
+function unusedApiClient(url: string): never {
+  throw new Error(`terminal test: unexpected api client call for ${url}`)
+}
+
+/**
+ * The `@/platform/api/api` module the terminal suites run against.
+ *
+ * `mock.module` replaces a module PROCESS-WIDE, so a hand-listed partial mock
+ * breaks every importer of an export it forgot — omitting `isLoopbackHttpUrl`
+ * (which `platform/runtime/server-transport.ts` imports) is what stopped
+ * `relay-lifecycle.test.ts` from loading at all. Building on `createMockApi`,
+ * the one shared mirror of api.ts's surface, means there is no list to forget
+ * from, and one place to update when that surface changes.
+ *
+ * Usage: `mock.module("@/platform/api/api", () => createTerminalApiModule(url))`
+ */
+export function createTerminalApiModule(baseUrl: string): ApiModuleShape {
+  return createMockApi({
+    // Read `fetch` at call time: the suites install their interceptor by
+    // swapping `globalThis.fetch` after this module is registered.
+    authFetch: (input, init) => fetch(input, init),
+    getClaxedoServerUrl: () => baseUrl,
+    getDefaultBaseUrl: () => baseUrl,
+    // These suites pin the default base rather than a configured one.
+    getConfiguredClaxedoServerUrl: () => "",
+    api: {
+      get: unusedApiClient,
+      post: unusedApiClient,
+      put: unusedApiClient,
+      patch: unusedApiClient,
+      delete: unusedApiClient,
+    },
+  }).module
+}
 
 export function createMockSDK() {
   const listeners = new Map<string, Set<Listener>>()

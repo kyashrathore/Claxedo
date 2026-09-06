@@ -42,11 +42,14 @@ import { seedForScenario } from "../src/seed"
 const SCENARIO = "workspace-interactions" as const
 const round = (value: number) => Math.round(value * 100) / 100
 
+// Each `page.evaluate` below reads `window.__floor` into a local of its own.
+// A shared accessor declared here is a Node-side binding and would not exist
+// inside a function serialized into the page.
+
 /** Install the in-page floor meter once; every measurement below reuses it. */
 const installMeter = async (page: Page) =>
   await page.evaluate(() => {
-    const w = window as unknown as Record<string, unknown>
-    w.__floor = {
+    window.__floor = {
       // One whole-document style invalidation, timed WITHOUT layout: writing a
       // custom property on <html> dirties every element, and reading a computed
       // colour flushes style alone.
@@ -61,12 +64,12 @@ const installMeter = async (page: Page) =>
         document.documentElement.style.removeProperty("--claxedo-floor-probe")
         void getComputedStyle(document.body).color
         values.sort((a, b) => a - b)
-        return { min: values[0]!, median: values[Math.floor(values.length / 2)]! }
+        return { min: values[0], median: values[Math.floor(values.length / 2)] }
       },
       count: () => {
         let total = document.querySelectorAll("*").length
         for (const host of document.querySelectorAll("*")) {
-          const shadow = (host as HTMLElement).shadowRoot
+          const shadow = host.shadowRoot
           if (shadow) total += shadow.querySelectorAll("*").length
         }
         return total
@@ -76,9 +79,10 @@ const installMeter = async (page: Page) =>
 
 const floor = async (page: Page) =>
   await page.evaluate(() => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
-    const timing = w.__floor.time()
-    return { ...timing, elements: w.__floor.count() }
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    const timing = floor.time()
+    return { ...timing, elements: floor.count() }
   })
 
 const report = (label: string, value: { min: number; median: number; elements: number }, baseline?: number) =>
@@ -98,7 +102,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -116,8 +120,11 @@ const sheets = await page.evaluate(() =>
     const countRules = (list: CSSRuleList) => {
       for (const rule of Array.from(list)) {
         rules += 1
-        const nested = (rule as unknown as { cssRules?: CSSRuleList }).cssRules
-        if (nested) countRules(nested)
+        // The two rule kinds that nest: `@media`/`@supports`/`@container`/
+        // `@layer` (all CSSGroupingRule) and `@keyframes`, which holds its
+        // frames outside that hierarchy.
+        if (rule instanceof CSSGroupingRule) countRules(rule.cssRules)
+        else if (rule instanceof CSSKeyframesRule) countRules(rule.cssRules)
       }
     }
     try {
@@ -128,7 +135,7 @@ const sheets = await page.evaluate(() =>
     return {
       index,
       rules,
-      href: sheet.href?.slice(sheet.href.lastIndexOf("/") + 1) ?? `<inline #${(sheet.ownerNode as Element | null)?.id || index}>`,
+      href: sheet.href?.slice(sheet.href.lastIndexOf("/") + 1) ?? `<inline #${(sheet.ownerNode instanceof Element ? sheet.ownerNode.id : "") || index}>`,
     }
   })
 )
@@ -158,7 +165,6 @@ const shapes: Array<{ name: string; build: string }> = [
 ]
 for (const shape of shapes) {
   const measured = await page.evaluate((build) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const host = document.createElement("div")
     host.id = "claxedo-floor-synth"
     if (build === "contained") host.style.contain = "style"
@@ -195,8 +201,10 @@ for (const shape of shapes) {
         }, { node: null, depth: 0 }).node
       : null
     ;(deepest ?? document.body).append(host)
-    const timing = w.__floor.time()
-    const elements = w.__floor.count()
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    const timing = floor.time()
+    const elements = floor.count()
     host.remove()
     return { ...timing, elements }
   }, shape.build)
@@ -211,8 +219,7 @@ const props = await page.evaluate(() => {
   const names: string[] = []
   const walk = (list: CSSRuleList) => {
     for (const rule of Array.from(list)) {
-      const nested = (rule as unknown as { cssRules?: CSSRuleList }).cssRules
-      if (nested) walk(nested)
+      if (rule instanceof CSSGroupingRule) walk(rule.cssRules)
       if (!(rule instanceof CSSStyleRule)) continue
       if (!/(^|,)\s*(:root|html\[data-theme)/.test(rule.selectorText)) continue
       for (const name of Array.from(rule.style)) if (name.startsWith("--")) names.push(name)
@@ -229,7 +236,6 @@ const props = await page.evaluate(() => {
 })
 console.log(`  distinct :root custom properties: ${props.length}`)
 const withoutProps = await page.evaluate((names) => {
-  const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
   // Re-declare every root token as its own computed value, but on a NON-root
   // element, so nothing inherits them from <html> any more. Purely diagnostic:
   // the page looks wrong afterwards.
@@ -239,8 +245,10 @@ const withoutProps = await page.evaluate((names) => {
   killer.id = "claxedo-floor-killer"
   killer.textContent = `:root{${names.map((name) => `${name}:initial !important`).join(";")}}`
   document.head.append(killer)
-  const timing = w.__floor.time()
-  const elements = w.__floor.count()
+  const floor = window.__floor
+  if (!floor) throw new Error("the floor meter is not installed on this page")
+  const timing = floor.time()
+  const elements = floor.count()
   killer.remove()
   return { ...timing, elements, restored: saved.length }
 }, props)
@@ -305,15 +313,16 @@ const ruleShapes: Array<{ name: string; template: string }> = [
 ]
 for (const shape of ruleShapes) {
   const measured = await page.evaluate((template) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const style = document.createElement("style")
     style.id = "claxedo-floor-rules"
     const rules: string[] = []
     for (let index = 0; index < 2000; index++) rules.push(`${template.replace("INDEX", String(index))}{color:red}`)
     style.textContent = rules.join("")
     document.head.append(style)
-    const timing = w.__floor.time()
-    const elements = w.__floor.count()
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    const timing = floor.time()
+    const elements = floor.count()
     style.remove()
     return { ...timing, elements }
   }, shape.template)
@@ -330,8 +339,7 @@ const registered = await page.evaluate(() => {
   const walk = (list: CSSRuleList) => {
     for (const rule of Array.from(list)) {
       if (rule.constructor.name === "CSSPropertyRule") count += 1
-      const nested = (rule as unknown as { cssRules?: CSSRuleList }).cssRules
-      if (nested) walk(nested)
+      if (rule instanceof CSSGroupingRule) walk(rule.cssRules)
     }
   }
   for (const sheet of Array.from(document.styleSheets)) {
@@ -346,7 +354,6 @@ const registered = await page.evaluate(() => {
 console.log(`  @property registrations already in the document: ${registered}`)
 for (const inherits of [false, true]) {
   const measured = await page.evaluate((inheritsValue) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const style = document.createElement("style")
     style.id = "claxedo-floor-registered"
     const rules: string[] = []
@@ -355,8 +362,10 @@ for (const inherits of [false, true]) {
     }
     style.textContent = rules.join("")
     document.head.append(style)
-    const timing = w.__floor.time()
-    const elements = w.__floor.count()
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    const timing = floor.time()
+    const elements = floor.count()
     style.remove()
     return { ...timing, elements }
   }, inherits)
@@ -388,7 +397,7 @@ const regions = await page.evaluate(() => {
     if (!element) return { selector, present: false, elements: 0 }
     let total = element.querySelectorAll("*").length
     for (const host of element.querySelectorAll("*")) {
-      const shadow = (host as HTMLElement).shadowRoot
+      const shadow = host.shadowRoot
       if (shadow) total += shadow.querySelectorAll("*").length
     }
     return { selector, present: true, elements: total, contain: getComputedStyle(element).contain, cv: getComputedStyle(element).contentVisibility }
@@ -413,15 +422,16 @@ const REGION_ROUNDS = 7
 const rankedRegions: Array<{ selector: string; elements: number; saved: number; spread: number }> = []
 for (const region of regions.filter((candidate) => candidate.present)) {
   const measured = await page.evaluate(async ({ selector, rounds }) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const element = document.querySelector<HTMLElement>(selector)!
     const previous = element.style.contentVisibility
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
     const deltas: number[] = []
     for (let round = 0; round < rounds; round++) {
       element.style.contentVisibility = previous
-      const visible = w.__floor.time(5).min
+      const visible = floor.time(5).min
       element.style.contentVisibility = "hidden"
-      const locked = w.__floor.time(5).min
+      const locked = floor.time(5).min
       deltas.push(visible - locked)
       // Yield so a stray task from the page lands between rounds rather than
       // inside one half of a pair.
@@ -431,10 +441,10 @@ for (const region of regions.filter((candidate) => candidate.present)) {
     void getComputedStyle(document.body).color
     deltas.sort((a, b) => a - b)
     return {
-      saved: deltas[Math.floor(deltas.length / 2)]!,
-      low: deltas[0]!,
-      high: deltas[deltas.length - 1]!,
-      elements: w.__floor.count(),
+      saved: deltas[Math.floor(deltas.length / 2)],
+      low: deltas[0],
+      high: deltas[deltas.length - 1],
+      elements: floor.count(),
     }
   }, { selector: region.selector, rounds: REGION_ROUNDS })
   rankedRegions.push({
@@ -471,7 +481,6 @@ console.log("\n  -- which lever: element COUNT vs the class list each element ca
 // after; this is a measurement, not a rendering mode.
 for (const region of regions.filter((candidate) => candidate.present && candidate.elements > 0)) {
   const measured = await page.evaluate(async ({ selector, rounds }) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const root = document.querySelector<HTMLElement>(selector)!
     const nodes = Array.from(root.querySelectorAll<HTMLElement>("*"))
     const saved = nodes.map((node) => node.getAttribute("class"))
@@ -487,19 +496,21 @@ for (const region of regions.filter((candidate) => candidate.present && candidat
         else node.setAttribute("class", value)
       })
     }
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
     const deltas: number[] = []
     for (let round = 0; round < rounds; round++) {
       restore()
-      const dressed = w.__floor.time(5).min
+      const dressed = floor.time(5).min
       strip()
-      const stripped = w.__floor.time(5).min
+      const stripped = floor.time(5).min
       deltas.push(dressed - stripped)
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
     restore()
     void getComputedStyle(document.body).color
     deltas.sort((a, b) => a - b)
-    return { saved: deltas[Math.floor(deltas.length / 2)]!, classes, nodes: nodes.length }
+    return { saved: deltas[Math.floor(deltas.length / 2)], classes, nodes: nodes.length }
   }, { selector: region.selector, rounds: 5 })
   console.log(
     `  ${region.selector.padEnd(46)} els=${String(region.elements).padStart(5)}` +
@@ -511,11 +522,12 @@ for (const region of regions.filter((candidate) => candidate.present && candidat
 
 console.log("\n  -- floor with the WHOLE body display-locked (absolute lower bound) --")
 const bodyLocked = await page.evaluate(() => {
-  const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
   const previous = document.body.style.contentVisibility
   document.body.style.contentVisibility = "hidden"
-  const timing = w.__floor.time()
-  const elements = w.__floor.count()
+  const floor = window.__floor
+  if (!floor) throw new Error("the floor meter is not installed on this page")
+  const timing = floor.time()
+  const elements = floor.count()
   document.body.style.contentVisibility = previous
   return { ...timing, elements }
 })
@@ -538,7 +550,6 @@ const acts: Array<{ name: string; act: string }> = [
 ]
 for (const entry of acts) {
   const measured = await page.evaluate((act) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const shared = new CSSStyleSheet()
     shared.replaceSync(":host{display:block}span{color:red}")
     const mid = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")!
@@ -590,7 +601,9 @@ for (const entry of acts) {
       void getComputedStyle(document.body).color
     }
     samples.sort((a, b) => a - b)
-    return { min: samples[0]!, median: samples[Math.floor(samples.length / 2)]!, elements: w.__floor.count() }
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    return { min: samples[0], median: samples[Math.floor(samples.length / 2)], elements: floor.count() }
   }, entry.act)
   report(entry.name, measured)
 }
@@ -617,16 +630,16 @@ for (let depth = 0; depth < 8; depth++) {
     return Array.from(parent.children).map((child, index) => {
       let total = child.querySelectorAll("*").length
       for (const host of child.querySelectorAll("*")) {
-        const shadow = (host as HTMLElement).shadowRoot
+        const shadow = host.shadowRoot
         if (shadow) total += shadow.querySelectorAll("*").length
       }
       return {
         index,
         path: `${path}>${index}`,
         label: `${child.tagName.toLowerCase()}${child.id ? `#${child.id}` : ""}` +
-          `${child.getAttribute("data-testid") ? `[${child.getAttribute("data-testid")}]` : ""}` +
-          `${child.getAttribute("data-component") ? `{${child.getAttribute("data-component")}}` : ""}` +
-          `${child.getAttribute("data-slot") ? `<${child.getAttribute("data-slot")}>` : ""}`,
+          (child.getAttribute("data-testid") ? `[${child.getAttribute("data-testid")}]` : "") +
+          (child.getAttribute("data-component") ? `{${child.getAttribute("data-component")}}` : "") +
+          (child.getAttribute("data-slot") ? `<${child.getAttribute("data-slot")}>` : ""),
         elements: total,
       }
     })
@@ -636,8 +649,7 @@ for (let depth = 0; depth < 8; depth++) {
   for (const child of children) {
     if (child.elements < 20) continue
     const measured = await page.evaluate((path) => {
-      const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
-      const resolve = (value: string): Element | null => {
+        const resolve = (value: string): Element | null => {
         let node: Element | null = document.body
         for (const step of value.split(">").slice(1)) {
           if (!node) return null
@@ -645,11 +657,13 @@ for (let depth = 0; depth < 8; depth++) {
         }
         return node
       }
-      const element = resolve(path) as HTMLElement | null
-      if (!element) return undefined
+      const element = resolve(path)
+      if (!(element instanceof HTMLElement)) return undefined
       const previous = element.style.contentVisibility
       element.style.contentVisibility = "hidden"
-      const timing = w.__floor.time()
+      const floor = window.__floor
+      if (!floor) throw new Error("the floor meter is not installed on this page")
+      const timing = floor.time()
       element.style.contentVisibility = previous
       return timing
     }, child.path)
@@ -685,12 +699,13 @@ console.log(`  sprite roots: ${spriteStats.roots.join(", ")} — ${spriteStats.e
 const shotDir = process.env.PROBE_SHOT_DIR ?? "/tmp/claxedo-style-floor"
 await page.screenshot({ path: `${shotDir}/sprites-visible.png` })
 const spriteLocked = await page.evaluate(() => {
-  const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
   for (const root of Array.from(document.querySelectorAll<SVGSVGElement>("svg[id$='-icon-sprite']"))) {
     root.style.contentVisibility = "hidden"
   }
-  const timing = w.__floor.time(11)
-  return { ...timing, elements: w.__floor.count() }
+  const floor = window.__floor
+  if (!floor) throw new Error("the floor meter is not installed on this page")
+  const timing = floor.time(11)
+  return { ...timing, elements: floor.count() }
 })
 await page.screenshot({ path: `${shotDir}/sprites-locked.png` })
 await page.evaluate(() => {
@@ -703,7 +718,6 @@ console.log(`  screenshots: ${shotDir}/sprites-visible.png vs ${shotDir}/sprites
 
 console.log("\n=== 7. is a display:none subtree already free? ===")
 const hiddenShape = await page.evaluate(() => {
-  const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
   const host = document.createElement("div")
   host.style.display = "none"
   for (let index = 0; index < 2000; index++) {
@@ -712,8 +726,10 @@ const hiddenShape = await page.evaluate(() => {
     host.append(node)
   }
   document.body.append(host)
-  const timing = w.__floor.time()
-  const elements = w.__floor.count()
+  const floor = window.__floor
+  if (!floor) throw new Error("the floor meter is not installed on this page")
+  const timing = floor.time()
+  const elements = floor.count()
   host.remove()
   return { ...timing, elements }
 })
@@ -758,12 +774,13 @@ if (!rowCensus) {
       ` ${rowCensus.uses} <use>`,
   )
   const locked = await page.evaluate(() => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const root = document.querySelector<HTMLElement>("[data-review-rendered-files]")!
     const previous = root.style.contentVisibility
     root.style.contentVisibility = "hidden"
-    const timing = w.__floor.time(11)
-    const elements = w.__floor.count()
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    const timing = floor.time(11)
+    const elements = floor.count()
     root.style.contentVisibility = previous
     return { ...timing, elements }
   })
@@ -777,15 +794,16 @@ if (!rowCensus) {
   ]
   for (const part of parts) {
     const measured = await page.evaluate((selector) => {
-      const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
-      const root = document.querySelector<HTMLElement>("[data-review-rendered-files]")!
+        const root = document.querySelector<HTMLElement>("[data-review-rendered-files]")!
       const detached = Array.from(root.querySelectorAll<HTMLElement>(selector)).map((node) => {
         const anchor = document.createComment("floor-probe")
         node.replaceWith(anchor)
         return { node, anchor }
       })
-      const timing = w.__floor.time(11)
-      const elements = w.__floor.count()
+      const floor = window.__floor
+      if (!floor) throw new Error("the floor meter is not installed on this page")
+      const timing = floor.time(11)
+      const elements = floor.count()
       for (const { node, anchor } of detached) anchor.replaceWith(node)
       return { ...timing, elements, detached: detached.length }
     }, part.selector)

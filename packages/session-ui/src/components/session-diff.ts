@@ -113,17 +113,19 @@ function fileDiffFromPatch(file: string, patch: string) {
   return (input ? parsePatchFiles(input)[0]?.files[0] : undefined) ?? emptyFileDiff(file)
 }
 
-function completePatchContents(patch: string) {
+function completePatchContents(patch: string): { before: string; after: string } | undefined {
   try {
     const parsed = parsePatch(patch)[0]
-    if (!parsed || (!parsed.index && !parsed.oldFileName && !parsed.newFileName)) return
+    if (!parsed || (!parsed.index && !parsed.oldFileName && !parsed.newFileName)) return undefined
     // Snapshot and VCS producers request full context. Tool patches use jsdiff's shorter default context.
-    if (!patch.startsWith("diff --git ") && !/^--- [^\n]*\t\r?\n\+\+\+ [^\n]*\t(?:\r?\n|$)/m.test(patch)) return
+    if (!patch.startsWith("diff --git ") && !/^--- [^\n]*\t\r?\n\+\+\+ [^\n]*\t(?:\r?\n|$)/m.test(patch)) {
+      return undefined
+    }
     // Full patches collapse into one leading hunk. Separated hunks omit ranges and must stay partial.
-    if (parsed.hunks.length !== 1) return
+    if (parsed.hunks.length !== 1) return undefined
 
     const hunk = parsed.hunks[0]
-    if (!hunk || hunk.oldStart > 1 || hunk.newStart > 1) return
+    if (!hunk || hunk.oldStart > 1 || hunk.newStart > 1) return undefined
 
     const before: Array<{ text: string; newline: boolean }> = []
     const after: Array<{ text: string; newline: boolean }> = []
@@ -151,7 +153,7 @@ function completePatchContents(patch: string) {
         previous = "+"
         continue
       }
-      if (!line.startsWith(" ")) return
+      if (!line.startsWith(" ")) return undefined
       before.push({ text: line.slice(1), newline: true })
       after.push({ text: line.slice(1), newline: true })
       previous = " "
@@ -161,19 +163,19 @@ function completePatchContents(patch: string) {
       lines.map((line) => line.text + (line.newline ? "\n" : "")).join("")
     return { before: text(before), after: text(after) }
   } catch {
-    return
+    return undefined
   }
 }
 
-function patchInput(file: string, patch: string) {
+function patchInput(file: string, patch: string): string | undefined {
   try {
     const parsed = parsePatch(patch)[0]
-    if (!parsed) return
+    if (!parsed) return undefined
     if (parsed.index || parsed.oldFileName || parsed.newFileName) return patch
-    if (!parsed.hunks.length) return
+    if (!parsed.hunks.length) return undefined
     return `Index: ${file}\n===================================================================\n--- ${file}\t\n+++ ${file}\t\n${patch}`
   } catch {
-    return
+    return undefined
   }
 }
 

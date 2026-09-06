@@ -16,19 +16,19 @@ import { defineIconLibrary } from "@/ui/icons/registry"
  */
 const spriteURL = new URL("../../../../ui/src/assets/icons/codex/sprite.svg", import.meta.url)
 const sprite = readFileSync(spriteURL, "utf8")
-const spriteSymbols = new Set([...sprite.matchAll(/<symbol id="([^"]+)"/g)].map((m) => m[1]!))
+const spriteSymbols = new Set([...sprite.matchAll(/<symbol id="([^"]+)"/g)].map((m) => m[1]))
 
 /** The hand-drawn glyphs live inline in the component, so parse its table. */
 const componentSource = readFileSync(new URL("../controls/claxedo-icon.tsx", import.meta.url), "utf8")
 const customGlyphBlock = componentSource.split("const customGlyphs")[1]?.split("} as const")[0] ?? ""
 const customGlyphs = new Set(
-  [...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:/g)].map((m) => m[1]!),
+  [...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:/g)].map((m) => m[1]),
 )
 
 /** `codex-custom-*` id -> the key in `claxedoIcons` that actually draws it. */
 const customGlyphTargets = new Map(
   [...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:\s*"([a-z0-9-]+)"/g)].map(
-    (m) => [m[1]!, m[2]!] as const,
+    (m) => [m[1], m[2]] as const,
   ),
 )
 
@@ -36,7 +36,7 @@ const customGlyphTargets = new Map(
 const drawnGlyphs = new Map(
   [...(componentSource.split("const claxedoIcons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
     /^ {2}"?([a-zA-Z0-9-]+)"?:\s*`([^`]*)`/gm,
-  )].map((m) => [m[1]!, m[2]!] as const),
+  )].map((m) => [m[1], m[2]] as const),
 )
 
 describe("icon library registry", () => {

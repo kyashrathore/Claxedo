@@ -1,3 +1,5 @@
+import { isRecord, numberField, textField } from "./json-fields"
+
 export const PRIMARY_AGENT_APP_METRICS = [
   "app.cold_ready_ms",
   "work_item.cold_open_ms",
@@ -36,6 +38,37 @@ export type InvalidMetric = {
 }
 
 export type AgentMetricValue = ExactMetric | BoundedMetric | UnsupportedMetric | InvalidMetric
+
+/**
+ * Read a metric value that came back across the driver's JSON boundary.
+ *
+ * The inverse of the constructors below: `state` decides which fields the value
+ * must carry, so one that lost a field is named here instead of reaching a
+ * report as `undefined`.
+ */
+export function readAgentMetricValue(value: unknown): AgentMetricValue {
+  if (!isRecord(value)) throw new Error("metric value must be an object")
+  const state = value.state
+  const reason = textField(value, "reason")
+  const unit = textField(value, "unit")
+  if (state === "exact") {
+    const exact = numberField(value, "value")
+    if (exact === undefined || unit === undefined) throw new Error("exact metric requires value and unit")
+    return { state, value: exact, unit }
+  }
+  if (state === "bounded") {
+    const upperBound = numberField(value, "upperBound")
+    if (upperBound === undefined || unit === undefined || reason === undefined) {
+      throw new Error("bounded metric requires upperBound, unit and reason")
+    }
+    return { state, upperBound, unit, reason }
+  }
+  if (state === "unsupported" || state === "invalid") {
+    if (reason === undefined) throw new Error(`${state} metric requires a reason`)
+    return { state, reason }
+  }
+  throw new Error(`unsupported metric state: ${JSON.stringify(state)}`)
+}
 
 export function eventTimingP95(input: {
   probeCount: number
@@ -137,7 +170,7 @@ export function resourceMetrics(input: {
 
   const ordered = input.samples.toSorted((a, b) => a.atMs - b.atMs)
   for (let index = 0; index < ordered.length; index++) {
-    const sample = ordered[index]!
+    const sample = ordered[index]
     if (
       !Number.isFinite(sample.atMs) ||
       !Number.isFinite(sample.rssBytes) || sample.rssBytes < 0 ||
@@ -165,7 +198,7 @@ export function percentile(values: number[], rank: number) {
   if (values.length === 0 || !Number.isFinite(rank) || rank < 0 || rank > 100) return Number.NaN
   const sorted = values.toSorted((a, b) => a - b)
   const index = Math.max(0, Math.ceil((rank / 100) * sorted.length) - 1)
-  return sorted[Math.min(index, sorted.length - 1)]!
+  return sorted[Math.min(index, sorted.length - 1)]
 }
 
 function exact(value: number, unit: string): ExactMetric {

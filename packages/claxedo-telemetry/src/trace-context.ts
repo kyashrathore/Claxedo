@@ -62,8 +62,8 @@ export function newSpanId() {
   return id
 }
 
-function isHex(value: string, length: number) {
-  if (value.length !== length) return false
+function isHex(value: string | undefined, length: number): value is string {
+  if (value?.length !== length) return false
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index)
     const digit = code >= 48 && code <= 57
@@ -86,7 +86,7 @@ export function parseTraceParent(value: string | null | undefined, traceState?: 
   const parts = value.trim().split("-")
   // A future version may append fields; the first four keep their meaning.
   if (parts.length < 4) return undefined
-  const [version, traceId, spanId, flags] = parts as [string, string, string, string]
+  const [version, traceId, spanId, flags] = parts
   if (!isHex(version, 2) || version === "ff") return undefined
   // Version 00 is exactly four fields. Extra fields there are a malformed
   // header, not a forward-compatible one.

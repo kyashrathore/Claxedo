@@ -19,13 +19,13 @@ import { applySessionFilter, type SessionFilter } from "../../../../platform/syn
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
 import { mapInventoryToSessions, signedInventoryItems } from "../query/inventory"
 import {
-  inventoryRecord as rec,
   inventorySessionAttachments,
   inventorySessionEnvironment,
   inventorySessionGit,
   inventorySessionId,
   inventoryText as txt,
 } from "./session-inventory"
+import { asRecord as rec, readArray } from "@/lib/record"
 export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
 
 type ProjectDirectory = string
@@ -64,6 +64,26 @@ export type InventoryGlobalSession = {
   environment?: unknown
   git?: unknown
   lastTurn?: unknown
+}
+
+/**
+ * Row guards for the control-plane list payloads.
+ *
+ * Each response is an untyped HTTP body; the guards check the identity fields
+ * every downstream reader dereferences, so a malformed row is dropped at the
+ * boundary rather than asserted into the inventory and read as `undefined`
+ * further in.
+ */
+function isInventoryGlobalSession(value: unknown): value is InventoryGlobalSession {
+  const row = rec(value)
+  return typeof row?.id === "string" && typeof row.directory === "string"
+    && typeof rec(row.time)?.created === "number"
+}
+
+function isWorkspaceGroup(value: unknown): value is WorkspaceGroup {
+  const row = rec(value)
+  return typeof row?.directory === "string" && typeof row.projectID === "string"
+    && Array.isArray(row.sessions) && typeof row.hasMore === "boolean" && typeof row.total === "number"
 }
 
 const CONTROL_SESSIONS_DEDUPE_MS = 3_000
@@ -142,7 +162,7 @@ export function controlPlaneSessionToItem(input: {
   const row = rec(input.session)
   const workspace = rec(input.workspace)
   const id = txt(row?.session_id) ?? txt(row?.sessionID) ?? txt(row?.id)
-  if (!id) return
+  if (!id) return undefined
   const created = typeof row?.created_at === "number"
     ? row.created_at
     : typeof row?.createdAt === "number"
@@ -256,21 +276,21 @@ export function createSignedInventorySource(input: {
   async function requestControlPlaneSessions(workspaceId: string) {
     const run = await signedAccountRun()
     if (run) {
-      const body = decodeHostedResult<{ sessions: unknown[] }>(
-        "session.list",
-        await run("session.list", { workspaceId }),
+      const sessions = readArray(
+        decodeHostedResult("session.list", await run("session.list", { workspaceId })),
+        "sessions",
       )
-      if (!Array.isArray(body.sessions)) throw new Error("session.list returned an invalid sessions payload")
-      return body.sessions
+      if (!sessions) throw new Error("session.list returned an invalid sessions payload")
+      return sessions
     }
     const res = await input.authFetch(controlSessionListUrl({
       baseUrl: inventoryServerUrl(input.baseUrl()),
       workspaceId,
     }), { headers: { Accept: "application/json" } })
     if (!res.ok) throw new Error(`Control-plane session list failed with ${res.status}`)
-    const body = await res.json()
-    if (!Array.isArray(body?.sessions)) throw new Error("Control-plane session list returned an invalid sessions payload")
-    return body.sessions as unknown[]
+    const sessions = readArray(await res.json(), "sessions")
+    if (!sessions) throw new Error("Control-plane session list returned an invalid sessions payload")
+    return sessions
   }
 
   async function fetchControlPlaneSessions(workspaceId: string) {
@@ -320,23 +340,20 @@ export function createSignedInventorySource(input: {
     const run = await signedAccountRun()
     if (run) {
       const operation = access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
-      const body = decodeHostedResult<{ workspaces: unknown[] }>(
-        operation,
-        await run(operation, {}),
-      )
-      if (!Array.isArray(body.workspaces)) throw new Error(`${operation} returned an invalid workspaces payload`)
-      return body.workspaces
+      const workspaces = readArray(decodeHostedResult(operation, await run(operation, {})), "workspaces")
+      if (!workspaces) throw new Error(`${operation} returned an invalid workspaces payload`)
+      return workspaces
     }
     const res = await input.authFetch(workspaceListUrl({
       baseUrl: input.baseUrl(),
       access,
     }), { headers: { Accept: "application/json" } })
     if (!res.ok) throw new Error(`Control-plane ${access} workspace list failed with ${res.status}`)
-    const body = await res.json()
-    if (!Array.isArray(body?.workspaces)) {
+    const workspaces = readArray(await res.json(), "workspaces")
+    if (!workspaces) {
       throw new Error(`Control-plane ${access} workspace list returned an invalid workspaces payload`)
     }
-    return body.workspaces as unknown[]
+    return workspaces
   }
 
   async function fetchSignedWorkspaceSnapshot() {
@@ -495,9 +512,9 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       headers: { Accept: "application/json" },
     })
     if (!res.ok) return { data: [] as InventoryGlobalSession[], cursor: null }
-    const body = await res.json().catch(() => [])
+    const body: unknown = await res.json().catch(() => [])
     return {
-      data: Array.isArray(body) ? body as InventoryGlobalSession[] : [],
+      data: Array.isArray(body) ? body.filter(isInventoryGlobalSession) : [],
       cursor: res.headers.get("x-next-cursor"),
     }
   }
@@ -550,8 +567,8 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
           headers: { Accept: "application/json" },
         })
         if (!res.ok) return []
-        const body = rec(await res.json().catch(() => ({ groups: [] })))
-        return Array.isArray(body?.groups) ? body.groups as WorkspaceGroup[] : []
+        const groups = readArray(await res.json().catch(() => ({ groups: [] })), "groups")
+        return groups?.filter(isWorkspaceGroup) ?? []
       },
     })
       .catch(() => [])

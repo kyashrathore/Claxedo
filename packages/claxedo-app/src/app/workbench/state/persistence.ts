@@ -1,8 +1,15 @@
 // Persistence — v5 validator/defaults.
 
+import { isRecord, recordOrEmpty } from "@/lib/record"
 import { constructWorkbenchState, validate as validateWorkbench } from "../workbench/index"
 import type { WorkbenchState } from "../workbench/index"
-import { createWorkspacePanel, type WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import {
+  createWorkspacePanel,
+  type FileFocusIntent,
+  type WorkspacePanelMode,
+  type WorkspacePanelNavigator,
+  type WorkspacePanelState,
+} from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
 import type {
@@ -16,10 +23,7 @@ import type {
   WorkspaceSlice,
 } from "./types"
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v)
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
-const obj = (v: unknown): Record<string, unknown> => (isObject(v) ? v : {})
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined)
 const contentTypes = new Set<string>(CONTENT_TYPES)
 
@@ -60,8 +64,43 @@ export function emptyClaxedoState(): ClaxedoState {
 const isContentType = (v: unknown): v is ContentType =>
   typeof v === "string" && contentTypes.has(v)
 
+/**
+ * The persisted payload of one content entry, read against the arm its
+ * `ContentMeta.type` names.
+ *
+ * Each arm of `ContentPayload` guarantees fields the surface that renders it
+ * dereferences — a "page" has a `pageId`, a "draft-session" has a `draftId` and
+ * a `providerDirectory`, a scoped surface has a `directory`. Those are checked;
+ * the rest of the blob (title, intent, sessionRef, …) is carried through
+ * untouched, so nothing a writer stored is dropped on the way back in. The
+ * payload's own `type` is ignored in favour of the entry's, which
+ * `validateMeta` has already checked — they are the same discriminant, and a
+ * blob where they disagree is the entry's to name.
+ */
+function validateContentPayload(input: unknown, type: ContentType): ContentPayload | undefined {
+  if (!isRecord(input)) return undefined
+  if (type === "page") {
+    const pageId = str(input.pageId)
+    return pageId === undefined ? undefined : { ...input, type, pageId }
+  }
+  if (type === "pages-index" || type === "marketplace") return { ...input, type }
+  if (type === "draft-session") {
+    const draftId = str(input.draftId)
+    const providerDirectory = str(input.providerDirectory)
+    return draftId === undefined || providerDirectory === undefined
+      ? undefined
+      : { ...input, type, draftId, providerDirectory }
+  }
+  if (type === "session") {
+    const sessionId = str(input.sessionId)
+    return sessionId === undefined ? undefined : { ...input, type, sessionId }
+  }
+  const directory = str(input.directory)
+  return directory === undefined ? undefined : { ...input, type, directory }
+}
+
 function validateMeta(input: unknown): ContentMeta | undefined {
-  if (!isObject(input)) return undefined
+  if (!isRecord(input)) return undefined
   const id = str(input.id)
   if (!id) return undefined
   if (!isContentType(input.type)) return undefined
@@ -78,7 +117,7 @@ function validateMeta(input: unknown): ContentMeta | undefined {
     terminalId: str(input.terminalId),
     filePath: str(input.filePath),
     pageId: str(input.pageId),
-    content: isObject(input.content) ? (input.content as ContentPayload) : undefined,
+    content: validateContentPayload(input.content, input.type),
   }
   if (meta.content) {
     meta.directory = meta.directory ?? str(meta.content.directory)
@@ -98,7 +137,7 @@ function missingRequiredSessionRef(meta: ContentMeta) {
 }
 
 function validateRail(input: unknown): RailSlice {
-  const o = obj(input)
+  const o = recordOrEmpty(input)
   const width = typeof o.width === "number" && Number.isFinite(o.width) && o.width >= 220 && o.width <= 520
     ? o.width
     : 260
@@ -112,28 +151,28 @@ function validateRail(input: unknown): RailSlice {
 }
 
 function validateWorkspace(input: unknown): WorkspaceSlice {
-  const o = obj(input)
+  const o = recordOrEmpty(input)
   const paneWorktree: WorkspaceSlice["paneWorktree"] = {}
-  for (const [k, v] of Object.entries(obj(o.paneWorktree))) {
-    const e = obj(v)
+  for (const [k, v] of Object.entries(recordOrEmpty(o.paneWorktree))) {
+    const e = recordOrEmpty(v)
     paneWorktree[k] = {
       default: typeof e.default === "string" ? e.default : null,
       pinned: typeof e.pinned === "string" ? e.pinned : null,
     }
   }
   const recency: WorkspaceSlice["recency"] = {}
-  for (const [k, v] of Object.entries(obj(o.recency))) {
+  for (const [k, v] of Object.entries(recordOrEmpty(o.recency))) {
     recency[k] = arr(v).filter((s): s is string => typeof s === "string")
   }
   const worktreeColor: WorkspaceSlice["worktreeColor"] = {}
-  for (const [k, v] of Object.entries(obj(o.worktreeColor))) {
+  for (const [k, v] of Object.entries(recordOrEmpty(o.worktreeColor))) {
     if (typeof v === "string") worktreeColor[k] = v
   }
   return { paneWorktree, recency, worktreeColor }
 }
 
 function validateProcessPane(input: unknown): ProcessPaneSlice {
-  const o = obj(input)
+  const o = recordOrEmpty(input)
   const action = o.pendingAction
   return {
     crashedWhileClosed: typeof o.crashedWhileClosed === "boolean" ? o.crashedWhileClosed : false,
@@ -143,21 +182,21 @@ function validateProcessPane(input: unknown): ProcessPaneSlice {
 }
 
 function validateTerminal(input: unknown): TerminalSlice {
-  const o = obj(input)
+  const o = recordOrEmpty(input)
   const owner: TerminalSlice["owner"] = {}
-  for (const [k, v] of Object.entries(obj(o.owner))) {
+  for (const [k, v] of Object.entries(recordOrEmpty(o.owner))) {
     if (typeof v === "string") owner[k] = v
   }
   const agentStatus: TerminalSlice["agentStatus"] = {}
-  for (const [k, v] of Object.entries(obj(o.agentStatus))) {
+  for (const [k, v] of Object.entries(recordOrEmpty(o.agentStatus))) {
     if (v === "idle" || v === "working" || v === "permission") agentStatus[k] = v
   }
   const agentSeen: TerminalSlice["agentSeen"] = {}
-  for (const [k, v] of Object.entries(obj(o.agentSeen))) {
+  for (const [k, v] of Object.entries(recordOrEmpty(o.agentSeen))) {
     if (v === true) agentSeen[k] = true
   }
   const lifecycle: TerminalSlice["lifecycle"] = {}
-  for (const [k, v] of Object.entries(obj(o.lifecycle))) {
+  for (const [k, v] of Object.entries(recordOrEmpty(o.lifecycle))) {
     if (
       v === "creating" ||
       v === "attaching" ||
@@ -171,14 +210,90 @@ function validateTerminal(input: unknown): TerminalSlice {
   return { owner, agentStatus, agentSeen, lifecycle }
 }
 
-function validateWorkspacePanel(input: unknown): WorkspacePanelState {
-  if (!isObject(input)) return createWorkspacePanel()
-  // Trust the shape — the existing pure helpers consume this directly. The
-  // only enforced invariant is the boolean `open`.
-  if (typeof (input as WorkspacePanelState).open !== "boolean") {
-    return createWorkspacePanel()
+const isWorkspacePanelMode = (v: unknown): v is WorkspacePanelMode =>
+  v === "files" || v === "review" || v === "processes" || v === "activity"
+const isWorkspacePanelNavigator = (v: unknown): v is WorkspacePanelNavigator =>
+  v === "files" || v === "changes" || v === "processes"
+const isFileFocusIntent = (v: unknown): v is FileFocusIntent =>
+  v === "tab" || v === "review"
+
+const num = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) ? v : undefined
+
+/**
+ * A persisted focus target, read arm by arm.
+ *
+ * The panel body branches on `kind` and then reads that arm's own fields, so a
+ * blob whose arm is incomplete (a "file" focus with no `path`, a focus with no
+ * `version` to compare against) has no arm to be — it is dropped rather than
+ * admitted as one.
+ */
+function validateWorkspacePanelFocus(input: unknown): WorkspacePanelState["focus"] {
+  if (!isRecord(input)) return undefined
+  const version = num(input.version)
+  if (version === undefined) return undefined
+  if (input.kind === "review") return { kind: "review", version }
+  if (input.kind === "browser") {
+    const url = str(input.url)
+    return url === undefined ? undefined : { kind: "browser", url, version }
   }
-  return input as WorkspacePanelState
+  if (input.kind === "process") {
+    const processId = str(input.processId)
+    return processId === undefined ? undefined : { kind: "process", processId, version }
+  }
+  if (input.kind === "context") {
+    const sessionId = str(input.sessionId)
+    return sessionId === undefined ? undefined : { kind: "context", sessionId, version }
+  }
+  if (input.kind !== "file") return undefined
+  const path = str(input.path)
+  const intent = input.intent
+  if (path === undefined || !isFileFocusIntent(intent)) return undefined
+  const line = num(input.line)
+  const col = num(input.col)
+  return {
+    kind: "file",
+    path,
+    version,
+    intent,
+    ...(line === undefined ? {} : { line }),
+    ...(col === undefined ? {} : { col }),
+  }
+}
+
+function validateWorkspacePanelActivity(input: unknown): WorkspacePanelState["activitySubject"] {
+  if (!isRecord(input)) return undefined
+  const subjectType = str(input.subjectType)
+  const subjectId = str(input.subjectId)
+  if (subjectType === undefined || subjectId === undefined) return undefined
+  const label = str(input.label)
+  return { subjectType, subjectId, ...(label === undefined ? {} : { label }) }
+}
+
+/**
+ * The persisted panel blob, read field by field.
+ *
+ * Every field here is a closed literal union or a primitive the panel body
+ * branches on, so all of them are checkable — `open` was only ever the first of
+ * them, and admitting the rest unchecked let a stale blob put the panel in a
+ * mode no component renders.
+ */
+function validateWorkspacePanel(input: unknown): WorkspacePanelState {
+  if (!isRecord(input) || typeof input.open !== "boolean") return createWorkspacePanel()
+  const workspaceDir = str(input.workspaceDir)
+  const targetPaneId = str(input.targetPaneId)
+  const focus = validateWorkspacePanelFocus(input.focus)
+  const activitySubject = validateWorkspacePanelActivity(input.activitySubject)
+  return {
+    open: input.open,
+    ...(isWorkspacePanelMode(input.mode) ? { mode: input.mode } : {}),
+    ...(workspaceDir === undefined ? {} : { workspaceDir }),
+    ...(targetPaneId === undefined ? {} : { targetPaneId }),
+    ...(isWorkspacePanelNavigator(input.navigator) ? { navigator: input.navigator } : {}),
+    ...(typeof input.navigatorHidden === "boolean" ? { navigatorHidden: input.navigatorHidden } : {}),
+    ...(focus === undefined ? {} : { focus }),
+    ...(activitySubject === undefined ? {} : { activitySubject }),
+  }
 }
 
 /**
@@ -205,7 +320,7 @@ function dropContents(state: WorkbenchState, drop: ReadonlySet<string>): Workben
  * usable state — drops invalid fragments and back-fills defaults.
  */
 export function validate(input: unknown): { state: ClaxedoState; dirty: boolean } {
-  if (!isObject(input)) {
+  if (!isRecord(input)) {
     return { state: emptyClaxedoState(), dirty: true }
   }
   let dirty = false
@@ -213,14 +328,14 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   // Workbench
   const wbResult = validateWorkbench(input.workbench)
   if (wbResult.dirty) dirty = true
-  const metaIn = obj(input.meta)
+  const metaIn = recordOrEmpty(input.meta)
   // Contents that do not survive a relaunch: the retired process surface, and
   // the marketplace, which is a place you go rather than work you left open —
   // restoring it made the store the app's landing page and its slow signed
   // reads the first thing every launch waited on.
   const deprecatedContentIds = new Set(
     Object.entries(metaIn)
-      .filter(([, raw]) => isObject(raw) && (raw.type === "process" || raw.type === "marketplace"))
+      .filter(([, raw]) => isRecord(raw) && (raw.type === "process" || raw.type === "marketplace"))
       .map(([id]) => id),
   )
   let workbench: WorkbenchState = dropContents(wbResult.state, deprecatedContentIds)

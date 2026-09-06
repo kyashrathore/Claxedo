@@ -17,7 +17,7 @@ describe("terminal log summary", () => {
   test("loads and caches a summary from process logs", async () => {
     const calls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
-      calls.push(String(input))
+      calls.push(requestUrl(input))
       return new Response("one\ntwo\nthree")
     }) as typeof fetch
 
@@ -124,7 +124,7 @@ describe("terminal log summary", () => {
   test("follows terminal id aliases", async () => {
     const calls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
-      calls.push(String(input))
+      calls.push(requestUrl(input))
       return new Response("aliased")
     }) as typeof fetch
 
@@ -134,3 +134,12 @@ describe("terminal log summary", () => {
     expect(calls[0]).toContain("terminal_id=pty_new")
   })
 })
+
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}

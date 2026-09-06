@@ -1,7 +1,6 @@
-type CdpResult<T> = {
-  result: { value?: T; description?: string }
-  exceptionDetails?: { text?: string; exception?: { description?: string } }
-}
+import { isRecord, numberField, recordField, textField } from "./json-fields"
+import { optionalPoint, optionalText, rawValue, readFlag, readNumber } from "./page-value"
+
 
 type PageEvent = "framenavigated" | "crash"
 type Index = number | "last"
@@ -24,9 +23,28 @@ export interface BenchmarkPage {
     type(value: string): Promise<void>
   }
   addInitScript(fn: () => void): Promise<void>
-  evaluate<R, A = undefined>(fn: ((arg: A) => R | Promise<R>) | (() => R | Promise<R>), arg?: A): Promise<R>
-  /** Raw CDP escape hatch for diagnostics (profiling, tracing). */
-  rawCommand<R>(method: string, params?: Record<string, unknown>): Promise<R>
+  /**
+   * Run `fn` in the page and resolve what it answered.
+   *
+   * Resolves `unknown`, not `fn`'s declared return type. `fn` is `toString()`d
+   * and evaluated in the renderer, so what it declares describes a value in
+   * another realm and what arrives here is that value's JSON — `() =>
+   * document.querySelector(x)` declares `Element | null` and arrives as `{}`.
+   * Callers read the answer with `./page-value`.
+   *
+   * The signature stays Playwright's `Page.evaluate` shape minus the result
+   * type, because `agent-browser-observer` drives a real Playwright page and
+   * this one through the same structural type.
+   */
+  evaluate<A = undefined>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>
+  /**
+   * Raw CDP escape hatch for diagnostics (profiling, tracing).
+   *
+   * Resolves `unknown`: a reply's shape is decided by the CDP method, not by
+   * the caller. Every caller today issues a command for its effect and ignores
+   * the reply; one that needs a field should read it rather than declare it.
+   */
+  rawCommand(method: string, params?: Record<string, unknown>): Promise<unknown>
   onProtocolEvent(method: string, listener: (params: unknown) => void): () => void
   waitForFunction<A = undefined>(
     fn: ((arg: A) => unknown) | (() => unknown),
@@ -53,9 +71,16 @@ export async function connectCdpPage(input: {
       throw new Error(`Claxedo exited before CDP was ready (${String(input.process.exitCode)})`)
     }
     try {
-      const targets = await fetch(`http://127.0.0.1:${String(input.port)}/json/list`, {
+      const listed: unknown = await fetch(`http://127.0.0.1:${String(input.port)}/json/list`, {
         signal: AbortSignal.timeout(1_000),
-      }).then((response) => response.json()) as Array<{ type?: string; webSocketDebuggerUrl?: string; url?: string }>
+      }).then((response) => response.json())
+      // The DevTools target list is HTTP JSON; these are the three fields the
+      // search below reads.
+      const targets = (Array.isArray(listed) ? listed : []).filter(isRecord).map((candidate) => ({
+        type: textField(candidate, "type"),
+        webSocketDebuggerUrl: textField(candidate, "webSocketDebuggerUrl"),
+        url: textField(candidate, "url"),
+      }))
       target = targets.find((candidate) => candidate.type === "page" && candidate.url?.includes("index.local.html"))
       if (target?.webSocketDebuggerUrl) break
     } catch {
@@ -94,53 +119,65 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     pending.clear()
   }
   socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as {
-      id?: number
-      method?: string
-      params?: unknown
-      result?: unknown
-      error?: { message?: string }
-    }
-    if (message.id !== undefined) {
-      const request = pending.get(message.id)
+    // A CDP frame is JSON off a socket: an id-carrying command reply, or a
+    // method-carrying event. Read as the protocol describes it rather than
+    // asserted into a shape the socket never promised.
+    const parsed: unknown = JSON.parse(String(event.data))
+    const message = isRecord(parsed) ? parsed : {}
+    const id = numberField(message, "id")
+    if (id !== undefined) {
+      const request = pending.get(id)
       if (!request) return
-      pending.delete(message.id)
+      pending.delete(id)
       clearTimeout(request.timer)
-      if (message.error) request.reject(new Error(message.error.message ?? "CDP command failed"))
+      const failure = recordField(message, "error")
+      if (failure) request.reject(new Error(textField(failure, "message") ?? "CDP command failed"))
       else request.resolve(message.result)
       return
     }
-    if (message.method === "Page.frameNavigated") listeners.framenavigated.forEach((listener) => listener(page))
-    if (message.method === "Inspector.targetCrashed") listeners.crash.forEach((listener) => listener())
-    if (message.method) protocolListeners.get(message.method)?.forEach((listener) => listener(message.params))
+    const method = textField(message, "method")
+    if (method === "Page.frameNavigated") listeners.framenavigated.forEach((listener) => listener(page))
+    if (method === "Inspector.targetCrashed") listeners.crash.forEach((listener) => listener())
+    if (method) protocolListeners.get(method)?.forEach((listener) => listener(message.params))
   })
   socket.addEventListener("close", () => fail(new Error("Packaged renderer CDP closed")))
   socket.addEventListener("error", () => fail(new Error("Packaged renderer CDP failed")))
 
-  const command = <T>(method: string, params: Record<string, unknown> = {}) => new Promise<T>((resolve, reject) => {
+  // Resolves `unknown`: a CDP reply's shape is decided by the method, and the
+  // socket cannot promise the caller's type. The one call site that reads a
+  // reply narrows it below.
+  const command = (method: string, params: Record<string, unknown> = {}) => new Promise<unknown>((resolve, reject) => {
     const id = ++sequence
     const timer = setTimeout(() => {
       pending.delete(id)
       reject(new Error(`Packaged renderer CDP command timed out: ${method}`))
     }, timeoutMs)
-    pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
+    pending.set(id, { resolve, reject, timer })
     socket.send(JSON.stringify({ id, method, params }))
   })
 
-  const evaluateExpression = async <T>(expression: string) => {
-    const output = await command<CdpResult<T>>("Runtime.evaluate", {
+  const evaluateExpression = async <T>(expression: string, read: (value: unknown) => T) => {
+    const reply = await command("Runtime.evaluate", {
       expression,
       awaitPromise: true,
       returnByValue: true,
       userGesture: true,
     })
-    if (output.exceptionDetails) {
-      throw new Error(output.exceptionDetails.exception?.description ?? output.exceptionDetails.text ?? "Renderer evaluation failed")
+    // `Runtime.evaluate` answers with either an exception report or a result
+    // envelope. Both are read here; the payload inside the envelope is the
+    // page's own JSON, so `read` decides what it is.
+    const envelope = isRecord(reply) ? reply : {}
+    const exception = recordField(envelope, "exceptionDetails")
+    if (exception) {
+      const thrown = recordField(exception, "exception")
+      throw new Error(
+        (thrown && textField(thrown, "description")) ?? textField(exception, "text") ?? "Renderer evaluation failed",
+      )
     }
-    return output.result.value as T
+    return read((recordField(envelope, "result") ?? {}).value)
   }
-  const evaluate = <R, A>(fn: ((arg: A) => R | Promise<R>) | (() => R | Promise<R>), arg?: A) =>
-    evaluateExpression<R>(`(${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)})`)
+  const evaluate = <A>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A) =>
+    evaluateExpression(`(${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)})`, rawValue)
 
   const key = async (value: string) => {
     const description = keyDescription(value)
@@ -163,48 +200,51 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     })()`
     return {
       async click() {
-        const point = await evaluateExpression<{ x: number; y: number } | null>(`(() => {
+        const point = await evaluateExpression(`(() => {
           const result = ${query}; const element = result.element;
           if (!(element instanceof HTMLElement)) return null;
           element.scrollIntoView({ block: "center", inline: "center" });
           const rect = element.getBoundingClientRect();
           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        })()`)
+        })()`, optionalPoint)
         if (!point) throw new Error(`benchmark click target is missing: ${selector}`)
         await command("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 })
         await command("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 })
       },
       async hover() {
-        const point = await evaluateExpression<{ x: number; y: number } | null>(`(() => {
+        const point = await evaluateExpression(`(() => {
           const result = ${query}; const element = result.element;
           if (!(element instanceof HTMLElement)) return null;
           element.scrollIntoView({ block: "center", inline: "center" });
           const rect = element.getBoundingClientRect();
           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        })()`)
+        })()`, optionalPoint)
         if (!point) throw new Error(`benchmark hover target is missing: ${selector}`)
         await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y })
       },
-      count: () => evaluateExpression<number>(`(${query}).matches.length`),
+      count: () => evaluateExpression(`(${query}).matches.length`, readNumber),
       nth: (next) => locator(selector, next, parent),
       last: () => locator(selector, "last", parent),
       locator: (child) => locator(child, 0, { selector, index }),
-      getAttribute: (name) => evaluateExpression<string | null>(`(${query}).element?.getAttribute(${JSON.stringify(name)}) ?? null`),
+      getAttribute: async (name) =>
+        // An attribute the element does not carry reads as absent, not as a
+        // broken page: the expression already answers `null` for that case.
+        (await evaluateExpression(`(${query}).element?.getAttribute(${JSON.stringify(name)}) ?? null`, optionalText)) ?? null,
       async waitFor(input) {
-        await waitFor(() => evaluateExpression<boolean>(`(() => {
+        await waitFor(() => evaluateExpression(`(() => {
           const element = (${query}).element;
           if (!(element instanceof HTMLElement)) return false;
           if (${JSON.stringify(input.state)} === "attached") return true;
           const rect = element.getBoundingClientRect();
           return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden";
-        })()`), timeoutMs, input.state === "visible" ? 16 : 50)
+        })()`, readFlag), timeoutMs, input.state === "visible" ? 16 : 50)
       },
       async focus() {
-        const focused = await evaluateExpression<boolean>(`(() => {
+        const focused = await evaluateExpression(`(() => {
           const element = (${query}).element;
           if (!(element instanceof HTMLElement)) return false;
           element.focus(); return document.activeElement === element;
-        })()`)
+        })()`, readFlag)
         if (!focused) throw new Error(`benchmark focus target is missing: ${selector}`)
       },
     }
@@ -232,7 +272,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
       }
     },
     async waitForFunction(fn, arg, options) {
-      await waitFor(async () => !!await evaluate(fn as (value: typeof arg) => unknown, arg), options?.timeout ?? timeoutMs, options?.polling === "raf" ? 16 : 50)
+      await waitFor(async () => !!await evaluate(fn, arg), options?.timeout ?? timeoutMs, options?.polling === "raf" ? 16 : 50)
     },
     locator: (selector) => locator(selector),
     getByTestId: (testId) => locator(`[data-testid="${cssEscape(testId)}"]`),

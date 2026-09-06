@@ -91,7 +91,7 @@ describe("mirrorCodexTokens", () => {
     )
 
     expect(written).toEqual([mine])
-    const updated = JSON.parse(readFileSync(mine, "utf8")) as any
+    const updated = JSON.parse(readFileSync(mine, "utf8"))
     expect(updated.tokens.access_token).toBe("access_new")
     expect(updated.tokens.refresh_token).toBe("refresh_new")
     expect(updated.tokens.id_token).toBe("id_new")
@@ -118,7 +118,7 @@ describe("mirrorCodexTokens", () => {
 
     mirrorCodexTokens({ accountId: "acct_mine", access: "a2", refresh: "r2" }, root)
 
-    expect((JSON.parse(readFileSync(file, "utf8")) as any).tokens.id_token).toBe("id_old")
+    expect((JSON.parse(readFileSync(file, "utf8"))).tokens.id_token).toBe("id_old")
   })
 
   test("never creates a file that was not already there", () => {

@@ -17,7 +17,7 @@ export type WorkspaceRouteProject = {
 }
 
 export function opaqueWorkspaceRouteId(value: string | null | undefined) {
-  if (!value || value.includes("/") || value.includes("\\") || value.includes("%")) return
+  if (!value || value.includes("/") || value.includes("\\") || value.includes("%")) return undefined
   return value
 }
 
@@ -30,7 +30,7 @@ export function opaqueWorkspaceRouteId(value: string | null | undefined) {
  * workspace is `workspace:<id>` and never the serving host's path.
  */
 export function workspaceRouteIdentity(projects: readonly WorkspaceRouteProject[], routeKey: string | undefined) {
-  if (!routeKey) return
+  if (!routeKey) return undefined
 
   const directDirectories = new Set<string>()
   let directory: string | undefined
@@ -64,8 +64,8 @@ export function workspaceRouteIdentity(projects: readonly WorkspaceRouteProject[
   if (directDirectories.size === 1) {
     return { routeId: routeKey, directory: directDirectories.values().next().value! }
   }
-  if (directDirectories.size > 1) return
-  if (!directory) return
+  if (directDirectories.size > 1) return undefined
+  if (!directory) return undefined
   if (matchingProjects > 1) return { routeId: undefined, directory }
   const ids = workspaceIds.size > 0 ? workspaceIds : projectIds
   return { routeId: ids.size === 1 ? ids.values().next().value : undefined, directory }

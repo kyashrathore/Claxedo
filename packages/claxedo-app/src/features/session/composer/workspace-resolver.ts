@@ -20,7 +20,9 @@ const localWorkspaceKind = "local"
 const userHostedWorkspaceKind = "user-hosted"
 
 export type WorkspaceCatalogEntry = WorkspaceInventoryEntry & {
-  kind?: WorkspaceCatalogKind | string | null
+  // Wire field: the catalog may name a kind this build does not know, so it is
+  // a free string here. `knownWorkspaceKind` is the narrower to `WorkspaceCatalogKind`.
+  kind?: string | null
   id?: string | null
   workspaceId?: string | null
   directory?: string | null
@@ -71,7 +73,9 @@ export type ResolveWorkspaceSubmitPlanInput = {
   fallbackDirectory?: string
   defaultDirectory: string
   worktreeSelection: string
-  workspaceKind: WorkspaceCatalogKind | string
+  // Free string for the same reason as `WorkspaceCatalogEntry["kind"]`; narrow
+  // with `knownWorkspaceKind` before comparing against a known kind.
+  workspaceKind: string
   projects: readonly ProjectCatalogItem[]
   runtimeWorkspaceRef?: (directory: WorkspaceDirectory | undefined) => RuntimeWorkspaceRef | undefined
 }

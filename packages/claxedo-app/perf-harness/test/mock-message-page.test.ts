@@ -16,7 +16,7 @@ const indexOfMessageID = (id: string) => {
   const value = Number(id.slice("msg_perf_".length))
   return Number.isInteger(value) && value >= 0 ? value : undefined
 }
-const role = (index: number) => (index % 2 === 0 ? "user" : "assistant") as "user" | "assistant"
+const role = (index: number) => (index % 2 === 0 ? "user" : "assistant")
 
 const select = (request: MockMessagePageRequest, total = 800) =>
   selectMockMessagePage({ request, total, messageID, indexOfMessageID, role })
@@ -90,7 +90,7 @@ describe("latest-surface is a bounded first-paint fragment", () => {
 
 describe("latest-turn is the complete latest turn", () => {
   test("spans the owning user through the newest message", () => {
-    const alwaysAssistantAfterBoundary = (index: number) => (index === 790 ? "user" : "assistant") as "user" | "assistant"
+    const alwaysAssistantAfterBoundary = (index: number) => (index === 790 ? "user" : "assistant")
     const page = selectMockMessagePage({
       request: { view: "latest-turn" },
       total: 800,
@@ -132,7 +132,6 @@ describe("numeric paging", () => {
 describe("the surface projection", () => {
   test("drops non-text parts and the omitted user envelope fields", () => {
     const projected = projectMockSurfacePage<
-      { type: string; text?: string },
       { info: Record<string, unknown>; parts: Array<{ type: string; text?: string }> }
     >([
       {
@@ -144,9 +143,9 @@ describe("the surface projection", () => {
         parts: [{ type: "tool" }, { type: "text", text: "world" }],
       },
     ])
-    expect(projected[0]!.info).toEqual({ id: "msg_perf_798", role: "user", agent: "build" })
-    expect(projected[0]!.parts).toEqual([{ type: "text", text: "hello" }])
-    expect(projected[1]!.parts).toEqual([{ type: "text", text: "world" }])
+    expect(projected[0].info).toEqual({ id: "msg_perf_798", role: "user", agent: "build" })
+    expect(projected[0].parts).toEqual([{ type: "text", text: "hello" }])
+    expect(projected[1].parts).toEqual([{ type: "text", text: "world" }])
   })
 
   test("omits an oversized text part whole rather than truncating it", () => {
@@ -156,15 +155,15 @@ describe("the surface projection", () => {
         parts: [{ type: "text", text: "x".repeat(49 * 1024) }, { type: "text", text: "kept" }],
       },
     ])
-    expect(projected[0]!.parts).toEqual([{ type: "text", text: "kept" }])
+    expect(projected[0].parts).toEqual([{ type: "text", text: "kept" }])
   })
 
   test("keeps at most the newest-priority bounded set of text parts", () => {
     const parts = Array.from({ length: 20 }, (_, index) => ({ type: "text" as const, text: `part ${index}` }))
     const projected = projectMockSurfacePage([{ info: { id: "msg_perf_799", role: "assistant" }, parts }])
-    expect(projected[0]!.parts.length).toBe(16)
+    expect(projected[0].parts.length).toBe(16)
     // Newest-priority selection, restored to canonical order.
-    expect(projected[0]!.parts.at(-1)).toEqual({ type: "text", text: "part 19" })
-    expect(projected[0]!.parts.at(0)).toEqual({ type: "text", text: "part 4" })
+    expect(projected[0].parts.at(-1)).toEqual({ type: "text", text: "part 19" })
+    expect(projected[0].parts.at(0)).toEqual({ type: "text", text: "part 4" })
   })
 })

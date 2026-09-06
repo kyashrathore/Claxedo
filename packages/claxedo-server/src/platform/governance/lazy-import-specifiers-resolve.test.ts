@@ -48,14 +48,14 @@ describe("lazy import specifiers", () => {
       const source = fs.readFileSync(file, "utf8")
       for (const match of source.matchAll(LAZY_IMPORT)) {
         sites++
-        const variable = match[1]!
+        const variable = match[1]
         const assignment = new RegExp(`(?:const|let)\\s+${variable}\\s*=\\s*["']([^"']+)["']`).exec(source)
         const rel = path.relative(SRC, file)
         if (!assignment) {
           failures.push(`${rel}: cannot trace \`${variable}\` to a string-literal assignment`)
           continue
         }
-        const specifier = assignment[1]!
+        const specifier = assignment[1]
         if (!specifier.startsWith(".")) continue // bare specifiers are package deps, resolved by Node
         if (!moduleExists(path.resolve(path.dirname(file), specifier))) {
           failures.push(`${rel}: \`${variable}\` = "${specifier}" resolves to nothing`)

@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml"
+import { isJsonRecord } from "../../platform/runtime/lib/json"
 import type { AgentPluginTree } from "../artifacts/tree"
 import { treeChildren, treeEntry, treeText } from "../artifacts/tree"
 import {
@@ -28,10 +29,6 @@ const MANIFEST_FIELDS = new Set([
 
 const NAME_PATTERN = /^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
-function record(input: unknown): input is Record<string, unknown> {
-  return typeof input === "object" && input !== null && !Array.isArray(input)
-}
-
 function json(tree: AgentPluginTree, relativePath: string): unknown {
   const text = treeText(tree, relativePath)
   if (text === undefined) throw new Error(`${relativePath} is not a file`)
@@ -49,16 +46,16 @@ function validString(value: unknown): value is string {
 }
 
 function stringRecord(value: unknown): value is Record<string, string> {
-  return record(value) && Object.values(value).every(validString)
+  return isJsonRecord(value) && Object.values(value).every(validString)
 }
 
 function extensionRecord(value: unknown): value is Record<string, Record<string, unknown>> {
-  return record(value) && Object.values(value).every(record)
+  return isJsonRecord(value) && Object.values(value).every(isJsonRecord)
 }
 
 function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagnostics: AgentPluginDiagnostic[] } {
   const diagnostics: AgentPluginDiagnostic[] = []
-  if (!record(raw)) {
+  if (!isJsonRecord(raw)) {
     return { diagnostics: [{ code: "manifest_invalid", path: "plugin.json", message: "plugin.json must contain an object" }] }
   }
 
@@ -87,7 +84,7 @@ function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagn
     return fatal("keywords must be an array of strings")
   }
   if (raw.author !== undefined) {
-    if (!record(raw.author)) return fatal("author must be an object")
+    if (!isJsonRecord(raw.author)) return fatal("author must be an object")
     if (Object.keys(raw.author).some((field) => !["name", "email", "url"].includes(field))) {
       return fatal("author contains an unknown field")
     }
@@ -103,7 +100,7 @@ function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagn
     name: raw.name,
     ...(typeof raw.version === "string" ? { version: raw.version } : {}),
     ...(typeof raw.description === "string" ? { description: raw.description } : {}),
-    ...(record(raw.author) ? { author: raw.author as AgentPluginManifest["author"] } : {}),
+    ...(isJsonRecord(raw.author) ? { author: raw.author as AgentPluginManifest["author"] } : {}),
     ...(typeof raw.homepage === "string" ? { homepage: raw.homepage } : {}),
     ...(typeof raw.repository === "string" ? { repository: raw.repository } : {}),
     ...(typeof raw.license === "string" ? { license: raw.license } : {}),
@@ -119,7 +116,7 @@ function parseSkillFrontmatter(text: string, directoryName: string): { name: str
   if (!match) return undefined
   try {
     const fields = parseYaml(match[1]) as unknown
-    if (!record(fields)) return undefined
+    if (!isJsonRecord(fields)) return undefined
     if (typeof fields.name !== "string"
       || fields.name !== directoryName
       || fields.name.length > 64
@@ -198,7 +195,7 @@ function remoteUrl(value: unknown): value is string {
 }
 
 function headers(value: unknown): value is Record<string, string> {
-  if (!record(value)) return false
+  if (!isJsonRecord(value)) return false
   const names = new Set<string>()
   try {
     for (const [name, content] of Object.entries(value)) {
@@ -263,7 +260,7 @@ function validateHttpServer(name: string, raw: Record<string, unknown>): AgentPl
 }
 
 function validateMcpServer(tree: AgentPluginTree, name: string, raw: unknown): AgentPluginMcpServer | undefined {
-  if (!record(raw)) return undefined
+  if (!isJsonRecord(raw)) return undefined
   if (raw.type === "stdio") return validateStdioServer(tree, name, raw)
   if (raw.type === "streamable-http" || raw.type === "sse") return validateHttpServer(name, raw)
   return undefined
@@ -284,9 +281,9 @@ function loadMcp(tree: AgentPluginTree, diagnostics: AgentPluginDiagnostic[]) {
     diagnostics.push({ code: "mcp_invalid", path: "mcp.json", message: "mcp.json is not valid JSON" })
     return { status: "invalid" as const, servers: [] }
   }
-  if (!record(raw)
+  if (!isJsonRecord(raw)
     || raw.$schema !== AGENT_PLUGIN_MCP_SCHEMA
-    || !record(raw.mcpServers)
+    || !isJsonRecord(raw.mcpServers)
     || !noUnknownFields(raw, ["$schema", "mcpServers"])) {
     diagnostics.push({ code: "mcp_invalid", path: "mcp.json", message: "mcp.json does not satisfy the Agent Plugins v1 top-level schema" })
     return { status: "invalid" as const, servers: [] }

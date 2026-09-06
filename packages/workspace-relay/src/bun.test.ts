@@ -18,6 +18,33 @@ type DirectoryObserver = {
   waitForOffline(): Promise<void>
 }
 
+/**
+ * Test-server teardown, bounded.
+ *
+ * `Bun.Server.stop()` is async and its promise settles only once every socket
+ * is gone. Several tests below deliberately wedge an upstream socket (the
+ * open-watchdog and pre-open-queue cases), so an unbounded await there never
+ * returns. The wait exists to release the port before the next test, not to
+ * assert anything about shutdown, so it is raced against a short timer — and
+ * the loser's rejection is swallowed so a late failure cannot surface as an
+ * unhandled rejection in whichever test happens to be running by then.
+ */
+async function stopServer(server: { stop: (closeActiveConnections?: boolean) => Promise<void> }) {
+  await Promise.race([
+    server.stop(true).catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+  ])
+}
+
+/**
+ * Bun delivers a WebSocket frame as a string or a `Buffer`. The echo hosts
+ * below prefix whatever arrived, so decode the binary case explicitly rather
+ * than letting a template literal stringify a `Buffer`.
+ */
+function frameText(message: string | Buffer<ArrayBuffer>) {
+  return typeof message === "string" ? message : message.toString("utf8")
+}
+
 function waitForOpen(ws: WebSocket) {
   return new Promise<void>((resolve, reject) => {
     ws.onopen = () => resolve()
@@ -102,12 +129,19 @@ function observeDirectory(directory: WorkspaceRelayDirectory): DirectoryObserver
   }
 }
 
-async function readExactBytes(reader: ReadableStreamDefaultReader<Uint8Array>, byteLength: number) {
+/**
+ * Declared by what it uses rather than as a `ReadableStreamDefaultReader`: the
+ * reader handed back by `Response.body.getReader()` and the one `bun-types`
+ * declares disagree on `readMany`, and this helper only ever calls `read()`.
+ */
+type ByteReader = { read: () => Promise<{ done: boolean; value?: Uint8Array }> }
+
+async function readExactBytes(reader: ByteReader, byteLength: number) {
   const chunks: Uint8Array[] = []
   let size = 0
   while (size < byteLength) {
     const next = await reader.read()
-    if (next.done) throw new Error(`Stream ended after ${size} bytes, expected ${byteLength}`)
+    if (next.done || !next.value) throw new Error(`Stream ended after ${size} bytes, expected ${byteLength}`)
     chunks.push(next.value)
     size += next.value.byteLength
   }
@@ -149,7 +183,7 @@ describe("workspace relay Bun adapter", () => {
       },
       websocket: {
         message(ws, message) {
-          ws.send(`host:${message}`)
+          ws.send(`host:${frameText(message)}`)
         },
       },
     })
@@ -193,7 +227,7 @@ describe("workspace relay Bun adapter", () => {
 
       await expect(message).resolves.toBe("host:ping")
       expect(hostAuthorizations[0]?.startsWith("Bearer ")).toBe(true)
-      await expect(verifyRelayHostToken(hostAuthorizations[0]!.replace(/^Bearer\s+/i, ""), relayHost.publicKey, {
+      await expect(verifyRelayHostToken(hostAuthorizations[0].replace(/^Bearer\s+/i, ""), relayHost.publicKey, {
         workspaceId: "ws_1",
         hostId: "host_1",
       })).resolves.toMatchObject({
@@ -203,8 +237,8 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -269,8 +303,8 @@ describe("workspace relay Bun adapter", () => {
       expect(Buffer.from(data instanceof ArrayBuffer ? new Uint8Array(data) : data as Uint8Array)).toEqual(Buffer.from([0, 1, 127, 255]))
     } finally {
       ws.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -279,7 +313,7 @@ describe("workspace relay Bun adapter", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     class HangingUpstreamWebSocket {
       readyState: number = WebSocket.CONNECTING
-      binaryType: BinaryType = "arraybuffer"
+      binaryType: WebSocket["binaryType"] = "arraybuffer"
       bufferedAmount = 0
       onopen: ((event: Event) => void) | null = null
       onmessage: ((event: MessageEvent) => void) | null = null
@@ -334,7 +368,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -343,7 +377,7 @@ describe("workspace relay Bun adapter", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     class HangingUpstreamWebSocket {
       readyState: number = WebSocket.CONNECTING
-      binaryType: BinaryType = "arraybuffer"
+      binaryType: WebSocket["binaryType"] = "arraybuffer"
       bufferedAmount = 0
       onopen: ((event: Event) => void) | null = null
       onmessage: ((event: MessageEvent) => void) | null = null
@@ -406,7 +440,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -416,7 +450,7 @@ describe("workspace relay Bun adapter", () => {
     class SlowOpenUpstreamWebSocket {
       static instances: SlowOpenUpstreamWebSocket[] = []
       readyState: number = WebSocket.CONNECTING
-      binaryType: BinaryType = "arraybuffer"
+      binaryType: WebSocket["binaryType"] = "arraybuffer"
       bufferedAmount = 0
       onopen: ((event: Event) => void) | null = null
       onmessage: ((event: MessageEvent) => void) | null = null
@@ -499,7 +533,7 @@ describe("workspace relay Bun adapter", () => {
       })
       ws.send("queued-before-upstream")
       const received = await messages
-      const trace = JSON.parse(received[0]!) as {
+      const trace = JSON.parse(received[0]) as {
         type?: string
         wsUpstreamOpenMs?: number
         queuedFrames?: number
@@ -509,11 +543,11 @@ describe("workspace relay Bun adapter", () => {
       expect(trace.wsUpstreamOpenMs).toBeGreaterThanOrEqual(0)
       expect(trace.queuedFrames).toBe(1)
       expect(trace.maxQueuedDelayMs).toBeGreaterThanOrEqual(0)
-      expect(JSON.parse(received[1]!) as { type?: string }).toMatchObject({ type: "ready" })
+      expect(JSON.parse(received[1]) as { type?: string }).toMatchObject({ type: "ready" })
       expect(SlowOpenUpstreamWebSocket.instances[0]?.sent).toEqual(["queued-before-upstream"])
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -522,7 +556,7 @@ describe("workspace relay Bun adapter", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     class InvalidCloseUpstreamWebSocket {
       readyState: number = WebSocket.CONNECTING
-      binaryType: BinaryType = "arraybuffer"
+      binaryType: WebSocket["binaryType"] = "arraybuffer"
       bufferedAmount = 0
       onopen: ((event: Event) => void) | null = null
       onmessage: ((event: MessageEvent) => void) | null = null
@@ -586,7 +620,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -595,7 +629,7 @@ describe("workspace relay Bun adapter", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     class AbnormalCloseUpstreamWebSocket {
       readyState: number = WebSocket.CONNECTING
-      binaryType: BinaryType = "arraybuffer"
+      binaryType: WebSocket["binaryType"] = "arraybuffer"
       bufferedAmount = 0
       onopen: ((event: Event) => void) | null = null
       onmessage: ((event: MessageEvent) => void) | null = null
@@ -659,7 +693,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -736,8 +770,8 @@ describe("workspace relay Bun adapter", () => {
       }
       await expect(res.text()).resolves.toBe("cloud-ok")
     } finally {
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -803,8 +837,8 @@ describe("workspace relay Bun adapter", () => {
       expect(first.headers.get("server-timing") ?? "").toContain("rht-mint;dur=")
       expect(second.headers.get("server-timing") ?? "").toContain("rht-cache;dur=")
     } finally {
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -862,8 +896,8 @@ describe("workspace relay Bun adapter", () => {
         },
       })
     } finally {
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -924,8 +958,8 @@ describe("workspace relay Bun adapter", () => {
       expect(first.headers.get("server-timing") ?? "").toContain("direct-http-queue;dur=")
       expect(second.headers.get("server-timing") ?? "").toContain("direct-http-queue;dur=")
     } finally {
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -995,7 +1029,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1045,7 +1079,7 @@ describe("workspace relay Bun adapter", () => {
       expect(ws.readyState).toBe(WebSocket.OPEN)
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1095,7 +1129,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1136,7 +1170,7 @@ describe("workspace relay Bun adapter", () => {
       await expect(observer.waitForOffline()).resolves.toBeUndefined()
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1223,7 +1257,7 @@ describe("workspace relay Bun adapter", () => {
       await expect(res.text()).resolves.toBe("tunnel-ok")
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1294,7 +1328,7 @@ describe("workspace relay Bun adapter", () => {
       expect(forwarded).toBe(false)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1357,7 +1391,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1462,7 +1496,7 @@ describe("workspace relay Bun adapter", () => {
       await expect(reader.read()).resolves.toMatchObject({ done: true })
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1531,7 +1565,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1622,7 +1656,7 @@ describe("workspace relay Bun adapter", () => {
       expect(requestCount).toBe(2)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1716,7 +1750,7 @@ describe("workspace relay Bun adapter", () => {
     } finally {
       if (delayedChunk) clearTimeout(delayedChunk)
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1791,8 +1825,8 @@ describe("workspace relay Bun adapter", () => {
       expect(new TextDecoder().decode(chunk.value)).toBe("data: still-open\n\n")
     } finally {
       if (delayedChunk) clearTimeout(delayedChunk)
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   }, 20_000)
 
@@ -1885,7 +1919,7 @@ describe("workspace relay Bun adapter", () => {
       }
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -1954,7 +1988,7 @@ describe("workspace relay Bun adapter", () => {
       }
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2041,7 +2075,7 @@ describe("workspace relay Bun adapter", () => {
       }
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2114,7 +2148,7 @@ describe("workspace relay Bun adapter", () => {
       }
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2146,7 +2180,7 @@ describe("workspace relay Bun adapter", () => {
       expect(res.status).toBe(403)
       await expect(res.text()).resolves.toBe("Host tunnel registration denied")
     } finally {
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2176,7 +2210,7 @@ describe("workspace relay Bun adapter", () => {
       expect(res.status).toBe(403)
       await expect(res.text()).resolves.toBe("Host tunnel registration denied")
     } finally {
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2301,7 +2335,7 @@ describe("workspace relay Bun adapter", () => {
       expect(accepted.status).toBe(200)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2383,7 +2417,7 @@ describe("workspace relay Bun adapter", () => {
       for (const c of clients) c.close()
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2475,7 +2509,7 @@ describe("workspace relay Bun adapter", () => {
           request_id: message.request_id,
         }))
       }
-      await waitForOpen(second!)
+      await waitForOpen(second)
       await observer.waitForPresence()
 
       first.close()
@@ -2495,7 +2529,7 @@ describe("workspace relay Bun adapter", () => {
     } finally {
       first.close()
       second?.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2544,7 +2578,7 @@ describe("workspace relay Bun adapter", () => {
       const body = await res.json() as { error?: { code?: string } }
       expect(body.error?.code).toBe("origin_not_allowed")
     } finally {
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2554,7 +2588,7 @@ describe("workspace relay Bun adapter", () => {
     const host = Bun.serve<{ ok: true }>({
       port: 0,
       fetch(request, server) {
-        if (server.upgrade(request, { data: { ok: true } })) return
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
         return new Response("upgrade failed", { status: 400 })
       },
       websocket: { message() {} },
@@ -2605,8 +2639,8 @@ describe("workspace relay Bun adapter", () => {
       await expect(product.json()).resolves.toMatchObject({ error: { code: "origin_not_allowed" } })
     } finally {
       custom.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -2654,7 +2688,7 @@ describe("workspace relay Bun adapter", () => {
       })
       expect(product.headers.get("access-control-allow-origin")).toBeNull()
     } finally {
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2664,7 +2698,7 @@ describe("workspace relay Bun adapter", () => {
     const host = Bun.serve<{ ok: true }>({
       port: 0,
       fetch(request, server) {
-        if (server.upgrade(request, { data: { ok: true } })) return
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
         return new Response("upgrade failed", { status: 400 })
       },
       websocket: { message() {} },
@@ -2709,8 +2743,8 @@ describe("workspace relay Bun adapter", () => {
       await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token has been revoked" })
     } finally {
       client.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -2720,7 +2754,7 @@ describe("workspace relay Bun adapter", () => {
     const host = Bun.serve<{ ok: true }>({
       port: 0,
       fetch(request, server) {
-        if (server.upgrade(request, { data: { ok: true } })) return
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
         return new Response("upgrade failed", { status: 400 })
       },
       websocket: { message() {} },
@@ -2760,8 +2794,8 @@ describe("workspace relay Bun adapter", () => {
       await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token expired" })
     } finally {
       client.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -2809,7 +2843,7 @@ describe("workspace relay Bun adapter", () => {
       const body = await res.json() as { error?: { code?: string } }
       expect(body.error?.code).toBe("origin_not_allowed")
     } finally {
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -2826,7 +2860,7 @@ describe("workspace relay Bun adapter", () => {
       },
       websocket: {
         message(ws, message) {
-          ws.send(`host:${message}`)
+          ws.send(`host:${frameText(message)}`)
         },
       },
     })
@@ -2870,8 +2904,8 @@ describe("workspace relay Bun adapter", () => {
       await expect(message).resolves.toBe("host:ping-localhost")
     } finally {
       ws.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -2888,7 +2922,7 @@ describe("workspace relay Bun adapter", () => {
       },
       websocket: {
         message(ws, message) {
-          ws.send(`host:${message}`)
+          ws.send(`host:${frameText(message)}`)
         },
       },
     })
@@ -2932,8 +2966,8 @@ describe("workspace relay Bun adapter", () => {
       await expect(message).resolves.toBe("host:ping-opencode")
     } finally {
       ws.close()
-      relay.stop(true)
-      host.stop(true)
+      await stopServer(relay)
+      await stopServer(host)
     }
   })
 
@@ -2994,7 +3028,7 @@ describe("workspace relay Bun adapter", () => {
       expect(body.error?.code).toBe("origin_not_allowed")
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3033,7 +3067,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       ws.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3081,7 +3115,7 @@ describe("workspace relay Bun adapter", () => {
       const body = await res.json() as { error?: { code?: string } }
       expect(body.error?.code).toBe("too_many_host_tunnel_reconnects")
     } finally {
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3158,7 +3192,7 @@ describe("workspace relay Bun adapter", () => {
       await expect(res.text()).resolves.toBe("ok-complete")
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3210,7 +3244,7 @@ describe("workspace relay Bun adapter", () => {
       })
     } finally {
       try { host.close() } catch {}
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3293,7 +3327,7 @@ describe("workspace relay Bun adapter", () => {
       expect(relayHandler.telemetry.getFragmentationStats().fragmentsBuffered).toBeGreaterThanOrEqual(1)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3376,7 +3410,7 @@ describe("workspace relay Bun adapter", () => {
       expect(relayHandler.telemetry.getFragmentationStats().fragmentsBuffered).toBeGreaterThanOrEqual(2)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3432,7 +3466,7 @@ describe("workspace relay Bun adapter", () => {
       expect(relayHandler.telemetry.getFragmentationStats().oversizedClosed).toBeGreaterThanOrEqual(1)
     } finally {
       try { host.close() } catch {}
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3485,7 +3519,7 @@ describe("workspace relay Bun adapter", () => {
       expect(relayHandler.telemetry.getFragmentationStats().fragmentsBuffered).toBe(before)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3575,7 +3609,7 @@ describe("workspace relay Bun adapter", () => {
       expect(body.byteLength).toBe(totalBytes)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3675,7 +3709,7 @@ describe("workspace relay Bun adapter", () => {
       }
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -3860,7 +3894,7 @@ describe("workspace relay Bun adapter", () => {
       expect(after.status).toBe(204)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
     }
   })
 
@@ -4105,7 +4139,7 @@ describe("workspace relay Bun adapter", () => {
         } catch {
           // ignore
         }
-        relay.stop(true)
+        await stopServer(relay)
         if (inflight) await inflight
         directory.dispose()
       }
@@ -4164,8 +4198,8 @@ describe("workspace relay Bun adapter", () => {
         const health = await fetch(new URL("/health", relay.url))
         expect(health.status).toBe(503)
       } finally {
-        relay.stop(true)
-        host.stop(true)
+        await stopServer(relay)
+        await stopServer(host)
       }
     })
 
@@ -4200,7 +4234,7 @@ describe("workspace relay Bun adapter", () => {
         expect(after.status).toBe(503)
         expect(await after.json()).toEqual({ ok: false, service: "workspace-relay", draining: true })
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
       }
     })
 
@@ -4254,7 +4288,7 @@ describe("workspace relay Bun adapter", () => {
         } catch {
           // ignore
         }
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4264,7 +4298,7 @@ describe("workspace relay Bun adapter", () => {
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       class OpenUpstreamWebSocket {
         readyState: number = WebSocket.CONNECTING
-        binaryType: BinaryType = "arraybuffer"
+        binaryType: WebSocket["binaryType"] = "arraybuffer"
         bufferedAmount = 0
         onopen: ((event: Event) => void) | null = null
         onmessage: ((event: MessageEvent) => void) | null = null
@@ -4332,7 +4366,7 @@ describe("workspace relay Bun adapter", () => {
         } catch {
           // ignore
         }
-        relay.stop(true)
+        await stopServer(relay)
       }
     })
 
@@ -4383,7 +4417,7 @@ describe("workspace relay Bun adapter", () => {
           // ignore
         }
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4455,7 +4489,7 @@ describe("workspace relay Bun adapter", () => {
         expect(connectedEvents.length).toBe(1)
         await closeAndWait(ws)
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4477,7 +4511,7 @@ describe("workspace relay Bun adapter", () => {
         const hostBEvents = events.filter((e) => e.hostId === "host_b")
         expect(hostBEvents.length).toBe(0)
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4500,7 +4534,7 @@ describe("workspace relay Bun adapter", () => {
         expect(hostCEvents.map((e) => e.action)).toEqual(["host_tunnel.connected"])
         await closeAndWait(ws2)
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4521,7 +4555,7 @@ describe("workspace relay Bun adapter", () => {
         const hostDActions = events.filter((e) => e.hostId === "host_d").map((e) => e.action)
         expect(hostDActions).toEqual(["host_tunnel.connected", "host_tunnel.disconnected"])
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4547,7 +4581,7 @@ describe("workspace relay Bun adapter", () => {
         expect(hostFEvents.map((e) => e.action)).toEqual(["host_tunnel.connected"])
         await closeAndWait(ws2)
       } finally {
-        relay.stop(true)
+        await stopServer(relay)
         directory.dispose()
       }
     })
@@ -4626,7 +4660,7 @@ describe("WebSocket send backpressure guard", () => {
           return new Response("expected an upgrade", { status: 400 })
         },
         websocket: {
-          open(socket) {
+          async open(socket) {
             try {
               const frame = "x".repeat(64 * 1024)
               for (let index = 0; index < 500; index++) socket.send(frame)
@@ -4641,16 +4675,16 @@ describe("WebSocket send backpressure guard", () => {
               reject(err)
             } finally {
               clearTimeout(timer)
-              server.stop(true)
+              await stopServer(server)
             }
           },
           message() {},
         },
       })
       const client = new WebSocket(`ws://localhost:${server.port}`)
-      client.onerror = () => {
+      client.onerror = async () => {
         clearTimeout(timer)
-        server.stop(true)
+        await stopServer(server)
         reject(new Error("Bun client socket errored"))
       }
     })
@@ -4756,7 +4790,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
       expect(host.readyState).toBe(WebSocket.OPEN)
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
       directory.dispose()
     }
   }, 30_000)
@@ -4785,7 +4819,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
       expect(closed.reason).toBe("Host tunnel backpressure limit exceeded")
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
       directory.dispose()
     }
   }, 30_000)
@@ -4823,7 +4857,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
       expect(channelId).not.toBe("")
     } finally {
       host.close()
-      relay.stop(true)
+      await stopServer(relay)
       directory.dispose()
     }
   }, 30_000)

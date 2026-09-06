@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessConnectionsCatalog } from "./connection-catalog"
+import { requestUrl } from "@/lib/url"
 
 const publicRow = {
   connectionId: "opaque-connection-id",
@@ -62,7 +63,7 @@ describe("generic harness connection discovery", () => {
       new Response(JSON.stringify({ status: "supported", connections: [] }), { status: 200 }),
     ]
     const request: typeof fetch = async (input, init) => {
-      calls.push({ url: String(input), method: init?.method ?? "GET" })
+      calls.push({ url: requestUrl(input), method: init?.method ?? "GET" })
       const response = responses.shift()
       if (!response) throw new Error("Unexpected request")
       return response

@@ -44,8 +44,7 @@ const round = (value: number) => Math.round(value * 100) / 100
 
 const installMeter = async (page: Page) =>
   await page.evaluate(() => {
-    const w = window as unknown as Record<string, unknown>
-    w.__floor = {
+    window.__floor = {
       time: (samples = 7) => {
         const values: number[] = []
         for (let index = 0; index < samples; index++) {
@@ -57,12 +56,12 @@ const installMeter = async (page: Page) =>
         document.documentElement.style.removeProperty("--claxedo-floor-probe")
         void getComputedStyle(document.body).color
         values.sort((a, b) => a - b)
-        return { min: values[0]!, median: values[Math.floor(values.length / 2)]! }
+        return { min: values[0], median: values[Math.floor(values.length / 2)] }
       },
       count: () => {
         let total = document.querySelectorAll("*").length
         for (const host of document.querySelectorAll("*")) {
-          const shadow = (host as HTMLElement).shadowRoot
+          const shadow = host.shadowRoot
           if (shadow) total += shadow.querySelectorAll("*").length
         }
         return total
@@ -78,7 +77,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -104,41 +103,43 @@ if (shape.wrappers === 0) {
   console.log("\n  no wrapper divs present — this build already renders the flat icon primitive.")
   console.log("  measuring the floor once for the record:")
   const measured = await page.evaluate(() => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
-    return { ...w.__floor.time(), elements: w.__floor.count() }
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
+    return { ...floor.time(), elements: floor.count() }
   })
   console.log(`  floor min=${round(measured.min)}ms median=${round(measured.median)}ms els=${measured.elements}` +
     ` perEl=${round((measured.min * 1000) / Math.max(1, measured.elements))}µs`)
 } else {
   console.log(`\n=== paired ablation: wrapper present vs wrapper removed (${ROUNDS} interleaved rounds) ===`)
   const measured = await page.evaluate(async (rounds) => {
-    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
+    const floor = window.__floor
+    if (!floor) throw new Error("the floor meter is not installed on this page")
     // Carry the wrapper's own attributes onto the svg while unwrapped so the
     // selector surface is identical in both halves and only the element count
     // moves.
     const CARRIED = ["data-component", "data-icon", "data-library", "data-size"]
     const records = Array.from(document.querySelectorAll<HTMLElement>("div[data-component='icon']"))
-      .map((div) => {
-        const svg = div.firstElementChild as SVGElement | null
-        return {
+      .flatMap((div) => {
+        const svg = div.firstElementChild
+        if (!(svg instanceof SVGElement)) return []
+        return [{
           div,
           svg,
           carried: CARRIED.map((name) => [name, div.getAttribute(name)] as const),
-          original: CARRIED.map((name) => [name, svg?.getAttribute(name) ?? null] as const),
-        }
+          original: CARRIED.map((name) => [name, svg.getAttribute(name)] as const),
+        }]
       })
-      .filter((record) => record.svg !== null)
 
     const unwrap = () => {
       for (const record of records) {
-        const svg = record.svg!
+        const svg = record.svg
         for (const [name, value] of record.carried) if (value !== null) svg.setAttribute(name, value)
         record.div.replaceWith(svg)
       }
     }
     const rewrap = () => {
       for (const record of records) {
-        const svg = record.svg!
+        const svg = record.svg
         // Idempotent: a round may start already wrapped.
         if (svg.parentNode === record.div) continue
         for (const [name, value] of record.original) {
@@ -155,11 +156,11 @@ if (shape.wrappers === 0) {
     let flatElements = 0
     for (let index = 0; index < rounds; index++) {
       rewrap()
-      const wrapped = w.__floor.time(5).min
-      wrappedElements = w.__floor.count()
+      const wrapped = floor.time(5).min
+      wrappedElements = floor.count()
       unwrap()
-      const flat = w.__floor.time(5).min
-      flatElements = w.__floor.count()
+      const flat = floor.time(5).min
+      flatElements = floor.count()
       deltas.push(wrapped - flat)
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
@@ -167,9 +168,9 @@ if (shape.wrappers === 0) {
     void getComputedStyle(document.body).color
     deltas.sort((a, b) => a - b)
     return {
-      saved: deltas[Math.floor(deltas.length / 2)]!,
-      low: deltas[0]!,
-      high: deltas[deltas.length - 1]!,
+      saved: deltas[Math.floor(deltas.length / 2)],
+      low: deltas[0],
+      high: deltas[deltas.length - 1],
       deltas,
       wrappedElements,
       flatElements,
@@ -191,12 +192,14 @@ if (shape.wrappers === 0) {
 // ABOVE the noise, synthesize the same two shapes at 10x the scale and take the
 // paired difference there: same sprite references, same attributes, same
 // ancestors, differing only by the wrapper element.
-console.log(`\n=== synthetic scale-up: ${1000} icons, wrapped vs flat (${ROUNDS} interleaved rounds) ===`)
+console.log(`\n=== synthetic scale-up: 1000 icons, wrapped vs flat (${ROUNDS} interleaved rounds) ===`)
 const synthetic = await page.evaluate(async ({ rounds, count }) => {
-  const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
+  const floor = window.__floor
+  if (!floor) throw new Error("the floor meter is not installed on this page")
   const template = document.querySelector<HTMLElement>("div[data-component='icon']")
   if (!template) return undefined
-  const svgTemplate = template.firstElementChild as SVGElement
+  const svgTemplate = template.firstElementChild
+  if (!(svgTemplate instanceof SVGElement)) return undefined
   const host = document.createElement("div")
   host.style.position = "absolute"
   host.style.top = "-100000px"
@@ -205,9 +208,11 @@ const synthetic = await page.evaluate(async ({ rounds, count }) => {
   const fill = (wrapped: boolean) => {
     host.replaceChildren()
     for (let index = 0; index < count; index++) {
-      const svg = svgTemplate.cloneNode(true) as SVGElement
+      const svg = svgTemplate.cloneNode(true)
+      if (!(svg instanceof SVGElement)) continue
       if (wrapped) {
-        const div = template.cloneNode(false) as HTMLElement
+        const div = template.cloneNode(false)
+        if (!(div instanceof HTMLElement)) continue
         div.append(svg)
         host.append(div)
       } else {
@@ -225,11 +230,11 @@ const synthetic = await page.evaluate(async ({ rounds, count }) => {
   let flatElements = 0
   for (let index = 0; index < rounds; index++) {
     fill(true)
-    const wrapped = w.__floor.time(5).min
-    wrappedElements = w.__floor.count()
+    const wrapped = floor.time(5).min
+    wrappedElements = floor.count()
     fill(false)
-    const flat = w.__floor.time(5).min
-    flatElements = w.__floor.count()
+    const flat = floor.time(5).min
+    flatElements = floor.count()
     deltas.push(wrapped - flat)
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -237,9 +242,9 @@ const synthetic = await page.evaluate(async ({ rounds, count }) => {
   void getComputedStyle(document.body).color
   deltas.sort((a, b) => a - b)
   return {
-    saved: deltas[Math.floor(deltas.length / 2)]!,
-    low: deltas[0]!,
-    high: deltas[deltas.length - 1]!,
+    saved: deltas[Math.floor(deltas.length / 2)],
+    low: deltas[0],
+    high: deltas[deltas.length - 1],
     wrappedElements,
     flatElements,
   }

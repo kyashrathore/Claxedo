@@ -19,9 +19,15 @@ export type ChannelSessionSummary = {
   updatedAt?: number
 }
 
+/**
+ * Property syntax, not methods: neither implementation uses `this`, and every
+ * caller passes these around as plain functions (transports hand them to SDK
+ * handlers, tests assert on the mock). Declaring them as methods made every
+ * such reference an unbound-method hazard for no gain.
+ */
 export type ChannelCore = {
-  handleInbound(input: InboundEnvelope, handlers: { reply: ChannelSink<[OutboundChunk]> }): Promise<void>
-  onApproval(input: ApprovalDecision): Promise<{ ok: true } | { ok: false; message: string }>
+  handleInbound: (input: InboundEnvelope, handlers: { reply: ChannelSink<[OutboundChunk]> }) => Promise<void>
+  onApproval: (input: ApprovalDecision) => Promise<{ ok: true } | { ok: false; message: string }>
 }
 
 /**
@@ -245,7 +251,7 @@ export function createChannelCore(input: {
         : envelope.intent.token
           ? await approvals.resolveToken({ token: envelope.intent.token, threadKey: envelope.threadKey })
           : { ok: false as const, message: "Approval reply is missing a prompt token." }
-      if (resolved.ok === false) {
+      if (!resolved.ok) {
         await handlers.reply({ kind: "text", text: resolved.message, final: true })
         return true
       }
@@ -257,7 +263,7 @@ export function createChannelCore(input: {
       })
       await handlers.reply({
         kind: "text",
-        text: decision.ok === true ? "Approval recorded." : decision.message,
+        text:  decision.ok ? "Approval recorded." : decision.message,
         final: true,
       })
       return true
@@ -298,7 +304,7 @@ export function createChannelCore(input: {
       })
       await handlers.reply({
         kind: "text",
-        text: decision.ok === true ? (verdict.decision === "approved" ? "Approved." : "Denied.") : decision.message,
+        text:  decision.ok ? (verdict.decision === "approved" ? "Approved." : "Denied.") : decision.message,
         final: true,
       })
       return true
@@ -408,7 +414,7 @@ export function createChannelCore(input: {
       // must always land). Refusal replies once with the cap notice.
       if (input.budget && action === "message") {
         const verdict = await input.budget(envelope)
-        if (verdict.ok === false) {
+        if (!verdict.ok) {
           await handlers.reply({ kind: "text", text: verdict.message, final: true })
           return
         }
@@ -417,7 +423,7 @@ export function createChannelCore(input: {
       const claim = await input.dedup.claim(envelope, {
         reserveSessionCreate: (envelope.intent?.kind ?? "message") === "message" && !pendingApproval && !existingRef,
       })
-      if (claim.ok === false) {
+      if (!claim.ok) {
         await handlers.reply({ kind: "text", text: claim.message, final: true })
         return
       }
@@ -451,7 +457,7 @@ export function createChannelCore(input: {
         token: decision.token,
         ...(decision.threadKey ? { threadKey: decision.threadKey } : {}),
       })
-      if (resolved.ok === false) return resolved
+      if (!resolved.ok) return resolved
       return approvals.decide({ ...decision, callId: resolved.callId })
     },
   }

@@ -18,13 +18,10 @@ import {
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/message-page"
 import { lt, or, sql } from "drizzle-orm"
-import { ClaxedoDB, and, desc, eq, gt } from "../platform/db"
+import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
 import { ClaxedoSessionMetaTable } from "@claxedo/server-core/session/meta.sql"
-
-function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined
-}
+import { isJsonRecord, jsonRecord, jsonRecord as rec } from "@claxedo/server-core/platform/runtime/lib/json"
 
 function txt(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
@@ -183,7 +180,7 @@ export function persistMessageEvent(
     const now = Date.now()
     const existing = loadMessage(messageId)
     const parsed = existing
-      ? (JSON.parse(existing.data) as { info: unknown; parts: unknown[] })
+      ? readStoredMessage(existing.data)
       : { info: { id: messageId, sessionID: txt(part.sessionID) ?? sessionId }, parts: [] }
     const parts = parsed.parts.slice()
     const index = parts.findIndex((item) => txt(rec(item)?.id) === txt(part.id))
@@ -214,7 +211,7 @@ export function persistMessageEvent(
     const now = Date.now()
     const existing = loadMessage(messageId)
     const parsed = existing
-      ? (JSON.parse(existing.data) as { info: unknown; parts: unknown[] })
+      ? readStoredMessage(existing.data)
       : { info: { id: messageId, sessionID: txt(props?.sessionID) ?? sessionId }, parts: [] }
     const parts = parsed.parts.slice()
     const idx = parts.findIndex((item) => txt(rec(item)?.id) === partId)
@@ -363,7 +360,13 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
           sessionId,
           ...selectedOrdinals,
           LATEST_SURFACE_MAX_INFO_BYTES,
-        ) as Array<{ ordinal: number; info_json: string }>
+        )
+        .flatMap((row): Array<{ ordinal: number; info_json: string }> => {
+          const item = jsonRecord(row)
+          const ordinal = item && numberColumn(item, "ordinal")
+          const info_json = item && textColumn(item, "info_json")
+          return ordinal === undefined || info_json === undefined ? [] : [{ ordinal, info_json }]
+        })
 
       const candidates = raw
         .prepare(`
@@ -386,12 +389,23 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
           ...selectedOrdinals,
           LATEST_SURFACE_MAX_TEXT_PART_BYTES,
           LATEST_SURFACE_MAX_PART_BYTES,
-        ) as Array<{
-          message_ordinal: number
-          part_ordinal: number
-          text_bytes: number
-          part_bytes: number
-        }>
+        )
+        .flatMap((row): Array<LatestSurfaceCandidate> => {
+          const item = jsonRecord(row)
+          if (!item) return []
+          const message_ordinal = numberColumn(item, "message_ordinal")
+          const part_ordinal = numberColumn(item, "part_ordinal")
+          const text_bytes = numberColumn(item, "text_bytes")
+          const part_bytes = numberColumn(item, "part_bytes")
+          if (
+            message_ordinal === undefined ||
+            part_ordinal === undefined ||
+            text_bytes === undefined ||
+            part_bytes === undefined
+          )
+            return []
+          return [{ message_ordinal, part_ordinal, text_bytes, part_bytes }]
+        })
       const selectedCandidateIndexes = selectLatestSurfaceTextCandidateIndexes(
         candidates.map((candidate) => ({ textBytes: candidate.text_bytes, partBytes: candidate.part_bytes })),
       )
@@ -412,21 +426,29 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
             .all(
               sessionId,
               ...selectedCandidateIndexes.flatMap((index) => {
-                const candidate = candidates[index]!
+                const candidate = candidates[index]
                 return [candidate.message_ordinal, candidate.part_ordinal]
               }),
-            ) as Array<{ message_ordinal: number; part_ordinal: number; part_json: string }>
+            )
+            .flatMap((row): Array<{ message_ordinal: number; part_json: string }> => {
+              const item = jsonRecord(row)
+              const message_ordinal = item && numberColumn(item, "message_ordinal")
+              const part_json = item && textColumn(item, "part_json")
+              return message_ordinal === undefined || part_json === undefined
+                ? []
+                : [{ message_ordinal, part_json }]
+            })
       const partsByOrdinal = new Map<number, Array<Record<string, unknown>>>()
       for (const part of selectedParts) {
-        const list = partsByOrdinal.get(part.message_ordinal) ?? []
-        list.push(JSON.parse(part.part_json) as Record<string, unknown>)
-        partsByOrdinal.set(part.message_ordinal, list)
+        const parsed = jsonRecord(JSON.parse(part.part_json))
+        if (!parsed) continue
+        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), parsed])
       }
       const messages = infoRows.length === selectedOrdinals.length
-        ? infoRows.map((row) => ({
-            info: JSON.parse(row.info_json) as Record<string, unknown>,
-            parts: partsByOrdinal.get(row.ordinal) ?? [],
-          }))
+        ? infoRows.flatMap((row) => {
+            const info = jsonRecord(JSON.parse(row.info_json))
+            return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
+          })
         : []
       const omittedIntermediate =
         boundary.ordinal === final.ordinal
@@ -550,11 +572,11 @@ export function readSessionEventsAfter(sessionId: string, afterOrdinal: number):
       .orderBy(ClaxedoCloudMessageEventTable.event_ordinal)
       .all(),
   ).map((row) => {
-    const parsed = JSON.parse(row.data) as { type?: unknown; properties?: unknown }
-    const properties = rec(parsed.properties)
+    const parsed = jsonRecord(JSON.parse(row.data))
+    const properties = rec(parsed?.properties)
     return {
       event_ordinal: row.event_ordinal,
-      type: txt(parsed.type) ?? row.type,
+      type: txt(parsed?.type) ?? row.type,
       ...(row.directory ? { directory: row.directory } : {}),
       ...(properties ? { properties } : {}),
     }
@@ -588,9 +610,9 @@ export function subscribeMessageReplay(bus: {
     const props = rec(properties)
     const sessionId =
       type === "message.updated"
-        ? txt((rec(props?.info) as Record<string, unknown> | undefined)?.sessionID)
+        ? txt((rec(props?.info))?.sessionID)
         : type === "message.part.updated"
-          ? (txt(props?.sessionID) ?? txt((rec(props?.part) as Record<string, unknown> | undefined)?.sessionID))
+          ? (txt(props?.sessionID) ?? txt((rec(props?.part))?.sessionID))
           : txt(props?.sessionID)
     if (!sessionId) return
 
@@ -602,10 +624,7 @@ export function subscribeMessageReplay(bus: {
 
 function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
   return terminalizeReplayMessages(
-    rows.map((row) => {
-      const parsed = JSON.parse(row.data) as { info: Record<string, unknown>; parts?: Array<Record<string, unknown>> }
-      return { info: parsed.info, parts: parsed.parts ?? [] }
-    }),
+    rows.map((row) => readStoredMessage(row.data)),
   )
 }
 
@@ -617,9 +636,35 @@ function loadMessage(messageId: string) {
 
 function existingParts(messageId: string): unknown[] {
   const row = loadMessage(messageId)
-  if (!row) return []
-  const parsed = JSON.parse(row.data) as { parts?: unknown[] }
-  return parsed.parts ?? []
+  return row ? readStoredMessage(row.data).parts : []
+}
+
+/** One text part considered for the latest-surface projection. */
+type LatestSurfaceCandidate = {
+  message_ordinal: number
+  part_ordinal: number
+  text_bytes: number
+  part_bytes: number
+}
+
+/**
+ * A persisted cloud-message envelope.
+ *
+ * `writeMessage` is the only writer, so a well-formed row round-trips exactly;
+ * a corrupt or foreign blob reads as an empty message rather than throwing
+ * inside a replay that has nothing to do with it.
+ */
+function readStoredMessage(data: string): { info: Record<string, unknown>; parts: Record<string, unknown>[] } {
+  // `JSON.parse` still throws on a corrupt blob: a row this reader was asked
+  // for and cannot read is a data error, and message-replay.test.ts uses
+  // exactly that to prove the bounded page reader never touches rows outside
+  // its selection.
+  const row = jsonRecord(JSON.parse(data))
+  const parts = row?.parts
+  return {
+    info: jsonRecord(row?.info) ?? {},
+    parts: Array.isArray(parts) ? parts.filter(isJsonRecord) : [],
+  }
 }
 
 function writeMessage(input: {

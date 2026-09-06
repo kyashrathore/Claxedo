@@ -30,8 +30,9 @@ import {
 } from "@claxedo/server-core/platform/http/peer-address"
 
 
-export async function localOnlyProjectionResponse(request: Request, options: Options) {
-  if (isLoopbackLocalRequest(request)) return
+/** The projection refusal a request earns, or nothing when it may proceed. */
+export async function localOnlyProjectionResponse(request: Request, options: Options): Promise<Response | undefined> {
+  if (isLoopbackLocalRequest(request)) return undefined
   const config = options.authConfig ?? controlPlaneAuthConfig()
   const token = bearerToken(request.headers.get("authorization"))
   if (!token && options.missingBearerAsAuthError) {
@@ -40,7 +41,7 @@ export async function localOnlyProjectionResponse(request: Request, options: Opt
         config,
         verifier: options.verifier,
       })
-      return
+      return undefined
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) {
         return Response.json(controlPlaneAuthErrorBody(err), { status: err.status })
@@ -71,5 +72,6 @@ export function localOnlyProjection(options: Options): MiddlewareHandler {
     const response = await localOnlyProjectionResponse(c.req.raw, options)
     if (response) return response
     await next()
+    return undefined
   }
 }

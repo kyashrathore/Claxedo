@@ -1,3 +1,4 @@
+import { asRecord, readField } from "@/lib/record"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 
@@ -60,7 +61,7 @@ function statusFingerprint(status: SessionStatus | undefined) {
 
 function trimSnapshots(entries: StatusSnapshot[], now: number) {
   // Keep only entries within the rolling window. Mutates the array in place.
-  while (entries.length > 0 && now - entries[0]!.at > T_WINDOW_MS) entries.shift()
+  while (entries.length > 0 && now - entries[0].at > T_WINDOW_MS) entries.shift()
 }
 
 function eventSnapshot(key: string) {
@@ -87,13 +88,37 @@ function setPollDisagreement(key: string, value: SessionStatusPollDisagreement) 
   queryClient.setQueryData(sessionStatusTelemetryQueryKey("disagreement", key), value)
 }
 
-function queryEntries<T>(kind: TelemetryKind) {
+/**
+ * Telemetry rows of one kind, as `[sessionKey, value]` pairs.
+ *
+ * The QueryClient hands back `unknown`, so the caller supplies the guard for the
+ * kind it asked for rather than the reader asserting a type parameter it never
+ * checked. All three payloads are written by this module, so the guards check
+ * the identity field each one is keyed and read by.
+ */
+function queryEntries<T>(kind: TelemetryKind, isValue: (value: unknown) => value is T) {
   return queryClient.getQueryCache().findAll({ queryKey: telemetryPrefix(kind) }).flatMap((query) => {
     const key = query.queryKey[3]
     if (typeof key !== "string") return []
-    const data = query.state.data as T | undefined
-    return data === undefined ? [] : [[key, data] as const]
+    const data = query.state.data
+    return isValue(data) ? [[key, data] as const] : []
   })
+}
+
+function isStatusSnapshot(value: unknown): value is StatusSnapshot {
+  const row = asRecord(value)
+  return typeof row?.sessionID === "string" && typeof row.at === "number"
+}
+
+function isMatchingPollBucket(value: unknown): value is MatchingPollBucket {
+  const row = asRecord(value)
+  return Array.isArray(row?.entries) && typeof row.total === "number"
+}
+
+function isPollDisagreement(value: unknown): value is SessionStatusPollDisagreement {
+  const row = asRecord(value)
+  return typeof row?.sessionID === "string" && typeof row.count === "number"
+    && typeof row.firstSeenAt === "number" && typeof row.lastSeenAt === "number"
 }
 
 function latestObservedDirectory(input: {
@@ -159,7 +184,7 @@ export function observeSessionStatusPoll(input: {
 }
 
 export function sessionStatusPollDisagreements() {
-  return queryEntries<SessionStatusPollDisagreement>("disagreement").map((item) => item[1])
+  return queryEntries("disagreement", isPollDisagreement).map((item) => item[1])
 }
 
 function recentMatchingPollCount(key: string | undefined, now: number) {
@@ -172,7 +197,7 @@ function recentMatchingPollCount(key: string | undefined, now: number) {
     return entries.length
   }
   let total = 0
-  for (const [bucketKey, bucket] of queryEntries<MatchingPollBucket>("matches")) {
+  for (const [bucketKey, bucket] of queryEntries("matches", isMatchingPollBucket)) {
     const entries = [...bucket.entries]
     trimSnapshots(entries, now)
     if (entries.length !== bucket.entries.length) setMatchingPollBucket(bucketKey, { ...bucket, entries })
@@ -197,7 +222,7 @@ export function sessionStatusPollingRemovalGate(input?: {
   const disagreements = key
     ? sessionStatusPollDisagreements().filter((item) => item.sessionID === key)
     : sessionStatusPollDisagreements()
-  const eventStatusCount = key ? eventSnapshot(key) ? 1 : 0 : queryEntries<StatusSnapshot>("event").length
+  const eventStatusCount = key ? eventSnapshot(key) ? 1 : 0 : queryEntries("event", isStatusSnapshot).length
   const matchingPollCount = recentMatchingPollCount(key, now)
 
   if (eventStatusCount === 0) {
@@ -271,9 +296,9 @@ export type SessionStatusTelemetrySnapshot = {
 
 export function getSessionStatusTelemetrySnapshot(now: number = Date.now()): SessionStatusTelemetrySnapshot {
   const keys = new Set<string>()
-  for (const [key] of queryEntries<StatusSnapshot>("event")) keys.add(key)
-  for (const [key] of queryEntries<MatchingPollBucket>("matches")) keys.add(key)
-  for (const [key] of queryEntries<SessionStatusPollDisagreement>("disagreement")) keys.add(key)
+  for (const [key] of queryEntries("event", isStatusSnapshot)) keys.add(key)
+  for (const [key] of queryEntries("matches", isMatchingPollBucket)) keys.add(key)
+  for (const [key] of queryEntries("disagreement", isPollDisagreement)) keys.add(key)
 
   const sessions: SessionStatusTelemetrySnapshot["sessions"] = []
   for (const key of keys) {
@@ -326,15 +351,18 @@ export function getSessionStatusTelemetrySnapshot(now: number = Date.now()): Ses
 export function installSessionStatusTelemetryDevtools() {
   if (typeof window === "undefined") return
   const debugEnabled =
-    (globalThis as Record<string, unknown>).__CLAXEDO_DEBUG__ === true ||
+    readField(globalThis, "__CLAXEDO_DEBUG__") === true ||
     (typeof process !== "undefined" && process.env?.CLAXEDO_DEBUG === "1")
   if (!debugEnabled) return
-  // as-any: debug-only browser hook extends Window outside the typed runtime surface.
-  ;(window as unknown as Record<string, unknown>).__claxedoPollingGate = {
-    snapshot: (now?: number) => getSessionStatusTelemetrySnapshot(now),
-    config: SESSION_STATUS_TELEMETRY_CONFIG,
-    reset: () => resetSessionStatusTelemetryForTest(),
-  }
+  // Debug-only browser hook: it extends Window outside the typed runtime surface,
+  // so it is attached rather than assigned through an asserted Window shape.
+  Object.assign(window, {
+    __claxedoPollingGate: {
+      snapshot: (now?: number) => getSessionStatusTelemetrySnapshot(now),
+      config: SESSION_STATUS_TELEMETRY_CONFIG,
+      reset: () => resetSessionStatusTelemetryForTest(),
+    },
+  })
 }
 
 export function resetSessionStatusTelemetryForTest() {

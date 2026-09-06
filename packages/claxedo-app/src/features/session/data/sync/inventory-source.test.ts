@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { requestUrl } from "@/lib/url"
 import { QueryClient } from "@tanstack/solid-query"
 import type { WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
@@ -255,7 +256,7 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
       authFetch: async (resource) => {
-        const url = new URL(String(resource))
+        const url = new URL(requestUrl(resource))
         requested.push(`${url.pathname}?${url.searchParams.toString()}`)
         if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
           return jsonResponse({
@@ -297,7 +298,7 @@ describe("global sync inventory source helpers", () => {
 
     const snapshot = await source.fetchSignedWorkspaceSnapshot()
 
-    expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud"])
+    expect(snapshot.groups.map((group) => group.workspaceId).sort((a, b) => a.localeCompare(b))).toEqual(["ws_cloud"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
@@ -325,7 +326,7 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
       authFetch: async (resource) => {
-        const access = new URL(String(resource)).searchParams.get("access")
+        const access = new URL(requestUrl(resource)).searchParams.get("access")
         started.push(access!)
         if (access === "cloud") {
           openCloudGate()
@@ -503,7 +504,7 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 2,
       platformFetch: () => async (resource) => {
-        requests.push(String(resource))
+        requests.push(requestUrl(resource))
         return jsonResponse({
           sessions: [
             { sessionID: "ses_3", directory: "/repo/a", createdAt: 1, updatedAt: 3 },
@@ -628,7 +629,7 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 1,
       platformFetch: () => async (url) => {
-        requested.push(String(url))
+        requested.push(requestUrl(url))
         return jsonResponse({ sessions })
       },
       hasSignedAccess: () => false,
@@ -659,7 +660,7 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 2,
       platformFetch: () => async (url) => {
-        requested.push(String(url))
+        requested.push(requestUrl(url))
         await Promise.resolve()
         return jsonResponse({
           sessions: [{ sessionID: "ses_1", directory: "/repo/a", createdAt: 1, updatedAt: 1 }],
@@ -691,7 +692,7 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 2,
       platformFetch: () => async (url) => {
-        requested.push(String(url))
+        requested.push(requestUrl(url))
         return jsonResponse({ sessions: [] })
       },
       hasSignedAccess: () => false,

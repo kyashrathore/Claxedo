@@ -9,6 +9,7 @@ import { Extension, type Editor, type Range } from "@tiptap/core"
 import Suggestion, { type SuggestionOptions, type SuggestionProps, type SuggestionKeyDownProps } from "@tiptap/suggestion"
 import { createSignal, createEffect, For, Show } from "solid-js"
 import { render as solidRender } from "solid-js/web"
+import { readString } from "@/lib/record"
 
 // ── Command items ──────────────────────────────────────────────────────
 
@@ -184,8 +185,10 @@ export const slashCommandItems: SlashCommandItem[] = [
     search: "table row below add",
     command: ({ editor, range }) => {
       const chain = editor.chain().focus().deleteRange(range)
-      if (!editor.isActive("table")) return chain.run()
-      chain.addRowAfter().run()
+      // Outside a table the item still clears the typed "/" query; inside one it
+      // also performs the edit. Either way exactly one chain is run.
+      if (editor.isActive("table")) chain.addRowAfter()
+      chain.run()
     },
   },
   {
@@ -197,8 +200,10 @@ export const slashCommandItems: SlashCommandItem[] = [
     search: "table row delete remove",
     command: ({ editor, range }) => {
       const chain = editor.chain().focus().deleteRange(range)
-      if (!editor.isActive("table")) return chain.run()
-      chain.deleteRow().run()
+      // Outside a table the item still clears the typed "/" query; inside one it
+      // also performs the edit. Either way exactly one chain is run.
+      if (editor.isActive("table")) chain.deleteRow()
+      chain.run()
     },
   },
   {
@@ -210,8 +215,10 @@ export const slashCommandItems: SlashCommandItem[] = [
     search: "table column right add",
     command: ({ editor, range }) => {
       const chain = editor.chain().focus().deleteRange(range)
-      if (!editor.isActive("table")) return chain.run()
-      chain.addColumnAfter().run()
+      // Outside a table the item still clears the typed "/" query; inside one it
+      // also performs the edit. Either way exactly one chain is run.
+      if (editor.isActive("table")) chain.addColumnAfter()
+      chain.run()
     },
   },
   {
@@ -223,8 +230,10 @@ export const slashCommandItems: SlashCommandItem[] = [
     search: "table column delete remove",
     command: ({ editor, range }) => {
       const chain = editor.chain().focus().deleteRange(range)
-      if (!editor.isActive("table")) return chain.run()
-      chain.deleteColumn().run()
+      // Outside a table the item still clears the typed "/" query; inside one it
+      // also performs the edit. Either way exactly one chain is run.
+      if (editor.isActive("table")) chain.deleteColumn()
+      chain.run()
     },
   },
   {
@@ -236,8 +245,10 @@ export const slashCommandItems: SlashCommandItem[] = [
     search: "table delete remove",
     command: ({ editor, range }) => {
       const chain = editor.chain().focus().deleteRange(range)
-      if (!editor.isActive("table")) return chain.run()
-      chain.deleteTable().run()
+      // Outside a table the item still clears the typed "/" query; inside one it
+      // also performs the edit. Either way exactly one chain is run.
+      if (editor.isActive("table")) chain.deleteTable()
+      chain.run()
     },
   },
   {
@@ -324,7 +335,7 @@ export const slashCommandItems: SlashCommandItem[] = [
     shortcut: "Cmd+K",
     search: "link url href anchor",
     command: ({ editor, range }) => {
-      const current = editor.getAttributes("link").href as string | undefined
+      const current = readString(editor.getAttributes("link"), "href")
       const href = promptUrl(current)
       if (href === null) return
       const value = href.trim()
@@ -462,7 +473,8 @@ function createSuggestionRenderer() {
     const rect = props.clientRect?.()
     if (!rect) return
 
-    const menuEl = popup.querySelector(".slash-command-menu") as HTMLElement | null
+    const found = popup.querySelector(".slash-command-menu")
+    const menuEl = found instanceof HTMLElement ? found : undefined
     const menuH = menuEl?.offsetHeight ?? MENU_HEIGHT_ESTIMATE
     const menuW = menuEl?.offsetWidth ?? 280
     const viewportH = window.innerHeight

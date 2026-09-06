@@ -3,6 +3,7 @@ import type { Context } from "hono"
 import type { ConnectionsService } from "./service.js"
 import type { ConnectionScope, IntegrationCapability } from "./types.js"
 import { ConnectionsUnavailableError, connectionScopeOf } from "./types.js"
+import { bool, record, stringRecord, text } from "./json.js"
 
 export type RouteGate = (c: Context) => Promise<Response | null> | Response | null
 export type RouteOwnerResolver = (c: Context) => string | undefined
@@ -36,16 +37,21 @@ export type IntegrationsRouteOptions = {
   ownerlessRows?: "team" | "refuse"
 }
 
-const CAPABILITIES: IntegrationCapability[] = ["docs", "work-source", "channel", "code-host", "mcp"]
+const CAPABILITIES = ["docs", "work-source", "channel", "code-host", "mcp"] as const satisfies readonly IntegrationCapability[]
+
+function isCapability(value: string | undefined): value is IntegrationCapability {
+  return !!value && (CAPABILITIES as readonly string[]).includes(value)
+}
 
 const CALLBACK_PAGE = (ok: boolean) =>
   `<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>${
     ok ? "Connection complete" : "Connection failed"
   }</h2><p>You can close this window and return to the app.</p></body></html>`
 
-function scopeFrom(body: { scope?: string }): ConnectionScope | undefined {
-  if (body.scope === undefined) return "team"
-  if (body.scope === "team" || body.scope === "personal") return body.scope
+function scopeFrom(scope: unknown): ConnectionScope | undefined {
+  if (scope === undefined) return "team"
+  if (scope === "team" || scope === "personal") return scope
+  return undefined
 }
 
 export function createIntegrationsRoutes(service: ConnectionsService, options: IntegrationsRouteOptions = {}) {
@@ -139,14 +145,10 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const denied = await gated(c)
     if (denied) return denied
     const integrationId = c.req.param("id")
-    const body = (await c.req.json().catch(() => ({}))) as {
-      method?: string
-      fields?: Record<string, string>
-      secret?: string
-      confirmReplace?: boolean
-      scope?: string
-    }
-    const scope = scopeFrom(body)
+    const body = record(await c.req.json().catch(() => ({}))) ?? {}
+    const confirmReplace = bool(body.confirmReplace)
+    const secret = text(body.secret)
+    const scope = scopeFrom(body.scope)
     if (!scope) return c.json({ ok: false, code: "invalid_connection_scope" }, 422)
     if (scope === "team") {
       const denied = await options.teamWriteGate?.(c)
@@ -161,20 +163,20 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
         ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
         ...(teamKey !== undefined ? { teamOwner: teamKey } : {}),
         ...(options.attemptRouting ? { attemptRouting: options.attemptRouting(c) } : {}),
-        ...(body.confirmReplace !== undefined ? { confirmReplace: body.confirmReplace } : {}),
+        ...(confirmReplace !== undefined ? { confirmReplace } : {}),
       })
       if (!result.ok) return c.json(result, result.code === "connection_exists" ? 409 : 404)
       return c.json(result)
     }
-    if (typeof body.secret !== "string" || !body.secret.trim()) {
+    if (!secret?.trim()) {
       return c.json({ ok: false, code: "connection_verify_failed", reason: "unauthorized" }, 422)
     }
     const result = await service.connect({
       integrationId,
       ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
-      fields: body.fields ?? {},
-      secret: body.secret,
-      ...(body.confirmReplace !== undefined ? { confirmReplace: body.confirmReplace } : {}),
+      fields: stringRecord(body.fields),
+      secret,
+      ...(confirmReplace !== undefined ? { confirmReplace } : {}),
     })
     if (!result.ok) {
       const status = result.code === "connection_exists" ? 409 : result.code === "unknown_integration" ? 404 : 422
@@ -246,12 +248,12 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
     const deniedTeamWrite = await options.teamWriteGate?.(c)
     if (deniedTeamWrite) return deniedTeamWrite
-    const body = await c.req.json().catch(() => undefined) as { secret?: unknown } | undefined
-    if (typeof body?.secret !== "string" || !body.secret.trim()) {
+    const webhookSecret = text(record(await c.req.json().catch(() => undefined))?.secret)
+    if (!webhookSecret?.trim()) {
       return c.json({ ok: false, code: "invalid_webhook_secret" }, 422)
     }
     try {
-      const result = await service.setWebhookSigningSecret(selected.row.id, body.secret)
+      const result = await service.setWebhookSigningSecret(selected.row.id, webhookSecret)
       return c.json(result, result.ok ? 200 : 422)
     } catch (error) {
       if (error instanceof ConnectionsUnavailableError) return c.json({ ok: false, code: "connections_unavailable" }, 503)
@@ -281,8 +283,8 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (denied) return denied
     const row = await visibleConnection(c.req.param("id"), tokenKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
-    const body = (await c.req.json().catch(() => ({}))) as { reason?: string }
-    await service.reportAuthFailure(row.id, typeof body.reason === "string" ? body.reason : "unspecified")
+    const reason = text(record(await c.req.json().catch(() => ({})))?.reason)
+    await service.reportAuthFailure(row.id, reason ?? "unspecified")
     return c.body(null, 204)
   })
 
@@ -292,9 +294,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const row = await visibleConnection(c.req.param("id"), tokenKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const capabilityRaw = c.req.query("capability")
-    const capability = CAPABILITIES.includes(capabilityRaw as IntegrationCapability)
-      ? (capabilityRaw as IntegrationCapability)
-      : undefined
+    const capability = isCapability(capabilityRaw) ? capabilityRaw : undefined
     const result = await service.getToken(row.id, capability)
     if (!result.ok) {
       return c.json(

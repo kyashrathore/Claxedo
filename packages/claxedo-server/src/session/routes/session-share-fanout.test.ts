@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { OrgId } from "@claxedo/server-core/platform/auth/authority"
+import type { OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import {
   subjectFromIdentity,
   notifySessionShareChanged,

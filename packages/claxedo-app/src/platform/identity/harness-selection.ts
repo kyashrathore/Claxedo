@@ -1,3 +1,4 @@
+import { isRecord } from "@/lib/record"
 export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
 /**
@@ -32,8 +33,8 @@ export function connectionHarness(connectionId: string): HarnessSelection {
 }
 
 export function isHarnessSelection(input: unknown): input is HarnessSelection {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return false
-  const row = input as Record<string, unknown>
+  if (!isRecord(input)) return false
+  const row = input
   if (
     row.kind === "native"
     && typeof row.harnessId === "string"

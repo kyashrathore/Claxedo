@@ -87,8 +87,8 @@ test("desktop plugins split static startup from separately fingerprinted optiona
       "assets/local.js -> assets/desktop-hosted-contributions-def456.js",
     ])
 
-    desktopMainBoundaryManifestPlugin(root).generateBundle({}, { "index.js": mainBundle["index.js"]! })
-    desktopRendererBoundaryManifestPlugin(root).generateBundle({}, { "assets/local.js": rendererBundle["assets/local.js"]! })
+    desktopMainBoundaryManifestPlugin(root).generateBundle({}, { "index.js": mainBundle["index.js"] })
+    desktopRendererBoundaryManifestPlugin(root).generateBundle({}, { "assets/local.js": rendererBundle["assets/local.js"] })
     expect(verifyDesktopBoundaryManifestSet(root)).toEqual([
       DESKTOP_MAIN_BOUNDARY_MANIFEST,
       DESKTOP_RENDERER_BOUNDARY_MANIFEST,

@@ -16,10 +16,7 @@ import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract
 import { IS_PACKAGED } from "./constants"
 import { isSafeExternalUrl } from "./navigation-guard"
 import { runRestart } from "../shared/restart-policy"
-import {
-  registerProcessDiagnosticsIpc,
-  type DiagnosticsIpcRouter,
-} from "./diagnostics/ipc"
+import { registerProcessDiagnosticsIpc } from "./diagnostics/ipc"
 import type { Profiler } from "./diagnostics/profiler"
 import { getStore } from "./store"
 
@@ -81,8 +78,11 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("get-start-at-login", () => deps.getStartAtLogin())
-  ipcMain.handle("set-start-at-login", (_event: IpcMainInvokeEvent, enabled: boolean) =>
-    deps.setStartAtLogin(Boolean(enabled)),
+  // `unknown`, then coerced: the flag arrives from a renderer message, so
+  // declaring it `boolean` claimed a type the message never promised and made
+  // the coercion below look redundant.
+  ipcMain.handle("set-start-at-login", (_event: IpcMainInvokeEvent, enabled: unknown) =>
+    deps.setStartAtLogin(enabled === true),
   )
   const renderMermaid = deps.renderMermaid
   if (renderMermaid) {
@@ -167,7 +167,12 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
+    // Answers nothing on either branch — `ElectronAPI.openPath` is
+    // `Promise<void>`, so `shell.openPath`'s error string was already dropped.
+    if (!app) {
+      await shell.openPath(path)
+      return
+    }
     await new Promise<void>((resolve, reject) => {
       const [cmd, args] =
         process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
@@ -237,7 +242,7 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   registerBrowserIpcHandlers(deps.browser)
-  return registerProcessDiagnosticsIpc(ipcMain as unknown as DiagnosticsIpcRouter, deps.processDiagnostics)
+  return registerProcessDiagnosticsIpc(ipcMain, deps.processDiagnostics)
 }
 
 function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
@@ -381,17 +386,17 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
     return handle.evaluate(expression)
   })
 
-  ipcMain.handle("browser:setAgentAllowed", (_event: IpcMainInvokeEvent, paneId: string, allowed: boolean) => {
+  ipcMain.handle("browser:setAgentAllowed", (_event: IpcMainInvokeEvent, paneId: string, allowed: unknown) => {
     const handle = registry.get(paneId)
     if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
-    handle.setAgentAllowed(Boolean(allowed))
+    handle.setAgentAllowed(allowed === true)
     return { ok: true as const }
   })
 
-  ipcMain.handle("browser:setInspectMode", async (_event: IpcMainInvokeEvent, paneId: string, enabled: boolean) => {
+  ipcMain.handle("browser:setInspectMode", async (_event: IpcMainInvokeEvent, paneId: string, enabled: unknown) => {
     const handle = registry.get(paneId)
     if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
-    return handle.setInspectMode(Boolean(enabled))
+    return handle.setInspectMode(enabled === true)
   })
 
   const nodeSubs = new Map<string, () => void>()

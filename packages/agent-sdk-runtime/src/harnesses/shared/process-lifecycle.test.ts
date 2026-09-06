@@ -63,7 +63,7 @@ function fixture(input: {
      * the Electron main bridge) do not cancel a pending callback at all.
      */
     fireCleared(index: number) {
-      timers[index]!.fn()
+      timers[index].fn()
     },
     liveTimers: () => timers.filter((item) => !item.cleared),
   }
@@ -366,7 +366,7 @@ describe("idle reaper", () => {
           timer.fn()
         }
       },
-      fireCleared(index: number) { timers[index]!.fn() },
+      fireCleared(index: number) { timers[index].fn() },
       liveTimers: () => timers.filter((item) => !item.cleared),
     }
   }

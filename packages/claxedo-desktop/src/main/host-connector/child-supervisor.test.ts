@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test"
 import { runHostConnectorChild } from "../../../scripts/host-connector-entry"
 import type {
   HostConnectorBootstrapIdentity,
-  HostConnectorChildMessage,
   HostConnectorParentMessage,
   HostConnectorSharedWorkspace,
 } from "./child-protocol"
@@ -63,7 +62,7 @@ class FakeChild implements HostConnectorChildProcess {
     if (event === "exit") this.#exit = listener
   }
 
-  emit(message: HostConnectorChildMessage | unknown) {
+  emit(message: unknown) {
     for (const listener of this.#messages) listener(message)
   }
 
@@ -154,9 +153,7 @@ function harness(options?: {
     shareCounts: () => ({ loads: shareLoads, stores: shareStores.length }),
     shareStores,
     bootstrapOf: (index: number) =>
-      children[index]?.parentMessages.find((message) => message.type === "bootstrap") as
-        | Extract<HostConnectorParentMessage, { type: "bootstrap" }>
-        | undefined,
+      children[index]?.parentMessages.find((message) => message.type === "bootstrap"),
   }
 }
 
@@ -255,13 +252,13 @@ describe("Electron-main child lifecycle", () => {
   test("retires a live child that reported stopped before launching its replacement", async () => {
     const host = harness()
     await host.connector.start()
-    host.children[0]!.emit({ type: "status", status: { status: "stopped", reason: "closed", detail: "remote stopped" } })
+    host.children[0].emit({ type: "status", status: { status: "stopped", reason: "closed", detail: "remote stopped" } })
     await until(() => host.connector.status().status === "stopped", "stopped child state")
 
     await host.connector.start()
 
     expect(host.children).toHaveLength(2)
-    expect(host.children[0]!.killed).toBe(true)
+    expect(host.children[0].killed).toBe(true)
     expect(host.children.filter((child) => !child.killed)).toHaveLength(1)
   })
 
@@ -278,7 +275,7 @@ describe("Electron-main child lifecycle", () => {
 
     expect(host.children).toHaveLength(2)
     expect(host.counts()).toEqual({ loads: 2, stores: 1, clears: 0 })
-    const secondBootstrap = host.children[1]!.parentMessages.find((message) => message.type === "bootstrap")
+    const secondBootstrap = host.children[1].parentMessages.find((message) => message.type === "bootstrap")
     expect(secondBootstrap).toMatchObject({ identity: { hostId } })
   })
 
@@ -325,7 +322,7 @@ describe("Electron-main child lifecycle", () => {
     const host = harness()
     await host.connector.start()
 
-    host.children[0]!.crash(9)
+    host.children[0].crash(9)
     await until(() => host.connector.status().status === "stopped", "child exit state")
 
     expect(host.connector.status()).toMatchObject({ status: "stopped", reason: "error" })
@@ -351,7 +348,7 @@ describe("Electron-main child lifecycle", () => {
 
     const starting = connector.start()
     await until(() => children.length === 1, "child spawn")
-    children[0]!.crash(17)
+    children[0].crash(17)
 
     await expect(starting).resolves.toMatchObject({ status: "stopped", reason: "error" })
   })
@@ -378,7 +375,7 @@ describe("Electron-main child lifecycle", () => {
     connector.stop()
 
     await expect(starting).resolves.toMatchObject({ status: "stopped", reason: "closed" })
-    expect(children[0]!.killed).toBe(true)
+    expect(children[0].killed).toBe(true)
     expect(connector.status()).toMatchObject({ status: "stopped", reason: "closed" })
   })
 
@@ -441,7 +438,7 @@ describe("Electron-main child lifecycle", () => {
       status: "enrolled",
       enrollment: { enrollment_id: "enr_1" },
     })
-    expect(children[0]!.killed).toBe(false)
+    expect(children[0].killed).toBe(false)
     // The bootstrap reply was published while the stall was still open, so a
     // panel open during a slow enrollment sees a starting machine.
     expect(statuses).toEqual([{ status: "idle" }, expect.objectContaining({ status: "enrolled" })])
@@ -494,7 +491,7 @@ describe("Electron-main child lifecycle", () => {
 
     expect(settled).toMatchObject({ status: "stopped", reason: "error" })
     expect((settled as { detail: string }).detail).toContain("Host Connector child enrollment timed out after 40ms")
-    expect(children[0]!.killed).toBe(true)
+    expect(children[0].killed).toBe(true)
   })
 
   test("a child that neither becomes ready nor exits is terminated by the startup bound", async () => {
@@ -544,7 +541,7 @@ describe("auth-lapse suspension", () => {
     // Fail closed. Unchanged by this work, and asserted so it stays that way:
     // the child is gone and the machine is off the air the moment auth lapses.
     expect(host.connector.suspendForAuthLapse()).toBe(true)
-    expect(host.children[0]!.killed).toBe(true)
+    expect(host.children[0].killed).toBe(true)
     expect(host.connector.status()).toEqual({
       status: "stopped",
       reason: "closed",
@@ -650,7 +647,7 @@ describe("main-side protocol guard", () => {
     await host.connector.start()
     const before = host.operations.length
 
-    host.children[0]!.emit({
+    host.children[0].emit({
       type: "account-operation",
       requestId: "hostile",
       name: "billing.updateSubscription",
@@ -659,7 +656,7 @@ describe("main-side protocol guard", () => {
     await Bun.sleep(0)
 
     expect(host.operations).toHaveLength(before)
-    expect(host.children[0]!.parentMessages.some((message) => message.type === "account-result" && message.requestId === "hostile")).toBe(false)
+    expect(host.children[0].parentMessages.some((message) => message.type === "account-result" && message.requestId === "hostile")).toBe(false)
   })
 
   test("drops a late account result after revocation without an unhandled transport error", async () => {
@@ -683,9 +680,9 @@ describe("main-side protocol guard", () => {
     })
     const starting = connector.start()
     await until(() => children.length === 1, "child spawn")
-    children[0]!.emit({ type: "ready" })
-    await until(() => children[0]!.parentMessages.some((message) => message.type === "bootstrap"), "bootstrap")
-    children[0]!.emit({ type: "account-operation", requestId: "late", name: "host.enrollmentNonce", input: { hostId: "h" } })
+    children[0].emit({ type: "ready" })
+    await until(() => children[0].parentMessages.some((message) => message.type === "bootstrap"), "bootstrap")
+    children[0].emit({ type: "account-operation", requestId: "late", name: "host.enrollmentNonce", input: { hostId: "h" } })
 
     connector.revoke()
     release({ request_id: "r", nonce: "n" })
@@ -693,6 +690,6 @@ describe("main-side protocol guard", () => {
     await Bun.sleep(0)
 
     expect(errors.find((entry) => entry.stage === "child-message")).toBeUndefined()
-    expect(children[0]!.parentMessages.some((message) => message.type === "account-result" && message.requestId === "late")).toBe(false)
+    expect(children[0].parentMessages.some((message) => message.type === "account-result" && message.requestId === "late")).toBe(false)
   })
 })

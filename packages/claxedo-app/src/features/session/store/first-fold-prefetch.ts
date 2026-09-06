@@ -12,8 +12,8 @@ export function firstFoldSessionPrefetch(input: {
   info?: SessionPrefetchMeta
   now?: number
 }) {
-  if (!input.info || input.info.directory !== input.directory || !input.info.page?.messages.length) return
-  if ((input.now ?? Date.now()) - input.info.at > SESSION_PREFETCH_TTL) return
+  if (!input.info || input.info.directory !== input.directory || !input.info.page?.messages.length) return undefined
+  if ((input.now ?? Date.now()) - input.info.at > SESSION_PREFETCH_TTL) return undefined
   return input.info
 }
 
@@ -218,20 +218,22 @@ export function createLatestTurnCompletion(input: {
       },
     })
   }
+  // Arrow properties: the session controller hands these to the activation work
+  // list as bare references, so none of them may depend on `this`.
   return {
-    schedule() {
+    schedule: () => {
       requested = true
       start()
     },
-    block() {
+    block: () => {
       if (started) return
       blocked = true
     },
-    unblock() {
+    unblock: () => {
       blocked = false
       start()
     },
-    cancel() {
+    cancel: () => {
       cancelled = true
       cancel()
     },

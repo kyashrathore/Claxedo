@@ -12,10 +12,26 @@ export function clearReadyWatcher(state: ReadyWatcher) {
   state.observer = undefined
 }
 
-export function getViewerHost(container: HTMLElement | undefined) {
-  if (!container) return
+/**
+ * The nearest ancestor that scrolls `el` vertically, or `undefined` when nothing above it does.
+ *
+ * `pierre/virtualizer.ts` walks the same chain but also treats the deprecated
+ * `overflow: overlay` as scrollable; the two are kept apart deliberately.
+ */
+export function scrollParent(el: HTMLElement): HTMLElement | undefined {
+  let parent = el.parentElement
+  while (parent) {
+    const style = getComputedStyle(parent)
+    if (style.overflowY === "auto" || style.overflowY === "scroll") return parent
+    parent = parent.parentElement
+  }
+  return undefined
+}
+
+export function getViewerHost(container: HTMLElement | undefined): HTMLElement | undefined {
+  if (!container) return undefined
   const host = container.querySelector("diffs-container")
-  if (!(host instanceof HTMLElement)) return
+  if (!(host instanceof HTMLElement)) return undefined
   return host
 }
 

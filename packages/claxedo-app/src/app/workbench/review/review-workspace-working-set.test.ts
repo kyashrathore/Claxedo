@@ -108,7 +108,7 @@ describe("Review workspace working-set boundary", () => {
     boundary.publishScroll({ top: 900, anchorPath: "src/z.ts" }, tabs, "review")
 
     // The scroll publisher must not drop the surface, and vice versa.
-    expect(changes[1]!.review).toEqual({
+    expect(changes[1].review).toEqual({
       mode: "to-from",
       fromRef: "main",
       toRef: "HEAD",
@@ -120,7 +120,7 @@ describe("Review workspace working-set boundary", () => {
     })
 
     boundary.publishSurface({ mode: "staged" }, tabs, "review")
-    expect(changes[2]!.review).toEqual({ mode: "staged", scroll: { top: 900, anchorPath: "src/z.ts" } })
+    expect(changes[2].review).toEqual({ mode: "staged", scroll: { top: 900, anchorPath: "src/z.ts" } })
   })
 
   test("exposes the latest retained review state, not the panel-open snapshot", () => {
@@ -165,8 +165,8 @@ describe("Review workspace working-set boundary", () => {
     openDiffs.push("src/b.ts")
     boundary.publish(tabs, "review")
 
-    expect(changes[0]!.review.openDiffs).toEqual(["src/a.ts"])
-    expect(changes[1]!.review.openDiffs).toEqual(["src/a.ts"])
+    expect(changes[0].review.openDiffs).toEqual(["src/a.ts"])
+    expect(changes[1].review.openDiffs).toEqual(["src/a.ts"])
   })
 
   test("publishes a cloned semantic scroll snapshot with the live tabs and active tab", () => {
@@ -194,11 +194,11 @@ describe("Review workspace working-set boundary", () => {
       },
     }])
     tabs.reverse()
-    expect(changes[0]!.tabs.map((tab) => tab.id)).toEqual(["review", "file:b"])
+    expect(changes[0].tabs.map((tab) => tab.id)).toEqual(["review", "file:b"])
 
-    changes[0]!.review.scroll.top = 0
+    changes[0].review.scroll.top = 0
     boundary.publish([{ id: "review", kind: "review" }], "review")
-    expect(changes[1]!.review.scroll.top).toBe(2_400)
+    expect(changes[1].review.scroll.top).toBe(2_400)
   })
 })
 

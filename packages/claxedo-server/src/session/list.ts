@@ -10,6 +10,7 @@ import {
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../authority/services"
+import { asRecord } from "../platform/json/index"
 
 /**
  * The refusal a session-list route gives when it is not the authority for the
@@ -156,7 +157,7 @@ function sessionListWorkspaceId(query: SessionListQuery) {
 }
 
 function workspaceRow(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+  return asRecord(input)
 }
 
 function rowText(input: unknown) {

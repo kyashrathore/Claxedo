@@ -103,18 +103,18 @@ describe("remote access service", () => {
     })
 
     // The machine is enrolled once, machine-wide — not per workspace.
-    await expect(authority.activeHostEnrollment!(auth)).resolves.toMatchObject({
+    await expect(authority.activeHostEnrollment(auth)).resolves.toMatchObject({
       active: true,
       host_id: "host_machine",
       display_name: "Yash's Mac",
     })
     // Routable = owner-assigned AND machine-acked AND live lease, verified by
     // the real authority from the signatures the service produced.
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
       active: true,
       host_id: "host_machine",
     })
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_2" })).resolves.toMatchObject({
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_2" })).resolves.toMatchObject({
       active: true,
       host_id: "host_machine",
     })
@@ -136,7 +136,7 @@ describe("remote access service", () => {
       relayUrl: "https://relay.test",
       hostTunnelTokenProvider: expect.any(Function),
     })
-    await expect(startMachineTunnel.mock.calls[0]![0].hostTunnelTokenProvider()).resolves.toBe("htt_1")
+    await expect(startMachineTunnel.mock.calls[0][0].hostTunnelTokenProvider()).resolves.toBe("htt_1")
   })
 
   test("every beat declares the composition of the runtimes this host serves", async () => {
@@ -150,7 +150,7 @@ describe("remote access service", () => {
       const { authority, service } = setup({ sessionAuthority: declared })
       await service.enable(auth, { displayName: "Mac", startAtLogin: false })
 
-      await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+      await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
         active: true,
         session_authority: declared,
       })
@@ -165,11 +165,11 @@ describe("remote access service", () => {
     await workspaceChanged()
 
     expect(startMachineTunnel).toHaveBeenCalledTimes(2)
-    expect(startMachineTunnel.mock.calls[1]![0]).toMatchObject({
+    expect(startMachineTunnel.mock.calls[1][0]).toMatchObject({
       hostId: "host_machine",
       workspaceIds: ["ws_1", "ws_2", "ws_3"],
     })
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_3" })).resolves.toMatchObject({
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_3" })).resolves.toMatchObject({
       active: true,
       host_id: "host_machine",
     })
@@ -192,7 +192,7 @@ describe("remote access service", () => {
       relayUrl: "https://relay.test",
     })
     // Share success = routable, not merely recorded.
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_share" })).resolves.toMatchObject({
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_share" })).resolves.toMatchObject({
       active: true,
       host_id: "host_machine",
     })
@@ -215,11 +215,11 @@ describe("remote access service", () => {
     // A user-hosted workspace lives exactly as long as its host assignment
     // (commit 9b88098572): unassigning ws_1 retires the workspace row itself,
     // not just its routing, so it 404s rather than reporting `active: false`.
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).rejects.toThrow("Workspace not found")
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).rejects.toThrow("Workspace not found")
     await expect(authority.listWorkspaces(auth)).resolves.not.toContainEqual(
       expect.objectContaining({ workspace_id: "ws_1" }),
     )
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_2" })).resolves.toMatchObject({ active: true })
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_2" })).resolves.toMatchObject({ active: true })
     await expect(authority.listWorkspaces(auth)).resolves.toContainEqual(
       expect.objectContaining({ workspace_id: "ws_2" }),
     )
@@ -254,9 +254,9 @@ describe("remote access service", () => {
 
     await expect(service.revoke(auth, "host_machine")).resolves.toEqual({ revoked: true })
     expect(stopMachineTunnel).toHaveBeenCalledWith("host_machine")
-    await expect(authority.activeHostEnrollment!(auth)).resolves.toEqual({ active: false, reason: "paused" })
+    await expect(authority.activeHostEnrollment(auth)).resolves.toEqual({ active: false, reason: "paused" })
     await expect(service.devices(auth)).resolves.toEqual([])
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).resolves.toEqual({ active: false })
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toEqual({ active: false })
   })
 
   test("a signature over the wrong served set is refused by the authority, not papered over", async () => {
@@ -284,6 +284,6 @@ describe("remote access service", () => {
     })
 
     await expect(service.enable(auth, { displayName: "Mac", startAtLogin: false })).rejects.toThrow(/Invalid host attestation/)
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).resolves.toEqual({ active: false })
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toEqual({ active: false })
   })
 })

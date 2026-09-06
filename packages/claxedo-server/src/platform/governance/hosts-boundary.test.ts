@@ -54,7 +54,7 @@ describe("hosts boundary", () => {
     const offenders = hostFiles().flatMap((file) => {
       const text = fs.readFileSync(file, "utf8")
       return [...text.matchAll(RELATIVE_IMPORT)]
-        .map((match) => path.relative(SRC, path.resolve(path.dirname(file), match[1]!)))
+        .map((match) => path.relative(SRC, path.resolve(path.dirname(file), match[1])))
         .filter((target) => target.split(path.sep)[0] === "deployments")
         .map((target) => `${path.relative(SRC, file)} -> ${target}`)
     })

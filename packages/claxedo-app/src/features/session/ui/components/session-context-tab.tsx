@@ -34,6 +34,7 @@ import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from
 import { createSessionContextFormatter } from "@/features/session/ui/components/session-context-format"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { createActiveConversationSnapshot } from "../../conversation/conversation-registry"
+import { isRuntimeAgentMessage } from "../../conversation/agent-conversation-codec"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../../data/sync/queries"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createActivePaneProjection } from "../../store/active-pane-projection"
@@ -154,10 +155,17 @@ export function SessionContextTab() {
     active: sessionParams.active,
   })
 
-  const messages = createMemo(() => conversation()?.messages as Message[] ?? emptyMessages, emptyMessages, { equals: same })
+  // Every reader below wants contract fields — tokens, cost, `system`, the raw
+  // envelope — so the tab reports on rows the runtime produced, not on an
+  // optimistic local stub that has none of them to report.
+  const messages = createMemo(
+    () => conversation()?.messages.filter(isRuntimeAgentMessage) ?? emptyMessages,
+    emptyMessages,
+    { equals: same },
+  )
 
   const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
+    () => messages().filter((m) => m.role === "user"),
     emptyUserMessages,
     { equals: same },
   )
@@ -211,9 +219,9 @@ export function SessionContextTab() {
   const systemPrompt = createMemo(() => {
     const msg = findLast(visibleUserMessages(), (m) => !!m.system)
     const system = msg?.system
-    if (!system) return
+    if (!system) return undefined
     const trimmed = system.trim()
-    if (!trimmed) return
+    if (!trimmed) return undefined
     return trimmed
   })
 
@@ -238,7 +246,7 @@ export function SessionContextTab() {
         if (!c?.input || !snapshot) return []
         return estimateSessionContextBreakdown({
           messages: messages(),
-          parts: snapshot.parts as Record<string, Part[] | undefined>,
+          parts: snapshot.parts,
           input: c.input,
           systemPrompt: systemPrompt(),
         })
@@ -280,7 +288,7 @@ export function SessionContextTab() {
   let frame: number | undefined
   let restoreFrame: number | undefined
   let pending: { x: number; y: number } | undefined
-  const getParts = (id: string) => (conversation()?.parts[id] ?? []) as Part[]
+  const getParts = (id: string) => (conversation()?.parts[id] ?? [])
 
   const restoreScroll = () => {
     if (!paneActive()) return

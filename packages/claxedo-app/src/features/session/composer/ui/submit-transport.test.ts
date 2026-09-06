@@ -20,7 +20,7 @@ describe("submit transport adapter", () => {
     response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = (
       _input,
       init,
-    ) => Response.json(JSON.parse(String(init?.body))),
+    ) => Response.json(typeof init?.body === "string" ? JSON.parse(init.body) : null),
   ) =>
     createSubmitTransportAdapter({
       serverUrl: () => "https://control.example",
@@ -33,7 +33,7 @@ describe("submit transport adapter", () => {
         calls.push({
           url: request.url,
           method: request.method,
-          body: init?.body ? String(init.body) : null,
+          body: typeof init?.body === "string" ? init.body : null,
         })
         return typeof response === "function" ? response(input, init) : response.clone()
       },

@@ -70,7 +70,7 @@ export function ProjectRemoteRoutes(options: ProjectRemoteOptions) {
     try {
       return c.json(await projectRemote({ directory: path.normalize(directory), git, ...(isDirectory ? { isDirectory } : {}) }))
     } catch (err) {
-      if ((err as Error)?.name === "GitTimeoutError") return c.json({ kind: "git_timeout" })
+      if (err instanceof Error && err.name === "GitTimeoutError") return c.json({ kind: "git_timeout" })
       throw err
     }
   })

@@ -4,11 +4,22 @@
 // `session-composer-region.tsx` (two independent writers to the same handoff
 // key). It now has one owner.
 
-export type PromptPreviewPart =
-  | { type: "file"; path?: string }
-  | { type: "agent"; name?: string }
-  | { type: "image"; filename?: string }
-  | { type: string; content?: string }
+/**
+ * The fields a prompt part can contribute to the preview line.
+ *
+ * Deliberately one record rather than a union discriminated on `type`: the
+ * fallback arm has to accept ANY part kind, and a `{ type: string }` arm in a
+ * union swallows the literal arms, so `part.type === "file"` narrowed nothing
+ * and each branch had to assert its own shape back. Reading the field the branch
+ * wants off one optional-field record says the same thing with no assertion.
+ */
+export type PromptPreviewPart = {
+  type: string
+  path?: string
+  name?: string
+  filename?: string
+  content?: string
+}
 
 /**
  * Collapse prompt parts into a single preview line:
@@ -22,10 +33,10 @@ export type PromptPreviewPart =
 export function previewPromptText(parts: readonly PromptPreviewPart[]): string {
   return parts
     .map((part) => {
-      if (part.type === "file") return `[file:${(part as { path?: string }).path}]`
-      if (part.type === "agent") return `@${(part as { name?: string }).name}`
-      if (part.type === "image") return `[image:${(part as { filename?: string }).filename}]`
-      return (part as { content?: string }).content ?? ""
+      if (part.type === "file") return `[file:${part.path}]`
+      if (part.type === "agent") return `@${part.name}`
+      if (part.type === "image") return `[image:${part.filename}]`
+      return part.content ?? ""
     })
     .join("")
     .trim()

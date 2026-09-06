@@ -4,34 +4,49 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { execFileSync } from "node:child_process"
+import { z } from "zod"
 
 const root = path.resolve(import.meta.dirname, "..")
 const repoRoot = path.resolve(root, "..", "..")
 const failures: string[] = []
 
-const pkg = readJson(path.join(root, "package.json")) as {
-  name: string
-  version: string
-  bin?: Record<string, string>
-  exports: Record<string, Record<string, string>>
-  files?: string[]
-  scripts?: Record<string, string>
-  repository?: { url?: string }
-  homepage?: string
-  bugs?: string | { url?: string }
-}
-const manifest = readJson(path.join(root, "docs", "api-manifest.json")) as {
-  packageExports: string[]
-  rootRuntimeExports: string[]
-  routePrefixes: string[]
-}
+/**
+ * The files this gate reads, PARSED rather than asserted.
+ *
+ * This script exists to catch a published package that no longer matches its
+ * manifest, so a file whose shape has drifted is exactly the failure it is
+ * looking for — asserting the shape made that the one drift it could not see.
+ */
+const PackageJson = z.object({
+  name: z.string(),
+  version: z.string(),
+  bin: z.record(z.string(), z.string()).optional(),
+  exports: z.record(z.string(), z.record(z.string(), z.string())),
+  files: z.array(z.string()).optional(),
+  scripts: z.record(z.string(), z.string()).optional(),
+  repository: z.object({ url: z.string().optional() }).optional(),
+  homepage: z.string().optional(),
+  bugs: z.union([z.string(), z.object({ url: z.string().optional() })]).optional(),
+})
 
-const rootApi = await import(pathToFileURL(path.join(root, "dist", "index.mjs")).href) as
-  Record<string, unknown>
-const routeApi = await import(pathToFileURL(path.join(root, "dist", "routes.mjs")).href) as {
-  WorkspaceRuntimeRouteManifest: Array<{ path: string }>
-  WorkspaceRuntimeRoutes: Record<string, string>
-}
+const ApiManifest = z.object({
+  packageExports: z.array(z.string()),
+  rootRuntimeExports: z.array(z.string()),
+  routePrefixes: z.array(z.string()),
+})
+
+const RouteApi = z.object({
+  WorkspaceRuntimeRouteManifest: z.array(z.object({ path: z.string() })),
+  WorkspaceRuntimeRoutes: z.record(z.string(), z.string()),
+})
+
+const PatchManifest = z.object({ claxedoDependencyPatches: z.record(z.string(), z.string()) })
+
+const pkg = PackageJson.parse(readJson(path.join(root, "package.json")))
+const manifest = ApiManifest.parse(readJson(path.join(root, "docs", "api-manifest.json")))
+
+const rootApi: Record<string, unknown> = await import(pathToFileURL(path.join(root, "dist", "index.mjs")).href)
+const routeApi = RouteApi.parse(await import(pathToFileURL(path.join(root, "dist", "routes.mjs")).href))
 
 compareSet(
   "package.json exports vs docs/api-manifest.json packageExports",
@@ -80,12 +95,8 @@ if (pkg.scripts?.postinstall !== "node scripts/install-opencode-node.mjs"
   failures.push("published package must run and include the Node SDK patch installer")
 }
 const patchRoot = path.join(root, "dist/opencode-node")
-const patchManifest = readJson(path.join(patchRoot, "package.json")) as {
-  claxedoDependencyPatches: Record<string, string>
-}
-const rootPatches = (readJson(path.join(repoRoot, "package.json")) as {
-  claxedoDependencyPatches: Record<string, string>
-}).claxedoDependencyPatches
+const patchManifest = PatchManifest.parse(readJson(path.join(patchRoot, "package.json")))
+const rootPatches = PatchManifest.parse(readJson(path.join(repoRoot, "package.json"))).claxedoDependencyPatches
 compareSet("published OpenCode patches vs canonical patches",
   Object.keys(patchManifest.claxedoDependencyPatches),
   Object.keys(rootPatches).filter((name) => name.startsWith("@opencode-ai/")))
@@ -171,8 +182,8 @@ function compareSet(label: string, actual: string[], expected: string[]) {
   const extra = actualSorted.filter((item) => !expectedSorted.includes(item))
   failures.push(
     `${label} mismatch`
-    + `${missing.length ? `; missing: ${missing.join(", ")}` : ""}`
-    + `${extra.length ? `; extra: ${extra.join(", ")}` : ""}`,
+    + (missing.length ? `; missing: ${missing.join(", ")}` : "")
+    + (extra.length ? `; extra: ${extra.join(", ")}` : ""),
   )
 }
 

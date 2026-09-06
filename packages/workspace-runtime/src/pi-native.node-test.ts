@@ -1,3 +1,6 @@
+// `node:test`'s `describe`/`test` return a promise the runner already owns: it
+// settles when the suite finishes and reports failures through the runner
+// rather than rejecting, so every registration below is deliberately `void`ed.
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
@@ -7,7 +10,7 @@ import { createServer } from "node:http"
 import { createWorkspaceRuntimeApp } from "./server"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
 
-test(
+void test(
   "lazy Pi admission clears crash-left credentials before its first unauthenticated HTTP turn",
   { skip: !process.env.PI_EXECUTABLE, timeout: 60_000 },
   async () => {
@@ -71,7 +74,7 @@ test(
   },
 )
 
-test(
+void test(
   "native Pi machine HTTP routes retain sessions and scrub auth across checkpoint/restart",
   { skip: !process.env.PI_EXECUTABLE, timeout: 60_000 },
   async () => {

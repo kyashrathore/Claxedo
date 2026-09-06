@@ -3,11 +3,12 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { rec, txt } from "./route-support"
+import { txt } from "./route-support"
 import { controlPlaneRateLimitError } from "./runtime-token-guards"
+import { asRecord } from "../platform/json/index"
 
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
-  const workspace = rec(rec(result)?.workspace)
+  const workspace = asRecord(asRecord(result)?.workspace)
   const resolvedWorkspaceId = txt(workspace?.workspace_id) ?? txt(workspace?.workspaceId) ?? workspaceId
   const access = txt(workspace?.access)
   const backing = txt(workspace?.backing)
@@ -69,7 +70,7 @@ export async function openSignedWorkspaceByDirectory(input: {
   auth: SignedControlPlaneAuth
   directory: string | undefined
 }) {
-  if (!input.directory) return
+  if (!input.directory) return undefined
   const authority = requireAuthority(input.services)
   await authority.usersMe(input.auth)
   const workspaces = await authority.listWorkspaces(input.auth)
@@ -91,7 +92,7 @@ export async function openSignedWorkspaceByDirectory(input: {
     } as const
   }
   const workspaceId = workspaceIds[0]
-  if (!workspaceId) return
+  if (!workspaceId) return undefined
   return await openSignedWorkspaceJson({
     services: input.services,
     rateLimiter: input.rateLimiter,
@@ -124,12 +125,12 @@ export async function openSignedWorkspaceJson(input: {
 }
 
 function signedWorkspaceId(workspace: unknown) {
-  const row = rec(workspace)
+  const row = asRecord(workspace)
   return txt(row?.workspace_id) ?? txt(row?.workspaceId)
 }
 
 function signedWorkspaceDirectory(workspace: unknown) {
-  const row = rec(workspace)
+  const row = asRecord(workspace)
   return txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? txt(row?.directory)
 }
 

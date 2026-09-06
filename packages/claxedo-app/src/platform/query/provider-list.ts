@@ -1,4 +1,5 @@
 import type { ProviderListResponse } from "@/platform/query/control-plane"
+import { asRecord, recordOrEmpty } from "@/lib/record"
 export type { ProviderListResponse } from "@/platform/query/control-plane"
 
 export const popularProviders = [
@@ -20,6 +21,35 @@ type CollectionValue<T> = T extends Map<unknown, infer Value>
 
 export type NormalizedProviderListResponse = Omit<ProviderListResponse, "all"> & {
   all: Map<string, CollectionValue<ProviderListResponse["all"]>>
+}
+
+/**
+ * Whether a body from `/agent-config/providers` is a provider catalog.
+ *
+ * Checks what the catalog is keyed and filtered by: `all` as providers that
+ * carry an `id` and a `models` map, `connected` as provider ids, and `default`
+ * as a provider id → model id map. Those are the fields this module indexes and
+ * the ones a wrong body silently breaks — `normalizeProviderList` used to take
+ * whatever `response.json()` returned on the strength of an `as`, so a body
+ * with no `all` produced an empty catalog and an unexplained empty model
+ * picker.
+ *
+ * Model BODIES are deliberately not re-derived here. `ClaxedoProviderModel` is
+ * the server's own catalog schema; a second copy of it in the client would be
+ * one more thing to keep in step with the server, and no reader in this app
+ * benefits from rejecting a catalog because one model grew a field.
+ */
+export function isProviderListResponse(value: unknown): value is ProviderListResponse {
+  const catalog = asRecord(value)
+  if (!catalog) return false
+  const isProvider = (entry: unknown) => {
+    const provider = asRecord(entry)
+    return typeof provider?.id === "string" && !!asRecord(provider.models)
+  }
+  if (!Array.isArray(catalog.all) || !catalog.all.every(isProvider)) return false
+  if (!Array.isArray(catalog.connected) || !catalog.connected.every((id) => typeof id === "string")) return false
+  const defaults = asRecord(catalog.default)
+  return !!defaults && Object.values(defaults).every((model) => typeof model === "string")
 }
 
 export function normalizeProviderList(input: ProviderListResponse): NormalizedProviderListResponse {
@@ -110,18 +140,13 @@ export function compactProviderListForStorage(input: unknown) {
   const connected = Array.isArray(catalog.connected)
     ? catalog.connected.filter((item): item is string => typeof item === "string")
     : []
-  const defaults = catalog.default && typeof catalog.default === "object" && !Array.isArray(catalog.default)
-    ? catalog.default as Record<string, unknown>
-    : {}
+  const defaults = recordOrEmpty(catalog.default)
   return {
     ...catalog,
     all: new Map(all.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return []
-      const provider = item as Record<string, unknown>
-      if (typeof provider.id !== "string") return []
-      const models = provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-        ? provider.models as Record<string, unknown>
-        : {}
+      const provider = asRecord(item)
+      if (!provider || typeof provider.id !== "string") return []
+      const models = recordOrEmpty(provider.models)
       const configuredDefault = defaults[provider.id]
       const defaultModel = typeof configuredDefault === "string" ? configuredDefault : undefined
       return [[provider.id, {

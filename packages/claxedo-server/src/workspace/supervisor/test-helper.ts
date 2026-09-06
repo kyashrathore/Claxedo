@@ -1,5 +1,4 @@
 import { runtimes, type WorkspaceRuntimeState } from "./store"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 export function __registerReadyRuntimeForTest(input: {
   workspaceId: string
@@ -12,9 +11,11 @@ export function __registerReadyRuntimeForTest(input: {
     ws: {
       id: input.workspaceId,
       directory: input.directory ?? `/tmp/${input.workspaceId}`,
-      ...(input.kind ? { kind: input.kind } : {}),
+      kind: input.kind ?? "local",
+      created_at: Date.now(),
+      updated_at: Date.now(),
       ...(input.remote_directory ? { remote_directory: input.remote_directory } : {}),
-    } as Workspace,
+    },
     url: input.url,
     status: "ready",
     used_at: Date.now(),

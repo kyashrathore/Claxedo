@@ -166,8 +166,8 @@ describe("session Goal authority", () => {
       currentDirectory: () => scope.directory,
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
-    expect(harness.pending[0]!.url).toContain("/session/ses_1/goal/state")
-    expect(harness.pending[0]!.method).toBe("GET")
+    expect(harness.pending[0].url).toContain("/session/ses_1/goal/state")
+    expect(harness.pending[0].method).toBe("GET")
     resolveGoalRead()
 
     await expect(sync).resolves.toBe(true)
@@ -186,7 +186,7 @@ describe("session Goal authority", () => {
       currentDirectory: () => scope.directory,
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
-    harness.pending[0]!.resolve(Response.json({
+    harness.pending[0].resolve(Response.json({
       capabilities: {
         implemented: false,
         available: false,
@@ -237,7 +237,7 @@ describe("session Goal authority", () => {
     // (`workspace-runtime` `routes/session-core.ts:goalMutationResponse`), so
     // the fake must too — a 200 here would exercise a transport the server
     // never produces.
-    harness.pending[0]!.resolve(Response.json({ ok: false, status: "failed", message: "provider refused" }, { status: 502 }))
+    harness.pending[0].resolve(Response.json({ ok: false, status: "failed", message: "provider refused" }, { status: 502 }))
 
     await expect(pause).rejects.toMatchObject({ name: "SessionGoalMutationError", status: "failed" })
     expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))?.goal).toEqual(activeGoal)
@@ -248,7 +248,7 @@ describe("session Goal authority", () => {
     const pause = mutateSessionGoalData({ request, mutation: "pause" })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
     const paused = { ...activeGoal, status: "paused" as const, updatedAt: 21 }
-    harness.pending[0]!.resolve(Response.json({ ok: true, goal: paused }))
+    harness.pending[0].resolve(Response.json({ ok: true, goal: paused }))
 
     await expect(pause).resolves.toEqual(paused)
     expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))?.goal).toEqual(paused)
@@ -264,7 +264,7 @@ describe("session Goal authority", () => {
       sessionId: scope.sessionID,
       payload: { type: "goal-cleared", sessionId: scope.sessionID },
     })).toBe(true)
-    harness.pending[0]!.resolve(Response.json({
+    harness.pending[0].resolve(Response.json({
       ok: true,
       goal: { ...activeGoal, status: "paused", updatedAt: 21 },
     }))

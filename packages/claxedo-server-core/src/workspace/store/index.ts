@@ -6,7 +6,8 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import { dockerSandboxDriverEnabled, isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import { isJsonRecord, jsonRecord, jsonString, jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 
 const execFileAsync = promisify(execFile)
 
@@ -91,10 +92,6 @@ type State = {
   projects?: Project[]
 }
 
-type StoredWorkspace = Omit<Workspace, "driver"> & {
-  driver?: SandboxDriverID
-}
-
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
 const projectsById = new Map<string, Project>()
@@ -146,10 +143,6 @@ function isRejectedDir(dir: string) {
   // __pages__ is a frontend sentinel directory — never a real workspace
   if (path.basename(dir) === "__pages__") return true
   return false
-}
-
-function storedCloudDirectory(item: Workspace) {
-  return trim(item.remote_directory) || trim(item.directory) || "/workspace"
 }
 
 function mapDirectory(ws: Workspace) {
@@ -232,47 +225,80 @@ function projectId(key: string) {
   return root?.project_id
 }
 
+/** A `{ color?, override? }` / `{ start? }` style sub-object of a stored record. */
+function textFields<Key extends string>(value: unknown, keys: readonly Key[]): Partial<Record<Key, string>> | undefined {
+  const row = jsonRecord(value)
+  if (!row) return undefined
+  const out: Partial<Record<Key, string>> = {}
+  for (const key of keys) {
+    const entry = row[key]
+    if (typeof entry === "string") out[key] = entry
+  }
+  return out
+}
+
+/** A stored sandbox driver id, when the file names one this build knows. */
+function driverId(value: unknown): SandboxDriverID | undefined {
+  const id = jsonString(value)
+  return id && isSandboxDriverID(id) ? id : undefined
+}
+
+/** A stored timestamp, or now when the record predates the field or carries a bad one. */
+function storedTime(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : Date.now()
+}
+
 async function load(target: string) {
   try {
-    const raw = JSON.parse(await fs.readFile(target, "utf-8"))
-    const state = raw as Partial<Omit<State, "workspaces"> & { workspaces: StoredWorkspace[] }>
-    for (const item of state.projects ?? []) {
-      const id = trim(item.id)
-      const name = trim(item.name)
+    const state = jsonRecord(JSON.parse(await fs.readFile(target, "utf-8")))
+    const rows = (key: string) => {
+      const value = state?.[key]
+      return Array.isArray(value) ? value.filter(isJsonRecord) : []
+    }
+    for (const item of rows("projects")) {
+      const id = trim(jsonString(item.id))
+      const name = trim(jsonString(item.name))
       if (!id || !name) continue
       projectsById.set(id, {
         id,
         name,
         env: envRecord(item.env),
-        created_at: item.created_at ?? Date.now(),
-        updated_at: item.updated_at ?? Date.now(),
+        created_at: storedTime(item.created_at),
+        updated_at: storedTime(item.updated_at),
       })
     }
-    for (const item of state.workspaces ?? []) {
-      const id = item.id
+    for (const item of rows("workspaces")) {
+      const id = jsonString(item.id)
+      if (!id) continue
       const kind = item.kind === "cloud" ? "cloud" : "local"
+      const directory = jsonString(item.directory)
+      const repoKey = trim(jsonString(item.repo_key))
+      const repoRoot = trim(jsonString(item.repo_root))
+      const remoteDirectory = trim(jsonString(item.remote_directory))
+      const storedDirectory = kind === "cloud" ? (remoteDirectory ?? trim(directory) ?? "/workspace") : directory
+      if (!storedDirectory) continue
       const ws: Workspace = {
         id,
-        org_id: trim(item.org_id),
-        project_id: trim(item.project_id) || id,
-        project_name: trim(item.project_name),
-        project_icon: item.project_icon,
-        project_commands: item.project_commands,
-        workspace_name: trim(item.workspace_name),
-        directory: kind === "cloud" ? storedCloudDirectory(item) : directoryKey(item.directory),
+        org_id: trim(jsonString(item.org_id)),
+        project_id: trim(jsonString(item.project_id)) || id,
+        project_name: trim(jsonString(item.project_name)),
+        project_icon: textFields(item.project_icon, ["color", "override"]),
+        project_commands: textFields(item.project_commands, ["start"]),
+        workspace_name: trim(jsonString(item.workspace_name)),
+        directory: kind === "cloud" ? storedDirectory : directoryKey(storedDirectory),
         kind,
-        driver: item.driver,
-        repo_url: trim(item.repo_url),
-        repo_key: kind === "cloud" ? item.repo_key : item.repo_key ? norm(item.repo_key) : undefined,
-        repo_root: kind === "cloud" ? item.repo_root : item.repo_root ? norm(item.repo_root) : undefined,
-        repo_name: trim(item.repo_name),
-        git_branch: trim(item.git_branch),
-        git_remote: trim(item.git_remote),
-        sandbox_id: trim(item.sandbox_id),
-        remote_directory: trim(item.remote_directory),
-        status: trim(item.status),
-        created_at: item.created_at ?? Date.now(),
-        updated_at: item.updated_at ?? Date.now(),
+        driver: driverId(item.driver),
+        repo_url: trim(jsonString(item.repo_url)),
+        repo_key: kind === "cloud" ? repoKey : repoKey ? norm(repoKey) : undefined,
+        repo_root: kind === "cloud" ? repoRoot : repoRoot ? norm(repoRoot) : undefined,
+        repo_name: trim(jsonString(item.repo_name)),
+        git_branch: trim(jsonString(item.git_branch)),
+        git_remote: trim(jsonString(item.git_remote)),
+        sandbox_id: trim(jsonString(item.sandbox_id)),
+        remote_directory: remoteDirectory,
+        status: trim(jsonString(item.status)),
+        created_at: storedTime(item.created_at),
+        updated_at: storedTime(item.updated_at),
       }
       byId.set(ws.id, ws)
       mapDirectory(ws)
@@ -395,10 +421,8 @@ type EnsureWorkspaceInput = {
 }
 
 function envRecord(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-  return entries.length ? Object.fromEntries(entries) : undefined
+  const entries = jsonStringEntries(value)
+  return Object.keys(entries).length ? entries : undefined
 }
 
 export async function ensureWorkspace(input: EnsureWorkspaceInput) {
@@ -580,7 +604,7 @@ export async function updateWorkspace(
 ) {
   await boot()
   const ws = byId.get(id)
-  if (!ws) return
+  if (!ws) return undefined
   const next = upsert({
     ...ws,
     ...patch,
@@ -612,7 +636,7 @@ export async function getProjectMetadata(projectId: string) {
 export async function updateProjectMetadata(projectId: string, patch: ProjectMetadataUpdate) {
   const workspace = await getProjectWorkspace(projectId)
   const root = workspace && byId.get(workspace.id)
-  if (!root) return
+  if (!root) return undefined
   upsert({
     ...root,
     ...(patch.name !== undefined ? { project_name: trim(patch.name) } : {}),
@@ -666,8 +690,8 @@ export async function resolveWorkspace(input: { workspaceId?: string; directory?
   })
 }
 
-function repoSlug(input: string | undefined) {
-  if (!input) return
+function repoSlug(input: string | undefined): string | undefined {
+  if (!input) return undefined
   const normalized = input.trim().replace(/\.git$/, "")
   const match = normalized.match(/github\.com[:/]([^/]+)\/([^/]+)$/i)
   if (match) return `${match[1]}/${match[2]}`.toLowerCase()
@@ -706,7 +730,7 @@ export async function listProjects() {
     .filter(([, rows]) => !rows.every((row) => row.kind !== "cloud" && isRejectedDir(row.directory)))
     .map(async ([id, rows]) => {
       const all = [...rows].sort((a, b) => a.created_at - b.created_at)
-      const root = main(all)!
+      const root = main(all)
       const repoRoot = root.repo_root ?? workspaceKey(root)
       const others = all.filter((row) => {
         if (row.id === root.id) return false

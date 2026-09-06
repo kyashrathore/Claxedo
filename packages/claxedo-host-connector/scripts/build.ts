@@ -7,6 +7,7 @@ import {
   serializeBuildManifest,
   type SourceMapMetadata,
 } from "../../../script/product-boundary/normalize-build-manifest"
+import { runBunBuild } from "../../../script/bun-build"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
@@ -15,7 +16,7 @@ const ENTRY = path.join(ROOT, "src/connector.ts")
 
 fs.rmSync(DIST, { recursive: true, force: true })
 
-const result = await Bun.build({
+const result = await runBunBuild("Host Connector bundle failed", {
   entrypoints: [ENTRY, path.join(ROOT, "src/host-identity.ts")],
   outdir: DIST,
   naming: "[name].mjs",
@@ -24,7 +25,6 @@ const result = await Bun.build({
   splitting: false,
   sourcemap: "external",
 })
-if (!result.success) throw new AggregateError(result.logs, "Host Connector bundle failed")
 
 execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], {
   cwd: ROOT,
@@ -32,7 +32,7 @@ execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.js
 })
 
 const mapFile = path.join(DIST, "connector.mjs.map")
-const sourceMap = JSON.parse(fs.readFileSync(mapFile, "utf8")) as SourceMapMetadata
+const sourceMap: SourceMapMetadata = JSON.parse(fs.readFileSync(mapFile, "utf8"))
 const manifest = normalizeSourceMapBuildManifest({
   entry: ENTRY,
   sourceMap,

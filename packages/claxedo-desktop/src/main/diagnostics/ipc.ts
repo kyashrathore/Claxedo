@@ -1,8 +1,15 @@
 import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+
+import { readUnknown } from "../../shared/json-read"
 import type { Profiler } from "./profiler"
 
 export type DiagnosticsIpcRouter = {
-  handle(channel: string, handler: (event: unknown, input?: unknown) => unknown): void
+  /**
+   * `event` is the sender, not `unknown`: Electron's own `ipcMain` satisfies
+   * this, so `main/ipc.ts` hands it over with no assertion, and the sender
+   * checks below read a declared shape instead of asserting one per handler.
+   */
+  handle(channel: string, handler: (event: SenderEvent, input?: unknown) => unknown): void
   removeHandler?(channel: string): void
 }
 
@@ -62,9 +69,8 @@ export function registerProcessDiagnosticsIpc(
   }
   const states = new Map<number, State>()
 
-  const stateFor = (input: unknown) => {
-    const event = input as Partial<SenderEvent>
-    if (!event.sender || !event.senderFrame) throw new Error("Untrusted diagnostics sender")
+  const stateFor = (event: SenderEvent) => {
+    if (!event.senderFrame) throw new Error("Untrusted diagnostics sender")
     const state = states.get(event.sender.id)
     if (!state || state.webContents !== event.sender || event.sender.isDestroyed()) {
       throw new Error("Unregistered diagnostics sender")
@@ -130,7 +136,7 @@ export function registerProcessDiagnosticsIpc(
   router.handle("process-diagnostics:kill", (event, input) =>
     dispatchAction(event, LocalDiagnostics.KillRequest.parse(input)))
 
-  async function dispatchAction(event: unknown, request: LocalDiagnostics.ActionRequest) {
+  async function dispatchAction(event: SenderEvent, request: LocalDiagnostics.ActionRequest) {
     const state = stateFor(event)
     const navigationGeneration = state.generation
     const profilerGeneration = options.profiler.getGeneration()
@@ -165,9 +171,15 @@ export function registerProcessDiagnosticsIpc(
       generation: 0,
       documentReady: options.isAllowedUrl(webContents.getURL()),
       onNavigation: (...args: unknown[]) => {
-        const details = args[0] as { isMainFrame?: boolean; isSameDocument?: boolean }
-        const isMainFrame = details.isMainFrame ?? args[3] === true
-        const isSameDocument = details.isSameDocument ?? args[2] === true
+        // Electron sends a details object on `did-frame-navigate` and
+        // positional arguments on the older `did-navigate`; read whichever
+        // arrived rather than asserting the first argument into a shape.
+        const flag = (key: string) => {
+          const value = readUnknown(args[0], key)
+          return typeof value === "boolean" ? value : undefined
+        }
+        const isMainFrame = flag("isMainFrame") ?? args[3] === true
+        const isSameDocument = flag("isSameDocument") ?? args[2] === true
         if (!isMainFrame || isSameDocument) return
         state.generation++
         state.documentReady = false

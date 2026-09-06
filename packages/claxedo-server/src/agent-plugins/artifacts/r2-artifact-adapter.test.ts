@@ -64,7 +64,7 @@ describe("hostedAgentPluginArtifactStore", () => {
     const store = hostedAgentPluginArtifactStore(bucket)
     const inspected = await artifact()
     await store.put(inspected)
-    const [key, bytes] = [...values][0]!
+    const [key, bytes] = [...values][0]
     const corrupt = bytes.slice()
     corrupt[corrupt.byteLength - 1] ^= 1
     values.set(key, corrupt)

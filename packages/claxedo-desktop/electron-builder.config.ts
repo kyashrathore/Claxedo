@@ -254,14 +254,6 @@ function getConfig() {
   const base = getBase()
 
   switch (channel) {
-    case "dev": {
-      return {
-        ...base,
-        appId: "ai.claxedo.desktop.dev",
-        productName: "Claxedo Dev",
-        rpm: { packageName: "claxedo-dev" },
-      }
-    }
     case "beta": {
       return {
         ...base,
@@ -280,6 +272,16 @@ function getConfig() {
         protocols: { name: "Claxedo", schemes: ["claxedo"] },
         publish: { provider: "github", owner: "kyashrathore", repo: "Claxedo", channel: "latest" },
         rpm: { packageName: "claxedo" },
+      }
+    }
+    default: {
+      // "dev" — the same value `channel` above falls back to, so every path
+      // here answers a config rather than dropping off the end.
+      return {
+        ...base,
+        appId: "ai.claxedo.desktop.dev",
+        productName: "Claxedo Dev",
+        rpm: { packageName: "claxedo-dev" },
       }
     }
   }

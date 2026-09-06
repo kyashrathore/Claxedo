@@ -99,7 +99,7 @@ async function localLoopbackConnectionResponse(
   options: WorkspaceRouteOptions,
   ws: Awaited<ReturnType<typeof resolveWorkspace>>,
 ) {
-  if (ws?.kind !== "cloud" || !isLoopbackLocalRequest(request)) return
+  if (ws?.kind !== "cloud" || !isLoopbackLocalRequest(request)) return undefined
   try {
     const result = await localLoopbackCloudConnectionInfo(services, options, request, ws)
     if ("error" in result) return c.json({ error: result.error }, result.status)

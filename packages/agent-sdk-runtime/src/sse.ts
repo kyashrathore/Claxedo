@@ -1,3 +1,4 @@
+import { clearOpaqueTimer } from "./harnesses/shared/opaque-timer"
 export type SseFanoutCleanup = () => void
 export type SseFanoutMeta = { id?: string }
 
@@ -37,7 +38,7 @@ export function createSseReplayBuffer<T>(input?: {
   let seq = Math.max(0, Math.floor(input?.initialSequence ?? 0))
 
   const isTerminal = (payload: T) => input?.isTerminal?.(payload) === true
-  const trim = <U>(items: U[], max: number) => {
+  const trim = (items: unknown[], max: number) => {
     while (items.length > max) items.shift()
   }
   const numericId = (id: string | undefined) => {
@@ -117,25 +118,35 @@ export function attachSseFanout<T>(input: {
   replayGap?: (input: { lastEventId?: string; throughId?: string }) =>
     T | { type: "heartbeat" } | { payload: { type: "server.heartbeat"; properties: {} } }
   onDrop?: (payload: T | { type: "heartbeat" } | { payload: { type: "server.heartbeat"; properties: {} } }) => void
+  /** The heartbeat clock. Injectable so a test drives it without patching a global. */
+  setInterval?: (fn: () => void, ms: number) => unknown
+  clearInterval?: (handle: unknown) => void
 }): SseFanoutCleanup {
   type Payload = T | { type: "heartbeat" } | { payload: { type: "server.heartbeat"; properties: {} } }
-  type Pending = { payload: Payload; id?: string }
+  // Terminality is decided where the value is still known to be a `T`; a
+  // heartbeat or a replay-gap frame is never terminal.
+  type Pending = { payload: Payload; id?: string; terminal?: boolean }
   const maxPending = Math.max(1, Math.floor(input.maxPending ?? 256))
   const pending: Pending[] = []
   let writing = false
   let closed = false
-  let heartbeat: ReturnType<typeof setInterval> | undefined
+  const startHeartbeat = input.setInterval ?? ((fn, ms) => setInterval(fn, ms))
+  const stopHeartbeat = input.clearInterval ?? clearOpaqueTimer
+  let heartbeat: unknown
   let unsub = () => {}
+
+  // Read through a function: `closed` flips while `flush` is awaiting a write.
+  const isClosed = () => closed
 
   const cleanup = () => {
     if (closed) return
     closed = true
     pending.length = 0
-    if (heartbeat) clearInterval(heartbeat)
+    if (heartbeat !== undefined) stopHeartbeat(heartbeat)
     unsub()
   }
 
-  const isTerminal = (event: Payload) => input.replay?.isTerminal(event as T) === true || input.isTerminal?.(event as T) === true
+  const isTerminal = (event: T) => input.replay?.isTerminal(event) === true || input.isTerminal?.(event) === true
   const numericId = (id: string | undefined) => {
     if (!id) return 0
     const parsed = Number.parseInt(id, 10)
@@ -145,7 +156,7 @@ export function attachSseFanout<T>(input: {
   const dropIndex = () => {
     const heartbeatIndex = pending.findIndex((event) => isHeartbeat(event.payload))
     if (heartbeatIndex !== -1) return heartbeatIndex
-    const nonTerminalIndex = pending.findIndex((event) => !isTerminal(event.payload))
+    const nonTerminalIndex = pending.findIndex((event) => event.terminal !== true)
     return nonTerminalIndex === -1 ? 0 : nonTerminalIndex
   }
   const enqueue = (event: Pending) => {
@@ -162,7 +173,7 @@ export function attachSseFanout<T>(input: {
     if (writing) return
     writing = true
     try {
-      while (!closed && pending.length > 0) {
+      while (!isClosed() && pending.length > 0) {
         const event = pending.shift()!
         await input.write(event.payload, { id: event.id })
       }
@@ -180,7 +191,7 @@ export function attachSseFanout<T>(input: {
     const id = replay
       ? replay.idFor(event) ?? (input.replayLive === false ? undefined : replay.push(event).id)
       : undefined
-    const next = { payload: event, id }
+    const next = { payload: event, id, terminal: isTerminal(event) }
     if (replaying) {
       deferredLive.push(next)
       return
@@ -193,7 +204,7 @@ export function attachSseFanout<T>(input: {
     enqueue({ payload: input.replayGap({ lastEventId: input.lastEventId, throughId }) })
   } else {
     for (const event of input.replay?.replayAfter(input.lastEventId, throughId) ?? []) {
-      enqueue({ payload: event.payload, id: event.id })
+      enqueue({ payload: event.payload, id: event.id, terminal: isTerminal(event.payload) })
     }
   }
   replaying = false
@@ -202,7 +213,7 @@ export function attachSseFanout<T>(input: {
     if (event.id && numericId(event.id) <= through) continue
     enqueue(event)
   }
-  heartbeat = setInterval(() => {
+  heartbeat = startHeartbeat(() => {
     enqueue({ payload: input.heartbeat })
   }, input.heartbeatMs)
   return cleanup

@@ -36,7 +36,7 @@ export async function waitForFontReady(
   { fontFamily, fontSize, timeoutMs = DEFAULT_FONT_LOAD_TIMEOUT_MS }: FontReadyTarget,
   doc: Pick<Document, "fonts"> | undefined = typeof document === "undefined" ? undefined : document,
 ): Promise<void> {
-  const fonts = doc?.fonts as FontFaceSet | undefined
+  const fonts = doc?.fonts
   if (!fonts || typeof fonts.load !== "function") return
 
   const spec = `${fontSize}px ${fontFamily}`

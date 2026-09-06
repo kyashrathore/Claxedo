@@ -1,3 +1,5 @@
+import { readFiniteNumber, readString } from "@/lib/record"
+
 export interface RecoveryDraftStorage {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
@@ -105,13 +107,11 @@ function readVersions(storage: RecoveryDraftStorage, documentId: string): Recove
 }
 
 function isRecoveryDraft(value: unknown, documentId: string, version: string): value is RecoveryDraft {
-  if (!value || typeof value !== "object") return false
-  const draft = value as Record<string, unknown>
   return (
-    draft.documentId === documentId &&
-    draft.version === version &&
-    typeof draft.displayName === "string" &&
-    typeof draft.markdown === "string" &&
-    typeof draft.updatedAt === "number"
+    readString(value, "documentId") === documentId &&
+    readString(value, "version") === version &&
+    readString(value, "displayName") !== undefined &&
+    readString(value, "markdown") !== undefined &&
+    readFiniteNumber(value, "updatedAt") !== undefined
   )
 }

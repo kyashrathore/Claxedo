@@ -21,6 +21,8 @@
 import { z } from "zod"
 
 import { desktopRequest } from "./desktop-request"
+import { bool, num, record, records, text } from "./json"
+import type { McpToolResult, RegisterMcpTool } from "./mcp-tool"
 
 // ---------------------------------------------------------------------------
 // Types matching the bridge's JSON shapes
@@ -63,14 +65,90 @@ export type BridgeNavigateResponse =
   | { ok: true }
   | { ok: false; error: { code: string; message?: string } }
 
-// Shared tool-result shape.
-export type ToolResult = {
-  content: Array<
-    | { type: "text"; text: string }
-    | { type: "image"; mimeType: "image/png" | "image/jpeg"; data: string }
-  >
-  isError?: boolean
+// ---------------------------------------------------------------------------
+// Parsers for those shapes
+//
+// `desktopRequest` returns `unknown` on purpose (see desktop-request.ts), so
+// each response is narrowed here, next to the type it produces. A bridge that
+// answers something else reads as a malformed response at the tool boundary
+// rather than as `undefined` inside a template three lines later.
+// ---------------------------------------------------------------------------
+
+const CONSOLE_LEVELS = ["log", "warn", "error", "debug", "info"] as const
+const CONSOLE_SOURCES = ["console", "exception", "log"] as const
+
+function tabSummaries(value: unknown): BridgeTabSummary[] {
+  return records(record(value)?.tabs).flatMap((row) => {
+    const paneId = text(row.paneId)
+    if (!paneId) return []
+    return [{
+      paneId,
+      title: typeof row.title === "string" ? row.title : "",
+      currentUrl: typeof row.currentUrl === "string" ? row.currentUrl : "",
+      ...(text(row.groupId) ? { groupId: text(row.groupId) } : {}),
+      agentAllowed: bool(row.agentAllowed) ?? false,
+    }]
+  })
 }
+
+function stackFrames(value: unknown): ConsoleStackFrame[] {
+  return records(value).map((frame) => ({
+    ...(text(frame.url) ? { url: text(frame.url) } : {}),
+    ...(text(frame.function) ? { function: text(frame.function) } : {}),
+    ...(num(frame.line) === undefined ? {} : { line: num(frame.line) }),
+    ...(num(frame.column) === undefined ? {} : { column: num(frame.column) }),
+  }))
+}
+
+function consoleEntries(value: unknown): BridgeConsoleEntry[] {
+  return records(record(value)?.entries).flatMap((row) => {
+    const id = num(row.id)
+    const level = CONSOLE_LEVELS.find((candidate) => candidate === row.level)
+    const source = CONSOLE_SOURCES.find((candidate) => candidate === row.source)
+    if (id === undefined || !level || !source) return []
+    return [{
+      id,
+      time: num(row.time) ?? 0,
+      level,
+      args: Array.isArray(row.args) ? row.args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))) : [],
+      source,
+      ...(text(row.sessionId) ? { sessionId: text(row.sessionId) } : {}),
+      ...(Array.isArray(row.stack) ? { stack: stackFrames(row.stack) } : {}),
+    }]
+  })
+}
+
+/** The `{ ok: false, error }` half every bridge mutation shares. */
+function bridgeError(value: unknown): { code: string; message?: string; stack?: string } {
+  const error = record(record(value)?.error)
+  return {
+    code: text(error?.code) ?? "unknown",
+    ...(text(error?.message) ? { message: text(error?.message) } : {}),
+    ...(text(error?.stack) ? { stack: text(error?.stack) } : {}),
+  }
+}
+
+function bridgeOk(value: unknown): boolean {
+  return record(value)?.ok === true
+}
+
+function screenshotResponse(value: unknown): BridgeScreenshotResponse {
+  const row = record(value)
+  const dataUrl = text(row?.dataUrl)
+  const mimeType = row?.mimeType === "image/jpeg" ? "image/jpeg" : "image/png"
+  if (!bridgeOk(value) || !dataUrl) return { ok: false, error: bridgeError(value) }
+  return { ok: true, dataUrl, mimeType }
+}
+
+function evaluateResponse(value: unknown): BridgeEvaluateResponse {
+  if (!bridgeOk(value)) return { ok: false, error: bridgeError(value) }
+  return { ok: true, result: record(value)?.result }
+}
+
+function navigateResponse(value: unknown): BridgeNavigateResponse {
+  return bridgeOk(value) ? { ok: true } : { ok: false, error: bridgeError(value) }
+}
+
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -78,12 +156,12 @@ export type ToolResult = {
 
 const MAX_IMAGE_BYTES = 1_000_000
 
-const errorResult = (text: string): ToolResult => ({
+const errorResult = (text: string): McpToolResult => ({
   content: [{ type: "text", text }],
   isError: true,
 })
 
-const textResult = (text: string): ToolResult => ({
+const textResult = (text: string): McpToolResult => ({
   content: [{ type: "text", text }],
 })
 
@@ -95,13 +173,13 @@ export const browserListTabsSchema = {
   // No input — kept explicit so the MCP SDK sees a `{}` schema.
 } as const
 
-export async function handleBrowserListTabs(opts: Parameters<typeof desktopRequest>[1] = {}): Promise<ToolResult> {
-  const res = await desktopRequest<{ tabs: BridgeTabSummary[] }>("/browser/tabs", {
+export async function handleBrowserListTabs(opts: Parameters<typeof desktopRequest>[1] = {}): Promise<McpToolResult> {
+  const res = await desktopRequest("/browser/tabs", {
     method: "GET",
     ...opts,
   })
   if (!res.ok) return errorResult(res.error)
-  const tabs = res.data?.tabs ?? []
+  const tabs = tabSummaries(res.data)
   if (tabs.length === 0) {
     return textResult("No browser tabs are currently open.")
   }
@@ -138,10 +216,10 @@ export const browserScreenshotSchema = {
 export async function handleBrowserScreenshot(
   args: { pane_id: string; clip?: { x: number; y: number; width: number; height: number; scale?: number } },
   opts: Parameters<typeof desktopRequest>[1] = {},
-): Promise<ToolResult> {
+): Promise<McpToolResult> {
   const paneId = args.pane_id.trim()
   if (!paneId) return errorResult("pane_id is required.")
-  const res = await desktopRequest<BridgeScreenshotResponse>(
+  const res = await desktopRequest(
     `/browser/${encodeURIComponent(paneId)}/screenshot`,
     {
       method: "POST",
@@ -150,10 +228,9 @@ export async function handleBrowserScreenshot(
     },
   )
   if (!res.ok) return errorResult(res.error)
-  const data = res.data
-  if (!data || data.ok === false) {
-    const message = data && data.ok === false ? data.error.message ?? data.error.code : "unknown screenshot error"
-    return errorResult(`browser_screenshot failed: ${message}`)
+  const data = screenshotResponse(res.data)
+  if (!data.ok) {
+    return errorResult(`browser_screenshot failed: ${data.error.message ?? data.error.code}`)
   }
   const { dataUrl, mimeType } = data
   const base64 = extractBase64(dataUrl)
@@ -202,7 +279,7 @@ export async function handleBrowserGetConsoleLogs(
     limit?: number
   },
   opts: Parameters<typeof desktopRequest>[1] = {},
-): Promise<ToolResult> {
+): Promise<McpToolResult> {
   const paneId = args.pane_id.trim()
   if (!paneId) return errorResult("pane_id is required.")
   const params = new URLSearchParams()
@@ -211,12 +288,12 @@ export async function handleBrowserGetConsoleLogs(
   params.set("limit", String(args.limit ?? 100))
   const path = `/browser/${encodeURIComponent(paneId)}/console?${params.toString()}`
 
-  const res = await desktopRequest<{ entries: BridgeConsoleEntry[] }>(path, {
+  const res = await desktopRequest(path, {
     method: "GET",
     ...opts,
   })
   if (!res.ok) return errorResult(res.error)
-  const entries = res.data?.entries ?? []
+  const entries = consoleEntries(res.data)
   if (entries.length === 0) {
     return textResult(`No console entries for pane ${paneId}${typeof args.since === "number" ? ` since id ${args.since}` : ""}.`)
   }
@@ -258,13 +335,13 @@ export const browserEvaluateJsSchema = {
 export async function handleBrowserEvaluateJs(
   args: { pane_id: string; expression: string },
   opts: Parameters<typeof desktopRequest>[1] = {},
-): Promise<ToolResult> {
+): Promise<McpToolResult> {
   const paneId = args.pane_id.trim()
   if (!paneId) return errorResult("pane_id is required.")
   const expression = args.expression
   if (!expression) return errorResult("expression is required.")
 
-  const res = await desktopRequest<BridgeEvaluateResponse>(
+  const res = await desktopRequest(
     `/browser/${encodeURIComponent(paneId)}/evaluate`,
     {
       method: "POST",
@@ -273,17 +350,15 @@ export async function handleBrowserEvaluateJs(
     },
   )
   if (!res.ok) return errorResult(res.error)
-  const data = res.data
-  if (!data || data.ok === false) {
-    if (data && data.ok === false && data.error.code === "eval-denied") {
+  const data = evaluateResponse(res.data)
+  if (!data.ok) {
+    if (data.error.code === "eval-denied") {
       return errorResult(
         `browser_evaluate_js is disabled for pane ${paneId}. ` +
           `Ask the user to enable "Allow agent to run JS" on this browser tab and retry.`,
       )
     }
-    const code = data && data.ok === false ? data.error.code : "unknown"
-    const message = data && data.ok === false ? data.error.message ?? "" : ""
-    const stack = data && data.ok === false ? data.error.stack ?? "" : ""
+    const { code, message = "", stack = "" } = data.error
     return errorResult(
       `browser_evaluate_js failed (${code})${message ? `: ${message}` : ""}${stack ? `\n\n${stack}` : ""}`,
     )
@@ -309,13 +384,13 @@ export const browserNavigateSchema = {
 export async function handleBrowserNavigate(
   args: { pane_id: string; url: string },
   opts: Parameters<typeof desktopRequest>[1] = {},
-): Promise<ToolResult> {
+): Promise<McpToolResult> {
   const paneId = args.pane_id.trim()
   if (!paneId) return errorResult("pane_id is required.")
   const target = args.url.trim()
   if (!target) return errorResult("url is required.")
 
-  const res = await desktopRequest<BridgeNavigateResponse>(
+  const res = await desktopRequest(
     `/browser/${encodeURIComponent(paneId)}/navigate`,
     {
       method: "POST",
@@ -324,10 +399,9 @@ export async function handleBrowserNavigate(
     },
   )
   if (!res.ok) return errorResult(res.error)
-  const data = res.data
-  if (!data || data.ok === false) {
-    const code = data && data.ok === false ? data.error.code : "unknown"
-    const message = data && data.ok === false ? data.error.message ?? "" : ""
+  const data = navigateResponse(res.data)
+  if (!data.ok) {
+    const { code, message = "" } = data.error
     return errorResult(`browser_navigate failed (${code})${message ? `: ${message}` : ""}`)
   }
   return textResult(`Navigated pane ${paneId} to ${target}.`)
@@ -337,78 +411,68 @@ export async function handleBrowserNavigate(
 // Registration helper
 // ---------------------------------------------------------------------------
 
-type McpServerLike = {
-  registerTool: (
-    name: string,
-    spec: { description: string; inputSchema: Record<string, z.ZodTypeAny> },
-    handler: (args: Record<string, unknown>) => Promise<ToolResult>,
-  ) => unknown
-}
-
-export function registerBrowserTools(server: McpServerLike, options: { readOnly?: boolean } = {}): void {
-  server.registerTool(
+/**
+ * How a browser tool is registered. Generic over the tool's own schema so a
+ * handler receives the shape its `inputSchema` declares: an erased port hands
+ * every handler a bare record and makes each one re-assert arguments zod has
+ * already parsed. The server passes its own registration wrapper, which is the
+ * single place the SDK's wider result union is bridged.
+ */
+export function registerBrowserTools(register: RegisterMcpTool, options: { readOnly?: boolean } = {}): void {
+  register(
     "browser_list_tabs",
     {
       description:
         "[Browser] List all browser tabs currently open in the Claxedo desktop app. " +
         "Returns paneId, title, currentUrl, groupId, and agentAllowed (per-tab JS gate).",
-      inputSchema: browserListTabsSchema as Record<string, z.ZodTypeAny>,
+      inputSchema: browserListTabsSchema,
     },
     async () => handleBrowserListTabs(),
   )
 
-  server.registerTool(
+  register(
     "browser_screenshot",
     {
       description:
         "[Browser] Capture a PNG (or JPEG if oversized) screenshot of a browser pane. " +
         "Returns an inline image content part. Enforces a 1 MB image size cap.",
-      inputSchema: browserScreenshotSchema as Record<string, z.ZodTypeAny>,
+      inputSchema: browserScreenshotSchema,
     },
-    async (args) =>
-      handleBrowserScreenshot(args as { pane_id: string; clip?: { x: number; y: number; width: number; height: number; scale?: number } }),
+    async (args) => handleBrowserScreenshot(args),
   )
 
-  server.registerTool(
+  register(
     "browser_get_console_logs",
     {
       description:
         "[Browser] Pull console + exception + log entries from a browser pane's ring buffer. " +
         "Supports since/level/limit filters. Read-only.",
-      inputSchema: browserGetConsoleLogsSchema as Record<string, z.ZodTypeAny>,
+      inputSchema: browserGetConsoleLogsSchema,
     },
-    async (args) =>
-      handleBrowserGetConsoleLogs(
-        args as {
-          pane_id: string
-          since?: number
-          level?: "log" | "warn" | "error" | "debug" | "info"
-          limit?: number
-        },
-      ),
+    async (args) => handleBrowserGetConsoleLogs(args),
   )
 
   if (!options.readOnly) {
-    server.registerTool(
+    register(
       "browser_evaluate_js",
       {
         description:
           "[Browser] Evaluate a JavaScript expression in a browser pane's top frame. " +
           "Only runs when the user has explicitly opted the pane into agent JS; otherwise returns a legible denial.",
-        inputSchema: browserEvaluateJsSchema as Record<string, z.ZodTypeAny>,
+        inputSchema: browserEvaluateJsSchema,
       },
-      async (args) => handleBrowserEvaluateJs(args as { pane_id: string; expression: string }),
+      async (args) => handleBrowserEvaluateJs(args),
     )
 
-    server.registerTool(
+    register(
       "browser_navigate",
       {
         description:
           "[Browser] Load a URL in a browser pane. " +
           "Only http:// and https:// are allowed. Agent-initiated; logged to the bound session's audit trail.",
-        inputSchema: browserNavigateSchema as Record<string, z.ZodTypeAny>,
+        inputSchema: browserNavigateSchema,
       },
-      async (args) => handleBrowserNavigate(args as { pane_id: string; url: string }),
+      async (args) => handleBrowserNavigate(args),
     )
   }
 }

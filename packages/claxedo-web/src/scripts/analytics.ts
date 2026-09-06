@@ -9,6 +9,9 @@
 export const conversionEventNames = ["download_app"] as const
 export type ConversionEventName = (typeof conversionEventNames)[number]
 
+export const isConversionEventName = (value: string | undefined): value is ConversionEventName =>
+  !!value && (conversionEventNames as readonly string[]).includes(value)
+
 export const conversionRoutes = [
   "/",
   "/app",
@@ -44,10 +47,10 @@ type EventInput = {
 const bounded = (value: string | undefined, pattern: RegExp) => value && pattern.test(value) ? value : undefined
 
 export const buildConversionEvent = (input: EventInput): ConversionEvent | undefined => {
-  if (!conversionEventNames.includes(input.name as ConversionEventName)) return
+  if (!isConversionEventName(input.name)) return undefined
   const placement = bounded(input.placement, /^[a-z0-9-]{1,64}$/)
   const route = conversionRoute(input.route.split("?")[0])
-  if (!placement || !route) return
+  if (!placement || !route) return undefined
   // Keep in sync with the `downloads` platform ids in src/config.ts — an id
   // missing here is silently stripped from the conversion event, not rejected.
   const platform = bounded(
@@ -55,7 +58,7 @@ export const buildConversionEvent = (input: EventInput): ConversionEvent | undef
     /^(macos-arm64|macos-x64|windows-x64|linux-appimage|linux-deb|linux-rpm|linux-arm64-appimage|linux-arm64-deb|linux-arm64-rpm)$/,
   )
   const version = bounded(input.version, /^\d+\.\d+\.\d+$/)
-  return { name: input.name as ConversionEventName, route, placement, ...(platform && { platform }), ...(version && { version }) }
+  return { name: input.name, route, placement, ...(platform && { platform }), ...(version && { version }) }
 }
 
 declare global {
@@ -67,7 +70,8 @@ declare global {
 
 if (typeof document !== "undefined") {
   document.addEventListener("click", (event) => {
-    const target = (event.target as Element | null)?.closest<HTMLElement>("[data-analytics-event]")
+    const target =
+      event.target instanceof Element ? event.target.closest<HTMLElement>("[data-analytics-event]") : null
     if (!target) return
     const conversion = buildConversionEvent({
       name: target.dataset.analyticsEvent,

@@ -189,16 +189,14 @@ export function certifiedHostedWorkerArtifact(
   environment: unknown,
 ): CertifiedArtifact<CertifiedHostedWorkerArtifactId>
 export function certifiedHostedWorkerArtifact(artifactId: unknown, environment: unknown) {
-  if (
-    typeof artifactId !== "string" ||
-    !CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS.some((candidate) => candidate === artifactId)
-  ) {
+  const certifiedId = CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS.find((candidate) => candidate === artifactId)
+  if (!certifiedId) {
     throw new Error(`Worker artifact ${JSON.stringify(artifactId)} is not certified`)
   }
   if (environment !== "production" && environment !== "staging") {
     throw new Error('certified Worker environment must be "production" or "staging"')
   }
-  const artifact = ARTIFACTS[artifactId as CertifiedHostedWorkerArtifactId]
+  const artifact = ARTIFACTS[certifiedId]
   const workerName = requireNonLegacyWorkerName(artifact.workerNames[environment])
   return Object.freeze({ ...artifact, environment, workerName }) as CertifiedArtifact<CertifiedHostedWorkerArtifactId>
 }

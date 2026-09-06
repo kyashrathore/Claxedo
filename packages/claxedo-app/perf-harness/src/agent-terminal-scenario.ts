@@ -8,7 +8,7 @@ import { beginTerminalObservation, finishTerminalObservation } from "./agent-bro
 export const TERMINAL_START_MARKER = "⟦t3-benchmark-start⟧\r\n"
 export const TERMINAL_COMPLETE_MARKER = "\u001b[32m⟦t3-benchmark-complete⟧\u001b[0m\r\n"
 
-type TerminalStream = {
+export type TerminalStream = {
   id: string
   chunks: Array<{ sequence: number; atMs: number; bytesBase64: string }>
   inputSentinels: string[]
@@ -196,8 +196,8 @@ export async function createTerminalWorkload(
     for (let completed = 1; completed <= repeatCount; completed += 1) {
       yield cycle
       if (sentinelAfterCycles[sentinelIndex] !== completed) continue
-      yield readyMarkers[sentinelIndex]!
-      yield echoes[sentinelIndex]!
+      yield readyMarkers[sentinelIndex]
+      yield echoes[sentinelIndex]
       sentinelIndex += 1
     }
     yield complete

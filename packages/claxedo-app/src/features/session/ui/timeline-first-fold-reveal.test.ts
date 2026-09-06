@@ -15,7 +15,7 @@ describe("scheduleTimelineFirstFoldReveal", () => {
 
     expect(tasks).toHaveLength(1)
     expect(events).toEqual([])
-    tasks[0]!()
+    tasks[0]()
     expect(events).toEqual(["prepare", "reveal"])
     expect(tasks).toHaveLength(1)
   })

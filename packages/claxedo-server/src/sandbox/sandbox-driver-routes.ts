@@ -24,8 +24,7 @@ export function sandboxDriverRoutes(
     ...(options.fetch ? { fetch: options.fetch } : {}),
     authorizeRead: async (request) => {
       const gate = await signedOrError(request, signedAccessOptions(request, options), services)
-      if (!("error" in gate)) return
-      return Response.json(gate.error, { status: gate.status })
+      return "error" in gate ? Response.json(gate.error, { status: gate.status }) : undefined
     },
   }
   return new Hono().route("/", SandboxDriverSettingsRoutes(routeOptions))

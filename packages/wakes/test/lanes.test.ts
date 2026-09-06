@@ -4,6 +4,9 @@ import { SqliteWakeStore } from "../src/sqlite"
 
 const WS = "ws1"
 
+/** Stable ordering for nullable identifiers collected out of firing order. */
+const byText = (a: string | null, b: string | null) => (a ?? "").localeCompare(b ?? "")
+
 function harness(sinkImpl?: (wake: Wake) => void | Promise<void>) {
   const clock = { t: 1_000_000 }
   const store = new SqliteWakeStore()
@@ -41,7 +44,7 @@ describe("serialization lanes (serialKey)", () => {
     await wakes.schedule({ workspaceId: WS, kind: "settle", serialKey: "org:b", at: clock.t, intent: {} })
     clock.t += 1
     expect((await wakes.runDue()).fired).toBe(2)
-    expect(fired.map((w) => w.serialKey).sort()).toEqual(["org:a", "org:b"])
+    expect(fired.map((w) => w.serialKey).sort(byText)).toEqual(["org:a", "org:b"])
   })
 
   it("null-key wakes have no lane: all claimable in one batch", async () => {

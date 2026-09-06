@@ -1,4 +1,17 @@
 import type { AgentMessageAuthor } from "./sessions"
+import { isRecord } from "./values"
+
+/** Token accounting, reported identically by assistant messages and step-finish parts. */
+export type AgentTokenUsage = {
+  total?: number
+  input: number
+  output: number
+  reasoning: number
+  cache: { read: number; write: number }
+}
+
+/** The provider/model pair a message was produced with. */
+export type AgentModelRef = { providerID: string; modelID: string; variant?: string }
 
 export type AgentMessageError = {
   name: string
@@ -20,7 +33,7 @@ export type AgentUserMessage = {
     diffs: AgentSnapshotFileDiff[]
   }
   agent: string
-  model: { providerID: string; modelID: string; variant?: string }
+  model: AgentModelRef
   system?: string
   tools?: Record<string, boolean>
   claxedo?: { author: AgentMessageAuthor }
@@ -40,13 +53,7 @@ export type AgentAssistantMessage = {
   path: { cwd: string; root: string }
   summary?: boolean
   cost: number
-  tokens: {
-    total?: number
-    input: number
-    output: number
-    reasoning: number
-    cache: { read: number; write: number }
-  }
+  tokens: AgentTokenUsage
   structured?: unknown
   variant?: string
   finish?: string
@@ -63,18 +70,12 @@ export type AgentMessageInfo = {
   time?: { created: number; completed?: number }
   providerID?: string
   modelID?: string
-  model?: { providerID: string; modelID: string; variant?: string }
+  model?: AgentModelRef
   agent?: string
   mode?: string
   path?: { cwd: string; root: string }
   cost?: number
-  tokens?: {
-    total?: number
-    input: number
-    output: number
-    reasoning: number
-    cache: { read: number; write: number }
-  }
+  tokens?: AgentTokenUsage
   tools?: Record<string, boolean>
   system?: string
   variant?: string
@@ -206,13 +207,7 @@ export type AgentStepFinishPart = AgentPartBase<"step-finish"> & {
   reason: string
   snapshot?: string
   cost: number
-  tokens: {
-    total?: number
-    input: number
-    output: number
-    reasoning: number
-    cache: { read: number; write: number }
-  }
+  tokens: AgentTokenUsage
 }
 
 export type AgentSnapshotPart = AgentPartBase<"snapshot"> & { snapshot: string }
@@ -317,4 +312,143 @@ export type AgentSnapshotFileDiff = {
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
+}
+
+/**
+ * Runtime parsers for message content arriving from a harness.
+ *
+ * `AgentContentPart` is a closed, discriminated union, but a harness answers
+ * over HTTP or a wire protocol with `unknown`. Without these, every adapter
+ * that fetches a message list has to assert the union it cannot prove — which
+ * is how a part with the wrong `type` reaches transcript rendering typed as
+ * something it is not. Each parser checks exactly the fields its variant
+ * declares and returns the value narrowed, so callers neither assert nor
+ * reshape; the payload passes through unchanged.
+ *
+ * Parsers return `undefined` rather than throwing so the policy for a bad part
+ * stays with the caller: an adapter bound to one session refuses the response,
+ * a presentation surface can skip the part.
+ */
+
+function isStringField(container: Record<string, unknown>, key: string): boolean {
+  return typeof container[key] === "string"
+}
+
+function optionalIs(container: Record<string, unknown>, key: string, check: (value: unknown) => boolean): boolean {
+  return container[key] === undefined || check(container[key])
+}
+
+function isTokenUsage(value: unknown): value is AgentTokenUsage {
+  if (!isRecord(value)) return false
+  const cache = value.cache
+  if (!isRecord(cache) || typeof cache.read !== "number" || typeof cache.write !== "number") return false
+  if (typeof value.input !== "number" || typeof value.output !== "number" || typeof value.reasoning !== "number") return false
+  return optionalIs(value, "total", (total) => typeof total === "number")
+}
+
+function isSpan(value: unknown): boolean {
+  return isRecord(value) && typeof value.start === "number" && optionalIs(value, "end", (end) => typeof end === "number")
+}
+
+function isMessageError(value: unknown): value is AgentMessageError {
+  return isRecord(value) && typeof value.name === "string" && isRecord(value.data)
+}
+
+function isToolState(value: unknown): value is AgentToolState {
+  if (!isRecord(value) || !isRecord(value.input)) return false
+  switch (value.status) {
+    case "pending":
+      return isStringField(value, "raw")
+    case "running":
+      return isSpan(value.time)
+    case "completed":
+      return isStringField(value, "output") && isStringField(value, "title") && isRecord(value.metadata) && isSpan(value.time)
+    case "error":
+      return isStringField(value, "error") && isSpan(value.time)
+    default:
+      return false
+  }
+}
+
+function isHandoffEnd(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" && typeof value.access === "string"
+}
+
+/** Does this part carry the identity every content part declares? */
+function hasPartIdentity(value: unknown): value is Record<string, unknown> {
+  return isRecord(value)
+    && isStringField(value, "id")
+    && isStringField(value, "sessionID")
+    && isStringField(value, "messageID")
+    && isStringField(value, "type")
+}
+
+/** Does the variant named by `part.type` have the fields that variant declares? */
+function hasVariantFields(part: Record<string, unknown>): boolean {
+  switch (part.type) {
+    case "text":
+      return isStringField(part, "text")
+    case "reasoning":
+      return isStringField(part, "text") && isSpan(part.time)
+    case "file":
+      return isStringField(part, "mime") && isStringField(part, "url")
+    case "tool":
+      return isStringField(part, "callID") && isStringField(part, "tool") && isToolState(part.state)
+    case "subtask":
+      return isStringField(part, "prompt") && isStringField(part, "description") && isStringField(part, "agent")
+    case "step-start":
+      return optionalIs(part, "snapshot", (snapshot) => typeof snapshot === "string")
+    case "step-finish":
+      return isStringField(part, "reason") && typeof part.cost === "number" && isTokenUsage(part.tokens)
+    case "snapshot":
+      return isStringField(part, "snapshot")
+    case "patch":
+      return isStringField(part, "hash")
+        && Array.isArray(part.files) && part.files.every((file) => typeof file === "string")
+    case "agent":
+      return isStringField(part, "name")
+    case "retry":
+      return typeof part.attempt === "number" && isMessageError(part.error)
+        && isRecord(part.time) && typeof part.time.created === "number"
+    case "compaction":
+      return typeof part.auto === "boolean"
+    case "handoff":
+      return isHandoffEnd(part.from) && isHandoffEnd(part.to)
+    default:
+      return false
+  }
+}
+
+/** Is `value` one of the content parts the contract declares? */
+export function isAgentContentPart(value: unknown): value is AgentContentPart {
+  return hasPartIdentity(value) && hasVariantFields(value)
+}
+
+/** The content part `value` holds, or `undefined` when it is not one. */
+export function parseAgentContentPart(value: unknown): AgentContentPart | undefined {
+  return isAgentContentPart(value) ? value : undefined
+}
+
+/** Is `value` the identifying header every message carries? */
+export function isAgentMessageInfo(value: unknown): value is AgentMessageInfo {
+  return isRecord(value)
+    && isStringField(value, "id")
+    && isStringField(value, "role")
+    && isStringField(value, "sessionID")
+    && optionalIs(value, "parentID", (parentID) => typeof parentID === "string")
+    && optionalIs(value, "tokens", isTokenUsage)
+    && optionalIs(value, "error", isMessageError)
+}
+
+/** Is `value` a message — a valid header and a list of parts the contract declares? */
+export function isAgentMessage(value: unknown): value is AgentMessage {
+  return isRecord(value)
+    && isAgentMessageInfo(value.info)
+    && Array.isArray(value.parts)
+    && value.parts.every(isAgentContentPart)
+}
+
+/** The message `value` holds, or `undefined` when it is not one. */
+export function parseAgentMessage(value: unknown): AgentMessage | undefined {
+  return isAgentMessage(value) ? value : undefined
 }

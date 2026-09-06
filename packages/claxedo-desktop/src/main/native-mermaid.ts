@@ -19,7 +19,7 @@ export function createNativeMermaidRenderer(
     validate: (output) => output.startsWith("<svg") && output.endsWith("</svg>"),
     invalidOutputMessage: "Native Mermaid renderer returned an invalid SVG document",
   })
-  if (!render) return
+  if (!render) return undefined
   return (source: string, theme: Record<string, string> = {}) =>
     render(JSON.stringify({ source, theme }))
 }

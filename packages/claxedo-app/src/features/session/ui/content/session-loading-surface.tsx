@@ -26,8 +26,8 @@ export function SessionLoadingRoot(props: {
   // The identity fields of the content this surface stands in for, typed from
   // that content rather than re-declared: what it stamps IS the metadata the
   // real page will stamp, and the two must not be able to drift apart.
-  sessionId: NonNullable<ContentMeta["sessionId"]> | ""
-  directory: NonNullable<ContentMeta["directory"]> | ""
+  sessionId: NonNullable<ContentMeta["sessionId"]>
+  directory: NonNullable<ContentMeta["directory"]>
   title?: string
 }) {
   return (

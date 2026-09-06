@@ -33,7 +33,7 @@ let unified: WorkerPoolManager | undefined
 let split: WorkerPoolManager | undefined
 
 export function getWorkerPool(style: WorkerPoolStyle | undefined): WorkerPoolManager | undefined {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return undefined
 
   if (style === "split") {
     if (!split) split = createPool("word-alt")
@@ -65,7 +65,7 @@ export function getWorkerPool(style: WorkerPoolStyle | undefined): WorkerPoolMan
  * does not apply to it.
  */
 export function getFileWorkerPool(): WorkerPoolManager | undefined {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return undefined
   return unified ?? split ?? getWorkerPool("unified")
 }
 

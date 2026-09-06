@@ -1,5 +1,6 @@
 import type { Accessor } from "solid-js"
 import type { AuthDisplayUser } from "./auth-display"
+import { asRecord } from "@/lib/record"
 
 export const BROWSER_AUTH_ADAPTERS = ["better-auth"] as const
 export const BROWSER_AUTH_METHODS = ["google", "github", "email-password"] as const
@@ -159,10 +160,6 @@ export function browserAuthUnavailableReason(error: unknown): string {
   return `Sign-in is unavailable: ${detail}`
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-}
-
 function present(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
 }
@@ -228,20 +225,14 @@ function parseDescriptor(
   value: unknown,
   input: { selectedAdapter: BrowserAuthAdapterId; apiOrigin: string; appOrigin: string },
 ): BrowserAuthDescriptor {
-  const descriptor = isRecord(value) ? value : undefined
-  const browser = isRecord(descriptor?.browser) ? descriptor.browser : undefined
-  const cookie = isRecord(browser?.cookie) ? browser.cookie : undefined
+  const descriptor = asRecord(value)
+  const browser = asRecord(descriptor?.browser)
+  const cookie = asRecord(browser?.cookie)
   const methods = browserAuthMethods(descriptor?.methods)
   const trustedOrigins = stringArray(browser?.trustedOrigins)
   const scopes = stringArray(browser?.scopes)
   const expectedTransport = "cookie"
   const expectedPolicy = "reject-cookie-and-authorization"
-
-  if (input.selectedAdapter !== "better-auth") {
-    throw new BrowserAuthConfigurationError(
-      `live auth descriptor does not match the ${input.selectedAdapter} browser build`,
-    )
-  }
 
   if (
     descriptor?.adapter !== input.selectedAdapter ||

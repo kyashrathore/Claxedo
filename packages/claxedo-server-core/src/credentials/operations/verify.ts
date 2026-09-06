@@ -1,3 +1,4 @@
+import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CredentialVerificationError } from "../verification-error"
 import {
@@ -208,16 +209,19 @@ function anthropicOAuth(credential: CredentialMetadata, token: string) {
   return credential.kind === "oauth_token" || /^sk-ant-o/i.test(token.trim())
 }
 
-function verificationAuth(credential: CredentialMetadata, secret: string) {
+function verificationAuth(
+  credential: CredentialMetadata,
+  secret: string,
+): { token: string; accountId?: string } | undefined {
   // Trimmed for the same reason the prefix match is: a pasted token can carry
   // surrounding whitespace, and a leading space survives into the header as
   // part of the value, so the provider is handed a token that is not the user's.
   if (credential.kind === "api_key") return { token: secret.trim() }
-  const value = jsonRecord(secret)
-  if (!value) return
-  const tokens = record(value.tokens)
-  const oauth = record(value.oauth)
-  const claude = record(value.claudeAiOauth)
+  const value = parseJsonRecord(secret)
+  if (!value) return undefined
+  const tokens = jsonRecord(value.tokens)
+  const oauth = jsonRecord(value.oauth)
+  const claude = jsonRecord(value.claudeAiOauth)
   const token = [
     value.access,
     value.access_token,
@@ -226,23 +230,13 @@ function verificationAuth(credential: CredentialMetadata, secret: string) {
     oauth?.access_token,
     claude?.accessToken,
     claude?.access_token,
-  ].find((item): item is string => typeof item === "string" && item.length > 0)
-  if (!token) return
-  const accountId = [value.account_id, value.accountId, tokens?.account_id, oauth?.account_id].find(
-    (item): item is string => typeof item === "string" && item.length > 0,
-  )
+  ]
+    .map(jsonString)
+    .find((item) => item !== undefined)
+  if (!token) return undefined
+  const accountId = [value.account_id, value.accountId, tokens?.account_id, oauth?.account_id]
+    .map(jsonString)
+    .find((item) => item !== undefined)
   return { token, ...(accountId ? { accountId } : {}) }
 }
 
-function jsonRecord(input: string) {
-  try {
-    return record(JSON.parse(input) as unknown)
-  } catch {
-    return
-  }
-}
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as Record<string, unknown>
-}

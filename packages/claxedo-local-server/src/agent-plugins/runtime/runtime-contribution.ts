@@ -21,6 +21,7 @@ import {
   materializeAgentPluginGeneration,
   readMaterializedAgentPluginGeneration,
 } from "./materialize"
+import { isRecord } from "../../platform/json"
 
 const MAX_APPLY_BODY_BYTES = 64 * 1024 * 1024
 const MAX_PLUGIN_COUNT = 128
@@ -35,16 +36,12 @@ type RuntimeSelection = AgentPluginRuntimeApplyRequest["selections"][number]
 type RuntimeArtifact = AgentPluginRuntimeApplyRequest["artifacts"][number]
 type RuntimeMcpServer = AgentPluginRuntimeApplyRequest["mcpServers"][number]
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function digest(value: unknown): value is RuntimeSelection["artifactDigest"] {
   return typeof value === "string" && DIGEST.test(value)
 }
 
 function selection(value: unknown): value is RuntimeSelection {
-  return record(value)
+  return isRecord(value)
     && typeof value.pluginInstanceId === "string"
     && Boolean(value.pluginInstanceId)
     && digest(value.artifactDigest)
@@ -54,7 +51,7 @@ function selection(value: unknown): value is RuntimeSelection {
 }
 
 function artifact(value: unknown): value is RuntimeArtifact {
-  return record(value)
+  return isRecord(value)
     && digest(value.digest)
     && typeof value.tree === "string"
 }
@@ -65,7 +62,7 @@ function httpsUrl(value: unknown): value is string {
 }
 
 function mcpServer(value: unknown): value is RuntimeMcpServer {
-  if (!record(value)
+  if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
     || !value.pluginInstanceId
     || !digest(value.artifactDigest)
@@ -81,9 +78,9 @@ function mcpServer(value: unknown): value is RuntimeMcpServer {
 
 /** The one validator every apply surface shares: the VM route and the signed desktop pull. */
 export function parseAgentPluginRuntimeApplyRequest(input: unknown): AgentPluginRuntimeApplyRequest | undefined {
-  if (!record(input)
+  if (!isRecord(input)
     || input.version !== 1
-    || !record(input.identity)
+    || !isRecord(input.identity)
     || input.identity.mode !== "signed"
     || typeof input.identity.userId !== "string"
     || !input.identity.userId
@@ -211,7 +208,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
       routes.post(AGENT_PLUGINS_RUNTIME_APPLY_PATH, async (c) => {
         let raw: unknown
         try {
-          raw = await boundedJsonBody(c, undefined, { limit: MAX_APPLY_BODY_BYTES })
+          raw = await boundedJsonBody(c, { limit: MAX_APPLY_BODY_BYTES })
         } catch (cause) {
           if (isRequestBodyTooLarge(cause)) return c.json(requestBodyTooLargeBody(), 413)
           throw cause

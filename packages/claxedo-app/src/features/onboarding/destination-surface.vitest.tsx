@@ -155,7 +155,7 @@ describe("saying yes", () => {
     const many: SandboxProviderCatalog = {
       defaultProviderId: "daytona",
       providers: [
-        catalog.providers[0]!,
+        catalog.providers[0],
         { id: "modal", label: "Modal", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
         { id: "vercel", label: "Vercel", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
       ],
@@ -240,7 +240,7 @@ describe("saying yes", () => {
         {...cloudProps}
         sandboxCatalog={{
           ...catalog,
-          providers: [{ ...catalog.providers[0]!, configured: true, verification: { state: "working" } }],
+          providers: [{ ...catalog.providers[0], configured: true, verification: { state: "working" } }],
         }}
         onChoose={vi.fn()}
       />
@@ -368,7 +368,7 @@ describe("repository access", () => {
     screen.getByRole("button", { name: "Connect GitHub" }).click()
     await vi.waitFor(() => expect(onCodeHostConnected).toHaveBeenCalled())
 
-    expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toEqual({ fields: {}, secret: "github_pat_abc" })
+    expect(JSON.parse(String(request.mock.calls[0][1]!.body))).toEqual({ fields: {}, secret: "github_pat_abc" })
   })
 
   test("a rejected token says what repairs it", async () => {
@@ -588,6 +588,6 @@ describe("the device-code flow", () => {
     screen.getByRole("button", { name: "Use this token" }).click()
 
     await vi.waitFor(() => expect(onCodeHostConnected).toHaveBeenCalled())
-    expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toEqual({ fields: {}, secret: "github_pat_abc" })
+    expect(JSON.parse(String(request.mock.calls[0][1]!.body))).toEqual({ fields: {}, secret: "github_pat_abc" })
   })
 })

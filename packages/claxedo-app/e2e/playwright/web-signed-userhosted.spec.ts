@@ -159,7 +159,7 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
   // .ts`, `live-user-hosted-relay.spec.ts`) accumulates this same `log()`
   // but only surfaces it in a startup GATING throw, never on a mid-test
   // failure. Printing the tail here costs nothing on green runs.
-  test.afterEach(async ({}, testInfo) => {
+  test.afterEach(async (_fixtures, testInfo) => {
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
     console.log(
       `\n[web-signed-userhosted] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,

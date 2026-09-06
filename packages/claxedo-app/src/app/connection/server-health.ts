@@ -1,6 +1,7 @@
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import type { ServerConnection } from "@/platform/connection/server-connection"
 import { queryClient } from "@/platform/query/query-client"
+import { readBoolean, readString } from "@/lib/record"
 
 export type ServerHealth = {
   healthy: boolean
@@ -36,16 +37,13 @@ export async function checkServerHealth(server: ServerConnection.HttpBase, fetch
       headers: server.password ? { authorization: `Bearer ${server.password}` } : undefined,
     })
     if (!res.ok) return { healthy: false }
-    const body = await res.json().catch(() => undefined) as {
-      ok?: boolean
-      healthy?: boolean
-      version?: string
-      localExecution?: boolean
-    } | undefined
+    const body: unknown = await res.json().catch(() => undefined)
+    const version = readString(body, "version")
+    const localExecution = readBoolean(body, "localExecution")
     return {
-      healthy: body?.ok === true || body?.healthy === true,
-      ...(body?.version ? { version: body.version } : {}),
-      ...(typeof body?.localExecution === "boolean" ? { localExecution: body.localExecution } : {}),
+      healthy: readBoolean(body, "ok") === true || readBoolean(body, "healthy") === true,
+      ...(version ? { version } : {}),
+      ...(localExecution === undefined ? {} : { localExecution }),
     }
   } catch {
     return { healthy: false }

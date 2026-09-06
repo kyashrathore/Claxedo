@@ -1,4 +1,4 @@
-import { assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { assertAgentExecutionBinding, parseAgentMessage } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding, AgentMessage, AgentSession, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import type { HarnessCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
@@ -19,6 +19,12 @@ const JSON_BODY_BYTES = 16 * 1024 * 1024
 const SSE_FRAME_BYTES = 1024 * 1024
 
 type OpenCodeServerRequest = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
+/** An upstream message proven to belong to the bound session. */
+type UpstreamMessage = Record<string, unknown> & {
+  info: Record<string, unknown>
+  parts: Record<string, unknown>[]
+}
 
 export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   readonly sessionConfigOwner = "runtime" as const
@@ -46,7 +52,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     await this.ensureCompatible()
     const data = await this.json("session.create", "/session", {
       method: "POST",
-      body: JSON.stringify({ ...(title ? { title } : {}) }),
+      body: JSON.stringify((title ? { title } : {})),
     })
     const session = this.session("session.create", data)
     return { id: id ?? session.id, agentSessionId: session.id }
@@ -83,8 +89,17 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     this.assertBinding(binding)
     const data = await this.json("session.messages", `/session/${encodeURIComponent(binding.upstreamSessionId)}/message`)
     if (!Array.isArray(data)) throw this.error("invalid_response", "OpenCode session.messages response must be an array", "session.messages")
-    this.validateMessages(data, binding.upstreamSessionId)
-    return data.map((item) => this.projectMessage(item as Record<string, unknown>, binding)) as AgentMessage[]
+    return this.validateMessages(data, binding.upstreamSessionId).map((row) => {
+      const message = parseAgentMessage(this.projectMessage(row, binding))
+      // Refusing here matches every other read on this adapter: a response it
+      // cannot type is an `invalid_response`, not a message with parts quietly
+      // removed. The streaming path drops parts it does not recognize because
+      // it emits a filtered event stream; this one promises whole messages.
+      if (!message) {
+        throw this.error("invalid_response", "OpenCode session.messages returned a message the runtime contract does not describe", "session.messages")
+      }
+      return message
+    })
   }
 
   async getTodos(binding: AgentExecutionBinding) {
@@ -265,8 +280,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       throw this.error("reconciliation_gap", "OpenCode authoritative reconciliation snapshots were unavailable", "events.reconcile")
     }
     if (!Array.isArray(messages)) throw this.error("reconciliation_gap", "OpenCode message reconciliation snapshot was invalid", "events.reconcile")
-    this.validateMessages(messages, binding.upstreamSessionId)
-    const result = turn.reconcile(messages as Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }>)
+    const result = turn.reconcile(this.validateMessages(messages, binding.upstreamSessionId))
     if (type === "busy" || type === "retry") return { events: result.events, terminal: false }
     // Idle sessions are absent from OpenCode's active-status map. Require both
     // the bound session and this prompt's terminal assistant message to exist.
@@ -324,7 +338,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     }
     // Durable sync records share the global stream but are not live Session
     // events and intentionally carry `syncEvent` instead of `properties`.
-    if (payload.type === "sync") return
+    if (payload.type === "sync") return undefined
     const properties = record(payload.properties)
     if (!properties) throw this.error("invalid_event", "OpenCode global event envelope is invalid", "events.read")
     const event = { type: payload.type, properties }
@@ -337,27 +351,35 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       if (sessionId !== undefined) {
         throw this.error("invalid_event", "OpenCode session event omitted its workspace directory", "events.read")
       }
-      return
+      return undefined
     }
-    if (envelope.directory !== this.config.targetDirectory) return
-    if (sessionId !== binding.upstreamSessionId) return
+    if (envelope.directory !== this.config.targetDirectory) return undefined
+    if (sessionId !== binding.upstreamSessionId) return undefined
     return event
   }
 
-  private validateMessages(messages: unknown[], upstreamSessionId: string) {
-    for (const item of messages) {
+  /**
+   * Parse an upstream message list into the bound-session shape the rest of the
+   * adapter works with. Validating and typing in one pass is what keeps every
+   * caller from re-asserting the shape this method already proved.
+   */
+  private validateMessages(messages: unknown[], upstreamSessionId: string): UpstreamMessage[] {
+    return messages.map((item) => {
       const row = record(item)
       const info = record(row?.info)
       if (!row || !info || info.sessionID !== upstreamSessionId || typeof info.id !== "string" || !Array.isArray(row.parts)) {
         throw this.error("invalid_response", "OpenCode messages crossed the bound upstream session", "session.messages")
       }
-      for (const itemPart of row.parts) {
+      const messageId = info.id
+      const parts = row.parts.map((itemPart) => {
         const part = record(itemPart)
-        if (!part || part.sessionID !== upstreamSessionId || part.messageID !== info.id) {
+        if (!part || part.sessionID !== upstreamSessionId || part.messageID !== messageId) {
           throw this.error("invalid_response", "OpenCode message part crossed the bound upstream session", "session.messages")
         }
-      }
-    }
+        return part
+      })
+      return { ...row, info, parts }
+    })
   }
 
   private session(operation: string, data: unknown, expectedId?: string) {
@@ -365,7 +387,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     if (!row || typeof row.id !== "string" || !row.id || row.directory !== this.config.targetDirectory || (expectedId && row.id !== expectedId)) {
       throw this.error("invalid_response", `OpenCode ${operation} response crossed its bound session or workspace`, operation)
     }
-    return row as { id: string; [key: string]: unknown }
+    return { ...row, id: row.id }
   }
 
   private projectSession(session: { id: string; [key: string]: unknown }, binding: AgentExecutionBinding): AgentSession {
@@ -377,15 +399,11 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     } as AgentSession
   }
 
-  private projectMessage(message: Record<string, unknown>, binding: AgentExecutionBinding) {
-    const info = record(message.info)!
+  private projectMessage(message: UpstreamMessage, binding: AgentExecutionBinding) {
     return {
       ...message,
-      info: { ...info, sessionID: binding.sessionId },
-      parts: (message.parts as Record<string, unknown>[]).map((part) => ({
-        ...part,
-        sessionID: binding.sessionId,
-      })),
+      info: { ...message.info, sessionID: binding.sessionId },
+      parts: message.parts.map((part) => ({ ...part, sessionID: binding.sessionId })),
     }
   }
 

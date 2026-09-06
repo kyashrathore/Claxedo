@@ -1,7 +1,7 @@
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import type { WorkspaceCapabilities } from "./capabilities"
-import type { AppliedRuntimeSnapshot, RuntimeSnapshot } from "./routes/config"
+import type { RuntimeSnapshot } from "./routes/config"
 import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
 
 export type WorkspaceRuntimeClientOptions = {
@@ -62,7 +62,7 @@ export type WorkspaceRuntimeHealth = {
 export type WorkspaceRuntimeClient = {
   health: () => Promise<WorkspaceRuntimeHealth>
   capabilities: () => Promise<WorkspaceCapabilities>
-  applyConfig: (snapshot: RuntimeSnapshot | AppliedRuntimeSnapshot, options?: WorkspaceRuntimeConfigApplyOptions) => Promise<void>
+  applyConfig: (snapshot: RuntimeSnapshot  , options?: WorkspaceRuntimeConfigApplyOptions) => Promise<void>
   runtimeEventsUrl: () => URL
   eventsUrl: () => URL
   files: {
@@ -167,8 +167,18 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
   }
 }
 
+/**
+ * A JSON response body, typed as the caller's `T`.
+ *
+ * `T` is a DECLARED view of the body, the same contract `RuntimeStore` uses for
+ * its JSON columns: the routes this client calls are defined in this package,
+ * so a read here is the other end of a serialization this repository owns —
+ * not a parse of foreign input. It is not a validation, and callers that must
+ * survive an older runtime should narrow what they read.
+ */
 async function jsonRequest<T>(doFetch: typeof fetch, baseUrl: URL, path: string, init?: RequestInit): Promise<T> {
-  return await request(doFetch, baseUrl, path, init).then((response) => response.json() as Promise<T>)
+  const response = await request(doFetch, baseUrl, path, init)
+  return await response.json()
 }
 
 async function request(doFetch: typeof fetch, baseUrl: URL, path: string, init?: RequestInit) {

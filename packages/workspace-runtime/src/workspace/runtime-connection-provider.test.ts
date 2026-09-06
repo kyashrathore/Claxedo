@@ -61,7 +61,10 @@ describe("WorkspaceRuntime generic connection selection", () => {
         return {
           ...adapter(),
           dispose() {
-            if (instance === 1) { canonicalDisposed++; return }
+            if (instance === 1) {
+              canonicalDisposed++
+              return Promise.resolve()
+            }
             const rejected = Promise.reject(new Error("Loser teardown failed"))
             void rejected.catch(() => {})
             return rejected
@@ -199,7 +202,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       providerKey: "fixture",
       validateConfig(input) { return input as { label: string } },
       project(config) { return { label: config.label, readiness: "ready", capabilities } },
-      resolve({ secrets }) { return { config: { token: secrets.token! } } },
+      resolve({ secrets }) { return { config: { token: secrets.token } } },
       createAdapter({ resolved }) {
         const token = resolved.config.token
         return {

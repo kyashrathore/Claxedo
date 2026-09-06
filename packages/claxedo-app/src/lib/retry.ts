@@ -1,3 +1,5 @@
+import { errorMessage } from "./server-errors"
+
 export interface RetryOptions {
   attempts?: number
   delay?: number
@@ -19,8 +21,11 @@ const TRANSIENT_MESSAGES = [
 
 function isTransientError(error: unknown): boolean {
   if (!error) return false
-  // oxlint-disable-next-line no-base-to-string -- error is unknown, intentional coercion for message matching
-  const message = String(error instanceof Error ? error.message : error).toLowerCase()
+  // Reading the message rather than stringifying the value: `String(error)` on
+  // a thrown object is `"[object Object]"`, which matches nothing here, so a
+  // transport failure thrown as `{ message: "Load failed" }` used to be treated
+  // as permanent and never retried.
+  const message = errorMessage(error, "").toLowerCase()
   return TRANSIENT_MESSAGES.some((m) => message.includes(m))
 }
 

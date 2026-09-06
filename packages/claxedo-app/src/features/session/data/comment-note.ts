@@ -1,3 +1,4 @@
+import { readField, readFiniteNumber, readString } from "@/lib/record"
 import type { FileSelection } from "@/platform/files/types"
 
 export type PromptComment = {
@@ -8,19 +9,14 @@ export type PromptComment = {
   origin?: "review" | "file"
 }
 
-function selection(selection: unknown) {
-  if (!selection || typeof selection !== "object") return undefined
-  const startLine = Number((selection as FileSelection).startLine)
-  const startChar = Number((selection as FileSelection).startChar)
-  const endLine = Number((selection as FileSelection).endLine)
-  const endChar = Number((selection as FileSelection).endChar)
-  if (![startLine, startChar, endLine, endChar].every(Number.isFinite)) return undefined
-  return {
-    startLine,
-    startChar,
-    endLine,
-    endChar,
-  } satisfies FileSelection
+function selection(value: unknown): FileSelection | undefined {
+  const startLine = readFiniteNumber(value, "startLine")
+  const startChar = readFiniteNumber(value, "startChar")
+  const endLine = readFiniteNumber(value, "endLine")
+  const endChar = readFiniteNumber(value, "endChar")
+  if (startLine === undefined || startChar === undefined || endLine === undefined || endChar === undefined)
+    return undefined
+  return { startLine, startChar, endLine, endChar }
 }
 
 export function createCommentMetadata(input: PromptComment) {
@@ -35,22 +31,19 @@ export function createCommentMetadata(input: PromptComment) {
   }
 }
 
-export function readCommentMetadata(value: unknown) {
-  if (!value || typeof value !== "object") return
-  const meta = (value as { claxedoComment?: unknown }).claxedoComment
-  if (!meta || typeof meta !== "object") return
-  const path = (meta as { path?: unknown }).path
-  const comment = (meta as { comment?: unknown }).comment
-  if (typeof path !== "string" || typeof comment !== "string") return
-  const preview = (meta as { preview?: unknown }).preview
-  const origin = (meta as { origin?: unknown }).origin
+export function readCommentMetadata(value: unknown): PromptComment | undefined {
+  const meta = readField(value, "claxedoComment")
+  const path = readString(meta, "path")
+  const comment = readString(meta, "comment")
+  if (path === undefined || comment === undefined) return undefined
+  const origin = readField(meta, "origin")
   return {
     path,
-    selection: selection((meta as { selection?: unknown }).selection),
+    selection: selection(readField(meta, "selection")),
     comment,
-    preview: typeof preview === "string" ? preview : undefined,
+    preview: readString(meta, "preview"),
     origin: origin === "review" || origin === "file" ? origin : undefined,
-  } satisfies PromptComment
+  }
 }
 
 export function formatCommentNote(input: { path: string; selection?: FileSelection; comment: string }) {
@@ -69,7 +62,7 @@ export function parseCommentNote(text: string) {
   const match = text.match(
     /^The user made the following comment regarding (this file|line (\d+)|lines (\d+) through (\d+)) of (.+?): ([\s\S]+)$/,
   )
-  if (!match) return
+  if (!match) return undefined
   const start = match[2] ? Number(match[2]) : match[3] ? Number(match[3]) : undefined
   const end = match[2] ? Number(match[2]) : match[4] ? Number(match[4]) : undefined
   return {

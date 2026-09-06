@@ -9,7 +9,7 @@ const conn = (reply: unknown = {}) => {
     calls,
     ctx: {
       request: async (method: string, params: unknown) => {
-        calls.push({ method: String(method), params })
+        calls.push({ method, params })
         return reply
       },
     } as never,
@@ -88,7 +88,7 @@ describe("writing an ACP permission mode", () => {
     const { ctx, calls } = conn({ configOptions: [{ ...SELECT_MODE, currentValue: "acceptEdits" }] })
     const result = await setPermissionMode(ctx, state({ cfg: [SELECT_MODE] as never }), "ses_a", "acceptEdits")
     expect(calls).toHaveLength(1)
-    expect(calls[0]!.params).toEqual({ sessionId: "ses_a", configId: "mode", value: "acceptEdits" })
+    expect(calls[0].params).toEqual({ sessionId: "ses_a", configId: "mode", value: "acceptEdits" })
     expect(result.result.currentModeId).toBe("acceptEdits")
   })
 
@@ -113,7 +113,7 @@ describe("writing an ACP permission mode", () => {
     const { ctx, calls } = conn()
     const before = state({ modes: [{ id: "plan", name: "Plan" }] as never })
     const result = await setPermissionMode(ctx, before, "ses_a", "plan")
-    expect(calls[0]!.params).toEqual({ sessionId: "ses_a", modeId: "plan" })
+    expect(calls[0].params).toEqual({ sessionId: "ses_a", modeId: "plan" })
     // set_mode has no response state; session/update later synchronizes the value.
     expect(result.result.currentModeId).toBe("plan")
   })

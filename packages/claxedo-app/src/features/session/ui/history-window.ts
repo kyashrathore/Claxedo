@@ -1,5 +1,5 @@
-import type { AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
-export type { AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
+import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
+export type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 import { createEffect, createMemo, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { same } from "@/lib/same"

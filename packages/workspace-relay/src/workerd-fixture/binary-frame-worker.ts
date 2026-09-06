@@ -1,3 +1,7 @@
+// Packages that compile these sources directly (claxedo-app does) build their
+// own program from imports alone and never pick up this package's tsconfig
+// file list, so the ambient declaration has to travel with the file.
+/// <reference path="../workerd-globals.d.ts" />
 /**
  * Fixture worker for `relay-workerd-binary.test.ts`. Bundled by esbuild and run
  * on REAL workerd via miniflare, because the hazard it covers is invisible to
@@ -42,9 +46,8 @@ type FixtureNamespace = {
 }
 
 const socketPair = () => {
-  const pair = new (globalThis as unknown as {
-    WebSocketPair: new () => { 0: FixtureSocket; 1: FixtureSocket }
-  }).WebSocketPair()
+  // `WebSocketPair` is declared in ../workerd-globals.d.ts.
+  const pair = new WebSocketPair<FixtureSocket>()
   return { client: pair[0], server: pair[1] }
 }
 

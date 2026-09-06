@@ -16,7 +16,7 @@ const config = {
 
 beforeAll(async () => {
   await h.installSubmitMocks(mock)
-  mock.module("@/features/session/composer/ui/build-request-parts", () => ({ buildRequestParts: realBuildRequestParts }))
+  await mock.module("@/features/session/composer/ui/build-request-parts", () => ({ buildRequestParts: realBuildRequestParts }))
 })
 beforeEach(() => h.resetSubmitHarness())
 afterAll(() => h.restoreSubmitMocks(mock))

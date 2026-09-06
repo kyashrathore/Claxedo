@@ -14,7 +14,7 @@ export function createLatestWorkerQueue<T extends { key: string }>(input: {
     running = Promise.resolve()
       .then(async () => {
         while (cursor < jobs.length) {
-          const job = jobs[cursor++]!
+          const job = jobs[cursor++]
           if (job.type === "dispose") {
             input.dispose(job.key)
             continue
@@ -58,7 +58,13 @@ export function createLatestWorkerQueue<T extends { key: string }>(input: {
     },
     pending: () => slots.size,
     async idle() {
-      while (running) await running
+      // `schedule` can start a fresh run from inside the previous run's `finally`, so the
+      // in-flight promise has to be re-read after every await rather than awaited once.
+      let current = running
+      while (current) {
+        await current
+        current = running
+      }
     },
   }
 }

@@ -1,3 +1,4 @@
+import { asRecord } from "@/lib/record"
 import { createMemo, createResource, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
@@ -46,9 +47,9 @@ const permissionContextInput = {
       {
         ...Persist.global("permission", ["permission.v3"]),
         migrate(value) {
-          if (!value || typeof value !== "object" || Array.isArray(value)) return value
+          const data = asRecord(value)
+          if (!data) return value
 
-          const data = value as Record<string, unknown>
           if (data.autoAccept) return value
 
           return {
@@ -137,9 +138,9 @@ const permissionContextInput = {
     // active directory and hydrated policy. That keeps readiness derived from
     // the request itself instead of mirroring query results through an effect.
     const reconciliationSource = createMemo(() => {
-      if (!ready()) return
+      if (!ready()) return undefined
       const currentDirectory = directory()
-      if (!currentDirectory) return
+      if (!currentDirectory) return undefined
       const policyKey = Object.entries(store.autoAccept)
         .filter(([, enabled]) => enabled)
         .map(([key]) => key)

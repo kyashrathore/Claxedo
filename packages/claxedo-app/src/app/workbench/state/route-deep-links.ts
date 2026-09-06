@@ -1,30 +1,30 @@
 export const deepLinkEvent = "claxedo:deep-link"
 
 const parseUrl = (input: string) => {
-  if (!input.startsWith("claxedo://")) return
-  if (typeof URL.canParse === "function" && !URL.canParse(input)) return
+  if (!input.startsWith("claxedo://")) return undefined
+  if (typeof URL.canParse === "function" && !URL.canParse(input)) return undefined
   try {
     return new URL(input)
   } catch {
-    return
+    return undefined
   }
 }
 
 export const parseDeepLink = (input: string) => {
   const url = parseUrl(input)
-  if (!url) return
-  if (url.hostname !== "open-project") return
+  if (!url) return undefined
+  if (url.hostname !== "open-project") return undefined
   const directory = url.searchParams.get("directory")
-  if (!directory) return
+  if (!directory) return undefined
   return directory
 }
 
 export const parseNewSessionDeepLink = (input: string) => {
   const url = parseUrl(input)
-  if (!url) return
-  if (url.hostname !== "new-session") return
+  if (!url) return undefined
+  if (url.hostname !== "new-session") return undefined
   const directory = url.searchParams.get("directory")
-  if (!directory) return
+  if (!directory) return undefined
   const prompt = url.searchParams.get("prompt") || undefined
   if (!prompt) return { directory }
   return { directory, prompt }

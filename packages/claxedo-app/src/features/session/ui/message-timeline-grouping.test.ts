@@ -11,27 +11,25 @@ import type { AgentAssistantMessage as AssistantMessage, AgentContentPart as Par
  */
 const SESSION = "ses_test"
 
-// Single narrowing point for the fixtures below: the SDK message/part types carry far more
-// than the grouping pass reads, so we build the minimal shape it actually consumes.
-function fixture<T>(value: Record<string, unknown>): T {
-  return value as T
-}
+// The contract's message/part types carry far more than the grouping pass reads,
+// so each fixture below builds the minimal shape it actually consumes and narrows
+// at its own return.
 
 function userMessage(id: string): UserMessage {
-  return fixture<UserMessage>({ id, sessionID: SESSION, role: "user", time: { created: 1_000 } })
+  return { id, sessionID: SESSION, role: "user", time: { created: 1_000 } }
 }
 
 function assistantMessage(id: string): AssistantMessage {
-  return fixture<AssistantMessage>({
+  return {
     id,
     sessionID: SESSION,
     role: "assistant",
     time: { created: 1_000, completed: 61_000 },
-  })
+  } as AssistantMessage
 }
 
 function toolPart(id: string, messageID: string, tool: string): Part {
-  return fixture<Part>({
+  return {
     id,
     sessionID: SESSION,
     messageID,
@@ -39,11 +37,11 @@ function toolPart(id: string, messageID: string, tool: string): Part {
     tool,
     callID: `${id}_c`,
     state: { status: "completed", input: {}, output: "ok", time: { start: 1, end: 2 } },
-  })
+  } as Part
 }
 
 function textPart(id: string, messageID: string, text: string): Part {
-  return fixture<Part>({ id, sessionID: SESSION, messageID, type: "text", text })
+  return { id, sessionID: SESSION, messageID, type: "text", text } as Part
 }
 
 function rowsFor(parts: Part[]) {

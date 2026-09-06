@@ -19,8 +19,8 @@ describe("settling", () => {
   test("a completed turn reports once", () => {
     const events = turnOutcomeEvents([user("u1"), assistant("u1", { completed: 3500 })], new Set())
     expect(events).toHaveLength(1)
-    expect(events[0]!.name).toBe("turn_completed")
-    expect(events[0]!.properties.duration_ms).toBe(2500)
+    expect(events[0].name).toBe("turn_completed")
+    expect(events[0].properties.duration_ms).toBe(2500)
   })
 
   test("an in-flight turn reports nothing", () => {
@@ -36,14 +36,14 @@ describe("settling", () => {
   test("an errored turn reports failure even without a completion time", () => {
     const events = turnOutcomeEvents([user("u1"), assistant("u1", { error: { data: { message: "boom" } } })], new Set())
     expect(events).toHaveLength(1)
-    expect(events[0]!.name).toBe("turn_failed")
+    expect(events[0].name).toBe("turn_failed")
   })
 })
 
 describe("failure classification", () => {
   const classOf = (message: string) => {
     const events = turnOutcomeEvents([user("u1"), assistant("u1", { error: { data: { message } } })], new Set())
-    return events[0]!.properties.failure_class
+    return events[0].properties.failure_class
   }
 
   test("derives the class from the wire error", () => {
@@ -57,7 +57,7 @@ describe("failure classification", () => {
       [user("u1"), assistant("u1", { error: { data: { firstTurnErrorClass: "harness", message: "401 unauthorized" } } })],
       new Set(),
     )
-    expect(events[0]!.properties.failure_class).toBe("harness")
+    expect(events[0].properties.failure_class).toBe("harness")
   })
 
   test("an unrecognized error still classifies rather than dropping the turn", () => {
@@ -99,19 +99,19 @@ describe("dedupe", () => {
     ]
     const events = turnOutcomeEvents(messages, new Set())
     expect(events).toHaveLength(1)
-    expect(events[0]!.name).toBe("turn_failed")
+    expect(events[0].name).toBe("turn_failed")
   })
 })
 
 describe("duration", () => {
   test("is omitted when the assistant never recorded a completion time", () => {
     const events = turnOutcomeEvents([user("u1"), assistant("u1", { error: "x" })], new Set())
-    expect(events[0]!.properties).not.toHaveProperty("duration_ms")
+    expect(events[0].properties).not.toHaveProperty("duration_ms")
   })
 
   test("is omitted rather than negative when clocks disagree", () => {
     const events = turnOutcomeEvents([user("u1", 9000), assistant("u1", { completed: 1000 })], new Set())
-    expect(events[0]!.properties).not.toHaveProperty("duration_ms")
+    expect(events[0].properties).not.toHaveProperty("duration_ms")
   })
 })
 
@@ -127,12 +127,12 @@ describe("payload safety", () => {
       [user("u1"), assistant("u1", { completed: 2000, error: { data: { message: "401 unauthorized" } } })],
       new Set(),
     )
-    expect(Object.keys(events[0]!.properties).sort()).toEqual(["duration_ms", "failure_class", "is_first_turn"])
+    expect(Object.keys(events[0].properties).sort()).toEqual(["duration_ms", "failure_class", "is_first_turn"])
   })
 
   test("a success sends exactly the allowlisted keys", () => {
     const events = turnOutcomeEvents([user("u1"), assistant("u1", { completed: 2000 })], new Set())
-    expect(Object.keys(events[0]!.properties).sort()).toEqual(["duration_ms", "is_first_turn"])
+    expect(Object.keys(events[0].properties).sort()).toEqual(["duration_ms", "is_first_turn"])
   })
 
   test("no error text, stack, or prompt content ever rides along", () => {
@@ -146,7 +146,7 @@ describe("payload safety", () => {
     expect(serialized).not.toContain("private-repo")
     expect(serialized).not.toContain("at foo()")
     for (const key of ["message", "error", "stack", "text", "prompt"]) {
-      expect(events[0]!.properties).not.toHaveProperty(key)
+      expect(events[0].properties).not.toHaveProperty(key)
     }
   })
 })

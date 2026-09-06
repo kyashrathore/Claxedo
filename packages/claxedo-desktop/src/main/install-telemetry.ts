@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { release } from "node:os"
 import { join } from "node:path"
-import type { TelemetryClientHandle } from "./telemetry"
+import type { TelemetryEventSink, TelemetryHandle } from "./telemetry"
 
 /** Versioned so a future change to what an "install" means can re-fire once
  *  deliberately, rather than being blocked by a marker from the old scheme. */
@@ -93,7 +93,7 @@ export function buildInstallProperties(input: {
  * new.
  */
 export async function reportInstall(
-  client: TelemetryClientHandle,
+  client: TelemetryHandle<TelemetryEventSink>,
   input: { userDataDir: string; appVersion: string; channel: string },
   flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS,
 ): Promise<void> {

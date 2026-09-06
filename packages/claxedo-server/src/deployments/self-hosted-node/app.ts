@@ -113,6 +113,7 @@ import {
 } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import {
+  SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
   SessionTurnLeaseLostError,
   type SessionTurnAuthority,
@@ -156,6 +157,7 @@ import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
+import { isComposedAuthorityPort } from "../../authority/composed-authority"
 
 const execFileAsync = promisify(execFile)
 
@@ -183,48 +185,49 @@ function authRouteOptions(services: ControlPlaneServices) {
   }
 }
 
+// The composed authority implements these; `WorkspaceAuthority` does not
+// declare them, so each guard below checks the members at runtime and refuses
+// the composition when one is absent. The previous `as unknown as` returned the
+// same object whether or not they were there.
+const RUNTIME_SESSION_AUTHORITY_MEMBERS = [
+  "registerRuntimeSession",
+  "markSessionRegistrationAmbiguous",
+  "beginSessionCompensation",
+  "completeSessionCompensation",
+  "authorizeRuntimeSession",
+  "runtimeAccessTokenActive",
+] as const satisfies readonly (keyof RuntimeSessionAuthorityOptions["authority"])[]
+
 function selfHostedRuntimeAuthority(authority: WorkspaceAuthority | undefined): RuntimeSessionAuthorityOptions["authority"] {
-  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
-  const methods = [
-    "registerRuntimeSession",
-    "markSessionRegistrationAmbiguous",
-    "beginSessionCompensation",
-    "completeSessionCompensation",
-    "authorizeRuntimeSession",
-    "runtimeAccessTokenActive",
-  ] as const
-  if (!candidate || methods.some((method) => typeof candidate[method] !== "function")) {
+  if (!isComposedAuthorityPort<RuntimeSessionAuthorityOptions["authority"]>(authority, RUNTIME_SESSION_AUTHORITY_MEMBERS)) {
     throw new ControlPlaneCompositionError(
       "self_host_app_required",
       "Self-hosted runtime session authority is incomplete",
     )
   }
-  return candidate as unknown as RuntimeSessionAuthorityOptions["authority"]
+  return authority
 }
 
 function selfHostedTurnAuthority(authority: WorkspaceAuthority | undefined): SessionTurnAuthority {
-  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
-  const methods = ["acquireSessionTurn", "renewSessionTurn", "releaseSessionTurn"] as const
-  if (!candidate || methods.some((method) => typeof candidate[method] !== "function")) {
+  if (!isComposedAuthorityPort<SessionTurnAuthority>(authority, SESSION_TURN_AUTHORITY_METHODS)) {
     throw new ControlPlaneCompositionError(
       "self_host_app_required",
       "Self-hosted session turn authority is incomplete",
     )
   }
-  return candidate as unknown as SessionTurnAuthority
+  return authority
 }
 
 function selfHostedPrivateSessionAuthority(
   authority: WorkspaceAuthority | undefined,
 ): Pick<PrivateSessionAuthority, "reserveSession"> {
-  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
-  if (!candidate || typeof candidate.reserveSession !== "function") {
+  if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "reserveSession">>(authority, ["reserveSession"])) {
     throw new ControlPlaneCompositionError(
       "self_host_app_required",
       "Self-hosted private-session reservation authority is incomplete",
     )
   }
-  return candidate as unknown as Pick<PrivateSessionAuthority, "reserveSession">
+  return authority
 }
 
 /**
@@ -760,7 +763,7 @@ export function createSelfHostedApp(
 
             const header = request.headers.get("authorization") ?? ""
             const match = /^Bearer\s+(\S+)/i.exec(header.trim())
-            if (!match?.[1]) return
+            if (!match?.[1]) return undefined
             const token = match[1]
 
             // Relay-forwarded user-hosted hops carry a Relay Host Token
@@ -791,14 +794,14 @@ export function createSelfHostedApp(
             }
 
             const publicPem = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.replaceAll("\\n", "\n")
-            if (!publicPem?.trim()) return
+            if (!publicPem?.trim()) return undefined
             try {
               const claims = await verifyRuntimeAccessToken(
                 token,
                 await importSPKI(publicPem, "EdDSA"),
                 { workspaceId },
               )
-              if (!claims.actor_id || !claims.actor_kind || !claims.actor_public_id || !claims.actor_name) return
+              if (!claims.actor_id || !claims.actor_kind || !claims.actor_public_id || !claims.actor_name) return undefined
               return {
                 actorId: claims.actor_id,
                 actorKind: claims.actor_kind,
@@ -809,7 +812,7 @@ export function createSelfHostedApp(
                 role: claims.role,
               }
             } catch {
-              return
+              return undefined
             }
           },
         }
@@ -848,7 +851,7 @@ export function createSelfHostedApp(
     turnCredentials,
     ...authRouteOptions(services),
   })
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
+  const nodeWebSocket = createNodeWebSocket({ app })
   const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxyOptions)
   const localWorkspaceRelayProxy = createLocalWorkspaceRelayProxy(runtimeProxyOptions)
 
@@ -940,9 +943,7 @@ export function createSelfHostedApp(
         ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
         telemetry: services.telemetry,
       }),
-      localTargetExists: localRelayTargetExists({
-        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-      }),
+      localTargetExists: localRelayTargetExists((services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {})),
     }),
   )
   app.route(
@@ -1003,7 +1004,7 @@ export function createSelfHostedApp(
     service: remoteAccessService ?? unavailableRemoteAccessService(),
   }))
 
-  mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
+  mountWorkspaceRuntimePtyWebSocketProxy(app, nodeWebSocket.upgradeWebSocket, runtimeProxyOptions)
 
   app.all("/workspaces/:workspaceId", localWorkspaceRelayProxy)
   app.all("/workspaces/:workspaceId/*", localWorkspaceRelayProxy)
@@ -1086,10 +1087,10 @@ export function createSelfHostedApp(
     "/api/claxedo/projects",
     LocalProjectRoutes(authRouteOptions(services), {
       cloneCredential: async (auth, repoUrl) => {
-        if (!repoUrl.startsWith("https://github.com/")) return
+        if (!repoUrl.startsWith("https://github.com/")) return undefined
         const connections = await connectionsHost.service.list({ owner: auth.user.subject })
         const github = connections.find((row) => row.integrationId === "github" && row.status === "connected")
-        if (!github) return
+        if (!github) return undefined
         const token = await connectionsHost.service.getToken(github.id, "code-host")
         return token.ok ? { authorization: githubCloneAuthorization(token.response.token) } : undefined
       },
@@ -1228,7 +1229,7 @@ export function createSelfHostedApp(
       routeOwnership,
       `feature:${contribution.id}`,
       contribution.path,
-      contribution.routes as never,
+      contribution.routes,
     ),
   })
 
@@ -1261,7 +1262,7 @@ export function createSelfHostedApp(
   let disposal: Promise<void> | undefined
   return {
     app,
-    injectWebSocket,
+    injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => nodeWebSocket.injectWebSocket(server),
     channels: controlPlaneChannels,
     dispose: () => disposal ??= (async () => { await machineWakes?.stop(); wakeStore?.close() })(),
     /**

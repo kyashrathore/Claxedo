@@ -6,7 +6,6 @@ import {
   type AuthIdentity,
 } from "@claxedo/server-core/platform/auth/authentication"
 import type {
-  OrgId,
   ProjectAction,
   ProjectRole,
   ProjectRoleResult,
@@ -14,6 +13,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
+import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -671,7 +671,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       user_id: who.userId,
       actor_id: who.actorId,
       actor_kind: "human" as const,
-      ...(orgs.length === 1 ? { org_id: orgs[0]!.org_id } : {}),
+      ...(orgs.length === 1 ? { org_id: orgs[0].org_id } : {}),
     }
   }
 
@@ -945,7 +945,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     `,
       )
       .bind(team.org_id, teamId)
-      .all<Record<string, unknown>>()
+      .all()
     return result.results
   }
 
@@ -1024,7 +1024,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           : "An explicit application organization selection is required",
       )
     }
-    return orgs[0]!.org_id as OrgId
+    return asOrgId(orgs[0].org_id)
   }
 
   async projectRole(
@@ -1643,7 +1643,7 @@ function workspaceJson(row: WorkspaceAccessRow) {
 
 function projectResult(row: ProjectAccessRow | null): ProjectRoleResult {
   if (!row || row.role_rank < 1) return { ok: false }
-  return { ok: true, orgId: row.org_id as OrgId, role: rankRole(row.role_rank) }
+  return { ok: true, orgId: asOrgId(row.org_id), role: rankRole(row.role_rank) }
 }
 
 function actionRank(action: ProjectAction) {

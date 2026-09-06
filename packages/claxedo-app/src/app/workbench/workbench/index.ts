@@ -11,8 +11,9 @@ export type {
   Edge,
   KeyMap,
   PaneRect,
+  MovePaneTarget,
 } from "./types"
-export { WORKBENCH_DRAG_MIME } from "./types"
+export { WORKBENCH_DRAG_MIME, NEW_PANE } from "./types"
 
 export { reducers } from "./reducers/index"
 export { selectors } from "./selectors"

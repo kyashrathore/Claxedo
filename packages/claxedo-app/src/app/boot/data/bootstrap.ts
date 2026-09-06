@@ -1,5 +1,6 @@
 import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
+import { asRecord, readBoolean, readString } from "@/lib/record"
 import { retry } from "@/lib/retry"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -51,22 +52,32 @@ export type GlobalBootstrapState = {
 
 type Boot = {
   healthy?: boolean
-  authenticated?: boolean
-  services?: unknown
-  version?: string
   path?: Path
 }
 
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object"
+/**
+ * Read the bootstrap response into the two fields this module uses.
+ *
+ * The body arrives as `unknown` and asserting it into `Boot` certifies nothing:
+ * `path` is handed to `setGlobalState` and cached under `queryKeys.directory.path`
+ * as five guaranteed strings, and every consumer reads `path.worktree` without
+ * checking. Each field is read for its own type instead, and a `path` missing
+ * any member is dropped so the caller's `EMPTY_PATH` fallback runs.
+ */
+function toBoot(input: unknown): Boot | undefined {
+  const data = asRecord(input)
+  if (!data) return undefined
+  return { healthy: readBoolean(data, "healthy"), path: toPath(data.path) }
 }
 
-function record(input: unknown) {
-  return isRecord(input) ? input : undefined
-}
-
-function isBoot(input: unknown): input is Boot {
-  return !!record(input)
+function toPath(input: unknown): Path | undefined {
+  const home = readString(input, "home")
+  const state = readString(input, "state")
+  const config = readString(input, "config")
+  const worktree = readString(input, "worktree")
+  const directory = readString(input, "directory")
+  if (!home || !state || !config || !worktree || !directory) return undefined
+  return { home, state, config, worktree, directory }
 }
 
 function normalizedServerUrl(serverUrl: string | undefined) {
@@ -95,7 +106,7 @@ async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, 
     })
     if (!res.ok) return undefined
     const data: unknown = await res.json().catch(() => undefined)
-    return isBoot(data) ? data : undefined
+    return toBoot(data)
   } catch {
     return undefined
   }

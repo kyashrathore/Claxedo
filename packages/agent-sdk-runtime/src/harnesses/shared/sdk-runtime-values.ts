@@ -1,12 +1,19 @@
-import type { JsonRecord } from "./sdk-runtime-driver"
+import { asRecord, asText } from "@claxedo/agent-runtime-contract"
 
-export function record(input: unknown): JsonRecord | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as JsonRecord
-}
+/**
+ * Harness payload readers. The structural guards are the contract package's, so
+ * every harness in this package narrows unknown payloads the same way.
+ */
+export const record = asRecord
+export const text = asText
 
-export function text(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
+/** The string-valued entries of a config record, or undefined when it is not one. */
+export function stringRecord(value: unknown): Record<string, string> | undefined {
+  const row = record(value)
+  if (!row) return undefined
+  return Object.fromEntries(
+    Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
 }
 
 export function errorMessage(error: unknown): string {

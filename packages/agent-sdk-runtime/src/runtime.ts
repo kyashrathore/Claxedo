@@ -82,8 +82,6 @@ import type {
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
   CreateAgentRuntimeInput,
-  InternalAgentHarnessFactory,
-  RuntimeStoreInternal,
 } from "./runtime/contracts"
 
 export type AgentRuntime = ReturnType<typeof createAgentRuntime>
@@ -95,9 +93,8 @@ function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is
 /** The caller owns input.store and closes it after every sharing runtime is disposed. */
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = createRuntimeEventHub()
-  const store = input.store as unknown as RuntimeStoreInternal
-  const factories = input.harnesses as unknown as InternalAgentHarnessFactory[]
-  const adapters = new Map(factories.map((factory) => [
+  const store = input.store
+  const adapters = new Map(input.harnesses.map((factory) => [
     key(factory),
     factory.create({ store, eventHub }),
   ]))
@@ -385,7 +382,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       if (!admitted()) return
       if (titleEmitted) return
       titleEmitted = true
-      const session = store.getSession(sessionId) as { title?: string | null; time?: { created?: number } } | null
+      const session = store.getSession(sessionId)
       if (hasConcreteSessionTitle(session?.title)) return
       const text = extractPromptTitleText(prompt.parts)
       if (!text) return
@@ -502,18 +499,18 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
       return persisted
     }
-    const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
+    const session = store.getSession(sessionId)
     if (!session) throw new Error(`Session ${sessionId} not found`)
     if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
     const targetDirectory = directory ?? session.directory
-    const previousBinding = executionBinding(sessionId, targetDirectory, current!.harness)
-    const source = await adapterFor(current!.harness)
+    const previousBinding = executionBinding(sessionId, targetDirectory, current.harness)
+    const source = await adapterFor(current.harness)
     const target = await adapterFor(update.harness!)
     return executeHandoffTransaction({
       sessionId,
       directory: targetDirectory,
       session,
-      current: current!,
+      current: current,
       update: { ...update, harness: update.harness! },
       binding: previousBinding,
       store,
@@ -527,7 +524,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   }
 
   const goalResourceReadContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
-    const session = store.getSession(sessionId) as { directory?: string } | null
+    const session = store.getSession(sessionId)
     if (!session) {
       throw new AgentRuntimeGoalError("goal_session_not_found", `Session ${sessionId} not found`)
     }
@@ -603,7 +600,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
 
   const unsubscribeGoalBridge = eventHub.subscribeRuntime((event) => {
     if (event.payload.type !== "goal-updated" && event.payload.type !== "goal-cleared") return
-    const session = store.getSession(event.sessionId) as { directory?: string } | null
+    const session = store.getSession(event.sessionId)
     publishGoalSnapshot(
       event.sessionId,
       session ? session.directory ?? undefined : event.directory,
@@ -681,25 +678,25 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (!persistedConfig) throw new Error(`Session ${session.id} has no runtime config`)
         const persistedSession = store.getSession(session.id)
         if (!persistedSession) throw new Error(`Session ${session.id} was not persisted`)
-        return persistedSession as AgentSession
+        return persistedSession
       },
       async get(sessionId: string, _directory?: RuntimeDirectory): Promise<AgentSession | null> {
-        return store.getSession(sessionId) as AgentSession | null
+        return store.getSession(sessionId) ?? null
       },
       async list(inputDirectory: RuntimeDirectory): Promise<AgentSession[]> {
-        return (store.listSessions(runtimeDirectory(inputDirectory)) as AgentSession[])
+        return store.listSessions(runtimeDirectory(inputDirectory))
           .map((session) => presentationSession(session)!)
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
-        const updated = await adapter.updateSession(executionBinding(sessionId, directory), updates) as AgentSession | null
+        const updated = await adapter.updateSession(executionBinding(sessionId, directory), updates)
         if (!updated) throw new Error(`Session ${sessionId} not found`)
         const persisted = store.updateSession(sessionId, {
           ...(updated.title !== undefined ? { title: updated.title ?? undefined } : {}),
           ...(updated.time?.archived !== undefined ? { time: { archived: updated.time.archived } } : {}),
         })
         if (!persisted) throw new Error(`Session ${sessionId} not found`)
-        return persisted as AgentSession
+        return persisted
       },
       async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
         return await updateSessionConfig(sessionId, update, directory)
@@ -716,7 +713,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if ((turn.actorId === undefined) !== (turn.actorKind === undefined)) {
           throw new Error("Turn actor id and kind must be provided together")
         }
-        const session = store.getSession(turn.sessionId) as { directory?: string } | null
+        const session = store.getSession(turn.sessionId)
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
         if (turn.admission && !turn.admission.valid()) {
           throw new Error("Durable session turn admission is no longer valid")
@@ -850,8 +847,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async stop(sessionId: string, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult> {
         return await runGoalMutation(sessionId, "stop", directory)
       },
-      async delete(sessionId: string, directory?: RuntimeDirectory) {
-        return await runGoalMutation(sessionId, "delete", directory) as AgentGoalMutationResult<null>
+      async delete(sessionId: string, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult<null>> {
+        const result = await runGoalMutation(sessionId, "delete", directory)
+        // Delete leaves no goal; the adapter contract says so, and the shared
+        // mutation path returns the wider union every action shares.
+        return result.ok ? { ok: true, goal: null } : result
       },
     }),
     events: {
@@ -863,16 +863,16 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
         await adapterForSession(sessionId)
         executionBinding(sessionId, directory)
-        return store.getMessages(sessionId) as AgentMessage[]
+        return store.getMessages(sessionId)
       },
       }),
     },
     permissions: resource({
       async list(directory: RuntimeDirectory): Promise<AgentPermission[]> {
-        return merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as Promise<AgentPermission[]>
+        return merge(adapters, (adapter) => adapter.listPermissions?.(directory))
       },
       async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
-        const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as AgentPermission[])
+        const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)))
           .find((item) => item.id === permissionId)
         if (!permission) throw new Error(`Permission ${permissionId} not found`)
         const adapter = await interactionAdapter("respondPermission", permission?.sessionID)
@@ -884,10 +884,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     }),
     questions: resource({
       async list(directory: RuntimeDirectory): Promise<AgentQuestion[]> {
-        return merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as Promise<AgentQuestion[]>
+        return merge(adapters, (adapter) => adapter.listQuestions?.(directory))
       },
       async answer(questionId: string, answers: AgentQuestionAnswer[], directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
-        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
+        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)))
           .find((item) => item.id === questionId)
         if (!question) throw new Error(`Question ${questionId} not found`)
         const adapter = await interactionAdapter("replyQuestion", question?.sessionID)
@@ -897,7 +897,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return result
       },
       async reject(questionId: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
-        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
+        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)))
           .find((item) => item.id === questionId)
         if (!question) throw new Error(`Question ${questionId} not found`)
         const adapter = await interactionAdapter("rejectQuestion", question?.sessionID)

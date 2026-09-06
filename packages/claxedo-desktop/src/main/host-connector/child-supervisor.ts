@@ -1,3 +1,4 @@
+import type { HostedOperationName } from "../account/hosted-operations"
 import type { LocalWorkspaceDescription } from "./local-workspace-description"
 import {
   parseHostConnectorChildMessage,
@@ -7,7 +8,17 @@ import {
   type HostConnectorSharedWorkspace,
 } from "./child-protocol"
 
-export type AccountOperationRunner = (name: string, input?: Record<string, unknown>) => Promise<unknown>
+/**
+ * How the child asks main to perform one of the reviewed account operations.
+ *
+ * `HostedOperationName`, not `string`: the runner main supplies IS
+ * `accountService.run`, which only accepts a reviewed name, and typing the
+ * parameter as `string` made every wiring point assert the name away.
+ */
+export type AccountOperationRunner = (
+  name: HostedOperationName,
+  input?: Record<string, unknown>,
+) => Promise<unknown>
 
 export type HostConnectorChildProcess = {
   postMessage(message: HostConnectorParentMessage): void

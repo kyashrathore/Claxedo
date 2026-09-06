@@ -256,7 +256,10 @@ describe("PortLease", () => {
 
 describe("resolvePort via start()", () => {
   let tmpDir: string
-  let ptyCreate: ReturnType<typeof spyOn> | undefined
+  // `ReturnType<typeof spyOn>` is `any`, which swallowed the `| undefined`
+  // this variable actually relies on between tests. Only the two members used
+  // here are declared, so the reset in `afterEach` is type-checked.
+  let ptyCreate: { mockRestore(): void; mock: { calls: unknown[] } } | undefined
   let ptySeq = 0
 
   beforeEach(async () => {
@@ -387,7 +390,7 @@ describe("resolvePort via start()", () => {
         kind: "failed",
         error: "workspace command path must be relative",
       })
-      expect(ptyCreate).not.toHaveBeenCalled()
+      expect(ptyCreate?.mock.calls.length ?? 0).toBe(0)
     } finally {
       await dispose(dir)
     }
@@ -654,7 +657,7 @@ describe("resolvePort via start()", () => {
       expect(result.kind).toBe("started")
 
       expect(created).toHaveLength(1)
-      expect(created[0]!.initialCommand).toBe("bun dev --port 19887; printf '\\033]777;process-exit;%d\\007' $?")
+      expect(created[0].initialCommand).toBe("bun dev --port 19887; printf '\\033]777;process-exit;%d\\007' $?")
       expect(write).not.toHaveBeenCalled()
     } finally {
       write.mockRestore()
@@ -984,10 +987,10 @@ describe("resolvePort via start()", () => {
       if (result.kind !== "started") return
 
       expect(created).toHaveLength(1)
-      expect(created[0]!.env?.NODE_OPTIONS).toBeUndefined()
-      expect(created[0]!.env?.SECRET_TOKEN).toBeUndefined()
-      expect(created[0]!.env?.UNRELATED_VENDOR_ALLOWED).toBeUndefined()
-      expect(created[0]!.env).toMatchObject({
+      expect(created[0].env?.NODE_OPTIONS).toBeUndefined()
+      expect(created[0].env?.SECRET_TOKEN).toBeUndefined()
+      expect(created[0].env?.UNRELATED_VENDOR_ALLOWED).toBeUndefined()
+      expect(created[0].env).toMatchObject({
         CLAXEDO_ALLOWED: "yes",
         PORT: "19878",
       })

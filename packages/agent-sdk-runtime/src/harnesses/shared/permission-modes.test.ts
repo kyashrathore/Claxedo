@@ -79,8 +79,8 @@ describe("Codex encodings", () => {
   })
 
   test("an unset or unknown mode resolves to the default rung, never undefined", () => {
-    expect(codexSettingsFor(undefined)).toEqual(CODEX_SETTINGS[DEFAULT_CODEX_MODE]!)
-    expect(codexSettingsFor("nonsense")).toEqual(CODEX_SETTINGS[DEFAULT_CODEX_MODE]!)
+    expect(codexSettingsFor(undefined)).toEqual(CODEX_SETTINGS[DEFAULT_CODEX_MODE])
+    expect(codexSettingsFor("nonsense")).toEqual(CODEX_SETTINGS[DEFAULT_CODEX_MODE])
   })
 
   test("every codex mode has settings, so no row can be chosen without an encoding", () => {

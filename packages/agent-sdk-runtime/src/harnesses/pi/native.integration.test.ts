@@ -5,10 +5,8 @@ import path from "node:path"
 import { createAgentRuntime } from "../../runtime"
 import { pi } from "../../harnesses"
 import { PiRpcProcess } from "./rpc-process"
-import type { AgentMessage } from "../../index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { GOAL_PROMPT_TEXT } from "../shared/goal-protocol"
-import { storeRows } from "../../test-utils/store-internals"
 
 /** A real pinned Pi process and native tools; only the provider HTTP response is deterministic. */
 test.skipIf(!process.env.PI_EXECUTABLE)(
@@ -79,7 +77,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       }),
     )
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const create = () =>
       createAgentRuntime({ store, harnesses: [pi({ binary: process.env.PI_EXECUTABLE!, agentDir })] })
     let runtime = create()
@@ -122,15 +120,15 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       expect(nativeId).not.toBe(session.id)
       await turn(session.id, "first")
       expect(await fs.readFile(path.join(directory, "proof.txt"), "utf8")).toBe("written by native Pi")
-      expect(JSON.stringify(requests[0]!.messages)).toContain("data:image/png;base64,")
-      expect(requests[1]!.messages.some((message) => message.role === "tool")).toBe(true)
+      expect(JSON.stringify(requests[0].messages)).toContain("data:image/png;base64,")
+      expect(requests[1].messages.some((message) => message.role === "tool")).toBe(true)
       expect(JSON.stringify(rows.getMessages(session.id))).toContain("Native work complete")
       expect(usage).toHaveLength(2)
       expect(usage.every((event) => event.messageID === "first_r")).toBe(true)
       expect(usage.reduce((sum, event) => sum + event.observation.tokens.input, 0)).toBe(24)
       expect(usage.reduce((sum, event) => sum + event.observation.tokens.output, 0)).toBe(16)
       expect(
-        (rows.getMessages(session.id) as AgentMessage[]).find((message) => message.info.role === "assistant")?.info
+        rows.getMessages(session.id).find((message) => message.info.role === "assistant")?.info
           .time,
       ).toHaveProperty("completed")
       const files = await fs.readdir(path.join(agentDir, "sessions"))
@@ -179,7 +177,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       expect(JSON.stringify(requests.at(-1)!.messages)).toContain(GOAL_PROMPT_TEXT.evaluatorObjectiveLabel)
     } finally {
       await runtime.dispose()
-      server.stop(true)
+      await server.stop(true)
       await fs.rm(directory, { recursive: true, force: true })
     }
   },
@@ -212,7 +210,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
     )
     await fs.writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }))
     const { PiHarnessAdapter } = await import("./index")
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new PiHarnessAdapter({ store, binary: process.env.PI_EXECUTABLE!, agentDir })
     try {
       const session = await adapter.createSession(directory)
@@ -251,7 +249,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
         await new Promise((resolve) => setTimeout(resolve, 10))
       }
       expect(pending).toHaveLength(1)
-      await adapter.replyQuestion(binding, pending[0]!.id, [["native answer"]])
+      await adapter.replyQuestion(binding, pending[0].id, [["native answer"]])
       const answerFile = path.join(directory, "extension-answer.txt")
       for (let attempt = 0; attempt < 200; attempt++) {
         if (

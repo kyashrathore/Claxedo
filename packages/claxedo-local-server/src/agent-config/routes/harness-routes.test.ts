@@ -39,7 +39,7 @@ describe("harness routes", () => {
     vi.mocked(sandboxFetch).mockResolvedValueOnce(Response.json({ ready: true, status: "ok" }))
     const response = await agentConfigHarnessRoutes().request("/harness?connectionId=openclaw&sessionId=three-day-old&workspaceId=workspace-1")
     expect(response.status).toBe(200)
-    const request = new URL(vi.mocked(sandboxFetch).mock.calls[0]![1], "http://runtime.test")
+    const request = new URL(vi.mocked(sandboxFetch).mock.calls[0][1], "http://runtime.test")
     expect(request.pathname).toBe("/api/wr/health")
     expect(Object.fromEntries(request.searchParams)).toEqual({ directory: "/project", connectionId: "openclaw", sessionId: "three-day-old" })
   })
@@ -50,7 +50,7 @@ describe("harness routes", () => {
     const response = await agentConfigHarnessRoutes().request("/harness/options?connectionId=openclaw&workspaceId=workspace-1")
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual(error)
-    expect(vi.mocked(sandboxFetch).mock.calls[0]![1]).toBe("/api/wr/harness-config-options?directory=%2Fproject&connectionId=openclaw")
+    expect(vi.mocked(sandboxFetch).mock.calls[0][1]).toBe("/api/wr/harness-config-options?directory=%2Fproject&connectionId=openclaw")
   })
 
   test("does not silently choose OpenCode when no selection exists", async () => {

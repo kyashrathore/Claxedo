@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, afterEach, describe, expect, test } from "vitest"
 import { installFakePiRpc } from "../../../../agent-sdk-runtime/src/test-utils/fake-pi-rpc.mjs"
 import fs from "fs/promises"
 import os from "os"
@@ -133,7 +133,7 @@ describe("embedded workspace runtime", () => {
             } finally { producerDone.resolve() }
           },
           dispose() {
-            if (!ownsProducer) return
+            if (!ownsProducer) return undefined
             stopped.resolve()
             return producerDone.promise
           },

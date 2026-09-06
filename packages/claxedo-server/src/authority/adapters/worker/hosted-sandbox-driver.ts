@@ -54,12 +54,12 @@ export function sandboxRuntimeControlEnv(env: HostedWorkerEnv) {
  */
 export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
   const name = clean(env.CLAXEDO_SANDBOX_DRIVER)?.toLowerCase()
-  if (!name) return
+  if (!name) return undefined
 
   if (name === "cloudflare") {
     const workerUrl = clean(env.CLOUDFLARE_SANDBOX_WORKER_URL)
     const apiToken = clean(env.CLOUDFLARE_SANDBOX_API_TOKEN)
-    if (!workerUrl || !apiToken) return
+    if (!workerUrl || !apiToken) return undefined
     return createCloudflareSandboxDriver({
       workerUrl,
       apiToken,
@@ -74,7 +74,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
   if (name === "daytona") {
     const apiKey = clean(env.DAYTONA_API_KEY)
     const baseSnapshot = clean(env.CLAXEDO_DAYTONA_SNAPSHOT)
-    if (!apiKey || !baseSnapshot) return
+    if (!apiKey || !baseSnapshot) return undefined
     return createDaytonaSandboxDriver({
       apiKey,
       baseSnapshot,
@@ -92,7 +92,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
 
   if (name === "exe") {
     const apiToken = clean(env.EXE_DEV_API_TOKEN)
-    if (!apiToken) return
+    if (!apiToken) return undefined
     const control = sandboxRuntimeControlEnv(env)
     const runtimeEnv = {
       ...(control.relayJwksUrl ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: control.relayJwksUrl } : {}),
@@ -119,7 +119,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
     )
   }
   const driverUrl = clean(env.CLAXEDO_SANDBOX_DRIVER_URL)
-  if (!driverUrl) return
+  if (!driverUrl) return undefined
   return createFetchBridgeSandboxDriver({
     id: "fetch",
     baseUrl: driverUrl,

@@ -9,7 +9,22 @@ const normalize = (file) => file.trim().replaceAll("\\", "/").replace(/^\.\//, "
 const startsWithAny = (file, prefixes) => prefixes.some((prefix) => file.startsWith(prefix))
 const equalsAny = (file, paths) => paths.includes(file)
 
-const GLOBAL_FILES = ["package.json", "bun.lock", "turbo.json", "script/ci-changes.mjs", "script/ci-changes.test.mjs"]
+// `script/bun-build.ts` is the single `Bun.build` wrapper behind every bundle in
+// the repository — the desktop server and host-connector bundles, the
+// local-server and host-connector builds, workspace-runtime's node bundle, and
+// session-ui's mermaid sanitizer verification. Nothing under `script/` belongs
+// to a package prefix, so a change to it would otherwise select no gate at all
+// and a broken bundler could ship green. Its six consumers span every gate, so
+// it fails open to the full suite rather than being enumerated per-gate.
+const GLOBAL_FILES = [
+  "package.json",
+  "bun.lock",
+  "turbo.json",
+  "script/ci-changes.mjs",
+  "script/ci-changes.test.mjs",
+  "script/bun-build.ts",
+  "script/bun-build.test.ts",
+]
 const GLOBAL_PREFIXES = [".github/actions/"]
 const GLOBAL_WORKFLOWS = [".github/workflows/test.yml", ".github/workflows/typecheck.yml"]
 
@@ -173,7 +188,7 @@ function resultFor(files, forceFull, reason) {
 }
 
 export function classifyChangedFiles(inputFiles, options = {}) {
-  const files = [...new Set(inputFiles.map(normalize).filter(Boolean))].sort()
+  const files = [...new Set(inputFiles.map(normalize).filter(Boolean))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
   return resultFor(files, options.forceFull === true, options.reason ?? "changed files")
 }
 

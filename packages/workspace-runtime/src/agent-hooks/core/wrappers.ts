@@ -18,6 +18,7 @@ import {
   SHIMMED_BINARIES,
 } from "./constants"
 import { loadTemplate, shellQuote, writeIfChanged } from "./utils"
+import { arr, rec } from "../../json-value"
 import { generateCopilotProjectHooks } from "./hooks"
 
 // ── Wrapper composition ────────────────────────────────────────────────────
@@ -129,8 +130,8 @@ const wrappersPath = (root = CLAXEDO_DIR) => path.join(root, WRAPPERS_JSON)
 export const loadCustomWrappers = async (root = CLAXEDO_DIR) => {
   try {
     const raw = await fs.promises.readFile(wrappersPath(root), "utf-8")
-    const data = JSON.parse(raw) as { custom?: string[] }
-    return normalizeWrappers(Array.isArray(data.custom) ? data.custom : [])
+    const custom = arr(rec(JSON.parse(raw))?.custom) ?? []
+    return normalizeWrappers(custom.filter((item): item is string => typeof item === "string"))
   } catch {
     return []
   }

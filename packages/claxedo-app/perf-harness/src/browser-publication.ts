@@ -54,7 +54,7 @@ export async function publishBrowserResult(result: ScenarioResult, options: Pick
     result.failures.push("Measurement refused: non-finite metric value or repetition")
     return
   }
-  const baseline = await readBaselineFor({ profile: records[0]!.profile, stack: options.stack, lane: "browser", flow: result.id, suite: result.context!.suite })
+  const baseline = await readBaselineFor({ profile: records[0].profile, stack: options.stack, lane: "browser", flow: result.id, suite: result.context!.suite })
   result.comparison = compareToBaseline(records, baseline)
   const commit = source.sourceIdentity.mode === "git" ? source.sourceIdentity.commit : undefined
   if (options.accept_baseline) await writeBaselineFor(records, commit, source.sourceIdentity)

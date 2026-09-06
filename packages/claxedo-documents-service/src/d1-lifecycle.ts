@@ -1,4 +1,5 @@
 import {
+  isServiceLifecycleMutationAction,
   serializeServiceLifecycleMutationRequest,
   type ServiceLifecycleMutationRequest,
   type ServiceLifecycleMutationResponse,
@@ -31,6 +32,14 @@ type LifecycleRow = Readonly<{
   state: ServiceLocalLifecycleState
   revision: number
 }>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function isLifecycleState(value: unknown): value is ServiceLocalLifecycleState {
+  return value === "installed_disabled" || value === "enabling" || value === "enabled"
+}
+
 type AuditRow = Readonly<{
   operationIntent: string
   action: ServiceLifecycleMutationRequest["action"]
@@ -206,21 +215,23 @@ export class D1DocumentsServiceLifecycleStore
          from documents_service_lifecycle where singleton = 1`,
       )
       .first()
-    const row = value as LifecycleRow | null
-    if (!row) return null
+    if (!value) return null
+    if (!isRecord(value)) throw new Error("invalid lifecycle row")
+    const { initializerOperationId, state, revision } = value
     if (
-      typeof row.initializerOperationId !== "string" ||
-      !row.initializerOperationId ||
-      (row.state !== "installed_disabled" && row.state !== "enabling" && row.state !== "enabled") ||
-      !Number.isSafeInteger(row.revision) ||
-      row.revision <= 0
+      typeof initializerOperationId !== "string" ||
+      !initializerOperationId ||
+      !isLifecycleState(state) ||
+      typeof revision !== "number" ||
+      !Number.isSafeInteger(revision) ||
+      revision <= 0
     )
       throw new Error("invalid lifecycle row")
-    return row
+    return { initializerOperationId, state, revision }
   }
 
-  private audit(operationId: string): Promise<AuditRow | null> {
-    return this.database
+  private async audit(operationId: string): Promise<AuditRow | null> {
+    const value = await this.database
       .prepare(
         `
         select operation_intent as operationIntent, action, to_state as toState, to_revision as toRevision
@@ -228,7 +239,18 @@ export class D1DocumentsServiceLifecycleStore
       `,
       )
       .bind(operationId)
-      .first() as Promise<AuditRow | null>
+      .first()
+    if (!value) return null
+    if (!isRecord(value)) throw new Error("invalid lifecycle audit row")
+    const { operationIntent, action, toState, toRevision } = value
+    if (
+      typeof operationIntent !== "string" ||
+      !isServiceLifecycleMutationAction(action) ||
+      !(toState === null || isLifecycleState(toState)) ||
+      !(toRevision === null || typeof toRevision === "number")
+    )
+      throw new Error("invalid lifecycle audit row")
+    return { operationIntent, action, toState, toRevision }
   }
 
   private auditInsert(

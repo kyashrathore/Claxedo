@@ -2,14 +2,26 @@ import fs from "fs"
 import path from "path"
 import { createRequire } from "module"
 import type { CompatEvent } from "../compat-events"
-import type { PromptInput, SessionConfigUpdate } from "../index"
+import type { SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
 import type {
+  AgentRuntimeAppendEventInput,
   AgentRuntimeSessionBinding,
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnFinishInput,
+  AgentRuntimeTurnStartInput,
 } from "../harnesses/shared/runtime-store"
 import { MemoryRuntimeStore, type MemoryRuntimeStoreSnapshot } from "./memory"
+import {
+  persistedMessageRow,
+  persistedPermissionRow,
+  persistedQuestionRow,
+  persistedSessionConfig,
+  persistedSessionRow,
+  persistedSubagentObservation,
+  persistedTodoRow,
+} from "./persisted-rows"
+import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
 import type { SubagentObservation } from "../subagent-admission"
 
 type SqliteStatement = {
@@ -48,19 +60,38 @@ export class RuntimeStoreCorruptionError extends Error {
   }
 }
 
+/** A driver column the schema declares as TEXT; anything else is a corrupt row. */
+function columnText(row: Record<string, unknown>, column: string): string {
+  const value = row[column]
+  return typeof value === "string" ? value : String(columnNumber(row, column))
+}
+
+/** A driver column the schema declares as INTEGER. */
+function columnNumber(row: Record<string, unknown>, column: string): number {
+  const value = row[column]
+  return typeof value === "number" ? value : Number.NaN
+}
+
+type SqliteDatabaseConstructor = new (file: string) => SqliteDatabase
+
+/**
+ * A driver module is loaded by name at runtime, so callability is all this can
+ * check; the constructor's contract is the driver package's, asserted by the
+ * name we required. Every driver load in this file goes through here.
+ */
+function isSqliteDatabaseConstructor(value: unknown): value is SqliteDatabaseConstructor {
+  return typeof value === "function"
+}
+
 function openDatabase(file: string): SqliteDatabase {
-  if (process.versions.bun) {
-    const mod = requireDatabase("bun:sqlite") as { Database: new(file: string) => SqliteDatabase }
-    return new mod.Database(file)
+  const driver = process.versions.bun ? "bun:sqlite" : "better-sqlite3"
+  const mod: unknown = requireDatabase(driver)
+  const exported = asRecord(mod)
+  const Database = process.versions.bun ? exported?.Database : exported?.default ?? mod
+  if (!isSqliteDatabaseConstructor(Database)) {
+    throw new Error(`${driver} export missing; install ${driver} to use @claxedo/agent-sdk-runtime/stores/sqlite`)
   }
-  const mod = requireDatabase("better-sqlite3") as
-    | { default?: new(file: string) => SqliteDatabase }
-    | (new(file: string) => SqliteDatabase)
-  const BetterSqlite = typeof mod === "function" ? mod : mod.default
-  if (!BetterSqlite) {
-    throw new Error("better-sqlite3 export missing; install better-sqlite3 to use @claxedo/agent-sdk-runtime/stores/sqlite outside Bun")
-  }
-  return new BetterSqlite(file)
+  return new Database(file)
 }
 
 /**
@@ -143,8 +174,8 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getAgentSessionId(id: string) { return this.memory.getAgentSessionId(id) }
   getExecutionBinding(id: string) { return this.memory.getExecutionBinding(id) }
-  acquireTurnLease(sessionId: string) {
-    if (this.turnLeases.has(sessionId)) return
+  acquireTurnLease(sessionId: string): string | undefined {
+    if (this.turnLeases.has(sessionId)) return undefined
     const leaseId = `${sessionId}:${++this.nextTurnLease}`
     this.turnLeases.set(sessionId, leaseId)
     return leaseId
@@ -153,22 +184,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (this.turnLeases.get(sessionId) === leaseId) this.turnLeases.delete(sessionId)
   }
 
-  startTurn(input: {
-    sessionId: string
-    agentSessionId?: string
-    userMessageId?: string
-    assistantMessageId: string
-    agent: string
-    model: { providerID: string; modelID: string }
-    parts: unknown[]
-    tools?: Record<string, boolean>
-    format?: unknown
-    system?: string
-    variant?: string
-    actorId?: string
-    actorKind?: "human" | "agent"
-    author?: PromptInput["author"]
-  }) {
+  startTurn(input: AgentRuntimeTurnStartInput) {
     return this.write(() => {
       const result = this.memory.startTurn(input)
       this.persistSession(input.sessionId)
@@ -186,7 +202,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     })
   }
 
-  appendEvent(input: { sessionId: string; agentSessionId?: string; payload: CompatEvent; source?: unknown }) {
+  appendEvent(input: AgentRuntimeAppendEventInput) {
     return this.write(() => {
       const result = this.memory.appendEvent(input)
       this.persistSession(input.sessionId)
@@ -260,9 +276,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   close() { this.db.close?.() }
 
   private initializeSchema() {
-    const legacy = this.get<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'runtime_store_snapshot'",
-    )
+    const legacy = this.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'runtime_store_snapshot'")
     if (legacy) throw new UnsupportedRuntimeStoreSchemaError("snapshot")
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_schema (version INTEGER NOT NULL);
@@ -293,30 +307,39 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       CREATE INDEX IF NOT EXISTS runtime_permissions_session ON runtime_permissions(session_id);
       CREATE INDEX IF NOT EXISTS runtime_questions_session ON runtime_questions(session_id);
     `)
-    const schema = this.get<{ version: number }>("SELECT version FROM runtime_schema LIMIT 1")
+    const schema = this.get("SELECT version FROM runtime_schema LIMIT 1")
     if (!schema) this.run("INSERT INTO runtime_schema(version) VALUES (?)", SCHEMA_VERSION)
-    else if (schema.version !== SCHEMA_VERSION) throw new UnsupportedRuntimeStoreSchemaError(schema.version)
+    else if (columnNumber(schema, "version") !== SCHEMA_VERSION) throw new UnsupportedRuntimeStoreSchemaError(columnNumber(schema, "version"))
   }
 
   private hydrateMemory() {
     const snapshot: MemoryRuntimeStoreSnapshot = {
-      sessions: this.jsonRows("runtime_sessions", "id"),
-      configs: this.rows<{ session_id: string; data_json: string }>("SELECT session_id, data_json FROM runtime_configs")
-        .map((row) => ({ sessionId: row.session_id, config: this.parse("runtime_configs", row.session_id, row.data_json) })),
-      messages: this.groupJsonRows("runtime_messages", "session_id", "message_id", "messages") as MemoryRuntimeStoreSnapshot["messages"],
-      permissions: this.groupJsonRows("runtime_permissions", "directory", "id", "rows") as MemoryRuntimeStoreSnapshot["permissions"],
-      questions: this.groupJsonRows("runtime_questions", "directory", "id", "rows") as MemoryRuntimeStoreSnapshot["questions"],
-      todos: this.groupJsonRows("runtime_todos", "session_id", "ordinal", "rows") as MemoryRuntimeStoreSnapshot["todos"],
-      recoveryErrors: this.rows<{ session_id: string; message: string }>("SELECT session_id, message FROM runtime_recovery_errors")
-        .map((row) => ({ sessionId: row.session_id, message: row.message })),
-      seq: this.rows<{ session_id: string; seq: number }>("SELECT session_id, seq FROM runtime_session_seq")
-        .map((row) => ({ sessionId: row.session_id, seq: row.seq })),
-      subagents: this.rows<{ parent_session_id: string; observation_id: string; data_json: string; published: number }>(
-        "SELECT parent_session_id, observation_id, data_json, published FROM runtime_subagents",
-      ).map((row) => ({
-        parentSessionId: row.parent_session_id,
-        observation: this.parse("runtime_subagents", `${row.parent_session_id}/${row.observation_id}`, row.data_json),
-        published: row.published === 1,
+      sessions: this.jsonRows("runtime_sessions", "id", persistedSessionRow),
+      configs: this.rows("SELECT session_id, data_json FROM runtime_configs").map((row) => ({
+        sessionId: columnText(row, "session_id"),
+        config: this.parse("runtime_configs", columnText(row, "session_id"), columnText(row, "data_json"), persistedSessionConfig),
+      })),
+      messages: this.groupJsonRows("runtime_messages", "session_id", "message_id", persistedMessageRow)
+        .map(({ group, values }) => ({ sessionId: group, messages: values })),
+      permissions: this.groupJsonRows("runtime_permissions", "directory", "id", persistedPermissionRow)
+        .map(({ group, values }) => ({ directory: group, rows: values })),
+      questions: this.groupJsonRows("runtime_questions", "directory", "id", persistedQuestionRow)
+        .map(({ group, values }) => ({ directory: group, rows: values })),
+      todos: this.groupJsonRows("runtime_todos", "session_id", "ordinal", persistedTodoRow)
+        .map(({ group, values }) => ({ sessionId: group, rows: values })),
+      recoveryErrors: this.rows("SELECT session_id, message FROM runtime_recovery_errors")
+        .map((row) => ({ sessionId: columnText(row, "session_id"), message: columnText(row, "message") })),
+      seq: this.rows("SELECT session_id, seq FROM runtime_session_seq")
+        .map((row) => ({ sessionId: columnText(row, "session_id"), seq: columnNumber(row, "seq") })),
+      subagents: this.rows("SELECT parent_session_id, observation_id, data_json, published FROM runtime_subagents").map((row) => ({
+        parentSessionId: columnText(row, "parent_session_id"),
+        observation: this.parse(
+          "runtime_subagents",
+          `${columnText(row, "parent_session_id")}/${columnText(row, "observation_id")}`,
+          columnText(row, "data_json"),
+          persistedSubagentObservation,
+        ),
+        published: columnNumber(row, "published") === 1,
       })),
     }
     this.memory = new MemoryRuntimeStore()
@@ -346,7 +369,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   private persistEventProjection(sessionId: string, event: CompatEvent) {
     if (event.type === "message.updated") {
-      this.persistMessage(sessionId, String((event.properties.info as { id?: unknown }).id ?? ""))
+      this.persistMessage(sessionId, event.properties.info.id)
     } else if (event.type === "message.part.updated") {
       this.persistMessage(sessionId, event.properties.part.messageID)
     } else if (event.type === "message.part.delta" || event.type === "message.completed") {
@@ -435,47 +458,63 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     return result
   }
 
-  private upsertJson(table: string, keyColumn: string, key: string, value: unknown | null) {
-    if (value === null) return void this.run(`DELETE FROM ${table} WHERE ${keyColumn} = ?`, key)
+  private upsertJson(table: string, keyColumn: string, key: string, value: unknown) {
+    if (value === null) {
+      this.run(`DELETE FROM ${table} WHERE ${keyColumn} = ?`, key)
+      return
+    }
     this.run(`
       INSERT INTO ${table}(${keyColumn}, data_json) VALUES (?, ?)
       ON CONFLICT(${keyColumn}) DO UPDATE SET data_json = excluded.data_json
     `, key, JSON.stringify(value))
   }
 
-  private upsertScalar(table: string, keyColumn: string, key: string, valueColumn: string, value: unknown | null) {
-    if (value === null) return void this.run(`DELETE FROM ${table} WHERE ${keyColumn} = ?`, key)
+  private upsertScalar(table: string, keyColumn: string, key: string, valueColumn: string, value: unknown) {
+    if (value === null) {
+      this.run(`DELETE FROM ${table} WHERE ${keyColumn} = ?`, key)
+      return
+    }
     this.run(`
       INSERT INTO ${table}(${keyColumn}, ${valueColumn}) VALUES (?, ?)
       ON CONFLICT(${keyColumn}) DO UPDATE SET ${valueColumn} = excluded.${valueColumn}
     `, key, value)
   }
 
-  private jsonRows(table: string, keyColumn: string): MemoryRuntimeStoreSnapshot["sessions"] {
-    return this.rows<Record<string, unknown> & { data_json: string }>(`SELECT * FROM ${table}`)
-      .map((row) => this.parse(table, String(row[keyColumn]), row.data_json))
+  /** Every stored JSON row of one table, parsed by `read` and keyed for corruption reports. */
+  private jsonRows<T>(table: string, keyColumn: string, read: (value: unknown) => T | undefined): T[] {
+    return this.rows(`SELECT * FROM ${table}`)
+      .map((row) => this.parse(table, columnText(row, keyColumn), columnText(row, "data_json"), read))
   }
 
-  private groupJsonRows(table: string, groupColumn: string, keyColumn: string, valueName: "messages" | "rows") {
+  /** The same, grouped by `groupColumn`, in the table's stored order. */
+  private groupJsonRows<T>(
+    table: string,
+    groupColumn: string,
+    keyColumn: string,
+    read: (value: unknown) => T | undefined,
+  ): Array<{ group: string; values: T[] }> {
     const order = table === "runtime_messages" || table === "runtime_todos" ? " ORDER BY ordinal" : ""
-    const rows = this.rows<Record<string, unknown> & { data_json: string }>(`SELECT * FROM ${table}${order}`)
-    const groups = new Map<string, unknown[]>()
-    for (const row of rows) {
-      const group = String(row[groupColumn])
+    const groups = new Map<string, T[]>()
+    for (const row of this.rows(`SELECT * FROM ${table}${order}`)) {
+      const group = columnText(row, groupColumn)
       const values = groups.get(group) ?? []
-      values.push(this.parse(table, `${group}/${String(row[keyColumn])}`, row.data_json))
+      values.push(this.parse(table, `${group}/${columnText(row, keyColumn)}`, columnText(row, "data_json"), read))
       groups.set(group, values)
     }
-    const groupName = groupColumn === "directory" ? "directory" : "sessionId"
-    return [...groups].map(([group, values]) => ({ [groupName]: group, [valueName]: values }))
+    return [...groups].map(([group, values]) => ({ group, values }))
   }
 
-  private parse<T>(table: string, key: string, value: string): T {
+  /** Stored JSON becomes a typed row here or the store reports the row as corrupt. */
+  private parse<T>(table: string, key: string, value: string, read: (value: unknown) => T | undefined): T {
+    let decoded: unknown
     try {
-      return JSON.parse(value) as T
+      decoded = JSON.parse(value)
     } catch (error) {
       throw new RuntimeStoreCorruptionError(table, key, error)
     }
+    const row = read(decoded)
+    if (row === undefined) throw new RuntimeStoreCorruptionError(table, key, new Error("row does not match its stored shape"))
+    return row
   }
 
   private run(sql: string, ...params: unknown[]) {
@@ -483,18 +522,18 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     try { return statement.run(...params) } finally { statement.finalize() }
   }
 
-  private get<T>(sql: string, ...params: unknown[]): T | null {
+  private get(sql: string, ...params: unknown[]): Record<string, unknown> | undefined {
     const statement = this.db.prepare(sql)
-    try { return statement.get(...params) as T | null } finally { statement.finalize() }
+    try { return asRecord(statement.get(...params)) } finally { statement.finalize() }
   }
 
-  private rows<T>(sql: string, ...params: unknown[]): T[] {
+  private rows(sql: string, ...params: unknown[]): Array<Record<string, unknown>> {
     const statement = this.db.prepare(sql)
-    try { return statement.all(...params) as T[] } finally { statement.finalize() }
+    try { return statement.all(...params).filter(isRecord) } finally { statement.finalize() }
   }
 
 }
 
 export function createSqliteRuntimeStore(options: SqliteRuntimeStoreOptions): AgentRuntimeStore {
-  return new SqliteRuntimeStore(options) as unknown as AgentRuntimeStore
+  return new SqliteRuntimeStore(options)
 }

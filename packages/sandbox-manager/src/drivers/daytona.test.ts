@@ -116,7 +116,7 @@ describe("DaytonaSandboxDriver", () => {
       value: "ntn-secret",
       hosts: ["api.notion.com"],
     })
-    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
     // The env-var references the secret NAME (→ placeholder inside sandbox), not the value.
     expect(createArg.secrets).toEqual({ NOTION_TOKEN: "claxedo-ws_1-NOTION_TOKEN" })
     const serialized = JSON.stringify({ envVars: createArg.envVars, labels: createArg.labels })
@@ -422,7 +422,7 @@ describe("DaytonaSandboxDriver", () => {
 
     await driver.ensureHost(input)
 
-    expect((daytona.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+    expect((daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
       autoStopInterval: 30,
       autoDeleteInterval: 1440,
     })
@@ -438,7 +438,7 @@ describe("DaytonaSandboxDriver", () => {
     // autoDelete 0 marks the sandbox ephemeral — deleted with its filesystem
     // the moment it stops. An absent option must stay absent so the provider
     // applies its own defaults (15-minute auto-stop, auto-delete off).
-    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(createArg).not.toHaveProperty("autoStopInterval")
     expect(createArg).not.toHaveProperty("autoDeleteInterval")
   })

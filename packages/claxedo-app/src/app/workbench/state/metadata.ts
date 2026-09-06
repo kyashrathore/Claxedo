@@ -8,26 +8,27 @@ import { produce, type SetStoreFunction } from "solid-js/store"
 import { batch, createSignal, type Accessor } from "solid-js"
 import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 import { CONTENT_TYPES, type ClaxedoState, type ContentMeta, type ContentType } from "./types"
+import { asRecord, recordOrEmpty } from "@/lib/record"
 
 export type MetadataSliceApi = {
-  get(id: string): ContentMeta | undefined
-  set(id: string, meta: ContentMeta): void
+  get: (id: string) => ContentMeta | undefined
+  set: (id: string, meta: ContentMeta) => void
   /** Replace the whole entry (creates if missing). */
-  upsert(meta: ContentMeta): void
+  upsert: (meta: ContentMeta) => void
   /** Apply a shallow patch; no-op if id is missing. */
-  patch(id: string, patch: Partial<ContentMeta>): void
+  patch: (id: string, patch: Partial<ContentMeta>) => void
   /** Remove the entry. */
-  remove(id: string): void
+  remove: (id: string) => void
   /** First entry matching predicate, scanned in registry order. */
-  find(predicate: (meta: ContentMeta) => boolean): ContentMeta | undefined
+  find: (predicate: (meta: ContentMeta) => boolean) => ContentMeta | undefined
   /** All entries matching predicate, in registry order. */
-  findAll(predicate: (meta: ContentMeta) => boolean): ContentMeta[]
+  findAll: (predicate: (meta: ContentMeta) => boolean) => ContentMeta[]
   /** All entries (snapshot, in registry order). */
-  all(): ContentMeta[]
+  all: () => ContentMeta[]
   /** Reactive accessor over the keys of `meta` — useful for reactive `For` lists. */
   ids: Accessor<string[]>
   /** Reactive structural index; entry patches do not invalidate unrelated type lists. */
-  idsOfType(type: ContentType): readonly string[]
+  idsOfType: (type: ContentType) => readonly string[]
   /**
    * Reactive unique-directory index. Only changes when the set of directories
    * represented by metadata changes; title/status/content patches stay keyed.
@@ -193,15 +194,16 @@ export function createMetadataSlice(input: {
 }
 
 function sameMetaPatch(existing: ContentMeta, patch: Partial<ContentMeta>) {
-  return Object.entries(patch).every(([key, value]) =>
-    sameMetaValue(existing[key as keyof ContentMeta], value))
+  const current = recordOrEmpty(existing)
+  return Object.entries(patch).every(([key, value]) => sameMetaValue(current[key], value))
 }
 
 function sameMetaValue(left: unknown, right: unknown): boolean {
   if (left === right) return true
-  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false
-  const leftEntries = Object.entries(left)
-  const rightEntries = Object.entries(right)
-  return leftEntries.length === rightEntries.length &&
-    leftEntries.every(([key, value]) => sameMetaValue(value, (right as Record<string, unknown>)[key]))
+  const leftRecord = asRecord(left)
+  const rightRecord = asRecord(right)
+  if (!leftRecord || !rightRecord) return false
+  const leftEntries = Object.entries(leftRecord)
+  return leftEntries.length === Object.keys(rightRecord).length &&
+    leftEntries.every(([key, value]) => sameMetaValue(value, rightRecord[key]))
 }

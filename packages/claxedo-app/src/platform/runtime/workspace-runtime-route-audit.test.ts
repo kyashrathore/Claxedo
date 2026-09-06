@@ -302,7 +302,7 @@ describe("workspace runtime route audit", () => {
       for (const match of text.matchAll(
         /(?:import|export)\s+\{\s*([^}]+)\s*\}\s+from\s+["'][^"']*workspace-runtime-request["']/g,
       )) {
-        const unsafe = match[1]!
+        const unsafe = match[1]
           .split(",")
           .map((item) => item.trim().replace(/\s+as\s+\w+$/, ""))
           .filter(
@@ -430,7 +430,7 @@ describe("workspace runtime route audit", () => {
       for (const match of text.matchAll(
         /(?:import|export)\s*(?:type\s*)?\{([^}]+)\}\s*from\s*["'][^"']*legacy-resolver["']/g,
       )) {
-        for (const spec of match[1]!.split(",")) {
+        for (const spec of match[1].split(",")) {
           const name = spec.trim().replace(/\s+as\s+\w+$/, "")
           if (name) importedFromResolver.add(name)
         }
@@ -533,7 +533,8 @@ describe("workspace runtime route audit", () => {
       transport: "loopback",
       role,
     })
-    expect([...RolePolicy.admin].sort()).toEqual([...RolePolicy.owner].sort())
+    const byName = (a: string, b: string) => a.localeCompare(b)
+    expect([...RolePolicy.admin].sort(byName)).toEqual([...RolePolicy.owner].sort(byName))
     expect(can("mutate.session", placement("editor"))).toBe(true)
     expect(can("mutate.workspace", placement("editor"))).toBe(false)
     expect(can("manage.runners", placement("editor"))).toBe(false)
@@ -1545,8 +1546,10 @@ describe("workspace runtime route audit", () => {
     const strategy = await Bun.file(path.join(root, promptModelStrategy)).text()
     const toolbar = await Bun.file(path.join(root, promptToolbarState)).text()
 
-    expect(local).toMatch(/selected\(\)\s*\{\s*return scope\(\)\?\.model\s*\}/)
-    expect(local).toMatch(/currentSource\(\)\s*\{[\s\S]{0,80}currentModelKey\(\)\?\.source/)
+    // Either member syntax satisfies the invariant — the claim is that `selected`
+    // returns exactly `scope()?.model`, with no catalog default spliced in.
+    expect(local).toMatch(/selected(?:\(\)|:\s*\(\)\s*=>)\s*\{\s*return scope\(\)\?\.model\s*\}/)
+    expect(local).toMatch(/currentSource(?:\(\)|:\s*\(\)\s*=>)\s*\{[\s\S]{0,80}currentModelKey\(\)\?\.source/)
     expect(local).toMatch(/sessionConfigSelectionQuery/)
     expect(strategy).toMatch(/hasSelection:\s*boolean/)
     expect(strategy).toMatch(/providerLoading:\s*boolean/)
@@ -1685,12 +1688,12 @@ describe("workspace runtime route audit", () => {
     expect(renderer).not.toMatch(/state\.meta\.ids\(\)/)
     expect(renderer).toMatch(/state\.meta\.get\(props\.id\)/)
     expect(renderer).not.toMatch(/firstPartyContentSurface/)
-    expect(contentSurfaces).toMatch(/createContributionRegistry\(\{ surfaces: surfaces as SurfaceContribution\[\] \}\)/)
+    expect(contentSurfaces).toMatch(/createContributionRegistry\(\{ surfaces \}\)/)
     expect(contentSurfaces).toMatch(/registerContentSurface/)
     // The surface shape moved to its own type-only module so the hosted set can
     // depend on the contract without importing the local surface list.
     const surfaceContract = await Bun.file(path.join(root, "app/integrations/content-surface-contract.ts")).text()
-    expect(surfaceContract).toMatch(/surface:\s*ContentType \| string/)
+    expect(surfaceContract).toMatch(/surface:\s*ContentSurfaceId/)
     expect(contentSurfaceTest).toMatch(/surface\.content\.agent-review/)
     expect(contentSurfaceTest).toMatch(/slot:\s*"ext:agent-review"/)
     expect(contentSurfaceTest).toMatch(/gate:\s*\{ backing: "real" \}/)
@@ -1715,7 +1718,7 @@ describe("workspace runtime route audit", () => {
 
     expect(await Bun.file(path.join(root, "overrides/platform/runtime/platform-provider.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, platformContext)).exists()).toBe(true)
-    expect(platform).toMatch(/getAuthToken\?\(\): Promise<string \| null>/)
+    expect(platform).toMatch(/getAuthToken\?: \(\) => Promise<string \| null>/)
     expect(platform).toMatch(/recordFatalRendererError\?/)
     expect(platform).toMatch(/runDesktopMenuAction\?/)
     // The reorg inverted the dependency: the platform context now DEFINES
@@ -1811,8 +1814,11 @@ describe("workspace runtime route audit", () => {
       /find: "@\/", replacement: normalizePath\(fileURLToPath\(new URL\("\.\/src\/", import\.meta\.url\)\)\)/,
     )
     expect(appVitestConfig).toMatch(
-      // as-any: regex asserts upstream text still contains this compatibility cast.
-      /plugins:\s*\[solid\(\) as unknown as NonNullable<UserConfig\["plugins"\]>\[number\]\]/,
+      // vitest 2.1.9 bundles vite@5's types while the workspace resolves vite@7,
+      // so the solid plugin needs one assertion to cross the two copies. The
+      // `as unknown as` hop it used to take was redundant — the single `as`
+      // compiles — and the invariant is that it stays a single one.
+      /plugins:\s*\[solid\(\) as NonNullable<UserConfig\["plugins"\]>\[number\]\]/,
     )
     expect(appTsconfig).not.toMatch(/\.\.\/app\/src/)
     expect(appTsconfig).toMatch(/"@\/\*": \["\.\/src\/\*"\]/)
@@ -2102,7 +2108,7 @@ describe("workspace runtime route audit", () => {
       const file = canonicalRelativePath(discovered)
       if (file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.endsWith(".vitest.tsx")) continue
       const text = await Bun.file(path.join(root, file)).text()
-      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute)|canonicalWorkspaceRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {
+      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute)|canonicalWorkspaceRoute|surfaceRoute)\(\s*([^,)\n]+)/g)) {
         const argument = match[1]?.trim() ?? ""
         if (argument === '""') continue
         if (/workspace.*id|routeId/i.test(argument)) continue
@@ -2478,11 +2484,11 @@ describe("workspace runtime route audit", () => {
     expect(statusDispatcher).not.toMatch(/applySessionStatusTimeoutStageToState/)
     expect(statusDispatcher).not.toMatch(/setStore/)
     expect(projector).toMatch(
-      /setSessionDiffQueryData\(\{ queryClient, sessionId: props\.sessionID, diff: list\(props\.diff\) \}\)/,
+      /setSessionDiffQueryData\(\{ queryClient, sessionId, diff: list\(diff\) \}\)/,
     )
-    expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(props\.sessionID, "diff"\)/)
+    expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(sessionId, "diff"\)/)
     expect(projector).toMatch(
-      /dispatchSessionTodoEvent\(\{[\s\S]*sessionID: props\.sessionID,[\s\S]*todos: props\.todos/,
+      /dispatchSessionTodoEvent\(\{[\s\S]*type: "session\.todo",[\s\S]*sessionID,[\s\S]*todos/,
     )
     expect(projector).not.toMatch(/setSessionTodoQueryData\(\{ queryClient, sessionId: props\.sessionID/)
     expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(props\.sessionID, "todo"\)/)
@@ -2513,9 +2519,9 @@ describe("workspace runtime route audit", () => {
     expect(directoryCacheManager).not.toMatch(/session_(?:agent|config|usage)/)
     expect(cache).not.toMatch(/session_(?:agent|config|usage)/)
     expect(types).not.toMatch(/\b(?:mcp_ready|lsp_ready|vcs):/)
-    expect(types).not.toMatch(/\b(?:mcp|lsp):\s*[\{\[]/)
+    expect(types).not.toMatch(/\b(?:mcp|lsp):\s*[{[]/)
     expect(directoryCacheManager).not.toMatch(/\b(?:mcp_ready|lsp_ready|vcs):/)
-    expect(directoryCacheManager).not.toMatch(/\b(?:mcp|lsp):\s*[\{\[]/)
+    expect(directoryCacheManager).not.toMatch(/\b(?:mcp|lsp):\s*[{[]/)
     expect(types).not.toMatch(/\bcommand:\s*Command\[\]/)
     expect(directoryCacheManager).not.toMatch(/\bcommand:\s*\[\]/)
     expect(context).not.toMatch(/setStore\("command"/)
@@ -2817,7 +2823,7 @@ describe("workspace runtime route audit", () => {
     // the controller wires that signal-backed state, and the extracted module
     // still backs it with createSignal<HistoryMeta> (never a createStore mirror).
     expect(text).toMatch(/createHistoryMetaState\(\)/)
-    expect(historyPagination).toMatch(/createSignal<HistoryMeta>/)
+    expect(historyPagination).toMatch(/createSignal\(emptyHistoryMeta\(\)\)/)
     expect(historyPagination).not.toMatch(/createStore/)
     // sessionCapabilitiesKey moved to session-pane-queries.ts (scope-keyed);
     // it still derives from shellDataKeys, and the capability fetch now flows
@@ -3820,8 +3826,8 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/directorySessionCacheQuery\.data\?\.session\.find\(\(session\) => session\.id === id\)/)
-    expect(text).toMatch(/conversation\(\)\?\.messages as Message\[\]/)
-    expect(text).toMatch(/snapshot\.parts as Record<string, Part\[\] \| undefined>/)
+    expect(text).toMatch(/conversation\(\)\?\.messages\.filter\(isRuntimeAgentMessage\) \?\? emptyMessages/)
+    expect(text).toMatch(/parts: snapshot\.parts/)
     expect(text).toMatch(/conversation\(\)\?\.parts\[id\]/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)

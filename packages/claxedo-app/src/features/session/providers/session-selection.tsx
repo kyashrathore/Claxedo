@@ -31,7 +31,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { useSDK } from "@/features/session/app-ports"
 import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
-import { parkedPaneQueryOptions } from "../store/pane-query-observer"
+import { parkedPaneQueryOptions, type PaneQueryOptions } from "../store/pane-query-observer"
 import {
   cycleModelVariant,
   getConfiguredAgentVariant,
@@ -75,17 +75,21 @@ async function loadSessionConfig(input: SessionConfigRequest, signal?: AbortSign
     })
 }
 
-function sessionConfigRawOptions(input: SessionConfigRequest | undefined) {
+// The runtime's `/config` payload is an unparsed JSON boundary: `decodeSessionConfig`
+// and `localSelectionStateFromSessionConfig` are the parsers, so `unknown` is the
+// honest query data type. Stating the return type collapses the parked and live
+// arms into one shape for `useQuery`/`fetchQuery`.
+function sessionConfigRawOptions(input: SessionConfigRequest | undefined): PaneQueryOptions<unknown> {
   if (!input) return {
     ...parkedPaneQueryOptions<unknown>("session-config-raw", "no-session"),
     staleTime: SESSION_CONFIG_STALE_TIME,
   }
-  return queryOptions<unknown>({
+  return {
     queryKey: sessionConfigRawQueryKey(sessionConfigQueryScope(input)),
     enabled: true,
     staleTime: SESSION_CONFIG_STALE_TIME,
     queryFn: async ({ signal }) => await loadSessionConfig(input, signal),
-  })
+  }
 }
 
 function sessionConfigSelectionOptions(input: SessionConfigRequest | undefined) {
@@ -117,7 +121,7 @@ const localContextInput = {
 
     const id = createMemo(() => {
       const session = input.sessionId?.()
-      if (session === "new") return
+      if (session === "new") return undefined
       return session
     })
     const hydrationReady = createDeferredDirectoryResourceGate({
@@ -137,7 +141,7 @@ const localContextInput = {
     }
 
     const sessionConfigRequest = (session: string | undefined): SessionConfigRequest | undefined => {
-      if (!session) return
+      if (!session) return undefined
       return {
         runtime: {
           serverUrl: sdk.url,
@@ -229,19 +233,19 @@ const localContextInput = {
 
     const selectionCatalogPending = (model: ModelKey | undefined) => {
       if (!isUsableSelection(model)) return false
-      if (validModel(model) || models.find(model!)) return false
+      if (validModel(model) || models.find(model)) return false
       return selectionProviderDetailNeeded({
         model,
         connected: connected(),
-        provider: providers.all().get(model!.providerID),
+        provider: providers.all().get(model.providerID),
       }) !== undefined
     }
 
     const resolveExplicitSelection = (selectedState: State | undefined): ModelKey | undefined => {
       const raw = selectedState?.model
       if (!isUsableSelection(raw)) return undefined
-      if (validModel(raw!)) return raw
-      if (models.find(raw!)) return raw
+      if (validModel(raw)) return raw
+      if (models.find(raw)) return raw
       if (selectionCatalogPending(raw)) return raw
       return undefined
     }
@@ -251,7 +255,7 @@ const localContextInput = {
       if (hit) return hit
       const provider = providers.all().get(model.providerID)
       const indexed = provider?.models[model.modelID]
-      if (!indexed || !connected().has(model.providerID)) return
+      if (!indexed || !connected().has(model.providerID)) return undefined
       return {
         ...indexed,
         name: indexed.name.replace("(latest)", "").trim(),
@@ -266,11 +270,12 @@ const localContextInput = {
         if (!model) continue
         if (validModel(model)) return model
       }
+      return undefined
     }
 
     const pickAgent = (name: string | undefined) => {
       const items = list()
-      if (items.length === 0) return
+      if (items.length === 0) return undefined
       return items.find((item) => item.name === name) ?? items[0]
     }
 
@@ -310,7 +315,7 @@ const localContextInput = {
         // its last settled value after the cache entry has been consumed.
         if (selectionHandoff) return selectionHandoff
         if (settledQueryData(sessionConfigSelectionQuery) !== undefined) return sessionConfigSelection
-        if (sessionConfigSelectionLoading()) return
+        if (sessionConfigSelectionLoading()) return undefined
       }
       return saved.session[session] ?? sessionConfigSelection
     })
@@ -358,10 +363,10 @@ const localContextInput = {
 
     const agent = {
       list,
-      current() {
+      current: () => {
         return pickAgent(scope()?.agent ?? store.current)
       },
-      set(name: string | undefined) {
+      set: (name: string | undefined) => {
         const item = pickAgent(name)
         if (!item) {
           setStore("current", undefined)
@@ -390,7 +395,7 @@ const localContextInput = {
           setStore("draft", next)
         })
       },
-      move(direction: 1 | -1) {
+      move: (direction: 1 | -1) => {
         const items = list()
         if (items.length === 0) {
           setStore("current", undefined)
@@ -413,18 +418,19 @@ const localContextInput = {
 
       const agentModel = selectedState?.agent ? firstModel(() => agent.current()?.model) : undefined
       if (agentModel) return { source: "agent", model: agentModel }
+      return undefined
     }
 
     const current = () => {
       const item = currentModelKey()
-      if (!item) return
+      if (!item) return undefined
       return materializeModel(item.model)
     }
 
     const configured = () => {
       const item = agent.current()
       const model = current()
-      if (!item || !model) return
+      if (!item || !model) return undefined
       return getConfiguredAgentVariant({
         agent: { model: item.model, variant: item.variant },
         model: { providerID: model.provider.id, modelID: model.id, variants: model.variants },
@@ -458,23 +464,72 @@ const localContextInput = {
 
     const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
 
+    const variant = {
+      configured,
+      selected,
+      current: () => {
+        const resolved = resolveModelVariant({
+          variants: variant.list(),
+          selected: variant.selected(),
+          configured: variant.configured(),
+        })
+        if (resolved) return resolved
+        const model = current()
+        if (!model) return undefined
+        const saved = models.variant.get({ providerID: model.provider.id, modelID: model.id })
+        if (saved && variant.list().includes(saved)) return saved
+        return undefined
+      },
+      list: () => {
+        const item = current()
+        if (!item?.variants) return []
+        return Object.keys(item.variants)
+      },
+      set: (value: string | undefined) => {
+        batch(() => {
+          const model = current()
+          setStore("last", {
+            type: "variant",
+            agent: agent.current()?.name,
+            model: model ? { providerID: model.provider.id, modelID: model.id } : null,
+            variant: value ?? null,
+          })
+          write({ variant: value ?? null })
+          if (model) {
+            models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
+          }
+        })
+      },
+      cycle: () => {
+        const items = variant.list()
+        if (items.length === 0) return
+        variant.set(
+          cycleModelVariant({
+            variants: items,
+            selected: variant.selected(),
+            configured: variant.configured(),
+          }),
+        )
+      },
+    }
+
     const model = {
       ready: models.ready,
       restorePending,
-      currentSource() {
+      currentSource: () => {
         return currentModelKey()?.source
       },
-      selected() {
+      selected: () => {
         return scope()?.model
       },
-      selectionCatalogPending() {
+      selectionCatalogPending: () => {
         return selectionCatalogPending(scope()?.model)
       },
       current,
       recent,
       list: models.list,
       hydrate: models.hydrate,
-      cycle(direction: 1 | -1) {
+      cycle: (direction: 1 | -1) => {
         const items = recent()
         const item = current()
         if (!item) return
@@ -490,8 +545,11 @@ const localContextInput = {
         if (!entry) return
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
-      set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        startTransition(() =>
+      set: (item: ModelKey | undefined, options?: { recent?: boolean }) => {
+        // Fire-and-forget: the returned promise only reports when the transition
+        // settles, and the callback below is synchronous, so there is nothing to
+        // await and no rejection path of ours.
+        void startTransition(() =>
           batch(() => {
             setStore("last", {
               type: "model",
@@ -507,70 +565,24 @@ const localContextInput = {
           }),
         )
       },
-      visible(item: ModelKey, defaults?: Record<string, string>) {
+      visible: (item: ModelKey, defaults?: Record<string, string>) => {
         return models.visible(item, defaults)
       },
-      setVisibility(item: ModelKey, visible: boolean) {
+      setVisibility: (item: ModelKey, visible: boolean) => {
         models.setVisibility(item, visible)
       },
-      variant: {
-        configured,
-        selected,
-        current() {
-          const resolved = resolveModelVariant({
-            variants: this.list(),
-            selected: this.selected(),
-            configured: this.configured(),
-          })
-          if (resolved) return resolved
-          const model = current()
-          if (!model) return
-          const saved = models.variant.get({ providerID: model.provider.id, modelID: model.id })
-          if (saved && this.list().includes(saved)) return saved
-        },
-        list() {
-          const item = current()
-          if (!item?.variants) return []
-          return Object.keys(item.variants)
-        },
-        set(value: string | undefined) {
-          batch(() => {
-            const model = current()
-            setStore("last", {
-              type: "variant",
-              agent: agent.current()?.name,
-              model: model ? { providerID: model.provider.id, modelID: model.id } : null,
-              variant: value ?? null,
-            })
-            write({ variant: value ?? null })
-            if (model) {
-              models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
-            }
-          })
-        },
-        cycle() {
-          const items = this.list()
-          if (items.length === 0) return
-          this.set(
-            cycleModelVariant({
-              variants: items,
-              selected: this.selected(),
-              configured: this.configured(),
-            }),
-          )
-        },
-      },
+      variant,
     }
 
     const result = {
       model,
       agent,
       session: {
-        reset() {
+        reset: () => {
           setStore("draft", undefined)
           clearLocalSelectionHandoff(localDraftSelectionHandoffID(sdk.directory))
         },
-        promote(dir: string, session: string, state?: State) {
+        promote: (dir: string, session: string, state?: State) => {
           const next = cloneLocalSelectionState(state ?? snapshot())
           if (!next) return
 
@@ -591,7 +603,7 @@ const localContextInput = {
 
           setStore("draft", undefined)
         },
-        restore(msg: { sessionID: string; agent: string; model: ModelKey }) {
+        restore: (msg: { sessionID: string; agent: string; model: ModelKey }) => {
           const session = id()
           if (!session) return
           if (msg.sessionID !== session) return

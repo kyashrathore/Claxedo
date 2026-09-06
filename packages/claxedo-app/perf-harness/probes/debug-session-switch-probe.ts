@@ -73,7 +73,7 @@ import { syntheticVisibleClick, waitForWorkspaceReviewContent } from "../src/bro
 //     startApp() rebuild the dist for whatever port you pass instead.
 //
 // The probe never touches application source; it only drives the built app.
-import { chromium, type Locator, type Page } from "@playwright/test"
+import { chromium, type Locator } from "@playwright/test"
 // Causal attribution (script/style/layout + the trusted-window trace) is
 // opt-in inside frame-sampler, read at call time. The probe exists to print
 // that attribution, so it turns the flag on for itself unless overridden.
@@ -135,7 +135,7 @@ await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("
 await installSeedState(page, app, fixture)
 
 const sessions = fixture.sessions
-const home = sessions[0]!
+const home = sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} corpus=${expectedTotal} files`)
 console.log(`[probe] workspace A=${fixture.workspaceDirectories[0]}  workspace B=${fixture.workspaceDirectories[1]}`)
 
@@ -154,6 +154,27 @@ const sessionRowActivate = async (target: (typeof sessions)[number]): Promise<Lo
   return page.locator("[role='button'], button, a").filter({ hasText: target.title }).first()
 }
 
+/**
+ * An element this probe has stamped.
+ *
+ * The stamp is an expando rather than an attribute on purpose: the probe is
+ * asking whether the SAME node survived the switch, and writing an attribute
+ * would itself be a DOM mutation inside the window being measured.
+ */
+type StampedElement = HTMLElement & {
+  __claxedoPerfShellToken?: true
+  __claxedoPerfContentToken?: true
+}
+
+declare global {
+  interface Window {
+    /** Count of `data-review-rendered-files` rewrites seen since the last stamp. */
+    __claxedoPerfReviewChurn?: number
+    /** The observer counting them, kept so the next stamp can retire it. */
+    __claxedoPerfChurnObserver?: MutationObserver
+  }
+}
+
 const stampWorkspaceIdentity = async () => {
   await page.evaluate((contentSelector) => {
     const visible = (element: Element) => {
@@ -162,24 +183,23 @@ const stampWorkspaceIdentity = async () => {
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    if (shell) (shell as unknown as Record<string, unknown>).__claxedoPerfShellToken = true
-    const content = Array.from(document.querySelectorAll<HTMLElement>(contentSelector)).find(visible)
+    const shell = document.querySelector<StampedElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    if (shell) shell.__claxedoPerfShellToken = true
+    const content = Array.from(document.querySelectorAll<StampedElement>(contentSelector)).find(visible)
     if (content) {
-      ;(content as unknown as Record<string, unknown>).__claxedoPerfContentToken = true
-      ;(window as unknown as Record<string, unknown>).__claxedoPerfOldPanelContent = content
+      content.__claxedoPerfContentToken = true
+      window.__claxedoPerfOldPanelContent = content
     }
-    const w = window as unknown as { __claxedoPerfReviewChurn?: number; __claxedoPerfChurnObserver?: MutationObserver }
-    w.__claxedoPerfChurnObserver?.disconnect()
-    w.__claxedoPerfReviewChurn = 0
+    window.__claxedoPerfChurnObserver?.disconnect()
+    window.__claxedoPerfReviewChurn = 0
     const corpus = document.querySelector("[data-review-rendered-files][data-review-total-files]")
     if (corpus) {
       const observer = new MutationObserver((records) => {
-        w.__claxedoPerfReviewChurn = (w.__claxedoPerfReviewChurn ?? 0) +
+        window.__claxedoPerfReviewChurn = (window.__claxedoPerfReviewChurn ?? 0) +
           records.filter((record) => record.attributeName === "data-review-rendered-files").length
       })
       observer.observe(corpus, { attributes: true, attributeFilter: ["data-review-rendered-files"] })
-      w.__claxedoPerfChurnObserver = observer
+      window.__claxedoPerfChurnObserver = observer
     }
   }, PANEL_CONTENT_SELECTOR)
 }
@@ -192,14 +212,13 @@ const readWorkspaceIdentity = async () =>
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    const content = Array.from(document.querySelectorAll<HTMLElement>(contentSelector)).find(visible)
-    const w = window as unknown as { __claxedoPerfReviewChurn?: number; __claxedoPerfChurnObserver?: MutationObserver }
-    w.__claxedoPerfChurnObserver?.disconnect()
+    const shell = document.querySelector<StampedElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    const content = Array.from(document.querySelectorAll<StampedElement>(contentSelector)).find(visible)
+    window.__claxedoPerfChurnObserver?.disconnect()
     return {
-      shellTokenPreserved: shell ? (shell as unknown as Record<string, unknown>).__claxedoPerfShellToken === true : false,
-      contentTokenPreserved: content ? (content as unknown as Record<string, unknown>).__claxedoPerfContentToken === true : false,
-      reviewRenderedFilesChurn: w.__claxedoPerfReviewChurn ?? 0,
+      shellTokenPreserved: shell?.__claxedoPerfShellToken === true,
+      contentTokenPreserved: content?.__claxedoPerfContentToken === true,
+      reviewRenderedFilesChurn: window.__claxedoPerfReviewChurn ?? 0,
     }
   }, PANEL_CONTENT_SELECTOR)
 
@@ -306,9 +325,9 @@ if (process.env.PROBE_SKIP_STALE_IDLE !== "1") {
 // --- Block A: panel CLOSED. Cheap, and it owns stability gate (a) plus the
 // closed baseline the workspace-open penalty is measured against.
 console.log("\n=== Block A: workspace panel CLOSED ===")
-await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2]!, panelOpen: false })
+await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2], panelOpen: false })
 await runCell({ block: "closed", scope: "within", temperature: "warm", target: home, panelOpen: false })
-await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]!, panelOpen: false })
+await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1], panelOpen: false })
 await runCell({ block: "closed", scope: "across", temperature: "warm", target: home, panelOpen: false })
 
 // --- Block B: panel OPEN on a substantial file, exactly as the driver stages
@@ -324,9 +343,9 @@ const openFilePrecondition = await settleBeforeNextInteraction(page)
 console.log(`[probe] open_file precondition settle=${round(openFilePrecondition.waitedMs)}ms settled=${openFilePrecondition.settled} (${elapsed()})`)
 
 console.log("\n=== Block B: workspace panel OPEN on a substantial file ===")
-await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]!, panelOpen: true })
+await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4], panelOpen: true })
 await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home, panelOpen: true })
-await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]!, panelOpen: true })
+await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3], panelOpen: true })
 await runCell({ block: "open_file", scope: "across", temperature: "warm", target: home, panelOpen: true })
 
 // --- Precondition for Block C, identical to the driver's: the review tab back
@@ -341,9 +360,9 @@ console.log(`[probe] review warm + first diff expanded; settle=${round(precondit
 // --- Block C: Review OPEN. The within cells own stability gate (b); the final
 // across/warm cell is the measured switch this probe exists for.
 console.log("\n=== Block C: Review OPEN on the large corpus ===")
-await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6]!, panelOpen: true })
+await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6], panelOpen: true })
 await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home, panelOpen: true })
-await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]!, panelOpen: true })
+await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5], panelOpen: true })
 const measured = await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home, panelOpen: true })
 
 // --- Rank-7 attribution cell. The first-fold reveal's pre-paint work reads
@@ -363,7 +382,7 @@ const suppressed = await runCell({
   block: "open_review",
   scope: "across",
   temperature: "cold",
-  target: sessions[7]!,
+  target: sessions[7],
   panelOpen: true,
   sessionClockOnly: true,
   label: "attribution_open_review_cold_corpus_hidden",
@@ -378,7 +397,7 @@ console.log(
 // for during this run, which is precisely what the panel body LRU retains. On
 // a build that disposes the outgoing body these three are three more full
 // constructions; on a retaining build they are display flips.
-const awayTarget = sessions[5]!
+const awayTarget = sessions[5]
 console.log(
   `\n=== Ping-pong A-B-A-B (return switches; A=${home.directory} B=${awayTarget.directory}) ===`,
 )
@@ -508,7 +527,7 @@ console.log("\n================ READY-GATE STAGES PER CELL ================")
 for (const result of results) {
   const stages = result.observation.stageMs ?? {}
   const rendered = READY_STAGES
-    .map((name) => `${name}=${stages[name] === undefined ? "never" : `${round(stages[name]!)}ms`}`)
+    .map((name) => `${name}=${stages[name] === undefined ? "never" : `${round(stages[name])}ms`}`)
     .join(" ")
   console.log(`  ${result.cell.padEnd(42)} ${rendered}`)
 }

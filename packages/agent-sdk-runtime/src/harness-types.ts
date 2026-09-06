@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 export const AGENT_HARNESS_DEFINITIONS = [
   {
     key: "claude",
@@ -88,8 +89,9 @@ export function isAgentHarnessAccess(access: string): access is AgentHarnessAcce
 }
 
 export function normalizeAgentHarnessTransport(input: unknown): AgentHarnessTransport | undefined {
-  if (input === undefined) return
+  if (input === undefined) return undefined
   if (input === "stdio" || input === "streamable-http" || input === "websocket") return input
+  return undefined
 }
 
 export function harnessKey(input: { id: SessionHarnessId; access: AgentHarnessAccess }) {
@@ -104,8 +106,8 @@ export function normalizeHarnessIdentity(input: unknown): { id: SessionHarnessId
     if (isAgentHarnessId(input)) return { id: input, access: "native" }
     return undefined
   }
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  const row = input as Record<string, unknown>
+  const row = asRecord(input)
+  if (!row) return undefined
   const idInput = typeof row.id === "string" ? row.id : undefined
   const accessInput = typeof row.access === "string" ? row.access : undefined
   const id = idInput && isAgentHarnessId(idInput)
@@ -114,6 +116,6 @@ export function normalizeHarnessIdentity(input: unknown): { id: SessionHarnessId
         ? idInput
         : undefined
   const access = accessInput && isAgentHarnessAccess(accessInput) ? accessInput : id ? "native" : undefined
-  if (!id || !access) return
+  if (!id || !access) return undefined
   return { id, access }
 }

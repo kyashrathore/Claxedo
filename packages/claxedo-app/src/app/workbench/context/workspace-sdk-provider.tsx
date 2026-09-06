@@ -18,7 +18,7 @@ export function WorkspaceSDKProvider(
   const key = createMemo(() => {
     const url = server.key
     const path = dir()
-    if (!url || !path) return
+    if (!url || !path) return undefined
     return `${url}\n${path}`
   })
 

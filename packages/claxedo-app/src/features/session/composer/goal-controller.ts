@@ -1,3 +1,4 @@
+import { readString } from "@/lib/record"
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
@@ -113,10 +114,9 @@ export function createComposerGoalController(input: {
       goalArmed: input.armed,
       onGoalArm: () => input.setArmed(true),
       onGoalAccepted: () => input.setArmed(false),
-      hasActiveGoal: () => {
-        const current = goal?.() as { status?: string } | null | undefined
-        return current?.status === "active"
-      },
+      // `goal` is an opaque accessor supplied by the caller; read its status
+      // structurally rather than asserting a shape it never promised.
+      hasActiveGoal: () => readString(goal?.(), "status") === "active",
       stopGoal,
     }),
   }

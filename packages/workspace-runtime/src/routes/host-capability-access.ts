@@ -27,7 +27,7 @@ export async function authorizeHostCapability(
   sessionId?: string,
 ) {
   const context = verifiedContext
-  if (!context.authority && !options.sessionAccessPolicy) return
+  if (!context.authority && !options.sessionAccessPolicy) return undefined
   if (!options.sessionAccessPolicy) {
     return sessionAccessDenied({
       allowed: false,
@@ -53,7 +53,7 @@ export async function authorizeHostCapability(
       path: c.req.path,
     })
     if (!decision.allowed) return sessionAccessDenied(decision)
-    return
+    return undefined
   }
   const decision = await options.sessionAccessPolicy.authorize({
     ...context,
@@ -63,4 +63,5 @@ export async function authorizeHostCapability(
     path: c.req.path,
   })
   if (!decision.allowed) return sessionAccessDenied(decision)
+  return undefined
 }

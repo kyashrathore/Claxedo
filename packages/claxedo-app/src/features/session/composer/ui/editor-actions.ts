@@ -2,6 +2,7 @@ import { createSignal, type Accessor } from "solid-js"
 import {
   createTextFragment,
   getCursorPosition,
+  isBreakNode,
   setCursorPosition,
   setRangeEdge,
 } from "@/features/session/composer/ui/editor-dom"
@@ -236,7 +237,7 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
           }
         }
         if (last.nodeType !== Node.TEXT_NODE) {
-          const isBreak = last.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR"
+          const isBreak = isBreakNode(last)
           const next = last.nextSibling
           const emptyText = next?.nodeType === Node.TEXT_NODE && (next.textContent ?? "") === ""
           if (isBreak && (!next || emptyText)) {
@@ -332,7 +333,8 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
     isImeComposing,
     openPopover,
     reconcile,
-    replaceText(text: string) {
+    // Arrow property: the composer engine forwards this as a bare reference.
+    replaceText: (text: string) => {
       setEditorText(text)
       input.prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
       focusEditorEnd()

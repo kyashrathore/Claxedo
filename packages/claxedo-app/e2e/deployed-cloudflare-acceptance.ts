@@ -51,7 +51,7 @@
 
 import fs from "node:fs/promises"
 import path from "node:path"
-import { generateKeyPairSync, sign, type JsonWebKey } from "node:crypto"
+import { generateKeyPairSync, sign } from "node:crypto"
 import { chromium, type BrowserContext } from "@playwright/test"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnel } from "@claxedo/workspace-runtime/relay"
 
@@ -165,7 +165,7 @@ export function heartbeatPayloadV2(input: {
  */
 export function createMachineIdentity() {
   const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
-  const publicJwk = pair.publicKey.export({ format: "jwk" }) as JsonWebKey
+  const publicJwk = pair.publicKey.export({ format: "jwk" })
   return {
     publicKey: JSON.stringify(publicJwk),
     sign(payload: string) {
@@ -188,7 +188,7 @@ function selectedStage(argv: readonly string[]): Stage {
   if (selected.length !== 1) {
     throw new Error(`select exactly one stage: ${stages.map((stage) => `--${stage}`).join(", ")}`)
   }
-  return selected[0]!
+  return selected[0]
 }
 
 function record(value: unknown, name: string): JsonRecord {
@@ -1041,7 +1041,7 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
     process.stdout.write(`Deployed two-user Cloudflare acceptance passed. Evidence: ${resultFile}\n`)
   } finally {
     activeTunnel?.close()
-    localRuntime?.stop(true)
+    await localRuntime?.stop(true)
     await Promise.all([owner.close(), member.close()])
   }
 }

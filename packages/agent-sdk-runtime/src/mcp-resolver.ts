@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 import type { McpServer } from "@agentclientprotocol/sdk"
 import { dataDir } from "./paths"
+import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
 import { normalizeHarnessIdentity } from "./harness-types"
 
 // Resolve storage paths at operation time because the data directory is a runtime setting.
@@ -62,20 +63,18 @@ export type ManagedMcpState = {
   servers: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>
 }
 
-const asRecord = (value: unknown) => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
-}
+const row = (value: unknown): Record<string, unknown> => asRecord(value) ?? {}
 
 const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
 
 const defaults = (): Record<ManagedMcpServer, Record<McpCapableAgent, boolean>> => ({})
 
-const clone = () => JSON.parse(JSON.stringify(defaults())) as Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>
+/** Every capable agent, off. The registry's inner map is complete by contract. */
+const noAgents = (): Record<McpCapableAgent, boolean> => ({ claude: false, codex: false, gemini: false, cursor: false })
 
-const loadAgents = (value?: unknown) => {
-  const root = asRecord(value)
-  const out = {} as Record<McpCapableAgent, boolean>
+const loadAgents = (value?: unknown): Partial<Record<McpCapableAgent, boolean>> => {
+  const root = row(value)
+  const out: Partial<Record<McpCapableAgent, boolean>> = {}
   for (const agent of MCP_CAPABLE_AGENTS) {
     const next = root[agent]
     if (typeof next === "boolean") out[agent] = next
@@ -84,7 +83,7 @@ const loadAgents = (value?: unknown) => {
 }
 
 const normalizeOverrides = (value?: unknown) => {
-  const root = asRecord(value)
+  const root = row(value)
   const out: ManagedMcpOverrides = {}
   for (const server of MANAGED_MCP_SERVERS) {
     const agents = loadAgents(root[server])
@@ -97,9 +96,9 @@ const apply = (
   base: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
   overrides: ManagedMcpOverrides,
 ) => {
-  const out = clone()
+  const out = defaults()
   for (const server of MANAGED_MCP_SERVERS) {
-    const agents = out[server] ??= {} as Record<McpCapableAgent, boolean>
+    const agents = out[server] ??= noAgents()
     for (const agent of MCP_CAPABLE_AGENTS) {
       const next = overrides[server]?.[agent]
       if (typeof next === "boolean") agents[agent] = next
@@ -109,17 +108,20 @@ const apply = (
 }
 
 export const isManagedMcpServer = (value: string): value is ManagedMcpServer =>
-  MANAGED_MCP_SERVERS.includes(value as ManagedMcpServer)
+  MANAGED_MCP_SERVERS.includes(value)
 
 export const mcpControl = (agent: McpCapableAgent): ManagedMcpControl => {
   if (agent === "gemini") return "generated-config"
   return "managed"
 }
 
+/** Sound because `MCP_CAPABLE_AGENTS` is the tuple `McpCapableAgent` is derived from. */
+const isMcpCapableAgent = (value: string): value is McpCapableAgent =>
+  (MCP_CAPABLE_AGENTS as readonly string[]).includes(value)
+
 export const harnessAgent = (type: string): McpCapableAgent | null => {
   const agent = normalizeHarnessIdentity(type)?.id
-  if (!agent || !(MCP_CAPABLE_AGENTS as readonly string[]).includes(agent)) return null
-  return agent as McpCapableAgent
+  return agent && isMcpCapableAgent(agent) ? agent : null
 }
 
 const resolveManaged = (
@@ -163,9 +165,9 @@ export const resolveUserMcp = resolveUser
 const readState = async (defaultPort = 7860) => {
   try {
     const raw = await fs.promises.readFile(overridesFile(), "utf-8")
-    const json = JSON.parse(raw) as { port?: number; overrides?: unknown }
+    const json = row(JSON.parse(raw))
     return {
-      port: json.port ?? defaultPort,
+      port: typeof json.port === "number" ? json.port : defaultPort,
       overrides: normalizeOverrides(json.overrides),
     }
   } catch (error) {
@@ -297,4 +299,19 @@ export function toAcpMcpServers(mcp: Record<string, ResolvedMcpServer>): McpServ
 
 export function shellCommand(path: string) {
   return `bash ${shellQuote(path)}`
+}
+
+/** Servers a config payload declares, parsed rather than asserted. */
+export function resolvedMcpServers(value: unknown): Record<string, ResolvedMcpServer> | undefined {
+  const servers = asRecord(value)
+  if (!servers) return undefined
+  return Object.fromEntries(
+    Object.entries(servers).flatMap(([name, server]) => (isResolvedMcpServer(server) ? [[name, server]] : [])),
+  )
+}
+
+function isResolvedMcpServer(value: unknown): value is ResolvedMcpServer {
+  if (!isRecord(value) || typeof value.name !== "string") return false
+  if (value.transport === "stdio") return typeof value.command === "string" && Array.isArray(value.args) && isRecord(value.env)
+  return value.transport === "remote" && typeof value.url === "string" && isRecord(value.headers)
 }

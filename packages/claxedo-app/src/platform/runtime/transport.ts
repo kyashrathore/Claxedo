@@ -25,7 +25,15 @@ export {
 export type RuntimeTransport = {
   fetch(path: string, init?: RequestInit): Promise<Response>
   sdkFetch: typeof fetch
-  json<T>(path: string, init?: RequestInit): Promise<T>
+  /**
+   * The JSON body of a successful runtime response, as `unknown`.
+   *
+   * The transport knows a path and a status; it does not know what any runtime
+   * route answers, so it does not claim to. Callers narrow with the decoder
+   * their own resource owns — see `http-backend.ts`, which owns the vcs, mcp
+   * and lsp shapes it reads through here.
+   */
+  json(path: string, init?: RequestInit): Promise<unknown>
 }
 
 export function submitTransportForPlacement(input: {
@@ -88,9 +96,9 @@ export function createTransport(input: {
         signal: request.signal,
       })
     },
-    async json<T>(path: string, init?: RequestInit) {
+    async json(path: string, init?: RequestInit): Promise<unknown> {
       const response = await runtimeFetch(path, init)
-      if (response.ok) return await response.json() as T
+      if (response.ok) return await response.json()
       throw new Error((await response.text()) || `Request failed: ${response.status}`)
     },
   }

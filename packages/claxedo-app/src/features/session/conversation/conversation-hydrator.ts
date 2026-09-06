@@ -1,9 +1,11 @@
+import { readField } from "@/lib/record"
 import type {
   AgentContentPart as Part,
   AgentPresentationMessage as Message,
 } from "@claxedo/agent-runtime-contract"
 import { mergeStoredItems, normalizeMessageRows, reconcileStoredParts } from "../store/message-page"
 import { hydrateRegisteredConversationSnapshot, registeredConversationSnapshot } from "./conversation-registry"
+import { isRuntimeAgentMessage } from "./agent-conversation-codec"
 import type { ConversationDirectory } from "./conversation-chat-client"
 
 type PartRows = Array<{ id: string; parts: Part[] }>
@@ -43,7 +45,7 @@ function overlayByID<T extends { id: string }>(existing: T[], next: T[]) {
     const replacement = nextByID.get(item.id)
     if (!replacement) return item
     const unchanged = replacement === item || Object.entries(replacement)
-      .every(([key, value]) => Object.is(item[key as keyof T], value))
+      .every(([key, value]) => Object.is(readField(item, key), value))
     if (unchanged) return item
     changed = true
     return { ...item, ...replacement }
@@ -152,11 +154,15 @@ export function hydrateConversationPage(input: {
   normalized.parts.forEach((row) => {
     if (row.parts.length === 0 && !canonicalIds?.has(row.id)) return
     parts[row.id] = canonicalIds?.has(row.id)
-      ? reconcileStoredParts(parts[row.id] as Part[] | undefined, row.parts)
+      ? reconcileStoredParts(parts[row.id], row.parts)
       : resolveStoredParts(parts[row.id], row.parts)
   })
   const messages = resolveStoredMessages({
-    existing: conversation.messages as Message[],
+    // Hydration reconciles server-backed rows. An optimistic stub has no
+    // canonical counterpart to reconcile against, and `mergeConversationSnapshot`
+    // retains it in the store on its own (`retainOutsideCanonicalSnapshot`), so
+    // it never needs to travel back out through the snapshot builder.
+    existing: conversation.messages.filter(isRuntimeAgentMessage),
     next: normalized.messages,
     completeness: input.messageCompleteness,
     mode: input.mode,

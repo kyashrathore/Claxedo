@@ -1,7 +1,5 @@
 import type {
-  AgentAgentPart as MessageAgentPart,
   AgentContentPart as Part,
-  AgentFilePart as FilePart,
   AgentTextPart as TextPart,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
@@ -84,7 +82,7 @@ export function extractPromptFromParts(parts: Part[], opts?: { directory?: strin
 
   for (const part of parts) {
     if (part.type === "file") {
-      const filePart = part as FilePart
+      const filePart = part
       const sourceText = filePart.source?.text
       if (sourceText) {
         const value = sourceText.value
@@ -118,7 +116,7 @@ export function extractPromptFromParts(parts: Part[], opts?: { directory?: strin
     }
 
     if (part.type === "agent") {
-      const agentPart = part as MessageAgentPart
+      const agentPart = part
       const source = agentPart.source
       if (!source) continue
       inline.push({

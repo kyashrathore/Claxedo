@@ -1,5 +1,6 @@
 import type { TerminalBackend } from "@/features/terminal/core/backend/types"
 import { retry } from "@/features/terminal/core/retry"
+import { readField } from "@/lib/record"
 import { ComponentProps, createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, splitProps } from "solid-js"
 import { TerminalAccessoryRow } from "./accessory-row"
 import { useSDK } from "@/features/terminal/app-ports"
@@ -408,7 +409,7 @@ export const Terminal = (props: TerminalProps) => {
       const likelyTui =
         !isRecreatedPty &&
         isLikelyTui({
-          snapshotWasAltScreen: snapshotWasAltScreen === true,
+          snapshotWasAltScreen:  snapshotWasAltScreen,
           initialCommand: local.pty.initialCommand ?? "",
           title: local.pty.title ?? "",
         })
@@ -429,7 +430,7 @@ export const Terminal = (props: TerminalProps) => {
         splitWidthChanged,
         isReload,
         snapshotHasBuffer,
-        snapshotWasAltScreen: snapshotWasAltScreen === true,
+        snapshotWasAltScreen:  snapshotWasAltScreen,
         snapshotCursor,
       })
       const launch = initialDelay({ likelyTui })
@@ -984,8 +985,7 @@ export const Terminal = (props: TerminalProps) => {
               // PTY-data path below.
               const json = new TextDecoder().decode(bytes.subarray(1))
               try {
-                const meta = JSON.parse(json) as { cursor?: unknown }
-                const next = meta?.cursor
+                const next = readField(JSON.parse(json), "cursor")
                 if (typeof next === "number" && Number.isSafeInteger(next) && next >= 0) {
                   replayReady = true
                   cursor = next
@@ -1174,7 +1174,7 @@ export const Terminal = (props: TerminalProps) => {
         tabIndex={-1}
         style={{ "background-color": terminalColors().background }}
         classList={{
-          ...(local.classList ?? {}),
+          ...local.classList,
           "select-text": true,
           "h-full w-full overflow-hidden font-mono": true,
           [local.class ?? ""]: !!local.class,

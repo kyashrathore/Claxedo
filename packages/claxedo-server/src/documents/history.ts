@@ -12,7 +12,7 @@ import {
 import { syncDirectory } from "./fs-durability"
 import { mapBounded } from "./map-bounded"
 import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetadata } from "./snapshot-pins"
-import type { DocumentActor, SnapshotID, SnapshotRef } from "./port"
+import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef } from "./port"
 import { contentHash } from "./version"
 import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 
@@ -68,7 +68,7 @@ export function createDocumentHistory(options: HistoryOptions) {
 
       const createdAt = Math.max(now(), (existing?.createdAt ?? 0) + 1)
       const metadata: SnapshotRef = {
-        id: ulid(createdAt) as SnapshotID,
+        id: toSnapshotID(ulid(createdAt)),
         sha256,
         size: content.byteLength,
         reason: input.reason,
@@ -169,7 +169,7 @@ export function createDocumentHistory(options: HistoryOptions) {
       await mapBounded(
         names.filter((name) => name.endsWith(".json")),
         (name) => {
-          const snapshotId = name.slice(0, -5) as SnapshotID
+          const snapshotId = toSnapshotID(name.slice(0, -5))
           return Promise.resolve(options.faults?.beforeMetadataRead?.(snapshotId)).then(() =>
             readMetadata(directory, snapshotId),
           )

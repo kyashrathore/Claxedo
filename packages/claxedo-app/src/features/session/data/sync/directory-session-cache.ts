@@ -1,5 +1,5 @@
 import { hasBacking } from "@/platform/identity/session-ref"
-import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoSession as Session } from "../session-types"
 import { useGlobalSync } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "./queries"
@@ -36,7 +36,7 @@ export type DirectorySessionCacheRefresh = (
   directory: string,
   harnessType?: string,
   options?: DirectorySessionCacheRefreshOptions,
-) => Promise<unknown> | unknown
+) => unknown
 export type DirectorySessionCacheFocusSource = {
   setFocusedDirectory?: (directory: string | undefined) => void
 }

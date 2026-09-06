@@ -28,16 +28,16 @@ function isPtySocket(value: unknown): value is PtySocket {
   return "close" in value && typeof (value as { close?: unknown }).close === "function"
 }
 
-function cursor(c: Context) {
+function cursor(c: Context): number | undefined {
   const value = c.req.query("cursor")
-  if (!value) return
+  if (!value) return undefined
   const parsed = Number(value)
-  if (!Number.isSafeInteger(parsed) || parsed < -1) return
+  if (!Number.isSafeInteger(parsed) || parsed < -1) return undefined
   return parsed
 }
 
-function decoded(value: string | undefined) {
-  if (!value) return
+function decoded(value: string | undefined): string | undefined {
+  if (!value) return undefined
   try {
     return decodeURIComponent(value)
   } catch {
@@ -147,9 +147,13 @@ function connectRemoteWorkspacePty(
           for (const item of pending.splice(0)) upstream?.send(item)
         })
         upstream.addEventListener("message", async (event) => {
-          const data = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data
+          const payload: unknown = event.data
+          const data = payload instanceof Blob ? await payload.arrayBuffer() : payload
+          if (typeof data !== "string" && !(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) return
           try {
-            ws.send(data as string | ArrayBuffer)
+            // Same widening as the inbound direction: re-view the bytes over a
+            // plain ArrayBuffer rather than assert the frame is not shared.
+            ws.send(data instanceof Uint8Array ? new Uint8Array(data) : data)
           } catch {
             upstream?.close()
           }
@@ -171,11 +175,16 @@ function connectRemoteWorkspacePty(
           void data.arrayBuffer().then(sendUpstream)
           return
         }
-        if (typeof data === "string" || data instanceof ArrayBuffer || data instanceof Uint8Array) {
-          // A WebSocket binary message is never SharedArrayBuffer-backed, so the
-          // Uint8Array is ArrayBuffer-backed (TS7 widens the bare type to
-          // ArrayBufferLike, which WebSocket.send rejects).
-          sendUpstream(data as string | ArrayBuffer | Uint8Array<ArrayBuffer>)
+        if (typeof data === "string" || data instanceof ArrayBuffer) {
+          sendUpstream(data)
+          return
+        }
+        if (data instanceof Uint8Array) {
+          // TS widens a binary frame's view to `Uint8Array<ArrayBufferLike>`,
+          // which `WebSocket.send` rejects. Re-viewing the exact bytes over a
+          // plain ArrayBuffer states what a WebSocket frame always is, without
+          // claiming it.
+          sendUpstream(new Uint8Array(data))
         }
       },
       onClose() {

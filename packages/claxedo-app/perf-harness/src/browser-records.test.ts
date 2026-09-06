@@ -94,9 +94,9 @@ test("one truncated shift buffer makes the entire CLS measurement absent while v
     await publishBrowserResult(current, { stack: "solid-1", accept_baseline: true, append_trend: false }, true, source)
     expect(current.status).toBe("pass")
     const baseline = await readBaselineFor({ profile, stack: "solid-1", lane: "browser", flow: current.id, suite: "renderer" })
-    expect(baseline!.metrics.visual_stability!.value).toBeUndefined()
-    expect(baseline!.metrics.visual_stability!.samples).toEqual([])
-    expect(baseline!.metrics.visual_stability!.absentReason).toBe(cls.absentReason)
+    expect(baseline!.metrics.visual_stability.value).toBeUndefined()
+    expect(baseline!.metrics.visual_stability.samples).toEqual([])
+    expect(baseline!.metrics.visual_stability.absentReason).toBe(cls.absentReason)
     expect(baseline!.metrics.time_to_first_content_ms).toMatchObject({ value: 200, samples: [100, 200] })
     expect(baseline!.metrics.renderer_task_worst_ms).toMatchObject({ value: 4, samples: [4, 4] })
   } finally {
@@ -112,8 +112,8 @@ test("valid publication persists one suite-scoped baseline with authoritative so
     await publishBrowserResult(current, { stack: "solid-1", accept_baseline: true, append_trend: false }, true, source)
     const baseline = await readBaselineFor({ profile, stack: "solid-1", lane: "browser", flow: current.id, suite: "renderer" })
     expect(baseline!.sourceIdentity).toEqual(source.sourceIdentity)
-    expect(baseline!.metrics.renderer_task_worst_ms!.samples).toEqual([4])
-    expect(baseline!.metrics.renderer_task_worst_ms!.evidence!.context.host).toEqual(context.host)
+    expect(baseline!.metrics.renderer_task_worst_ms.samples).toEqual([4])
+    expect(baseline!.metrics.renderer_task_worst_ms.evidence!.context.host).toEqual(context.host)
     expect(await readBaselineFor({ profile, stack: "solid-1", lane: "browser", flow: current.id, suite: "diagnostics" })).toBeUndefined()
   } finally {
     await rm(path.join(dataRoot, "baselines", profile), { recursive: true, force: true })

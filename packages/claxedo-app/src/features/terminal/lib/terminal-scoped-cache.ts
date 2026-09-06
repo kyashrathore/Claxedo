@@ -30,6 +30,17 @@ export type CacheTtl = { hit: number; miss: number }
 
 type CacheEntry<T> = { value: T | null; at: number }
 
+/**
+ * A cache key that also names what is stored under it.
+ *
+ * Nothing at runtime can tell what a cached entry holds, so the type is
+ * declared once — by the function that BUILDS the key, next to the fetcher that
+ * writes it — instead of being restated as an explicit type argument at every
+ * read. That also makes the reader's type parameter checked against an
+ * argument rather than chosen freely by the caller.
+ */
+export type CacheKey<T> = readonly unknown[] & { readonly valueType?: T }
+
 /** A cached entry is stale once older than its value-dependent TTL (or absent). */
 export const isCacheEntryStale = <T>(entry: CacheEntry<T> | undefined, ttl: CacheTtl) => {
   if (!entry) return true
@@ -42,7 +53,7 @@ export const isCacheEntryStale = <T>(entry: CacheEntry<T> | undefined, ttl: Cach
  * the caller can decide whether to refetch. Distinguishes a fresh `null`
  * (known-empty) from `undefined` (unknown / needs load).
  */
-export const readCachedEntry = <T>(cacheKey: readonly unknown[], ttl: CacheTtl): T | null | undefined => {
+export const readCachedEntry = <T>(cacheKey: CacheKey<T>, ttl: CacheTtl): T | null | undefined => {
   const existing = queryClient.getQueryData<CacheEntry<T>>(cacheKey)
   if (isCacheEntryStale(existing, ttl)) {
     queryClient.removeQueries({ queryKey: cacheKey })
@@ -60,7 +71,7 @@ export const readCachedEntry = <T>(cacheKey: readonly unknown[], ttl: CacheTtl):
  * consumers of the same target dedupe onto one request.
  */
 export const loadCachedEntry = <T>(input: {
-  cacheKey: readonly unknown[]
+  cacheKey: CacheKey<T>
   requestKey: readonly unknown[]
   ttl: CacheTtl
   run: () => Promise<T | null>

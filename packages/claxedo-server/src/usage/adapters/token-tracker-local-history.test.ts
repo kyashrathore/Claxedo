@@ -224,7 +224,7 @@ describe("TokenTracker embedded local history", () => {
       model: "gpt-5.6-sol",
       tokens: { input: 70, output: 22, reasoning: 8, cacheRead: 80, cacheWrite: 0 },
     })])
-    const totals = snapshot.rows[0]!.tokens
+    const totals = snapshot.rows[0].tokens
     expect((totals.input ?? 0) + (totals.output ?? 0) + (totals.reasoning ?? 0) + (totals.cacheRead ?? 0) + (totals.cacheWrite ?? 0)).toBe(180)
   })
 

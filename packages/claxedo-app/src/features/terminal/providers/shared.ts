@@ -1,3 +1,5 @@
+import { defaultTitleNumber } from "@/lib/terminal-title"
+
 export type LocalPTY = {
   id: string
   sessionId?: string
@@ -38,20 +40,13 @@ export type NewTerminalInput = {
   createRequestId?: string
 }
 
-function titleNum(title: string) {
-  const m = title.match(/^Terminal (\d+)$/)
-  if (!m) return undefined
-  const n = Number(m[1])
-  if (!Number.isFinite(n) || n <= 0) return undefined
-  return n
-}
-
-function nextNum(all: LocalPTY[]) {
+/** The lowest terminal number not already taken by a live terminal. */
+export function nextTerminalNumber(all: readonly LocalPTY[]) {
   const nums = new Set(
     all.flatMap((pty) => {
       const direct = Number.isFinite(pty.titleNumber) && pty.titleNumber > 0 ? pty.titleNumber : undefined
       if (direct !== undefined) return [direct]
-      const parsed = titleNum(pty.title)
+      const parsed = defaultTitleNumber(pty.title)
       if (parsed === undefined) return []
       return [parsed]
     }),
@@ -65,8 +60,8 @@ export function mergeCreatedTerminal(
 ) {
   const existing = all.find((pty) => pty.id === info.id)
   if (existing) return all
-  const parsed = info.title ? titleNum(info.title) : undefined
-  const titleNumber = parsed ?? nextNum(all)
+  const parsed = info.title ? defaultTitleNumber(info.title) : undefined
+  const titleNumber = parsed ?? nextTerminalNumber(all)
   const title = info.title ?? `Terminal ${titleNumber}`
   return [...all, {
     id: info.id,

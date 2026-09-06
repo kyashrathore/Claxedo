@@ -1,5 +1,6 @@
 import type { RelayTokenInput } from "../../adapters/relay/index"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "../../platform/auth/runtime-actor"
+import { jsonRecord } from "../../platform/runtime/lib/json"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "../../platform/runtime/region/index"
 import type { SandboxReadyTarget } from "../../sandbox/manager-port"
 import type { Workspace } from "../store/index"
@@ -69,7 +70,7 @@ export async function workspaceRuntimeRequestError(
   response: Response,
 ): Promise<WorkspaceRuntimeRequestError> {
   const body: unknown = await response.json().catch(() => undefined)
-  const error = record(body) && record(body.error) ? body.error : undefined
+  const error = jsonRecord(jsonRecord(body)?.error)
   const code = typeof error?.code === "string" ? error.code : undefined
   const detail = typeof error?.message === "string" ? error.message : undefined
   return new WorkspaceRuntimeRequestError({
@@ -307,10 +308,6 @@ function runtimeUrl(relayUrl: string, workspaceId: string, requestPath: string) 
 function sandboxPath(requestPath: string) {
   const url = new URL(requestPath, "http://sandbox-manager.local")
   return `${url.pathname}${url.search}`
-}
-
-function record(input: unknown): input is Record<string, unknown> {
-  return typeof input === "object" && input !== null && !Array.isArray(input)
 }
 
 export class WorkspaceRuntimeProtocolError extends Error {

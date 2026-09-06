@@ -14,7 +14,7 @@ export {
   type OpenCodeLifecycle,
   type OpenCodeStatus,
 } from "./lifecycle"
-export { assertLocationInScope, authorizeWorkspace, sameScope, WorkspaceScopeError, type WorkspaceScope } from "./scope"
+export { assertLocationInScope, WorkspaceScope, sameScope, WorkspaceScopeError } from "./scope"
 export {
   createSessionPort,
   type AdmittedMessage,

@@ -79,7 +79,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   sessionContentPayload: lazy("@/app/workbench/state/session-content-payload", "sessionContentPayload"),
   usePaneId: lazy("@/app/workbench/context/pane-id", "usePaneId"),
   PaneIdProvider: lazy("@/app/workbench/context/pane-id", "PaneIdProvider"),
-  workbenchDrag: lazy("@/app/workbench/workbench", "workbenchDrag"),
   useWorkspaceQuery: lazy("@/features/workspaces/data/use-workspace-query", "useWorkspaceQuery"),
   isWorkspaceReady: lazy("@/features/workspaces/data/workspace-connection", "isWorkspaceReady"),
   workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),

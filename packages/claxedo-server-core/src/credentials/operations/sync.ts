@@ -1,4 +1,5 @@
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
+import { jsonRecord, jsonText } from "@claxedo/server-core/platform/runtime/lib/json"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -78,13 +79,14 @@ function claudeCredentialsPath() {
   return path.join(homeDir(), ".claude", ".credentials.json")
 }
 
-function claudeCredentialsFileToken() {
+function claudeCredentialsFileToken(): string | undefined {
   try {
     const file = claudeCredentialsPath()
-    if (!fs.existsSync(file)) return
+    if (!fs.existsSync(file)) return undefined
     return claudeCodeOAuthAccessToken(fs.readFileSync(file, "utf8"))
   } catch (err) {
     log.warn("Failed to read Claude Code credentials file", { error: String(err) })
+    return undefined
   }
 }
 
@@ -117,31 +119,29 @@ function claudeCodeOAuthToken(options: CollectLocalCredentialsOptions) {
  * holding. A plain string that is not JSON is a legitimate env-var token
  * (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_AUTH_TOKEN`) and passes through.
  */
-function claudeCodeOAuthAccessToken(input: string) {
+function claudeCodeOAuthAccessToken(input: string): string | undefined {
   const raw = clean(input)
-  if (!raw) return
+  if (!raw) return undefined
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
     return raw
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return raw
-  const row = parsed as Record<string, unknown>
-  const oauth = row.claudeAiOauth && typeof row.claudeAiOauth === "object" && !Array.isArray(row.claudeAiOauth)
-    ? row.claudeAiOauth as Record<string, unknown>
-    : undefined
-  return clean(typeof oauth?.accessToken === "string" ? oauth.accessToken : undefined)
+  const row = jsonRecord(parsed)
+  if (!row) return raw
+  const oauth = jsonRecord(row.claudeAiOauth)
+  return oauth && jsonText(oauth, "accessToken")
 }
 
-function codexAuth() {
+function codexAuth(): Record<string, unknown> | undefined {
   try {
     const file = codexAuthPath()
-    if (!fs.existsSync(file)) return
-    const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
-    return data
+    if (!fs.existsSync(file)) return undefined
+    return jsonRecord(JSON.parse(fs.readFileSync(file, "utf8")))
   } catch (err) {
     log.warn("Failed to read Codex auth", { error: String(err) })
+    return undefined
   }
 }
 
@@ -153,9 +153,9 @@ function codexAccountAuths() {
       .filter((entry) => entry.endsWith(".auth.json"))
       .flatMap((entry) => {
         const file = path.join(dir, entry)
-        const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
-        const bundle = codexBundle(data)
-        if (!bundle) return []
+        const data = jsonRecord(JSON.parse(fs.readFileSync(file, "utf8")))
+        const bundle = data && codexBundle(data)
+        if (!data || !bundle) return []
         return [{
           data,
           origin: "~/.codex/accounts/*.auth.json",
@@ -202,39 +202,41 @@ function codexAuthCandidates() {
   return [...freshest.values()].sort((a, b) => b.refreshed - a.refreshed)
 }
 
-function jwtExp(input: string | undefined) {
-  if (!input) return
+function jwtExp(input: string | undefined): number | undefined {
+  if (!input) return undefined
   try {
     const part = input.split(".")[1]
-    if (!part) return
+    if (!part) return undefined
     const base = part
       .replace(/-/g, "+")
       .replace(/_/g, "/")
       .padEnd(Math.ceil(part.length / 4) * 4, "=")
-    const data = JSON.parse(Buffer.from(base, "base64").toString("utf8")) as { exp?: unknown }
-    return typeof data.exp === "number" ? data.exp * 1000 : undefined
-  } catch {}
+    const claims = jsonRecord(JSON.parse(Buffer.from(base, "base64").toString("utf8")))
+    return typeof claims?.exp === "number" ? claims.exp * 1000 : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function codexBundle(input: unknown) {
-  if (!input || typeof input !== "object") return
-  const row = input as Record<string, unknown>
-  const tokens = row.tokens && typeof row.tokens === "object" ? row.tokens as Record<string, unknown> : undefined
-  const access = clean(typeof tokens?.access_token === "string" ? tokens.access_token : undefined)
-  const refresh = clean(typeof tokens?.refresh_token === "string" ? tokens.refresh_token : undefined)
-  const account_id = clean(typeof tokens?.account_id === "string" ? tokens.account_id : undefined)
-  const id_token = clean(typeof tokens?.id_token === "string" ? tokens.id_token : undefined)
-  if (!access || !refresh || !account_id) return
+  const row = jsonRecord(input)
+  if (!row) return undefined
+  const tokens = jsonRecord(row.tokens)
+  const access = tokens && jsonText(tokens, "access_token")
+  const refresh = tokens && jsonText(tokens, "refresh_token")
+  const account_id = tokens && jsonText(tokens, "account_id")
+  const id_token = tokens && jsonText(tokens, "id_token")
+  if (!access || !refresh || !account_id) return undefined
   return {
-    auth_mode: clean(typeof row.auth_mode === "string" ? row.auth_mode : undefined) ?? "chatgpt",
-    OPENAI_API_KEY: clean(typeof row.OPENAI_API_KEY === "string" ? row.OPENAI_API_KEY : undefined) ?? null,
+    auth_mode: jsonText(row, "auth_mode") ?? "chatgpt",
+    OPENAI_API_KEY: jsonText(row, "OPENAI_API_KEY") ?? null,
     tokens: {
       ...(id_token ? { id_token } : {}),
       access_token: access,
       refresh_token: refresh,
       account_id,
     },
-    last_refresh: clean(typeof row.last_refresh === "string" ? row.last_refresh : undefined) ?? new Date().toISOString(),
+    last_refresh: jsonText(row, "last_refresh") ?? new Date().toISOString(),
   }
 }
 
@@ -244,7 +246,7 @@ function codexCredential(local: unknown) {
   const access = bundle?.tokens.access_token
   const account_id = bundle?.tokens.account_id
   const expires = jwtExp(access) ?? Date.now() + 55 * 60 * 1000
-  if (!refresh || !access) return
+  if (!refresh || !access) return undefined
   return {
     provider_id: "codex-app-server",
     kind: "oauth_token" as const,
@@ -292,7 +294,7 @@ function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
 
 function claudeOAuthItem(token: string | undefined) {
   const accessToken = clean(token)
-  if (!accessToken) return
+  if (!accessToken) return undefined
   const envVar = process.env.CLAUDE_CODE_OAUTH_TOKEN
     ? "CLAUDE_CODE_OAUTH_TOKEN"
     : process.env.ANTHROPIC_AUTH_TOKEN
@@ -320,7 +322,7 @@ function sandboxDriverCredentialItem(
   secret: string | undefined,
 ) {
   const txt = clean(secret)
-  if (!txt) return
+  if (!txt) return undefined
   return {
     provider_id: driverId,
     kind: "sandbox_driver" as const,
@@ -342,7 +344,7 @@ function vercelSandboxDriverCredentialItem(
   const access_token = clean(input.access_token)
   const team_id = clean(input.team_id)
   const project_id = clean(input.project_id)
-  if (!access_token || !team_id || !project_id) return
+  if (!access_token || !team_id || !project_id) return undefined
   return {
     provider_id: "vercel",
     kind: "sandbox_driver" as const,

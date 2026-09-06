@@ -7,6 +7,7 @@ import type {
   ProjectRole,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
+import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
@@ -155,7 +156,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     if (!row || row.role_rank < actionRank(args.action)) return { ok: false as const }
     return {
       ok: true as const,
-      orgId: row.org_id as never,
+      orgId: asOrgId(row.org_id),
       role: rankRole(row.role_rank),
       actorId: binding.actorId,
       actorKind: binding.actorKind,
@@ -563,7 +564,7 @@ function inactive(code: string, reason: string) {
 }
 
 function changes(result: { meta?: { changes?: number } }) {
-  return Number(result.meta?.changes ?? 0)
+  return result.meta?.changes ?? 0
 }
 
 function isUniqueFailure(error: unknown) {

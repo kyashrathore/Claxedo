@@ -31,7 +31,9 @@ export function focusComposerSurface(doc: Document = document, options?: { sessi
 // deferred a frame. Exposed as a mutable object so tests can run it
 // synchronously without leaning on real timers/rAF.
 export const composerFocus = {
-  schedule(run: () => void): void {
+  // Arrow property: tests capture and restore `composerFocus.schedule` as a bare
+  // reference, which is only sound for a function that carries no `this`.
+  schedule: (run: () => void): void => {
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(() => run())
       return

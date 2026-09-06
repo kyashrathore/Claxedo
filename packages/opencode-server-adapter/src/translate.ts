@@ -119,11 +119,14 @@ function translateSessionEvent(event: OpenCodeLeafEvent): AgentRuntimeEvent | un
     const agentId = string(event.properties.agentId)
     return agentId ? agentRuntimeEvent.sessionAgent({ agentId }) : undefined
   }
+  return undefined
 }
 
 function partKey(messageId: unknown, partId: unknown) {
-  if (!string(messageId) || !string(partId)) throw new OpenCodeServerAdapterError("invalid_event", "OpenCode part omitted its message ID or part ID")
-  return `${messageId}:${partId}`
+  const message = string(messageId)
+  const part = string(partId)
+  if (!message || !part) throw new OpenCodeServerAdapterError("invalid_event", "OpenCode part omitted its message ID or part ID")
+  return `${message}:${part}`
 }
 
 function statusType(input: unknown) {
@@ -138,7 +141,11 @@ export function errorText(input: unknown) {
 }
 
 export function record(input: unknown): Record<string, unknown> | undefined {
-  return input !== null && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return isRecord(input) ? input : undefined
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return input !== null && typeof input === "object" && !Array.isArray(input)
 }
 
 function string(input: unknown) { return typeof input === "string" && input.length > 0 ? input : undefined }

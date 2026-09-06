@@ -42,12 +42,21 @@ export type WakeToolResult = { ok: boolean; text: string }
 
 const DURATION_RE = /^\+?(\d+)\s*([smhdw])$/
 
+/** Must stay in step with the unit class in `DURATION_RE`. */
+const DURATION_UNIT_MS = new Map<string, number>([
+  ["s", 1e3],
+  ["m", 60e3],
+  ["h", 3600e3],
+  ["d", 86400e3],
+  ["w", 604800e3],
+])
+
 function parseDuration(s: string): number {
   const m = DURATION_RE.exec(s.trim())
   if (!m) throw new Error(`invalid duration "${s}" (use e.g. "3d", "2h", "30m", "+1w")`)
   const n = Number(m[1])
-  const unit = m[2]
-  const ms = { s: 1e3, m: 60e3, h: 3600e3, d: 86400e3, w: 604800e3 }[unit as "s" | "m" | "h" | "d" | "w"]
+  const ms = DURATION_UNIT_MS.get(m[2] ?? "")
+  if (ms === undefined) throw new Error(`invalid duration unit in "${s}" (use s, m, h, d, or w)`)
   return n * ms
 }
 

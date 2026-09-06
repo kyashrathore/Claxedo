@@ -158,7 +158,7 @@ function navigationRow(session: StoredSession) {
  * which never arrives here (INVARIANTS.md cross-cutting invariant 3).
  */
 function storedTranscript() {
-  const sessionID = STORED_SESSIONS[0]!.sessionId
+  const sessionID = STORED_SESSIONS[0].sessionId
   return [
     {
       info: {
@@ -308,16 +308,16 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     }
     const messages = path.match(/^\/api\/control\/sessions\/([^/]+)\/messages$/)
     if (messages) {
-      const sessionId = messages[1]!
+      const sessionId = messages[1]
       state.transcriptReads.push(sessionId)
       return json(route, {
-        messages: sessionId === STORED_SESSIONS[0]!.sessionId ? storedTranscript() : [],
+        messages: sessionId === STORED_SESSIONS[0].sessionId ? storedTranscript() : [],
         maxEventOrdinal: 0,
       })
     }
     const central = path.match(/^\/api\/control\/sessions\/([^/]+)(\/.*)?$/)
     if (central) {
-      const sessionId = central[1]!
+      const sessionId = central[1]
       const stored = sessions.find((item) => item.sessionId === sessionId)
       if (central[2] === "/gateway") {
         return json(route, { gatewayUrl: null, workspaceId: WORKSPACE_ID, directory: WORKSPACE_ID, harnessHost: "central" })
@@ -435,7 +435,7 @@ test.describe("core dead-workspace session history @core", () => {
     const state = await installDeadWorkspace(page)
     await openProject(page)
 
-    const target = STORED_SESSIONS[0]!
+    const target = STORED_SESSIONS[0]
     const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${target.sessionId}"]`)
     await expect(row).toBeVisible({ timeout: 20_000 })
     await row.click()

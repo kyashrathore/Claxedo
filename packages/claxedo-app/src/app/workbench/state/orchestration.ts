@@ -13,7 +13,7 @@ import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
 import { PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
-import type { Edge, UseWorkbench } from "../workbench/index"
+import type { Edge, MovePaneTarget, UseWorkbench } from "../workbench/index"
 import type { MetadataSliceApi } from "./metadata"
 import type { TerminalSliceApi } from "./terminal"
 import {
@@ -32,37 +32,37 @@ export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef; wor
 type OpenSessionByIdOptions = { focus?: boolean; authoritative?: boolean; sessionRef?: SessionRef }
 
 export type LayoutOrchestrationApi = {
-  openSession(directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions): string
-  openSessionById(sessionId: string, title?: string, opts?: OpenSessionByIdOptions): string
-  openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
-  completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
-  openTerminal(
+  openSession: (directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions) => string
+  openSessionById: (sessionId: string, title?: string, opts?: OpenSessionByIdOptions) => string
+  openDraftSession: (providerDirectory: string, draftId: string, opts?: { focus?: boolean }) => string
+  completeDraftSession: (input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }) => string | undefined
+  openTerminal: (
     directory: string,
     terminalId: string,
     title?: string,
     opts?: { focus?: boolean; command?: string; sessionId?: string; workspaceRouteId?: string },
-  ): string
-  openPage(pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }): string
-  openPagesIndex(directory?: string, opts?: { workspaceRouteId?: string }): string
-  openMarketplace(): string
+  ) => string
+  openPage: (pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }) => string
+  openPagesIndex: (directory?: string, opts?: { workspaceRouteId?: string }) => string
+  openMarketplace: () => string
   /**
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
    */
-  closeContent(id: string, reason?: ContentCloseReason): void
-  closePane(paneId: string, opts?: { destroyContent?: boolean }): void
-  moveContent(id: string, fromPane: string, toPane: string | "new"): void
-  splitContent(targetPane: string, edge: Edge, id: string): void
+  closeContent: (id: string, reason?: ContentCloseReason) => void
+  closePane: (paneId: string, opts?: { destroyContent?: boolean }) => void
+  moveContent: (id: string, fromPane: string, toPane: MovePaneTarget) => void
+  splitContent: (targetPane: string, edge: Edge, id: string) => void
   /** Alias for `wb.navigation.show(id)`. */
-  showContent(id: string): void
-  restoreContentFocus(id: string): void
+  showContent: (id: string) => void
+  restoreContentFocus: (id: string) => void
 
   /**
    * Internal hook the rail-layout's `onContentClose` calls when the Workbench
    * removes a content (drag-drop merge or split-close with destroyContent).
    * Cleans up meta + per-type state without touching the workbench.
    */
-  _cleanupOnClose(id: string, reason: ContentCloseReason): void
+  _cleanupOnClose: (id: string, reason: ContentCloseReason) => void
 }
 
 const PINNED_TYPES = PINNED_CONTENT_TYPES
@@ -409,7 +409,7 @@ export function createLayoutOrchestration(input: {
 
     completeDraftSession(input) {
       const draft = meta.find((m) => m.type === "draft-session" && m.draftId === input.draftId)
-      if (!draft) return
+      if (!draft) return undefined
       const content = {
         type: "session" as const,
         directory: input.directory,

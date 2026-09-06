@@ -26,8 +26,8 @@ function varsBlocks(config: string): VarsBlock[] {
   // A block runs from its own header to the next top-level header. Wrangler's
   // TOML has no nested tables inside `vars`, so this is sufficient and keeps the
   // test free of a TOML parser dependency.
-  return [...config.matchAll(/^\[((?:env\.[\w-]+\.)?vars)\]\n([\s\S]*?)(?=^\[|\Z)/gm)]
-    .map((match) => ({ name: match[1]!, body: match[2]! }))
+  return [...config.matchAll(/^\[((?:env\.[\w-]+\.)?vars)\]\n([\s\S]*?)(?=^\[|Z)/gm)]
+    .map((match) => ({ name: match[1], body: match[2] }))
 }
 
 function declaredValue(block: VarsBlock, key: string) {
@@ -139,7 +139,7 @@ describe("relay region mapping", () => {
     const declared = regionSource.match(/export const DEFAULT_CLAXEDO_REGIONS = \[([^\]]*)\]/)?.[1]
     expect(declared, "could not find DEFAULT_CLAXEDO_REGIONS in claxedo-server-core").toBeDefined()
 
-    const regions = [...declared!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+    const regions = [...declared!.matchAll(/"([^"]+)"/g)].map((match) => match[1])
     expect(regions.length).toBeGreaterThanOrEqual(5)
 
     for (const region of regions) {

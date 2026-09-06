@@ -299,8 +299,8 @@ function watchPerformanceReady(win: BrowserWindow) {
         })
         observer.observe(document.documentElement, { childList: true, subtree: true })
       })`)
-      .then((ready) => {
-        if (!ready || readyLogged) return
+      .then(async (ready) => {
+        if (!ready || readyLogged) return undefined
         readyLogged = true
         log.info(`[startup-perf] session list ready after-renderer=${String(Math.round(performance.now() - loadedAt))}ms`)
         return win.webContents.executeJavaScript(`performance.getEntriesByType("resource")

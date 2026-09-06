@@ -35,6 +35,22 @@ function publicJwk(input: crypto.JsonWebKey) {
   }
 }
 
+/**
+ * Read back the private EC JWK this CLI minted. The stored file is untrusted
+ * input like any other JSON, so the key material is validated here once rather
+ * than failing inside `createPrivateKey` with no mention of the file.
+ */
+function privateJwk(input: unknown): crypto.JsonWebKey | undefined {
+  const jwk = object(input)
+  const kty = text(jwk.kty)
+  const crv = text(jwk.crv)
+  const d = text(jwk.d)
+  const x = text(jwk.x)
+  const y = text(jwk.y)
+  if (kty !== "EC" || !crv || !d || !x || !y) return undefined
+  return { kty, crv, d, x, y }
+}
+
 function identity(hostId: string, jwk: crypto.JsonWebKey): MachineHostKey {
   const privateKey = crypto.createPrivateKey({ key: jwk, format: "jwk" })
   return {
@@ -60,8 +76,12 @@ export async function loadMachineHostKey(): Promise<MachineHostKey> {
   const pathname = machineKeyPath()
   const existing = object(await readJsonFile(pathname))
   const hostId = text(existing.host_id)
-  const privateKeyJwk = existing.private_key_jwk as crypto.JsonWebKey | undefined
-  if (hostId && privateKeyJwk) return identity(hostId, privateKeyJwk)
+  const stored = existing.private_key_jwk
+  if (hostId && stored) {
+    const privateKeyJwk = privateJwk(stored)
+    if (!privateKeyJwk) throw new Error(`${pathname} holds an unreadable private_key_jwk`)
+    return identity(hostId, privateKeyJwk)
+  }
 
   const pair = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   const jwk = pair.privateKey.export({ format: "jwk" })

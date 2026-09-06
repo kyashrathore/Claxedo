@@ -11,10 +11,10 @@ function recording(responses: Array<{ status?: number; body: unknown }>) {
     const headers = new Headers(init?.headers)
     calls.push({
       url,
-      body: new URLSearchParams(String(init?.body ?? "")),
+      body: new URLSearchParams(typeof init?.body === "string" ? init.body : ""),
       accept: headers.get("Accept") ?? undefined,
     })
-    const next = responses[Math.min(index++, responses.length - 1)]!
+    const next = responses[Math.min(index++, responses.length - 1)]
     return new Response(JSON.stringify(next.body), {
       status: next.status ?? 200,
       headers: { "Content-Type": "application/json" },
@@ -66,17 +66,17 @@ describe("github device grant", () => {
       intervalMs: 5_000,
       expiresAt: 1_000 + 900_000,
     })
-    expect(calls[0]!.url).toBe("https://github.com/login/device/code")
-    expect(calls[0]!.body.get("client_id")).toBe("Iv1.client")
+    expect(calls[0].url).toBe("https://github.com/login/device/code")
+    expect(calls[0].body.get("client_id")).toBe("Iv1.client")
     // The token endpoints answer form-encoded unless JSON is asked for.
-    expect(calls[0]!.accept).toBe("application/json")
+    expect(calls[0].accept).toBe("application/json")
   })
 
   test("start never sends the client secret — the device leg is public", async () => {
     const { calls, fetchImpl } = recording([{ body: GRANT }])
     await githubIntegration({ clientId: "Iv1.client", clientSecret: "shh", fetchImpl }).impl.device!.start()
 
-    expect(calls[0]!.body.get("client_secret")).toBeNull()
+    expect(calls[0].body.get("client_secret")).toBeNull()
   })
 
   test("a device grant refused by github throws rather than returning a half grant", async () => {
@@ -93,10 +93,10 @@ describe("github device poll", () => {
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
     expect(await integration.impl.device!.poll("device-abc")).toEqual({ status: "pending" })
-    expect(calls[0]!.url).toBe("https://github.com/login/oauth/access_token")
-    expect(calls[0]!.body.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code")
-    expect(calls[0]!.body.get("device_code")).toBe("device-abc")
-    expect(calls[0]!.body.get("client_secret")).toBeNull()
+    expect(calls[0].url).toBe("https://github.com/login/oauth/access_token")
+    expect(calls[0].body.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code")
+    expect(calls[0].body.get("device_code")).toBe("device-abc")
+    expect(calls[0].body.get("client_secret")).toBeNull()
   })
 
   test("slow_down stays pending and carries github's widened interval", async () => {
@@ -182,9 +182,9 @@ describe("github token refresh", () => {
       refreshToken: "ghr_new",
       expiresAt: 9_000 + 28_800_000,
     })
-    expect(calls[0]!.body.get("grant_type")).toBe("refresh_token")
-    expect(calls[0]!.body.get("refresh_token")).toBe("ghr_old")
-    expect(calls[0]!.body.get("client_secret")).toBe("shh")
+    expect(calls[0].body.get("grant_type")).toBe("refresh_token")
+    expect(calls[0].body.get("refresh_token")).toBe("ghr_old")
+    expect(calls[0].body.get("client_secret")).toBe("shh")
   })
 
   test("a device-flow app with no secret still refreshes — github does not require one", async () => {
@@ -192,7 +192,7 @@ describe("github token refresh", () => {
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
     expect((await integration.impl.refresh!("ghr_old")).accessToken).toBe("ghu_new")
-    expect(calls[0]!.body.get("client_secret")).toBeNull()
+    expect(calls[0].body.get("client_secret")).toBeNull()
   })
 
   test("a spent refresh token demands a reconnect instead of a silent retry", async () => {

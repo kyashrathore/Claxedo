@@ -45,6 +45,7 @@ import {
   resolveSessionGateway,
 } from "../http"
 import { assertRuntimeMutationAuth, runtimeSnapshotInput } from "./protocol"
+import { fetchUrl } from "../../test-support/fetch-calls"
 
 function services(): ControlPlaneServices {
   let projectedMessages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
@@ -415,7 +416,7 @@ describe("control plane HTTP protocol", () => {
     const getRelayEndpoint = vi.fn(async () => "https://relay.eu.test")
     svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
     stubFetch(vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1" })
       return new Response("not found", { status: 404 })
@@ -506,7 +507,7 @@ describe("control plane HTTP protocol", () => {
     const getRelayEndpoint = vi.fn(async () => "https://relay.eu.test")
     svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
     stubFetch(vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1" })
       return new Response("not found", { status: 404 })
@@ -794,7 +795,7 @@ describe("control plane HTTP protocol", () => {
       directory: "/tmp/demo",
     })
     const fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url === "https://relay.example.test/workspaces/ws_1/global/health") {
         return Response.json({ workspaceId: "ws_1" })
       }

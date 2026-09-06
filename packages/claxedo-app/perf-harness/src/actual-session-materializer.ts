@@ -3,6 +3,7 @@ import { mkdir, realpath, stat } from "node:fs/promises"
 import path from "node:path"
 import { Database as SQLiteDatabase } from "bun:sqlite"
 import { OpenCodeCorpus } from "./opencode-corpus"
+import { isRecord, numberField, recordField, textField } from "./json-fields"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
 import { initializeWorkspace, type MaterializedWorkspace } from "./workspace-fixture"
 import { persistClaxedoCorpus, registerWorkspace } from "./fixture-registration"
@@ -235,12 +236,12 @@ function assignTargets(sources: SourceSession[]): TargetAssignment[] {
     ...WORKSPACE_B_TARGETS.map((logicalSessionId) => ({ logicalSessionId, workspaceId: "workspace-b" as const })),
   ]
   const selected = quantileSample(sources, logicalTargets.length)
-  return logicalTargets.map((target, index) => ({ ...target, source: selected[index]! }))
+  return logicalTargets.map((target, index) => ({ ...target, source: selected[index] }))
 }
 
 function quantileSample(values: SourceSession[], count: number) {
-  if (count === 1) return [values[Math.floor(values.length / 2)]!]
-  return Array.from({ length: count }, (_, index) => values[Math.round((index * (values.length - 1)) / (count - 1))]!)
+  if (count === 1) return [values[Math.floor(values.length / 2)]]
+  return Array.from({ length: count }, (_, index) => values[Math.round((index * (values.length - 1)) / (count - 1))])
 }
 
 async function createWorkspaces(input: { dataDirectory: string; workspaceDirectory: string }) {
@@ -282,7 +283,7 @@ function copySession(input: {
   `,
     )
     .all(assignment.source.id)
-  const parsedMessages = messages.map((message) => JSON.parse(message.data) as Record<string, unknown>)
+  const parsedMessages = messages.map((message) => parseRecord(message.data))
   const latestUserIndex = parsedMessages.findLastIndex((data) => data.role === "user")
   const messageIds = new Map(
     messages.map((message, index) => [message.id, canonicalOrderedId("msg", assignment.logicalSessionId, index)]),
@@ -290,7 +291,7 @@ function copySession(input: {
   const latestTurnMessageIds = new Set(
     messages.flatMap((message, index) => (index >= latestUserIndex ? [messageIds.get(message.id)!] : [])),
   )
-  const latestUserMessageId = messageIds.get(messages[latestUserIndex]!.id)!
+  const latestUserMessageId = messageIds.get(messages[latestUserIndex].id)!
   const sourceOrdinal = input.sourceHasPartOrdinal
     ? "ordinal"
     : "ROW_NUMBER() OVER (PARTITION BY message_id ORDER BY rowid) - 1"
@@ -324,7 +325,7 @@ function copySession(input: {
   let latestAssistant: { messageId: string; createdAt: number; finished: boolean } | undefined
   let payloadBytes = 0
   for (const [messageIndex, message] of messages.entries()) {
-    const data = parsedMessages[messageIndex]!
+    const data = parsedMessages[messageIndex]
     const parentID = typeof data.parentID === "string" ? messageIds.get(data.parentID) : undefined
     if (parentID) data.parentID = parentID
     if (data.path && typeof data.path === "object") {
@@ -334,9 +335,10 @@ function copySession(input: {
     payloadBytes += Buffer.byteLength(serialized)
     const id = messageIds.get(message.id)!
     input.destination.addMessage(id, sessionId, data)
-    const time = data.time as { completed?: number } | undefined
+    const time = recordField(data, "time")
     if (data.role === "assistant" && data.finish !== undefined) {
-      latestAssistant = { messageId: id, createdAt: message.time_created, finished: time?.completed !== undefined }
+      const completed = time && numberField(time, "completed")
+      latestAssistant = { messageId: id, createdAt: message.time_created, finished: completed !== undefined }
     }
   }
   if (!latestAssistant) throw new Error("actual-session selection lost its completed assistant turn")
@@ -346,7 +348,7 @@ function copySession(input: {
   let latestTextSha256: string | undefined
   let transcriptBytes = 0
   for (const part of parts) {
-    const data = JSON.parse(part.data) as Record<string, unknown>
+    const data = parseRecord(part.data)
     const serialized = JSON.stringify(data)
     payloadBytes += Buffer.byteLength(serialized)
     transcriptBytes += payloadSize(data)
@@ -392,13 +394,20 @@ function updateContentHash(hash: ReturnType<typeof createHash>, kind: string, va
   hash.update(value)
 }
 
+/** Decode a stored JSON column as an object; anything else reads as empty. */
+function parseRecord(text: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(text)
+  return isRecord(parsed) ? parsed : {}
+}
+
 function payloadSize(part: Record<string, unknown>) {
   if ((part.type === "text" || part.type === "reasoning") && typeof part.text === "string") {
     return Buffer.byteLength(part.text)
   }
   if (part.type === "tool") {
-    const state = part.state as { input?: unknown; output?: string } | undefined
-    return Buffer.byteLength(JSON.stringify(state?.input ?? null)) + Buffer.byteLength(state?.output ?? "")
+    const state = recordField(part, "state")
+    const output = state && textField(state, "output")
+    return Buffer.byteLength(JSON.stringify(state?.input ?? null)) + Buffer.byteLength(output ?? "")
   }
   return 0
 }

@@ -66,9 +66,9 @@ describe("runtime config secret scoping", () => {
       }),
     }
     configureAgentConfig({ connectionProviders: [provider] })
-    await saveUserConfig({ version: 3, mcp: {}, connections: { external: { connectionId: "external", providerKey: "fixture", configRevision: 1, enabled: true, config: {}, secretRefs: { first: credentials[0]!.id, second: credentials[1]!.id } } } })
+    await saveUserConfig({ version: 3, mcp: {}, connections: { external: { connectionId: "external", providerKey: "fixture", configRevision: 1, enabled: true, config: {}, secretRefs: { first: credentials[0].id, second: credentials[1].id } } } })
     const snapshot = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a" })
-    expect(snapshot.auth).toMatchObject({ [credentials[0]!.id]: "first-secret", [credentials[1]!.id]: "second-secret", external: expect.any(String) })
+    expect(snapshot.auth).toMatchObject({ [credentials[0].id]: "first-secret", [credentials[1].id]: "second-secret", external: expect.any(String) })
     const target = { workspaceId: "ws-credentials", directory: root }
     const host = createWorkspaceHost({ target, storeRoot: path.join(root, "runtime"), connectionProviders: [provider] })
     const app = new Hono()

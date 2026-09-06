@@ -95,7 +95,8 @@ export function createNativeGoalResource(host: NativeGoalResourceHost): AgentGoa
       // Deleting a LIVE Goal locally would lie: a resumed provider session
       // re-emits it. Only a driver whose provider has a clear operation may do
       // it, and then in the same order as `stop`.
-      const clear = native.delete
+      // Bound: a driver may implement `delete` as a class method that reads `this`.
+      const clear = native.delete?.bind(native)
       if (!clear) return unsupported("Delete")
       return settleGoalStop<null>({
         sessionId,

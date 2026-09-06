@@ -8,6 +8,7 @@ import { isBuiltin } from "node:module"
 import { build as esbuildBuild, type Metafile } from "esbuild"
 import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
+import { isRecord, parseJson } from "../../src/platform/json/index"
 import {
   claxedoAgentPluginsWorkspaceRuntimeEntry,
   claxedoWorkspaceRuntimeEntry,
@@ -51,17 +52,13 @@ function workspacePackageRoot(name: string) {
 
 type WorkspaceCatalog = Record<string, string>
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function workspaceCatalog(value: unknown): value is WorkspaceCatalog {
-  return record(value) && Object.values(value).every((entry) => typeof entry === "string")
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string")
 }
 
 function rootWorkspaceCatalog(): WorkspaceCatalog {
-  const root: unknown = JSON.parse(fs.readFileSync(path.resolve(packagesRoot(), "../package.json"), "utf8"))
-  if (!record(root) || !record(root.workspaces) || !workspaceCatalog(root.workspaces.catalog)) return {}
+  const root = parseJson(fs.readFileSync(path.resolve(packagesRoot(), "../package.json"), "utf8"))
+  if (!isRecord(root) || !isRecord(root.workspaces) || !workspaceCatalog(root.workspaces.catalog)) return {}
   return root.workspaces.catalog
 }
 
@@ -259,7 +256,7 @@ export function assertHostBundleDependencies(metafile: Metafile, dependencies: R
   for (const output of Object.values(metafile.outputs)) {
     for (const imported of output.imports) {
       if (!imported.external || isBuiltin(imported.path)) continue
-      const name = imported.path.startsWith("@") ? imported.path.split("/").slice(0, 2).join("/") : imported.path.split("/")[0]!
+      const name = imported.path.startsWith("@") ? imported.path.split("/").slice(0, 2).join("/") : imported.path.split("/")[0]
       if (!dependencies[name]) missing.add(imported.path)
     }
   }

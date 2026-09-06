@@ -18,6 +18,7 @@ import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
   isAgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { isRecord } from "../../platform/json"
 
 type ChoiceBody = {
   pluginInstanceId: string
@@ -35,10 +36,6 @@ function errorBody(code: string, message: string) {
   return { error: { code, message } }
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function stringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item): item is string => typeof item === "string")
 }
@@ -48,7 +45,7 @@ function nonnegativeSafeInteger(value: unknown): value is number {
 }
 
 function choiceBody(value: unknown): ChoiceBody | undefined {
-  if (!record(value)
+  if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
     || !value.pluginInstanceId
     || !stringArray(value.harnessIds)
@@ -64,7 +61,7 @@ function choiceBody(value: unknown): ChoiceBody | undefined {
 }
 
 function updateBody(value: unknown): UpdateBody | undefined {
-  if (!record(value)
+  if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
     || !value.pluginInstanceId
     || !nonnegativeSafeInteger(value.expectedRevision)) return undefined
@@ -245,7 +242,7 @@ export function LocalAgentPluginActivationRoutes(input: {
 
   app.post("/activation", async (c) => {
     const raw = await c.req.json().catch(() => undefined)
-    if (record(raw) && ("projectId" in raw || "projectIds" in raw)) {
+    if (isRecord(raw) && ("projectId" in raw || "projectIds" in raw)) {
       return c.json(errorBody("agent_plugins_project_scope_unsupported", "Unsigned Agent Plugins activation is machine-wide"), 400)
     }
     const body = choiceBody(raw)

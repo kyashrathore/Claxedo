@@ -15,7 +15,6 @@ import {
   googleIntegration,
   notionIntegration,
   type CodeHostRepository,
-  type ConnectionsService,
   type RouteGate,
 } from "@claxedo/connections"
 import {
@@ -148,7 +147,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   }
 
   return {
-    service: service as ConnectionsService,
+    service: service,
     routes: createIntegrationsRoutes(service, {
       gate,
       tokenGate,

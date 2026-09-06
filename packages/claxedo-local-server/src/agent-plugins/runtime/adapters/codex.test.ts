@@ -48,7 +48,7 @@ describe("codexAgentPluginAdapter", () => {
       plugins: [await plugin(retainedRoot, "claxedo-review")],
     })
 
-    const projectedRoot = projected.pluginRoots[0]!.root
+    const projectedRoot = projected.pluginRoots[0].root
     expect(JSON.parse(await fs.readFile(path.join(generationRoot, ".agents", "plugins", "marketplace.json"), "utf8")))
       .toEqual({
         name: "claxedo-agent-plugins",

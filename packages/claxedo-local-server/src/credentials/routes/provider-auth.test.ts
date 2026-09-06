@@ -3,6 +3,11 @@ import type { ControlPlaneCredentials, ControlPlaneServicesContract } from "@cla
 import { createProviderAuthService } from "../provider-auth/service"
 import { ProviderAuthRoutes } from "./provider-auth"
 
+/** The absolute URL a fetch call targeted, for whichever RequestInfo shape it used. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : input.toString()
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -81,7 +86,7 @@ describe("control-plane provider auth", () => {
       sleep: async () => {},
       pollingSafetyMs: 0,
       fetch: (async (input, init) => {
-        const url = input.toString()
+        const url = requestUrl(input)
         calls.push(`${init?.method ?? "GET"} ${url}`)
         if (url.endsWith("/api/accounts/deviceauth/usercode")) {
           return json({ device_auth_id: "dev_1", user_code: "ABCD-EFGH", interval: "1" })
@@ -130,7 +135,7 @@ describe("control-plane provider auth", () => {
       account_id: "acct_123",
       expires_at: 3_601_000,
     })
-    expect(JSON.parse(c.writes[0]!.secret)).toMatchObject({
+    expect(JSON.parse(c.writes[0].secret)).toMatchObject({
       type: "codex_auth",
       tokens: {
         access_token: "access_token",

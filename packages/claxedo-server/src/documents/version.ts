@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { DocumentVersion } from "./port"
+import { toDocumentVersion, type DocumentVersion } from "./port"
 
 type VersionEvidence = Readonly<{
   size: number
@@ -18,14 +18,16 @@ export function contentHash(content: Uint8Array | string) {
 }
 
 export function localDocumentVersion(content: Uint8Array, evidence: VersionEvidence): DocumentVersion {
-  return Buffer.from(
-    JSON.stringify({
-      v: 1,
-      sha256: contentHash(content),
-      size: evidence.size,
-      mtimeMs: evidence.mtimeMs,
-    } satisfies LocalVersion),
-  ).toString("base64url") as DocumentVersion
+  return toDocumentVersion(
+    Buffer.from(
+      JSON.stringify({
+        v: 1,
+        sha256: contentHash(content),
+        size: evidence.size,
+        mtimeMs: evidence.mtimeMs,
+      } satisfies LocalVersion),
+    ).toString("base64url"),
+  )
 }
 
 export function documentVersionContentHash(version: DocumentVersion) {

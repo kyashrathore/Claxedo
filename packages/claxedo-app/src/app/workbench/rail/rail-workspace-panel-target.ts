@@ -67,7 +67,7 @@ export function useRailWorkspacePanelTarget(input: {
   const focusedSplitPaneId = () => input.state.wb.state.focusedPaneId ?? visiblePanes()[0]?.id
   const focusedPanelTarget = () => {
     const paneId = focusedSplitPaneId()
-    if (!paneId) return
+    if (!paneId) return undefined
     return workspacePanelTargetForPane(paneId)
   }
   const focusedSurfaceWorkspaceToolsBlocked = () => {

@@ -11,10 +11,14 @@ export function withDir<Event extends CompatEvent>(directory: string, payload: E
   return { directory, payload }
 }
 
-export function normalizeCompatEventWithDiagnostics<Event extends CompatEvent>(event: Event): NormalizeCompatEventResult<Event> {
+export function normalizeCompatEventWithDiagnostics<Event extends CompatEvent>(event: Event): NormalizeCompatEventResult<Event>
+// `normalizeValue` rewrites only the leaves a structured consumer cannot carry
+// (bigint, function, symbol, cycles), so the envelope keeps the shape the
+// overload promises; the implementation is typed at the boundary it works on.
+export function normalizeCompatEventWithDiagnostics(event: CompatEvent): { event: unknown; issues: string[] } {
   const result = normalizeValue(event, new WeakSet())
   return {
-    event: result.value as Event,
+    event: result.value,
     issues: [...new Set(result.issues)],
   }
 }
@@ -47,7 +51,8 @@ function normalizeValue(value: unknown, seen: WeakSet<object>): NormalizeValueRe
     }
   }
 
-  const entries: NormalizedObjectEntry[] = Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+  const rows: Array<[string, unknown]> = Object.entries(value)
+  const entries: NormalizedObjectEntry[] = rows.map(([key, item]) => {
     const normalized = normalizeValue(item, seen)
     return normalized.value === undefined
       ? { key, omit: true, issues: normalized.issues }

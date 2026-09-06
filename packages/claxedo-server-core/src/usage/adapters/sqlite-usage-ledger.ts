@@ -3,6 +3,7 @@ import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db/index"
 import {
   assertTurnUsageRevision,
+  readTurnUsageQuality,
   type TurnUsageQuality,
   type TurnUsageRevision,
   type UsageRevisionReader,
@@ -71,8 +72,7 @@ function values(fact: TurnUsageRevision, hash: string): typeof ClaxedoUsageTurnR
 }
 
 function quality(input: string): TurnUsageQuality {
-  const parsed = JSON.parse(input) as TurnUsageQuality
-  return parsed
+  return readTurnUsageQuality(JSON.parse(input))
 }
 
 function fact(row: UsageRow): TurnUsageRevision {
@@ -84,9 +84,9 @@ function fact(row: UsageRow): TurnUsageRevision {
     revision: row.revision,
     observedAt: row.observed_at,
     ...(row.completed_at === null ? {} : { completedAt: row.completed_at }),
-    settlement: row.settlement as TurnUsageRevision["settlement"],
-    status: row.status as TurnUsageRevision["status"],
-    location: row.location as TurnUsageRevision["location"],
+    settlement: row.settlement,
+    status: row.status,
+    location: row.location,
     harness: row.harness,
     providerId: row.provider_id,
     modelId: row.model_id,

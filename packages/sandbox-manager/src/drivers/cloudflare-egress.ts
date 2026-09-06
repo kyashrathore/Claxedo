@@ -17,6 +17,8 @@ function b64urlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }
 
+import { record } from "../json"
+
 function b64urlDecode(input: string): Uint8Array {
   const padded = input.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (input.length % 4)) % 4)
   const binary = atob(padded)
@@ -82,23 +84,26 @@ export async function verifyEgressToken(
   signingSecret: string,
   now: () => number = Date.now,
 ): Promise<EgressTokenClaims | null> {
-  const parts = token.split(".")
-  if (parts.length !== 3) return null
-  const [header, payload, sig] = parts as [string, string, string]
+  const [header, payload, sig, ...extra] = token.split(".")
+  if (!header || !payload || !sig || extra.length > 0) return null
   const key = await hmacKey(signingSecret)
   const expected = b64urlEncode(
     new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${header}.${payload}`))),
   )
   if (!timingSafeEqual(sig, expected)) return null
-  let claims: EgressTokenClaims
+  let decoded: unknown
   try {
-    claims = JSON.parse(new TextDecoder().decode(b64urlDecode(payload))) as EgressTokenClaims
+    decoded = JSON.parse(new TextDecoder().decode(b64urlDecode(payload)))
   } catch {
     return null
   }
-  if (typeof claims.sub !== "string" || !Array.isArray(claims.hosts) || typeof claims.exp !== "number") return null
-  if (claims.exp <= Math.floor(now() / 1000)) return null
-  return claims
+  const claims = record(decoded)
+  const sub = claims?.sub
+  const hosts = claims?.hosts
+  const exp = claims?.exp
+  if (typeof sub !== "string" || !Array.isArray(hosts) || typeof exp !== "number") return null
+  if (exp <= Math.floor(now() / 1000)) return null
+  return { sub, hosts: hosts.filter((host): host is string => typeof host === "string"), exp }
 }
 
 /** How the sandbox names its egress target: header carries the absolute upstream URL. */

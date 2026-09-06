@@ -94,7 +94,7 @@ export const DialogManageModels: Component = () => {
             <span>{i.name}</span>
             <div onClick={(e) => e.stopPropagation()}>
               <Switch
-                checked={!!local.model.visible({ modelID: i.id, providerID: i.provider.id })}
+                checked={local.model.visible({ modelID: i.id, providerID: i.provider.id })}
                 onChange={(checked) => {
                   local.model.setVisibility({ modelID: i.id, providerID: i.provider.id }, checked)
                 }}

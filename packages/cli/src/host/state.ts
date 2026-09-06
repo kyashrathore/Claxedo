@@ -1,4 +1,3 @@
-import fs from "node:fs/promises"
 import path from "node:path"
 import { config } from "../config"
 import { number, object, readJsonFile, text, writePrivateJson } from "../json"
@@ -29,7 +28,7 @@ function hostRecord(input: unknown): HostRecord | undefined {
   const displayName = text(row.displayName)
   const controlPlaneUrl = text(row.controlPlaneUrl)
   const appUrl = text(row.appUrl)
-  if (!workspaceId || !hostId || !directory || !displayName || !controlPlaneUrl || !appUrl) return
+  if (!workspaceId || !hostId || !directory || !displayName || !controlPlaneUrl || !appUrl) return undefined
   return {
     workspaceId,
     hostId,
@@ -66,11 +65,12 @@ export async function upsertHostRecord(record: HostRecord) {
 export async function removeHostRecord(input: { workspaceId?: string; directory?: string }) {
   const state = await readHostState()
   await writeHostState(
-    state.hosts.filter((item) =>
-      (input.workspaceId && item.workspaceId === input.workspaceId) ||
-      (input.directory && item.directory === input.directory)
-        ? false
-        : true,
+    state.hosts.filter(
+      (item) =>
+        !(
+          (input.workspaceId && item.workspaceId === input.workspaceId) ||
+          (input.directory && item.directory === input.directory)
+        ),
     ),
   )
 }

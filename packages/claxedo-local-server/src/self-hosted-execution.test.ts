@@ -34,7 +34,7 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
 
     for (const file of walk(SERVER_SRC)) {
       for (const match of fs.readFileSync(file, "utf8").matchAll(/["'](@claxedo\/local-server(?:\/[\w./-]+)?)["']/g)) {
-        const specifier = match[1]!
+        const specifier = match[1]
         if (allowed.has(specifier)) continue
         offenders.push(`${path.relative(SERVER_SRC, file)} -> ${specifier}`)
       }

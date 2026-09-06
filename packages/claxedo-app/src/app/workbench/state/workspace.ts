@@ -134,8 +134,10 @@ export function createWorkspaceSlice(input: {
 
       // Free the color so it can be reused.
       if (state.workspace.worktreeColor[directory]) {
-        // as-any: Solid store uses undefined here to clear an indexed string entry.
-        setState("workspace", "worktreeColor", directory, undefined as unknown as string)
+        // Solid clears an indexed entry by writing `undefined`; the store path
+        // signature says `string`, so the value is typed where it is written.
+        const cleared: string | undefined = undefined
+        setState("workspace", "worktreeColor", { [directory]: cleared })
       }
     })
   }

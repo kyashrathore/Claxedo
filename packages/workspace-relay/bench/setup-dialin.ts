@@ -48,7 +48,7 @@ const BUNDLE_PATH = join(REPORTS_DIR, "dialin-agent.bundle.cjs")
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
-  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith("--") ? process.argv[i + 1] : fallback
+  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith("--") ? process.argv[i + 1] : fallback
 }
 
 function flag(name: string) {
@@ -149,7 +149,7 @@ async function main() {
   await sandbox.process.executeSessionCommand(sessionId, {
     command: `bash -lc '${startCmd}'`,
     runAsync: true,
-  } as any)
+  })
 
   // 4. Poll the agent log for the tunnel `open` event (the runtime successfully
   //    registered its inbound tunnel with the relay).
@@ -159,7 +159,7 @@ async function main() {
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 1500))
     const tail = await sandbox.process.executeCommand(`bash -lc 'cat /tmp/dialin.log 2>/dev/null || true'`)
-    lastLog = String((tail as any).result ?? (tail as any).stdout ?? "")
+    lastLog = tail.result
     if (/"type":"open"/.test(lastLog)) {
       registered = true
       break

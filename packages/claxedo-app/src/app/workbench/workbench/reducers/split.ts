@@ -1,4 +1,4 @@
-import type { Edge, Pane, SplitNode, WorkbenchState } from "../types"
+import type { Edge, MovePaneTarget, Pane, SplitNode, WorkbenchState } from "../types"
 import {
   appendLeafAtRoot,
   makeSplitTree,
@@ -158,7 +158,7 @@ export function move(
   state: WorkbenchState,
   contentId: string,
   fromPaneId: string,
-  toPaneId: string | "new",
+  toPaneId: MovePaneTarget,
 ): WorkbenchState {
   const fromIdx = state.panes.findIndex((p) => p.id === fromPaneId)
   if (fromIdx === -1) return state

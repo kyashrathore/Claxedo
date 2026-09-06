@@ -189,11 +189,13 @@ export function sandboxDriverAuth<T extends SandboxDriverID>(
   id: T,
   env: SandboxDriverEnv = process.env,
 ): SandboxDriverAuth[T] | undefined {
-  const configured = sandboxDriverAuthValues(cfg, id, env)
-  if (id !== "docker" || !configured) return configured
-  const image = (configured as NonNullable<SandboxDriverAuth["docker"]>).image
-    ?? defaultSandboxImage(workspaceRuntimeVersion(), undefined, env)
-  return { image } as SandboxDriverAuth[T]
+  if (id === "docker") {
+    const configured = sandboxDriverAuthValues(cfg, "docker", env)
+    if (!configured) return undefined
+    const image = configured.image ?? defaultSandboxImage(workspaceRuntimeVersion(), undefined, env)
+    return { image } as SandboxDriverAuth[T]
+  }
+  return sandboxDriverAuthValues(cfg, id, env)
 }
 
 export function hasSandboxDriverAuth(

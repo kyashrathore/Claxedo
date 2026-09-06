@@ -1,8 +1,11 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
+import type { McpServer } from "@agentclientprotocol/sdk"
+import { type WithInternals } from "../../test-utils/class-internals"
 import { committedStartTurn, fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
+import type { AgentRuntimeTurnStartInput } from "../shared/runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
+import { ACPProcess } from "./process"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 import { generateAITitle } from "./title"
 import type { CompatEvent } from "../../compat-events"
@@ -10,16 +13,77 @@ import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 
+/**
+ * Drives the adapter's *protected* surface on a real instance.
+ *
+ * `currentMcp`, `processKey` and `make` are `protected`, not `private`, so a
+ * subclass reaches them directly. Exposing exactly those three keeps their
+ * types the adapter's own: a test that mis-describes one now fails to compile,
+ * where a caller-chosen internals cast accepted whatever the test invented.
+ */
+class ProtectedAcpAdapter extends AcpHarnessAdapter {
+  seedMcp(servers: McpServer[]) {
+    this.currentMcp = servers
+  }
+
+  keyFor(directory: string) {
+    return this.processKey(directory)
+  }
+
+  spawn(directory: string, role: "harness" | "probe") {
+    return this.make(directory, role)
+  }
+}
+
+/** A transport that connects to nothing: enough to construct a live `ACPProcess`. */
+function inertTransport() {
+  return {
+    kind: "stdio" as const,
+    stream: { readable: new ReadableStream(), writable: new WritableStream() },
+    metadata: {},
+    pid: 1,
+    alive: true,
+    dispose() {},
+  }
+}
+
+/**
+ * A live process whose session sync rejects — the case `updateSessionConfig`
+ * must roll back. Subclassing the real `ACPProcess` keeps `alive` and the rest
+ * of the surface genuine; only the one call under test is replaced.
+ */
+class SyncRejectingProcess extends ACPProcess {
+  override async syncSession(): Promise<never> {
+    throw new Error("model rejected")
+  }
+}
+
+/** Binds every session to one caller-supplied process, bypassing the spawn path. */
+class BoundProcessAdapter extends AcpHarnessAdapter {
+  bound: ACPProcess | null = null
+
+  protected override entryForSession() {
+    if (!this.bound) return undefined
+    return {
+      key: "acp:test",
+      directory: path.resolve("/work"),
+      proc: this.bound,
+      init: null,
+      sessionIds: new Set<string>(),
+    }
+  }
+}
+
 function adapter() {
   const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
     store: {
       listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
       appendEvent: (input: unknown) => void
     }
-    sessions: Map<string, { proc: { alive: boolean; pendingPermissions: Map<string, unknown>; respondPermission: (id: string, response: unknown) => void } }>
+    processes: Map<string, { proc: { alive: boolean; pendingPermissions: Map<string, unknown>; respondPermission: (id: string, response: unknown) => void } }>
   }>
-  item.sessions = new Map()
-  Object.assign(item, { permissionOwners: new Map(), processes: item.sessions })
+  item.processes = new Map()
+  Object.assign(item, { permissionOwners: new Map() })
   return item
 }
 
@@ -46,7 +110,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     }
     const selected: unknown[] = []
-    item.sessions.set("session-1", {
+    item.processes.set("session-1", {
       proc: {
         alive: true,
         pendingPermissions: new Map([
@@ -75,7 +139,7 @@ describe("AcpHarnessAdapter permissions", () => {
       appendEvent() {},
     }
     const selected: unknown[] = []
-    item.sessions.set("session-1", {
+    item.processes.set("session-1", {
       proc: {
         alive: true,
         pendingPermissions: new Map([
@@ -110,14 +174,14 @@ describe("AcpHarnessAdapter permissions", () => {
       },
       markRecovering() {},
     } as typeof item.store
-    item.sessions.set("session-1", {
+    item.processes.set("session-1", {
       proc: {
         alive: true,
         pendingPermissions: new Map(),
         respondPermission() {},
       },
     })
-    item.sessions.set("replacement", {
+    item.processes.set("replacement", {
       proc: {
         alive: true,
         pendingPermissions: new Map([["perm-1", { options: [] }]]),
@@ -138,14 +202,14 @@ describe("AcpHarnessAdapter permissions", () => {
       },
       appendEvent() {},
     }
-    item.sessions.set("session-1", {
+    item.processes.set("session-1", {
       proc: {
         alive: true,
         pendingPermissions: new Map(),
         respondPermission() {},
       },
     })
-    item.sessions.set("replacement", {
+    item.processes.set("replacement", {
       proc: {
         alive: true,
         pendingPermissions: new Map([
@@ -258,7 +322,7 @@ describe("AcpHarnessAdapter runtime health isolation", () => {
 
 describe("AcpHarnessAdapter active turn cleanup", () => {
   test("process keys are opaque fingerprints without raw launch secrets", () => {
-    const adapter = new AcpHarnessAdapter({
+    const adapter = new ProtectedAcpAdapter({
       connection: {
         kind: "process",
         command: "fake-acp",
@@ -268,18 +332,14 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       harness: "codex",
       store: {} as AcpRuntimeStore,
     })
-    const item = internalsOf<{
-      currentMcp: unknown[]
-      processKey: (directory: string) => string
-    }>(adapter)
-    item.currentMcp = [{
+    adapter.seedMcp([{
       name: "private-mcp",
       command: "node",
       args: ["mcp-secret"],
-      env: { MCP_TOKEN: "mcp-env-secret" },
-    }]
+      env: [{ name: "MCP_TOKEN", value: "mcp-env-secret" }],
+    }])
 
-    const key = item.processKey(path.resolve("/work"))
+    const key = adapter.keyFor(path.resolve("/work"))
 
     expect(key.startsWith("acp:")).toBe(true)
     expect(key).not.toContain("arg-secret")
@@ -558,7 +618,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       alive: true,
       dispose() {},
     })
-    const adapter = new AcpHarnessAdapter({
+    const adapter = new ProtectedAcpAdapter({
       connection: {
         kind: "process",
         command: "/safe/bin/openclaw",
@@ -570,30 +630,21 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       createTransport,
       processObserver,
     })
-    const item = internalsOf<{
-      currentMcp: Array<{
-        name: string
-        command: string
-        args: string[]
-        env: Array<{ name: string; value: string }>
-      }>
-      make: (directory: string, role: "harness" | "probe") => { dispose(): void }
-    }>(adapter)
-    item.currentMcp = [{
+    adapter.seedMcp([{
       name: "safe-mcp",
       command: "node",
       args: [sentinel],
       env: [{ name: "TOKEN", value: sentinel }],
-    }]
+    }])
 
-    const harness = item.make(path.resolve("/work"), "harness")
-    const probe = item.make(path.resolve("/work"), "probe")
+    const harness = adapter.spawn(path.resolve("/work"), "harness")
+    const probe = adapter.spawn(path.resolve("/work"), "probe")
 
     expect(descriptors.map((descriptor) => [descriptor.role, descriptor.pid, descriptor.parentOwnerId])).toEqual([
       ["harness", 456, undefined],
-      ["mcp", undefined, descriptors[0]!.ownerId],
+      ["mcp", undefined, descriptors[0].ownerId],
       ["probe", 456, undefined],
-      ["mcp", undefined, descriptors[2]!.ownerId],
+      ["mcp", undefined, descriptors[2].ownerId],
     ])
     expect(JSON.stringify(descriptors)).not.toContain(sentinel)
     harness.dispose()
@@ -610,20 +661,23 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       variant: "medium",
       agent: "build",
     })
-    const item = new AcpHarnessAdapter({ connection: { kind: "process", command: "example-acp" }, harness: "example", store })
+    const item = new BoundProcessAdapter({ connection: { kind: "process", command: "example-acp" }, harness: "example", store })
     item.setModel("gpt-5.5")
-    internalsOf<{
-      entryForSession: () => { proc: { alive: boolean; syncSession: () => Promise<void> } }
-    }>(item).entryForSession = () => ({
-      proc: {
-        alive: true,
-        async syncSession() { throw new Error("model rejected") },
-      },
-    })
+    item.bound = new SyncRejectingProcess(
+      path.resolve("/work"),
+      "example-acp",
+      [],
+      "gpt-5.5",
+      () => [],
+      () => {},
+      inertTransport,
+      () => ({}),
+    )
 
     await expect(item.updateSessionConfig(executionBinding("s1", path.resolve("/work")), { variant: "high" }))
       .rejects.toThrow("model rejected")
     expect(store.getSessionConfig("s1")?.variant).toBe("medium")
+    item.bound.dispose()
     item.dispose()
   })
 
@@ -772,7 +826,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
+        startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
@@ -865,7 +919,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
+        startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
@@ -951,13 +1005,13 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
+        startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
       options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
-      sessions: Map<string, { directory: string; proc: unknown; init: null }>
+      processes: Map<string, { directory: string; proc: unknown; init: null }>
       probe: null
       currentMcp: unknown[]
       currentEnv: Record<string, string>
@@ -980,7 +1034,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const calls: string[] = []
     item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
-    item.sessions = new Map()
+    item.processes = new Map()
     item.probe = null
     item.currentMcp = []
     item.currentEnv = {}
@@ -1162,14 +1216,14 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
-      sessions: Map<string, unknown>
+      processes: Map<string, unknown>
       probe: null
       getOrSpawnProbe: () => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
       boot: () => Promise<string>
     }>
     item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "openclaw-probe" }
     item.turnLifecycle = createSessionTurnLifecycle()
-    item.sessions = new Map()
+    item.processes = new Map()
     item.probe = null
     item.getOrSpawnProbe = async () => ({ alive: true, cachedConfigOptions: null })
     item.boot = async () => "probe-session"

@@ -89,7 +89,7 @@ describe("session perf", () => {
     h.perf.openPhase("ses_a", "messages-ready")
     h.perf.openStart("ses_a", "rail")
     expect(h.perf.summary()).toHaveLength(3)
-    expect(h.perf.summary()[1]!.phases).toEqual({ "messages-ready": 0 })
+    expect(h.perf.summary()[1].phases).toEqual({ "messages-ready": 0 })
   })
 
   test("returning to an abandoned open starts a fresh measurement", () => {
@@ -174,7 +174,7 @@ describe("session perf", () => {
       perf.openStart("ses_shared", "route")
       perf.openPhase("ses_shared", "messages-ready")
       expect(perf.summary()[0]).toMatchObject({ sessionId: "ses_shared", from: "route" })
-      expect(perf.summary()[0]!.previousSessionId).toBeUndefined()
+      expect(perf.summary()[0].previousSessionId).toBeUndefined()
       expect(perf.events()).toHaveLength(2)
     } finally {
       perf.clear()

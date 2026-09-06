@@ -57,7 +57,7 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
     "ref",
   ])
 
-  const [internal, setInternal] = createSignal<string | null>(local.defaultValue ?? null)
+  const [internal, setInternal] = createSignal(local.defaultValue ?? null)
 
   const selected = createMemo(() => (isControlled() ? (local.value ?? null) : internal()))
 
@@ -88,16 +88,17 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
 
   const ctx: SegmentedControlContextValue = {
     selected,
-    groupDisabled: () => !!local.disabled,
+    groupDisabled: () => local.disabled,
     select,
     clearIfAllowed,
     focusNext,
   }
 
-  const assignRef = (el: HTMLDivElement | undefined) => {
+  const assignRef = (el: HTMLDivElement) => {
+    // A component `ref` reaches the component as a callback; the `ref={variable}` form is
+    // resolved by Solid's compiler before it gets here, so there is no other shape to handle.
     const r = local.ref
-    if (typeof r === "function") (r as (el: HTMLDivElement | undefined) => void)(el)
-    else if (r != null && typeof r === "object" && "value" in r) (r as { value: HTMLDivElement | undefined }).value = el
+    if (typeof r === "function") r(el)
   }
 
   return (
@@ -128,9 +129,13 @@ export type SegmentedControlItemV2Props = Omit<ComponentProps<"button">, "type" 
 
 function invokeButtonHandler<E extends Event>(
   handler: JSX.EventHandlerUnion<HTMLButtonElement, E> | undefined,
-  e: E & { currentTarget: HTMLButtonElement },
+  e: Parameters<JSX.EventHandler<HTMLButtonElement, E>>[0],
 ) {
-  if (typeof handler === "function") (handler as (ev: typeof e) => void)(e)
+  if (!handler) return
+  // Solid accepts a plain handler or its bound `[handler, data]` form, which is typed as an
+  // interface with numeric keys rather than a tuple. Both are forwarded.
+  if (typeof handler === "function") handler(e)
+  else handler[0](handler[1], e)
 }
 
 export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
@@ -147,7 +152,7 @@ export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
   const ctx = useSegmentedControlContext()
 
   const pressed = createMemo(() => ctx.selected() === local.value)
-  const disabled = createMemo(() => ctx.groupDisabled() || !!local.disabled)
+  const disabled = createMemo(() => ctx.groupDisabled() || local.disabled)
 
   const onClick: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (e) => {
     invokeButtonHandler(local.onClick, e)

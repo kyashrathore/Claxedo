@@ -28,8 +28,7 @@ import {
 import { workerTelemetry } from "../platform/auth/worker-telemetry"
 import { workerCredentials } from "../credentials/worker/index"
 import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
-import type { ProjectionStore } from "./projection-store"
-import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
+import { UNUSED_DURABLE_SESSION_LOG, UNUSED_PROJECTION_STORE } from "./unavailable-session-stores"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import type { RuntimeSessionAuthorityOptions } from "../routes/runtime-session-authority"
@@ -162,7 +161,7 @@ function sandboxManager(
 ) {
   const selectedDriver = clean(env.CLAXEDO_SANDBOX_DRIVER)
   if (!sandbox) {
-    if (!selectedDriver) return
+    if (!selectedDriver) return undefined
     throw new HostedWorkerCompositionError(
       "hosted_capability_unavailable",
       "The selected hosted adapter does not provide the sandbox driver and durable lease store required by CLAXEDO_SANDBOX_DRIVER",
@@ -207,7 +206,7 @@ function sandboxManager(
  */
 export function hostedDeviceAuthProvider(env: HostedWorkerEnv): HostedDeviceAuthProvider | undefined {
   const issuer = clean(env.CLAXEDO_DEVICE_LOGIN_ISSUER)
-  if (!issuer) return
+  if (!issuer) return undefined
   const base = issuer.replace(/\/+$/, "")
   return {
     issuer,
@@ -220,18 +219,6 @@ export function hostedDeviceAuthProvider(env: HostedWorkerEnv): HostedDeviceAuth
       ? { issuerToken: clean(env.CLAXEDO_DEVICE_LOGIN_ISSUER_TOKEN) }
       : {}),
   }
-}
-
-// Session projection / durable log are not part of the hosted Worker surface.
-// Provide fail-closed stubs so a stray call is loud rather than silently wrong.
-function unusedStore<T extends object>(label: string): T {
-  return new Proxy({} as T, {
-    get() {
-      return () => {
-        throw new Error(`${label} is not available in the hosted Worker control plane`)
-      }
-    },
-  })
 }
 
 export type HostedControlPlane = {
@@ -365,8 +352,8 @@ export function composeProviderNeutralHostedControlPlane(
     telemetry,
   })
   const services: ControlPlaneServices = {
-    projectionStore: unusedStore<ProjectionStore>("Session projection store"),
-    durableSessionLog: unusedStore<DurableSessionLog>("Durable session log"),
+    projectionStore: UNUSED_PROJECTION_STORE,
+    durableSessionLog: UNUSED_DURABLE_SESSION_LOG,
     auth: bindings.auth,
     credentials: workerCredentials(
       bindings.credentialsNamespace ? { ...env, CLAXEDO_CREDENTIALS: bindings.credentialsNamespace } : env,
@@ -379,9 +366,7 @@ export function composeProviderNeutralHostedControlPlane(
       runtimeAccessTokenSigner: runtimeAccessSigner,
       hostTunnelTokenSigner: hostTunnelSigner,
     },
-    sandbox: {
-      ...(manager ? { sandboxManager: manager } : {}),
-    },
+    sandbox: (manager ? { sandboxManager: manager } : {}),
     telemetry,
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,

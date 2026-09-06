@@ -25,16 +25,31 @@ export function createDocumentPickerController(input: {
   const [documents, setDocuments] = createSignal<ComposerDocumentOption[]>([])
   const [loading, setLoading] = createSignal(false)
   const [listError, setListError] = createSignal<unknown>()
+  /**
+   * The notice line for a failed document list. The signal holds whatever the
+   * loader rejected with, so a non-Error is serialized rather than stringified —
+   * `String({})` would put a bare "[object Object]" in front of the user.
+   */
+  const describeListError = (error: unknown) => {
+    if (error instanceof Error) return error.message
+    if (typeof error === "string") return error
+    try {
+      return JSON.stringify(error) ?? "unknown error"
+    } catch {
+      return "unknown error"
+    }
+  }
   let listGeneration = 0
   const notice = () => {
     const selected = selectionNotice()
     if (selected) return selected
-    if (!open()) return
+    if (!open()) return undefined
     if (loading()) return "Loading documents…"
     const error = listError()
     if (error) {
-      return `Documents unavailable: ${error instanceof Error ? error.message : String(error)}`
+      return `Documents unavailable: ${describeListError(error)}`
     }
+    return undefined
   }
   return {
     open,

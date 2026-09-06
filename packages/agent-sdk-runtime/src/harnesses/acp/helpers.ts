@@ -1,5 +1,6 @@
 import type { McpServer, Usage } from "@agentclientprotocol/sdk"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import { Log } from "../../log"
 import type { ACPTransportEnv } from "./transport"
 
@@ -27,9 +28,8 @@ function envRecord(input: unknown): ACPTransportEnv {
 }
 
 function stringRecord(input: unknown): Record<string, string> {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return {}
   return Object.fromEntries(
-    Object.entries(input as Record<string, unknown>)
+    Object.entries(asRecord(input) ?? {})
       .filter((item): item is [string, string] => typeof item[1] === "string"),
   )
 }
@@ -77,20 +77,20 @@ export function initializeTimeoutMs() {
  * matching the moment an agent starts populating `data`.
  */
 export function errorCode(err: unknown): number | undefined {
-  const obj = err && typeof err === "object" ? (err as Record<string, unknown>) : undefined
+  const obj = asRecord(err)
   return typeof obj?.code === "number" ? obj.code : undefined
 }
 
 /** Extract a human-readable message from any error value (Error, JSON-RPC error object, or unknown). */
 export function errorMessage(err: unknown): string {
-  const obj = err && typeof err === "object" ? (err as Record<string, unknown>) : undefined
+  const obj = asRecord(err)
   // JSON-RPC error object: { code, message, data } — prefer the detail in `data`
   // over the generic top-level message. This MUST run before the `instanceof
   // Error` shortcut below: the ACP SDK's RequestError extends Error AND carries
   // `data`, so an early return on `.message` collapsed every agent-side failure
   // to "Internal error" and made this branch dead code for the only errors it
   // was written for. Agents may report the useful failure in either field.
-  const data = obj?.data && typeof obj.data === "object" ? (obj.data as Record<string, unknown>) : undefined
+  const data = asRecord(obj?.data)
   const detail = [data?.message, data?.details].find((v): v is string => typeof v === "string" && v.length > 0)
   if (detail) return typeof obj?.message === "string" && obj.message !== detail ? `${obj.message}: ${detail}` : detail
   if (err instanceof Error) return err.message

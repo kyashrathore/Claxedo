@@ -21,6 +21,8 @@
  */
 
 import type { HostedOperationName } from "./account-port"
+import { asRecord } from "@/lib/record"
+import { readArray } from "@/lib/record"
 
 export type { HostedOperationName }
 
@@ -49,8 +51,9 @@ export type HostedOperationSpec<T = unknown> = {
 }
 
 function object(raw: unknown): DecodeResult<Record<string, unknown>> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, reason: "expected an object" }
-  return { ok: true, value: raw as Record<string, unknown> }
+  const value = asRecord(raw)
+  if (!value) return { ok: false, reason: "expected an object" }
+  return { ok: true, value }
 }
 
 /** Requires named fields to be present and non-empty strings. */
@@ -91,7 +94,12 @@ function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
   if (typeof shape.value.can_manage_shares !== "boolean") {
     return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
   }
-  for (const [index, team] of (shape.value.teams as unknown[]).entries()) {
+  // `withArrays` above is what proves these three are arrays; read them back
+  // through the same evidence rather than re-asserting it three times.
+  const teams = readArray(shape.value, "teams") ?? []
+  const participants = readArray(shape.value, "participants") ?? []
+  const grants = readArray(shape.value, "grants") ?? []
+  for (const [index, team] of teams.entries()) {
     const row = object(team)
     if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
     for (const field of ["team_id", "name", "is_shared"] as const) {
@@ -101,13 +109,13 @@ function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
       }
     }
   }
-  for (const [index, participant] of (shape.value.participants as unknown[]).entries()) {
+  for (const [index, participant] of participants.entries()) {
     const row = object(participant)
     if (!row.ok || typeof row.value.user_id !== "string") {
       return { ok: false, reason: `expected participants[${index}].user_id to be a string` }
     }
   }
-  for (const [index, grant] of (shape.value.grants as unknown[]).entries()) {
+  for (const [index, grant] of grants.entries()) {
     const row = object(grant)
     if (!row.ok || typeof row.value.grant_id !== "string") {
       return { ok: false, reason: `expected grants[${index}].grant_id to be a string` }
@@ -174,7 +182,7 @@ function statusResult(raw: unknown): DecodeResult<{ status: number; body?: unkno
   return { ok: true, value: { status, ...(Object.hasOwn(shape.value, "body") ? { body: shape.value.body } : {}) } }
 }
 
-export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec> = {
+export const HOSTED_OPERATIONS = {
   "account.mode": { safe: true, decode: object },
   "account.compatibility": { safe: true, decode: object },
   // Mints a CLI session token. A replayed exchange must not mint twice — and
@@ -323,10 +331,42 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "billing.portal": { safe: true, decode: object },
   "usage.get": { safe: true, decode: object },
   "usage.sync": { safe: true, decode: object },
-}
+} satisfies Record<HostedOperationName, HostedOperationSpec>
+
+/**
+ * What one operation's decoder actually proves about its result.
+ *
+ * The table used to be annotated `Record<HostedOperationName, HostedOperationSpec>`,
+ * and that annotation collapsed every row to `HostedOperationSpec<unknown>` at
+ * the point of declaration — the per-operation decoder type was thrown away
+ * before anyone could read it. `decodeHostedResult` then took a type parameter
+ * and cast to it, which let the CALLER name the result shape with nothing
+ * checking the claim. Reading the type back off the decoder that actually runs
+ * is the same fact, sourced from the code that establishes it.
+ */
+export type DecodedHostedResult<N extends HostedOperationName> =
+  (typeof HOSTED_OPERATIONS)[N]["decode"] extends (raw: unknown) => DecodeResult<infer T> ? T : never
+
+/**
+ * The same table, typed so that indexing it by a name keeps that row's decoded
+ * type instead of the union of all of them.
+ *
+ * A mapped type is required rather than merely nice: indexing the `satisfies`
+ * literal by a type parameter defers to `(typeof HOSTED_OPERATIONS)[N]`, whose
+ * apparent `decode` is the union of every decoder, so the call returns the
+ * union of every decoded type and nothing can assign that back to row `N`.
+ * Indexing a mapped type distributes instead. It is derived from the one table
+ * above, so the two cannot drift.
+ */
+const OPERATIONS: { [N in HostedOperationName]: HostedOperationSpec<DecodedHostedResult<N>> } = HOSTED_OPERATIONS
 
 export function hostedOperationNames(): HostedOperationName[] {
-  return Object.keys(HOSTED_OPERATIONS) as HostedOperationName[]
+  return Object.keys(HOSTED_OPERATIONS).filter(isHostedOperationName)
+}
+
+/** True for a name the operation table actually declares. */
+export function isHostedOperationName(value: string): value is HostedOperationName {
+  return Object.hasOwn(HOSTED_OPERATIONS, value)
 }
 
 /**
@@ -335,15 +375,15 @@ export function hostedOperationNames(): HostedOperationName[] {
  * The name in the message is the point. "expected a non-empty relayUrl" from an
  * unnamed decoder sends someone reading the wrong route.
  */
-export function decodeHostedResult<T = unknown>(name: HostedOperationName, raw: unknown): T {
-  const spec = HOSTED_OPERATIONS[name]
+export function decodeHostedResult<N extends HostedOperationName>(name: N, raw: unknown): DecodedHostedResult<N> {
+  const spec = OPERATIONS[name]
   if (!spec) throw new Error(`no hosted operation named "${name}"`)
   const decoded = spec.decode(raw)
   if (!decoded.ok) throw new Error(`hosted operation "${name}" returned an unexpected shape: ${decoded.reason}`)
-  return decoded.value as T
+  return decoded.value
 }
 
 /** Whether the renderer may retry this operation on its own. */
 export function isSafeOperation(name: HostedOperationName) {
-  return HOSTED_OPERATIONS[name]?.safe === true
+  return  HOSTED_OPERATIONS[name]?.safe
 }

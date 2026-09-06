@@ -38,19 +38,25 @@ export function openProcessWorkspaceTab(input: { tabs: readonly ReviewWorkspaceT
 }
 
 export function openContextWorkspaceTab(input: { tabs: readonly ReviewWorkspaceTab[]; sessionId: string }) {
+  // One tab value for both branches: a context tab holds nothing but these
+  // three fields, so re-pointing an existing one at a session and adding a new
+  // one produce the same tab — spreading the old one only widened its type.
+  const contextTab = {
+    id: CONTEXT_TAB_ID,
+    kind: "context",
+    sessionId: input.sessionId,
+  } satisfies ReviewWorkspaceTab
   const index = input.tabs.findIndex((tab) => tab.kind === "context")
   if (index === -1) {
     return {
-      tabs: [...input.tabs, { id: CONTEXT_TAB_ID, kind: "context", sessionId: input.sessionId } satisfies ReviewWorkspaceTab],
+      tabs: [...input.tabs, contextTab],
       activeTabId: CONTEXT_TAB_ID,
       added: true,
       contextIndex: undefined,
     }
   }
   return {
-    tabs: input.tabs.map((tab, tabIndex) =>
-      tabIndex === index ? { ...tab, sessionId: input.sessionId } as ReviewWorkspaceTab : tab
-    ),
+    tabs: input.tabs.map((tab, tabIndex) => (tabIndex === index ? contextTab : tab)),
     activeTabId: CONTEXT_TAB_ID,
     added: false,
     contextIndex: index,

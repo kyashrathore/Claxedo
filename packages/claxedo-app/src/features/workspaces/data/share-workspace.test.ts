@@ -105,7 +105,7 @@ describe("share workspace helpers", () => {
   test("assigns a workspace to this machine on the host-assignment route", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const capture = async (url: URL | RequestInfo, init?: RequestInit) => {
-      calls.push({ url: String(url), init })
+      calls.push({ url: requestUrl(url), init })
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" },
       })
@@ -121,7 +121,7 @@ describe("share workspace helpers", () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]?.url).toBe("https://control.example.test/api/workspace/ws_local/host-assignment")
     expect(calls[0]?.init?.method).toBe("POST")
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ displayName: "Main" })
+    expect(requestJson(calls[0]?.init)).toEqual({ displayName: "Main" })
   })
 
   test("omits displayName entirely rather than sending an empty one", async () => {
@@ -133,12 +133,12 @@ describe("share workspace helpers", () => {
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       request: async (url, init) => {
-        calls.push({ url: String(url), init })
+        calls.push({ url: requestUrl(url), init })
         return new Response("{}", { headers: { "Content-Type": "application/json" } })
       },
     })
 
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({})
+    expect(requestJson(calls[0]?.init)).toEqual({})
   })
 
   test("never sends a hostId — the machine identity is the server's to decide", async () => {
@@ -148,12 +148,12 @@ describe("share workspace helpers", () => {
       workspaceId: "ws_local",
       displayName: "Main",
       request: async (url, init) => {
-        calls.push({ url: String(url), init })
+        calls.push({ url: requestUrl(url), init })
         return new Response("{}", { headers: { "Content-Type": "application/json" } })
       },
     })
 
-    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
+    const body = requestJson(calls[0]?.init) as Record<string, unknown>
     expect(Object.keys(body)).toEqual(["displayName"])
     expect(body.hostId).toBeUndefined()
   })
@@ -180,7 +180,7 @@ describe("share workspace helpers", () => {
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       request: async (url, init) => {
-        calls.push({ url: String(url), init })
+        calls.push({ url: requestUrl(url), init })
         return new Response("{}", { headers: { "Content-Type": "application/json" } })
       },
     })
@@ -189,3 +189,17 @@ describe("share workspace helpers", () => {
     expect(calls[0]?.init?.method).toBe("DELETE")
   })
 })
+
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

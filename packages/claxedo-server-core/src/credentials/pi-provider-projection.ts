@@ -2,16 +2,21 @@ import type { CredentialMetadata } from "./types"
 
 export const PI_LAUNCH_PROVIDERS = ["openai-codex", "anthropic", "openai"] as const
 
-const credentialProviders: Record<(typeof PI_LAUNCH_PROVIDERS)[number], readonly string[]> = {
+export type PiLaunchProvider = (typeof PI_LAUNCH_PROVIDERS)[number]
+
+/** Narrow an arbitrary provider id to one Pi can launch. */
+export function isPiLaunchProvider(providerID: string): providerID is PiLaunchProvider {
+  return PI_LAUNCH_PROVIDERS.some((provider) => provider === providerID)
+}
+
+const credentialProviders: Record<PiLaunchProvider, readonly string[]> = {
   "openai-codex": ["codex-app-server"],
   anthropic: ["anthropic"],
   openai: ["openai"],
 }
 
 export function piCredentialProviderIDs(providerID: string): readonly string[] {
-  return Object.hasOwn(credentialProviders, providerID)
-    ? credentialProviders[providerID as keyof typeof credentialProviders]
-    : []
+  return isPiLaunchProvider(providerID) ? credentialProviders[providerID] : []
 }
 
 export function piCredentialConnected(providerID: string, credential: CredentialMetadata | undefined) {

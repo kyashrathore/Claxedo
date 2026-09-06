@@ -27,7 +27,7 @@ export function stageMarkdownCollections(root: HTMLElement, trace?: Trace) {
   root.dataset.markdownProgressive = "pending"
   const completeImmediately = () => {
     collections.forEach((entry) => {
-      while (entry.cursor < entry.children.length) entry.collection.appendChild(entry.children[entry.cursor++]!)
+      while (entry.cursor < entry.children.length) entry.collection.appendChild(entry.children[entry.cursor++])
     })
     root.dataset.markdownProgressive = "complete"
   }
@@ -41,7 +41,7 @@ export function stageMarkdownCollections(root: HTMLElement, trace?: Trace) {
     const started = performance.now()
     collections.forEach((entry) => {
       const end = Math.min(entry.children.length, entry.cursor + batchRows)
-      while (entry.cursor < end) entry.collection.appendChild(entry.children[entry.cursor++]!)
+      while (entry.cursor < end) entry.collection.appendChild(entry.children[entry.cursor++])
     })
     const pending = collections.some((entry) => entry.cursor < entry.children.length)
     if (batch++ === 0 || !pending) trace?.(`markdown.progressive.${pending ? "first" : "complete"}`, started)

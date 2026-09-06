@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
@@ -17,12 +18,12 @@ export function piAuthProjection(auth: Record<string, unknown>) {
     } catch {
       throw new Error("Invalid Pi Codex credential JSON")
     }
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new Error("Invalid Pi Codex credential object")
-    const tokens = value.tokens as Record<string, unknown> | undefined
-    const oauth = value.oauth as Record<string, unknown> | undefined
-    const access = tokens?.access_token ?? value.access ?? oauth?.access
-    const expires = value.expires ?? oauth?.expires
+    const row = asRecord(value)
+    if (!row) throw new Error("Invalid Pi Codex credential object")
+    const tokens = asRecord(row.tokens)
+    const oauth = asRecord(row.oauth)
+    const access = tokens?.access_token ?? row.access ?? oauth?.access
+    const expires = row.expires ?? oauth?.expires
     if (typeof access === "string" && access) {
       if (typeof expires === "number" && expires <= Date.now())
         throw new Error("Pi Codex credential expired; refresh the connected credential")

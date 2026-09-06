@@ -140,6 +140,7 @@ import {
 } from "../helpers/turn-oracle"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
 import { stampTestAuth } from "../playwright-global-setup"
+import { eventStream, lastEventId } from "../helpers/sse-route"
 import {
   assertSessionConfigPatchResponse,
   parseSessionConfigPatch,
@@ -165,10 +166,6 @@ const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
 
 type PipelineStep = "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready"
 
-// Bare row labels (`CLOUD_STARTUP_PIPELINE` in cloud-startup-view.tsx) — the
-// detail line no longer restates these as a `{label} before the composer
-// unlocks.` sentence (dev 8d1227e44), so the row text itself is what a spec
-// asserts against now.
 const STEP_LABEL: Record<Exclude<PipelineStep, "ready">, string> = {
   acquiring_sandbox: "Acquiring sandbox",
   cloning: "Cloning repository",
@@ -210,8 +207,6 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-// Switch the empty-draft composer's canonical environment chip to "cloud" and
-// prove the selected value is reflected by the trigger.
 async function selectCloudEnvironment(page: Page) {
   const trigger = page.locator('[data-slot="context-chip-environment"]').filter({ visible: true })
   await expect(trigger).toHaveCount(1, { timeout: 20_000 })
@@ -286,16 +281,6 @@ class Bus<T> {
   }
 }
 
-function lastEventId(route: Route) {
-  const value = Number(route.request().headers()["last-event-id"])
-  return Number.isFinite(value) && value > 0 ? value : 0
-}
-
-function eventStream<T>(events: Array<{ id: number; payload: T }>) {
-  if (events.length === 0) return ": heartbeat\n\n"
-  return events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event.payload)}\n\n`).join("")
-}
-
 async function seedCloudProject(page: Page, opts: { registerWorkspace: boolean }) {
   await page.addInitScript(
     (input: { dir: string; projectId: string; workspaceId: string; registerWorkspace: boolean }) => {
@@ -319,22 +304,12 @@ async function seedCloudProject(page: Page, opts: { registerWorkspace: boolean }
   )
 }
 
-/**
- * Installs the FULL cloud-workspace mock: bootstrap/project inventory (with or without
- * the workspace pre-registered as `kind: "cloud"`), workspace create, resolve, mint
- * (connection), the central `provision` SSE stream, and the `/workspaces/:id/...`
- * runtime proxy lane (session/prompt/message/config/capabilities + the supporting
- * agent/provider/mcp/lsp/vcs/command/permission/question/todo/event endpoints) needed to
- * complete one full turn once the workspace is ready.
- */
 async function installCloudRuntimeMock(
   page: Page,
   opts: {
-    /** Whether the project inventory already carries the workspace (kind: cloud). */
     registerWorkspace: boolean
     /** Initial `/api/workspace/resolve` step. Ignored if the workspace isn't registered yet. */
     initialStep?: PipelineStep
-    /** Auto-advance acquiring_sandbox -> cloning -> starting_runtime -> waiting_health -> ready over real ticks. */
     autoAdvance?: boolean
   },
 ) {
@@ -415,14 +390,12 @@ async function installCloudRuntimeMock(
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
-    // ---- Central Claxedo event bus (pty/provision/lifecycle events) ----
     if (url.pathname === "/api/wr/events") {
       const batch = await provisionBus.drain(4000, lastEventId(route))
       await route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       return
     }
 
-    // ---- Bootstrap / project inventory ----
     if (url.pathname === "/api/claxedo/bootstrap") {
       return json(route, {
         healthy: true,
@@ -558,7 +531,6 @@ async function installCloudRuntimeMock(
       return json(route, { workspaces: [] })
     }
 
-    // ---- Workspace create (submit-time first-ever sandbox) ----
     if (url.pathname === "/api/workspace/create" && method === "POST") {
       requests.workspaceCreateCount += 1
       workspaceRegistered = true
@@ -566,7 +538,6 @@ async function installCloudRuntimeMock(
       return json(route, { workspaceId: WORKSPACE_ID, directory: WORKSPACE_ID, projectId: PROJECT_ID, provider: "modal", status: "acquiring_sandbox" })
     }
 
-    // ---- Workspace resolve (provisioning progress, polled repeatedly) ----
     if (isWorkspaceResolvePath(url.pathname) && url.searchParams.get("workspaceId") === WORKSPACE_ID) {
       startAutoAdvance()
       return json(route, {
@@ -578,7 +549,6 @@ async function installCloudRuntimeMock(
       })
     }
 
-    // ---- Connection mint (provisioning until currentStep === "ready") ----
     if (url.pathname === `/api/workspace/${WORKSPACE_ID}/connection` || url.pathname === `/api/workspace/${WORKSPACE_ID}/connection/refresh`) {
       if (currentStep !== "ready") return json(route, { status: "provisioning", retryAfterMs: 500 })
       return json(route, {
@@ -596,7 +566,6 @@ async function installCloudRuntimeMock(
       })
     }
 
-    // ---- Workspace runtime lane, proxied through /workspaces/:id/... ----
     const prefix = `/workspaces/${WORKSPACE_ID}`
     if (url.pathname.startsWith(prefix)) {
       const runtimePath = url.pathname.slice(prefix.length) || "/"
@@ -745,12 +714,9 @@ test.describe("core cloud provisioning @core", () => {
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 100_000 })
     await page.waitForLoadState("domcontentloaded")
 
-    // Behavior 1: the 4-step pipeline renders instead of the session surface.
     await expect(page.locator('[data-component="cloud-startup-view"]')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
 
-    // Behavior 2: once the runtime is ready, the pipeline disappears and the
-    // draft composer becomes reachable/editable.
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0, { timeout: 20_000 })
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
@@ -761,9 +727,6 @@ test.describe("core cloud provisioning @core", () => {
     await selectCloudAgentConnection(page)
     await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
 
-    // Behavior 3/4: a send dispatches through the workspace-scoped relay lane
-    // and the oracle proves the reply renders; exactly one user + one
-    // assistant row.
     const promptText = "core cloud provisioning first turn"
     await input.click()
     await input.fill(promptText)
@@ -813,12 +776,6 @@ test.describe("core cloud provisioning @core", () => {
     await expectStepNotDone(viewAfterReload, STEP_LABEL.waiting_health)
   })
 
-  // `resolveCloudSessionDirectory`
-  // (src/features/session/composer/ui/submit-directory.ts) sets a
-  // `creationRejected` flag inside the `.catch()` and `return`s immediately
-  // afterward, so a rejected cloud-create fires exactly one toast instead of
-  // falling through to the second `!createdWorkspace?.workspaceId` toast. The
-  // toast-COUNT assertion below is that fix's regression guard.
   test(
     "cloud workspace create failure (request rejected) shows a toast, opens no pipeline, creates no session, and preserves composer text — behavior 6",
     async ({ page }) => {
@@ -866,11 +823,8 @@ test.describe("core cloud provisioning @core", () => {
       await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud workspace", { timeout: 10_000 })
       await expect(page.locator('[data-slot="toast-description"]')).toContainText("workspace creation blew up", { timeout: 10_000 })
 
-      // No pipeline overlay ever opens on this path.
       await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
-      // No session created.
       expect(mock.requests.createSessionCount).toBe(0)
-      // Composer text preserved exactly.
       await expect(input).toContainText(promptText)
     },
   )
@@ -1078,8 +1032,6 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await page.goto("/", { waitUntil: "domcontentloaded", timeout: 100_000 })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-      // The rail's "New Project" raises the create intent; the empty canvas's
-      // composer answers with its Project chip's "Create project…" panel.
       await page.getByRole("button", { name: "New Project", exact: true }).first().click()
       const form = page.locator('[data-slot="project-create-form"]')
       await expect(form).toBeVisible({ timeout: 20_000 })

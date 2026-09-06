@@ -22,15 +22,12 @@
  */
 
 import type { ApplyPolarStateArgs, ApplyPolarStateResult, BillingStore, OrgBillingStateWrite } from "./store-contract"
+import { asRecord } from "../platform/json/index"
 
 /** Subscription statuses that entitle (ADR 014 §3: past_due is grace-managed in entitlement.ts). */
 const ENTITLING_STATUSES = new Set(["active", "trialing", "past_due"])
 
 type Rec = Record<string, unknown>
-
-function rec(value: unknown): Rec | undefined {
-  return value && typeof value === "object" ? (value as Rec) : undefined
-}
 
 function str(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined
@@ -58,15 +55,15 @@ function epochMs(value: unknown): number | undefined {
 }
 
 function subscriptionOrgId(subscription: Rec): string | undefined {
-  return str(rec(subscription.metadata)?.org_id)
+  return str(asRecord(subscription.metadata)?.org_id)
 }
 
 function subscriptionCustomerId(subscription: Rec): string | undefined {
-  return str(field(subscription, "customer_id", "customerId")) ?? str(rec(subscription.customer)?.id)
+  return str(field(subscription, "customer_id", "customerId")) ?? str(asRecord(subscription.customer)?.id)
 }
 
 function subscriptionProductId(subscription: Rec): string | undefined {
-  return str(field(subscription, "product_id", "productId")) ?? str(rec(subscription.product)?.id)
+  return str(field(subscription, "product_id", "productId")) ?? str(asRecord(subscription.product)?.id)
 }
 
 function subscriptionModifiedAt(subscription: Rec): number | undefined {
@@ -141,15 +138,16 @@ export function customerStateToApplyArgs(
   // the whole snapshot when product filtering is unavailable so a production
   // configuration error cannot turn ignored subscriptions into downgrades.
   if (config.knownProductIds.size === 0 && !config.allowAllProductsWhenUnconfigured) return undefined
-  const customer = rec(state)
+  const customer = asRecord(state)
   const customerId = str(customer?.id)
   if (!customer || !customerId) return undefined
 
-  const subscriptions = (field(customer, "active_subscriptions", "activeSubscriptions") as unknown[] | undefined) ?? []
+  const subscriptionsField = field(customer, "active_subscriptions", "activeSubscriptions")
+  const subscriptions = Array.isArray(subscriptionsField) ? subscriptionsField : []
   const byOrg = new Map<string, OrgBillingStateWrite>()
   let sourceTs = epochMs(field(customer, "modified_at", "modifiedAt")) ?? 0
   for (const entry of subscriptions) {
-    const subscription = rec(entry)
+    const subscription = asRecord(entry)
     if (!subscription || !relevantProduct(subscription, config)) continue
     sourceTs = Math.max(sourceTs, subscriptionModifiedAt(subscription) ?? 0)
     const orgId = subscriptionOrgId(subscription)
@@ -183,7 +181,7 @@ export function subscriptionEventToApplyArgs(
   subscription: unknown,
   config: PolarProductConfig,
 ): ApplyPolarStateArgs | undefined {
-  const sub = rec(subscription)
+  const sub = asRecord(subscription)
   if (!sub || !relevantProduct(sub, config)) return undefined
   const customerId = subscriptionCustomerId(sub)
   const orgId = subscriptionOrgId(sub)

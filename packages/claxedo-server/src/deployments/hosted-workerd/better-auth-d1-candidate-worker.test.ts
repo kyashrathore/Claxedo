@@ -36,7 +36,7 @@ vi.mock("../../platform/auth/better-auth-native-clients", () => ({
   requireBetterAuthNativeClientClosure: vi.fn(),
 }))
 vi.mock("./core-worker.cf", () => ({
-  LiveSyncRoom: class LiveSyncRoom {},
+  LiveSyncRoom: class LiveSyncRoom { readonly stub = "live-sync-room" },
   createHostedCoreWorker: (compose: (env: unknown) => unknown) => ({
     fetch: async (request: Request, env: unknown, context: unknown) => {
       compose(env)

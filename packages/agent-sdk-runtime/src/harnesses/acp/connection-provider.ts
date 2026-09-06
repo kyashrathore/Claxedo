@@ -1,4 +1,4 @@
-import { decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtime-contract"
+import { asRecord, decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtime-contract"
 import { ConnectionProviderError, type ConnectionProvider, type HarnessConnectionCapabilities } from "../../connection-provider"
 import { AcpHarnessAdapter } from "."
 import { validateACPConnection, type ACPConnection } from "./transport"
@@ -32,8 +32,8 @@ export function createAcpConnectionProvider(): ConnectionProvider<AcpConnectionP
   return {
     providerKey: "acp",
     validateConfig(input) {
-      if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("config must be an object")
-      const config = input as Record<string, unknown>
+      const config = asRecord(input)
+      if (!config) throw new Error("config must be an object")
       const extra = Object.keys(config).find((key) => !["label", "connection", "modelSelection", "secretBindings"].includes(key))
       if (extra) throw new Error(`config cannot include ${extra}`)
       if (typeof config.label !== "string" || config.label.length === 0) throw new Error("label must be a non-empty string")
@@ -86,9 +86,9 @@ export function createAcpConnectionProvider(): ConnectionProvider<AcpConnectionP
 }
 
 function validateSecretBindings(input: unknown, connection: ACPConnection): AcpConnectionProviderConfig["secretBindings"] {
-  if (input === undefined) return
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("secretBindings must be an object")
-  const row = input as Record<string, unknown>
+  if (input === undefined) return undefined
+  const row = asRecord(input)
+  if (!row) throw new Error("secretBindings must be an object")
   const extra = Object.keys(row).find((key) => key !== "env" && key !== "headers")
   if (extra) throw new Error(`secretBindings cannot include ${extra}`)
   const env = secretBindingRecord(row.env, "secretBindings.env")
@@ -101,18 +101,20 @@ function validateSecretBindings(input: unknown, connection: ACPConnection): AcpC
   if (headers && Object.keys(headers).some((name) => connection.kind !== "process" && connection.headers?.[name] !== undefined)) {
     throw new Error("secretBindings.headers cannot overwrite a literal header value")
   }
-  if (!env && !headers) return
+  if (!env && !headers) return undefined
   return { ...(env ? { env } : {}), ...(headers ? { headers } : {}) }
 }
 
 function secretBindingRecord(input: unknown, field: string): Record<string, string> | undefined {
-  if (input === undefined) return
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error(`${field} must be a string record`)
-  const entries = Object.entries(input)
-  if (entries.length === 0 || entries.some(([name, value]) => !name || typeof value !== "string" || !value)) {
+  if (input === undefined) return undefined
+  const row = asRecord(input)
+  if (!row) throw new Error(`${field} must be a string record`)
+  const entries = Object.entries(row)
+  const named = entries.filter((entry): entry is [string, string] => !!entry[0] && typeof entry[1] === "string" && !!entry[1])
+  if (named.length === 0 || named.length !== entries.length) {
     throw new Error(`${field} must be a non-empty string record`)
   }
-  return Object.fromEntries(entries) as Record<string, string>
+  return Object.fromEntries(named)
 }
 
 function configuredSecretNames(config: AcpConnectionProviderConfig) {
@@ -148,5 +150,5 @@ function materializedBindings(
   bindings: Readonly<Record<string, string>> | undefined,
   secrets: Readonly<Record<string, string>>,
 ) {
-  return Object.fromEntries(Object.entries(bindings ?? {}).map(([target, name]) => [target, secrets[name]!]))
+  return Object.fromEntries(Object.entries(bindings ?? {}).map(([target, name]) => [target, secrets[name]]))
 }

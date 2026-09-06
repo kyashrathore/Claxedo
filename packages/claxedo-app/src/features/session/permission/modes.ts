@@ -270,6 +270,6 @@ export function findPermissionModeOption(input: {
   // Bound to a local before the callback: TypeScript discards narrowing on a
   // property access once it is read inside a closure.
   const modeId = selection.modeId
-  if (selection.kind !== "harness") return
+  if (selection.kind !== "harness") return undefined
   return harnessPermissionModes(input).modes.find((mode) => mode.id === modeId)
 }

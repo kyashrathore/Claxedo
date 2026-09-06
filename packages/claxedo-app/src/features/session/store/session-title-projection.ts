@@ -133,7 +133,7 @@ function resolveEntry(
   next: Omit<SessionTitleProjectionEntry, "resolved">,
   resetInventoryResolution = false,
 ): SessionTitleProjectionEntry | undefined {
-  if (!next.inventory && !next.provisionalTitle && !next.canonical) return
+  if (!next.inventory && !next.provisionalTitle && !next.canonical) return undefined
   const concreteInventoryReplacesProvisional =
     previous?.resolved?.source === "provisional" &&
     isConcreteSessionTitle(normalized(next.inventory?.title))
@@ -193,6 +193,7 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
       const value = state.byKey[key]
       if (value) return value
     }
+    return undefined
   }
 
   const select = (target: SessionTitleTarget): SessionTitleProjectionSelection => {

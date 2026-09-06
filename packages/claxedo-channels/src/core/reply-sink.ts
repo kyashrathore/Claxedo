@@ -1,36 +1,33 @@
 import type { ChannelSink, OutboundChunk } from "../envelope"
 import type { ApprovalBridge } from "./approval-bridge"
+import { filled as str, record as rec } from "../json"
 
-function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
-function textFromPart(input: unknown) {
+function textFromPart(input: unknown): string | undefined {
   const row = rec(input)
-  if (row?.type !== "text") return
+  if (row?.type !== "text") return undefined
   return typeof row.text === "string" ? row.text : undefined
 }
 
-function textFromMessageUpdated(input: Record<string, unknown>) {
+function textFromMessageUpdated(input: Record<string, unknown>): string | undefined {
   const properties = rec(input.properties)
   const info = rec(properties?.info)
-  if (info?.role !== "assistant") return
+  if (info?.role !== "assistant") return undefined
   return Array.isArray(properties?.parts)
     ? properties.parts.flatMap((part) => textFromPart(part) ?? []).join("")
     : undefined
 }
 
-function textPartUpdate(input: Record<string, unknown>) {
+function textPartUpdate(input: Record<string, unknown>): { id: string; text: string } | undefined {
   const properties = rec(input.properties)
   const part = rec(properties?.part)
-  if (part?.type !== "text") return
+  if (part?.type !== "text") return undefined
   const id = typeof part.id === "string" ? part.id : "part"
   return typeof part.text === "string" ? { id, text: part.text } : undefined
 }
 
-function textFromMessagePartDelta(input: Record<string, unknown>) {
+function textFromMessagePartDelta(input: Record<string, unknown>): string | undefined {
   const properties = rec(input.properties)
-  if (typeof properties?.delta !== "string") return
+  if (typeof properties?.delta !== "string") return undefined
   return properties.delta
 }
 
@@ -52,10 +49,6 @@ function statusFromRuntimeEvent(input: Record<string, unknown>): Extract<Outboun
   return undefined
 }
 
-function str(input: unknown) {
-  return typeof input === "string" && input.trim() ? input : undefined
-}
-
 /**
  * Map a runtime `permission.asked` event onto an `ApprovalRequest`.
  *
@@ -72,9 +65,9 @@ function approvalFromRuntimeEvent(input: Record<string, unknown>, context: {
   threadKey?: string
   requestee?: string
 }) {
-  if (input.type !== "permission.asked") return
+  if (input.type !== "permission.asked") return undefined
   const properties = rec(input.properties)
-  if (!properties || typeof properties.id !== "string") return
+  if (!properties || typeof properties.id !== "string") return undefined
   const metadata = rec(properties.metadata)
   const patterns = Array.isArray(properties.patterns)
     ? properties.patterns.flatMap((pattern) => str(pattern) ?? [])

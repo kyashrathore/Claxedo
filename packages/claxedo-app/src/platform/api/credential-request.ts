@@ -1,4 +1,5 @@
 import { getClaxedoServerUrl, isLoopbackHostname, normalizeUrl } from "@/platform/api/api"
+import { readField, readString } from "@/lib/record"
 
 /** Same-origin in desktop dev so Vite can proxy credential routes (no CORS). */
 export function credentialRequestOrigin(input?: ClaxedoCredentialRequestInput): string {
@@ -54,13 +55,13 @@ async function claxedoCredentialErrorMessage(res: Response) {
   if (!text) return `Request failed: ${res.status}`
 
   try {
-    const body = JSON.parse(text) as { error?: unknown; message?: unknown }
-    if (body.error && typeof body.error === "object" && "message" in body.error) {
-      const message = body.error.message
-      if (typeof message === "string" && message.trim()) return message
-    }
-    if (typeof body.error === "string" && body.error.trim()) return body.error
-    if (typeof body.message === "string" && body.message.trim()) return body.message
+    const body: unknown = JSON.parse(text)
+    const nested = readString(readField(body, "error"), "message")
+    if (nested?.trim()) return nested
+    const error = readString(body, "error")
+    if (error?.trim()) return error
+    const message = readString(body, "message")
+    if (message?.trim()) return message
   } catch {
     return text
   }

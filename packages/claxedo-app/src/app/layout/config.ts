@@ -1,3 +1,5 @@
+import { isRecord } from "@/lib/record"
+
 export const layoutConfigVersion = 1
 
 export type LayoutTarget = "web" | "desktop"
@@ -64,11 +66,11 @@ const builtinSlots = new Set<BuiltinSlotKind>([
   "workbench",
 ])
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
+/** Membership test over the same set, without narrowing the question to its answer. */
+const builtinSlotNames: ReadonlySet<string> = builtinSlots
 
 const isSlotKind = (value: unknown): value is SlotKind =>
-  typeof value === "string" && (builtinSlots.has(value as BuiltinSlotKind) || value.startsWith("ext:"))
+  typeof value === "string" && (builtinSlotNames.has(value) || value.startsWith("ext:"))
 
 const isSide = (value: unknown): value is RegionSide =>
   value === "left" || value === "right" || value === "top" || value === "bottom" || value === "center"
@@ -117,7 +119,7 @@ export function defaultLayoutConfig(input: { target?: LayoutTarget } = {}): Layo
 
 export function layoutMigrate(input: unknown, options: { target?: LayoutTarget } = {}): LayoutMigrationResult {
   if (isLayoutConfig(input)) return normalizeLayoutConfig(input, options)
-  if (isObject(input)) {
+  if (isRecord(input)) {
     const result = normalizeLayoutConfig(layoutConfigFromFlatState(input, options), options)
     return { ...result, dirty: true }
   }
@@ -205,7 +207,7 @@ export function chromeRegionPlacement(config: LayoutConfig, regionId: RegionId) 
 function normalizeLayoutConfig(config: LayoutConfig, options: { target?: LayoutTarget }): LayoutMigrationResult {
   const fallback = defaultLayoutConfig({ target: options.target ?? config.target })
   const regions: Record<RegionId, RegionConfig> = {}
-  for (const [id, raw] of Object.entries(isObject(config.regions) ? config.regions : fallback.regions)) {
+  for (const [id, raw] of Object.entries(isRecord(config.regions) ? config.regions : fallback.regions)) {
     const normalized = normalizeRegion(id, raw, fallback.regions[id])
     if (normalized) regions[normalized[0]] = normalized[1]
   }
@@ -223,9 +225,9 @@ function normalizeLayoutConfig(config: LayoutConfig, options: { target?: LayoutT
 
 function layoutConfigFromFlatState(input: Record<string, unknown>, options: { target?: LayoutTarget }): LayoutConfig {
   const config = defaultLayoutConfig(options)
-  const rail = isObject(input.rail) ? input.rail as FlatRail : {}
-  const workspacePanel = isObject(input.workspacePanel) ? input.workspacePanel as FlatWorkspacePanel : {}
-  const oldProcessPane = isObject(input.processPane) ? input.processPane : {}
+  const rail = isRecord(input.rail) ? input.rail as FlatRail : {}
+  const workspacePanel = isRecord(input.workspacePanel) ? input.workspacePanel as FlatWorkspacePanel : {}
+  const oldProcessPane = isRecord(input.processPane) ? input.processPane : {}
   const railCollapsed = rail.collapsed === true && rail.pinned !== true
   const railWidth = typeof rail.width === "number" && Number.isFinite(rail.width) && rail.width >= 0
     ? rail.width
@@ -253,9 +255,9 @@ function layoutConfigFromFlatState(input: Record<string, unknown>, options: { ta
 }
 
 function normalizeRegion(regionId: RegionId, input: unknown, fallback?: RegionConfig) {
-  const raw = isObject(input) ? input : {}
+  const raw = isRecord(input) ? input : {}
   const slot = isSlotKind(raw.slot) ? raw.slot : fallback?.slot
-  if (!slot) return
+  if (!slot) return undefined
   return [
     regionId,
     {
@@ -271,7 +273,7 @@ function normalizeRegion(regionId: RegionId, input: unknown, fallback?: RegionCo
 }
 
 function normalizeSize(input: unknown, fallback: LayoutSize = { unit: "fr", value: 1 }): LayoutSize {
-  if (!isObject(input)) return fallback
+  if (!isRecord(input)) return fallback
   const unit = input.unit === "px" || input.unit === "percent" || input.unit === "fr" ? input.unit : fallback.unit
   const value = typeof input.value === "number" && Number.isFinite(input.value) && input.value >= 0 ? input.value : fallback.value
   return { unit, value }
@@ -287,7 +289,7 @@ function slotMap(regions: Record<RegionId, RegionConfig>, existing?: SlotConfigM
 }
 
 function isLayoutConfig(input: unknown): input is LayoutConfig {
-  return isObject(input) && input.version === layoutConfigVersion && isObject(input.regions)
+  return isRecord(input) && input.version === layoutConfigVersion && isRecord(input.regions)
 }
 
 function regionSortIndex(side: RegionSide) {

@@ -5,8 +5,9 @@ describe("GitHub code-host repositories", () => {
   test("lists and paginates repositories with real read/write permissions", async () => {
     const calls: string[] = []
     const fetchImpl = async (input: string | URL | Request) => {
-      calls.push(String(input))
-      const page = new URL(String(input)).searchParams.get("page")
+      const url = input instanceof Request ? input.url : input.toString()
+      calls.push(url)
+      const page = new URL(url).searchParams.get("page")
       if (page === "1") {
         return Response.json(Array.from({ length: 100 }, (_, index) => ({
           id: index + 1,

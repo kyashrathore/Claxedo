@@ -52,7 +52,7 @@ export function splitSessionPrefetchPage(
   count = SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT,
 ) {
   const page = info.page
-  if (!page || page.messages.length === 0) return
+  if (!page || page.messages.length === 0) return undefined
   const budget = Math.max(2, count)
   const tail = page.messages.at(-1)!
   const owningUser = page.messages.findLastIndex((message) => message.role === "user")
@@ -61,11 +61,11 @@ export function splitSessionPrefetchPage(
   // deferring intermediate assistant/tool messages. A latest turn may contain
   // arbitrarily many assistant records, so walking back to the user and taking
   // the whole suffix would make the supposedly bounded first fold unbounded.
-  if (owningUser >= 0) selected.add(page.messages[owningUser]!.id)
+  if (owningUser >= 0) selected.add(page.messages[owningUser].id)
   selected.add(tail.id)
   for (let index = page.messages.length - 2; index >= 0 && selected.size < budget; index--) {
     if (index === owningUser) continue
-    selected.add(page.messages[index]!.id)
+    selected.add(page.messages[index].id)
   }
   const firstFoldMessages = page.messages.filter((message) => selected.has(message.id))
   const firstFoldIds = new Set(firstFoldMessages.map((message) => message.id))
@@ -231,7 +231,7 @@ function prefetchGenerationKey() {
 }
 
 function prefetchQueryInfo(queryKey: readonly unknown[]) {
-  if (queryKey[0] !== "shell" || queryKey[1] !== "session" || typeof queryKey[2] !== "string") return
+  if (queryKey[0] !== "shell" || queryKey[1] !== "session" || typeof queryKey[2] !== "string") return undefined
   if (queryKey[3] === "message-prefetch") {
     const data = queryClient.getQueryData<SessionPrefetchMeta>(queryKey)
     return { type: "meta" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : data?.directory }
@@ -242,4 +242,5 @@ function prefetchQueryInfo(queryKey: readonly unknown[]) {
   if (queryKey[3] === "message-prefetch-revision") {
     return { type: "revision" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : undefined }
   }
+  return undefined
 }

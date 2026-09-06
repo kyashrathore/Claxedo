@@ -12,6 +12,11 @@ import {
   type ClaxedoDaemonDiscovery,
 } from "./server-daemon-discovery"
 
+/** The URL of a `fetch` double's argument, whichever of the three forms it takes. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
 const roots: string[] = []
 
 afterEach(() => {
@@ -54,7 +59,7 @@ describe("Claxedo daemon discovery", () => {
 
     const verified = await verifyClaxedoDaemonDiscovery(record, async (input, init) => {
       requests.push({
-        url: String(input),
+        url: requestUrl(input),
         authorization: new Headers(init?.headers).get("authorization"),
       })
       return Response.json({

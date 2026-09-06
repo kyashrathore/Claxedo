@@ -5,17 +5,13 @@ import {
   type SessionConfigRequestUpdate,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as Record<string, unknown>
-}
+import { rec as record, str } from "./json-value"
 
 export function normalizeSessionHarness(input: unknown): SessionHarness | undefined {
   const row = record(input)
-  if (!row) return
+  if (!row) return undefined
   const identity = normalizeHarnessIdentity(row)
-  if (!identity) return
+  if (!identity) return undefined
   return {
     id: identity.id,
     access: identity.access,
@@ -25,12 +21,11 @@ export function normalizeSessionHarness(input: unknown): SessionHarness | undefi
 function promptModel(input: unknown): PromptModel | null | undefined {
   if (input === null) return null
   const row = record(input)
-  if (!row) return
-  if (typeof row.providerID !== "string" || typeof row.modelID !== "string") return
-  return {
-    providerID: row.providerID,
-    modelID: row.modelID,
-  }
+  if (!row) return undefined
+  const providerID = str(row.providerID)
+  const modelID = str(row.modelID)
+  if (providerID === undefined || modelID === undefined) return undefined
+  return { providerID, modelID }
 }
 
 export function normalizeSessionConfigUpdate(input: unknown): SessionConfigRequestUpdate {
@@ -60,7 +55,7 @@ export function normalizeSessionCreateConfig(input: unknown): SessionConfigReque
 export function normalizeSessionConfig(input: unknown): SessionConfig | undefined {
   const row = record(input) ?? {}
   const update = normalizeSessionConfigUpdate(input)
-  if (!update.harness) return
+  if (!update.harness) return undefined
   return {
     harness: update.harness,
     ...(update.model && update.model !== null ? { model: update.model } : {}),

@@ -24,6 +24,8 @@ export type ProviderAuthError = {
   }
 }
 
+import { isRecord, readField, readString } from "./record"
+
 type Translator = (key: string, vars?: Record<string, string | number>) => string
 
 function tr(translator: Translator | undefined, key: string, text: string, vars?: Record<string, string | number>) {
@@ -33,6 +35,30 @@ function tr(translator: Translator | undefined, key: string, text: string, vars?
   return out
 }
 
+/**
+ * The message text of an unknown thrown value.
+ *
+ * `error instanceof Error ? error.message : String(error)` appears at ninety-two
+ * places in this package, plus five private `errorMessage` helpers that each
+ * disagree slightly. It is also wrong in the same way every time: `String()` on
+ * a thrown object renders `"[object Object]"`, and that placeholder is what the
+ * user is then shown. This reads the message where one actually exists —
+ * including the `{ message }` envelope the control plane throws — and answers
+ * `fallback` rather than a placeholder when none does.
+ *
+ * For a SERVER error envelope (`ConfigInvalidError` and friends) use
+ * `formatServerError`, which understands their payloads; this is the plain
+ * "what went wrong" string for everything else.
+ */
+export function errorMessage(error: unknown, fallback = "Unknown error"): string {
+  if (typeof error === "string") return error.trim() || fallback
+  if (error instanceof Error) return error.message.trim() || fallback
+  const message = readString(error, "message")?.trim()
+  if (message) return message
+  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error)
+  return fallback
+}
+
 export function formatServerError(error: unknown, translate?: Translator, fallback?: string) {
   const unwrapped = unwrapNamedError(error)
   if (isConfigInvalidErrorLike(unwrapped)) return parseReadableConfigInvalidError(unwrapped, translate)
@@ -40,45 +66,37 @@ export function formatServerError(error: unknown, translate?: Translator, fallba
   if (isProviderAuthErrorLike(unwrapped)) return parseReadableProviderAuthError(unwrapped, translate)
   const dataMessage = readableDataMessage(unwrapped)
   if (dataMessage) return dataMessage
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "string" && error) return error
-  if (fallback) return fallback
-  return tr(translate, "error.chain.unknown", "Unknown error")
+  return errorMessage(error, fallback || tr(translate, "error.chain.unknown", "Unknown error"))
 }
 
 function unwrapNamedError(error: unknown): unknown {
-  if (error instanceof Error && error.cause && typeof error.cause === "object") {
-    if ("body" in error.cause) return (error.cause as Record<string, unknown>).body
-    return error.cause
-  }
-  return error
+  if (!(error instanceof Error) || !isRecord(error.cause)) return error
+  return "body" in error.cause ? error.cause.body : error.cause
+}
+
+/**
+ * The shared shape of every server error envelope this module understands:
+ * a `name` discriminator plus a `data` payload object. The three named guards
+ * below differ only in which `name` they accept.
+ */
+function isNamedServerError(error: unknown, name: string): boolean {
+  return isRecord(error) && error.name === name && isRecord(error.data)
 }
 
 function isConfigInvalidErrorLike(error: unknown): error is ConfigInvalidError {
-  if (typeof error !== "object" || error === null) return false
-  const o = error as Record<string, unknown>
-  return o.name === "ConfigInvalidError" && typeof o.data === "object" && o.data !== null
+  return isNamedServerError(error, "ConfigInvalidError")
 }
 
 function isProviderModelNotFoundErrorLike(error: unknown): error is ProviderModelNotFoundError {
-  if (typeof error !== "object" || error === null) return false
-  const o = error as Record<string, unknown>
-  return o.name === "ProviderModelNotFoundError" && typeof o.data === "object" && o.data !== null
+  return isNamedServerError(error, "ProviderModelNotFoundError")
 }
 
 function isProviderAuthErrorLike(error: unknown): error is ProviderAuthError {
-  if (typeof error !== "object" || error === null) return false
-  const o = error as Record<string, unknown>
-  return o.name === "ProviderAuthError" && typeof o.data === "object" && o.data !== null
+  return isNamedServerError(error, "ProviderAuthError")
 }
 
-function readableDataMessage(error: unknown) {
-  if (typeof error !== "object" || error === null) return
-  const data = (error as Record<string, unknown>).data
-  if (typeof data !== "object" || data === null) return
-  const message = (data as Record<string, unknown>).message
-  if (typeof message !== "string") return
-  return message.trim() || undefined
+function readableDataMessage(error: unknown): string | undefined {
+  return readString(readField(error, "data"), "message")?.trim() || undefined
 }
 
 export function parseReadableConfigInvalidError(errorInput: ConfigInvalidError, translator?: Translator) {

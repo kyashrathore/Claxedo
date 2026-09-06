@@ -12,7 +12,7 @@ import {
 } from "../data/sync/queries"
 import type { SessionTransportCapabilities } from "./session-transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { paneQueryOptions, parkedPaneQueryOptions } from "./pane-query-observer"
+import { parkedPaneQueryOptions, type PaneQueryOptions } from "./pane-query-observer"
 import { sessionGoalKey, type SessionGoalData } from "./session-goal-query"
 import { queryKeys } from "@/platform/query/keys"
 import type { ClaxedoSession } from "../data/session-types"
@@ -43,32 +43,32 @@ export function createSessionPaneQueries(input: {
   sessionRef?: Accessor<SessionRef | undefined>
   fetchSessionRow?: (sessionID: string) => Promise<ClaxedoSession | undefined>
 }) {
-  const session = <T>(resource: string, options: (sessionID: string) => ReturnType<typeof paneQueryOptions<T>>) => {
+  const session = <T>(resource: string, options: (sessionID: string) => PaneQueryOptions<T>) => {
     if (!input.active()) return parkedPaneQueryOptions<T>(resource, "inactive")
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return parkedPaneQueryOptions<T>(resource, "no-session")
     return options(sessionID)
   }
   const statusQuery = useQuery<SessionStatus>(() => session("session-status", (sessionID) =>
-    paneQueryOptions<SessionStatus>({
+    ({
       queryKey: shellDataKeys.sessionId(sessionID, "status"),
       queryFn: skipToken,
       enabled: false,
     })))
   const requestQuery = useQuery<SessionRequestsQueryData>(() => session("session-requests", (sessionID) =>
-    paneQueryOptions<SessionRequestsQueryData>({
+    ({
       queryKey: shellDataKeys.sessionId(sessionID, "requests"),
       queryFn: skipToken,
       enabled: false,
     })))
   const todoQuery = useQuery<Todo[]>(() => session("session-todo", (sessionID) =>
-    paneQueryOptions<Todo[]>({
+    ({
       queryKey: shellDataKeys.sessionId(sessionID, "todo"),
       queryFn: skipToken,
       enabled: false,
     })))
   const diffQuery = useQuery<SnapshotFileDiff[]>(() => session("session-diff", (sessionID) =>
-    paneQueryOptions<SnapshotFileDiff[]>({
+    ({
       queryKey: shellDataKeys.sessionId(sessionID, "diff"),
       queryFn: skipToken,
       enabled: false,
@@ -83,13 +83,13 @@ export function createSessionPaneQueries(input: {
     sessionRef: input.sessionRef?.(),
   })
   const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) =>
-    paneQueryOptions<SessionTransportCapabilities>({
+    ({
       queryKey: sessionCapabilitiesKey(authorityScope(sessionID)),
       queryFn: skipToken,
       enabled: false,
     })))
   const goalQuery = useQuery<SessionGoalData>(() => session("session-goal", (sessionID) =>
-    paneQueryOptions<SessionGoalData>({
+    ({
       queryKey: sessionGoalKey(authorityScope(sessionID)),
       queryFn: skipToken,
       enabled: false,
@@ -110,7 +110,7 @@ export function createSessionPaneQueries(input: {
     if (!sessionID || sessionID === "new" || !input.fetchSessionRow) {
       return parkedPaneQueryOptions<ClaxedoSession | null>("session-row", "no-session")
     }
-    return paneQueryOptions<ClaxedoSession | null>({
+    return ({
       queryKey: queryKeys.session.row(input.serverUrl?.(), input.directory(), sessionID),
       queryFn: async () => await input.fetchSessionRow!(sessionID) ?? null,
     })

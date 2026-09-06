@@ -20,7 +20,7 @@ export function registerPendingPrompt(sessionID: string, prompt: PendingPrompt) 
 
 export function takePendingPrompt(sessionID: string) {
   const prompt = pendingPrompts.get(sessionID)
-  if (!prompt) return
+  if (!prompt) return undefined
   pendingPrompts.delete(sessionID)
   return prompt
 }

@@ -7,11 +7,12 @@ import {
   type TunnelHttpRequest,
   type TunnelHttpResponseFlow,
   type TunnelMessage,
-  type TunnelWsClose,
   type TunnelWsFrame,
   type TunnelWsOpen,
 } from "@claxedo/workspace-relay-protocol"
-import NodeWebSocket from "ws"
+import { resolveTunnelWebSocket, type TunnelWebSocket, type TunnelWebSocketCtor } from "./tunnel-websocket"
+
+export type { TunnelWebSocket, TunnelWebSocketCtor }
 
 export type WorkspaceRelayHostTunnelOptions = {
   relayUrl: string
@@ -33,7 +34,7 @@ export type WorkspaceRelayHostTunnelOptions = {
   tokenProvider?: () => Promise<string>
   onEvent?: (event: WorkspaceRelayHostTunnelEvent) => void
   maxReconnectAttempts?: number
-  webSocket?: typeof WebSocket
+  webSocket?: TunnelWebSocketCtor
   /**
    * Only ever called `(target, init)`, so it is typed to that shape rather than
    * `typeof fetch`, whose statics (`preconnect`) a caller supplying a plain
@@ -87,7 +88,7 @@ export type WorkspaceRelayHostTunnelEvent =
   | { type: "closed"; reason: "client" | "max-attempts" }
 
 type TunnelChannel = {
-  upstream: WebSocket
+  upstream: TunnelWebSocket
   queue: Array<string | Uint8Array<ArrayBuffer>>
   /** Running byte size of `queue`; reset when it is flushed upstream. */
   queuedBytes: number
@@ -191,7 +192,7 @@ function preOpenFrameBytes(input: string | Uint8Array<ArrayBuffer>) {
   return input.byteLength
 }
 
-function encodedFrame(input: MessageEvent["data"]) {
+function encodedFrame(input: MessageEvent["data"]): { binary: boolean; data_base64: string } | undefined {
   if (typeof input === "string") {
     return {
       binary: false,
@@ -210,9 +211,10 @@ function encodedFrame(input: MessageEvent["data"]) {
       data_base64: Buffer.from(input.buffer, input.byteOffset, input.byteLength).toString("base64"),
     }
   }
+  return undefined
 }
 
-function send(ws: WebSocket, message: TunnelMessage) {
+function send(ws: TunnelWebSocket, message: TunnelMessage) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message))
 }
 
@@ -242,7 +244,7 @@ function errorMessage(input: unknown) {
   return input instanceof Error ? input.message : String(input)
 }
 
-function closeSocket(ws: WebSocket, code?: number, reason?: string) {
+function closeSocket(ws: TunnelWebSocket, code?: number, reason?: string) {
   try {
     ws.close(safeCloseCode(code), safeCloseReason(reason))
   } catch {
@@ -260,7 +262,7 @@ function reconnectDelay(input: WorkspaceRelayHostTunnelOptions, attempt: number)
 }
 
 function tunnelHeaders(input: WorkspaceRelayHostTunnelOptions, token: string) {
-  const result = { ...(input.headers ?? {}) }
+  const result = { ...input.headers }
   for (const key of Object.keys(result)) {
     if (key.toLowerCase() === "authorization") delete result[key]
   }
@@ -268,7 +270,7 @@ function tunnelHeaders(input: WorkspaceRelayHostTunnelOptions, token: string) {
   return result
 }
 
-function sendWsClose(tunnel: WebSocket, channelId: string, code: unknown, reason: unknown) {
+function sendWsClose(tunnel: TunnelWebSocket, channelId: string, code: unknown, reason: unknown) {
   send(tunnel, {
     type: "ws.close",
     protocol: TUNNEL_PROTOCOL_VERSION,
@@ -279,7 +281,7 @@ function sendWsClose(tunnel: WebSocket, channelId: string, code: unknown, reason
 }
 
 function closeChannel(
-  tunnel: WebSocket,
+  tunnel: TunnelWebSocket,
   channels: Map<string, TunnelChannel>,
   channelId: string,
   channel: TunnelChannel,
@@ -294,17 +296,21 @@ function closeChannel(
   sendWsClose(tunnel, channelId, code, reason)
 }
 
-function parseTunnelMessage(data: MessageEvent["data"]) {
-  if (typeof data !== "string") return
+function parseTunnelMessage(data: MessageEvent["data"]): TunnelMessage | undefined {
+  if (typeof data !== "string") return undefined
   try {
-    const parsed = JSON.parse(data) as unknown
+    const parsed: unknown = JSON.parse(data)
     if (isTunnelMessage(parsed)) return parsed
-  } catch {}
+  } catch {
+    // A relay frame that is not JSON is dropped, like one that is JSON but not
+    // a tunnel message.
+  }
+  return undefined
 }
 
 async function waitForHttpFlow(flowControls: Map<string, HttpFlowControl>, requestId: string, signal: AbortSignal) {
   const flow = flowControls.get(requestId)
-  if (!flow?.paused) return
+  if (!flow?.paused) return undefined
   await new Promise<void>((resolve) => {
     const done = () => {
       signal.removeEventListener("abort", done)
@@ -314,6 +320,7 @@ async function waitForHttpFlow(flowControls: Map<string, HttpFlowControl>, reque
     flow.waiters.add(done)
     signal.addEventListener("abort", done, { once: true })
   })
+  return undefined
 }
 
 function applyHttpFlow(flowControls: Map<string, HttpFlowControl>, message: TunnelHttpResponseFlow) {
@@ -345,7 +352,7 @@ function releaseHttpFlows(flowControls: Map<string, HttpFlowControl>) {
 }
 
 async function forwardHttp(
-  ws: WebSocket,
+  ws: TunnelWebSocket,
   input: WorkspaceRelayHostTunnelOptions,
   message: TunnelHttpRequest,
   signal: AbortSignal,
@@ -428,7 +435,7 @@ async function forwardHttp(
 }
 
 function openChannel(
-  tunnel: WebSocket,
+  tunnel: TunnelWebSocket,
   input: WorkspaceRelayHostTunnelOptions,
   channels: Map<string, TunnelChannel>,
   message: TunnelWsOpen,
@@ -438,10 +445,8 @@ function openChannel(
     sendWsClose(tunnel, message.channel_id, 1008, "Workspace route is not remotely accessible")
     return
   }
-  const WebSocketCtor = input.webSocket ?? WebSocket
-  const upstream = new (WebSocketCtor as unknown as {
-    new(url: string, options: { headers?: Record<string, string> }): WebSocket
-  })(target.toString().replace(/^http/, "ws"), {
+  const WebSocketCtor = resolveTunnelWebSocket(input.webSocket)
+  const upstream = new WebSocketCtor(target.toString().replace(/^http/, "ws"), {
     headers: replayHeaders(input, message.headers),
   })
   const channel: TunnelChannel = {
@@ -484,7 +489,7 @@ function openChannel(
 }
 
 function forwardFrame(
-  tunnel: WebSocket,
+  tunnel: TunnelWebSocket,
   input: WorkspaceRelayHostTunnelOptions,
   channels: Map<string, TunnelChannel>,
   message: TunnelWsFrame,
@@ -520,13 +525,13 @@ function forwardFrame(
 }
 
 export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelOptions): WorkspaceRelayHostTunnel {
-  const WebSocketCtor = options.webSocket ?? NodeWebSocket as unknown as typeof WebSocket
+  const WebSocketCtor = resolveTunnelWebSocket(options.webSocket)
   const setTimeoutFn = options.setTimeout ?? globalThis.setTimeout
   const clearTimeoutFn = options.clearTimeout ?? globalThis.clearTimeout
   const channels = new Map<string, TunnelChannel>()
   let pingTimer: ReturnType<typeof setInterval> | undefined
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
-  let ws: WebSocket | undefined
+  let ws: TunnelWebSocket | undefined
   let closed = false
   let closedEventSent = false
   let reconnectAttempt = 0
@@ -577,11 +582,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
 
   const openSocket = (headers: Record<string, string> | undefined) => {
     if (closed) return
-    const socket = new (WebSocketCtor as unknown as {
-      new(url: string, options: { headers?: Record<string, string> }): WebSocket
-    })(tunnelUrl(options), {
-      headers,
-    })
+    const socket = new WebSocketCtor(tunnelUrl(options), { headers })
     ws = socket
     // Dead-socket watchdog: sending pings into a half-open TCP socket never
     // errors (frames just buffer), so without verifying that traffic comes
@@ -622,11 +623,10 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
           return
         }
         if (socket.readyState !== WebSocket.OPEN) return
-        const control = socket as WebSocket & { ping?: () => void }
-        if (control.ping) {
+        if (socket.ping) {
           // RFC WebSocket control frames are handled below the Durable Object
           // message API, so they keep the transport alive without waking it.
-          control.ping()
+          socket.ping()
           return
         }
         // Injected/browser-style clients without protocol ping support retain
@@ -635,7 +635,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
         socket.send(JSON.stringify(makeTunnelPing()))
       }, pingIntervalMs)
     }
-    ;(socket as WebSocket & { on?: (event: "pong", listener: () => void) => void }).on?.("pong", () => {
+    socket.on?.("pong", () => {
       if (ws === socket) lastInboundAt = Date.now()
     })
     socket.onmessage = (event) => {
@@ -669,7 +669,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
         return
       }
       if (parsed.type === "ws.close") {
-        const close = parsed as TunnelWsClose
+        const close = parsed
         const channel = channels.get(close.channel_id)
         if (channel) closeSocket(channel.upstream, close.code, close.reason)
         channels.delete(close.channel_id)

@@ -102,9 +102,8 @@ export function createElectronRenderer(mode: string): UserConfig {
           manualChunks(id) {
             // Mermaid's classDiagram and classDiagram-v2 are separate dynamic
             // imports that produce byte-identical chunks. Merge them.
-            if (/mermaid[^]*\/classDiagram/.test(id)) {
-              return "mermaid-classDiagram"
-            }
+            // `undefined` leaves everything else to Rollup's own splitting.
+            return /mermaid[^]*\/classDiagram/.test(id) ? "mermaid-classDiagram" : undefined
           },
         },
       },

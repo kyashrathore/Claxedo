@@ -49,7 +49,7 @@ describe("Principal carries no credential", () => {
     // only the first. Mutation-checked: adding `sessionHandle: string` beside
     // `userId` slipped past the anchored version.
     const members = [...principalUnion().matchAll(/([a-zA-Z][\w]*)\s*\??\s*:/g)]
-      .map((match) => match[1]!)
+      .map((match) => match[1])
     const allowed = new Set(["kind", "deviceId", "userId", "orgId", "memberships", "workspaceId", "role"])
 
     expect(members.filter((member) => !allowed.has(member))).toEqual([])

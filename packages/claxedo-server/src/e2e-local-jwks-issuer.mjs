@@ -66,7 +66,7 @@ export async function startLocalJwksIssuer(input = {}) {
     const ttlSeconds = claims.ttlSeconds ?? 3600
     let jwt = new SignJWT({
       ...(claims.orgId ? { org_id: claims.orgId } : {}),
-      ...(claims.extra ?? {}),
+      ...claims.extra,
     })
       .setProtectedHeader({ alg: algorithm, kid })
       .setIssuer(issuer)

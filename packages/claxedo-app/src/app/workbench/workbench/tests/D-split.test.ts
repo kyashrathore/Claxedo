@@ -154,7 +154,7 @@ describe("D. split.close", () => {
     h.api.navigation.show("a")
     h.api.split.split(h.api.selectors.contentPane("a")!, "right", "b")
     h.api.split.close(h.api.selectors.contentPane("b")!, { destroyContent: true })
-    expect(h.state().focusedPaneId).toBe(h.api.selectors.contentPane("a")!)
+    expect(h.state().focusedPaneId).toBe(h.api.selectors.contentPane("a"))
   })
 })
 

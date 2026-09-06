@@ -9,6 +9,7 @@ import type {
 import {
   resolveCliSessionTokenRegistry,
   type CliSessionTokenKind,
+  type CliSessionTokenRecord,
   type CliSessionTokenRegistry,
 } from "./cli-session-registry"
 
@@ -63,14 +64,7 @@ export type CliSessionTokenErrorCode =
   | "cli_session_token_mismatch"
   | "cli_session_expired"
 
-// Narrows `code` to this class's union. Merged rather than written as a
-// `declare` class field: Playwright's babel transform rejects those unless
-// @babel/plugin-transform-typescript is configured, and it loads this file.
-export interface CliSessionTokenError {
-  readonly code: CliSessionTokenErrorCode
-}
-
-export class CliSessionTokenError extends ClaxedoError {
+export class CliSessionTokenError extends ClaxedoError<CliSessionTokenErrorCode> {
   constructor(code: CliSessionTokenErrorCode, message: string) {
     // Every case is a token the caller must replace, not one that becomes valid
     // on a second read — so 401, and never retryable.
@@ -183,7 +177,7 @@ async function loadPublicKey(env: Env) {
 
 async function deriveKid(privateKey: Parameters<typeof exportJWK>[0]) {
   const jwk = await exportJWK(privateKey)
-  const material = String(jwk.x ?? jwk.n ?? "")
+  const material = jwk.x ?? jwk.n ?? ""
   if (!material) throw new Error("Unable to derive CLI token kid")
   return sha256Hex16(material)
 }
@@ -291,7 +285,7 @@ async function signCliSessionPair(
   auth: SignedControlPlaneAuth,
   env: Env,
   options: { sessionId?: string; sessionExpiresAt?: number },
-) {
+): Promise<{ records: CliSessionTokenRecord[]; response: AdapterNativeSessionTokenSet }> {
   const user = tokenIdentity(auth)
   const accessTtl = accessTtlSeconds(env)
   const refreshTtl = refreshTtlSeconds(env)
@@ -375,7 +369,7 @@ export async function mintCliSessionTokens(
   // unregistered token would fail verification anyway.
   for (const record of records) await registry.recordMint(record)
 
-  return response as AdapterNativeSessionTokenSet
+  return response
 }
 
 /**
@@ -479,7 +473,7 @@ export async function refreshCliSessionTokens(
     minted: records,
   })
   if (!rotated.ok) throw new CliSessionTokenError(rotated.code, rotated.reason)
-  return response as AdapterNativeSessionTokenSet
+  return response
 }
 
 export async function verifyCliAccessBearer(

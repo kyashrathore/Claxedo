@@ -109,7 +109,7 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
     },
     resolveTarget: async (workspaceId, hostId) => {
       const target = await options.targetLookup({ workspaceId, hostId })
-      if (!target.found) return
+      if (!target.found) return undefined
       return {
         workspaceId,
         hostId,

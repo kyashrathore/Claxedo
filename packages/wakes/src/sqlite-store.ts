@@ -1,8 +1,79 @@
 import Database from "better-sqlite3"
-import type { SessionId, Token, Wake, WakeId, WakeState, WorkspaceId } from "./types"
+import type { SessionId, Token, TriggerType, Wake, WakeId, WakeState, WorkspaceId } from "./types"
 import type { WakeStore } from "./store"
 
+/** A result row as better-sqlite3 hands it back: column name -> SQLite value. */
 type Row = Record<string, unknown>
+
+// The store is create-only (see the constructor): a DB file predating a schema
+// change is deleted and recreated, never migrated. Reads therefore validate the
+// row shape instead of asserting it, so a stale file fails loudly at the read
+// rather than silently producing a `Wake` with undefined fields.
+function isRow(value: unknown): value is Row {
+  return typeof value === "object" && value !== null
+}
+
+function rowOf(value: unknown, what: string): Row {
+  if (!isRow(value)) throw new Error(`wakes: expected a ${what} row object, got ${typeof value}`)
+  return value
+}
+
+function textOrNull(row: Row, column: string): string | null {
+  const value = row[column]
+  if (value === null || value === undefined) return null
+  if (typeof value !== "string") throw new Error(`wakes: column "${column}" holds ${typeof value}, expected TEXT`)
+  return value
+}
+
+function text(row: Row, column: string): string {
+  const value = textOrNull(row, column)
+  if (value === null) throw new Error(`wakes: column "${column}" is NULL, expected TEXT NOT NULL`)
+  return value
+}
+
+function integerOrNull(row: Row, column: string): number | null {
+  const value = row[column]
+  if (value === null || value === undefined) return null
+  if (typeof value !== "number") throw new Error(`wakes: column "${column}" holds ${typeof value}, expected INTEGER`)
+  return value
+}
+
+function integer(row: Row, column: string): number {
+  const value = integerOrNull(row, column)
+  if (value === null) throw new Error(`wakes: column "${column}" is NULL, expected INTEGER NOT NULL`)
+  return value
+}
+
+// `Record<Union, true>` makes the compiler reject a new union member that is not
+// listed, so these guards cannot drift from the types they check.
+const TRIGGER_TYPES: Record<TriggerType, true> = { at: true, on_event: true, on_approval: true }
+const WAKE_STATES: Record<WakeState, true> = {
+  pending: true,
+  firing: true,
+  fired: true,
+  expired: true,
+  cancelled: true,
+}
+
+function isTriggerType(value: string): value is TriggerType {
+  return Object.hasOwn(TRIGGER_TYPES, value)
+}
+
+function isWakeState(value: string): value is WakeState {
+  return Object.hasOwn(WAKE_STATES, value)
+}
+
+function triggerType(row: Row, column: string): TriggerType {
+  const value = text(row, column)
+  if (!isTriggerType(value)) throw new Error(`wakes: unknown trigger_type "${value}"`)
+  return value
+}
+
+function wakeState(row: Row, column: string): WakeState {
+  const value = text(row, column)
+  if (!isWakeState(value)) throw new Error(`wakes: unknown state "${value}"`)
+  return value
+}
 
 const FIELD_TO_COL: Record<keyof Wake, string> = {
   id: "id",
@@ -30,33 +101,47 @@ const FIELD_TO_COL: Record<keyof Wake, string> = {
   attempts: "attempts",
 }
 
-function rowToWake(r: Row): Wake {
+function rowToWake(value: unknown): Wake {
+  const r = rowOf(value, "wakes")
   return {
-    id: r.id as string,
-    sessionId: (r.session_id as string) ?? null,
-    workspaceId: r.workspace_id as string,
-    triggerType: r.trigger_type as Wake["triggerType"],
-    kind: (r.kind as string) ?? "session_turn",
-    serialKey: (r.serial_key as string) ?? null,
-    intentJson: r.intent_json as string,
-    resultJson: (r.result_json as string) ?? null,
-    state: r.state as WakeState,
-    expiresAt: (r.expires_at as number) ?? null,
-    depth: r.depth as number,
-    createdBy: (r.created_by as string) ?? null,
-    createdAt: r.created_at as number,
-    firedAt: (r.fired_at as number) ?? null,
-    fireAt: (r.fire_at as number) ?? null,
-    schedule: (r.schedule as string) ?? null,
-    eventKey: (r.event_key as string) ?? null,
-    token: (r.token as string) ?? null,
-    prompt: (r.prompt as string) ?? null,
-    resolvedBy: (r.resolved_by as string) ?? null,
-    idempotencyKey: (r.idempotency_key as string) ?? null,
-    leaseUntil: (r.lease_until as number) ?? null,
-    attempts: r.attempts as number,
+    id: text(r, "id"),
+    sessionId: textOrNull(r, "session_id"),
+    workspaceId: text(r, "workspace_id"),
+    triggerType: triggerType(r, "trigger_type"),
+    kind: textOrNull(r, "kind") ?? "session_turn",
+    serialKey: textOrNull(r, "serial_key"),
+    intentJson: text(r, "intent_json"),
+    resultJson: textOrNull(r, "result_json"),
+    state: wakeState(r, "state"),
+    expiresAt: integerOrNull(r, "expires_at"),
+    depth: integer(r, "depth"),
+    createdBy: textOrNull(r, "created_by"),
+    createdAt: integer(r, "created_at"),
+    firedAt: integerOrNull(r, "fired_at"),
+    fireAt: integerOrNull(r, "fire_at"),
+    schedule: textOrNull(r, "schedule"),
+    eventKey: textOrNull(r, "event_key"),
+    token: textOrNull(r, "token"),
+    prompt: textOrNull(r, "prompt"),
+    resolvedBy: textOrNull(r, "resolved_by"),
+    idempotencyKey: textOrNull(r, "idempotency_key"),
+    leaseUntil: integerOrNull(r, "lease_until"),
+    attempts: integer(r, "attempts"),
   }
 }
+
+// One INSERT, built once from the exhaustive `Record<keyof Wake, string>` map so
+// a new `Wake` field cannot be added without giving it a column. Values bind by
+// name (`@sessionId`), so better-sqlite3 rejects a wake missing any of them.
+const INSERT_SQL = (() => {
+  const entries = Object.entries(FIELD_TO_COL)
+  const columns = entries.map(([, column]) => column).join(", ")
+  const parameters = entries.map(([field]) => `@${field}`).join(", ")
+  return `INSERT OR IGNORE INTO wakes (${columns}) VALUES (${parameters})`
+})()
+
+/** `FIELD_TO_COL` as an O(1) lookup keyed by an arbitrary (patch-supplied) name. */
+const COLUMN_BY_FIELD = new Map<string, string>(Object.entries(FIELD_TO_COL))
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wakes (
@@ -118,30 +203,25 @@ export class SqliteWakeStore implements WakeStore {
   }
 
   async insert(wake: Wake): Promise<{ inserted: boolean }> {
-    const cols = (Object.keys(FIELD_TO_COL) as (keyof Wake)[]).map((f) => FIELD_TO_COL[f])
-    const placeholders = cols.map(() => "?").join(", ")
-    const values = (Object.keys(FIELD_TO_COL) as (keyof Wake)[]).map((f) => wake[f] ?? null)
-    const res = this.db
-      .prepare(`INSERT OR IGNORE INTO wakes (${cols.join(", ")}) VALUES (${placeholders})`)
-      .run(...values)
+    const res = this.db.prepare(INSERT_SQL).run(wake)
     return { inserted: res.changes > 0 }
   }
 
   async get(id: WakeId): Promise<Wake | null> {
-    const r = this.db.prepare("SELECT * FROM wakes WHERE id = ?").get(id) as Row | undefined
-    return r ? rowToWake(r) : null
+    const r = this.db.prepare("SELECT * FROM wakes WHERE id = ?").get(id)
+    return r === undefined ? null : rowToWake(r)
   }
 
   async getByToken(token: Token): Promise<Wake | null> {
-    const r = this.db.prepare("SELECT * FROM wakes WHERE token = ?").get(token) as Row | undefined
-    return r ? rowToWake(r) : null
+    const r = this.db.prepare("SELECT * FROM wakes WHERE token = ?").get(token)
+    return r === undefined ? null : rowToWake(r)
   }
 
   async getByIdempotencyKey(workspaceId: WorkspaceId, key: string): Promise<Wake | null> {
     const r = this.db
       .prepare("SELECT * FROM wakes WHERE workspace_id = ? AND idempotency_key = ?")
-      .get(workspaceId, key) as Row | undefined
-    return r ? rowToWake(r) : null
+      .get(workspaceId, key)
+    return r === undefined ? null : rowToWake(r)
   }
 
   async claimDue(nowMs: number, leaseMs: number, limit: number, serialKey?: string | null): Promise<Wake[]> {
@@ -172,7 +252,7 @@ export class SqliteWakeStore implements WakeStore {
          )
          RETURNING *`,
       )
-      .all(nowMs + leaseMs, nowMs, ...laneParams, limit) as Row[]
+      .all(nowMs + leaseMs, nowMs, ...laneParams, limit)
     return rows.map(rowToWake)
   }
 
@@ -181,7 +261,7 @@ export class SqliteWakeStore implements WakeStore {
     const setVals: unknown[] = [to]
     if (patch) {
       for (const [k, v] of Object.entries(patch)) {
-        const col = FIELD_TO_COL[k as keyof Wake]
+        const col = COLUMN_BY_FIELD.get(k)
         if (!col || col === "state" || col === "id") continue
         setCols.push(`${col} = ?`)
         setVals.push(v ?? null)
@@ -195,7 +275,7 @@ export class SqliteWakeStore implements WakeStore {
 
   async findPendingByEventKey(eventKey: string): Promise<Wake[]> {
     return (
-      this.db.prepare("SELECT * FROM wakes WHERE event_key = ? AND state = 'pending'").all(eventKey) as Row[]
+      this.db.prepare("SELECT * FROM wakes WHERE event_key = ? AND state = 'pending'").all(eventKey)
     ).map(rowToWake)
   }
 
@@ -203,7 +283,7 @@ export class SqliteWakeStore implements WakeStore {
     return (
       this.db
         .prepare("SELECT * FROM wakes WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?")
-        .all(nowMs) as Row[]
+        .all(nowMs)
     ).map(rowToWake)
   }
 
@@ -221,7 +301,7 @@ export class SqliteWakeStore implements WakeStore {
          WHERE state = 'firing' AND lease_until IS NOT NULL AND lease_until <= ? ${laneFilter}
          RETURNING *`,
       )
-      .all(nowMs + leaseMs, nowMs, ...laneParams) as Row[]
+      .all(nowMs + leaseMs, nowMs, ...laneParams)
     return rows.map(rowToWake)
   }
 
@@ -229,33 +309,33 @@ export class SqliteWakeStore implements WakeStore {
     const laneFilter =
       serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
     const laneParams = typeof serialKey === "string" ? [serialKey] : []
-    return (this.db.prepare(`SELECT * FROM wakes WHERE state = 'firing' ${laneFilter}`).all(...laneParams) as Row[])
+    return this.db
+      .prepare(`SELECT * FROM wakes WHERE state = 'firing' ${laneFilter}`)
+      .all(...laneParams)
       .map(rowToWake)
   }
 
   async listForSession(sessionId: SessionId): Promise<Wake[]> {
-    return (this.db.prepare("SELECT * FROM wakes WHERE session_id = ?").all(sessionId) as Row[]).map(rowToWake)
+    return this.db.prepare("SELECT * FROM wakes WHERE session_id = ?").all(sessionId).map(rowToWake)
   }
 
   async countLive(workspaceId: WorkspaceId): Promise<number> {
     const r = this.db
       .prepare("SELECT COUNT(*) AS n FROM wakes WHERE workspace_id = ? AND state = 'pending'")
-      .get(workspaceId) as { n: number }
-    return r.n
+      .get(workspaceId)
+    return integer(rowOf(r, "wakes count"), "n")
   }
 
   async countCreatedSince(workspaceId: WorkspaceId, sinceMs: number): Promise<number> {
     const r = this.db
       .prepare("SELECT COUNT(*) AS n FROM wakes WHERE workspace_id = ? AND created_at >= ?")
-      .get(workspaceId, sinceMs) as { n: number }
-    return r.n
+      .get(workspaceId, sinceMs)
+    return integer(rowOf(r, "wakes count"), "n")
   }
 
   async getReceipt(key: string): Promise<string | null> {
-    const r = this.db.prepare("SELECT result_json FROM effect_receipts WHERE key = ?").get(key) as
-      | { result_json: string }
-      | undefined
-    return r ? r.result_json : null
+    const r = this.db.prepare("SELECT result_json FROM effect_receipts WHERE key = ?").get(key)
+    return r === undefined ? null : text(rowOf(r, "effect_receipts"), "result_json")
   }
 
   async putReceipt(key: string, resultJson: string): Promise<void> {

@@ -19,7 +19,7 @@ export const DialogSelectProvider: Component<{ harness: string; scope?: string }
         harness={props.harness}
         scope={props.scope}
         onSelect={(providerId) => {
-          dialog.show(() => (
+          void dialog.show(() => (
             <DialogConnectProvider provider={providerId} harness={props.harness} scope={props.scope} />
           ))
         }}

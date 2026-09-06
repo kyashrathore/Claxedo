@@ -27,7 +27,7 @@ export function liveSessionGoalScope(input: {
   signedControlPlane: boolean
 }): SessionResourceAuthorityScope | undefined {
   const live = input.live
-  if (!live?.directory) return
+  if (!live?.directory) return undefined
   return sessionResourceAuthorityScope({
     sessionID: live.sessionID,
     directory: live.directory,

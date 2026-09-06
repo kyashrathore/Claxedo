@@ -9,6 +9,7 @@ import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/in
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
 import { isAgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { asRecord, isRecord, stringField } from "../../platform/json/index"
 import type { WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import {
   desiredAgentPluginSelections,
@@ -33,14 +34,10 @@ export type AgentPluginMcpRuntimeState = {
   plan: AgentPluginRuntimeProjectionPlan
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function runtimeMcpServer(
   value: unknown,
 ): value is AgentPluginRuntimeApplyRequest["mcpServers"][number] {
-  if (!record(value)
+  if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
     || typeof value.artifactDigest !== "string"
     || !/^sha256:[a-f0-9]{64}$/.test(value.artifactDigest)
@@ -53,9 +50,9 @@ function runtimeMcpServer(
 }
 
 function runtimeState(value: unknown): value is AgentPluginMcpRuntimeState {
-  return record(value)
+  return isRecord(value)
     && value.kind === "agent-plugins-mcp-runtime"
-    && record(value.plan)
+    && isRecord(value.plan)
     && typeof value.plan.revision === "number"
     && Number.isSafeInteger(value.plan.revision)
     && value.plan.revision >= 0
@@ -198,7 +195,9 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
     for (const { artifact } of loaded) {
       if (artifact.plugin.mcp.status !== "valid") continue
       for (const server of artifact.plugin.mcp.servers) {
-        if (server.type === "streamable-http") discover(server.url)
+        // Prefetch only; the plan below awaits each discovery, and `discover`
+        // already attaches a no-op catch so an early failure stays handled.
+        if (server.type === "streamable-http") void discover(server.url)
       }
     }
 
@@ -249,9 +248,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
           }
         }
         if (!auth) {
-          const reason = record(discoveryFailure) && typeof discoveryFailure.code === "string"
-            ? discoveryFailure.code
-            : "mcp_auth_discovery_failed"
+          const reason = stringField(asRecord(discoveryFailure), "code") ?? "mcp_auth_discovery_failed"
           for (const harnessId of selection.harnessIds) {
             mcpServers.push(unavailable({
               pluginInstanceId: selection.pluginInstanceId,

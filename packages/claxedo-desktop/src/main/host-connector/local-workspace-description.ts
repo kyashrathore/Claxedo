@@ -5,19 +5,15 @@
  * (`/api/claxedo/workspace`); the renderer only names WHICH workspace to
  * share, so the description is read here, in main, at share time.
  */
+
+import { readArray, readRecord, readString } from "../../shared/json-read"
+
 export type LocalWorkspaceDescription = {
   displayName: string
   directory: string
   repoName?: string
   gitBranch?: string
   repoUrl?: string
-}
-
-type DaemonWorkspace = {
-  workspaceId?: unknown
-  directory?: unknown
-  workspaceName?: unknown
-  backing?: { repoName?: unknown; branch?: unknown; repoUrl?: unknown } | null
 }
 
 export async function describeLocalWorkspace(
@@ -27,18 +23,22 @@ export async function describeLocalWorkspace(
 ): Promise<LocalWorkspaceDescription | undefined> {
   const response = await fetchImpl(new URL("/api/claxedo/workspace", daemonUrl))
   if (!response.ok) throw new Error(`workspace list answered ${response.status}`)
-  const body = (await response.json()) as { workspaces?: unknown }
-  const rows = Array.isArray(body.workspaces) ? (body.workspaces as DaemonWorkspace[]) : []
-  const row = rows.find((item) => item.workspaceId === workspaceId)
-  if (!row || typeof row.directory !== "string" || !row.directory) return undefined
-  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined)
-  const repoName = text(row.backing?.repoName)
-  const displayName = text(row.workspaceName) ?? repoName ?? row.directory.split("/").filter(Boolean).at(-1) ?? row.directory
+  const body: unknown = await response.json()
+  const row = readArray(body, "workspaces")?.find((item) => readString(item, "workspaceId") === workspaceId)
+  const directory = readString(row, "directory")
+  if (!directory) return undefined
+  const trimmed = (value: string | undefined) => (value?.trim() ? value.trim() : undefined)
+  const backing = readRecord(row, "backing")
+  const repoName = trimmed(readString(backing, "repoName"))
+  const gitBranch = trimmed(readString(backing, "branch"))
+  const repoUrl = trimmed(readString(backing, "repoUrl"))
+  const displayName =
+    trimmed(readString(row, "workspaceName")) ?? repoName ?? directory.split("/").filter(Boolean).at(-1) ?? directory
   return {
     displayName,
-    directory: row.directory,
+    directory,
     ...(repoName ? { repoName } : {}),
-    ...(text(row.backing?.branch) ? { gitBranch: text(row.backing?.branch) } : {}),
-    ...(text(row.backing?.repoUrl) ? { repoUrl: text(row.backing?.repoUrl) } : {}),
+    ...(gitBranch ? { gitBranch } : {}),
+    ...(repoUrl ? { repoUrl } : {}),
   }
 }

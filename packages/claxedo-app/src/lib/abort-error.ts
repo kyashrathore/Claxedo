@@ -13,3 +13,16 @@ export function isAbortError(error: unknown): boolean {
     (error as { name?: unknown }).name === "AbortError"
   )
 }
+
+/**
+ * True for a request this app itself gave up on: an `AbortError`, or the
+ * `CancelledError` TanStack Query raises when a query is cancelled.
+ *
+ * Callers use it to stay silent — a cancellation is not a failure to report —
+ * so both names have to be covered. `providers/file.tsx` and
+ * `platform/files/tree-store.ts` each carried a byte-identical private copy.
+ */
+export function isCancelledError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return error.name === "CancelledError" || error.name === "AbortError" || error.message === "CancelledError"
+}

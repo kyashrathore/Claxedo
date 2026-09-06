@@ -15,9 +15,31 @@ import {
   RELAY_LOCATION_HINTS,
   type WorkspaceRelaySocketAttachment,
   type WorkspaceRelayDurableObjectNamespace,
-  type WorkspaceRelayDurableObjectSocketPair,
 } from "./cloudflare"
 import type { WorkspaceRelayTarget } from "./server"
+
+/**
+ * A frame a `FakeSocket` was sent, as text.
+ *
+ * `send` carries `string | ArrayBuffer | Uint8Array`; tunnel control frames are
+ * JSON strings but data frames are bytes, and `String()` renders those as
+ * `[object ArrayBuffer]` — which then fails `JSON.parse` with an error that
+ * says nothing about the actual frame.
+ */
+function frameText(frame: string | ArrayBuffer | Uint8Array | undefined) {
+  if (frame === undefined) throw new Error("expected a sent frame at that index")
+  if (typeof frame === "string") return frame
+  return new TextDecoder().decode(frame instanceof ArrayBuffer ? new Uint8Array(frame) : frame)
+}
+
+/**
+ * The URL a `fetch` double was called with — see `frameText` for why the raw
+ * `String()` of a `Request` or `URL` is not usable.
+ */
+function fetchUrl(input: string | URL | Request) {
+  if (typeof input === "string") return input
+  return input instanceof URL ? input.href : input.url
+}
 
 function fakeNamespace() {
   const routed: Array<{ id: string; request: Request; options?: { locationHint?: string } }> = []
@@ -125,7 +147,10 @@ async function roomHarness(input: {
 } = {}) {
   const runtime = await generateKeyPair("EdDSA", { extractable: true })
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-  const pairs: WorkspaceRelayDurableObjectSocketPair[] = []
+  // Every pair this harness creates is a FakeSocket pair, so type it as one:
+  // tests read fake-only state (`sent`, `closed`, `accepted`) off `server` and
+  // used to reach it through a cast on each access.
+  const pairs: Array<{ client: FakeSocket; server: FakeSocket }> = []
   const hibernatedSockets: FakeSocket[] = input.hibernatedSockets ?? []
   const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0, ...(input.now ? { now: input.now } : {}) })
   const room = createWorkspaceRelayDurableObjectRoom({
@@ -183,6 +208,17 @@ async function roomHarness(input: {
   return {
     room,
     pairs,
+    /**
+     * The server socket of the Nth pair the room created, asserted to exist.
+     * Tests index straight into `pairs` right after driving an upgrade, so a
+     * missing pair is a bug in the test — this names it instead of failing
+     * later on a property read of `undefined`.
+     */
+    socket: (index: number) => {
+      const pair = pairs[index]
+      if (!pair) throw new Error(`no socket pair at index ${index} (the room created ${pairs.length})`)
+      return pair.server
+    },
     hibernatedSockets,
     directory,
     relayHost,
@@ -208,6 +244,19 @@ async function waitForSent(socket: FakeSocket, count: number) {
     if (socket.sent.length >= count) return
     await new Promise((resolve) => setTimeout(resolve, 1))
   }
+}
+
+/**
+ * Polls a condition a room callback drives (a counter, a flag) up to a bound.
+ * Bounded on purpose: an unbounded `while (!condition)` turns a regression into
+ * a suite-wide timeout instead of a named failure.
+ */
+async function waitFor(label: string, condition: () => boolean, attempts = 200, delayMs = 2) {
+  for (let i = 0; i < attempts; i++) {
+    if (condition()) return
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  throw new Error(`timed out waiting for ${label}`)
 }
 
 async function waitForClosed(socket: FakeSocket) {
@@ -481,14 +530,14 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
 
     expect(res.status).toBe(101)
-    expect((harness.pairs[0]?.server as FakeSocket | undefined)?.accepted).toBe(true)
+    expect(harness.socket(0).accepted).toBe(true)
     expect(harness.room.state()).toMatchObject({
       hostTunnelCount: 1,
       clientCount: 0,
       hostIds: ["host_1"],
     })
 
-    ;(harness.pairs[0]?.server as FakeSocket).dispatch("close")
+    ;harness.socket(0).dispatch("close")
     expect(harness.room.state()).toMatchObject({
       hostTunnelCount: 0,
       hostIds: [],
@@ -523,7 +572,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
 
     expect(res.status).toBe(101)
-    ;(harness.pairs[0]?.server as FakeSocket).message("{")
+    ;harness.socket(0).message("{")
     expect(harness.room.state()).toMatchObject({
       hostTunnelCount: 1,
       hostIds: ["host_1"],
@@ -540,7 +589,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
     expect(response.status).toBe(101)
 
-    ;(harness.pairs[0]?.server as FakeSocket).message(JSON.stringify({
+    ;harness.socket(0).message(JSON.stringify({
       type: "host.registration.update",
       protocol: 1,
       workspace_ids: ["ws_1", "ws_2"],
@@ -573,13 +622,13 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
 
     expect(res.status).toBe(101)
-    expect((harness.pairs[0]?.server as FakeSocket | undefined)?.accepted).toBe(true)
+    expect(harness.socket(0).accepted).toBe(true)
     expect(harness.room.state()).toMatchObject({
       hostTunnelCount: 0,
       clientCount: 1,
     })
 
-    ;(harness.pairs[0]?.server as FakeSocket).dispatch("close")
+    ;harness.socket(0).dispatch("close")
     expect(harness.room.state()).toMatchObject({ clientCount: 0 })
   })
 
@@ -602,11 +651,11 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     harness.room.drain.setDraining(true)
 
-    expect((harness.pairs[0]?.server as FakeSocket).closed).toEqual({
+    expect(harness.socket(0).closed).toEqual({
       code: 1012,
       reason: "Workspace relay is draining",
     })
-    expect((harness.pairs[1]?.server as FakeSocket).closed).toEqual({
+    expect(harness.socket(1).closed).toEqual({
       code: 1012,
       reason: "Workspace relay is draining",
     })
@@ -633,8 +682,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(upstreams[0]?.url).toBe("https://runtime.test/api/claxedo/pty/pty_1/connect?tab=1")
     expect(upstreams[0]?.headers.authorization).toStartWith("Bearer ")
     expect(upstreams[0]?.headers["sec-websocket-protocol"]).toBeUndefined()
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
-    const upstreamSocket = upstreams[0]!.socket
+    const clientSocket = harness.socket(0)
+    const upstreamSocket = upstreams[0].socket
 
     upstreamSocket.message("from-upstream")
     expect(clientSocket.sent).toEqual(["from-upstream"])
@@ -658,7 +707,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
     const first = clientSocket.sent[0]
     expect(typeof first).toBe("string")
     const trace = JSON.parse(first as string) as {
@@ -684,7 +733,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
     expect(clientSocket.sent).toHaveLength(0)
   })
 
@@ -702,7 +751,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
     // Upstream is still connecting, so no trace has been emitted yet and
     // client frames queue behind the pending upstream open.
     expect(clientSocket.sent).toHaveLength(0)
@@ -735,7 +784,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
 
     revoked = true
     await waitForClosed(clientSocket)
@@ -772,7 +821,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     const forwarded: Array<{ url: string; request: Request }> = []
     const harness = await roomHarness({
       fetch: ((url, init) => {
-        forwarded.push({ url: String(url), request: new Request(url, init) })
+        forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("cloud-ok", {
           status: 202,
           headers: {
@@ -1006,10 +1055,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
-    const open = JSON.parse(String(hostSocket.sent[0])) as {
+    const open = JSON.parse(frameText(hostSocket.sent[0])) as {
       channel_id: string
       headers: Record<string, string>
     }
@@ -1036,7 +1085,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     clientSocket.message("from-client")
     await waitForSent(hostSocket, 2)
-    await expect(Promise.resolve(JSON.parse(String(hostSocket.sent[1])) as {
+    await expect(Promise.resolve(JSON.parse(frameText(hostSocket.sent[1])) as {
       type: string
       binary: boolean
       data_base64: string
@@ -1062,8 +1111,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
 
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     expect(hostSocket.accepted).toBe(false)
     expect(clientSocket.accepted).toBe(false)
     expect(harness.hibernatedSockets).toEqual([hostSocket, clientSocket])
@@ -1097,10 +1146,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await first.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = first.pairs[0]?.server as FakeSocket
-    const clientSocket = first.pairs[1]?.server as FakeSocket
+    const hostSocket = first.socket(0)
+    const clientSocket = first.socket(1)
     await waitForSent(hostSocket, 1)
-    const open = JSON.parse(String(hostSocket.sent[0])) as { channel_id: string }
+    const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
     hostSocket.sent.length = 0
 
     const second = await roomHarness({
@@ -1115,7 +1164,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     await second.room.webSocketMessage(clientSocket, "from-client-after-wake")
     await waitForSent(hostSocket, 1)
-    expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+    expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
       type: "ws.frame",
       channel_id: open.channel_id,
       data_base64: btoa("from-client-after-wake"),
@@ -1146,10 +1195,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
-    const open = JSON.parse(String(hostSocket.sent[0])) as { channel_id: string }
+    const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
 
     hostSocket.message(JSON.stringify({
       type: "ws.close",
@@ -1187,8 +1236,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
 
     revoked = true
@@ -1199,7 +1248,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       code: 1008,
       reason: "Runtime Access Token has been revoked",
     })
-    expect(JSON.parse(String(hostSocket.sent[1]))).toMatchObject({
+    expect(JSON.parse(frameText(hostSocket.sent[1]))).toMatchObject({
       type: "ws.close",
       protocol: TUNNEL_PROTOCOL_VERSION,
       code: 1008,
@@ -1234,8 +1283,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
 
     targetActive = false
@@ -1246,7 +1295,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       code: 1011,
       reason: "User-hosted workspace is offline",
     })
-    expect(JSON.parse(String(hostSocket.sent[1]))).toMatchObject({
+    expect(JSON.parse(frameText(hostSocket.sent[1]))).toMatchObject({
       type: "ws.close",
       protocol: TUNNEL_PROTOCOL_VERSION,
       code: 1011,
@@ -1272,8 +1321,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
 
     harness.directory.disconnectHost("host_1")
@@ -1284,7 +1333,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       code: 1011,
       reason: "User-hosted workspace is offline",
     })
-    expect(JSON.parse(String(hostSocket.sent[1]))).toMatchObject({
+    expect(JSON.parse(frameText(hostSocket.sent[1]))).toMatchObject({
       type: "ws.close",
       protocol: TUNNEL_PROTOCOL_VERSION,
       code: 1011,
@@ -1339,10 +1388,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         cookie: "private=yes",
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
     expect(hostSocket.sent).toHaveLength(1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as {
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as {
       request_id: string
       type: string
       path: string
@@ -1403,9 +1452,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
       body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string; type: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string; type: string }
     expect(requestMessage.type).toBe("http.request")
 
     hostSocket.message(JSON.stringify({
@@ -1445,9 +1494,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1498,9 +1547,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1539,14 +1588,14 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.hostTunnelToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
 
     const startStream = async (sentIndex: number) => {
       const pending = harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/events", {
         headers: { authorization: `Bearer ${await harness.runtimeAccessToken()}` },
       }))
       await waitForSent(hostSocket, sentIndex + 1)
-      const requestMessage = JSON.parse(String(hostSocket.sent[sentIndex])) as { request_id: string }
+      const requestMessage = JSON.parse(frameText(hostSocket.sent[sentIndex])) as { request_id: string }
       hostSocket.message(JSON.stringify({
         type: "http.response.start",
         protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1582,9 +1631,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1605,7 +1654,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     expect(harness.room.drain.pendingCount()).toBe(0)
     const flows = hostSocket.sent
-      .map((item) => JSON.parse(String(item)) as { type: string; request_id?: string; paused?: boolean; reason?: string })
+      .map((item) => JSON.parse(frameText(item)) as { type: string; request_id?: string; paused?: boolean; reason?: string })
       .filter((item) => item.type === "http.response.flow")
     expect(flows).toEqual([
       expect.objectContaining({ request_id: requestMessage.request_id, paused: false, reason: "closed" }),
@@ -1630,9 +1679,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1659,7 +1708,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     await expect(res.text()).rejects.toThrow("slow_consumer_timeout")
-    expect(hostSocket.sent.map((item) => JSON.parse(String(item))).filter((item) => item.type === "http.response.flow")).toEqual([
+    expect(hostSocket.sent.map((item) => JSON.parse(frameText(item))).filter((item) => item.type === "http.response.flow")).toEqual([
       expect.objectContaining({ paused: true, reason: "slow_consumer" }),
       expect.objectContaining({ paused: false, reason: "closed" }),
     ])
@@ -1684,9 +1733,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1713,14 +1762,14 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
 
     await waitForSent(hostSocket, 2)
-    expect(hostSocket.sent.map((item) => JSON.parse(String(item))).filter((item) => item.type === "http.response.flow")).toEqual([
+    expect(hostSocket.sent.map((item) => JSON.parse(frameText(item))).filter((item) => item.type === "http.response.flow")).toEqual([
       expect.objectContaining({ paused: true, reason: "slow_consumer" }),
     ])
 
     const first = await reader.read()
     expect(first.done).toBe(false)
     await waitForSent(hostSocket, 3)
-    expect(hostSocket.sent.map((item) => JSON.parse(String(item))).filter((item) => item.type === "http.response.flow")).toEqual([
+    expect(hostSocket.sent.map((item) => JSON.parse(frameText(item))).filter((item) => item.type === "http.response.flow")).toEqual([
       expect.objectContaining({ paused: true, reason: "slow_consumer" }),
       expect.objectContaining({ paused: false, reason: "drained" }),
     ])
@@ -1750,12 +1799,12 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
     expect(harness.room.drain.pendingCount()).toBe(1)
     await expect(harness.room.drain.waitForDrain(1)).resolves.toEqual({ drained: false, remaining: 1 })
 
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.end",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1780,7 +1829,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
 
     const second = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/second", {
@@ -1795,7 +1844,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         code: "too_many_pending_requests",
       },
     })
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.end",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1827,7 +1876,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         code: "request_body_too_large",
       },
     })
-    expect((harness.pairs[0]?.server as FakeSocket).sent).toHaveLength(0)
+    expect(harness.socket(0).sent).toHaveLength(0)
   })
 
   test("rejects user-hosted HTTP responses over the room body cap", async () => {
@@ -1844,10 +1893,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
     expect(harness.room.drain.pendingCount()).toBe(1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1884,9 +1933,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 1)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "error",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1931,7 +1980,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(host.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
 
     for (let i = 0; i < 4; i++) {
       clock += 15_000
@@ -1951,7 +2000,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     await waitForSent(hostSocket, 5)
-    const requestMessage = JSON.parse(String(hostSocket.sent[4])) as { request_id: string }
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[4])) as { request_id: string }
     hostSocket.message(JSON.stringify({
       type: "http.response.end",
       protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1996,7 +2045,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.hostTunnelToken()}`,
       },
     }))
-    const hostSocket = harness.hibernatedSockets[0]!
+    const hostSocket = harness.hibernatedSockets[0]
     const realFrame = () => harness.room.webSocketMessage(hostSocket, JSON.stringify({
       // An http response for an unknown request id is a no-op beyond the
       // presence touch — a stand-in for ordinary host->relay traffic.
@@ -2048,7 +2097,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(host.status).toBe(101)
-    const hostSocket = harness.hibernatedSockets[0]!
+    const hostSocket = harness.hibernatedSockets[0]
 
     hostSocket.close()
     clock += 90_000
@@ -2175,7 +2224,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     })
     expect(pulls).toBeLessThan(10)
-    expect((harness.pairs[0]?.server as FakeSocket).sent).toHaveLength(0)
+    expect(harness.socket(0).sent).toHaveLength(0)
   })
 
   test("rejects user-hosted request bodies whose content-length exceeds the cap before reading", async () => {
@@ -2227,7 +2276,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
 
     clock += 31 * 60_000
     await waitForClosed(clientSocket)
@@ -2253,7 +2302,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
 
     clock += 31 * 60_000
     await waitForClosed(clientSocket)
@@ -2285,10 +2334,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     })
 
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
     await waitForSent(hostSocket, 2)
-    const requestMessage = JSON.parse(String(hostSocket.sent[0])) as { request_id: string }
-    expect(JSON.parse(String(hostSocket.sent[1]))).toEqual({
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
+    expect(JSON.parse(frameText(hostSocket.sent[1]))).toEqual({
       type: "http.response.flow",
       protocol: TUNNEL_PROTOCOL_VERSION,
       request_id: requestMessage.request_id,
@@ -2317,7 +2366,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
 
     clientSocket.message("frame-1")
     clientSocket.message("frame-2")
@@ -2370,10 +2419,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         },
       }))
       expect(res.status).toBe(101)
-      const hostSocket = harness.pairs[0]?.server as FakeSocket
-      const clientSocket = harness.pairs[1]?.server as FakeSocket
+      const hostSocket = harness.socket(0)
+      const clientSocket = harness.socket(1)
       await waitForSent(hostSocket, 1)
-      const open = JSON.parse(String(hostSocket.sent[0])) as { channel_id: string }
+      const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
       hostSocket.sent.length = 0
       return { harness, hostSocket, clientSocket, channelId: open.channel_id }
     }
@@ -2384,7 +2433,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       clientSocket.message(new Blob([bytes]))
       await waitForSent(hostSocket, 1)
 
-      expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+      expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
         type: "ws.frame",
         binary: true,
         data_base64: btoa(String.fromCharCode(...bytes)),
@@ -2397,7 +2446,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       clientSocket.message(new DataView(bytes.buffer.slice(0)))
       await waitForSent(hostSocket, 1)
 
-      expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+      expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
         type: "ws.frame",
         binary: true,
         data_base64: btoa(String.fromCharCode(...bytes)),
@@ -2412,7 +2461,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       clientSocket.message(new DataView(backing.buffer, 2, bytes.byteLength))
       await waitForSent(hostSocket, 1)
 
-      expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+      expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
         binary: true,
         data_base64: btoa(String.fromCharCode(...bytes)),
       })
@@ -2428,7 +2477,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         },
       }))
       expect(res.status).toBe(101)
-      const clientSocket = harness.pairs[0]?.server as FakeSocket
+      const clientSocket = harness.socket(0)
 
       clientSocket.message(new Blob([bytes]))
       await waitForSent(upstream, 1)
@@ -2452,7 +2501,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
           authorization: `Bearer ${await harness.runtimeAccessToken()}`,
         },
       }))
-      const clientSocket = harness.pairs[0]?.server as FakeSocket
+      const clientSocket = harness.socket(0)
 
       clientSocket.message(new Blob([new Uint8Array([1])]))
       clientSocket.message("two")
@@ -2481,10 +2530,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
           authorization: `Bearer ${await harness.runtimeAccessToken()}`,
         },
       }))
-      const hostSocket = harness.pairs[0]?.server as FakeSocket
-      const clientSocket = harness.pairs[1]?.server as FakeSocket
+      const hostSocket = harness.socket(0)
+      const clientSocket = harness.socket(1)
       await waitForSent(hostSocket, 1)
-      const open = JSON.parse(String(hostSocket.sent[0])) as { channel_id: string }
+      const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
       hostSocket.sent.length = 0
 
       await harness.room.webSocketMessage(
@@ -2493,7 +2542,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       )
       await waitForSent(hostSocket, 1)
 
-      expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+      expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
         type: "ws.frame",
         channel_id: open.channel_id,
         binary: true,
@@ -2525,10 +2574,10 @@ describe("workspace relay failure semantics", () => {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },
     }))
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
-    const open = JSON.parse(String(hostSocket.sent[0])) as { channel_id: string }
+    const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
     hostSocket.sent.length = 0
     return { harness, hostSocket, clientSocket, channelId: open.channel_id, upgradeStatus: res.status }
   }
@@ -2564,7 +2613,7 @@ describe("workspace relay failure semantics", () => {
     })
     // The host is told to stop producing for this channel.
     await waitForSent(hostSocket, 1)
-    expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+    expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
       type: "ws.close",
       channel_id: channelId,
       code: 1013,
@@ -2591,7 +2640,7 @@ describe("workspace relay failure semantics", () => {
     await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
       headers: { upgrade: "websocket", authorization: `Bearer ${await harness.runtimeAccessToken()}` },
     }))
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const clientSocket = harness.socket(1)
     established = true
 
     // Must RESOLVE, not reject: an escaping throw is the bug.
@@ -2657,10 +2706,10 @@ describe("workspace relay failure semantics", () => {
     }))
     expect(res.status).toBe(101)
     established = true
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
 
     // After the FIRST failure the connection must still be open.
-    while (calls < 1) await new Promise((r) => setTimeout(r, 2))
+    await waitFor("the first revocation check", () => calls >= 1)
     expect(clientSocket.closed).toBeUndefined()
 
     // ...and it closes only once the outage is sustained past the grace bound.
@@ -2690,7 +2739,7 @@ describe("workspace relay failure semantics", () => {
     }))
     expect(res.status).toBe(101)
     established = true
-    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const clientSocket = harness.socket(0)
 
     await waitForClosed(clientSocket)
     expect(clientSocket.closed).toEqual({
@@ -2765,10 +2814,10 @@ describe("workspace relay hibernated revocation alarm", () => {
       headers: { upgrade: "websocket", authorization: `Bearer ${await harness.runtimeAccessToken()}` },
     }))
     expect(res.status).toBe(101)
-    const hostSocket = harness.pairs[0]?.server as FakeSocket
-    const clientSocket = harness.pairs[1]?.server as FakeSocket
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
     await waitForSent(hostSocket, 1)
-    const open = JSON.parse(String(hostSocket.sent[0])) as { channel_id: string }
+    const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
     hostSocket.sent.length = 0
     return { harness, alarmState, hostSocket, clientSocket, channelId: open.channel_id }
   }
@@ -2805,7 +2854,7 @@ describe("workspace relay hibernated revocation alarm", () => {
     expect(harness.room.state()).toMatchObject({ clientCount: 0 })
     // The host is told to stop serving the channel too.
     await waitForSent(hostSocket, 1)
-    expect(JSON.parse(String(hostSocket.sent[0]))).toMatchObject({
+    expect(JSON.parse(frameText(hostSocket.sent[0]))).toMatchObject({
       type: "ws.close",
       channel_id: channelId,
       code: 1008,
@@ -2915,9 +2964,7 @@ describe("workspace relay Durable Object location hint", () => {
   }) {
     const { namespace, routed } = fakeNamespace()
     const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
-    const request = new Request(`https://relay.test/workspaces/ws_1/api/wr/health${input.search ?? ""}`, {
-      ...(input.headers ? { headers: input.headers } : {}),
-    })
+    const request = new Request(`https://relay.test/workspaces/ws_1/api/wr/health${input.search ?? ""}`, (input.headers ? { headers: input.headers } : {}))
     if (input.cf) Object.defineProperty(request, "cf", { value: input.cf })
     const res = await gateway.fetch(request, input.env ?? {})
     return { res, routed, hint: routed[0]?.options?.locationHint }

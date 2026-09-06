@@ -174,8 +174,8 @@ describe("D1 Agent Plugin source store", () => {
         { id: "github:acme/team@main", kind: "organization" },
       ])
     }
-    expect(await store.canRemove(plain.auth, (await store.list(plain.auth))[0]!)).toBe(false)
-    expect(await store.canRemove(admin.auth, (await store.list(admin.auth))[0]!)).toBe(true)
+    expect(await store.canRemove(plain.auth, (await store.list(plain.auth))[0])).toBe(false)
+    expect(await store.canRemove(admin.auth, (await store.list(admin.auth))[0])).toBe(true)
   })
 
   test("organization rows sort ahead of a member's identical personal row", async () => {

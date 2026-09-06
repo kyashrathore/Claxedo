@@ -79,7 +79,8 @@ describe("hosted canonical auth profile", () => {
   })
 
   test("mounts the explicit one-use owner bootstrap only for the user-deployed product", async () => {
-    const authenticate = vi.fn(authentication().authenticate)
+    const adapter = authentication()
+    const authenticate = vi.fn(adapter.authenticate.bind(adapter))
     const listOrgs = vi.fn(async () => [{ org_id: "org_deployment", name: "Deployment organization" }])
     const app = HostedAuthProfileRoutes({
       authentication: { ...authentication(), authenticate },

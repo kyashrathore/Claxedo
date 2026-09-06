@@ -19,7 +19,7 @@ export function localDraftSelectionHandoffID(workspaceId: string) {
 }
 
 export function cloneLocalSelectionState(value: LocalSelectionState | undefined) {
-  if (!value) return
+  if (!value) return undefined
   return {
     ...value,
     model: value.model ? { ...value.model } : undefined,

@@ -23,18 +23,25 @@ export async function probeDiscoveredCredential(
   item: LocalCredentialItem,
   options: { fetch?: typeof fetch; now?: () => number } = {},
 ): Promise<CredentialProbe> {
-  const credential = {
+  const now = options.now ?? Date.now
+  const at = now()
+  // The metadata a saved credential would have, so the probe exercises the same
+  // verification path a saved one takes. Nothing here is persisted.
+  const credential: CredentialMetadata = {
     id: `discovery:${item.provider_id}`,
     provider_id: item.provider_id,
     kind: item.kind,
     source: item.source,
     label: item.label,
     account_id: item.account_id ?? null,
+    status: "available",
     // A discovered item carries no saved expiry; `fresh_until` is what the
     // collector believes. Passing it lets a stale-but-refreshable Codex token
     // renew during the probe exactly as it would after saving.
     expires_at: item.fresh_until ?? null,
-  } as unknown as CredentialMetadata
+    created_at: at,
+    updated_at: at,
+  }
 
   try {
     const outcome = await verifyCredential(credential, item.secret, options)

@@ -5,6 +5,7 @@ import path from "node:path"
 import { PiRpcProcess } from "../../../agent-sdk-runtime/src/harnesses/pi/rpc-process"
 import { requirePiExecutable, verifyPiExecutable } from "../../../agent-sdk-runtime/src/harnesses/pi/executable"
 import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments, hydrateSessionDocument, hydratedSessionDocumentPaths } from "../../src/documents/session-hydration"
+import { asRecord, numberField } from "../../src/platform/json/index"
 
 /** Real native Pi shell execution against the document hydration owner. No model credential is needed. */
 export async function runDocumentsSessionRoundtripSmoke() {
@@ -20,15 +21,16 @@ export async function runDocumentsSessionRoundtripSmoke() {
     const hydratedPath = await hydrateSessionDocument({ sessionId, workspaceRoot: root, documentId: "document-session-smoke", displayName: "Session Smoke", markdown: before, baseVersion: "version-1", sync: async markdown => { canonical = markdown; return "version-2" } })
     rpc = new PiRpcProcess({ binary, directory: root, args: ["--mode", "rpc", "--no-session"], env: { ...process.env, PI_CODING_AGENT_DIR: path.join(root, "pi-agent") } })
     const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-    const result = await rpc.request("bash", { command: `printf %s ${quote(after)} > ${quote(hydratedPath)}` }) as { exitCode: number }
+    const result = asRecord(await rpc.request("bash", { command: `printf %s ${quote(after)} > ${quote(hydratedPath)}` }))
     await syncHydratedSessionDocuments(sessionId)
-    if (result.exitCode !== 0) throw new Error(`Native Pi shell exited ${result.exitCode}`)
+    const exitCode = numberField(result, "exitCode")
+    if (exitCode !== 0) throw new Error(`Native Pi shell exited ${exitCode ?? "without a status"}`)
     if (canonical !== after) throw new Error("Native Pi edit did not sync exact canonical bytes")
     const hydratedDocuments = hydratedSessionDocumentPaths(sessionId).length
     await disposeHydratedSessionDocuments(sessionId)
     const disposed = hydratedSessionDocumentPaths(sessionId).length === 0 && !await fs.stat(hydratedPath).then(() => true, () => false)
     if (hydratedDocuments !== 1 || !disposed) throw new Error("Session document lifecycle was not contained")
-    return { sessionId, exitCode: result.exitCode, beforeSha256: sha256(before), afterSha256: sha256(canonical), exactBytes: true, hydratedDocuments, disposed }
+    return { sessionId, exitCode, beforeSha256: sha256(before), afterSha256: sha256(canonical), exactBytes: true, hydratedDocuments, disposed }
   } finally {
     rpc?.dispose()
     await disposeHydratedSessionDocuments(sessionId)

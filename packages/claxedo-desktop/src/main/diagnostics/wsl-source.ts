@@ -169,7 +169,7 @@ export function mapWslSnapshot(
         {
           pid: Number(pid),
           ppid: Number(ppid),
-          startTicks: startTicks!,
+          startTicks: startTicks,
           ticks: Number(ticks),
           rssBytes: Number(rssPages) * Number(pageSize),
           clockTicks: Number(clockTicks),

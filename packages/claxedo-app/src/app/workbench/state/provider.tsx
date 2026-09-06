@@ -30,6 +30,7 @@ import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orches
 import { emptyClaxedoState, validate } from "./persistence"
 import type { ClaxedoState, ContentMeta } from "./types"
 import { parseShellRoute } from "@/platform/identity/route"
+import { wrapSetStore } from "@/platform/persistence/solid-store-erasure"
 import {
   clearOpenSessions,
   setOpenSessionMeta,
@@ -41,7 +42,6 @@ type IdleWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
   cancelIdleCallback?: (handle: number) => void
 }
-type StoreSetter = (...args: unknown[]) => unknown
 
 function sameStringArray(left: readonly string[], right: readonly string[]) {
   if (left === right) return true
@@ -84,7 +84,7 @@ function sameSnapshots(left: Record<string, Snapshot>, right: Record<string, Sna
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
   return leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => !!right[key] && sameSnapshot(left[key]!, right[key]!))
+    leftKeys.every((key) => !!right[key] && sameSnapshot(left[key], right[key]))
 }
 
 const safeStorage = (): Storage | undefined => {
@@ -285,7 +285,7 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
   const focusedSessionId = (): string | undefined => {
     const contentId = wb.selectors.focusedContent()
     const focused = contentId ? meta.get(contentId) : undefined
-    if (focused?.type !== "session") return
+    if (focused?.type !== "session") return undefined
     const id = focused.sessionId
     return id && id !== "new" ? id : undefined
   }
@@ -327,14 +327,10 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   )
   const [state, setState] = createStore<ClaxedoState>(initial)
   onCleanup(clearOpenSessions)
-  // as-any: wraps Solid's overloaded setStore while preserving its public setter type.
-  const rawSetState = setState as unknown as StoreSetter
-  const setPersistentState = ((...args: unknown[]) => {
-    const result = rawSetState(...args)
-    schedulePersistState(state, args)
-    return result
-    // as-any: wrapper preserves Solid's overloaded SetStoreFunction call surface.
-  }) as unknown as SetStoreFunction<ClaxedoState>
+  // Persisting is a side effect of every write, so it belongs on the setter
+  // rather than at each caller. `wrapSetStore` owns the two claims Solid's
+  // overloaded `SetStoreFunction` forces; see `solid-store-erasure`.
+  const setPersistentState = wrapSetStore(setState, (args) => schedulePersistState(state, args))
   if (typeof window !== "undefined") {
     const flush = () => flushPersistState(state)
     window.addEventListener("pagehide", flush)
@@ -370,9 +366,9 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
     markRendererPhase("sessionActivate.patchStart")
     measureRendererPhase("workbench.patch", () => {
       batch(() => {
-        if (focusedPaneChanged) rawSetState("workbench", "focusedPaneId", next.focusedPaneId)
-        if (panesChanged) rawSetState("workbench", "panes", reconcile(next.panes, { key: "id" }))
-        if (splitChanged) rawSetState("workbench", "split", reconcile(next.split))
+        if (focusedPaneChanged) setState("workbench", "focusedPaneId", next.focusedPaneId)
+        if (panesChanged) setState("workbench", "panes", reconcile(next.panes, { key: "id" }))
+        if (splitChanged) setState("workbench", "split", reconcile(next.split))
         if (contentIdsChanged || contentRecencyChanged) {
           // A path setter aimed at an array invokes Solid Store's
           // `updateArray`, which rewrites every changed index. Moving a tab
@@ -384,10 +380,10 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
           const arrays: Partial<Pick<WorkbenchState, "contentIds" | "contentRecency">> = {}
           if (contentIdsChanged) arrays.contentIds = next.contentIds
           if (contentRecencyChanged) arrays.contentRecency = next.contentRecency
-          rawSetState("workbench", arrays)
+          setState("workbench", arrays)
         }
         if (snapshotsChanged) {
-          rawSetState("workbench", "layoutSnapshots", reconcile(next.layoutSnapshots))
+          setState("workbench", "layoutSnapshots", reconcile(next.layoutSnapshots))
         }
       })
       schedulePersistState(state, ["workbench"])

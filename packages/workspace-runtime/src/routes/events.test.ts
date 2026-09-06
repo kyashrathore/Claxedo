@@ -218,7 +218,7 @@ describe("runtime event parent authorization", () => {
     })
 
     const response = await app.request("http://localhost/api/wr/runtime-events?parentSessionId=parent-b")
-    host.dispose()
+    await host.dispose()
 
     expect(response.status).toBe(403)
   })

@@ -76,9 +76,12 @@ export function decideSandboxStart(
   return decideStartMethod(lease, placement)
 }
 
+/**
+ * Health-failure policy is placement-independent: retry budget and backoff are
+ * the same question for every driver, so this deliberately takes no placement.
+ */
 export function decideSandboxHealthFailure(
   lease: SandboxLeaseRow,
-  _placement: SandboxDriverPlacement,
   now: number,
   config: SandboxDecisionConfig = DEFAULT_WORKSPACE_HOST_DECISION_CONFIG,
 ): SandboxDecision {

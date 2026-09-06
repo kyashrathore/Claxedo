@@ -40,7 +40,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -72,8 +72,8 @@ const shape = await page.evaluate(() => {
   const walk = (node: Element, depth: number) => {
     tree.push(
       `${"  ".repeat(depth)}${node.tagName.toLowerCase()}` +
-        `${node.getAttribute("data-component") ? `{${node.getAttribute("data-component")}}` : ""}` +
-        `${node.getAttribute("data-slot") ? `<${node.getAttribute("data-slot")}>` : ""}`,
+        (node.getAttribute("data-component") ? `{${node.getAttribute("data-component")}}` : "") +
+        (node.getAttribute("data-slot") ? `<${node.getAttribute("data-slot")}>` : ""),
     )
     for (const child of Array.from(node.children)) walk(child, depth + 1)
   }
@@ -119,7 +119,7 @@ if (!shape) {
 const rebuild = await page.evaluate(async () => {
   const scroller = document.querySelector<HTMLElement>("[data-review-rendered-files]")?.closest<HTMLElement>(
     "[data-slot='session-review-scroll'], .scroll-view__viewport",
-  ) ?? document.scrollingElement as HTMLElement
+  ) ?? (document.scrollingElement instanceof HTMLElement ? document.scrollingElement : document.body)
   const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   const rows = () => document.querySelectorAll("[data-review-rendered-files] [data-review-file]").length
   const samples: number[] = []
@@ -137,9 +137,9 @@ const rebuild = await page.evaluate(async () => {
   // is the comparable number and p25 shows whether the whole distribution moved.
   return {
     rows: rows(),
-    min: samples[0]!,
-    p25: samples[Math.floor(samples.length / 4)]!,
-    median: samples[Math.floor(samples.length / 2)]!,
+    min: samples[0],
+    p25: samples[Math.floor(samples.length / 4)],
+    median: samples[Math.floor(samples.length / 2)],
     max: samples.at(-1)!,
   }
 })

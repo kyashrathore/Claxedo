@@ -300,7 +300,7 @@ export function HarnessModelPicker<H>(props: {
   const handleManage = () => {
     setOpen(false)
     void loadManageModelsDialog().then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
+      void dialog.show(() => <x.DialogManageModels />)
     })
   }
 

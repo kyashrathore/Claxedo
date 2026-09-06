@@ -39,7 +39,8 @@ function bootChunkModulepreloadPlugin(): Plugin {
       order: "post",
       handler(_html, ctx) {
         const bundle = ctx.bundle
-        if (!bundle) return
+        // `generateBundle` has not run (dev/serve): nothing to preload.
+        if (!bundle) return []
         // Vite already emits modulepreload links for the entry's static
         // imports (vendor-solid, vendor-better-auth); skip those and the entry.
         const seen = new Set<string>()

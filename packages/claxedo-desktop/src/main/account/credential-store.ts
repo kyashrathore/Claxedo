@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 
+import { readNumber, readString, readUnknown } from "../../shared/json-read"
 import type { BoundDesktopCredential } from "./auth-descriptor"
 import { parseBoundDesktopCredential } from "./auth-descriptor"
 import { secureStorageVerdict, storedCredentialDisposition, type StoredCredential } from "./secure-storage"
@@ -48,18 +49,23 @@ export type CredentialStore = {
 
 function parseEnvelope(contents: string): EncryptedDesktopCredential | undefined {
   try {
-    const value = JSON.parse(contents) as Partial<EncryptedDesktopCredential>
+    const value: unknown = JSON.parse(contents)
+    const revision = readString(value, "revision")
+    const state = readUnknown(value, "state")
+    const ciphertext = readString(value, "ciphertext")
+    const backend = readString(value, "backend")
+    const expiresAt = readNumber(value, "expiresAt")
     if (
-      value.format !== "claxedo-desktop-native-v2" ||
-      typeof value.revision !== "string" ||
-      !value.revision ||
-      (value.state !== "active" && value.state !== "revocation-pending") ||
-      typeof value.ciphertext !== "string" ||
-      typeof value.backend !== "string" ||
-      typeof value.expiresAt !== "number"
-    )
+      readUnknown(value, "format") !== "claxedo-desktop-native-v2" ||
+      !revision ||
+      (state !== "active" && state !== "revocation-pending") ||
+      ciphertext === undefined ||
+      backend === undefined ||
+      expiresAt === undefined
+    ) {
       return undefined
-    return value as EncryptedDesktopCredential
+    }
+    return { format: "claxedo-desktop-native-v2", revision, state, ciphertext, backend, expiresAt }
   } catch {
     return undefined
   }

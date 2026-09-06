@@ -1,4 +1,5 @@
 import type { LocalDiagnostics } from "@/features/processes/data/local-diagnostics"
+import { asRecord } from "@/lib/record"
 
 type Bucket = "chatBytes" | "imageBytes" | "compactionBytes"
 
@@ -46,7 +47,7 @@ function estimate(
     return
   }
 
-  const nextBucket = record(value)?.type === "compaction" ? "compactionBytes" : bucket
+  const nextBucket = asRecord(value)?.type === "compaction" ? "compactionBytes" : bucket
   const nextImageContext = imageContext || imageRecord(value)
   if (Array.isArray(value)) {
     buckets[nextBucket] += 2 + Math.max(0, value.length - 1)
@@ -67,14 +68,10 @@ function imageString(value: string, imageContext: boolean) {
 }
 
 function imageRecord(value: object) {
-  const item = record(value)
+  const item = asRecord(value)
   if (!item) return false
   const mime = typeof item.mime === "string" ? item.mime : typeof item.media_type === "string" ? item.media_type : undefined
   return item.type === "image" || mime?.startsWith("image/") === true
-}
-
-function record(value: object) {
-  return !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
 function utf8Bytes(value: string) {

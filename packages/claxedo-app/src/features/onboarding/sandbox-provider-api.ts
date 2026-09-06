@@ -1,4 +1,6 @@
 import { api } from "@/platform/api/api"
+import { errorText } from "./error-text"
+import { readArray, readBoolean, readField, readString } from "@/lib/record"
 import { workspaceSandboxDriversUrl } from "./app-ports"
 
 /**
@@ -58,16 +60,15 @@ export function parseCatalog(body: DriverBody): SandboxProviderCatalog {
   const defaultProviderId = typeof body.default_driver === "string" ? body.default_driver : undefined
   const drivers = Array.isArray(body.drivers) ? body.drivers : []
   const providers = drivers.flatMap((value): SandboxProviderOption[] => {
-    if (!value || typeof value !== "object") return []
-    const driver = value as Record<string, unknown>
-    if (typeof driver.id !== "string") return []
-    const verification = parseVerification(driver.verification)
+    const id = readString(value, "id")
+    if (id === undefined) return []
+    const verification = parseVerification(readField(value, "verification"))
     return [{
-      id: driver.id,
-      label: typeof driver.label === "string" ? driver.label : driver.id,
-      fields: parseFields(driver.fields),
-      configured: driver.configured === true,
-      isDefault: defaultProviderId ? driver.id === defaultProviderId : driver.default === true,
+      id,
+      label: readString(value, "label") ?? id,
+      fields: parseFields(readArray(value, "fields")),
+      configured: readBoolean(value, "configured") === true,
+      isDefault: defaultProviderId ? id === defaultProviderId : readBoolean(value, "default") === true,
       ...(verification ? { verification } : {}),
     }]
   })
@@ -80,26 +81,23 @@ export function parseCatalog(body: DriverBody): SandboxProviderCatalog {
  * say, the second has said "I could not check". Absent stays absent.
  */
 export function parseVerification(value: unknown): SandboxProviderVerification | undefined {
-  if (!value || typeof value !== "object") return
-  const verification = value as Record<string, unknown>
-  const state = verification.state
-  if (state !== "working" && state !== "broken" && state !== "unknown") return
+  const state = readString(value, "state")
+  if (state !== "working" && state !== "broken" && state !== "unknown") return undefined
+  const reason = readString(value, "reason")
   return {
     state,
-    ...(typeof verification.reason === "string" && verification.reason ? { reason: verification.reason } : {}),
+    ...(reason ? { reason } : {}),
   }
 }
 
-function parseFields(value: unknown): SandboxProviderField[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return []
-    const field = item as Record<string, unknown>
-    if (typeof field.key !== "string") return []
+function parseFields(value: unknown[] | undefined): SandboxProviderField[] {
+  return (value ?? []).flatMap((item) => {
+    const key = readString(item, "key")
+    if (key === undefined) return []
     return [{
-      key: field.key,
-      label: typeof field.label === "string" ? field.label : field.key,
-      secret: field.secret === true,
+      key,
+      label: readString(item, "label") ?? key,
+      secret: readBoolean(item, "secret") === true,
     }]
   })
 }
@@ -142,7 +140,7 @@ export async function saveSandboxProviderKey(input: {
  * the message text would throw that away and answer more vaguely.
  */
 export function sandboxProviderFailureCopy(error: unknown) {
-  const raw = error instanceof Error ? error.message : String(error ?? "")
+  const raw = errorText(error)
   const structured = structuredReason(raw)
   if (structured) return structured
   const message = raw.toLowerCase()
@@ -167,9 +165,9 @@ export function sandboxProviderFailureCopy(error: unknown) {
  */
 function structuredReason(raw: string) {
   try {
-    const body = JSON.parse(raw) as { error?: { reason?: unknown; data?: { reason?: unknown } } }
-    const reason = body.error?.reason ?? body.error?.data?.reason
-    return typeof reason === "string" && reason.trim() ? reason : undefined
+    const error = readField(JSON.parse(raw), "error")
+    const reason = readString(error, "reason") ?? readString(readField(error, "data"), "reason")
+    return reason?.trim() ? reason : undefined
   } catch {
     return undefined
   }

@@ -56,7 +56,7 @@ describe("timeline row reuse", () => {
 
     const assistantRows = rows.filter((row) => row._tag === "AssistantPart")
     expect(assistantRows).toHaveLength(1)
-    expect(TimelineRow.contentMessageID(assistantRows[0]!)).toBe(final.id)
+    expect(TimelineRow.contentMessageID(assistantRows[0])).toBe(final.id)
     expect(rows.find((row) => row._tag === "Error")).toEqual(
       expect.objectContaining({ text: "hidden sibling failed" }),
     )
@@ -64,7 +64,7 @@ describe("timeline row reuse", () => {
 
   test("token updates replace only changed row references in a large timeline", () => {
     const previous = Array.from({ length: 10_000 }, (_, index) =>
-      new TimelineRow.UserMessage({
+      TimelineRow.UserMessage({
         userMessageID: `msg_${index}`,
         anchor: true,
         previousUserMessage: index > 0,
@@ -72,12 +72,12 @@ describe("timeline row reuse", () => {
     )
     const next = previous.map((row, index) =>
       index === 7_321
-        ? new TimelineRow.UserMessage({
+        ? TimelineRow.UserMessage({
             userMessageID: row.userMessageID,
             anchor: false,
             previousUserMessage: row.previousUserMessage,
           })
-        : new TimelineRow.UserMessage({
+        : TimelineRow.UserMessage({
             userMessageID: row.userMessageID,
             anchor: row.anchor,
             previousUserMessage: row.previousUserMessage,
@@ -93,7 +93,7 @@ describe("timeline row reuse", () => {
   })
 
   test("drops malformed rows before render code reads row tags", () => {
-    const row = new TimelineRow.UserMessage({
+    const row = TimelineRow.UserMessage({
       userMessageID: "msg_1",
       anchor: true,
     })

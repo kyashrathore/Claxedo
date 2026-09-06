@@ -19,11 +19,12 @@ fs.mkdirSync(ws)
 fs.writeFileSync(path.join(ws, "README.md"), "# probe\n")
 
 const oc = await OpenCode.create({ database: { path: path.join(root, "c.db") } })
-let delivered
+/** Resolved by the subscriber below with the FIRST delivered inboxID. */
+const delivery = Promise.withResolvers()
 const stream = await oc.events.subscribe()
 ;(async () => {
   for await (const event of stream) {
-    if (event?.type === "session.inbox.delivered") delivered = event.data.inboxID
+    if (event?.type === "session.inbox.delivered") delivery.resolve(event.data.inboxID)
   }
 })().catch(() => {})
 
@@ -44,8 +45,17 @@ const attempt = async (label) => {
 }
 
 await attempt("immediately    ")
-const deadline = Date.now() + 60_000
-while (!delivered && Date.now() < deadline) await new Promise((r) => setTimeout(r, 250))
+// Wait on the subscriber's own hand-off rather than polling a shared variable
+// on a 250ms sawtooth: the event arrives when it arrives, and `undefined` here
+// says "no delivery inside the window" instead of "the poll gave up".
+let expiry
+const delivered = await Promise.race([
+  delivery.promise,
+  new Promise((resolve) => {
+    expiry = setTimeout(() => resolve(undefined), 60_000)
+  }),
+])
+clearTimeout(expiry)
 console.log("delivered inboxID  :", delivered, "| same as prompt id:", delivered === admitted.id)
 await attempt("after delivery ")
 

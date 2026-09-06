@@ -9,6 +9,7 @@ import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { SANDBOX_IMAGE } from "../image"
+import { record, text } from "../json"
 import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
 
 type ExeVm = {
@@ -56,7 +57,10 @@ export function exeWorkspaceName(workspaceId: string, epoch: number) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 30) || "workspace"
-  const hash = [...workspaceId].reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16_777_619), 2_166_136_261)
+  // FNV-1a over code points. `for..of` iterates a string exactly as spread
+  // does, so existing VM names keep hashing to the same suffix.
+  let hash = 2_166_136_261
+  for (const char of workspaceId) hash = Math.imul(hash ^ char.charCodeAt(0), 16_777_619)
   return `claxedo-ws-${slug}-${(hash >>> 0).toString(36).slice(0, 8)}-g${epoch}`.slice(0, 63).replace(/-+$/g, "")
 }
 
@@ -81,18 +85,18 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
       body: command,
       signal: AbortSignal.timeout(operationTimeoutMs),
     })
-    const text = await response.text()
-    const body = text ? JSON.parse(text) as ExeResponse : {}
+    const payload = await response.text()
+    const body: ExeResponse = (payload ? record(JSON.parse(payload)) : undefined) ?? {}
     if (!response.ok || body.ok === false || typeof body.error === "string") {
-      throw new Error(`exe.dev command failed (${response.status}): ${String(body.error ?? body.message ?? response.statusText)}`)
+      const detail = text(body.error) ?? text(body.message) ?? response.statusText
+      throw new Error(`exe.dev command failed (${response.status}): ${detail}`)
     }
     return body
   }
 
   function vm(input: unknown): ExeVm | undefined {
-    if (!input || typeof input !== "object") return
-    const value = input as Record<string, unknown>
-    if (typeof value.vm_name !== "string") return
+    const value = record(input)
+    if (!value || typeof value.vm_name !== "string") return undefined
     return {
       vm_name: value.vm_name,
       ...(typeof value.https_url === "string" ? { https_url: value.https_url } : {}),
@@ -132,11 +136,11 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
     const cached = labels.get(item.vm_name)
     if (cached) return cached
     const tags = item.tags ?? []
-    if (!tags.includes("claxedo")) return
+    if (!tags.includes("claxedo")) return undefined
     const workspaceId = tags.find((tag) => tag.startsWith("workspace-"))?.slice("workspace-".length)
-    if (!workspaceId) return
+    if (!workspaceId) return undefined
     const epoch = item.vm_name.match(/-g(\d+)$/)?.[1]
-    if (!epoch) return
+    if (!epoch) return undefined
     return { app: DEFAULT_EXE_APP_LABEL, workspaceId, epoch }
   }
 
@@ -167,7 +171,7 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
 
   async function execute(name: string, command: string): Promise<SandboxCommandResult> {
     const body = await api(`ssh ${shell(name)} ${shell(command)}`)
-    const result = body.result && typeof body.result === "object" ? body.result as ExeResponse : body
+    const result = record(body.result) ?? body
     return {
       stdout: typeof result.stdout === "string" ? result.stdout : "",
       stderr: typeof result.stderr === "string" ? result.stderr : "",

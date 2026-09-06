@@ -24,6 +24,7 @@ export function hostedPiCredentials(input: {
         for (const id of piCredentialProviderIDs(provider)) {
           if (piCredentialConnected(provider, await store.getCredentialByProvider(id))) return provider
         }
+        return undefined
       }))
       return projectPiProviderCatalog(new Set(connected.filter((id): id is NonNullable<typeof id> => !!id)))
     },

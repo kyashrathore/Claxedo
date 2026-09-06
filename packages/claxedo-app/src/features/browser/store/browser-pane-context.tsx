@@ -1,5 +1,6 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createSignal, onCleanup, type Accessor } from "solid-js"
+import { isRecord } from "@/lib/record"
 
 /**
  * BrowserPaneContext.
@@ -128,10 +129,6 @@ type InitProps = {
   paneId: string
   bridge?: BrowserBridgeApi
   initialUrl?: string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object"
 }
 
 function isBrowserBridgeApi(value: unknown): value is BrowserBridgeApi {

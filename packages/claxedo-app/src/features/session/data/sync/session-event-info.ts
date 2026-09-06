@@ -1,0 +1,90 @@
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import { asRecord, readFiniteNumber, readString } from "@/lib/record"
+
+/**
+ * `properties.info` on a `session.*` lifecycle event.
+ *
+ * The envelope reaches the app as `{ type: string; properties?: unknown }` — an
+ * SSE/bus frame, not a typed value — and the producers do NOT all publish the
+ * same `info`. `session.deleted` carries identity only (see
+ * `claxedo-local-server/src/session/session-meta-tap.ts`, which publishes
+ * `{ id, parentID?, directory? }`), while `session.created`/`session.updated`
+ * carry the whole row. Reading the envelope through this module is the one place
+ * that difference is stated; every consumer previously re-asserted
+ * `properties as { info: Session }`, which was a lie for the identity-only arm
+ * and threw a TypeError when `info` was absent altogether.
+ */
+
+function nonEmpty(value: string | undefined) {
+  return value && value.length > 0 ? value : undefined
+}
+
+function eventInfo(properties: unknown) {
+  return asRecord(asRecord(properties)?.info)
+}
+
+/** The session id of a `session.*` event, read from `info.id`. */
+export function sessionEventInfoId(properties: unknown): string | undefined {
+  return nonEmpty(readString(eventInfo(properties), "id"))
+}
+
+/** The workspace `info` was stamped with, under either spelling the producers use. */
+export function sessionEventWorkspaceId(properties: unknown): string | undefined {
+  const info = eventInfo(properties)
+  return nonEmpty(readString(info, "workspaceID")) ?? nonEmpty(readString(info, "workspaceId"))
+}
+
+/** The identity and list-ordering fields a session-list row projection reads off `info`. */
+export type SessionEventSummary = {
+  id: string
+  title?: string
+  parentID?: string
+  updated?: number
+  archived?: number
+}
+
+export function sessionEventSummary(properties: unknown): SessionEventSummary | undefined {
+  const info = eventInfo(properties)
+  const id = nonEmpty(readString(info, "id"))
+  if (!id) return undefined
+  const time = asRecord(info?.time)
+  const title = readString(info, "title")
+  const parentID = nonEmpty(readString(info, "parentID"))
+  const updated = readFiniteNumber(time, "updated")
+  const archived = readFiniteNumber(time, "archived")
+  return {
+    id,
+    ...(title === undefined ? {} : { title }),
+    ...(parentID === undefined ? {} : { parentID }),
+    ...(updated === undefined ? {} : { updated }),
+    ...(archived === undefined ? {} : { archived }),
+  }
+}
+
+/**
+ * The full row, for the consumers that store `info` AS a session.
+ *
+ * The predicate checks exactly the fields those consumers dereference without a
+ * guard — `id` and `time.created`/`time.updated`, which decide row identity and
+ * list ordering. An `info` that lacks them cannot be merged into or ordered
+ * within the session cache, so it is not a row. Everything else (`title`,
+ * `slug`, `version`, …) is compared defensively downstream and may be absent
+ * from a partial update.
+ */
+export function sessionEventRow(properties: unknown): Session | undefined {
+  return sessionRow(asRecord(properties)?.info)
+}
+
+/** The same check applied to an already-unwrapped `info`. */
+export function sessionRow(info: unknown): Session | undefined {
+  const row = asRecord(info)
+  return isSessionRow(row) ? row : undefined
+}
+
+function isSessionRow(info: Record<string, unknown> | undefined): info is Record<string, unknown> & Session {
+  if (!info) return false
+  const time = asRecord(info.time)
+  return typeof info.id === "string" && info.id.length > 0
+    && typeof time?.created === "number"
+    && typeof time.updated === "number"
+}

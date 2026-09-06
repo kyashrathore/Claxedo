@@ -5,6 +5,7 @@ import { ensureHostForUrl, removeAutoHostsForSource } from "@claxedo/server-core
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../route-options"
+import { record, stringRecord } from "../../platform/json"
 
 export function agentConfigMcpRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -36,44 +37,44 @@ export function agentConfigMcpRoutes(options: AgentConfigRouteOptions = {}) {
         )
       }
 
-      const body = await c.req.json().catch(() => null)
-      if (!body || typeof body !== "object") {
+      const body = record(await c.req.json().catch(() => null))
+      if (!body) {
         return c.json(errorBody("agent_config_invalid_body", "Invalid JSON body"), 400)
       }
 
-      const { type, command, args, env, url, headers, disabled } = body as Record<string, unknown>
+      const { type, command, args, env, url, headers, disabled } = body
+      const optional = typeof disabled === "boolean" ? { disabled } : {}
 
       if (type !== "stdio" && type !== "remote") {
         return c.json(errorBody("agent_config_mcp_type_invalid", "type must be 'stdio' or 'remote'"), 400)
       }
-      if (type === "stdio" && typeof command !== "string") {
-        return c.json(errorBody("agent_config_mcp_command_required", "command is required for stdio servers"), 400)
+      const config = await loadUserConfig()
+      // The two server kinds are written in their own branch so each required
+      // field is checked and used in one place: a combined object had to
+      // re-state, unchecked, what its own guard had already proved.
+      if (type === "stdio") {
+        if (typeof command !== "string") {
+          return c.json(errorBody("agent_config_mcp_command_required", "command is required for stdio servers"), 400)
+        }
+        config.mcp[name] = {
+          type,
+          command,
+          args: Array.isArray(args) ? args.filter((arg): arg is string => typeof arg === "string") : [],
+          env: stringRecord(env),
+          ...optional,
+        }
+        await saveUserConfig(config)
+        fanOutConfig().catch(() => {})
+        return c.json({ ok: true, name })
       }
-      if (type === "remote" && typeof url !== "string") {
+
+      if (typeof url !== "string") {
         return c.json(errorBody("agent_config_mcp_url_required", "url is required for remote servers"), 400)
       }
-
-      const config = await loadUserConfig()
-      config.mcp[name] = {
-        type: type as "stdio" | "remote",
-        ...(type === "stdio"
-          ? {
-              command: command as string,
-              args: Array.isArray(args) ? (args as string[]) : [],
-              env: (env as Record<string, string>) ?? {},
-            }
-          : {
-              url: url as string,
-              headers: (headers as Record<string, string>) ?? {},
-            }),
-        ...(typeof disabled === "boolean" ? { disabled } : {}),
-      }
+      config.mcp[name] = { type, url, headers: stringRecord(headers), ...optional }
       await saveUserConfig(config)
       fanOutConfig().catch(() => {})
-
-      if (type === "remote" && typeof url === "string") {
-        ensureHostForUrl(url as string, `mcp:${name}`)
-      }
+      ensureHostForUrl(url, `mcp:${name}`)
 
       return c.json({ ok: true, name })
     })

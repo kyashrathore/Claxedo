@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { notionIntegration } from "./notion.js"
 
+/** The header names exactly as the impl set them — `Headers` would lower-case them. */
+const headerRecord = (init: HeadersInit | undefined): Record<string, string> => {
+  if (!init) return {}
+  if (init instanceof Headers) return Object.fromEntries(init.entries())
+  if (Array.isArray(init)) return Object.fromEntries(init.map(([name, value]) => [name ?? "", value ?? ""]))
+  return { ...init }
+}
+
 describe("notion integration", () => {
   test("declares a key-method docs integration with a single secret prompt", () => {
     const { decl } = notionIntegration()
@@ -18,7 +26,7 @@ describe("notion integration", () => {
     const calls: Array<{ url: string; headers: Record<string, string> }> = []
     const integration = notionIntegration({
       fetchImpl: (async (input, init) => {
-        calls.push({ url: String(input), headers: (init?.headers ?? {}) as Record<string, string> })
+        calls.push({ url: input, headers: headerRecord(init?.headers) })
         return Response.json({ name: "Acme Bot" })
       }),
     })

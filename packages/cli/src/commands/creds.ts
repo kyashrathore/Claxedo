@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import readline from "node:readline/promises"
+import { jwtExpiresAt } from "../auth/jwt"
+import { object, text } from "../json"
 
 /**
  * `claxedo creds sync --remote <url>` — push local harness subscription
@@ -45,35 +47,24 @@ type CodexBundle = {
 async function readCodexBundle(): Promise<CodexBundle | undefined> {
   try {
     const raw = await readFile(path.join(os.homedir(), ".codex", "auth.json"), "utf8")
-    const value = JSON.parse(raw) as Record<string, unknown>
-    const tokens = value.tokens && typeof value.tokens === "object" ? value.tokens as Record<string, unknown> : undefined
-    const access = typeof tokens?.access_token === "string" ? tokens.access_token : undefined
-    const refresh = typeof tokens?.refresh_token === "string" ? tokens.refresh_token : undefined
-    const account = typeof tokens?.account_id === "string" ? tokens.account_id : undefined
+    const value = object(JSON.parse(raw))
+    const tokens = object(value.tokens)
+    const access = typeof tokens.access_token === "string" ? tokens.access_token : undefined
+    const refresh = typeof tokens.refresh_token === "string" ? tokens.refresh_token : undefined
+    const account = typeof tokens.account_id === "string" ? tokens.account_id : undefined
     if (!access || !refresh || !account) return undefined
     if (value.auth_mode !== undefined && value.auth_mode !== "chatgpt") return undefined
     return {
       auth_mode: "chatgpt",
       OPENAI_API_KEY: typeof value.OPENAI_API_KEY === "string" ? value.OPENAI_API_KEY : null,
       tokens: {
-        ...(typeof tokens?.id_token === "string" ? { id_token: tokens.id_token } : {}),
+        ...(typeof tokens.id_token === "string" ? { id_token: tokens.id_token } : {}),
         access_token: access,
         refresh_token: refresh,
         account_id: account,
       },
       last_refresh: typeof value.last_refresh === "string" ? value.last_refresh : new Date().toISOString(),
     }
-  } catch {
-    return undefined
-  }
-}
-
-function jwtExpMs(token: string): number | undefined {
-  const payload = token.split(".")[1]
-  if (!payload) return undefined
-  try {
-    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { exp?: unknown }
-    return typeof decoded.exp === "number" ? decoded.exp * 1000 : undefined
   } catch {
     return undefined
   }
@@ -117,7 +108,7 @@ export async function creds(args: string[]) {
     }
   }
 
-  const expires = jwtExpMs(bundle.tokens.access_token)
+  const expires = jwtExpiresAt(bundle.tokens.access_token)
   const response = await fetch(`${remote}/api/claxedo/credentials`, {
     method: "PUT",
     headers: {
@@ -151,6 +142,7 @@ export async function creds(args: string[]) {
     const body = await response.text().catch(() => "")
     throw new Error(`Sync failed: ${response.status} ${body.slice(0, 300)}`)
   }
-  const result = await response.json().catch(() => undefined) as { credential?: { id?: string; provider_id?: string } } | undefined
-  console.log(`Synced codex-app-server → ${remote} (credential ${result?.credential?.id ?? "stored"}).`)
+  const result = object(await response.json().catch(() => undefined))
+  const credentialId = text(object(result.credential).id)
+  console.log(`Synced codex-app-server → ${remote} (credential ${credentialId ?? "stored"}).`)
 }
