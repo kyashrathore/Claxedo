@@ -15,35 +15,55 @@ import { createSignal, onCleanup, type Accessor } from "solid-js"
  * An app hidden behind other windows produces no input, so backgrounding the
  * app reaches the same unloaded state through the same single rule.
  */
-export function createMountIdleGovernor(input: {
+/**
+ * Clock seam for tests. The handle is whatever the injected `setInterval`
+ * returns — a real timer handle in the browser, a counter in tests — and the
+ * governor only ever hands the same value straight back to `clearInterval`,
+ * so threading it as a type parameter keeps both ends exact.
+ */
+export type MountIdleClock<Handle> = {
+  now: () => number
+  setInterval: (handler: () => void, ms: number) => Handle
+  clearInterval: (id: Handle) => void
+}
+
+export type MountIdleGovernorInput<Handle> = {
   baseLimit: number
   idleAfterMs?: number
   backfillStepMs?: number
   /** Input-event source; tests inject a bare EventTarget. `null` means "no
    * target available" (SSR), yielding a constant full budget. */
   target?: EventTarget | null
-  /** Clock seam for tests; timer ids are opaque to the governor. */
-  clock?: {
-    now: () => number
-    setInterval: (handler: () => void, ms: number) => unknown
-    clearInterval: (id: unknown) => void
-  }
-}): Accessor<number> {
+  clock?: MountIdleClock<Handle>
+}
+
+const wallClock: MountIdleClock<ReturnType<typeof setInterval>> = {
+  now: () => performance.now(),
+  setInterval: (handler, ms) => setInterval(handler, ms),
+  clearInterval: (id) => clearInterval(id),
+}
+
+export function createMountIdleGovernor<Handle>(input: MountIdleGovernorInput<Handle>): Accessor<number> {
   const target = input.target === null
     ? undefined
     : input.target ?? (typeof window === "undefined" ? undefined : window)
   if (!target) return () => input.baseLimit
+  // Resolved here, not inside `runGovernor`, so the injected and default clocks
+  // each keep their own handle type instead of meeting at `unknown`.
+  return input.clock ? runGovernor(input, target, input.clock) : runGovernor(input, target, wallClock)
+}
+
+function runGovernor<Handle>(
+  input: { baseLimit: number; idleAfterMs?: number; backfillStepMs?: number },
+  target: EventTarget,
+  clock: MountIdleClock<Handle>,
+): Accessor<number> {
   const idleAfterMs = input.idleAfterMs ?? 180_000
   const backfillStepMs = input.backfillStepMs ?? 300
-  const clock = input.clock ?? {
-    now: () => performance.now(),
-    setInterval: (handler: () => void, ms: number) => setInterval(handler, ms),
-    clearInterval: (id: unknown) => clearInterval(id as Parameters<typeof clearInterval>[0]),
-  }
 
   const [limit, setLimit] = createSignal(input.baseLimit)
   let lastActivityAt = clock.now()
-  let backfillTimer: unknown
+  let backfillTimer: Handle | undefined
 
   const stopBackfill = () => {
     if (backfillTimer === undefined) return

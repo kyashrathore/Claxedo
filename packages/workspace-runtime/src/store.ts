@@ -173,17 +173,52 @@ type Control =
   | ProjectionResetRequested
   | ConfigUpdate
 
-type SqliteStatement = {
-  run(...params: unknown[]): unknown
-  get(...params: unknown[]): unknown
-  all(...params: unknown[]): unknown[]
+/** What both `bun:sqlite` and `better-sqlite3` return from a write statement. */
+type SqliteRunResult = {
+  changes?: number
+  lastInsertRowid?: number | bigint
+}
+
+/**
+ * A prepared statement over rows of a single declared shape.
+ *
+ * `Row` is the column list this store's SQL selects, declared once at
+ * `db.prepare<Row>(sql)` instead of re-asserted at every read. `get` widens to
+ * `null | undefined` because the two drivers disagree on the empty result:
+ * `bun:sqlite` yields `null`, `better-sqlite3` yields `undefined`.
+ */
+type SqliteStatement<Row> = {
+  run(...params: unknown[]): SqliteRunResult
+  get(...params: unknown[]): Row | null | undefined
+  all(...params: unknown[]): Row[]
   finalize?: () => unknown
 }
 
 type SqliteDatabase = {
   exec(sql: string): unknown
-  prepare(sql: string): SqliteStatement
+  prepare<Row = unknown>(sql: string): SqliteStatement<Row>
   close?: (throwOnError?: boolean) => unknown
+}
+
+/** The constructor shape both SQLite drivers expose. */
+type SqliteDatabaseConstructor = new (file: string) => SqliteDatabase
+
+/**
+ * A row the schema guarantees exists (a `SELECT` on a row this statement just
+ * wrote, or on a `PRIMARY KEY` the caller already resolved). A miss is a store
+ * bug, so it fails with the query's name rather than a property access on null.
+ */
+function requireRow<Row>(row: Row | null | undefined, what: string): Row {
+  if (row === null || row === undefined) throw new Error(`missing ${what} row`)
+  return row
+}
+
+/** Where a journaled event came from on the wire, as `source_json` stores it. */
+export type RuntimeEventSource = {
+  dir: "in" | "out"
+  method: string
+  requestId?: string
+  frame?: unknown
 }
 
 export type RuntimeStoreAppendOutput = {
@@ -192,12 +227,7 @@ export type RuntimeStoreAppendOutput = {
   createdAt: number
   agentSessionId?: string
   payload: CompatEvent
-  source?: {
-    dir: "in" | "out"
-    method: string
-    requestId?: string
-    frame?: unknown
-  }
+  source?: RuntimeEventSource
 }
 
 export type RuntimeStoreTurnStartOutput = {
@@ -225,8 +255,8 @@ const requireDatabase = createRequire(import.meta.url)
 function managedDatabase(db: SqliteDatabase): SqliteDatabase {
   return {
     exec: (sql) => db.exec(sql),
-    prepare(sql) {
-      const statement = db.prepare(sql)
+    prepare<Row>(sql: string): SqliteStatement<Row> {
+      const statement = db.prepare<Row>(sql)
       const finalize = () => statement.finalize?.()
       return {
         run(...params) {
@@ -256,20 +286,38 @@ function managedDatabase(db: SqliteDatabase): SqliteDatabase {
   }
 }
 
-function openDatabase(file: string): SqliteDatabase {
-  if (process.versions.bun) {
-    const mod = requireDatabase("bun:sqlite") as { Database: new (file: string) => SqliteDatabase }
-    return managedDatabase(new mod.Database(file))
+/**
+ * Both drivers are loaded through `createRequire` (never bundled), so their
+ * exports arrive untyped. This is the one place that decides a value is a
+ * database constructor, and it decides it by looking, not by asserting.
+ */
+function isSqliteDatabaseConstructor(value: unknown): value is SqliteDatabaseConstructor {
+  return typeof value === "function"
+}
+
+function sqliteConstructor(mod: unknown, exportName: string): SqliteDatabaseConstructor {
+  if (isSqliteDatabaseConstructor(mod)) return mod
+  if (isRecord(mod)) {
+    const named = mod[exportName]
+    if (isSqliteDatabaseConstructor(named)) return named
+    const fallback = mod.default
+    if (isSqliteDatabaseConstructor(fallback)) return fallback
   }
-  const mod = requireDatabase("better-sqlite3") as
-    { default?: new (file: string) => SqliteDatabase } | (new (file: string) => SqliteDatabase)
-  const BetterSqlite = typeof mod === "function" ? mod : mod.default
-  if (!BetterSqlite) throw new Error("better-sqlite3 export missing")
-  return managedDatabase(new BetterSqlite(file))
+  throw new Error(`sqlite driver export ${exportName} missing`)
+}
+
+function openDatabase(file: string): SqliteDatabase {
+  const driver = process.versions.bun
+    ? sqliteConstructor(requireDatabase("bun:sqlite"), "Database")
+    : sqliteConstructor(requireDatabase("better-sqlite3"), "default")
+  return managedDatabase(new driver(file))
 }
 
 function tableColumns(db: SqliteDatabase, table: string) {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name)
+  return db
+    .prepare<{ name: string }>(`PRAGMA table_info(${table})`)
+    .all()
+    .map((row) => row.name)
 }
 
 function hasColumn(db: SqliteDatabase, table: string, column: string) {
@@ -291,12 +339,7 @@ type Row =
       sessionId: string
       agentSessionId?: string
       kind: "event"
-      source?: {
-        dir: "in" | "out"
-        method: string
-        requestId?: string
-        frame?: unknown
-      }
+      source?: RuntimeEventSource
       payload: CompatEvent
     }
 
@@ -366,14 +409,49 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
   }
 }
 
-function rec(input: unknown): Record<string, unknown> | null {
+/** The one plain-object test in this store; every other check narrows through it. */
+function isRecord(input: unknown): input is Record<string, unknown> {
   return input !== null && typeof input === "object" && !Array.isArray(input)
-    ? (input as Record<string, unknown>)
-    : null
+}
+
+function rec(input: unknown): Record<string, unknown> | null {
+  return isRecord(input) ? input : null
 }
 
 function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
+}
+
+/**
+ * The read half of this store's JSON columns.
+ *
+ * Every one of these columns was written by a `JSON.stringify` in this file, so
+ * a read is the other end of that round trip, not a parse of foreign input.
+ * Declaring each column view here — once — keeps the contract greppable and
+ * stops it being re-stated at every read site.
+ *
+ * `message.info_json` and `part.data_json` each have two views: the typed
+ * `AgentMessage` view the projection returns, and the untyped record view the
+ * merge/patch paths mutate before writing the column back.
+ */
+/**
+ * Widen a typed message/part envelope to the open record the projection stores.
+ *
+ * The projection round-trips envelopes through `info_json`/`data_json`, so it
+ * works in open records, while the builders in `compat-events` and the engine's
+ * own event payloads are closed types. A shallow copy is the whole conversion:
+ * no assertion, and the caller's value is never mutated (neither `upsertMessage`
+ * nor `upsertPart` writes to what it is given).
+ */
+function envelopeRecord(value: object): Record<string, unknown> {
+  return { ...value }
+}
+
+const readColumn = {
+  messageInfo: (json: string): AgentMessage["info"] => JSON.parse(json),
+  messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
+  messagePart: (json: string): AgentMessage["parts"][number] => JSON.parse(json),
+  partRecord: (json: string): Record<string, unknown> => JSON.parse(json),
 }
 
 /** Keep host-stamped `claxedo.author` when an engine envelope omits it. */
@@ -382,13 +460,9 @@ function preserveClaxedoAuthor(
   next: Record<string, unknown>,
 ): Record<string, unknown> {
   if (str(next.role) !== "user") return next
-  const nextClaxedo = next.claxedo && typeof next.claxedo === "object" && !Array.isArray(next.claxedo)
-    ? next.claxedo as Record<string, unknown>
-    : undefined
+  const nextClaxedo = rec(next.claxedo) ?? undefined
   if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
-  const prevClaxedo = previous?.claxedo && typeof previous.claxedo === "object" && !Array.isArray(previous.claxedo)
-    ? previous.claxedo as Record<string, unknown>
-    : undefined
+  const prevClaxedo = rec(previous?.claxedo) ?? undefined
   if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
   return {
     ...next,
@@ -425,14 +499,16 @@ function nullable(input: unknown): string | null | undefined {
 }
 
 function sessionHandoff(input: string | null | undefined): SessionConfig["handoff"] | undefined {
-  if (!input) return
+  if (!input) return undefined
   try {
-    const value = JSON.parse(input) as SessionConfig["handoff"]
-    if (!value || ! value.pending || !value.from?.id || typeof value.transcript !== "string") return
+    const value: SessionConfig["handoff"] = JSON.parse(input)
+    if (!value || !value.pending || !value.from?.id || typeof value.transcript !== "string") return undefined
     const from = normalizeHarnessIdentity(value.from)
-    if (!from) return
+    if (!from) return undefined
     return { from, pending: true, transcript: value.transcript }
-  } catch {}
+  } catch {
+    return undefined
+  }
 }
 
 function sessionHandoffJson(input: SessionConfig["handoff"] | undefined) {
@@ -448,8 +524,7 @@ function sessionHarness(input: {
       ? { id: input.harness_id, access: input.harness_access }
       : undefined,
   )
-  if (!identity) return
-  return identity
+  return identity ?? undefined
 }
 
 /**
@@ -834,24 +909,25 @@ export class RuntimeStore {
   private hydrateSubagentAdmission() {
     this.subagentAdmission = createMemorySubagentAdmissionStore()
     const rows = this.db
-      .prepare(
-        `
-      SELECT parent_session_id, observation_id, subagent_key, revision, observation_json, published
-      FROM session_subagent_observation
-      ORDER BY parent_session_id, subagent_key, revision
-    `,
-      )
-      .all() as Array<{
+      .prepare<{
       parent_session_id: string
       observation_id: string
       subagent_key: string
       revision: number
       observation_json: string
       published: number
-    }>
+    }>(
+        `
+      SELECT parent_session_id, observation_id, subagent_key, revision, observation_json, published
+      FROM session_subagent_observation
+      ORDER BY parent_session_id, subagent_key, revision
+    `,
+      )
+      .all()
     for (const row of rows) {
+      const stored: SubagentObservation = JSON.parse(row.observation_json)
       const observation = {
-        ...(JSON.parse(row.observation_json) as SubagentObservation),
+        ...stored,
         observationId: row.observation_id,
         subagentKey: row.subagent_key,
       }
@@ -920,17 +996,17 @@ export class RuntimeStore {
       this.hydrateSubagentAdmission()
       const admitted = this.subagentAdmission.admit(input)
       const existing = this.db
-        .prepare(
+        .prepare<{
+        event_json: string
+        published: number
+      }>(
           `
         SELECT event_json, published
         FROM session_subagent_observation
         WHERE parent_session_id = ? AND observation_id = ?
       `,
         )
-        .get(input.parentSessionId, input.observation.observationId) as {
-        event_json: string
-        published: number
-      } | null
+        .get(input.parentSessionId, input.observation.observationId)
       if (existing) {
         this.db.exec("COMMIT")
         return { ...admitted, published: !!existing.published }
@@ -993,14 +1069,14 @@ export class RuntimeStore {
       WHERE parent_session_id = ? AND observation_id = ?
     `,
       )
-      .run(parentSessionId, observationId) as { changes?: number }
+      .run(parentSessionId, observationId)
     if (result.changes === 0) throw new Error(`unknown subagent observation ${observationId}`)
     this.subagentAdmission.markPublished(parentSessionId, observationId)
   }
 
   listSubagents(parentSessionId: string) {
     const rows = this.db
-      .prepare(
+      .prepare<Record<string, string | number | null>>(
         `
       SELECT *
       FROM session_subagent
@@ -1008,9 +1084,14 @@ export class RuntimeStore {
       ORDER BY created_at, subagent_key
     `,
       )
-      .all(parentSessionId) as Array<Record<string, string | number | null>>
+      .all(parentSessionId)
     const edges = this.db
-      .prepare(
+      .prepare<{
+      subagent_key: string
+      tool_call_id: string
+      role: "spawn" | "interaction"
+      revision: number
+    }>(
         `
       SELECT subagent_key, tool_call_id, role, revision
       FROM session_subagent_tool_call
@@ -1018,12 +1099,7 @@ export class RuntimeStore {
       ORDER BY created_at, tool_call_id
     `,
       )
-      .all(parentSessionId) as Array<{
-      subagent_key: string
-      tool_call_id: string
-      role: "spawn" | "interaction"
-      revision: number
-    }>
+      .all(parentSessionId)
     return rows.map((row) => ({
       parentSessionId,
       subagentKey: String(row.subagent_key),
@@ -1048,7 +1124,7 @@ export class RuntimeStore {
 
   private reconcileOrphanedSubagents() {
     const parents = this.db
-      .prepare(
+      .prepare<{ parent_session_id: string }>(
         `
       SELECT DISTINCT child.parent_session_id
       FROM session_subagent child
@@ -1058,7 +1134,7 @@ export class RuntimeStore {
         AND COALESCE(parent.status, 'idle') != 'busy'
     `,
       )
-      .all() as Array<{ parent_session_id: string }>
+      .all()
     for (const parent of parents) this.interruptSubagents(parent.parent_session_id, "orphan")
   }
 
@@ -1119,15 +1195,18 @@ export class RuntimeStore {
         .run(value, event.revision, parentSessionId, event.subagentKey, event.revision)
     }
     if (event.status !== undefined) {
-      const current = this.db
-        .prepare(
-          `
+      const current = requireRow(
+        this.db
+          .prepare<{ status: string; status_revision: number }>(
+            `
         SELECT status, status_revision
         FROM session_subagent
         WHERE parent_session_id = ? AND subagent_key = ?
       `,
-        )
-        .get(parentSessionId, event.subagentKey) as { status: string; status_revision: number }
+          )
+          .get(parentSessionId, event.subagentKey),
+        "session_subagent",
+      )
       const currentTerminal = terminalSubagentStatus(current.status)
       const incomingTerminal = terminalSubagentStatus(event.status)
       if (
@@ -1221,7 +1300,7 @@ export class RuntimeStore {
 
   private replay() {
     const sessions = this.db
-      .prepare(
+      .prepare<{ session_id: string; last_seq: number; max_seq: number }>(
         `
         SELECT journal.session_id, COALESCE(checkpoint.last_seq, 0) AS last_seq, journal.max_seq
         FROM (
@@ -1234,12 +1313,12 @@ export class RuntimeStore {
         ORDER BY journal.session_id ASC
       `,
       )
-      .all() as Array<{ session_id: string; last_seq: number; max_seq: number }>
+      .all()
     for (const session of sessions) {
       let cursor = session.last_seq
       while (cursor < session.max_seq) {
         const rows = this.db
-          .prepare(
+          .prepare<RuntimeJournalRow>(
             `
             SELECT
               session_id,
@@ -1260,7 +1339,7 @@ export class RuntimeStore {
             LIMIT 100
           `,
           )
-          .all(session.session_id, cursor) as RuntimeJournalRow[]
+          .all(session.session_id, cursor)
         if (rows.length === 0) break
         for (const row of rows) {
           cursor = row.seq
@@ -1280,10 +1359,10 @@ export class RuntimeStore {
   private finishTools(sessionId: string, ts: number, message?: string) {
     const error = this.staleToolError(message)
     const rows = this.db
-      .prepare("SELECT data_json FROM part WHERE session_id = ? ORDER BY updated_at ASC")
-      .all(sessionId) as Array<{ data_json: string }>
+      .prepare<{ data_json: string }>("SELECT data_json FROM part WHERE session_id = ? ORDER BY updated_at ASC")
+      .all(sessionId)
     for (const row of rows) {
-      const part = JSON.parse(row.data_json) as Record<string, unknown>
+      const part = readColumn.partRecord(row.data_json)
       if (part.type !== "tool") continue
       const state = rec(part.state)
       const status = str(state?.status)
@@ -1323,10 +1402,10 @@ export class RuntimeStore {
   }
 
   private normalizeRecoveringTools() {
-    const rows = this.db.prepare("SELECT id, agent_session_id FROM session WHERE status = 'busy'").all() as Array<{
+    const rows = this.db.prepare<{
       id: string
       agent_session_id: string | null
-    }>
+    }>("SELECT id, agent_session_id FROM session WHERE status = 'busy'").all()
     for (const row of rows) {
       this.markSessionInterrupted(row.id, ACP_RECOVER, row.agent_session_id)
     }
@@ -1372,7 +1451,17 @@ export class RuntimeStore {
   }
 
   getWorktree(workspaceId: string, sessionId: string): WorkspaceWorktreeRecord | undefined {
-    const row = this.db.prepare(`
+    const row = this.db.prepare<{
+      workspace_id: string
+      session_id: string
+      branch: string
+      base_commit: string
+      path: string
+      state: WorkspaceWorktreeRecord["state"]
+      created_at: number
+      updated_at: number
+      last_activity_at: number
+    }>(`
       SELECT
         workspace_id,
         session_id,
@@ -1385,18 +1474,8 @@ export class RuntimeStore {
         last_activity_at
       FROM workspace_worktree
       WHERE workspace_id = ? AND session_id = ?
-    `).get(workspaceId, sessionId) as {
-      workspace_id: string
-      session_id: string
-      branch: string
-      base_commit: string
-      path: string
-      state: WorkspaceWorktreeRecord["state"]
-      created_at: number
-      updated_at: number
-      last_activity_at: number
-    } | undefined
-    if (!row) return
+    `).get(workspaceId, sessionId)
+    if (!row) return undefined
     return {
       workspaceId: row.workspace_id,
       sessionId: row.session_id,
@@ -1413,46 +1492,40 @@ export class RuntimeStore {
   listWorktrees(workspaceId: string): WorkspaceWorktreeRecord[] {
     return (
       this.db
-        .prepare(
+        .prepare<{ session_id: string }>(
           `
       SELECT session_id
       FROM workspace_worktree
       WHERE workspace_id = ?
       ORDER BY last_activity_at DESC, session_id ASC
-    `).all(workspaceId) as Array<{ session_id: string }>)
+    `).all(workspaceId))
       .map((row) => this.getWorktree(workspaceId, row.session_id)!)
   }
 
   private parseJournalRow(row: RuntimeJournalRow): Row | null {
     try {
       if (row.kind === "control") {
+        const control: Control = JSON.parse(row.payload_json)
         return {
           seq: row.seq,
           ts: row.created_at,
           sessionId: row.session_id,
           ...(row.provider_session_id ? { agentSessionId: row.provider_session_id } : {}),
           kind: "control",
-          control: JSON.parse(row.payload_json) as Control,
+          control,
         }
       }
       if (row.kind === "event") {
+        const payload: CompatEvent = JSON.parse(row.payload_json)
+        const source: RuntimeEventSource | undefined = row.source_json ? JSON.parse(row.source_json) : undefined
         return {
           seq: row.seq,
           ts: row.created_at,
           sessionId: row.session_id,
           ...(row.provider_session_id ? { agentSessionId: row.provider_session_id } : {}),
           kind: "event",
-          payload: JSON.parse(row.payload_json) as CompatEvent,
-          ...(row.source_json
-            ? {
-                source: JSON.parse(row.source_json) as {
-                  dir: "in" | "out"
-                  method: string
-                  requestId?: string
-                  frame?: unknown
-                },
-              }
-            : {}),
+          payload,
+          ...(source ? { source } : {}),
         }
       }
       return null
@@ -1463,7 +1536,7 @@ export class RuntimeStore {
 
   exportJournalJsonl(sessionId?: string) {
     const rows = this.db
-      .prepare(
+      .prepare<RuntimeJournalRow>(
         `
         SELECT
           session_id,
@@ -1483,7 +1556,7 @@ export class RuntimeStore {
         ORDER BY session_id ASC, seq ASC
       `,
       )
-      .all(...(sessionId ? [sessionId] : [])) as RuntimeJournalRow[]
+      .all(...(sessionId ? [sessionId] : []))
     return (
       rows
         .flatMap((row) => {
@@ -1495,9 +1568,12 @@ export class RuntimeStore {
   }
 
   private next(sessionId: string) {
-    const row = this.db
-      .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM runtime_journal WHERE session_id = ?")
-      .get(sessionId) as { seq: number }
+    const row = requireRow(
+      this.db
+        .prepare<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM runtime_journal WHERE session_id = ?")
+        .get(sessionId),
+      "runtime_journal next seq",
+    )
     return row.seq
   }
 
@@ -1604,14 +1680,14 @@ export class RuntimeStore {
   }
 
   private latestFencingToken(sessionId: string) {
-    const row = this.db.prepare(`
+    const row = this.db.prepare<{ fencing_token: number }>(`
       SELECT CAST(json_extract(payload_json, '$.fencingToken') AS INTEGER) AS fencing_token
       FROM runtime_journal
       WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
         AND json_type(payload_json, '$.fencingToken') = 'integer'
       ORDER BY seq DESC
       LIMIT 1
-    `).get(sessionId) as { fencing_token: number } | null
+    `).get(sessionId)
     return row?.fencing_token
   }
 
@@ -1654,32 +1730,39 @@ export class RuntimeStore {
   }
 
   private messageOrd(sessionId: string, messageId: string) {
-    const row = this.db.prepare("SELECT ord FROM message WHERE id = ?").get(messageId) as { ord: number } | null
+    const row = this.db.prepare<{ ord: number }>("SELECT ord FROM message WHERE id = ?").get(messageId)
     if (row) return row.ord
-    const max = this.db
-      .prepare("SELECT COALESCE(MAX(ord), -1) AS ord FROM message WHERE session_id = ?")
-      .get(sessionId) as { ord: number }
+    const max = requireRow(
+      this.db
+        .prepare<{ ord: number }>("SELECT COALESCE(MAX(ord), -1) AS ord FROM message WHERE session_id = ?")
+        .get(sessionId),
+      "message max ord",
+    )
     return max.ord + 1
   }
 
   private partOrd(messageId: string, partId: string) {
-    const row = this.db.prepare("SELECT ord FROM part WHERE id = ?").get(partId) as { ord: number } | null
+    const row = this.db.prepare<{ ord: number }>("SELECT ord FROM part WHERE id = ?").get(partId)
     if (row) return row.ord
-    const max = this.db
-      .prepare("SELECT COALESCE(MAX(ord), -1) AS ord FROM part WHERE message_id = ?")
-      .get(messageId) as { ord: number }
+    const max = requireRow(
+      this.db
+        .prepare<{ ord: number }>("SELECT COALESCE(MAX(ord), -1) AS ord FROM part WHERE message_id = ?")
+        .get(messageId),
+      "part max ord",
+    )
     return max.ord + 1
   }
 
-  private upsertMessage(info: Record<string, unknown>, ts: number) {
+  private upsertMessage(envelope: object, ts: number) {
+    const info = envelopeRecord(envelope)
     const sessionId = str(info.sessionID)
     const id = str(info.id)
     const role = str(info.role)
     if (!sessionId || !id || !role) return
-    const prev = this.db.prepare("SELECT created_at, info_json FROM message WHERE id = ?").get(id) as
-      | { created_at: number; info_json: string }
-      | null
-    const merged = preserveClaxedoAuthor(prev ? JSON.parse(prev.info_json) as Record<string, unknown> : undefined, info)
+    const prev = this.db
+      .prepare<{ created_at: number; info_json: string }>("SELECT created_at, info_json FROM message WHERE id = ?")
+      .get(id)
+    const merged = preserveClaxedoAuthor(prev ? readColumn.messageRecord(prev.info_json) : undefined, info)
     this.db
       .prepare(
         "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1687,7 +1770,8 @@ export class RuntimeStore {
       .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? ts)
   }
 
-  private upsertPart(part: Record<string, unknown>, ts: number) {
+  private upsertPart(envelope: object, ts: number) {
+    const part = envelopeRecord(envelope)
     const sessionId = str(part.sessionID)
     const messageId = str(part.messageID)
     const id = str(part.id)
@@ -1742,7 +1826,7 @@ export class RuntimeStore {
    * another's. Either guard alone would do; both are cheap.
    */
   private supersedeProvisionalParts(messageId: string) {
-    const rows = this.db.prepare("SELECT id FROM part WHERE message_id = ?").all(messageId) as Array<{ id: string }>
+    const rows = this.db.prepare<{ id: string }>("SELECT id FROM part WHERE message_id = ?").all(messageId)
     const stale: string[] = []
     let canonical = 0
     for (const row of rows) {
@@ -1754,9 +1838,9 @@ export class RuntimeStore {
   }
 
   private delta(sessionId: string, messageId: string, partId: string, field: string, delta: string, ts: number) {
-    const row = this.db.prepare("SELECT data_json FROM part WHERE id = ?").get(partId) as { data_json: string } | null
+    const row = this.db.prepare<{ data_json: string }>("SELECT data_json FROM part WHERE id = ?").get(partId)
     const part = row
-      ? (JSON.parse(row.data_json) as Record<string, unknown>)
+      ? readColumn.partRecord(row.data_json)
       : {
           id: partId,
           sessionID: sessionId,
@@ -1787,7 +1871,25 @@ export class RuntimeStore {
     parentSessionId?: string
   }) {
     const prev = this.db
-      .prepare(
+      .prepare<{
+      created_at: number
+      parent_id: string | null
+      title: string | null
+      recovery_error: string | null
+      agent_session_id: string | null
+      process_key: string | null
+      harness_id: string | null
+      harness_access: string | null
+      harness_binary: string | null
+      harness_transport: string | null
+      harness_url: string | null
+      harness_headers_json: string | null
+      model_provider_id: string | null
+      model_id: string | null
+      variant: string | null
+      agent: string | null
+      handoff_json: string | null
+    }>(
         `
         SELECT
           created_at,
@@ -1811,25 +1913,7 @@ export class RuntimeStore {
         WHERE id = ?
       `,
       )
-      .get(input.id) as {
-      created_at: number
-      parent_id: string | null
-      title: string | null
-      recovery_error: string | null
-      agent_session_id: string | null
-      process_key: string | null
-      harness_id: string | null
-      harness_access: string | null
-      harness_binary: string | null
-      harness_transport: string | null
-      harness_url: string | null
-      harness_headers_json: string | null
-      model_provider_id: string | null
-      model_id: string | null
-      variant: string | null
-      agent: string | null
-      handoff_json: string | null
-    } | null
+      .get(input.id)
     this.db
       .prepare(
         `INSERT INTO session (
@@ -1991,11 +2075,11 @@ export class RuntimeStore {
             ...(control.system ? { system: control.system } : {}),
             ...(control.variant ? { variant: control.variant } : {}),
             ...(control.author ? { author: control.author } : {}),
-          }) as unknown as Record<string, unknown>,
+          }),
           row.ts,
         )
         for (const part of buildUserPromptParts(row.sessionId, control.userMessageId, control.parts)) {
-          this.upsertPart(part as unknown as Record<string, unknown>, row.ts)
+          this.upsertPart(part, row.ts)
         }
       }
       this.upsertMessage(
@@ -2007,7 +2091,7 @@ export class RuntimeStore {
           model: control.model,
           directory,
           created: row.ts,
-        }) as unknown as Record<string, unknown>,
+        }),
         row.ts,
       )
       this.upsertSession({
@@ -2114,11 +2198,11 @@ export class RuntimeStore {
     if (this.deleted(row.sessionId)) return
     switch (event.type) {
       case "message.updated":
-        this.upsertMessage(event.properties.info as unknown as Record<string, unknown>, row.ts)
+        this.upsertMessage(event.properties.info, row.ts)
         return
 
       case "message.part.updated":
-        this.upsertPart(event.properties.part as unknown as Record<string, unknown>, row.ts)
+        this.upsertPart(event.properties.part, row.ts)
         return
 
       case "message.part.delta":
@@ -2189,10 +2273,10 @@ export class RuntimeStore {
 
       case "message.completed": {
         const rowInfo = this.db
-          .prepare("SELECT info_json FROM message WHERE id = ?")
-          .get(event.properties.messageID) as { info_json: string } | null
+          .prepare<{ info_json: string }>("SELECT info_json FROM message WHERE id = ?")
+          .get(event.properties.messageID)
         if (!rowInfo) return
-        const info = JSON.parse(rowInfo.info_json) as Record<string, unknown>
+        const info = readColumn.messageRecord(rowInfo.info_json)
         info.time = { ...rec(info.time), completed: row.ts }
         this.upsertMessage(info, row.ts)
         return
@@ -2366,7 +2450,11 @@ export class RuntimeStore {
     fencingToken?: number
   }) {
     const active = this.db
-      .prepare(
+      .prepare<{
+      seq: number
+      created_at: number
+      provider_session_id: string | null
+    }>(
         `
         SELECT start.seq, start.created_at, start.provider_session_id
         FROM runtime_journal start
@@ -2386,17 +2474,21 @@ export class RuntimeStore {
         LIMIT 1
       `,
       )
-      .get(input.sessionId, input.assistantMessageId) as {
-      seq: number
-      created_at: number
-      provider_session_id: string | null
-    } | null
+      .get(input.sessionId, input.assistantMessageId)
     if (active) {
-      const activeControl = JSON.parse((this.db.prepare(`
+      const activeStart = requireRow(
+        this.db
+          .prepare<{ payload_json: string }>(
+            `
         SELECT payload_json FROM runtime_journal
         WHERE session_id = ? AND kind = 'control' AND type = 'turn.start' AND assistant_message_id = ?
         ORDER BY seq DESC LIMIT 1
-      `).get(input.sessionId, input.assistantMessageId) as { payload_json: string }).payload_json) as Turn
+      `,
+          )
+          .get(input.sessionId, input.assistantMessageId),
+        "runtime_journal turn.start",
+      )
+      const activeControl: Turn = JSON.parse(activeStart.payload_json)
       if (input.fencingToken !== activeControl.fencingToken) throw new AgentRuntimeStaleTurnError(input.sessionId)
       return {
         sessionId: input.sessionId,
@@ -2447,7 +2539,7 @@ export class RuntimeStore {
 
   markDirectorySessionsInterrupted(directory: string, message = ACP_RECOVER) {
     const rows = this.db
-      .prepare(
+      .prepare<{ id: string; agent_session_id: string | null }>(
         `
         SELECT s.id, s.agent_session_id
         FROM session s
@@ -2465,7 +2557,7 @@ export class RuntimeStore {
           )
       `,
       )
-      .all(directory) as Array<{ id: string; agent_session_id: string | null }>
+      .all(directory)
     for (const row of rows) {
       this.markSessionInterrupted(row.id, message, row.agent_session_id)
     }
@@ -2473,7 +2565,7 @@ export class RuntimeStore {
 
   markSessionsInterruptedByOwner(ownerKey: string, message = ACP_RECOVER) {
     const rows = this.db
-      .prepare(
+      .prepare<{ id: string; agent_session_id: string | null }>(
         `
         SELECT s.id, s.agent_session_id
         FROM session s
@@ -2491,7 +2583,7 @@ export class RuntimeStore {
           )
       `,
       )
-      .all(ownerKey) as Array<{ id: string; agent_session_id: string | null }>
+      .all(ownerKey)
     for (const row of rows) {
       this.markSessionInterrupted(row.id, message, row.agent_session_id)
     }
@@ -2502,9 +2594,9 @@ export class RuntimeStore {
       agentSessionId !== undefined
         ? agentSessionId
         : ((
-            this.db.prepare("SELECT agent_session_id FROM session WHERE id = ?").get(sessionId) as {
+            this.db.prepare<{
               agent_session_id: string | null
-            } | null
+            }>("SELECT agent_session_id FROM session WHERE id = ?").get(sessionId)
           )?.agent_session_id ?? null)
     const item: Row = {
       seq: this.next(sessionId),
@@ -2524,12 +2616,7 @@ export class RuntimeStore {
     sessionId: string
     agentSessionId?: string
     payload: CompatEvent
-    source?: {
-      dir: "in" | "out"
-      method: string
-      requestId?: string
-      frame?: unknown
-    }
+    source?: RuntimeEventSource
     fencingToken?: number
   }) {
     const row: Row = {
@@ -2561,7 +2648,13 @@ export class RuntimeStore {
   }) {
     this.assertFencingToken(input.sessionId, input.fencingToken)
     const active = this.db
-      .prepare(
+      .prepare<{
+      provider_session_id: string | null
+      user_message_id: string | null
+      assistant_message_id: string | null
+      payload_json: string
+      created_at: number
+    }>(
         `
         SELECT provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
         FROM runtime_journal
@@ -2570,13 +2663,7 @@ export class RuntimeStore {
         LIMIT 1
       `,
       )
-      .get(input.sessionId) as {
-      provider_session_id: string | null
-      user_message_id: string | null
-      assistant_message_id: string | null
-      payload_json: string
-      created_at: number
-    } | null
+      .get(input.sessionId)
     if (!active?.assistant_message_id) return { events: [] }
     if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
     if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
@@ -2731,7 +2818,7 @@ export class RuntimeStore {
 
   private lastTurn(sessionId: string) {
     const row = this.db
-      .prepare(
+      .prepare<{ seq: number; type: string; created_at: number; payload_json: string }>(
         `
         SELECT seq, type, created_at, payload_json
         FROM runtime_journal
@@ -2744,7 +2831,7 @@ export class RuntimeStore {
         LIMIT 1
       `,
       )
-      .get(sessionId) as { seq: number; type: string; created_at: number; payload_json: string } | null
+      .get(sessionId)
     if (!row) return
     if (row.type === "turn.finish") {
       const control = JSON.parse(row.payload_json) as TurnFinish
@@ -2774,7 +2861,7 @@ export class RuntimeStore {
 
   private lastStartedAssistant(sessionId: string, beforeSeq: number) {
     const row = this.db
-      .prepare(
+      .prepare<{ assistant_message_id: string | null }>(
         `
         SELECT assistant_message_id
         FROM runtime_journal
@@ -2786,14 +2873,37 @@ export class RuntimeStore {
         LIMIT 1
       `,
       )
-      .get(sessionId, beforeSeq) as { assistant_message_id: string | null } | null
+      .get(sessionId, beforeSeq)
     return row?.assistant_message_id ?? undefined
   }
 
   listSessions(directory: string) {
     return (
       this.db
-        .prepare(
+        .prepare<{
+        id: string
+        workspace_id: string | null
+        parent_id: string | null
+        directory: string
+        title: string | null
+        agent_session_id: string | null
+        process_key: string | null
+        harness_id: string | null
+        harness_access: string | null
+        harness_binary: string | null
+        harness_transport: string | null
+        harness_url: string | null
+        harness_headers_json: string | null
+        model_provider_id: string | null
+        model_id: string | null
+        variant: string | null
+        agent: string | null
+        created_at: number
+        updated_at: number
+        status: string | null
+        recovery_error: string | null
+        archived_at: number | null
+      }>(
           `
         SELECT
           session.id,
@@ -2824,37 +2934,14 @@ export class RuntimeStore {
         ORDER BY created_at DESC
       `,
         )
-        .all(directory) as Array<{
-        id: string
-        workspace_id: string | null
-        parent_id: string | null
-        directory: string
-        title: string | null
-        agent_session_id: string | null
-        process_key: string | null
-        harness_id: string | null
-        harness_access: string | null
-        harness_binary: string | null
-        harness_transport: string | null
-        harness_url: string | null
-        harness_headers_json: string | null
-        model_provider_id: string | null
-        model_id: string | null
-        variant: string | null
-        agent: string | null
-        created_at: number
-        updated_at: number
-        status: string | null
-        recovery_error: string | null
-        archived_at: number | null
-      }>
+        .all(directory)
     ).map((row) => this.session(row))
   }
 
   stalePermission(id: string) {
-    const row = this.db.prepare("SELECT session_id FROM pending_permission WHERE id = ?").get(id) as {
+    const row = this.db.prepare<{
       session_id: string
-    } | null
+    }>("SELECT session_id FROM pending_permission WHERE id = ?").get(id)
     if (!row) return
     this.commit({
       seq: this.next(row.session_id),
@@ -2869,9 +2956,9 @@ export class RuntimeStore {
   }
 
   staleQuestion(id: string) {
-    const row = this.db.prepare("SELECT session_id FROM pending_question WHERE id = ?").get(id) as {
+    const row = this.db.prepare<{
       session_id: string
-    } | null
+    }>("SELECT session_id FROM pending_question WHERE id = ?").get(id)
     if (!row) return
     this.commit({
       seq: this.next(row.session_id),
@@ -2927,7 +3014,30 @@ export class RuntimeStore {
 
   getSession(id: string) {
     const row = this.db
-      .prepare(
+      .prepare<{
+      id: string
+      workspace_id: string | null
+      parent_id: string | null
+      directory: string
+      title: string | null
+      harness_id: string | null
+      harness_access: string | null
+      harness_binary: string | null
+      harness_transport: string | null
+      harness_url: string | null
+      harness_headers_json: string | null
+      model_provider_id: string | null
+      model_id: string | null
+      variant: string | null
+      agent: string | null
+      created_at: number
+      updated_at: number
+      status: string | null
+      recovery_error: string | null
+      archived_at: number | null
+      process_key: string | null
+      agent_session_id: string | null
+    }>(
         `
         SELECT
           session.id,
@@ -2957,57 +3067,34 @@ export class RuntimeStore {
         WHERE session.id = ?
       `,
       )
-      .get(id) as {
-      id: string
-      workspace_id: string | null
-      parent_id: string | null
-      directory: string
-      title: string | null
-      harness_id: string | null
-      harness_access: string | null
-      harness_binary: string | null
-      harness_transport: string | null
-      harness_url: string | null
-      harness_headers_json: string | null
-      model_provider_id: string | null
-      model_id: string | null
-      variant: string | null
-      agent: string | null
-      created_at: number
-      updated_at: number
-      status: string | null
-      recovery_error: string | null
-      archived_at: number | null
-      process_key: string | null
-      agent_session_id: string | null
-    } | null
+      .get(id)
     if (!row) return null
     return this.session(row)
   }
 
   getAgentSessionId(id: string) {
-    const row = this.db.prepare("SELECT agent_session_id FROM session WHERE id = ?").get(id) as {
+    const row = this.db.prepare<{
       agent_session_id: string | null
-    } | null
+    }>("SELECT agent_session_id FROM session WHERE id = ?").get(id)
     return row?.agent_session_id ?? null
   }
 
   getExecutionBinding(sessionId: string): AgentExecutionBinding | null {
     const row = this.db
-      .prepare(
+      .prepare<{
+      session_id: string
+      workspace_id: string
+      directory: string
+      connection_id: string
+      upstream_session_id: string
+    }>(
         `
         SELECT session_id, workspace_id, directory, connection_id, upstream_session_id
         FROM session_execution_binding
         WHERE session_id = ?
       `,
       )
-      .get(sessionId) as {
-      session_id: string
-      workspace_id: string
-      directory: string
-      connection_id: string
-      upstream_session_id: string
-    } | null
+      .get(sessionId)
     if (!row) return null
     return {
       sessionId: row.session_id,
@@ -3019,24 +3106,24 @@ export class RuntimeStore {
   }
 
   getSessionOwnerKey(id: string) {
-    const row = this.db.prepare("SELECT process_key FROM session WHERE id = ?").get(id) as {
+    const row = this.db.prepare<{
       process_key: string | null
-    } | null
+    }>("SELECT process_key FROM session WHERE id = ?").get(id)
     return row?.process_key ?? null
   }
 
   listSessionsByOwnerKey(ownerKey: string) {
     return (
-      this.db.prepare("SELECT id FROM session WHERE process_key = ? ORDER BY created_at ASC").all(ownerKey) as Array<{
+      this.db.prepare<{
         id: string
-      }>
+      }>("SELECT id FROM session WHERE process_key = ? ORDER BY created_at ASC").all(ownerKey)
     ).map((row) => row.id)
   }
 
   getSessionByAgent(agentSessionId: string) {
     const row = this.db
-      .prepare("SELECT session_id FROM session_map WHERE agent_session_id = ?")
-      .get(agentSessionId) as { session_id: string } | null
+      .prepare<{ session_id: string }>("SELECT session_id FROM session_map WHERE agent_session_id = ?")
+      .get(agentSessionId)
     return row?.session_id ?? null
   }
 
@@ -3087,8 +3174,8 @@ export class RuntimeStore {
 
   getTodos(sessionId: string) {
     return this.db
-      .prepare("SELECT content, status, priority FROM todo WHERE session_id = ? ORDER BY position ASC")
-      .all(sessionId) as Array<{ content: string; status: string; priority: string }>
+      .prepare<{ content: string; status: string; priority: string }>("SELECT content, status, priority FROM todo WHERE session_id = ? ORDER BY position ASC")
+      .all(sessionId)
   }
 
   private hydrateMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessage[] {
@@ -3098,7 +3185,7 @@ export class RuntimeStore {
       const batch = msgs.slice(offset, offset + MESSAGE_HYDRATION_BATCH_SIZE)
       const placeholders = batch.map(() => "?").join(", ")
       const parts = this.db
-        .prepare(
+        .prepare<{ message_id: string; data_json: string }>(
           `
           SELECT message_id, data_json
           FROM part
@@ -3106,16 +3193,16 @@ export class RuntimeStore {
           ORDER BY message_id ASC, ord ASC
         `,
         )
-        .all(sessionId, ...batch.map((message) => message.id)) as Array<{ message_id: string; data_json: string }>
+        .all(sessionId, ...batch.map((message) => message.id))
       for (const part of parts) {
         const current = partsByMessage.get(part.message_id) ?? []
-        current.push(JSON.parse(part.data_json) as AgentMessage["parts"][number])
+        current.push(readColumn.messagePart(part.data_json))
         partsByMessage.set(part.message_id, current)
       }
     }
 
     return msgs.map((msg) => {
-      const info = JSON.parse(msg.info_json) as AgentMessage["info"]
+      const info = readColumn.messageInfo(msg.info_json)
       const infoRecord = info as Record<string, unknown>
       const time = rec(info.time)
       const completed = typeof time?.completed === "number"
@@ -3141,7 +3228,14 @@ export class RuntimeStore {
     if (msgs.length === 0) return []
     const placeholders = msgs.map(() => "?").join(", ")
     const candidates = this.db
-      .prepare(
+      .prepare<{
+        part_id: string
+        message_id: string
+        part_ord: number
+        message_ord: number
+        text_bytes: number
+        part_bytes: number
+      }>(
         `
         SELECT
           p.id AS part_id,
@@ -3166,27 +3260,20 @@ export class RuntimeStore {
         ...msgs.map((message) => message.id),
         LATEST_SURFACE_MAX_TEXT_PART_BYTES,
         LATEST_SURFACE_MAX_PART_BYTES,
-      ) as Array<{
-        part_id: string
-        message_id: string
-        part_ord: number
-        message_ord: number
-        text_bytes: number
-        part_bytes: number
-      }>
+      )
     const selectedIndexes = selectLatestSurfaceTextCandidateIndexes(
       candidates.map((candidate) => ({ textBytes: candidate.text_bytes, partBytes: candidate.part_bytes })),
     )
     const selectedIds = selectedIndexes.map((index) => candidates[index].part_id)
     if (selectedIds.length === 0) {
       return msgs.map((msg) => ({
-        info: JSON.parse(msg.info_json) as AgentMessage["info"],
+        info: readColumn.messageInfo(msg.info_json),
         parts: [],
       }))
     }
     const selectedPlaceholders = selectedIds.map(() => "?").join(", ")
     const parts = this.db
-      .prepare(
+      .prepare<{ message_id: string; data_json: string }>(
         `
         SELECT p.message_id, p.data_json
         FROM part p
@@ -3195,23 +3282,23 @@ export class RuntimeStore {
         ORDER BY m.ord ASC, p.ord ASC
       `,
       )
-      .all(sessionId, ...selectedIds) as Array<{ message_id: string; data_json: string }>
+      .all(sessionId, ...selectedIds)
     const partsByMessage = new Map<string, AgentMessage["parts"]>()
     for (const part of parts) {
       const current = partsByMessage.get(part.message_id) ?? []
-      current.push(JSON.parse(part.data_json) as AgentMessage["parts"][number])
+      current.push(readColumn.messagePart(part.data_json))
       partsByMessage.set(part.message_id, current)
     }
     return msgs.map((msg) => ({
-      info: JSON.parse(msg.info_json) as AgentMessage["info"],
+      info: readColumn.messageInfo(msg.info_json),
       parts: partsByMessage.get(msg.id) ?? [],
     }))
   }
 
   getMessages(sessionId: string): AgentMessage[] {
     const msgs = this.db
-      .prepare("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
-      .all(sessionId) as MessageProjectionRow[]
+      .prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
+      .all(sessionId)
     return this.hydrateMessages(sessionId, msgs)
   }
 
@@ -3220,15 +3307,15 @@ export class RuntimeStore {
       throw new AgentMessagePageError(404, `Session not found: ${sessionId}`)
     }
     const projection = this.db
-      .prepare("SELECT 1 AS present FROM message WHERE session_id = ? LIMIT 1")
-      .get(sessionId) as { present: number } | null
+      .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? LIMIT 1")
+      .get(sessionId)
     // Undefined distinguishes a missing projection from an exhausted page.
     // The workspace host uses the owning adapter's paging capability to decide
     // whether this means engine-owned history or an authoritative empty store.
     if (!projection) return undefined
     if ("view" in page && page.view !== undefined) {
       const boundary = this.db
-        .prepare(
+        .prepare<Pick<MessageProjectionRow, "id" | "ord">>(
           `
           SELECT id, ord
           FROM message
@@ -3237,25 +3324,25 @@ export class RuntimeStore {
           LIMIT 1
         `,
         )
-        .get(sessionId) as Pick<MessageProjectionRow, "id" | "ord"> | null
+        .get(sessionId)
       if (!boundary) {
         throw new AgentMessagePageError(409, `Latest turn boundary is unavailable for session: ${sessionId}`)
       }
       if (page.view === "latest-surface") {
         const boundaryInfo = this.db
-          .prepare(
+          .prepare<Pick<SurfaceTurnRow, "info_id">>(
             `
             SELECT json_extract(info_json, '$.id') AS info_id
             FROM message
             WHERE session_id = ? AND ord = ?
           `,
           )
-          .get(sessionId, boundary.ord) as Pick<SurfaceTurnRow, "info_id"> | null
+          .get(sessionId, boundary.ord)
         if (boundaryInfo?.info_id !== boundary.id) {
           throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
         }
         const final = this.db
-          .prepare(
+          .prepare<SurfaceTurnRow>(
             `
             SELECT
               id,
@@ -3269,9 +3356,9 @@ export class RuntimeStore {
             LIMIT 1
           `,
           )
-          .get(sessionId, boundary.ord) as SurfaceTurnRow | null
+          .get(sessionId, boundary.ord)
         const invalidAssistant = this.db
-          .prepare(
+          .prepare<{ present: number }>(
             `
             SELECT 1 AS present
             FROM message
@@ -3285,14 +3372,14 @@ export class RuntimeStore {
             LIMIT 1
           `,
           )
-          .get(sessionId, boundary.ord, boundary.id) as { present: number } | null
+          .get(sessionId, boundary.ord, boundary.id)
         if (!final || invalidAssistant) {
           throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
         }
         const selectedIds = final.id === boundary.id ? [boundary.id] : [boundary.id, final.id]
         const placeholders = selectedIds.map(() => "?").join(", ")
         const selected = this.db
-          .prepare(
+          .prepare<MessageProjectionRow>(
             `
             WITH projected AS (
             SELECT
@@ -3319,20 +3406,20 @@ export class RuntimeStore {
             sessionId,
             ...selectedIds,
             LATEST_SURFACE_MAX_INFO_BYTES,
-          ) as MessageProjectionRow[]
+          )
         const older = this.db
-          .prepare("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
-          .get(sessionId, boundary.ord) as { present: number } | null
+          .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
+          .get(sessionId, boundary.ord)
         const intermediate = this.db
-          .prepare("SELECT 1 AS present FROM message WHERE session_id = ? AND ord > ? AND ord < ? LIMIT 1")
-          .get(sessionId, boundary.ord, final.ord) as { present: number } | null
+          .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord > ? AND ord < ? LIMIT 1")
+          .get(sessionId, boundary.ord, final.ord)
         return {
           messages: selected.length === selectedIds.length ? this.hydrateSurfaceMessages(sessionId, selected) : [],
           ...(older || intermediate ? { nextCursor: encodeMessagePageCursor(sessionId, final.ord) } : {}),
         }
       }
       const turn = this.db
-        .prepare(
+        .prepare<MessageProjectionRow>(
           `
           SELECT id, ord, info_json
           FROM message
@@ -3340,12 +3427,12 @@ export class RuntimeStore {
           ORDER BY ord ASC
         `,
         )
-        .all(sessionId, boundary.ord) as MessageProjectionRow[]
-      const user = JSON.parse(turn[0].info_json) as AgentMessage["info"]
+        .all(sessionId, boundary.ord)
+      const user = readColumn.messageInfo(turn[0].info_json)
       const contiguous =
         turn.length > 0 &&
         turn.every((row, index) => {
-          const message = JSON.parse(row.info_json) as AgentMessage["info"]
+          const message = readColumn.messageInfo(row.info_json)
           if (index === 0) return message.role === "user" && message.id === user.id
           return message.role === "assistant" && message.parentID === user.id
         })
@@ -3353,8 +3440,8 @@ export class RuntimeStore {
         throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
       }
       const older = this.db
-        .prepare("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
-        .get(sessionId, boundary.ord) as { present: number } | null
+        .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
+        .get(sessionId, boundary.ord)
       return {
         messages: this.hydrateMessages(sessionId, turn),
         ...(older ? { nextCursor: encodeMessagePageCursor(sessionId, boundary.ord) } : {}),
@@ -3368,7 +3455,7 @@ export class RuntimeStore {
     if (beforeOrd !== undefined) params.push(beforeOrd)
     params.push(page.limit + 1)
     const rows = this.db
-      .prepare(
+      .prepare<MessageProjectionRow>(
         `
         SELECT id, ord, info_json
         FROM message
@@ -3377,7 +3464,7 @@ export class RuntimeStore {
         LIMIT ?
       `,
       )
-      .all(...params) as MessageProjectionRow[]
+      .all(...params)
     const hasMore = rows.length > page.limit
     const selected = rows.slice(0, page.limit).reverse()
     return {
@@ -3387,9 +3474,12 @@ export class RuntimeStore {
   }
 
   getSessionMaxSeq(sessionId: string) {
-    const row = this.db
-      .prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM runtime_journal WHERE session_id = ?")
-      .get(sessionId) as { seq: number }
+    const row = requireRow(
+      this.db
+        .prepare<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) AS seq FROM runtime_journal WHERE session_id = ?")
+        .get(sessionId),
+      "runtime_journal max seq",
+    )
     return row.seq
   }
 
@@ -3402,7 +3492,7 @@ export class RuntimeStore {
     const result = this.db.prepare(`
       INSERT OR IGNORE INTO session_turn_lease (session_id, lease_id, acquired_at)
       VALUES (?, ?, ?)
-    `).run(sessionId, leaseId, Date.now()) as { changes: number }
+    `).run(sessionId, leaseId, Date.now())
     return result.changes === 1 ? leaseId : undefined
   }
 
@@ -3413,9 +3503,9 @@ export class RuntimeStore {
   deleteSession(id: string) {
     if (!this.getSession(id)) return
     const children = (
-      this.db.prepare("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC").all(id) as Array<{
+      this.db.prepare<{
         id: string
-      }>
+      }>("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC").all(id)
     ).map((row) => row.id)
     for (const child of children) this.deleteSession(child)
     this.commit({
@@ -3448,9 +3538,9 @@ export class RuntimeStore {
   }
 
   consumeRecoveryError(id: string) {
-    const row = this.db.prepare("SELECT recovery_error FROM session WHERE id = ?").get(id) as {
+    const row = this.db.prepare<{
       recovery_error: string | null
-    } | null
+    }>("SELECT recovery_error FROM session WHERE id = ?").get(id)
     const msg = row?.recovery_error ?? null
     if (msg) {
       this.commit({
@@ -3469,7 +3559,19 @@ export class RuntimeStore {
 
   getSessionConfig(id: string): SessionConfig | null {
     const row = this.db
-      .prepare(
+      .prepare<{
+      harness_id: string | null
+      harness_access: string | null
+      harness_binary: string | null
+      harness_transport: string | null
+      harness_url: string | null
+      harness_headers_json: string | null
+      model_provider_id: string | null
+      model_id: string | null
+      variant: string | null
+      agent: string | null
+      handoff_json: string | null
+    }>(
         `
 	        SELECT
 	          harness_id,
@@ -3487,19 +3589,7 @@ export class RuntimeStore {
         WHERE id = ?
       `,
       )
-      .get(id) as {
-      harness_id: string | null
-      harness_access: string | null
-      harness_binary: string | null
-      harness_transport: string | null
-      harness_url: string | null
-      harness_headers_json: string | null
-      model_provider_id: string | null
-      model_id: string | null
-      variant: string | null
-      agent: string | null
-      handoff_json: string | null
-    } | null
+      .get(id)
     if (!row) return null
     const harness = sessionHarness(row)
     if (!harness) return null
@@ -3517,7 +3607,21 @@ export class RuntimeStore {
 
   private applyConfigUpdate(id: string, patch: SessionConfigUpdate, ts = Date.now(), directory?: string) {
     const prev = this.db
-      .prepare(
+      .prepare<{
+      directory: string | null
+      harness_id: string | null
+      harness_access: string | null
+      harness_binary: string | null
+      harness_transport: string | null
+      harness_url: string | null
+      harness_headers_json: string | null
+      model_provider_id: string | null
+      model_id: string | null
+      variant: string | null
+      agent: string | null
+      handoff_json: string | null
+      updated_at: number
+    }>(
         `
 	        SELECT
 	          directory,
@@ -3537,21 +3641,7 @@ export class RuntimeStore {
         WHERE id = ?
       `,
       )
-      .get(id) as {
-      directory: string | null
-      harness_id: string | null
-      harness_access: string | null
-      harness_binary: string | null
-      harness_transport: string | null
-      harness_url: string | null
-      harness_headers_json: string | null
-      model_provider_id: string | null
-      model_id: string | null
-      variant: string | null
-      agent: string | null
-      handoff_json: string | null
-      updated_at: number
-    } | null
+      .get(id)
     const prevHarness = prev ? sessionHarness(prev) : undefined
     if (!prevHarness && !patch.harness) return
     if (!prev) {

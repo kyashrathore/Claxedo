@@ -93,7 +93,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const routeWorkspaceBacking = createMemo(() => {
     const directory = routeDirectory()
     const workspaceId = routeWorkspaceKey()
-    if (!directory || !workspaceId) return
+    if (!directory || !workspaceId) return undefined
     return routeSessionWorkspaceBacking({
       projects: projectsQuery.data ?? [],
       directory,
@@ -107,7 +107,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const routeIdForDirectory = (dir: string) => workspaceRouteId(projectsQuery.data ?? [], dir)
   const routeProjectWorktree = createMemo(() => {
     const workspaceKey = routeWorkspaceKey()
-    if (!workspaceKey) return
+    if (!workspaceKey) return undefined
     return projectWorktreeForDirectory(layoutProjects(), workspaceKey)
   })
   const shellRouteKind = createMemo(() => shellRoute().kind)
@@ -137,7 +137,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   )
   const activeProjectId = createMemo(() => {
     const dir = activeDirectory()
-    if (!dir) return
+    if (!dir) return undefined
     // Prefer the canonical `/w/:workspaceId` owner: multiple cloud workspaces
     // can legitimately report the same physical `/workspace` directory. The
     // physical directory remains the fallback for local and legacy routes.
@@ -147,11 +147,11 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     const surface = activeSurface()
     if (!surface) return input.params.id
     if (surface.type === "session" || surface.type === "context") {
-      if (!surface.sessionId) return
-      if (surface.sessionId === "new") return
+      if (!surface.sessionId) return undefined
+      if (surface.sessionId === "new") return undefined
       return surface.sessionId
     }
-    return
+    return undefined
   })
 
   createEffect(() => {

@@ -20,6 +20,7 @@ import {
   type SessionListQuery,
   type SessionListResponse,
 } from "../query/session-list"
+import { asRecord } from "@/lib/record"
 
 /**
  * Where one workspace's sessions are read from, chosen by the catalog row's
@@ -56,7 +57,6 @@ const COMPOSED_CENTRAL_MEMBER = "central"
 
 /** Rows the runtime answers with are re-shaped once and paged from memory. */
 const USER_HOSTED_SESSION_LIST_STALE_MS = 30_000
-
 
 /**
  * The app's own central server's list: the daemon's on a local surface, the
@@ -285,10 +285,10 @@ function userHostedNavigationRow(
   row: unknown,
   source: Extract<SessionSource, { kind: "user-hosted" }>,
 ): SessionNavigationRow | undefined {
-  const item = rec(row)
+  const item = asRecord(row)
   const sessionId = txt(item?.id)
-  if (!sessionId) return
-  const time = rec(item?.time)
+  if (!sessionId) return undefined
+  const time = asRecord(item?.time)
   const createdAt = num(time?.created) ?? 0
   const updatedAt = num(time?.updated) ?? createdAt
   const archivedAt = num(time?.archived)
@@ -363,10 +363,6 @@ function rowMatchesView(row: SessionNavigationRow, query: SessionListQuery) {
   if (query.status?.length || query.environment?.length || query.git?.length) return false
   if (query.search && !row.title.toLowerCase().includes(query.search.toLowerCase())) return false
   return true
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 function txt(input: unknown) {

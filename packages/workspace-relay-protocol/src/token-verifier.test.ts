@@ -64,7 +64,8 @@ describe("StaticTokenVerifier", () => {
 describe("HttpTokenVerifier", () => {
   test("returns claims when the verifier endpoint accepts the token", async () => {
     const fetchMock = asFetch(async (url, init) => {
-      const body = init?.body ? JSON.parse(String(init.body)) : null
+      const raw = init?.body
+      const body: { token?: string } | null = typeof raw === "string" ? JSON.parse(raw) : null
       expect(url).toBe("https://verify.example/v")
       expect(body?.token).toBe("tok-1")
       return new Response(
@@ -260,7 +261,7 @@ describe("OidcTokenVerifier", () => {
         },
       })
     } finally {
-      server.stop(true)
+      await server.stop(true)
     }
   })
 
@@ -277,7 +278,7 @@ describe("OidcTokenVerifier", () => {
         code: "oidc_token_invalid",
       })
     } finally {
-      server.stop(true)
+      await server.stop(true)
     }
   })
 })

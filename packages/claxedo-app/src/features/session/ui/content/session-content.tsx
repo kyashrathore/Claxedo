@@ -108,7 +108,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     pendingTranscript: () => {
       const id = sessionId()
       const dir = directory()
-      if (!id || id === "new" || !dir) return
+      if (!id || id === "new" || !dir) return undefined
       return getSessionPrefetchPromise(dir, id)
     },
   })
@@ -140,8 +140,6 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     return dir && dir !== "/workspace" ? dir : undefined
   })
   const paneDirectory = createMemo(() => {
-    const ref = effectiveSessionRef()
-
     if (canRenderWorkspaceScope() && directory() !== undefined) return { value: directory()! }
     return undefined
   })

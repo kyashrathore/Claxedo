@@ -29,12 +29,13 @@ export function createDocumentPickerController(input: {
   const notice = () => {
     const selected = selectionNotice()
     if (selected) return selected
-    if (!open()) return
+    if (!open()) return undefined
     if (loading()) return "Loading documents…"
     const error = listError()
     if (error) {
       return `Documents unavailable: ${error instanceof Error ? error.message : String(error)}`
     }
+    return undefined
   }
   return {
     open,

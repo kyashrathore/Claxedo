@@ -95,6 +95,7 @@ export function firstValidSelectionModel(input: {
     if (!model) continue
     if (input.valid(model)) return model
   }
+  return undefined
 }
 
 function sortedConnectedProviders(providers: ProviderItem[]) {

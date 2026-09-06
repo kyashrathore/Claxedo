@@ -1,4 +1,4 @@
-import { defineConfig, type UserConfig } from "vite"
+import { defineConfig } from "vite"
 import cloud from "./vite.cloud.config"
 import { fileURLToPath } from "node:url"
 
@@ -54,7 +54,7 @@ const namesForbiddenPackage = (ids: readonly unknown[]) =>
  * default would deploy the local UI to a hosted surface.
  */
 export default defineConfig((env) => {
-  const base = (typeof cloud === "function" ? cloud(env as never) : cloud)
+  const base = cloud(env)
   const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url))
 
   // Refused rather than worked around. Both shapes are expressible and neither

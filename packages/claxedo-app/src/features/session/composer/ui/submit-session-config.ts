@@ -1,5 +1,6 @@
 import { pickHarness, type HarnessType } from "@/features/session/harness/profile"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { asRecord } from "@/lib/record"
 
 export type ExistingSessionConfig = {
   harnessType: HarnessType
@@ -9,10 +10,10 @@ export type ExistingSessionConfig = {
 }
 
 export function parseExistingSessionConfig(input: unknown): ExistingSessionConfig | undefined {
-  const row = record(input)
-  const harness = record(row?.harness)
+  const row = asRecord(input)
+  const harness = asRecord(row?.harness)
   const harnessType = pickHarness(row?.harnessType) ?? pickHarness(harness)
-  if (!harnessType) return
+  if (!harnessType) return undefined
   return {
     harnessType,
     ...modelConfig(row?.model),
@@ -30,14 +31,10 @@ export function sameExistingSessionConfig(left: ExistingSessionConfig, right: Ex
 }
 
 function modelConfig(input: unknown) {
-  const model = record(input)
+  const model = asRecord(input)
   const providerID = string(model?.providerID)
   const modelID = string(model?.modelID)
   return providerID && modelID ? { model: { providerID, modelID } } : {}
-}
-
-function record(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 function string(input: unknown) {

@@ -24,5 +24,7 @@ export type SessionConfigSelectOption = AcpSessionConfigSelectOption
 export type SessionConfigSelectGroup = AcpSessionConfigSelectGroup
 export type SessionConfigOption = AcpSessionConfigOption
 
+export type { ContentBlock }
+
 export type SessionUpdate = SessionNotification["update"]
 export type StopReason = AcpStopReason

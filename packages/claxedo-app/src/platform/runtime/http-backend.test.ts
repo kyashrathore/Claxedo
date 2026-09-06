@@ -7,6 +7,7 @@ import {
 } from "@/platform/runtime/http-backend"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { queryClient } from "@/platform/query/query-client"
+import { requestUrl } from "@/lib/url"
 
 beforeEach(() => queryClient.clear())
 
@@ -39,8 +40,17 @@ function session(id: string): Session {
   }
 }
 
-function requestUrl(input: RequestInfo | URL, init?: RequestInit) {
-  return input instanceof Request ? input.url : new Request(input, init).url
+// The runtime and session backends reach for the ambient `fetch` on their relay
+// hop, so a relay-routed assertion has to run with the double installed
+// globally — and restore the real one even when the assertion throws.
+async function withGlobalFetch<T>(request: typeof fetch, run: () => Promise<T>): Promise<T> {
+  const previous = globalThis.fetch
+  globalThis.fetch = request
+  try {
+    return await run()
+  } finally {
+    globalThis.fetch = previous
+  }
 }
 
 describe("http backend ports", () => {
@@ -63,8 +73,8 @@ describe("http backend ports", () => {
   test("runtime backend resolves and ensures through http", async () => {
     let resolves = 0
     let connections = 0
-    const request: typeof fetch = async (input, init) => {
-      const url = requestUrl(input, init)
+    const request: typeof fetch = async (input) => {
+      const url = requestUrl(input)
       if (url.includes("/api/workspace/resolve")) {
         resolves += 1
         return new Response(JSON.stringify({
@@ -151,15 +161,11 @@ describe("http backend ports", () => {
 
     })
 
-    const previous = globalThis.fetch
-    globalThis.fetch = request
-    try {
+    await withGlobalFetch(request, async () => {
       expect(await backend.getVcs({ directory: "/tmp/ws" })).toMatchObject({ branch: "feature/relay" })
       expect(await backend.getMcpStatus({ directory: "/tmp/ws" })).toMatchObject({ local: { status: "connected" } })
       expect(await backend.getLspStatus({ directory: "/tmp/ws" })).toMatchObject([{ id: "ts", status: "connected" }])
-    } finally {
-      globalThis.fetch = previous
-    }
+    })
     expect(client.vcs.get).toHaveBeenCalledTimes(0)
     expect(client.mcp.status).toHaveBeenCalledTimes(0)
     expect(client.lsp.status).toHaveBeenCalledTimes(0)
@@ -202,15 +208,11 @@ describe("http backend ports", () => {
       },
     })
 
-    const previous = globalThis.fetch
-    globalThis.fetch = request
-    try {
+    await withGlobalFetch(request, async () => {
       expect(await backend.getMcpStatus({ directory: "workspace:ws_user_hosted" })).toMatchObject({
         local: { status: "connected" },
       })
-    } finally {
-      globalThis.fetch = previous
-    }
+    })
     expect(calls).toEqual([
       "GET http://claxedo.test/api/workspace/ws_user_hosted/connection",
       "GET https://relay.test/workspaces/ws_user_hosted/mcp Bearer rat_user_hosted",
@@ -235,8 +237,8 @@ describe("http backend ports", () => {
 
   test("session backend routes opaque and scoped sessions through AgentRuntime", async () => {
     const calls: string[] = []
-    const request: typeof fetch = async (input, init) => {
-      const url = requestUrl(input, init)
+    const request: typeof fetch = async (input) => {
+      const url = requestUrl(input)
       calls.push(url)
       if (url.includes("/capabilities")) {
         return new Response(JSON.stringify({
@@ -322,20 +324,13 @@ describe("http backend ports", () => {
       claxedoServerUrl: "http://claxedo.test",
     })
 
-    const previous = globalThis.fetch
-    globalThis.fetch = request
-    let messages: Awaited<ReturnType<typeof backend.listMessages>> | undefined
-    try {
-      messages = await backend.listMessages({
-        directory: "workspace:ws_cloud",
-        sessionID: "ses_cloud",
-        limit: 8,
-      })
-    } finally {
-      globalThis.fetch = previous
-    }
+    const messages = await withGlobalFetch(request, () => backend.listMessages({
+      directory: "workspace:ws_cloud",
+      sessionID: "ses_cloud",
+      limit: 8,
+    }))
 
-    expect(messages?.data?.map((row) => row.info.id)).toEqual(["msg_1"])
+    expect(messages.data?.map((row) => row.info.id)).toEqual(["msg_1"])
     expect(calls).toEqual([
       "GET http://claxedo.test/api/workspace/ws_cloud/connection",
       "GET https://relay.test/workspaces/ws_cloud/session/ses_cloud/message?limit=8 Bearer rat_cloud",
@@ -374,30 +369,23 @@ describe("http backend ports", () => {
       claxedoServerUrl: "http://claxedo.test",
     })
 
-    const previous = globalThis.fetch
-    globalThis.fetch = request
-    let messages: Awaited<ReturnType<typeof backend.listMessages>> | undefined
-    try {
-      messages = await backend.listMessages({
-        directory: "/repo/not-a-workspace-ref",
-        sessionID: "ses_explicit",
-        sessionRef: {
-          sessionId: "ses_explicit",
-          host: "workspace",
+    const messages = await withGlobalFetch(request, () => backend.listMessages({
+      directory: "/repo/not-a-workspace-ref",
+      sessionID: "ses_explicit",
+      sessionRef: {
+        sessionId: "ses_explicit",
+        host: "workspace",
+        workspaceId: "ws_explicit",
+        toolSandbox: {
+          kind: "workspace",
           workspaceId: "ws_explicit",
-          toolSandbox: {
-            kind: "workspace",
-            workspaceId: "ws_explicit",
-            hosting: "cloud",
-          },
+          hosting: "cloud",
         },
-        limit: 8,
-      })
-    } finally {
-      globalThis.fetch = previous
-    }
+      },
+      limit: 8,
+    }))
 
-    expect(messages?.data?.map((row) => row.info.id)).toEqual(["msg_1"])
+    expect(messages.data?.map((row) => row.info.id)).toEqual(["msg_1"])
     expect(calls).toEqual([
       "GET http://claxedo.test/api/workspace/ws_explicit/connection",
       "GET https://relay.test/workspaces/ws_explicit/session/ses_explicit/message?limit=8 Bearer rat_explicit",
@@ -406,8 +394,8 @@ describe("http backend ports", () => {
 
   test("signed session backend uses Control Plane inventory and messages with relay-owned runtime resources", async () => {
     const calls: string[] = []
-    const request: typeof fetch = async (input, init) => {
-      const url = requestUrl(input, init)
+    const request: typeof fetch = async (input) => {
+      const url = requestUrl(input)
       calls.push(url)
       if (url.includes("/api/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_cloud", directory: "/repo", kind: "cloud" }), { status: 200 })
@@ -480,8 +468,8 @@ describe("http backend ports", () => {
   test("signed session backend fails closed when workspace resolve omits workspaceId", async () => {
     const calls: string[] = []
     const backend = createHttpSessionBackend({
-      request: async (input, init) => {
-        const url = requestUrl(input, init)
+      request: async (input) => {
+        const url = requestUrl(input)
         calls.push(url)
         if (url.includes("/api/workspace/resolve")) {
           return new Response(JSON.stringify({ directory: "/repo", kind: "cloud" }), { status: 200 })

@@ -580,7 +580,7 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
           )
           WHEN granted_to_subject IS NOT NULL THEN 'subject:' || granted_to_subject`
         : "WHEN granted_to_subject IS NOT NULL THEN 'subject:' || granted_to_subject"
-      const invalidShare = db.prepare(`
+      const invalidShare = db.prepare<unknown[], { grant_id: string }>(`
         SELECT grant_id FROM workspace_share_grants
         WHERE revoked_at IS NULL AND (
           (granted_to_token_identifier IS NOT NULL)
@@ -589,7 +589,7 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
           + (granted_to_team_id IS NOT NULL) != 1
         )
         LIMIT 1
-      `).get() as { grant_id: string } | undefined
+      `).get()
       if (invalidShare) throw new Error(`workspace_share_target_invalid:${invalidShare.grant_id}`)
       db.exec(`
         UPDATE workspace_share_grants
@@ -617,12 +617,12 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
         WHERE revoked_at IS NULL AND target_key IS NOT NULL;
       `)
       // Expand CHECK to allow team targets only after every active row has a non-null target_key.
-      const hasTeamCheck = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workspace_share_grants'`)
-        .get() as { sql?: string } | undefined)?.sql?.includes("granted_to_team_id IS NOT NULL")
+      const hasTeamCheck = (db.prepare<unknown[], { sql?: string }>(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workspace_share_grants'`)
+        .get())?.sql?.includes("granted_to_team_id IS NOT NULL")
       if (!hasTeamCheck) {
-        const nullTarget = db.prepare(`
+        const nullTarget = db.prepare<unknown[], { grant_id: string }>(`
           SELECT grant_id FROM workspace_share_grants WHERE target_key IS NULL LIMIT 1
-        `).get() as { grant_id: string } | undefined
+        `).get()
         if (nullTarget) throw new Error(`workspace_share_target_key_unresolved:${nullTarget.grant_id}`)
         db.exec(`
           CREATE TABLE workspace_share_grants_v3 (
@@ -671,16 +671,16 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
       WHERE repo_key IS NULL OR trim(repo_key) = '';
     `)
 
-    for (const workspace of db.prepare(`
+    for (const workspace of db.prepare<unknown[], LegacyWorkspaceRow>(`
       SELECT workspace_id, org_id, project_id, owner_token_identifier, repo_url, remote_directory,
              created_at, updated_at
       FROM workspaces
-    `).all() as Array<LegacyWorkspaceRow>) {
+    `).all()) {
       if (workspace.org_id) continue
       const orgIds = new Set<string>()
       if (workspace.project_id) {
-        const project = db.prepare("SELECT org_id FROM projects WHERE project_id = ?")
-          .get(workspace.project_id) as { org_id: string | null } | undefined
+        const project = db.prepare<unknown[], { org_id: string | null }>("SELECT org_id FROM projects WHERE project_id = ?")
+          .get(workspace.project_id)
         if (project?.org_id) orgIds.add(project.org_id)
       }
       if (orgIds.size === 0) {
@@ -691,14 +691,14 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
         .run([...orgIds][0], workspace.workspace_id)
     }
 
-    for (const project of db.prepare(`
+    for (const project of db.prepare<unknown[], LegacyProjectRow>(`
       SELECT project_id, org_id, repo_key, owner_token_identifier, created_at, updated_at
       FROM projects
-    `).all() as Array<LegacyProjectRow>) {
-      const linked = db.prepare(`
+    `).all()) {
+      const linked = db.prepare<unknown[], { org_id: string; owner_token_identifier: string }>(`
         SELECT DISTINCT org_id, owner_token_identifier FROM workspaces
         WHERE project_id = ? AND org_id IS NOT NULL
-      `).all(project.project_id) as Array<{ org_id: string; owner_token_identifier: string }>
+      `).all(project.project_id)
       const orgIds = new Set(project.org_id ? [project.org_id] : linked.map((workspace) => workspace.org_id))
       if (orgIds.size === 0 && project.owner_token_identifier) {
         for (const orgId of userOrganizationIds(db, project.owner_token_identifier)) orgIds.add(orgId)
@@ -708,8 +708,8 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
       const owners = new Set(project.owner_token_identifier
         ? [project.owner_token_identifier]
         : linked.map((workspace) => workspace.owner_token_identifier))
-      const org = db.prepare("SELECT owner_token_identifier FROM orgs WHERE org_id = ?")
-        .get(orgId) as { owner_token_identifier: string | null } | undefined
+      const org = db.prepare<unknown[], { owner_token_identifier: string | null }>("SELECT owner_token_identifier FROM orgs WHERE org_id = ?")
+        .get(orgId)
       if (owners.size === 0 && org?.owner_token_identifier) owners.add(org.owner_token_identifier)
       if (owners.size !== 1) throw new Error(`project_owner_unresolved:${project.project_id}`)
       db.prepare(`
@@ -717,19 +717,19 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
       `).run(orgId, [...owners][0], project.project_id)
     }
 
-    for (const workspace of db.prepare(`
+    for (const workspace of db.prepare<unknown[], LegacyWorkspaceRow>(`
       SELECT workspace_id, org_id, project_id, owner_token_identifier, repo_url, remote_directory,
              created_at, updated_at
       FROM workspaces WHERE project_id IS NULL OR trim(project_id) = ''
-    `).all() as Array<LegacyWorkspaceRow>) {
+    `).all()) {
       if (!workspace.org_id) throw new Error(`workspace_organization_unresolved:${workspace.workspace_id}`)
       const repoKey = sqliteRepoKey(workspace.repo_url ?? workspace.remote_directory, workspace.workspace_id)
-      const matching = db.prepare("SELECT project_id FROM projects WHERE org_id = ? AND repo_key = ?")
-        .get(workspace.org_id, repoKey) as { project_id: string } | undefined
+      const matching = db.prepare<unknown[], { project_id: string }>("SELECT project_id FROM projects WHERE org_id = ? AND repo_key = ?")
+        .get(workspace.org_id, repoKey)
       const projectId = matching?.project_id ?? `prj_legacy_${workspace.workspace_id}`
       if (!matching) {
-        const collision = db.prepare("SELECT org_id, repo_key FROM projects WHERE project_id = ?")
-          .get(projectId) as { org_id: string; repo_key: string } | undefined
+        const collision = db.prepare<unknown[], { org_id: string; repo_key: string }>("SELECT org_id, repo_key FROM projects WHERE project_id = ?")
+          .get(projectId)
         if (collision && (collision.org_id !== workspace.org_id || collision.repo_key !== repoKey)) {
           throw new Error(`workspace_project_identity_conflict:${workspace.workspace_id}:${projectId}`)
         }
@@ -758,11 +758,11 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
     requireNoNull(db, "workspaces", "project_id", "workspace_id")
     requireUnique(db, "users", ["public_id"])
     requireUnique(db, "projects", ["org_id", "repo_key"])
-    const mismatchedWorkspace = db.prepare(`
+    const mismatchedWorkspace = db.prepare<unknown[], { workspace_id: string }>(`
       SELECT w.workspace_id FROM workspaces w
       LEFT JOIN projects p ON p.project_id = w.project_id AND p.org_id = w.org_id
       WHERE p.project_id IS NULL LIMIT 1
-    `).get() as { workspace_id: string } | undefined
+    `).get()
     if (mismatchedWorkspace) {
       throw new Error(`workspace_project_tenant_unresolved:${mismatchedWorkspace.workspace_id}`)
     }
@@ -859,12 +859,12 @@ function addColumn(db: SqliteAuthorityDb, table: string, column: string, definit
 }
 
 function userOrganizationIds(db: SqliteAuthorityDb, tokenIdentifier: string) {
-  return (db.prepare(`
+  return (db.prepare<unknown[], { org_id: string }>(`
     SELECT DISTINCT o.org_id FROM orgs o
     LEFT JOIN org_memberships m ON m.org_id = o.org_id
     WHERE o.deleted_at IS NULL
       AND (o.owner_token_identifier = ? OR m.token_identifier = ?)
-  `).all(tokenIdentifier, tokenIdentifier) as Array<{ org_id: string }>).map((row) => row.org_id)
+  `).all(tokenIdentifier, tokenIdentifier)).map((row) => row.org_id)
 }
 
 export function sqliteRepoKey(value: string | null | undefined, workspaceId: string) {
@@ -877,16 +877,16 @@ export function sqliteRepoKey(value: string | null | undefined, workspaceId: str
 }
 
 function requireNoNull(db: SqliteAuthorityDb, table: string, column: string, identity: string) {
-  const row = db.prepare(`SELECT ${identity} AS identity FROM ${table} WHERE ${column} IS NULL OR trim(${column}) = '' LIMIT 1`)
-    .get() as { identity: string } | undefined
+  const row = db.prepare<unknown[], { identity: string }>(`SELECT ${identity} AS identity FROM ${table} WHERE ${column} IS NULL OR trim(${column}) = '' LIMIT 1`)
+    .get()
   if (row) throw new Error(`${table}_${column}_unresolved:${row.identity}`)
 }
 
 function requireUnique(db: SqliteAuthorityDb, table: string, columns: string[]) {
-  const row = db.prepare(`
+  const row = db.prepare<unknown[], Record<string, unknown>>(`
     SELECT ${columns.join(", ")}, COUNT(*) AS count FROM ${table}
     GROUP BY ${columns.join(", ")} HAVING COUNT(*) > 1 LIMIT 1
-  `).get() as Record<string, unknown> | undefined
+  `).get()
   if (row) throw new Error(`${table}_${columns.join("_")}_duplicate:${JSON.stringify(row)}`)
 }
 
@@ -973,6 +973,21 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
   `)
 }
 
+/**
+ * Did `PRAGMA wal_checkpoint(TRUNCATE)` fully drain the write-ahead log?
+ *
+ * better-sqlite3 types every pragma result `unknown`, so the one row it answers
+ * with is checked here — not asserted at the call site — before the backup that
+ * depends on the main file being complete is taken.
+ */
+function walCheckpointComplete(result: unknown) {
+  if (!Array.isArray(result)) return false
+  const row: unknown = result[0]
+  if (typeof row !== "object" || row === null) return false
+  if (!("busy" in row) || !("log" in row) || !("checkpointed" in row)) return false
+  return row.busy === 0 && row.log === row.checkpointed
+}
+
 export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
   const entry: TrackedAuthorityDb = {
     handle: lazy(() => {
@@ -985,12 +1000,7 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         db.pragma("synchronous = NORMAL")
         db.pragma("busy_timeout = 5000")
         if (existing && Number(db.pragma("user_version", { simple: true })) < SQLITE_TENANCY_SCHEMA_VERSION) {
-          const [checkpoint] = db.pragma("wal_checkpoint(TRUNCATE)") as Array<{
-            busy: number
-            log: number
-            checkpointed: number
-          }>
-          if (!checkpoint || checkpoint.busy || checkpoint.log !== checkpoint.checkpointed) {
+          if (!walCheckpointComplete(db.pragma("wal_checkpoint(TRUNCATE)"))) {
             throw new Error("authority_backup_checkpoint_incomplete")
           }
           const backup = `${file}.pre-tenancy-v${SQLITE_TENANCY_SCHEMA_VERSION}.bak`
@@ -1095,6 +1105,52 @@ export type ProjectRow = {
   deleted_at: number | null
 }
 
+/**
+ * A row of `workspace_share_grants` / `session_share_grants` as the schema
+ * above declares them. Both tables were previously re-described inline at every
+ * read, once per SELECT and once per column subset, so a column rename had as
+ * many places to miss as there were queries. Reads that project a subset say so
+ * with `Pick<…>` instead of restating the shape.
+ */
+export type WorkspaceShareGrantRow = {
+  grant_id: string
+  workspace_id: string
+  target_key: string
+  granted_to_token_identifier: string | null
+  granted_to_subject: string | null
+  granted_to_org_id: string | null
+  granted_to_team_id: string | null
+  role: string
+  created_by_token_identifier: string
+  created_at: number
+  revoked_at: number | null
+}
+
+export type SessionShareGrantRow = {
+  grant_id: string
+  session_id: string
+  workspace_id: string
+  granted_to_user_token_identifier: string | null
+  granted_to_org_id: string | null
+  granted_to_team_id: string | null
+  created_by_token_identifier: string
+  created_at: number
+  revoked_at: number | null
+}
+
+/**
+ * The three mutually-exclusive target columns of `session_share_grants`. Every
+ * "may this viewer see this session?" read projects exactly these, so they are
+ * named once rather than respelled per query.
+ */
+export type SessionShareTargetRow = Pick<
+  SessionShareGrantRow,
+  "granted_to_user_token_identifier" | "granted_to_org_id" | "granted_to_team_id"
+>
+
+/** `SessionShareTargetRow` plus the id, for reads whose caller then revokes the grant. */
+export type IdentifiedSessionShareTargetRow = SessionShareTargetRow & Pick<SessionShareGrantRow, "grant_id">
+
 export type WorkspaceAction = "read" | "write" | "admin" | "owner"
 export type WorkspaceRole = "viewer" | "editor" | "admin" | "owner"
 type OrgRole = "member" | "admin" | "owner"
@@ -1117,14 +1173,14 @@ export function roleAllows(role: WorkspaceRole, action: WorkspaceAction) {
   return action === "read"
 }
 
-function maxRole(roles: Array<WorkspaceRole | undefined>) {
+function maxRole(roles: Array<WorkspaceRole | undefined>): WorkspaceRole | undefined {
   return roles.filter((role): role is WorkspaceRole => !!role)
     .sort((a, b) => roleRank[b] - roleRank[a])[0]
 }
 
-function workspaceRoleValue(input: unknown) {
+function workspaceRoleValue(input: unknown): WorkspaceRole | undefined {
   return input === "viewer" || input === "editor" || input === "admin" || input === "owner"
-    ? input as WorkspaceRole
+    ? input
     : undefined
 }
 
@@ -1135,8 +1191,8 @@ function orgWorkspaceRole(role: OrgRole) {
 
 export function upsertUser(db: SqliteAuthorityDb, user: AuthorityUser & { issuer?: string; kind?: "human" | "agent" }) {
   const now = Date.now()
-  const existing = db.prepare(`SELECT public_id FROM users WHERE token_identifier = ?`)
-    .get(user.token_identifier) as { public_id: string | null } | undefined
+  const existing = db.prepare<unknown[], { public_id: string | null }>(`SELECT public_id FROM users WHERE token_identifier = ?`)
+    .get(user.token_identifier)
   const publicId = existing?.public_id ?? `usr_${randomToken()}`
   db.prepare(`
     INSERT INTO users (token_identifier, public_id, subject, issuer, name, image_url, kind, created_at, updated_at)
@@ -1160,10 +1216,12 @@ export function upsertUser(db: SqliteAuthorityDb, user: AuthorityUser & { issuer
     now,
     now,
   )
-  return db.prepare(`
+  const stored = db.prepare<unknown[], AuthorityUser>(`
     SELECT token_identifier, public_id, subject, name, image_url, kind
     FROM users WHERE token_identifier = ?
-  `).get(user.token_identifier) as AuthorityUser
+  `).get(user.token_identifier)
+  if (!stored) throw new Error("authority_user_missing_after_upsert")
+  return stored
 }
 
 export function userBySubject(db: SqliteAuthorityDb, subject: string) {
@@ -1172,8 +1230,8 @@ export function userBySubject(db: SqliteAuthorityDb, subject: string) {
 }
 
 export function usersBySubject(db: SqliteAuthorityDb, subject: string) {
-  return db.prepare(`SELECT token_identifier, subject FROM users WHERE subject = ? LIMIT 2`)
-    .all(subject) as AuthorityUser[]
+  return db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject FROM users WHERE subject = ? LIMIT 2`)
+    .all(subject)
 }
 
 /**
@@ -1183,17 +1241,17 @@ export function usersBySubject(db: SqliteAuthorityDb, subject: string) {
  * accepting a deleted org.
  */
 export function activeOrgById(db: SqliteAuthorityDb, orgId: string) {
-  return db.prepare(`SELECT org_id FROM orgs WHERE deleted_at IS NULL AND org_id = ? LIMIT 1`)
-    .get(orgId) as { org_id: string } | undefined
+  return db.prepare<unknown[], { org_id: string }>(`SELECT org_id FROM orgs WHERE deleted_at IS NULL AND org_id = ? LIMIT 1`)
+    .get(orgId)
 }
 
 /** The user's personal org, created on first touch (mirror of `personalOrgForUser`). */
 export function ensurePersonalOrg(db: SqliteAuthorityDb, user: AuthorityUser) {
   return db.transaction(() => {
-    const existing = db.prepare(`
+    const existing = db.prepare<unknown[], { org_id: string }>(`
       SELECT org_id FROM orgs
       WHERE owner_token_identifier = ? AND kind = 'personal' AND deleted_at IS NULL
-    `).get(user.token_identifier) as { org_id: string } | undefined
+    `).get(user.token_identifier)
     if (existing) return existing.org_id
     const now = Date.now()
     const orgId = `org_${randomToken()}`
@@ -1217,11 +1275,11 @@ export function ensureProject(db: SqliteAuthorityDb, input: {
 }) {
   return db.transaction(() => {
     const now = Date.now()
-    const matching = db.prepare(`SELECT project_id FROM projects WHERE org_id = ? AND repo_key = ?`)
-      .get(input.orgId, input.repoKey) as { project_id: string } | undefined
+    const matching = db.prepare<unknown[], { project_id: string }>(`SELECT project_id FROM projects WHERE org_id = ? AND repo_key = ?`)
+      .get(input.orgId, input.repoKey)
     const projectId = matching?.project_id ?? input.projectId
-    const requested = db.prepare(`SELECT org_id, repo_key FROM projects WHERE project_id = ?`)
-      .get(projectId) as { org_id: string | null; repo_key: string } | undefined
+    const requested = db.prepare<unknown[], { org_id: string | null; repo_key: string }>(`SELECT org_id, repo_key FROM projects WHERE project_id = ?`)
+      .get(projectId)
     if (requested?.org_id !== undefined && requested.org_id !== input.orgId) throw new Error("project_tenant_conflict")
     if (requested && requested.repo_key !== input.repoKey) {
       if (!requested.repo_key.startsWith("workspace:") || matching) throw new Error("project_repo_conflict")
@@ -1243,48 +1301,49 @@ export function ensureProject(db: SqliteAuthorityDb, input: {
 }
 
 export function workspaceByPublicId(db: SqliteAuthorityDb, workspaceId: string) {
-  return db.prepare(`SELECT * FROM workspaces WHERE workspace_id = ?`)
-    .get(workspaceId) as WorkspaceRow | undefined
+  return db.prepare<unknown[], WorkspaceRow>(`SELECT * FROM workspaces WHERE workspace_id = ?`)
+    .get(workspaceId)
 }
 
 export function projectByPublicId(db: SqliteAuthorityDb, projectId: string) {
-  return db.prepare(`SELECT project_id, org_id, repo_key, owner_token_identifier, deleted_at FROM projects WHERE project_id = ?`)
-    .get(projectId) as ProjectRow | undefined
+  return db.prepare<unknown[], ProjectRow>(`SELECT project_id, org_id, repo_key, owner_token_identifier, deleted_at FROM projects WHERE project_id = ?`)
+    .get(projectId)
 }
 
 function directWorkspaceRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const row = db.prepare(`SELECT role FROM workspace_memberships WHERE workspace_id = ? AND token_identifier = ?`)
-    .get(workspaceId, user.token_identifier) as { role: string } | undefined
+  const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM workspace_memberships WHERE workspace_id = ? AND token_identifier = ?`)
+    .get(workspaceId, user.token_identifier)
   return workspaceRoleValue(row?.role)
 }
 
 function directProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId: string) {
-  const row = db.prepare(`SELECT role FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
-    .get(projectId, user.token_identifier) as { role: string } | undefined
+  const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
+    .get(projectId, user.token_identifier)
   return workspaceRoleValue(row?.role)
 }
 
-function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string) {
-  const org = db.prepare(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId) as {
+function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string): WorkspaceRole | undefined {
+  const org = db.prepare<unknown[], {
     owner_token_identifier: string | null
     deleted_at: number | null
-  } | undefined
-  if (!org || org.deleted_at) return
-  const row = db.prepare(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
-    .get(orgId, user.token_identifier) as { role: string } | undefined
+  }>(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId)
+  if (!org || org.deleted_at) return undefined
+  const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+    .get(orgId, user.token_identifier)
   if (row?.role === "member" || row?.role === "admin" || row?.role === "owner") return orgWorkspaceRole(row.role)
-  if (org.owner_token_identifier === user.token_identifier) return "admin" as const
+  if (org.owner_token_identifier === user.token_identifier) return "admin"
+  return undefined
 }
 
 export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
   if (!orgId) return false
-  const org = db.prepare(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId) as {
+  const org = db.prepare<unknown[], {
     owner_token_identifier: string | null
     deleted_at: number | null
-  } | undefined
+  }>(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId)
   if (!org || org.deleted_at) return false
-  const membership = db.prepare(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
-    .get(orgId, user.token_identifier) as { role: string } | undefined
+  const membership = db.prepare<unknown[], { role: string }>(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+    .get(orgId, user.token_identifier)
   if (membership) return membership.role === "admin" || membership.role === "owner"
   return org.owner_token_identifier === user.token_identifier
 }
@@ -1295,54 +1354,63 @@ function shareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: stri
     `token:${user.token_identifier}`,
     ...(subjectOwner?.token_identifier === user.token_identifier ? [`subject:${user.subject}`] : []),
   ]
-  const rows = targetKeys.flatMap((targetKey) => db.prepare(`
+  const rows = targetKeys.flatMap((targetKey) => db.prepare<unknown[], { role: string }>(`
     SELECT role FROM workspace_share_grants
     WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
-  `).all(workspaceId, targetKey) as Array<{ role: string }>)
+  `).all(workspaceId, targetKey))
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 
 function orgShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const rows = db.prepare(`
+  const rows = db.prepare<unknown[], { role: string }>(`
     SELECT g.role AS role FROM workspace_share_grants g
     JOIN org_memberships m ON m.org_id = g.granted_to_org_id
     WHERE g.workspace_id = ? AND g.target_key = 'org:' || m.org_id
       AND g.revoked_at IS NULL AND m.token_identifier = ?
-  `).all(workspaceId, user.token_identifier) as Array<{ role: string }>
+  `).all(workspaceId, user.token_identifier)
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 
 function teamShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const rows = db.prepare(`
+  const rows = db.prepare<unknown[], { role: string }>(`
     SELECT g.role AS role FROM workspace_share_grants g
     JOIN team_memberships m ON m.team_id = g.granted_to_team_id
     WHERE g.workspace_id = ? AND g.revoked_at IS NULL AND m.user_token_identifier = ?
-  `).all(workspaceId, user.token_identifier) as Array<{ role: string }>
+  `).all(workspaceId, user.token_identifier)
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 
-function teamProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId: string | undefined, orgId: string | undefined) {
-  if (!projectId || !orgId) return
-  const memberships = db.prepare(`
+function teamProjectRole(
+  db: SqliteAuthorityDb,
+  user: AuthorityUser,
+  projectId: string | undefined,
+  orgId: string | undefined,
+): WorkspaceRole | undefined {
+  if (!projectId || !orgId) return undefined
+  const memberships = db.prepare<unknown[], { team_id: string }>(`
     SELECT m.team_id AS team_id FROM team_memberships m
     JOIN teams t ON t.team_id = m.team_id
     WHERE m.user_token_identifier = ? AND t.org_id = ? AND t.deleted_at IS NULL
-  `).all(user.token_identifier, orgId) as Array<{ team_id: string }>
+  `).all(user.token_identifier, orgId)
   const roles: Array<WorkspaceRole | undefined> = []
   for (const membership of memberships) {
-    const grant = db.prepare(`
+    const grant = db.prepare<unknown[], { role: string }>(`
       SELECT role FROM team_project_grants
       WHERE team_id = ? AND project_id = ? AND revoked_at IS NULL
-    `).get(membership.team_id, projectId) as { role: string } | undefined
+    `).get(membership.team_id, projectId)
     if (grant) roles.push(workspaceRoleValue(grant.role))
   }
   return maxRole(roles)
 }
 
 /** Role precedence mirror of `combineRolePrecedence` in the authority model. */
-export function workspaceRoleForUser(db: SqliteAuthorityDb, workspace: WorkspaceRow, user: AuthorityUser) {
-  if (workspace.deleted_at) return
-  if (workspace.owner_token_identifier === user.token_identifier) return "owner" as const
+export function workspaceRoleForUser(
+  db: SqliteAuthorityDb,
+  workspace: WorkspaceRow,
+  user: AuthorityUser,
+): WorkspaceRole | undefined {
+  if (workspace.deleted_at) return undefined
+  if (workspace.owner_token_identifier === user.token_identifier) return "owner"
   const project = workspace.project_id ? projectByPublicId(db, workspace.project_id) : undefined
   return maxRole([
     directWorkspaceRole(db, user, workspace.workspace_id),
@@ -1365,9 +1433,13 @@ export function authorizeWorkspaceForUser(
   return role && roleAllows(role, action) ? role : undefined
 }
 
-export function projectRoleForUser(db: SqliteAuthorityDb, project: ProjectRow, user: AuthorityUser) {
-  if (project.deleted_at) return
-  if (project.owner_token_identifier === user.token_identifier) return "owner" as const
+export function projectRoleForUser(
+  db: SqliteAuthorityDb,
+  project: ProjectRow,
+  user: AuthorityUser,
+): WorkspaceRole | undefined {
+  if (project.deleted_at) return undefined
+  if (project.owner_token_identifier === user.token_identifier) return "owner"
   return maxRole([
     directProjectRole(db, user, project.project_id),
     project.org_id ? directOrgRole(db, user, project.org_id) : undefined,

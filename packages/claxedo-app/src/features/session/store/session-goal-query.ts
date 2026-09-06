@@ -35,6 +35,21 @@ export { sessionGoalKey, setSessionGoalData, type SessionGoalData } from "./sess
 // provisioning semantics. This union covers only mutations on an EXISTING Goal.
 export type SessionGoalMutation = "pause" | "resume" | "stop" | "delete"
 
+/**
+ * The transport call each mutation makes. A record keyed by the union rather
+ * than a switch, so adding a member to `SessionGoalMutation` is a type error
+ * here instead of a silent fall-through.
+ */
+const goalMutationTransport: Record<
+  SessionGoalMutation,
+  (input: SessionGoalTransportScope) => Promise<AgentRuntimeGoalMutationResult>
+> = {
+  pause: pauseSessionGoalByTransport,
+  resume: resumeSessionGoalByTransport,
+  stop: stopSessionGoalByTransport,
+  delete: deleteSessionGoalByTransport,
+}
+
 function transportAuthority(input: SessionGoalTransportScope) {
   return sessionResourceAuthorityKey(sessionGoalAuthorityScope(input))
 }
@@ -119,18 +134,7 @@ export async function mutateSessionGoalData(input: {
     throw new Error(`Goal action '${input.mutation}' is unavailable`)
   }
   const revision = sessionGoalRevision(scope)
-  const result = await (() => {
-    switch (input.mutation) {
-      case "pause":
-        return pauseSessionGoalByTransport(input.request)
-      case "resume":
-        return resumeSessionGoalByTransport(input.request)
-      case "stop":
-        return stopSessionGoalByTransport(input.request)
-      case "delete":
-        return deleteSessionGoalByTransport(input.request)
-    }
-  })()
+  const result = await goalMutationTransport[input.mutation](input.request)
   if (!result.ok) throw new SessionGoalMutationError(result)
   writeSessionGoalDataAtRevision(scope, revision, (latest) => latest
     ? { ...latest, goal: result.goal }

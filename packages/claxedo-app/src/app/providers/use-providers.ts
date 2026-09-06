@@ -38,9 +38,9 @@ function mergeProviderQuery(input: {
 }
 
 function providerFromUnknown(input: unknown): Provider | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined
   const provider = input as Partial<Provider> & { id?: unknown; models?: unknown }
-  if (typeof provider.id !== "string") return
+  if (typeof provider.id !== "string") return undefined
   return {
     ...provider,
     id: provider.id,

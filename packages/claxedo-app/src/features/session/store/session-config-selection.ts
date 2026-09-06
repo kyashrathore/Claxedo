@@ -4,6 +4,7 @@ import {
   sessionResourceAuthorityKey,
   type SessionResourceAuthorityScope,
 } from "./session-resource-authority"
+import { asRecord } from "@/lib/record"
 
 const sessionConfigSelectionPart = "config-selection"
 const sessionConfigRawPart = "config-raw"
@@ -28,8 +29,8 @@ export function sessionConfigSelectionSyncQueryKey(sessionID: string) {
 }
 
 export function localSelectionStateFromSessionConfig(input: unknown): LocalSelectionState | undefined {
-  const row = object(input)
-  if (!row) return
+  const row = asRecord(input)
+  if (!row) return undefined
 
   const model = modelKey(row.model)
   const agent = typeof row.agent === "string" && row.agent ? row.agent : undefined
@@ -39,7 +40,7 @@ export function localSelectionStateFromSessionConfig(input: unknown): LocalSelec
     ? model.variant
     : undefined
 
-  if (!agent && !model && variant === undefined) return
+  if (!agent && !model && variant === undefined) return undefined
   return {
     ...(agent ? { agent } : {}),
     ...(model ? { model } : {}),
@@ -68,15 +69,10 @@ export function shouldExposeDefaultLocalModelFallback(input: {
   return !input.existingSession
 }
 
-function object(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as Record<string, unknown>
-}
-
 function modelKey(input: unknown) {
-  const row = object(input)
-  if (!row) return
-  if (typeof row.providerID !== "string" || typeof row.modelID !== "string") return
+  const row = asRecord(input)
+  if (!row) return undefined
+  if (typeof row.providerID !== "string" || typeof row.modelID !== "string") return undefined
   return {
     providerID: row.providerID,
     modelID: row.modelID,

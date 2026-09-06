@@ -409,7 +409,7 @@ export function createLayoutOrchestration(input: {
 
     completeDraftSession(input) {
       const draft = meta.find((m) => m.type === "draft-session" && m.draftId === input.draftId)
-      if (!draft) return
+      if (!draft) return undefined
       const content = {
         type: "session" as const,
         directory: input.directory,

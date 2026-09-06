@@ -1,4 +1,4 @@
-import { blend, contrastRatio, hexToOklch, shift } from "../color"
+import { blend, contrastRatio, hexToOklch, isHexColor, shift } from "../color"
 import { mapV2Semantics } from "./mapping"
 import type { ColorValue, HexColor, V2ColorValue } from "../types"
 
@@ -6,9 +6,10 @@ const GREY_STEPS = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 120
 
 const greyRef = (step: number): V2ColorValue => `var(--v2-grey-${step})`
 
-function greyHex(primitives: Record<string, V2ColorValue>, step: number) {
-  const hex = primitives[`v2-grey-${step}`]
-  if (typeof hex === "string" && hex.startsWith("#")) return hex as HexColor
+function greyHex(primitives: Record<string, V2ColorValue>, step: number): HexColor | undefined {
+  const hex: V2ColorValue | undefined = primitives[`v2-grey-${step}`]
+  if (hex === undefined || !isHexColor(hex)) return undefined
+  return hex
 }
 
 function resolveGreyRef(value: V2ColorValue, primitives: Record<string, V2ColorValue>) {

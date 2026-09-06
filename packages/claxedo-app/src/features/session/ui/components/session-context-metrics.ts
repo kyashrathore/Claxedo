@@ -50,6 +50,7 @@ const lastAssistantWithTokens = (messages: Message[]) => {
     if (tokenTotal(msg) <= 0) continue
     return msg
   }
+  return undefined
 }
 
 const build = (messages: Message[], providers: Provider[]): Metrics => {

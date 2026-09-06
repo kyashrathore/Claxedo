@@ -649,7 +649,7 @@ function createLayoutContextValue() {
           const current = store.sessionView[sessionKey]
           const message = current?.pendingMessage
           const at = current?.pendingMessageAt
-          if (!message || !at) return
+          if (!message || !at) return undefined
 
           setStore(
             "sessionView",
@@ -660,7 +660,7 @@ function createLayoutContextValue() {
             }),
           )
 
-          if (Date.now() - at > PENDING_MESSAGE_TTL_MS) return
+          if (Date.now() - at > PENDING_MESSAGE_TTL_MS) return undefined
           return message
         },
       },

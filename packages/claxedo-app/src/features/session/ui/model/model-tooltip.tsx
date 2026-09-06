@@ -59,7 +59,7 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
       return entries.length ? entries.join(", ") : undefined
     }
     const raw = props.model.modalities?.input
-    if (!raw) return
+    if (!raw) return undefined
     const entries = raw.map((value) => inputLabel(value))
     return entries.length ? entries.join(", ") : undefined
   }

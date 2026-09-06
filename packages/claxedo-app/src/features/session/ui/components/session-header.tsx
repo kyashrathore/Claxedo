@@ -48,9 +48,9 @@ export function SessionHeader() {
     return true
   })
   const readProject = () => {
-    if (globalSession()) return
+    if (globalSession()) return undefined
     const directory = projectDirectory()
-    if (!directory) return
+    if (!directory) return undefined
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   }
   const project = createActivePaneProjection({

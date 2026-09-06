@@ -1,4 +1,9 @@
-import type { HexColor, OklchColor } from "./types"
+import type { HexColor, OklchColor, RgbaColor } from "./types"
+
+/** The one place that decides whether a colour string is a literal hex value. */
+export function isHexColor(value: string): value is HexColor {
+  return value.startsWith("#")
+}
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v))
@@ -293,7 +298,7 @@ export function darken(color: HexColor, amount: number): HexColor {
   })
 }
 
-export function withAlpha(color: HexColor, alpha: number): string {
+export function withAlpha(color: HexColor, alpha: number): RgbaColor {
   const { r, g, b } = hexToRgb(color)
   return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`
 }

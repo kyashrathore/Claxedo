@@ -3,9 +3,10 @@ import { batch, createContext, createEffect, createRoot, on, onCleanup, useConte
 import { useSDK, useClaxedoEventsOptional } from "@/features/terminal/app-ports"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { scopeUrl } from "@/lib/url"
+import { defaultTitleNumber } from "@/lib/terminal-title"
 import { clearInitialCommandMarker } from "@/features/terminal/core/terminal-recovery"
 import { pickPersistBufferEvictions } from "@/features/terminal/core/terminal-buffer"
-import { mergeCreatedTerminal, type LocalPTY, type NewTerminalInput } from "@/features/terminal/providers/shared"
+import { mergeCreatedTerminal, nextTerminalNumber, type LocalPTY, type NewTerminalInput } from "@/features/terminal/providers/shared"
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
 import { legacyTerminalPersistScopeKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -72,14 +73,6 @@ export function workspaceRelativeCwd(workspaceDir: string, cwd: string | undefin
   return undefined
 }
 
-function titleNumber(title: string) {
-  const m = title.match(/^Terminal (\d+)$/)
-  if (!m) return
-  const n = Number(m[1])
-  if (!Number.isFinite(n) || n <= 0) return
-  return n
-}
-
 function pty(value: unknown): LocalPTY | undefined {
   if (!obj(value)) return
 
@@ -106,7 +99,7 @@ function pty(value: unknown): LocalPTY | undefined {
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(createRequestId !== undefined ? { createRequestId } : {}),
     title,
-    titleNumber: direct && direct > 0 ? direct : (titleNumber(title) ?? 0),
+    titleNumber: direct && direct > 0 ? direct : (defaultTitleNumber(title) ?? 0),
     ...(cwd !== undefined ? { cwd } : {}),
     ...(rows !== undefined ? { rows } : {}),
     ...(cols !== undefined ? { cols } : {}),
@@ -433,20 +426,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       if (!store.active) setStore("active", input.id)
     },
     new(input: NewTerminalInput = {}): Promise<string | undefined> {
-      const existingTitleNumbers = new Set(
-        store.all.flatMap((pty) => {
-          const direct = Number.isFinite(pty.titleNumber) && pty.titleNumber > 0 ? pty.titleNumber : undefined
-          if (direct !== undefined) return [direct]
-          const parsed = titleNumber(pty.title)
-          if (parsed === undefined) return []
-          return [parsed]
-        }),
-      )
-
-      const nextNumber =
-        Array.from({ length: existingTitleNumbers.size + 1 }, (_, index) => index + 1).find(
-          (number) => !existingTitleNumbers.has(number),
-        ) ?? 1
+      const nextNumber = nextTerminalNumber(store.all)
 
       // Use provided title or default to "Terminal N"
       const terminalTitle = input.title ? `${input.title} ${nextNumber}` : `Terminal ${nextNumber}`

@@ -124,6 +124,7 @@ function isPartEqual(partA: ContentPart, partB: ContentPart) {
     case "image":
       return partB.type === "image" && partA.id === partB.id
   }
+  return undefined
 }
 
 export function isPromptEqual(promptA: Prompt, promptB: Prompt): boolean {

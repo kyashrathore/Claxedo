@@ -9,6 +9,7 @@ import type { WorkspaceProvisionEvent } from "@/platform/runtime/workspace-start
 import { queryClient } from "@/platform/query/query-client"
 import { configureWorkspaceConnectionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
 import { isFetchThrottleBypassed } from "@/lib/fetch-throttle"
+import { requestUrl } from "@/lib/url"
 
 // happy-dom's preloaded window must survive this suite: deleting it without
 // restoring poisons whichever test file shares the process afterwards
@@ -22,11 +23,6 @@ afterEach(() => {
   delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
   ;(globalThis as typeof globalThis & { window?: unknown }).window = preloadedWindow
 })
-
-function requestUrl(input: Parameters<typeof fetch>[0]) {
-  if (input instanceof Request) return input.url
-  return input.toString()
-}
 
 function connectionBody(workspaceId: string) {
   return {

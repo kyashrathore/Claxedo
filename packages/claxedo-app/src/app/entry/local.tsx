@@ -40,7 +40,9 @@ const config = { ...getDefaultConfig(), authEnabled: false, loadAgentPluginContr
 initClaxedo(config)
 
 const root = document.getElementById("root")
-if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
+// Unconditional: without the mount node `render` fails anyway, and this names
+// the reason. It also gives `startApp` a mount node it does not have to cast.
+if (!root) {
   throw new Error("Root element not found. Make sure there is an element with id='root' in index.local.html")
 }
 
@@ -96,7 +98,7 @@ const platform: Platform = {
   },
 }
 
-function startApp() {
+function startApp(mount: HTMLElement) {
   render(
     () => (
       <PlatformProvider value={platform}>
@@ -107,8 +109,8 @@ function startApp() {
         </ConfigProvider>
       </PlatformProvider>
     ),
-    root as HTMLElement,
+    mount,
   )
 }
 
-startApp()
+startApp(root)

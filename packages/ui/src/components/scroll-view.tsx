@@ -8,6 +8,7 @@ import {
   splitProps,
   type Accessor,
   type ComponentProps,
+  type JSX,
 } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
@@ -15,6 +16,18 @@ import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
 
 export type ScrollViewThumbVisibility = "hover" | "scroll"
+
+/**
+ * Solid passes event handlers either as a function or as a `[handler, data]`
+ * pair. Forwarding a viewport event to a caller's handler has to cover both.
+ */
+function forwardEvent<E extends Event>(
+  handler: JSX.EventHandlerUnion<HTMLDivElement, E> | undefined,
+  event: E & { currentTarget: HTMLDivElement; target: Element },
+) {
+  if (typeof handler === "function") handler(event)
+  else if (Array.isArray(handler)) handler[0](handler[1], event)
+}
 
 export type ScrollViewThumbRevealSource = "viewport-scroll" | "wheel" | "touch" | "pen" | "keyboard"
 type ScrollViewThumbUserInput = Exclude<ScrollViewThumbRevealSource, "viewport-scroll">
@@ -47,9 +60,13 @@ export interface ScrollViewProps extends ComponentProps<"div"> {
   thumbHoverTarget?: HTMLElement | Accessor<HTMLElement | undefined>
 }
 
-export const scrollKey = (event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">) => {
-  if (event.altKey || event.ctrlKey || event.metaKey) return
-  if (event.shiftKey && event.key !== " ") return
+export type ScrollKeyAction = "page-down" | "page-up" | "home" | "end" | "up" | "down"
+
+export const scrollKey = (
+  event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">,
+): ScrollKeyAction | undefined => {
+  if (event.altKey || event.ctrlKey || event.metaKey) return undefined
+  if (event.shiftKey && event.key !== " ") return undefined
 
   switch (event.key) {
     case "PageDown":
@@ -66,10 +83,12 @@ export const scrollKey = (event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey
       return "down"
     case " ":
       return event.shiftKey ? "page-up" : "page-down"
+    default:
+      return undefined
   }
 }
 
-export function canScrollKey(element: HTMLElement, key: NonNullable<ReturnType<typeof scrollKey>>) {
+export function canScrollKey(element: HTMLElement, key: ScrollKeyAction) {
   const up = key === "up" || key === "page-up" || key === "home"
   return up ? element.scrollTop > 0 : element.scrollTop + element.clientHeight < element.scrollHeight
 }
@@ -77,7 +96,7 @@ export function canScrollKey(element: HTMLElement, key: NonNullable<ReturnType<t
 export function scrollKeyOwner(
   root: HTMLElement,
   target: EventTarget | null,
-  key: NonNullable<ReturnType<typeof scrollKey>>,
+  key: ScrollKeyAction,
 ) {
   const element = target instanceof Element ? target : undefined
   const owner = element?.closest<HTMLElement>("[data-scrollable]")
@@ -86,7 +105,7 @@ export function scrollKeyOwner(
   return canScrollKey(owner, key) ? owner : root
 }
 
-export function isScrollKeyTarget(target: EventTarget | null, key: NonNullable<ReturnType<typeof scrollKey>>) {
+export function isScrollKeyTarget(target: EventTarget | null, key: ScrollKeyAction) {
   const element = target instanceof HTMLElement ? target : undefined
   if (!element) return true
   if (["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) || element.isContentEditable) return false
@@ -240,7 +259,10 @@ export function ScrollView(props: ScrollViewProps) {
     }
 
     createResizeObserver(
-      () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
+      () =>
+        [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(
+          (element): element is HTMLElement => element instanceof HTMLElement,
+        ),
       scheduleThumbUpdate,
     )
 
@@ -388,43 +410,35 @@ export function ScrollView(props: ScrollViewProps) {
           // Programmatic anchoring and retained-surface resize corrections
           // arrive here too. Geometry must stay current, but only an input
           // boundary below may reveal the user-scrolling affordance.
-          if (typeof events.onScroll === "function") events.onScroll(e as any)
+          forwardEvent(events.onScroll, e)
         }}
         onWheel={(e) => {
           markScrolling("wheel")
-          const handler = events.onWheel
-          if (typeof handler === "function") handler(e as any)
-          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+          forwardEvent(events.onWheel, e)
         }}
         onTouchStart={(e) => {
           markScrolling("touch")
-          const handler = events.onTouchStart
-          if (typeof handler === "function") handler(e as any)
-          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+          forwardEvent(events.onTouchStart, e)
         }}
         onTouchMove={(e) => {
           // Refresh the idle window for long drags. Touch end then leaves the
           // existing 800 ms window for normal kinetic scrolling.
           markScrolling("touch")
-          const handler = events.onTouchMove
-          if (typeof handler === "function") handler(e as any)
-          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+          forwardEvent(events.onTouchMove, e)
         }}
-        onTouchEnd={events.onTouchEnd as any}
-        onTouchCancel={events.onTouchCancel as any}
+        onTouchEnd={events.onTouchEnd}
+        onTouchCancel={events.onTouchCancel}
         onPointerDown={(e) => {
           if (e.pointerType === "pen") markScrolling("pen")
-          const handler = events.onPointerDown
-          if (typeof handler === "function") handler(e as any)
-          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+          forwardEvent(events.onPointerDown, e)
         }}
-        onClick={events.onClick as any}
+        onClick={events.onClick}
         tabIndex={0}
         role="region"
         aria-label={i18n.t("ui.scrollView.ariaLabel")}
         onKeyDown={(e) => {
           onKeyDown(e)
-          if (typeof events.onKeyDown === "function") events.onKeyDown(e as any)
+          forwardEvent(events.onKeyDown, e)
         }}
       >
         {local.children}

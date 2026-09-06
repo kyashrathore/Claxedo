@@ -15,16 +15,16 @@ function memoryStorage(): Storage {
       entries.clear()
     },
     getItem(key) {
-      return entries.get(String(key)) ?? null
+      return entries.get(key) ?? null
     },
     key(index) {
       return [...entries.keys()][index] ?? null
     },
     removeItem(key) {
-      entries.delete(String(key))
+      entries.delete(key)
     },
     setItem(key, value) {
-      entries.set(String(key), String(value))
+      entries.set(key, value)
     },
   }
 }

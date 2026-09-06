@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceDiffClient } from "./workspace-diff-client"
+import { requestUrl } from "@/lib/url"
 
 describe("workspace diff client relay transport", () => {
   test("strict refs preserve load failures while legacy refs consumers keep their empty fallback", async () => {
@@ -17,7 +18,7 @@ describe("workspace diff client relay transport", () => {
   test("keeps local diff requests on unsigned loopback runtime paths", async () => {
     const calls: Array<{ url: string; method: string; authorization: string | null }> = []
     const request = (async (input, init) => {
-      const req = new Request(String(input), init)
+      const req = new Request(requestUrl(input), init)
       calls.push({
         url: req.url,
         method: req.method,
@@ -70,7 +71,7 @@ describe("workspace diff client relay transport", () => {
   test("routes cloud diff requests through Workspace Relay", async () => {
     const calls: Array<{ url: string; method: string; authorization: string | null }> = []
     const request = (async (input, init) => {
-      const req = new Request(String(input), init)
+      const req = new Request(requestUrl(input), init)
       calls.push({
         url: req.url,
         method: req.method,

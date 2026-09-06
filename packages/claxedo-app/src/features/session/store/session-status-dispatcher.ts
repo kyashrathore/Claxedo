@@ -382,6 +382,7 @@ function statusForTimeoutStage(stage: SessionStatusStage): SessionStatus | undef
       next: 0,
     }
   }
+  return undefined
 }
 
 function stageRank(stage: SessionStatusStage | undefined) {

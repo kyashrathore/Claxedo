@@ -180,7 +180,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
   )
   const info = () => {
     const sessionID = args.sessionId()
-    if (!sessionID) return
+    if (!sessionID) return undefined
     return queryClient
       .getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey)
       ?.session.find((session) => session.id === sessionID)

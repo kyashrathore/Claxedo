@@ -19,13 +19,13 @@ import { applySessionFilter, type SessionFilter } from "../../../../platform/syn
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
 import { mapInventoryToSessions, signedInventoryItems } from "../query/inventory"
 import {
-  inventoryRecord as rec,
   inventorySessionAttachments,
   inventorySessionEnvironment,
   inventorySessionGit,
   inventorySessionId,
   inventoryText as txt,
 } from "./session-inventory"
+import { asRecord as rec } from "@/lib/record"
 export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
 
 type ProjectDirectory = string
@@ -142,7 +142,7 @@ export function controlPlaneSessionToItem(input: {
   const row = rec(input.session)
   const workspace = rec(input.workspace)
   const id = txt(row?.session_id) ?? txt(row?.sessionID) ?? txt(row?.id)
-  if (!id) return
+  if (!id) return undefined
   const created = typeof row?.created_at === "number"
     ? row.created_at
     : typeof row?.createdAt === "number"

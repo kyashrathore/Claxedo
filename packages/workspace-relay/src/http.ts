@@ -1,5 +1,5 @@
-export function bearerToken(header: string | null | undefined) {
-  if (!header) return
+export function bearerToken(header: string | null | undefined): string | undefined {
+  if (!header) return undefined
   const match = /^Bearer\s+(.+)$/i.exec(header.trim())
   return match?.[1]?.trim() || undefined
 }

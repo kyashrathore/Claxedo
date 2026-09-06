@@ -11,7 +11,7 @@ export function hydrateFirstFoldSessionPrefetch(input: {
   prefetch: SessionPrefetchMeta
 }) {
   const split = splitSessionPrefetchPage(input.prefetch)
-  if (!split) return
+  if (!split) return undefined
   const conversation = registeredConversationSnapshot(input.directory, input.sessionID)
   hydrateConversationPage({
     directory: input.directory,

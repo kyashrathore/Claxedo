@@ -128,7 +128,7 @@ const globalSDKContextInput = {
       const ref = directory
         ? sessionWorkspaceRuntimeRef({ directory, projects: cachedProjectInventory(server.current?.http.url) })
         : undefined
-      if (!ref) return
+      if (!ref) return undefined
       return { sessionID: "route", directory, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
     }
     const signedEventAccess = () => shouldUseSignedEventAccess({
@@ -140,8 +140,9 @@ const globalSDKContextInput = {
       liveSession,
     })
     const rawEventFetch = (() => {
-      if (!platform.fetch || !server.current) return
+      if (!platform.fetch || !server.current) return undefined
       if (centralTransportForServer(server.current.http.url) !== "loopback") return platform.fetch
+      return undefined
     })()
     const eventFetch = signedEventAccess() && centralTransportForServer(server.current?.http.url) !== "loopback"
       ? authFetch
@@ -166,6 +167,7 @@ const globalSDKContextInput = {
         const part = payload.properties.part
         return `message.part.updated:${directory}:${part.messageID}:${part.id}`
       }
+      return undefined
     }
 
     const coalescer = createEventCoalescer<Event>({
@@ -175,14 +177,15 @@ const globalSDKContextInput = {
       policy: {
         coalesceKey: key,
         supersededDelta: (directory, payload) => {
-          if (!partUpdateSupersedesDeltas(payload)) return
+          if (!partUpdateSupersedesDeltas(payload)) return undefined
           const part = record((payload.properties as { part?: unknown }).part)
           if (typeof part?.messageID === "string" && typeof part.id === "string") {
             return deltaKey(directory, part.messageID, part.id)
           }
+          return undefined
         },
         deltaIdentity: (directory, payload) => {
-          if (payload.type !== "message.part.delta") return
+          if (payload.type !== "message.part.delta") return undefined
           const props = payload.properties
           return deltaKey(directory, props.messageID, props.partID)
         },

@@ -16,7 +16,7 @@ export function createServerClient({
   server: ServerConnection.HttpBase
 }) {
   const auth = (() => {
-    if (!server.password) return
+    if (!server.password) return undefined
     return {
       Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
     }

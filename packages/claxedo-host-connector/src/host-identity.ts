@@ -58,7 +58,7 @@ export async function hostKeyPairFromJwk(privateKeyJwk: JsonWebKey): Promise<Hos
   // The public half is derived from the private JWK's own coordinates rather
   // than stored separately: two fields that must agree and can be edited
   // independently will eventually disagree.
-  const { d: _private, key_ops: _ops, ext: _ext, ...publicJwk } = privateKeyJwk as Record<string, unknown>
+  const { d: _private, key_ops: _ops, ext: _ext, ...publicJwk } = privateKeyJwk
   return {
     publicKey: JSON.stringify(publicJwk),
     sign: async (payload) =>

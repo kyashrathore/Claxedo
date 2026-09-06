@@ -59,7 +59,7 @@ export function createReviewScrollRestoration(input: {
       .find((candidate) => candidate.dataset.reviewFile === path)
     : undefined
   const nearestAnchor = () => {
-    if (!element) return
+    if (!element) return undefined
     const viewportTop = element.getBoundingClientRect().top
     return Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]"))
       .filter((candidate) => {

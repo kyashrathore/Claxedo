@@ -47,15 +47,17 @@ const suiteGrep = {
   marketing: /@marketing/,
   all: undefined,
 } satisfies Record<string, RegExp | undefined>
+type SuiteName = keyof typeof suiteGrep
+const isSuiteName = (value: string): value is SuiteName => Object.hasOwn(suiteGrep, value)
 const suite = process.env.CLAXEDO_E2E_SUITE ?? "core"
-if (!(suite in suiteGrep)) {
+if (!isSuiteName(suite)) {
   // Fail loudly rather than fall through to "no grep = run everything": a typo'd
   // suite name silently running Tier L against no backend is worse than a crash.
   throw new Error(
     `CLAXEDO_E2E_SUITE="${suite}" is not a known suite. Known suites: ${Object.keys(suiteGrep).join(", ")}.`,
   )
 }
-const grep = suiteGrep[suite as keyof typeof suiteGrep]
+const grep = suiteGrep[suite]
 // PLAYWRIGHT_VIDEO=0 is an explicit off-switch: the old `|| suite === "core"`
 // override recorded video for every core test regardless, ballooning CI shard
 // artifacts (and slowing every local run) with videos of passing tests.
@@ -78,8 +80,9 @@ const tierRealBackendPort = Number(process.env.CLAXEDO_TIER_REAL_BACKEND_PORT ??
 // artifact built once by CI and must never silently rebuild it in a shard.
 const serveModes = ["dev", "build-preview", "preview"] as const
 type ServeMode = (typeof serveModes)[number]
+const isServeMode = (value: string): value is ServeMode => serveModes.some((mode) => mode === value)
 const serveMode = process.env.CLAXEDO_E2E_SERVE_MODE ?? "dev"
-if (!serveModes.includes(serveMode as ServeMode)) {
+if (!isServeMode(serveMode)) {
   throw new Error(`CLAXEDO_E2E_SERVE_MODE="${serveMode}" is not known. Known modes: ${serveModes.join(", ")}.`)
 }
 const prebuilt = serveMode !== "dev"

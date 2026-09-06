@@ -285,7 +285,7 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
   const focusedSessionId = (): string | undefined => {
     const contentId = wb.selectors.focusedContent()
     const focused = contentId ? meta.get(contentId) : undefined
-    if (focused?.type !== "session") return
+    if (focused?.type !== "session") return undefined
     const id = focused.sessionId
     return id && id !== "new" ? id : undefined
   }

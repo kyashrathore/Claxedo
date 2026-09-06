@@ -55,11 +55,11 @@ export function createWorkspaceRelayDirectory(options: {
   const sweepIntervalMs = options.sweepIntervalMs ?? 30_000
   const hosts = new Map<string, HostTunnelPresence>()
 
-  const alive = (presence: HostTunnelPresence | undefined) => {
-    if (!presence) return
+  const alive = (presence: HostTunnelPresence | undefined): HostTunnelPresence | undefined => {
+    if (!presence) return undefined
     if (presence.expiresAt <= now()) {
       hosts.delete(presence.hostId)
-      return
+      return undefined
     }
     return presence
   }
@@ -111,7 +111,7 @@ export function createWorkspaceRelayDirectory(options: {
     },
     activeHost(input) {
       const presence = alive(hosts.get(input.hostId))
-      if (!presence?.workspaceIds.includes(input.workspaceId)) return
+      if (!presence?.workspaceIds.includes(input.workspaceId)) return undefined
       return presence
     },
     sweep,

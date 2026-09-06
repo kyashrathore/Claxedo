@@ -1,5 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { SubagentRegistry } from "./subagent-registry"
+import { asRecord } from "@/lib/record"
 
 type SessionLifecycleEvent = { type: string; properties: unknown }
 
@@ -22,9 +23,9 @@ export function applySubagentCompatLifecycleEvent(
     return !!sessionId
   }
   if (payload.type !== "session.updated") return false
-  const info = record((payload.properties as { info?: unknown }).info)
+  const info = asRecord((payload.properties as { info?: unknown }).info)
   const sessionId = objectId(info)
-  if (!sessionId || typeof record(info?.time)?.archived !== "number") return false
+  if (!sessionId || typeof asRecord(info?.time)?.archived !== "number") return false
   registry.archiveParent(sessionId)
   return true
 }
@@ -36,10 +37,7 @@ export function abortSubagentsForParent(parentSessionId: string, registry: Subag
 }
 
 function objectId(input: unknown) {
-  const value = record(input)?.id
+  const value = asRecord(input)?.id
   return typeof value === "string" ? value : undefined
 }
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}

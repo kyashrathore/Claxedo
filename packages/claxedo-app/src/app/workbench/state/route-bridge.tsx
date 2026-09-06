@@ -264,7 +264,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const routeWorkspaceBacking = createMemo(() => {
     const routeKey = routeWorkspaceKey()
     const directory = routeDirectory()
-    if (!routeKey || !directory) return
+    if (!routeKey || !directory) return undefined
     const inventoryBacking = routeSessionWorkspaceBacking({
       projects: projectsQuery.data ?? [],
       directory,
@@ -272,7 +272,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     })
     if (inventoryBacking) return inventoryBacking
     const routeBacking = sessionWorkspaceRuntimeRef({ directory: routeKey })
-    if (!routeBacking) return
+    if (!routeBacking) return undefined
     // The canonical `/w/ws_…` route is workspace authority before project
     // inventory hydrates. Use the relay-only, non-provisioning kind until the
     // inventory above supplies the real cloud vs user-hosted kind. A legacy
@@ -308,7 +308,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const routeSession = createMemo(() => {
     const wsId = routeDirectory()
     const id = sessionId()
-    if (!wsId || !id) return
+    if (!wsId || !id) return undefined
     return routeSessionCacheQuery.data?.session.find((s) => s.id === id)
   })
   const directorySessions = (directory: string) =>
@@ -330,7 +330,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       directory,
       sessions: directorySessions(directory),
     })))
-    if (!candidate) return
+    if (!candidate) return undefined
     const { cacheDirectory: directory, session } = candidate
     const resolvedDirectory = routeSessionDirectory(session.directory, directory)
     const workspace = routeSessionWorkspaceBacking({
@@ -438,7 +438,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         ) ??
         (await probeRouteSessionDirectory(id, routeResolutionDirectories())) ??
         sessionWorkspaceId
-      if (!directory || directory === "/workspace") return
+      if (!directory || directory === "/workspace") return undefined
       const workspace = routeSessionWorkspaceBacking({
         projects: projectsQuery.data ?? [],
         directory,
@@ -498,7 +498,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       directory,
       sessions: directorySessions(directory),
     })))
-    if (!candidate) return
+    if (!candidate) return undefined
     const { cacheDirectory: directory, session } = candidate
     const resolvedDirectory = routeSessionDirectory(session.directory, directory)
     const harness = routeSessionHarness(session) ?? activeSurfaceHarnessForSession(sessionId, resolvedDirectory)

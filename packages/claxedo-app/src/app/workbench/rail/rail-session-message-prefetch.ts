@@ -78,10 +78,10 @@ export function createRailSessionMessagePrefetch(input: {
               : {}),
           })
           markRendererPhase("sessionActivate.prefetch.transportEnd")
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted) return undefined
           const normalized = normalizeMessageRows(messages.data)
-          if (controller.signal.aborted) return
-          if (normalized.messages.length === 0) return
+          if (controller.signal.aborted) return undefined
+          if (normalized.messages.length === 0) return undefined
           const cursor = messages.response.headers.get("x-next-cursor") ?? undefined
           const next = {
             directory,
@@ -95,8 +95,8 @@ export function createRailSessionMessagePrefetch(input: {
             ...(cursor ? { cursor } : {}),
           }
           const publish = () => {
-            if (controller.signal.aborted) return
-            if (!isSessionPrefetchCurrent(directory, sessionID, revision)) return
+            if (controller.signal.aborted) return undefined
+            if (!isSessionPrefetchCurrent(directory, sessionID, revision)) return undefined
             setSessionPrefetch({ ...next, sessionID })
             return next
           }
@@ -106,7 +106,7 @@ export function createRailSessionMessagePrefetch(input: {
             setTimeout(() => resolve(publish()), quietDelay + 100)
           })
         } catch (error) {
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted) return undefined
           throw error
         }
       },

@@ -71,18 +71,19 @@ export async function applyPermissionMode(input: {
 }): Promise<PermissionModeApplied> {
   const { delivery } = input
 
-  switch (delivery.kind) {
-    case "harness-permission-mode": {
-      if (!input.client.setPermissionMode) return { kind: "not-wired", delivery: delivery.kind }
-      const state = await input.client.setPermissionMode({
-        sessionID: input.sessionID,
-        modeId: delivery.modeId,
-      })
-      // The harness's read-back, not the request. `kept` differing from
-      // `delivery.modeId` is a real outcome — an ACP agent can clamp the mode —
-      // and the caller has to be able to see it rather than being told the
-      // requested mode is active.
-      return { kind: "applied", appliesFrom: delivery.appliesFrom, kept: state.currentModeId }
-    }
+  // The picker consults `permissionModeDeliverable` for the same question, so
+  // reading it here is what keeps the two from drifting: a delivery kind this
+  // module does not implement reports `not-wired` instead of a false "applied".
+  if (!permissionModeDeliverable(delivery.kind) || !input.client.setPermissionMode) {
+    return { kind: "not-wired", delivery: delivery.kind }
   }
+  const state = await input.client.setPermissionMode({
+    sessionID: input.sessionID,
+    modeId: delivery.modeId,
+  })
+  // The harness's read-back, not the request. `kept` differing from
+  // `delivery.modeId` is a real outcome — an ACP agent can clamp the mode —
+  // and the caller has to be able to see it rather than being told the
+  // requested mode is active.
+  return { kind: "applied", appliesFrom: delivery.appliesFrom, kept: state.currentModeId }
 }

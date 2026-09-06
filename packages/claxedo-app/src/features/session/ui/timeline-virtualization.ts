@@ -6,7 +6,7 @@ export function estimateLongMarkdownHeight(text: string) {
   // Short responses stay on the virtualizer default. Avoid any further work
   // for the overwhelmingly common small response while the virtualizer
   // estimates the complete history.
-  if (lineCount < 20) return
+  if (lineCount < 20) return undefined
 
   // Calibrated against rendered transcripts (live measurement, 2026-09-01):
   // long markdown renders at ~28px per SOURCE line at p50 (headings/lists run

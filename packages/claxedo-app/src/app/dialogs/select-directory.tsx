@@ -187,7 +187,7 @@ function useDirectorySearch(args: {
     const root = rootOf(raw)
     if (root) return { directory: trimTrailing(root), path: raw.slice(root.length) }
     const base = args.start()
-    if (!base) return
+    if (!base) return undefined
     if (!raw) return { directory: trimTrailing(base), path: "" }
     const home = args.home()
     if (raw === "~") return { directory: trimTrailing(home || base), path: "" }

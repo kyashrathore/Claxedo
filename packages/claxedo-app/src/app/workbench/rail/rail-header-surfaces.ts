@@ -93,7 +93,7 @@ export function useRailHeaderSurfaces(input: {
     })
     const titleSelection = createMemo(() => {
       const current = meta()
-      if (current?.type !== "session" || !current.sessionId) return
+      if (current?.type !== "session" || !current.sessionId) return undefined
       return sessionTitles.select({
         sessionId: current.sessionId,
         ...(current.directory ? { directory: current.directory } : {}),

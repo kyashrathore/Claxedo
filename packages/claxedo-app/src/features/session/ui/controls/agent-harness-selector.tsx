@@ -367,7 +367,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const modelSelection = createMemo(() =>
     createModelSelectionController({
       write: (command) => {
-        if (!command.model) return
+        if (!command.model) return undefined
         const hit = rows().find(
           (item) => item.id === command.model?.modelID && item.provider.id === command.model.providerID,
         )
@@ -465,6 +465,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const modelHint = createMemo(() => {
     if (managedDefaultModel() && harness()) return `Model is managed by ${harnessOptionLabel(harness()!)}`
     if (isStale() && !modelOptionsFailed()) return "Model list may be outdated"
+    return undefined
   })
 
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
@@ -542,10 +543,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
               sessionId: switchSession,
             }),
           ).then(async () => {
-            if (!isCatalogHarness(r)) return
+            if (!isCatalogHarness(r)) return undefined
             await catalogProviders.refresh()
-            if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
-            if (catalogProviders.error()) return
+            if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return undefined
+            if (catalogProviders.error()) return undefined
             const catalog = catalogRows()
             const result = resolveDraftDefaultPolicy({
               saved: { harness: r },
@@ -554,7 +555,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
               connectedProviderIDs: [...catalog.connected],
               providerDefaults: catalogProviders.default(),
             })
-            if (!result.model) return
+            if (!result.model) return undefined
             return props.harnessController.setModel(switchScope, result.model, {
               directory: switchDirectory,
               sessionId: switchSession,

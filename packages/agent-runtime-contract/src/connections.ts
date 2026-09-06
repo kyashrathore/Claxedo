@@ -17,13 +17,6 @@ export type HarnessConnectionsCatalog =
   | { status: "supported"; connections: HarnessConnectionRef[] }
   | { status: "unsupported"; reason: string }
 
-// Exhaustiveness follows AgentCapabilities: a new flag requires a decoder entry.
-const capabilityKeys = {
-  abort: true, reconnect: true, replay: true, permissions: true, questions: true,
-  todos: true, commands: true, fork: true, revert: true, unrevert: true,
-  configOptions: true, subagents: true,
-} satisfies Record<keyof HarnessConnectionCapabilities, true>
-
 export function decodeHarnessConnectionsCatalog(value: unknown): HarnessConnectionsCatalog {
   const root = record(value)
   if (root.status === "unsupported") {
@@ -42,19 +35,39 @@ function decodeConnection(value: unknown): HarnessConnectionRef {
     || typeof row.enabled !== "boolean"
     || (row.readiness !== "ready" && row.readiness !== "unavailable" && row.readiness !== "disabled")
   ) invalid("connection reference")
-  const source = record(row.capabilities)
-  const capabilities = Object.fromEntries(Object.keys(capabilityKeys).map((key) => {
-    if (typeof source[key] !== "boolean") invalid(`capability ${key}`)
-    return [key, source[key]]
-  })) as HarnessConnectionCapabilities
   return {
     connectionId: row.connectionId,
     label: row.label,
     enabled: row.enabled,
     readiness: row.readiness,
-    capabilities,
+    capabilities: decodeCapabilities(row.capabilities),
     ...(row.modelSelection !== undefined ? { modelSelection: decodeModelSelection(row.modelSelection) } : {}),
   }
+}
+
+/** Exhaustiveness follows AgentCapabilities: a new flag requires a line here or this stops compiling. */
+function decodeCapabilities(value: unknown): HarnessConnectionCapabilities {
+  const source = record(value)
+  return {
+    abort: capabilityFlag(source, "abort"),
+    reconnect: capabilityFlag(source, "reconnect"),
+    replay: capabilityFlag(source, "replay"),
+    permissions: capabilityFlag(source, "permissions"),
+    questions: capabilityFlag(source, "questions"),
+    todos: capabilityFlag(source, "todos"),
+    commands: capabilityFlag(source, "commands"),
+    fork: capabilityFlag(source, "fork"),
+    revert: capabilityFlag(source, "revert"),
+    unrevert: capabilityFlag(source, "unrevert"),
+    configOptions: capabilityFlag(source, "configOptions"),
+    subagents: capabilityFlag(source, "subagents"),
+  }
+}
+
+function capabilityFlag(source: Record<string, unknown>, key: keyof HarnessConnectionCapabilities): boolean {
+  const flag = source[key]
+  if (typeof flag !== "boolean") invalid(`capability ${key}`)
+  return flag
 }
 
 export function decodeModelSelection(value: unknown): ModelSelection {

@@ -20,3 +20,25 @@ export function computeDropEdge(
   if (min === distTop) return "top"
   return "bottom"
 }
+
+/** The pane and edge a pointer drag would drop onto. */
+export type DropTarget = { paneId: string; edge: Edge }
+
+/**
+ * Find the pane under a pointer position and the edge it would split on.
+ * `elementFromPoint` finds the pane under the cursor; the drag ghost is
+ * `pointer-events:none` so it never occludes it.
+ */
+export function hitTestPaneAt(x: number, y: number): DropTarget | null {
+  if (typeof document === "undefined" || !document.elementFromPoint) return null
+  const hit = document.elementFromPoint(x, y)
+  // `elementFromPoint` yields an Element (an SVG glyph inside a pane, say);
+  // walk to the first HTML ancestor and from there up to the pane node.
+  let el: HTMLElement | null = hit instanceof HTMLElement ? hit : (hit?.parentElement ?? null)
+  while (el && !el.dataset.paneId) el = el.parentElement
+  const paneId = el?.dataset.paneId
+  if (!el || !paneId) return null
+  const rect = el.getBoundingClientRect()
+  const edge = computeDropEdge({ left: rect.left, top: rect.top, width: rect.width, height: rect.height }, x, y)
+  return { paneId, edge }
+}

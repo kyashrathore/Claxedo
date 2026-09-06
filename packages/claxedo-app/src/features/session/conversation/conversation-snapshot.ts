@@ -44,7 +44,7 @@ function propertyRecord(input: unknown): Record<string, unknown> | undefined {
 }
 
 function messageAuthorRecord(message: Message | undefined) {
-  if (!message || message.role !== "user") return
+  if (!message || message.role !== "user") return undefined
   return propertyRecord(propertyRecord((message as { claxedo?: unknown }).claxedo)?.author)
 }
 

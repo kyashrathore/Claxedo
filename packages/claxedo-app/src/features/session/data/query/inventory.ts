@@ -3,10 +3,7 @@ import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../session-types"
 import { cmp } from "@/platform/query/sort"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
-
-function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
+import { asRecord } from "@/lib/record"
 
 function txt(input: unknown) {
   return typeof input === "string" ? input : undefined
@@ -23,14 +20,14 @@ function workspaceDirectory(row: Record<string, unknown>) {
 
 export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByWorkspace: Record<string, unknown[]> }) {
   return input.workspaces.flatMap((workspace) => {
-    const row = rec(workspace)
+    const row = asRecord(workspace)
     if (!row) return []
     const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
     if (!workspaceId) return []
     const directory = workspaceDirectory(row)
     const projectID = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
     return (input.sessionsByWorkspace[workspaceId] ?? []).flatMap((session) => {
-      const item = rec(session)
+      const item = asRecord(session)
       const id = txt(item?.session_id) ?? txt(item?.sessionID) ?? txt(item?.id)
       if (!id) return []
       const created = num(item?.created_at) ?? num(item?.createdAt) ?? 0

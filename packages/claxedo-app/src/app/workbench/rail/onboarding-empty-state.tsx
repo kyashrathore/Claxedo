@@ -182,7 +182,7 @@ export function OnboardingEmptyState(props: {
   })))
   const activeStep = createMemo(() => {
     const location = setup().location
-    if (location.kind !== "step") return
+    if (location.kind !== "step") return undefined
     return setup().steps.find((step) => step.id === location.step)
   })
   const visible = createMemo(() => setup().mode !== "hidden")
@@ -314,7 +314,7 @@ export function OnboardingEmptyState(props: {
     const location = setup().location
     if (location.kind === "done") return "All set"
     const step = activeStep()
-    if (!step) return
+    if (!step) return undefined
     if (step.id === "destination") return "Cloud sessions"
     if (step.id === "ai") return "Your AI"
     return "Remote access"
@@ -362,13 +362,13 @@ export function OnboardingEmptyState(props: {
     const previous = setup().steps
       .slice(0, setup().steps.findIndex((item) => item.id === step?.id))
       .at(-1)
-    if (!previous) return
+    if (!previous) return undefined
     return () => goTo(previous.id)
   }
 
   function skipAction() {
     const step = activeStep()
-    if (!step?.optional || step.done) return
+    if (!step?.optional || step.done) return undefined
     return {
       label: "Skip — set this up later",
       onClick: () => {
@@ -388,8 +388,8 @@ export function OnboardingEmptyState(props: {
    */
   function nextBlockedReason() {
     const step = activeStep()
-    if (!step || step.done) return
-    if (step.optional) return
+    if (!step || step.done) return undefined
+    if (step.optional) return undefined
     if (step.id === "destination") {
       if (destination() === undefined) return "Pick an answer to continue."
       if (!destinationIncludesCloud(destination())) {
@@ -399,7 +399,7 @@ export function OnboardingEmptyState(props: {
       // run and something to clone, and the reason names whichever is missing.
       if (!state().sandboxProviderConfigured) return "Add your sandbox provider key to continue."
       if (!state().codeHostConnected) return "Connect GitHub to continue."
-      return
+      return undefined
     }
     if (step.id === "ai") return "Connect an AI provider to continue."
     return step.lockedReason
@@ -416,7 +416,7 @@ export function OnboardingEmptyState(props: {
       return { label: "Start your first task", onClick: () => goTo(undefined) }
     }
     const step = activeStep()
-    if (!step) return
+    if (!step) return undefined
     const blocked = nextBlockedReason()
     return {
       label: "Next",
@@ -430,7 +430,7 @@ export function OnboardingEmptyState(props: {
     const location = setup().location
     if (location.kind === "done") return renderDone()
     const step = activeStep()
-    if (!step) return
+    if (!step) return undefined
     if (step.id === "destination") {
       return (
         <DestinationSurface
@@ -501,7 +501,7 @@ export function OnboardingEmptyState(props: {
         />
       )
     }
-    return
+    return undefined
   }
 
   function renderDone() {

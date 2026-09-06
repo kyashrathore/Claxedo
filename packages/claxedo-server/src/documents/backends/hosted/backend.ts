@@ -7,7 +7,16 @@ import {
 } from "./managed"
 import { mintDocumentSessionToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { z } from "zod"
+import { asRecord, isRecord, parseJson } from "../../../platform/json"
 import type { DocumentIndexEntry } from "../../index-store"
+import { toDocumentVersion } from "../../port"
+import {
+  LocalDocumentIndexResponseSchema,
+  LocalDocumentReadResponseSchema,
+  LocalDocumentWriteResponseSchema,
+  parseLocalDocumentResponse,
+} from "./local-relay-contract"
 
 export function createHostedDocumentsBackend(
   bucket: R2BucketBinding,
@@ -76,7 +85,7 @@ export function createHostedDocumentsBackend(
     const key = jobKey(sessionId, documentId)
     const object = await store.get(key)
     if (!object) throw new Error("Document job authority is unavailable")
-    const value = JSON.parse(new TextDecoder().decode(object.body)) as HostedDocumentJob | ExpiredDocumentJob
+    const value = parseJobRecord(object.body)
     if ("expired" in value) throw new Error("Document job authority expired")
     if (value.jobExpiresAt <= Math.floor(Date.now() / 1000)) {
       await store.put(key, new TextEncoder().encode(JSON.stringify({
@@ -94,7 +103,7 @@ export function createHostedDocumentsBackend(
     for (const _attempt of [0, 1, 2]) {
       const object = await store.get(key)
       if (!object) return
-      const value = JSON.parse(new TextDecoder().decode(object.body)) as HostedDocumentJob | ExpiredDocumentJob
+      const value = parseJobRecord(object.body)
       if ("expired" in value) return
       targetJti ??= value.activeJti
       if (value.activeJti !== targetJti) return
@@ -140,9 +149,12 @@ export function createHostedDocumentsBackend(
       operation: "read",
       jobExpiresAt: job.value.jobExpiresAt,
     })
-    const entry = current && typeof current === "object" ? (current as Record<string, unknown>).entry : undefined
-    if (!entry || typeof entry !== "object") throw new Error("Local document is unavailable")
-    return { entry: entry as DocumentIndexEntry, job }
+    const { entry } = parseLocalDocumentResponse(
+      LocalDocumentReadResponseSchema,
+      current,
+      "Local document is unavailable",
+    )
+    return { entry, job }
   }
   return {
     index,
@@ -167,8 +179,11 @@ export function createHostedDocumentsBackend(
           operation: "list",
           jobExpiresAt: Math.floor(Date.now() / 1000) + 15 * 60,
         })
-        if (!Array.isArray(result)) throw new Error("Local document index response is invalid")
-        return result as DocumentIndexEntry[]
+        return parseLocalDocumentResponse(
+          LocalDocumentIndexResponseSchema,
+          result,
+          "Local document index response is invalid",
+        )
       }, remoteFind: async (input: { auth: SignedControlPlaneAuth; orgId: string; documentId: string }) => {
         if (!options.listLocalWorkspaces) return undefined
         const workspaces = await options.listLocalWorkspaces(input.auth)
@@ -185,9 +200,8 @@ export function createHostedDocumentsBackend(
             operation: "list",
             jobExpiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
           }).catch(() => undefined)
-          return Array.isArray(result)
-            ? (result as DocumentIndexEntry[]).find((entry) => entry.id === input.documentId)
-            : undefined
+          return LocalDocumentIndexResponseSchema.safeParse(result)
+            .data?.find((entry) => entry.id === input.documentId)
         }))).filter((entry): entry is DocumentIndexEntry => Boolean(entry))
         if (matches.length > 1) throw new Error("Remote document identity is ambiguous")
         return matches[0]
@@ -217,14 +231,7 @@ export function createHostedDocumentsBackend(
             operation: "read",
             jobExpiresAt: Math.floor(Date.now() / 1000) + 60 * 60,
           })
-          if (!value || typeof value !== "object") throw new Error("Local document read is invalid")
-          const remote = (value as Record<string, unknown>).read
-          if (!remote || typeof remote !== "object") throw new Error("Local document read is invalid")
-          const result = remote as Record<string, unknown>
-          if (typeof result.markdown !== "string" || typeof result.version !== "string" || typeof result.modifiedAt !== "number") {
-            throw new Error("Local document read is invalid")
-          }
-          return { markdown: result.markdown, version: result.version, modifiedAt: result.modifiedAt }
+          return parseLocalDocumentResponse(LocalDocumentReadResponseSchema, value, "Local document read is invalid").read
         })()
         const jobExpiresAt = Math.floor(Date.now() / 1000) + 60 * 60
         const sealedAuth = await sealJobAuth(auth, env)
@@ -288,9 +295,11 @@ export function createHostedDocumentsBackend(
                 operation: "read",
                 jobExpiresAt: job.value.jobExpiresAt,
               })
-              const read = value && typeof value === "object" ? (value as Record<string, unknown>).read : undefined
-              if (!read || typeof read !== "object") throw new Error("Local document is unavailable")
-              return read as { markdown: string; version: string; modifiedAt: number }
+              return parseLocalDocumentResponse(
+                LocalDocumentReadResponseSchema,
+                value,
+                "Local document is unavailable",
+              ).read
             })()
         const scope = {
           orgId: entry.org_id,
@@ -353,11 +362,15 @@ export function createHostedDocumentsBackend(
             expectedVersion: input.expectedVersion,
             jobExpiresAt: job.value.jobExpiresAt,
           })
-          return result as never
+          return parseLocalDocumentResponse(
+            LocalDocumentWriteResponseSchema,
+            result,
+            "Local document write-back response is invalid",
+          )
         }
         const written = await workspace.write(await workspace.resolve(portEntry(entry)), {
           markdown: input.markdown,
-          expectedVersion: input.expectedVersion as never,
+          expectedVersion: toDocumentVersion(input.expectedVersion),
           actor: { type: "agent", id: input.sessionId },
           sessionId: input.sessionId,
         })
@@ -394,8 +407,8 @@ export function createHostedDocumentsBackend(
             operation: "read",
             jobExpiresAt: job.value.jobExpiresAt,
           })
-          const remoteEntry = current && typeof current === "object" ? (current as Record<string, unknown>).entry : undefined
-          if (!remoteEntry || typeof remoteEntry !== "object" || (remoteEntry as Record<string, unknown>).archived_at) {
+          const remote = LocalDocumentReadResponseSchema.safeParse(current).data
+          if (!remote || remote.entry.archived_at) {
             throw new Error("Local document is archived or unavailable")
           }
         }
@@ -415,18 +428,42 @@ export function createHostedDocumentsBackend(
   }
 }
 
-type HostedDocumentJob = Readonly<{
-  orgId: string
-  projectId: string
-  localWorkspaceId: string
-  cloudWorkspaceId: string
-  placement: "local" | "hosted"
-  jobExpiresAt: number
-  activeJti: string
-  sealedAuth: string
-}>
+/**
+ * The job authority record, stored as one R2 object per session/document. It is
+ * written and read only here, so the schema is both the write shape and the read
+ * validation: a corrupt or drifted object is rejected as a job-authority error
+ * instead of flowing on as a half-typed record.
+ */
+const HostedDocumentJobSchema = z.object({
+  orgId: z.string().min(1),
+  projectId: z.string().min(1),
+  localWorkspaceId: z.string(),
+  cloudWorkspaceId: z.string(),
+  placement: z.enum(["local", "hosted"]),
+  jobExpiresAt: z.number(),
+  activeJti: z.string(),
+  sealedAuth: z.string(),
+})
 
-type ExpiredDocumentJob = Readonly<{ expired: true; jobExpiresAt: number }>
+const ExpiredDocumentJobSchema = z.object({ expired: z.literal(true), jobExpiresAt: z.number() })
+
+const DocumentJobRecordSchema = z.union([ExpiredDocumentJobSchema, HostedDocumentJobSchema])
+
+type HostedDocumentJob = Readonly<z.infer<typeof HostedDocumentJobSchema>>
+
+type ExpiredDocumentJob = Readonly<z.infer<typeof ExpiredDocumentJobSchema>>
+
+function parseJobRecord(body: Uint8Array) {
+  let parsed: unknown
+  try {
+    parsed = parseJson(new TextDecoder().decode(body))
+  } catch {
+    throw new Error("Document job authority is corrupt")
+  }
+  const record = DocumentJobRecordSchema.safeParse(parsed)
+  if (!record.success) throw new Error("Document job authority is corrupt")
+  return record.data
+}
 
 function jobKey(sessionId: string, documentId: string) {
   return `document-jobs/${encodeURIComponent(sessionId)}/${encodeURIComponent(documentId)}.json`
@@ -445,11 +482,26 @@ async function sealJobAuth(auth: SignedControlPlaneAuth, env: NodeJS.ProcessEnv)
 async function openJobAuth(value: string, env: NodeJS.ProcessEnv) {
   const [nonce, encrypted] = value.split(".")
   if (!nonce || !encrypted) throw new Error("Document job authority is corrupt")
-  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+  const opened: unknown = parseJson(new TextDecoder().decode(await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: unbase64(nonce) },
     await jobAuthKey(env),
     unbase64(encrypted),
-  ))) as SignedControlPlaneAuth
+  )))
+  if (!isSealedControlPlaneAuth(opened)) throw new Error("Document job authority is corrupt")
+  return opened
+}
+
+/**
+ * `sealJobAuth` above is the only producer, and AES-GCM already proves the bytes
+ * are ours and unmodified. What still has to be checked is that the sealed value
+ * came from a *current* build: the identity fields every caller reads. Deeper
+ * members (`principal`) are carried through untouched, so they are covered by the
+ * seal rather than re-validated here.
+ */
+function isSealedControlPlaneAuth(value: unknown): value is SignedControlPlaneAuth {
+  if (!isRecord(value) || value.mode !== "signed") return false
+  const user = asRecord(value.user)
+  return typeof user?.subject === "string" && typeof user.tokenIdentifier === "string" && typeof user.issuer === "string"
 }
 
 async function jobAuthKey(env: NodeJS.ProcessEnv) {

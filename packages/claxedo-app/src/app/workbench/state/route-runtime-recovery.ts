@@ -12,10 +12,10 @@ export function recoverWorkspaceRuntimeRoute(input: {
   byWorkspace: RuntimeRouteSessionInventory["byWorkspace"]
   byProject: RuntimeRouteSessionInventory["byProject"]
 }) {
-  if (input.routeDir !== "/workspace" || !input.sessionId) return
+  if (input.routeDir !== "/workspace" || !input.sessionId) return undefined
   if (!sessionInventoryTarget(input.sessionId, {
     byWorkspace: input.byWorkspace,
     byProject: input.byProject,
-  })) return
+  })) return undefined
   return canonicalSessionRoute(input.sessionId)
 }

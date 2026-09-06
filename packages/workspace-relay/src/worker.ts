@@ -14,6 +14,8 @@ import type { RelayHostPublicKey, RuntimeAccessTokenActiveResult, WorkspaceRelay
 import {
   createCachedRevocationClient,
   createCachedTargetClient,
+  parseRuntimeAccessTokenActiveResult,
+  parseWorkspaceRelayTarget,
   type RevocationLookup,
   type TargetLookup,
 } from "./server"
@@ -99,7 +101,7 @@ function hex(bytes: ArrayBuffer) {
 
 async function deriveKidFromPublicKey(publicKey: CryptoKey) {
   const jwk = await exportJWK(publicKey)
-  const material = String(jwk.x ?? jwk.n ?? "")
+  const material = jwk.x ?? jwk.n ?? ""
   if (!material) throw new Error("Cannot derive kid: public key has no public component")
   return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material))).slice(0, 16)
 }
@@ -160,7 +162,9 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
     const res = await fetcher(url, { headers })
     if (res.status === 404 || res.status === 409) return undefined
     if (!res.ok) throw new Error(`relay target resolver failed: ${res.status}`)
-    return await res.json() as WorkspaceRelayTarget
+    const target = parseWorkspaceRelayTarget(await res.json())
+    if (!target) throw new Error("relay target resolver returned a malformed target")
+    return target
   }
   const revocationUncached: RevocationLookup = async (args) => {
     const url = new URL(`${root}/revocation`)
@@ -175,7 +179,9 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
         reason: `revocation resolver returned ${res.status}`,
       }
     }
-    return await res.json() as RuntimeAccessTokenActiveResult
+    const result = parseRuntimeAccessTokenActiveResult(await res.json())
+    if (!result) throw new Error("relay revocation resolver returned a malformed result")
+    return result
   }
   const targetCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS)
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)

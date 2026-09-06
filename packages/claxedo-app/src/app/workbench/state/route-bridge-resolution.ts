@@ -64,9 +64,9 @@ export function settledWorkspaceSessionRedirect(input: {
   routeId: string | undefined
   search: string
 }) {
-  if (!input.isSuccess || input.isFetching || input.routeId) return
+  if (!input.isSuccess || input.isFetching || input.routeId) return undefined
   const target = nonCanonicalWorkspaceRouteRedirect(input.pathname)
-  if (!target || target === input.pathname) return
+  if (!target || target === input.pathname) return undefined
   return `${target}${input.search}${input.hash}`
 }
 
@@ -109,8 +109,8 @@ export function routeSessionWorkspaceBacking(input: {
   const workspace =
     signedWorkspaceFromProjects(input.projects, input.directory) ??
     (input.workspaceId ? signedWorkspaceFromProjects(input.projects, input.workspaceId) : undefined)
-  if (!workspace) return
-  if (input.workspaceId && workspace.workspaceId !== input.workspaceId) return
+  if (!workspace) return undefined
+  if (input.workspaceId && workspace.workspaceId !== input.workspaceId) return undefined
   return {
     workspaceId: workspace.workspaceId,
     kind: workspace.kind,

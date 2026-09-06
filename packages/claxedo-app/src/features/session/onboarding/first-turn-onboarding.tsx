@@ -61,11 +61,11 @@ export function createFirstTurnOnboarding(input: {
       // workspace via the app's canonical new-session navigation. The lost
       // thread's transcript stays put; the user continues in a live session.
       input.onStartNewSession?.()
-      return
+      return undefined
     }
     if (kind === "credential") {
       void openSettingsProviders(dialog)
-      return
+      return undefined
     }
     if (kind === "model" || kind === "usage_limit") {
       const harness = input.harnessRecovery?.()
@@ -73,7 +73,7 @@ export function createFirstTurnOnboarding(input: {
       const selection = harness && controller ? controller.read(harness.scope) : undefined
       if (harness && controller && selection?.harness) {
         const next = nextHarnessRecoveryModel(selection)
-        if (!next) return
+        if (!next) return undefined
         return Promise.resolve(controller.setModel(
           harness.scope,
           next,
@@ -88,7 +88,7 @@ export function createFirstTurnOnboarding(input: {
       const next = candidates.find((model) => model.provider.id === current?.provider.id) ?? candidates[0]
       if (!next) {
         void openSettingsProviders(dialog)
-        return
+        return undefined
       }
       local.model.set({ providerID: next.provider.id, modelID: next.id }, { recent: true })
       return Promise.resolve().then(() => retry?.(failedPrompt))

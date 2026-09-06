@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { closeContextAndSaveVideo } from "./capture-video"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import "./capture-harness-window"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(
@@ -91,9 +92,8 @@ const context = await browser.newContext({
   recordVideo: { dir: RAW_VIDEO_DIR, size: viewport },
 })
 await context.addInitScript(() => {
-  const w = window as unknown as Record<string, unknown>
-  w.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
-  w.__CLAXEDO_TEST_AUTH_USER__ = {
+  window.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
+  window.__CLAXEDO_TEST_AUTH_USER__ = {
     id: "workspace-panel-motion-user",
     primaryEmailAddress: { emailAddress: "workspace-panel-motion@claxedo.test" },
     fullName: "Workspace Panel Motion",

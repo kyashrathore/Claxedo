@@ -10,7 +10,7 @@ function sessionTreeRequest<T>(
   sessionID?: string,
   include: (item: T) => boolean = () => true,
 ) {
-  if (!sessionID) return
+  if (!sessionID) return undefined
 
   const map = session.reduce((acc, item) => {
     if (!item.parentID) return acc
@@ -33,7 +33,7 @@ function sessionTreeRequest<T>(
   }
 
   const id = ids.find((id) => request[id]?.some(include))
-  if (!id) return
+  if (!id) return undefined
   return request[id]?.find(include)
 }
 
@@ -56,7 +56,7 @@ export function sessionVisiblePermissionRequest(input: {
   // Until persisted permission policy has hydrated, the client cannot know
   // whether this request is manual or will be answered by Auto. Rendering it
   // in that gap makes the dock flash and then disappear without a user choice.
-  if (!input.ready) return
+  if (!input.ready) return undefined
   return sessionPermissionRequest(
     input.sessions,
     input.requests,

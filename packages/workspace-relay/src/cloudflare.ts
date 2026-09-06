@@ -4,14 +4,7 @@ import {
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
   validateTunnelMessage,
-  type TunnelError,
-  type TunnelHttpResponseChunk,
-  type TunnelHttpResponseEnd,
   type TunnelHttpResponseFlow,
-  type TunnelHttpResponseStart,
-  type TunnelHostRegistrationUpdate,
-  type TunnelPing,
-  type TunnelWsClose,
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {

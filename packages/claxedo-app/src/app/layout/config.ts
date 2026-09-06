@@ -255,7 +255,7 @@ function layoutConfigFromFlatState(input: Record<string, unknown>, options: { ta
 function normalizeRegion(regionId: RegionId, input: unknown, fallback?: RegionConfig) {
   const raw = isObject(input) ? input : {}
   const slot = isSlotKind(raw.slot) ? raw.slot : fallback?.slot
-  if (!slot) return
+  if (!slot) return undefined
   return [
     regionId,
     {

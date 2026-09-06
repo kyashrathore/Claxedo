@@ -20,7 +20,7 @@ type AgentLifecycleEvent = Extract<ClaxedoEvent, { type: "agent.lifecycle" }>
 export function sessionStatusForAgentLifecycle(
   input: Pick<AgentLifecycleEvent, "sessionId" | "terminalId" | "eventType">,
 ) {
-  if (!input.sessionId || input.terminalId) return
+  if (!input.sessionId || input.terminalId) return undefined
   return input.eventType === "Busy" || input.eventType === "UserActionRequired"
     ? { type: "busy" as const }
     : { type: "idle" as const }
@@ -107,11 +107,11 @@ export function agentLifecycleTitle(input: {
 }) {
   const provider = providerLabel(input.provider, input.currentTitle)
   const current = clean(input.currentTitle)
-  if (!genericTerminalTitle(current, provider) && !agentGeneratedTitle(current, provider)) return
+  if (!genericTerminalTitle(current, provider) && !agentGeneratedTitle(current, provider)) return undefined
   const context = contextTitle({ ...input, provider })
-  if (!context) return
+  if (!context) return undefined
   const next = provider ? `${provider}: ${context}` : context
-  if (next === current) return
+  if (next === current) return undefined
   return next
 }
 

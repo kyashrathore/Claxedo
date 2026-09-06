@@ -10,14 +10,14 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
  * CLI listener.
  */
 export function localCallback(input: string | null): string | undefined {
-  if (!input) return
+  if (!input) return undefined
   try {
     const url = new URL(input)
-    if (url.protocol !== "http:") return
-    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return
+    if (url.protocol !== "http:") return undefined
+    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return undefined
     return url.toString()
   } catch {
-    return
+    return undefined
   }
 }
 

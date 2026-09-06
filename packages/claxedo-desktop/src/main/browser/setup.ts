@@ -23,15 +23,11 @@ import path from "node:path"
 
 import { isBrowserTabEnabled } from "./flag"
 import { startDesktopHttpBridge, type BridgeHandle } from "./http-bridge"
+import { readString } from "./json-read"
 import { configureAgentBrowserPartition, installAgentBrowserNavigationGuards } from "./partition"
 import { BrowserRegistry } from "./registry"
 import { ensureDesktopToken } from "./token"
-import {
-  AGENT_BROWSER_PARTITION,
-  createWillAttachWebviewHandler,
-  type WillAttachParams,
-  type WillAttachWebPreferences,
-} from "./will-attach-webview"
+import { AGENT_BROWSER_PARTITION, createWillAttachWebviewHandler } from "./will-attach-webview"
 
 /**
  * Resolve the absolute filesystem path of the built browser-preload script.
@@ -94,19 +90,10 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
   })
 
   // The Electron listener shape (`Event, WebPreferences, Record<string,string>`)
-  // is a strict superset of what our pure handler expects. Adapt the params to
-  // `WillAttachParams` (same values, slightly wider types) so the hardening
-  // code can work with an ergonomic shape.
-  const willAttachListener = (
-    event: Event,
-    webPreferences: WebPreferences,
-    params: Record<string, string>,
-  ) => {
-    willAttach(
-      event,
-      webPreferences as WillAttachWebPreferences,
-      params as unknown as WillAttachParams,
-    )
+  // is a strict superset of what our pure handler expects, so it passes
+  // straight through.
+  const willAttachListener = (event: Event, webPreferences: WebPreferences, params: Record<string, string>) => {
+    willAttach(event, webPreferences, params)
   }
 
   app.on("web-contents-created", (_event, contents) => {
@@ -114,7 +101,9 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
     // If this web-contents itself belongs to the agent-browser partition (i.e.
     // it is a guest), harden its navigation surface too.
     try {
-      const sessionPartition = (contents.session as unknown as { partition?: string } | undefined)?.partition
+      // `partition` is a runtime-only field on `Session` — Electron does not
+      // declare it — so probe for it instead of asserting it exists.
+      const sessionPartition = readString(contents.session, "partition")
       if (contents.getType?.() === "webview" || sessionPartition === AGENT_BROWSER_PARTITION) {
         installAgentBrowserNavigationGuards(contents)
       }
@@ -125,7 +114,9 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
 
   // `session.fromPartition` requires the `app` to be ready. Defer to
   // `whenReady` so callers can invoke `setupBrowserTab` at module scope.
-  app.whenReady().then(() => {
+  // Fire-and-forget: the callback swallows its own failures and `whenReady`
+  // itself never rejects, so there is no rejection for a caller to handle.
+  void app.whenReady().then(() => {
     try {
       configureAgentBrowserPartition()
     } catch (err) {

@@ -12,8 +12,8 @@ export function firstFoldSessionPrefetch(input: {
   info?: SessionPrefetchMeta
   now?: number
 }) {
-  if (!input.info || input.info.directory !== input.directory || !input.info.page?.messages.length) return
-  if ((input.now ?? Date.now()) - input.info.at > SESSION_PREFETCH_TTL) return
+  if (!input.info || input.info.directory !== input.directory || !input.info.page?.messages.length) return undefined
+  if ((input.now ?? Date.now()) - input.info.at > SESSION_PREFETCH_TTL) return undefined
   return input.info
 }
 

@@ -140,11 +140,12 @@ type TimelineCache = { measurements: VirtualItem[]; toolOpen: Record<string, boo
 const timelineCache = new Map<string, TimelineCache>()
 
 const taskDescription = (part: PartType, sessionID: string) => {
-  if (part.type !== "tool" || part.tool !== "task") return
+  if (part.type !== "tool" || part.tool !== "task") return undefined
   const metadata = "metadata" in part.state ? part.state.metadata : undefined
-  if (metadata?.sessionId !== sessionID) return
+  if (metadata?.sessionId !== sessionID) return undefined
   const value = part.state.input?.description
   if (typeof value === "string" && value) return value
+  return undefined
 }
 
 const pace = (width: number) => Math.round(Math.max(1200, Math.min(3200, (Math.max(width, 360) * 2000) / 900)))
@@ -429,7 +430,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   const info = createMemo(() => {
     const id = sessionID()
-    if (!id) return
+    if (!id) return undefined
     return directorySession(id)
   })
   const titleValue = createActivePaneProjection<string | undefined>({ active: props.active, read: props.title, initial: undefined })
@@ -437,7 +438,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const parentID = createMemo(() => props.parentID)
   const parent = createMemo(() => {
     const id = parentID()
-    if (!id) return
+    if (!id) return undefined
     return directorySession(id)
   })
   const parentConversation = createActiveConversationSnapshot({
@@ -459,7 +460,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   const childTaskDescription = createMemo(() => {
     const id = sessionID()
-    if (!id) return
+    if (!id) return undefined
     return parentMessages()
       .flatMap((message) => getParentMsgParts(message.id))
       .map((part) => taskDescription(part, id))
@@ -507,7 +508,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           { equals: samePartsRecord },
         )
         const visibleAssistantMessageIDs = createMemo(() => {
-          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return
+          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return undefined
           const parts = turnParts()
           return Timeline.coldFinalVisibleAssistantMessageIDs(
             turnAssistants(),
@@ -1191,7 +1192,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)
-    if (!message || message.role !== "user") return
+    if (!message || message.role !== "user") return undefined
     return Timeline.turnDurationMs(message, turnAssistantMessages(userMessageID))
   }
 
@@ -1218,6 +1219,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         return part.id
       }
     }
+    return undefined
   }
 
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
@@ -1311,17 +1313,17 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
     const message = createMemo(() => {
       const group = row().group
-      if (group.type !== "part") return
+      if (group.type !== "part") return undefined
       return messageByID().get(group.ref.messageID)
     })
     const part = createMemo(() => {
       const group = row().group
-      if (group.type !== "part") return
+      if (group.type !== "part") return undefined
       return getMsgPart(group.ref.messageID, group.ref.partID)
     })
     const defaultOpen = createMemo(() => {
       const item = part()
-      if (!item) return
+      if (!item) return undefined
       return partDefaultOpen(item, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())
     })
 
@@ -1424,6 +1426,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const message = createMemo(() => {
           const m = messageByID().get(userMessageRow().userMessageID)
           if (m?.role === "user") return m
+          return undefined
         })
         return (
           <TimelineRowFrame row={userMessageRow}>
@@ -1529,7 +1532,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const undoTurn = () => {
           const revert = props.actions?.revert
           const id = sessionID()
-          if (!revert || !id) return
+          if (!revert || !id) return undefined
           return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
             .then(() => showToast({ title: language.t("ui.message.revertMessage") }))
             .catch(() => showToast({ title: language.t("common.requestFailed"), variant: "error" }))
@@ -1565,6 +1568,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
     }
+    return undefined
   }
 
   function TimelineRowView(props: { row: TimelineRow.TimelineRow; onSizeChange?: () => void }) {

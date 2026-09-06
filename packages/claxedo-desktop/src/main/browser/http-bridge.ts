@@ -45,7 +45,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { AgentAuditLog } from "./agent-audit-log"
 import { agentAuditLog as defaultAgentAuditLog } from "./agent-audit-log"
-import type { BrowserHandle } from "./handle"
+import type { BrowserHandle, ScreenshotClip } from "./handle"
+import { readNumber, readRecord, readString } from "./json-read"
 import type { BrowserRegistry } from "./registry"
 import { DESKTOP_MCP_ORIGIN, DESKTOP_TOKEN_HEADER, ensureDesktopToken, setDesktopUrl } from "./token"
 
@@ -69,9 +70,8 @@ export type BridgeDeps = {
    * pane-registration IPC payload. */
   getGroupId?: (paneId: string) => string | undefined
   /**
-   * Fallback title resolver for tests that can't provide a real
-   * `WebContents`. Called with the paneId when `handle.webContents.getTitle`
-   * cannot be invoked.
+   * Fallback title resolver for panes whose guest reports no title yet.
+   * Called with the paneId when `handle.getTitle()` comes back empty.
    */
   resolveTitle?: (paneId: string, handle: BrowserHandle) => string
 }
@@ -189,13 +189,13 @@ async function handleRequest(
       if (method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" })
       const body = await readJson(req)
       if (body.error) return sendJson(res, 400, { error: body.error })
-      const opts = (body.value ?? {}) as { clip?: { x: number; y: number; width: number; height: number; scale?: number } }
-      const result = await handle.screenshot({ clip: opts.clip })
+      const clip = readClip(body.value)
+      const result = await handle.screenshot({ clip })
       if (!result.ok) {
         auditLog.append({
           paneId,
           action: "screenshot",
-          summary: describeScreenshot(opts),
+          summary: describeScreenshot(clip),
           result: "denied",
           reason: result.error.code,
         })
@@ -209,7 +209,7 @@ async function handleRequest(
         auditLog.append({
           paneId,
           action: "screenshot",
-          summary: describeScreenshot(opts),
+          summary: describeScreenshot(clip),
           result: "denied",
           reason: "image-too-large",
         })
@@ -221,7 +221,7 @@ async function handleRequest(
       auditLog.append({
         paneId,
         action: "screenshot",
-        summary: describeScreenshot(opts),
+        summary: describeScreenshot(clip),
         result: "allowed",
       })
       return sendJson(res, 200, result)
@@ -231,8 +231,7 @@ async function handleRequest(
       if (method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" })
       const body = await readJson(req)
       if (body.error) return sendJson(res, 400, { error: body.error })
-      const value = body.value as { expression?: string } | null
-      const expression = typeof value?.expression === "string" ? value.expression : ""
+      const expression = readString(body.value, "expression") ?? ""
       if (!expression) return sendJson(res, 400, { error: "expression-required" })
       const summary = `eval (${expression.length} chars)`
       const result = await handle.evaluate(expression)
@@ -257,8 +256,7 @@ async function handleRequest(
       if (method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" })
       const body = await readJson(req)
       if (body.error) return sendJson(res, 400, { error: body.error })
-      const value = body.value as { url?: string } | null
-      const target = typeof value?.url === "string" ? value.url.trim() : ""
+      const target = readString(body.value, "url")?.trim() ?? ""
       if (!target) return sendJson(res, 400, { error: "url-required" })
       try {
         const parsed = new URL(target)
@@ -309,18 +307,9 @@ function enumerateTabs(deps: BridgeDeps): BridgeTabSummary[] {
   for (const paneId of ids) {
     const handle = deps.registry.get(paneId)
     if (!handle) continue
-    let currentUrl = ""
-    let title = ""
-    try {
-      // `handle.webContents` is cast to the full Electron `WebContents` type;
-      // all of `getURL`, `getTitle` exist at runtime. Tests can inject
-      // `resolveTitle` to sidestep a missing stub.
-      const wc = handle.webContents as unknown as { getURL?: () => string; getTitle?: () => string }
-      currentUrl = wc.getURL ? wc.getURL() : ""
-      title = wc.getTitle ? wc.getTitle() : ""
-    } catch {
-      // getURL / getTitle throw if the webContents has been destroyed.
-    }
+    // Both accessors swallow a destroyed `webContents` and report "".
+    const currentUrl = handle.getNavigationState().url
+    let title = handle.getTitle()
     if (!title && deps.resolveTitle) {
       title = deps.resolveTitle(paneId, handle)
     }
@@ -393,7 +382,9 @@ async function readJson(req: IncomingMessage): Promise<{ value?: unknown; error?
   // fix.
   try {
     for await (const chunk of req) {
-      const buf = chunk as Buffer
+      // `IncomingMessage`'s async iterator is typed `any`; a request stream
+      // with no `setEncoding` always yields Buffers.
+      const buf: Buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       total += buf.length
       if (total > MAX_REQUEST_BODY_BYTES) {
         overflowed = true
@@ -432,10 +423,26 @@ function approxDataUrlBytes(dataUrl: string): number {
   return Math.floor((base64.length * 3) / 4)
 }
 
-function describeScreenshot(opts: { clip?: { x: number; y: number; width: number; height: number; scale?: number } }): string {
-  if (opts.clip) {
-    const { x, y, width, height } = opts.clip
-    return `screenshot clip=${Math.round(x)},${Math.round(y)} ${Math.round(width)}x${Math.round(height)}`
+/**
+ * A `screenshot` request body's `clip`, or `undefined` when the caller sent
+ * none — or sent one missing a required edge, which the CDP call would have
+ * rejected anyway.
+ */
+function readClip(body: unknown): ScreenshotClip | undefined {
+  const clip = readRecord(body, "clip")
+  if (!clip) return undefined
+  const x = readNumber(clip, "x")
+  const y = readNumber(clip, "y")
+  const width = readNumber(clip, "width")
+  const height = readNumber(clip, "height")
+  if (x === undefined || y === undefined || width === undefined || height === undefined) return undefined
+  const scale = readNumber(clip, "scale")
+  return scale === undefined ? { x, y, width, height } : { x, y, width, height, scale }
+}
+
+function describeScreenshot(clip: ScreenshotClip | undefined): string {
+  if (clip) {
+    return `screenshot clip=${Math.round(clip.x)},${Math.round(clip.y)} ${Math.round(clip.width)}x${Math.round(clip.height)}`
   }
   return "screenshot (viewport)"
 }

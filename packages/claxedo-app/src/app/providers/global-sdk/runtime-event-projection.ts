@@ -20,12 +20,12 @@ type Event = GlobalSdkEvent
 type EventDirectory = string
 export function compatEventEnvelope(input: unknown): { directory?: string; payload: Event } | undefined {
   const row = record(input)
-  if (!row || row.type === "heartbeat") return
+  if (!row || row.type === "heartbeat") return undefined
   const payload = record(row.payload) ?? row
-  if (typeof payload.type !== "string" || payload.type === "server.heartbeat") return
+  if (typeof payload.type !== "string" || payload.type === "server.heartbeat") return undefined
   const properties = record(payload.properties)
   // Flat control-plane lifecycle frames are consumed by ClaxedoEventsProvider.
-  if (!properties) return
+  if (!properties) return undefined
   const info = record(properties.info)
   const sessionId = typeof properties.sessionID === "string"
     ? properties.sessionID

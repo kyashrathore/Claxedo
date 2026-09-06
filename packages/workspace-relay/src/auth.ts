@@ -136,7 +136,8 @@ function seconds(input = Date.now()) {
 }
 
 function requireAlgorithm(input: string): RelayJwtAlgorithm {
-  if (algorithms.includes(input as RelayJwtAlgorithm)) return input as RelayJwtAlgorithm
+  const algorithm = algorithms.find((candidate) => candidate === input)
+  if (algorithm) return algorithm
   throw new WorkspaceRelayAuthError("invalid_relay_token", "Unsupported relay token algorithm")
 }
 
@@ -165,7 +166,7 @@ function actorProfileClaims(payload: JWTPayload) {
   const actor_name = stringClaim(payload, "actor_name")
   const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
   if (!actor_public_id && !actor_name && !actor_avatar_url) return {}
-  if (!actor_public_id || !actor_name) return
+  if (!actor_public_id || !actor_name) return undefined
   return { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
 }
 
@@ -404,9 +405,9 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     || (actor_kind !== "human" && actor_kind !== "agent")
     || (principal_kind === "user" && actor_kind !== "human")
     || (principal_kind === "service" && actor_kind !== "agent")
-  ) return
+  ) return undefined
   const actorProfile = actorProfileClaims(payload)
-  if (!actorProfile) return
+  if (!actorProfile) return undefined
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
@@ -434,7 +435,7 @@ function relayHostClaims(payload: JWTPayload): RelayHostTokenClaims | undefined 
   const backing = stringClaim(payload, "backing")
   const parent_jti = stringClaim(payload, "parent_jti")
   const pair = { access, backing }
-  if (!base || !parent_jti || !isRelayClaimPair(pair)) return
+  if (!base || !parent_jti || !isRelayClaimPair(pair)) return undefined
   return {
     ...base,
     iss: relayHostTokenIssuer,
@@ -451,7 +452,7 @@ function hostTunnelClaims(payload: JWTPayload): HostTunnelTokenClaims | undefine
   const jti = stringClaim(payload, "jti")
   const host_id = stringClaim(payload, "host_id")
   const workspace_ids = stringArrayClaim(payload, "workspace_ids")
-  if (!exp || !iat || !sub || !jti || !host_id || !workspace_ids?.length) return
+  if (!exp || !iat || !sub || !jti || !host_id || !workspace_ids?.length) return undefined
   return {
     iss: runtimeAccessTokenIssuer,
     aud: hostTunnelTokenAudience,

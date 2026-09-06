@@ -213,7 +213,7 @@ export function normalizeClaxedoStreamEvent(
     ? input as { directory?: unknown; payload?: unknown }
     : undefined
   const payload = envelope?.payload
-  if (!isClaxedoEvent(payload)) return
+  if (!isClaxedoEvent(payload)) return undefined
   if (payload.type === "heartbeat") return payload
   const addressed = addressClaxedoEvent(payload, address)
   if ("directory" in addressed && typeof addressed.directory === "string" && addressed.directory) return addressed

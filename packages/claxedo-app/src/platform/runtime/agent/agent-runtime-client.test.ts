@@ -3,13 +3,17 @@ import { queryClient } from "@/platform/query/query-client"
 import { apiBearerToken, configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient } from "./agent-runtime-client"
 import { AgentRuntimeRequestError } from "./agent-runtime-request-error"
+import { requestUrl } from "@/lib/url"
 
+// `...init` must come before `headers`: spreading it last would drop the merged
+// headers entirely (the old shape spread `init.headers` into an object literal
+// and then let `...init` overwrite the result, silently losing Content-Type).
+// `new Headers()` also accepts every `HeadersInit` arm, which an object spread
+// does not — spreading a `Headers` instance yields nothing at all.
 function ok(body: unknown, init?: ResponseInit) {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  })
+  const headers = new Headers(init?.headers)
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  return new Response(JSON.stringify(body), { status: 200, ...init, headers })
 }
 
 describe("AgentRuntimeClient", () => {
@@ -18,7 +22,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001",
       request: async (input) => {
-        calls.push(new URL(String(input)))
+        calls.push(new URL(requestUrl(input)))
         return ok({ modes: [], appliesFrom: "next-turn" })
       },
     })
@@ -65,7 +69,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input) => {
-        seen.push(String(input))
+        seen.push(requestUrl(input))
         return ok({ messages: [], maxEventOrdinal: 4 })
       },
     })
@@ -88,7 +92,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input) => {
-        seen.push(String(input))
+        seen.push(requestUrl(input))
         return ok({ messages: [], maxEventOrdinal: 4 })
       },
     })
@@ -110,7 +114,7 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       workspaceId: "ws_1",
       request: async (input) => {
-        seen.push(String(input))
+        seen.push(requestUrl(input))
         return ok({ messages: [{ info: { id: "msg_1" }, parts: [] }], maxEventOrdinal: 4 })
       },
     })
@@ -167,8 +171,8 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       request: async (input) => {
-        seen.push(String(input))
-        if (String(input).includes("/api/workspace/ws_1/connection")) {
+        seen.push(requestUrl(input))
+        if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",
@@ -207,11 +211,11 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input, init) => {
         seen.push({
-          url: String(input),
+          url: requestUrl(input),
           method: init?.method ?? "GET",
           ...(typeof init?.body === "string" ? { body: init.body } : {}),
         })
-        if (String(input).endsWith("/capabilities?directory=%2Frepo%2Fmain")) {
+        if (requestUrl(input).endsWith("/capabilities?directory=%2Frepo%2Fmain")) {
           return ok({ implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: [] })
         }
         if ((init?.method ?? "GET") === "GET") return ok(goal)
@@ -242,7 +246,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input) => {
-        seen.push(String(input))
+        seen.push(requestUrl(input))
         return ok({ transport: "codex", goals: true })
       },
     })
@@ -260,7 +264,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input) => {
-        seen.push(new URL(String(input)))
+        seen.push(new URL(requestUrl(input)))
         return ok({ goals: seen.at(-1)?.searchParams.has("nativeHarness") })
       },
     })
@@ -277,7 +281,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input) => {
-        calls.push(String(input))
+        calls.push(requestUrl(input))
         return ok({ messages: [], maxEventOrdinal: 7 })
       },
     })
@@ -355,7 +359,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         return ok([{ info: { id: "msg_1" }, parts: [] }], { headers: { "x-max-event-ordinal": "8" } })
       },
     })
@@ -377,7 +381,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         return ok({})
       },
     })
@@ -408,11 +412,11 @@ describe("AgentRuntimeClient", () => {
         toolSandbox: { kind: "local", cwd: "/repo/main" },
       },
       request: async (input, init) => {
-        const url = new URL(String(input))
+        const url = new URL(requestUrl(input))
         if (url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/api/workspace")) {
           throw new Error(`local cwd session should stay on local session routes: ${url.pathname}`)
         }
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         return ok({})
       },
     })
@@ -465,7 +469,7 @@ describe("AgentRuntimeClient", () => {
         },
       },
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         return ok({})
       },
     })
@@ -491,9 +495,9 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       signedControlPlane: true,
       request: async (input, init) => {
-        const req = input instanceof Request ? input : new Request(String(input), init)
+        const req = input instanceof Request ? input : new Request(requestUrl(input), init)
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
-        if (String(input).includes("/api/workspace/ws_1/connection")) {
+        if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",
@@ -529,7 +533,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         return ok([{ id: "runtime-session-1" }])
       },
     })
@@ -552,9 +556,9 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       signedControlPlane: true,
       request: async (input, init) => {
-        const req = input instanceof Request ? input : new Request(String(input), init)
+        const req = input instanceof Request ? input : new Request(requestUrl(input), init)
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
-        if (String(input).includes("/api/workspace/ws_1/connection")) {
+        if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",
@@ -591,9 +595,9 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       signedControlPlane: true,
       request: async (input, init) => {
-        const req = input instanceof Request ? input : new Request(String(input), init)
+        const req = input instanceof Request ? input : new Request(requestUrl(input), init)
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
-        if (String(input).includes("/api/workspace/ws_1/connection")) {
+        if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",
@@ -628,9 +632,9 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       signedControlPlane: true,
       request: async (input, init) => {
-        const req = input instanceof Request ? input : new Request(String(input), init)
+        const req = input instanceof Request ? input : new Request(requestUrl(input), init)
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
-        if (String(input).includes("/api/workspace/ws_1/connection")) {
+        if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",
@@ -671,8 +675,8 @@ describe("AgentRuntimeClient", () => {
       workspaceId: "ws_cleantest1",
       workspaceKind: "user-hosted",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -706,8 +710,8 @@ describe("AgentRuntimeClient", () => {
       workspaceId: "ws_cleantest1",
       workspaceKind: "user-hosted",
       request: async (input) => {
-        calls.push(String(input))
-        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+        calls.push(requestUrl(input))
+        if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -740,8 +744,8 @@ describe("AgentRuntimeClient", () => {
       workspaceId: "ws_cleantest1",
       workspaceKind: "user-hosted",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -780,8 +784,8 @@ describe("AgentRuntimeClient", () => {
         toolSandbox: { kind: "local", cwd: "/tmp/claxedo-portability/ws_cleantest1-dir" },
       },
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -820,8 +824,8 @@ describe("AgentRuntimeClient", () => {
       workspaceId: "ws_cleantest1",
       workspaceKind: "user-hosted",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -861,11 +865,11 @@ describe("AgentRuntimeClient", () => {
       signedControlPlane: true,
       workspaceKind: "user-hosted",
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/resolve")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/resolve")) {
           return ok({ workspaceId: "ws_cleantest1" })
         }
-        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+        if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -897,9 +901,9 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "cloud" })
-        if (String(input).includes("/api/workspace/ws_real/connection")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "cloud" })
+        if (requestUrl(input).includes("/api/workspace/ws_real/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",
@@ -961,9 +965,9 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       request: async (input, init) => {
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (String(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "user-hosted" })
-        if (String(input).includes("/api/workspace/ws_real/connection")) {
+        calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
+        if (requestUrl(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "user-hosted" })
+        if (requestUrl(input).includes("/api/workspace/ws_real/connection")) {
           return ok({
             access: "user-hosted",
             backing: "local-worktree",
@@ -1014,11 +1018,11 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       request: async (input, init) => {
-        if (String(input).includes("/api/workspace/resolve")) {
+        if (requestUrl(input).includes("/api/workspace/resolve")) {
           seen.push(new Headers(init?.headers).get("Authorization"))
           return ok({ workspaceId: "ws_bearer", kind: "cloud" })
         }
-        if (String(input).includes("/api/workspace/ws_bearer/connection")) {
+        if (requestUrl(input).includes("/api/workspace/ws_bearer/connection")) {
           return ok({
             access: "cloud",
             backing: "cloud-vm",

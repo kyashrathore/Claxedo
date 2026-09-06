@@ -255,7 +255,7 @@ export function railWorktreeInfo(input: {
   isCloud: boolean
 }): RailWorktreeInfo | undefined {
   const project = input.projects.find((item) => railProjectHasDir(item, input.dir))
-  if (!project) return
+  if (!project) return undefined
   const workspace = railProjectWorkspaces(project, input.isCloud).find((item) => item.id === input.dir || item.directory === input.dir)
   const name = workspace?.name || getFilename(input.dir)
   const cachedSessions = cachedDirectorySessions(input.dir)

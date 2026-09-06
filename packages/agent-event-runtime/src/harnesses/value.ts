@@ -1,12 +1,24 @@
-export function object(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
-  return value as Record<string, unknown>
+/** Canonical "is this a plain JSON object?" guard for harness payloads. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-export function text(value: unknown) {
-  if (typeof value !== "string") return
-  if (!value) return
+export function object(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+export function text(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined
   return value
+}
+
+/** JSON text for diagnostics and error surfaces. Never throws on cycles or BigInt. */
+export function jsonText(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? ""
+  } catch {
+    return "[unserializable]"
+  }
 }
 
 export function number(value: unknown) {

@@ -117,7 +117,7 @@ const localContextInput = {
 
     const id = createMemo(() => {
       const session = input.sessionId?.()
-      if (session === "new") return
+      if (session === "new") return undefined
       return session
     })
     const hydrationReady = createDeferredDirectoryResourceGate({
@@ -137,7 +137,7 @@ const localContextInput = {
     }
 
     const sessionConfigRequest = (session: string | undefined): SessionConfigRequest | undefined => {
-      if (!session) return
+      if (!session) return undefined
       return {
         runtime: {
           serverUrl: sdk.url,
@@ -251,7 +251,7 @@ const localContextInput = {
       if (hit) return hit
       const provider = providers.all().get(model.providerID)
       const indexed = provider?.models[model.modelID]
-      if (!indexed || !connected().has(model.providerID)) return
+      if (!indexed || !connected().has(model.providerID)) return undefined
       return {
         ...indexed,
         name: indexed.name.replace("(latest)", "").trim(),
@@ -266,11 +266,12 @@ const localContextInput = {
         if (!model) continue
         if (validModel(model)) return model
       }
+      return undefined
     }
 
     const pickAgent = (name: string | undefined) => {
       const items = list()
-      if (items.length === 0) return
+      if (items.length === 0) return undefined
       return items.find((item) => item.name === name) ?? items[0]
     }
 
@@ -310,7 +311,7 @@ const localContextInput = {
         // its last settled value after the cache entry has been consumed.
         if (selectionHandoff) return selectionHandoff
         if (settledQueryData(sessionConfigSelectionQuery) !== undefined) return sessionConfigSelection
-        if (sessionConfigSelectionLoading()) return
+        if (sessionConfigSelectionLoading()) return undefined
       }
       return saved.session[session] ?? sessionConfigSelection
     })
@@ -413,18 +414,19 @@ const localContextInput = {
 
       const agentModel = selectedState?.agent ? firstModel(() => agent.current()?.model) : undefined
       if (agentModel) return { source: "agent", model: agentModel }
+      return undefined
     }
 
     const current = () => {
       const item = currentModelKey()
-      if (!item) return
+      if (!item) return undefined
       return materializeModel(item.model)
     }
 
     const configured = () => {
       const item = agent.current()
       const model = current()
-      if (!item || !model) return
+      if (!item || !model) return undefined
       return getConfiguredAgentVariant({
         agent: { model: item.model, variant: item.variant },
         model: { providerID: model.provider.id, modelID: model.id, variants: model.variants },
@@ -524,9 +526,10 @@ const localContextInput = {
           })
           if (resolved) return resolved
           const model = current()
-          if (!model) return
+          if (!model) return undefined
           const saved = models.variant.get({ providerID: model.provider.id, modelID: model.id })
           if (saved && this.list().includes(saved)) return saved
+          return undefined
         },
         list() {
           const item = current()

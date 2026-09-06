@@ -56,7 +56,10 @@ import {
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
 import { createReviewTabActivationTransition, reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
-import { createReviewWorkspaceTabPresentation } from "./review-workspace-tab-presentation"
+import {
+  createReviewWorkspaceTabPresentation,
+  unhandledReviewWorkspaceTab,
+} from "./review-workspace-tab-presentation"
 import { createReviewWorkspaceVcsStaleness } from "./review-workspace-vcs-staleness"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
@@ -581,6 +584,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             />
           </div>
         )
+      default:
+        return unhandledReviewWorkspaceTab(tab)
     }
   }
 

@@ -47,6 +47,7 @@ export function createGoalAwareAbort(input: {
       input.onStopGoalError(error)
       await input.promptAbort()
     }
+    return undefined
   }
 }
 

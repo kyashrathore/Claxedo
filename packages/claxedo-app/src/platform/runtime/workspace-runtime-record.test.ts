@@ -8,6 +8,7 @@ import {
 } from "./workspace-runtime-record"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { requestUrl } from "@/lib/url"
 
 // happy-dom's preloaded window must survive this suite: deleting it without
 // restoring poisons whichever test file shares the process afterwards
@@ -20,11 +21,6 @@ afterEach(() => {
   ;(globalThis as typeof globalThis & { window?: unknown }).window = preloadedWindow
   delete (globalThis as { api?: unknown }).api
 })
-
-function requestUrl(input: Parameters<typeof fetch>[0]) {
-  if (input instanceof Request) return input.url
-  return input.toString()
-}
 
 describe("workspace runtime record", () => {
   test("workspaceRuntimeBlocksBootstrap only while cloud runtime is still pending", () => {

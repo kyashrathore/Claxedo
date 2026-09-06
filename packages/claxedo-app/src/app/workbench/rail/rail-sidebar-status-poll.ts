@@ -18,13 +18,17 @@
  * skip-in-flight guards inside `run` mean a repeated call is a no-op unless the
  * data has actually aged out. This module only supplies the missing clock.
  */
-export type SidebarStatusPollTimer = unknown
-
-export type SidebarStatusPollInput = {
+/**
+ * The caller owns the timer seam, so the handle is whatever its `schedule`
+ * hands back — `ReturnType<typeof setTimeout>` in the rail, a plain counter in
+ * tests. Threading it as a type parameter keeps `clear` exact at both ends
+ * instead of laundering the handle through `unknown` and casting it back.
+ */
+export type SidebarStatusPollInput<Timer> = {
   /** The existing batch fetch. Safe to call repeatedly: it self-skips when fresh. */
   run: () => void
-  schedule: (fn: () => void, ms: number) => SidebarStatusPollTimer
-  clear: (timer: SidebarStatusPollTimer) => void
+  schedule: (fn: () => void, ms: number) => Timer
+  clear: (timer: Timer) => void
   /**
    * Gate for "don't fetch right now" — a fast session switch in its quiet
    * window, or a hidden window. Returning false must NOT stop the loop, only
@@ -40,10 +44,10 @@ export type SidebarStatusPollInput = {
 export const SIDEBAR_STATUS_POLL_INITIAL_MS = 250
 export const SIDEBAR_STATUS_POLL_INTERVAL_MS = 5_000
 
-export function createSidebarStatusPoll(input: SidebarStatusPollInput) {
+export function createSidebarStatusPoll<Timer>(input: SidebarStatusPollInput<Timer>) {
   const initialDelayMs = input.initialDelayMs ?? SIDEBAR_STATUS_POLL_INITIAL_MS
   const intervalMs = input.intervalMs ?? SIDEBAR_STATUS_POLL_INTERVAL_MS
-  let timer: SidebarStatusPollTimer | undefined
+  let timer: Timer | undefined
   let stopped = false
 
   const tick = () => {

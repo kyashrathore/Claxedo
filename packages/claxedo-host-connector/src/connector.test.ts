@@ -546,7 +546,8 @@ describe("a control-plane failure before enrollment", () => {
     const state = await instance.start()
 
     expect(state).toMatchObject({ status: "stopped", reason: "error" })
-    expect(String((state as { detail: string }).detail)).toContain("control plane unreachable")
+    if (state.status !== "stopped") throw new Error(`expected a stopped state, got ${state.status}`)
+    expect(state.detail).toContain("control plane unreachable")
     expect(calls.enrolls).toEqual([])
   })
 

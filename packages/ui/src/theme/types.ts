@@ -66,9 +66,17 @@ export type ThemeToken = string
 
 export type CssVarRef = `var(--${string})`
 
-export type ColorValue = HexColor | CssVarRef
+/** What `withAlpha` emits: an `rgba(r, g, b, a)` functional color. */
+export type RgbaColor = `rgba(${string})`
 
-export type V2ColorValue = HexColor | CssVarRef | string
+export type ColorValue = HexColor | CssVarRef | RgbaColor
+
+/**
+ * A raw CSS value for a v2 token. Wider than `ColorValue` on purpose: the v2
+ * token space also carries composite `box-shadow` values (see
+ * `v2/mapping.ts`), so it cannot be narrowed to a colour.
+ */
+export type V2ColorValue = string
 
 export type ResolvedTheme = Record<ThemeToken, ColorValue>
 

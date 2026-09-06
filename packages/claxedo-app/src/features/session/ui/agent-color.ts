@@ -41,4 +41,5 @@ export function messageAgentColor(
     if (item.role !== "user" || !item.agent) continue
     return agentColor(item.agent, agents.find((agent) => agent.name === item.agent)?.color)
   }
+  return undefined
 }

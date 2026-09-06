@@ -77,7 +77,7 @@ export const conversationPersistence: ChatClientPersistence = {
     ? storage.get(id).then((messages) => compactConversationSnapshot(messages))
     : undefined,
   setItem: (id, messages) => {
-    if (!storage || persistenceKeyIsRevoked(id)) return
+    if (!storage || persistenceKeyIsRevoked(id)) return undefined
     const snapshot = compactConversationSnapshot(messages) ?? []
     return serializePersistenceOperation(id, async () => {
       if (persistenceKeyIsRevoked(id)) return

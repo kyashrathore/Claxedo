@@ -123,7 +123,7 @@ export function applySessionListEvent(input: {
       }
     }
     default:
-      return undefined
+    return undefined
   }
 }
 
@@ -133,7 +133,7 @@ export function applyDirectorySessionCacheEvent(input: {
   push: (directory: string) => void
   directory: string
 }): DirectorySessionCacheValue | undefined {
-  if (isConversationEventType(input.event.type)) return
+  if (isConversationEventType(input.event.type)) return undefined
   const next = applySessionListEvent(input)
   if (next) return next
   switch (input.event.type) {
@@ -143,11 +143,11 @@ export function applyDirectorySessionCacheEvent(input: {
     case "process.crashed":
     case "process.config.changed":
       // Handled by ProcessPaneProvider via direct SSE subscription.
-      return
+      return undefined
     case "vcs.branch.updated":
       // Runtime VCS is query-owned in Claxedo; do not revive upstream's
       // Solid store mirror for branch updates.
-      return
+      return undefined
     case "session.status":
     case "session.idle":
     case "session.error":
@@ -156,12 +156,12 @@ export function applyDirectorySessionCacheEvent(input: {
     case "question.asked":
     case "question.replied":
     case "question.rejected":
-      return
+      return undefined
     case "server.instance.disposed":
       input.push(input.directory)
-      return
+      return undefined
     default:
-      return
+    return undefined
   }
 }
 
@@ -181,8 +181,8 @@ export function applyClaxedoSessionLifecycleEvent(input: {
   cache: DirectorySessionCacheValue
   directory: string
 }) {
-  if (input.event.directory !== input.directory) return
-  if (input.event.phase !== "created" || !input.event.info) return
+  if (input.event.directory !== input.directory) return undefined
+  if (input.event.phase !== "created" || !input.event.info) return undefined
   // Canonical event type carries `info?: unknown` so cross-package consumers
   // (server bus + frontend events provider) share one envelope. Narrow to the
   // upstream `Session` shape at the projection site, the one place it reads `.id`.

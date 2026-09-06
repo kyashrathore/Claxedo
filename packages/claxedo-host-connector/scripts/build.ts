@@ -32,7 +32,7 @@ execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.js
 })
 
 const mapFile = path.join(DIST, "connector.mjs.map")
-const sourceMap = JSON.parse(fs.readFileSync(mapFile, "utf8")) as SourceMapMetadata
+const sourceMap: SourceMapMetadata = JSON.parse(fs.readFileSync(mapFile, "utf8"))
 const manifest = normalizeSourceMapBuildManifest({
   entry: ENTRY,
   sourceMap,

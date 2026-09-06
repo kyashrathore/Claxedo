@@ -26,7 +26,6 @@ import {
   usePaneId,
   useSDK,
   useServer,
-  useTerminal,
 } from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -42,7 +41,6 @@ import { createSessionHistoryWindow, emptyUserMessages } from "@/features/sessio
 import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff } from "@/features/session/ui/prompt-preview-handoff"
-import { terminalTabLabel } from "@/features/session/ui/terminal-label"
 import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { MessageTimeline, PromptInput, SessionComposerRegion } from "@/features/session/ui/session-screen-lazy"
 import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
@@ -118,7 +116,6 @@ export default function SessionPage() {
   const layout = useLayout()
   const local = useLocal()
   const server = useServer()
-  const terminal = useTerminal()
   const config = useConfigOptional()
   const dialog = useDialog()
   const language = useLanguage()
@@ -140,7 +137,7 @@ export default function SessionPage() {
   const promptHarnessControllers = usePromptHarnessControllersOptional()
   const contentMetaSource = createMemo(() => {
     const surfaceId = sessionParams.surfaceId?.()
-    if (!surfaceId) return
+    if (!surfaceId) return undefined
     return claxedoState.meta.get(surfaceId)
   })
   const activeContentMeta = createActivePaneProjection({ active: paneActive, read: contentMetaSource, initial: undefined as ReturnType<typeof contentMetaSource> })
@@ -177,7 +174,7 @@ export default function SessionPage() {
   const routeDirectory = createMemo(() => sessionParams.directory())
   const sessionTitleTarget = createMemo(() => {
     const sessionId = sessionID()
-    if (!sessionId) return
+    if (!sessionId) return undefined
     const route = parseShellRoute(paneLocation().pathname)
     const sessionRef = activeSessionRef()
     const central = route.kind === "session"
@@ -962,7 +959,7 @@ export default function SessionPage() {
     const list = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
       .map((el) => {
         const id = el.dataset.messageId
-        if (!id) return
+        if (!id) return undefined
 
         const rect = el.getBoundingClientRect()
         return { id, top: rect.top, bottom: rect.bottom }

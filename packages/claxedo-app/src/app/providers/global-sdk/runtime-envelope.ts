@@ -20,10 +20,10 @@ export function record(input: unknown): Record<string, unknown> | undefined {
 export function runtimeEnvelope(input: unknown): RuntimeEventEnvelope | undefined {
   const row = record(input)
   const payload = record(row?.payload)
-  if (row?.contractVersion !== AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return
-  if (typeof row?.directory !== "string") return
-  if (typeof row.sessionId !== "string") return
-  if (typeof payload?.type !== "string") return
+  if (row?.contractVersion !== AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return undefined
+  if (typeof row?.directory !== "string") return undefined
+  if (typeof row.sessionId !== "string") return undefined
+  if (typeof payload?.type !== "string") return undefined
   return {
     contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
     directory: row.directory,
@@ -45,10 +45,10 @@ export function runtimeEnvelope(input: unknown): RuntimeEventEnvelope | undefine
  */
 export function runtimeContractMismatch(input: unknown): { contractVersion: unknown } | undefined {
   const row = record(input)
-  if (!row || row.contractVersion === undefined) return
-  if (row.contractVersion === AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return
-  if (typeof row.directory !== "string" || typeof row.sessionId !== "string") return
-  if (typeof record(row.payload)?.type !== "string") return
+  if (!row || row.contractVersion === undefined) return undefined
+  if (row.contractVersion === AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return undefined
+  if (typeof row.directory !== "string" || typeof row.sessionId !== "string") return undefined
+  if (typeof record(row.payload)?.type !== "string") return undefined
   return { contractVersion: row.contractVersion }
 }
 

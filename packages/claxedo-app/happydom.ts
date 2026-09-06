@@ -18,11 +18,11 @@ plugin({
 // Mock Vite-specific imports that Bun cannot resolve.
 // `?worker&url` is a Vite convention for getting a worker script URL;
 // in tests we just provide a no-op stub.
-mock.module("@pierre/diffs/worker/worker.js?worker&url", () => ({
+await mock.module("@pierre/diffs/worker/worker.js?worker&url", () => ({
   default: "",
 }))
 
-mock.module("../session-ui/src/components/markdown-shiki.worker.ts?worker&url", () => ({
+await mock.module("../session-ui/src/components/markdown-shiki.worker.ts?worker&url", () => ({
   default: "",
 }))
 

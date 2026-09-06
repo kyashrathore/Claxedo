@@ -150,6 +150,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
   const authAction = createMemo(() => {
     if (signed()) return "logout" as const
     if (showSignIn()) return "signin" as const
+    return undefined
   })
   const [open, setOpen] = createSignal(false)
   let trigger: HTMLButtonElement | undefined

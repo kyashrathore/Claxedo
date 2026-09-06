@@ -128,7 +128,7 @@ export function createPromptInputSubmitRetry(input: {
     const snapshot = prompt
       ? { prompt, mode: "normal" as const }
       : lastSubmitted()
-    if (!snapshot) return
+    if (!snapshot) return undefined
     // Restore the captured payload, then route through the same submit
     // pipeline. The downstream submit re-runs all phase resolution from scratch.
     input.prompt.set(

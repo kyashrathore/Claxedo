@@ -1,6 +1,7 @@
 import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { createHash } from "node:crypto"
+import "./capture-harness-window"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(Bun.env.CLAXEDO_BROWSER_PARITY_DIR ?? path.join(PACKAGE_DIR, "test-results/browser-parity"))
@@ -114,9 +115,8 @@ for (const viewport of viewports) {
     isMobile: viewport.isMobile,
   })
   await context.addInitScript(() => {
-    const w = window as unknown as Record<string, unknown>
-    w.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
-    w.__CLAXEDO_TEST_AUTH_USER__ = {
+    window.__CLAXEDO_TEST_AUTH_TOKEN__ = "test-bypass-token"
+    window.__CLAXEDO_TEST_AUTH_USER__ = {
       id: "browser-parity-user",
       primaryEmailAddress: { emailAddress: "parity@claxedo.test" },
       fullName: "Browser Parity",

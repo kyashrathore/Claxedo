@@ -505,10 +505,10 @@ function AuthenticatedLayout(
   const platform = usePlatform()
 
   const stored = (() => {
-    if (platform.platform !== "web") return
+    if (platform.platform !== "web") return undefined
     const result = platform.getDefaultServer?.()
-    if (result instanceof Promise) return
-    if (!result) return
+    if (result instanceof Promise) return undefined
+    if (!result) return undefined
     return result
   })()
 

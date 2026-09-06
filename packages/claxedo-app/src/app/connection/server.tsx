@@ -28,7 +28,7 @@ type WorkspaceServerMap = Record<string, string>
 
 export function normalizeServerUrl(input: string) {
   const trimmed = input.trim()
-  if (!trimmed) return
+  if (!trimmed) return undefined
   const withProtocol = /^https?:\/\//.test(trimmed) ? trimmed : `http://${trimmed}`
   try {
     const url = new URL(withProtocol)
@@ -155,13 +155,13 @@ const serverContextInput = {
     function add(input: string | { url: string } | ServerConnection.Http) {
       const raw = typeof input === "string" ? input : "http" in input && typeof input.http === "object" ? input.http.url : (input as { url: string }).url
       const url = normalizeServerUrl(raw)
-      if (!url) return
+      if (!url) return undefined
 
       // If it's the default server, just switch to it
       const defaultUrl = normalizeServerUrl(props.defaultServer as string)
       if (defaultUrl && url === defaultUrl) {
         setState("active", ServerConnection.Key.make(url))
-        return
+        return undefined
       }
 
       // Build the connection to store
@@ -379,7 +379,7 @@ const serverContextInput = {
         },
         last() {
           const key = origin()
-          if (!key) return
+          if (!key) return undefined
           return store.lastProject[key]
         },
         touch(directory: string) {

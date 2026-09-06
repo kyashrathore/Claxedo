@@ -159,6 +159,10 @@ export namespace TimelineRow {
         return `retry:${row.userMessageID}`
       case "TurnFold":
         return `turn-fold:${row.userMessageID}`
+      default: {
+        const exhaustive: never = row
+        return exhaustive
+      }
     }
   }
 
@@ -206,6 +210,10 @@ export namespace TimelineRow {
       case "TurnFold":
         return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
           a.folded === b.folded && a.running === b.running && a.tokens === b.tokens && a.cost === b.cost
+      default: {
+        const exhaustive: never = a
+        return exhaustive
+      }
     }
   }
 

@@ -306,7 +306,7 @@ export function createHostConnector(options: ConnectorOptions) {
         // shows what actually routes.
         if (result.assigned_workspace_ids) {
           const assigned = new Set(result.assigned_workspace_ids)
-          for (const workspaceId of [...links.keys()]) {
+          for (const workspaceId of links.keys()) {
             if (!assigned.has(workspaceId)) links.delete(workspaceId)
           }
         }

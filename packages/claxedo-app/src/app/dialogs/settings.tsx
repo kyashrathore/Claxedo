@@ -119,7 +119,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
               <div
                 class="flex flex-col justify-between h-full w-full"
                 onClick={(event) => {
-                  if ((event.target as HTMLElement).closest("[data-slot='tabs-trigger']")) {
+                  if (event.target.closest("[data-slot='tabs-trigger']")) {
                     setMobile(true)
                   }
                 }}

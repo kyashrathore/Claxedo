@@ -123,11 +123,11 @@ export function createComposerPermissionModeWiring(input: {
     resourceKey,
     async (sourceKey) => {
       const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; selection: HarnessSelection | null }
-      if (!source.sessionID && !source.selection) return
+      if (!source.sessionID && !source.selection) return undefined
       // Every new source/refetch cancels the previous wait. Owner cleanup also
       // resolves it false, so disposed surfaces never escape into transport I/O.
       const delay = fastSessionSwitchQuietDelay({ sessionId: source.sessionID })
-      if (!await waitForQuietWindow(delay)) return
+      if (!await waitForQuietWindow(delay)) return undefined
       return (
         await fetchSessionPermissionModesByTransport({
           ...transportScope(),

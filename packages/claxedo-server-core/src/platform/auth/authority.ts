@@ -22,6 +22,18 @@ import type {
 type BrandedString<T extends string> = string & { readonly __brand: T }
 
 export type OrgId = BrandedString<"OrgId">
+
+/**
+ * The one place a stored identifier becomes a branded `OrgId`.
+ *
+ * A brand exists only in the type system, so minting one is an assertion by
+ * construction — there is no runtime shape to check. It is spelled once, here,
+ * beside the brand it produces, instead of at every authority adapter that
+ * reads the `orgs.org_id` column.
+ */
+export function asOrgId(value: string): OrgId {
+  return value as OrgId
+}
 export type ProjectId = BrandedString<"ProjectId">
 export type WorkspaceId = BrandedString<"WorkspaceId">
 export type ProjectRole = "viewer" | "editor" | "admin" | "owner"

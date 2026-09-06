@@ -57,8 +57,31 @@ export type DurationString = Parameters<typeof ms>[0]
 // Belt for the type's braces: `ms` returns undefined on an unparseable string.
 function duration(value: DurationString): number {
   const out = ms(value)
-  if (typeof out !== "number" || Number.isNaN(out)) throw new Error(`invalid duration "${String(value)}"`)
+  if (typeof out !== "number" || Number.isNaN(out)) throw new Error(`invalid duration "${value}"`)
   return out
+}
+
+function isActor(value: unknown): value is Actor {
+  return typeof value === "object" && value !== null && "userId" in value && typeof value.userId === "string"
+}
+
+/**
+ * `result_json` is this module's own `JSON.stringify(WakeResult)` read back
+ * across the durable store, so the discriminant plus the fields that carry a
+ * concrete type are checked. `intent`/`payload` are `Json` (unknown), for which
+ * an absent key is already a valid value.
+ */
+function isWakeResult(value: unknown): value is WakeResult {
+  if (typeof value !== "object" || value === null || !("trigger" in value)) return false
+  switch (value.trigger) {
+    case "at":
+    case "on_event":
+      return true
+    case "on_approval":
+      return "answer" in value && typeof value.answer === "string" && "resolvedBy" in value && isActor(value.resolvedBy)
+    default:
+      return false
+  }
 }
 
 type CommonCreate = {
@@ -142,7 +165,11 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
   }
 
   function resultForWake(wake: Wake): WakeResult {
-    if (wake.resultJson) return JSON.parse(wake.resultJson) as WakeResult
+    if (wake.resultJson) {
+      const stored: unknown = JSON.parse(wake.resultJson)
+      if (!isWakeResult(stored)) throw new Error(`wake ${wake.id}: stored result_json is not a WakeResult`)
+      return stored
+    }
     return { trigger: "at", intent: JSON.parse(wake.intentJson) }
   }
 

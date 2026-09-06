@@ -137,9 +137,9 @@ const permissionContextInput = {
     // active directory and hydrated policy. That keeps readiness derived from
     // the request itself instead of mirroring query results through an effect.
     const reconciliationSource = createMemo(() => {
-      if (!ready()) return
+      if (!ready()) return undefined
       const currentDirectory = directory()
-      if (!currentDirectory) return
+      if (!currentDirectory) return undefined
       const policyKey = Object.entries(store.autoAccept)
         .filter(([, enabled]) => enabled)
         .map(([key]) => key)

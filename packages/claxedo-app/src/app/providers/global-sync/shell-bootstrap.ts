@@ -15,7 +15,7 @@ export function shellBootstrapUrl(baseUrl: string) {
 }
 
 function parseShellBootstrap(body: unknown): ShellBootstrap | undefined {
-  if (!isRecord(body) || body.healthy !== true || !isRecord(body.path)) return
+  if (!isRecord(body) || body.healthy !== true || !isRecord(body.path)) return undefined
   return { path: body.path as GlobalBootstrapState["path"] }
 }
 
@@ -26,7 +26,7 @@ export async function fetchShellBootstrap(input: {
   const response = await input.request(shellBootstrapUrl(input.baseUrl), {
     headers: { Accept: "application/json" },
   }).catch(() => undefined)
-  if (!response?.ok) return
+  if (!response?.ok) return undefined
   const body: unknown = await response.json().catch(() => undefined)
   return parseShellBootstrap(body)
 }
@@ -46,4 +46,5 @@ export async function bootstrapInitialShell(input: {
   const shell = await fetchShellBootstrap(input)
   if (!shell) return input.fallback()
   input.setGlobalState({ path: shell.path, ready: true })
+  return undefined
 }

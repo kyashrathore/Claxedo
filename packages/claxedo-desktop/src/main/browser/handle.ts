@@ -30,7 +30,7 @@
  * fake can stub, with no direct `electron`-package calls at runtime.
  */
 
-import type { Event, WebContents } from "electron"
+import type { Event, RenderProcessGoneDetails, WebContents } from "electron"
 
 import {
   AgentAuditLog,
@@ -45,6 +45,7 @@ import {
   type ConsoleQuery,
   type ConsoleStackFrame,
 } from "./console-buffer"
+import { isRecord, readArray, readNumber, readRecord, readString, readUnknown } from "./json-read"
 
 export type BrowserHandleState = "detached" | "attaching" | "attached" | "reattaching"
 
@@ -127,9 +128,7 @@ export type BrowserWc = Pick<
   | "isDestroyed"
   | "loadURL"
   | "getURL"
-  | "on"
-  | "off"
-  | "removeAllListeners"
+  | "getTitle"
   | "canGoBack"
   | "canGoForward"
   | "goBack"
@@ -139,11 +138,37 @@ export type BrowserWc = Pick<
   | "openDevTools"
   | "closeDevTools"
   | "isDevToolsOpened"
-> & {
-  debugger: BrowserDebugger
-  session?: {
-    clearStorageData?: WebContents["session"]["clearStorageData"]
+> &
+  BrowserWcEvents & {
+    debugger: BrowserDebugger
+    session?: {
+      clearStorageData?: WebContents["session"]["clearStorageData"]
+    }
   }
+
+/**
+ * The `webContents` events the handle subscribes to, spelled out with the
+ * signatures Electron actually emits them with.
+ *
+ * `Pick<WebContents, "on" | "off">` drags in ~70 overloads, so every
+ * `wc.on(event, handler)` call here used to need a cast to silence overload
+ * resolution — which is how `did-navigate` came to be handled with a fifth
+ * `isMainFrame` parameter Electron never passes. Declaring only the five
+ * events this class uses makes the handlers type-checked against reality.
+ */
+export type BrowserWcEvents = {
+  on(event: "dom-ready" | "devtools-closed" | "destroyed", listener: () => void): unknown
+  on(
+    event: "did-navigate",
+    listener: (event: Event, url: string, httpResponseCode: number, httpStatusText: string) => void,
+  ): unknown
+  on(event: "render-process-gone", listener: (event: Event, details: RenderProcessGoneDetails) => void): unknown
+  off(event: "dom-ready" | "devtools-closed" | "destroyed", listener: () => void): unknown
+  off(
+    event: "did-navigate",
+    listener: (event: Event, url: string, httpResponseCode: number, httpStatusText: string) => void,
+  ): unknown
+  off(event: "render-process-gone", listener: (event: Event, details: RenderProcessGoneDetails) => void): unknown
 }
 
 export type BrowserDebugger = {
@@ -151,8 +176,10 @@ export type BrowserDebugger = {
   detach(): void
   isAttached(): boolean
   sendCommand(method: string, commandParams?: unknown, sessionId?: string): Promise<unknown>
-  on(event: "message" | "detach", listener: (...args: unknown[]) => void): unknown
-  off(event: "message" | "detach", listener: (...args: unknown[]) => void): unknown
+  on(event: "detach", listener: (event: Event, reason: string) => void): unknown
+  on(event: "message", listener: (event: Event, method: string, params: unknown, sessionId: string) => void): unknown
+  off(event: "detach", listener: (event: Event, reason: string) => void): unknown
+  off(event: "message", listener: (event: Event, method: string, params: unknown, sessionId: string) => void): unknown
 }
 
 export type BrowserHandleOptions = {
@@ -189,12 +216,12 @@ export class BrowserHandle {
 
   // Retained references so wc event handlers can be removed on destroy.
   #onDomReady: () => void
-  #onDidNavigate: (event: Event, url: string, statusCode: number, statusText: string, isMainFrame: boolean) => void
+  #onDidNavigate: () => void
   #onRenderProcessGone: () => void
   #onDevtoolsClosed: () => void
   #onWcDestroyed: () => void
-  #onDebuggerDetach: (event: unknown, reason: string) => void
-  #onDebuggerMessage: (event: unknown, method: string, params: unknown, sessionId: string) => void
+  #onDebuggerDetach: () => void
+  #onDebuggerMessage: (event: Event, method: string, params: unknown, sessionId: string) => void
 
   constructor(wc: BrowserWc, opts: BrowserHandleOptions = {}) {
     this.#wc = wc
@@ -204,9 +231,10 @@ export class BrowserHandle {
     this.#onDomReady = () => {
       void this.#handleDomReady()
     }
-    this.#onDidNavigate = (_event, _url, _statusCode, _statusText, isMainFrame) => {
-      // Non-main-frame navigations don't swap the RFH, so skip.
-      if (!isMainFrame) return
+    this.#onDidNavigate = () => {
+      // Electron emits `did-navigate` for main-frame navigations only
+      // (`did-frame-navigate` is the any-frame variant), so every one of
+      // these swapped the RFH.
       void this.#handleMainFrameNavigated()
     }
     this.#onRenderProcessGone = () => {
@@ -219,7 +247,7 @@ export class BrowserHandle {
     this.#onWcDestroyed = () => {
       this.dispose()
     }
-    this.#onDebuggerDetach = (_event, _reason) => {
+    this.#onDebuggerDetach = () => {
       // Fires when DevTools open or WC closes. Mark Detached; reattach on
       // `devtools-closed` or `dom-ready`. If the WC is gone we'll clean up
       // through the `destroyed` event path.
@@ -231,18 +259,15 @@ export class BrowserHandle {
     }
 
     // Subscribe — listeners are removed in dispose().
-    this.#wc.on("dom-ready", this.#onDomReady as never)
-    this.#wc.on("did-navigate", this.#onDidNavigate as never)
-    this.#wc.on("render-process-gone", this.#onRenderProcessGone as never)
-    this.#wc.on("devtools-closed", this.#onDevtoolsClosed as never)
-    this.#wc.on("destroyed", this.#onWcDestroyed as never)
-    this.#wc.debugger.on("detach", this.#onDebuggerDetach as never)
-    this.#wc.debugger.on("message", this.#onDebuggerMessage as never)
+    this.#wc.on("dom-ready", this.#onDomReady)
+    this.#wc.on("did-navigate", this.#onDidNavigate)
+    this.#wc.on("render-process-gone", this.#onRenderProcessGone)
+    this.#wc.on("devtools-closed", this.#onDevtoolsClosed)
+    this.#wc.on("destroyed", this.#onWcDestroyed)
+    this.#wc.debugger.on("detach", this.#onDebuggerDetach)
+    this.#wc.debugger.on("message", this.#onDebuggerMessage)
   }
 
-  get webContents(): WebContents {
-    return this.#wc as unknown as WebContents
-  }
   get webContentsId(): number {
     return this.#wc.id
   }
@@ -258,7 +283,7 @@ export class BrowserHandle {
   }
 
   setAgentAllowed(allowed: boolean): void {
-    this.#agentAllowed = Boolean(allowed)
+    this.#agentAllowed = allowed
   }
 
   /**
@@ -308,13 +333,13 @@ export class BrowserHandle {
 
   dispose(): void {
     try {
-      this.#wc.off("dom-ready", this.#onDomReady as never)
-      this.#wc.off("did-navigate", this.#onDidNavigate as never)
-      this.#wc.off("render-process-gone", this.#onRenderProcessGone as never)
-      this.#wc.off("devtools-closed", this.#onDevtoolsClosed as never)
-      this.#wc.off("destroyed", this.#onWcDestroyed as never)
-      this.#wc.debugger.off("detach", this.#onDebuggerDetach as never)
-      this.#wc.debugger.off("message", this.#onDebuggerMessage as never)
+      this.#wc.off("dom-ready", this.#onDomReady)
+      this.#wc.off("did-navigate", this.#onDidNavigate)
+      this.#wc.off("render-process-gone", this.#onRenderProcessGone)
+      this.#wc.off("devtools-closed", this.#onDevtoolsClosed)
+      this.#wc.off("destroyed", this.#onWcDestroyed)
+      this.#wc.debugger.off("detach", this.#onDebuggerDetach)
+      this.#wc.debugger.off("message", this.#onDebuggerMessage)
     } catch {
       // webContents may already be destroyed.
     }
@@ -351,12 +376,27 @@ export class BrowserHandle {
     let canGoBack = false
     let canGoForward = false
     try {
-      canGoBack = Boolean(this.#wc.canGoBack())
-      canGoForward = Boolean(this.#wc.canGoForward())
+      canGoBack = this.#wc.canGoBack()
+      canGoForward = this.#wc.canGoForward()
     } catch {
       // ignore — destroyed / race
     }
     return { url, canGoBack, canGoForward }
+  }
+
+  /**
+   * The guest's current document title, or `""` when the `webContents` has
+   * been destroyed. Paired with `getNavigationState().url` this is everything
+   * the HTTP bridge's tab listing needs, so callers never need the raw
+   * `WebContents`.
+   */
+  getTitle(): string {
+    try {
+      return this.#wc.getTitle() ?? ""
+    } catch {
+      // webContents may have been destroyed mid-call
+      return ""
+    }
   }
 
   goBack(): { ok: true } | { ok: false; error: string } {
@@ -465,13 +505,13 @@ export class BrowserHandle {
         captureBeyondViewport: false,
       }
       if (opts.clip) params.clip = { ...opts.clip, scale: opts.clip.scale ?? 1 }
-      const response = (await this.#wc.debugger.sendCommand("Page.captureScreenshot", params)) as { data?: string }
-      if (!response || typeof response.data !== "string") {
+      const data = readString(await this.#wc.debugger.sendCommand("Page.captureScreenshot", params), "data")
+      if (data === undefined) {
         return { ok: false, error: { code: "cdp-error", message: "Page.captureScreenshot returned no data" } }
       }
-      pngBase64 = response.data
+      pngBase64 = data
     } catch (err) {
-      return { ok: false, error: { code: "cdp-error", message: String(err instanceof Error ? err.message : err) } }
+      return { ok: false, error: { code: "cdp-error", message: errMsg(err) } }
     }
 
     // Apply size caps. Base64 length * 0.75 ≈ byte size.
@@ -515,39 +555,31 @@ export class BrowserHandle {
       return { ok: false, error: { code: "not-attached" } }
     }
 
-    let resp: {
-      result?: { value?: unknown; type?: string; description?: string }
-      exceptionDetails?: {
-        text?: string
-        exception?: { description?: string; value?: unknown }
-        stackTrace?: { callFrames?: Array<{ url?: string; functionName?: string; lineNumber?: number; columnNumber?: number }> }
-      }
-    }
+    let resp: unknown
     try {
-      resp = (await this.#wc.debugger.sendCommand("Runtime.evaluate", {
+      resp = await this.#wc.debugger.sendCommand("Runtime.evaluate", {
         expression,
         returnByValue: true,
         awaitPromise: true,
-      })) as typeof resp
+      })
     } catch (err) {
-      const message = String(err instanceof Error ? err.message : err)
+      const message = errMsg(err)
       this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", message)
       return { ok: false, error: { code: "cdp-error", message } }
     }
 
-    if (resp && resp.exceptionDetails) {
-      const details = resp.exceptionDetails
-      const message =
-        details.exception?.description ?? (typeof details.text === "string" ? details.text : "script error")
-      const stack = details.stackTrace?.callFrames
-        ?.map((f) => `${f.functionName ?? "(anonymous)"} (${f.url ?? "?"}:${f.lineNumber ?? 0}:${f.columnNumber ?? 0})`)
-        .join("\n")
+    const exceptionDetails = readRecord(resp, "exceptionDetails")
+    if (exceptionDetails) {
+      const { message, stack } = parseExceptionDetails(exceptionDetails, "script error")
       this.#audit("evaluate", `eval (${expression.length} chars)`, "allowed", message)
-      return { ok: false, error: { code: "script-error", message, stack } }
+      return {
+        ok: false,
+        error: { code: "script-error", message, stack: stack ? formatCallFrames(stack) : undefined },
+      }
     }
 
     this.#audit("evaluate", `eval (${expression.length} chars)`, "allowed")
-    return { ok: true, result: resp?.result?.value }
+    return { ok: true, result: readUnknown(readRecord(resp, "result"), "value") }
   }
 
   // ─── Internal: state transitions ──────────────────────────────────────────
@@ -626,60 +658,55 @@ export class BrowserHandle {
   #handleDebuggerMessage(method: string, params: unknown, sessionId: string | undefined): void {
     switch (method) {
       case "Target.attachedToTarget": {
-        const p = params as { sessionId?: string } | undefined
-        if (p?.sessionId) {
-          this.#childSessionIds.add(p.sessionId)
-          void this.#enableDomainsForSession(p.sessionId)
+        const childSessionId = readString(params, "sessionId")
+        if (childSessionId) {
+          this.#childSessionIds.add(childSessionId)
+          void this.#enableDomainsForSession(childSessionId)
         }
         return
       }
       case "Target.detachedFromTarget": {
-        const p = params as { sessionId?: string } | undefined
-        if (p?.sessionId) this.#childSessionIds.delete(p.sessionId)
+        const childSessionId = readString(params, "sessionId")
+        if (childSessionId) this.#childSessionIds.delete(childSessionId)
         return
       }
       case "Runtime.consoleAPICalled": {
-        const p = params as RuntimeConsoleAPICalledParams | undefined
-        if (!p) return
-        const level = mapConsoleType(p.type)
-        const args = (p.args ?? []).map(describeRemoteObject)
+        if (!isRecord(params)) return
         this.#emit({
-          level,
-          args,
+          level: mapConsoleType(readString(params, "type")),
+          args: (readArray(params, "args") ?? []).map(describeRemoteObject),
           source: "console",
           sessionId: sessionId || undefined,
-          stack: p.stackTrace ? mapStackTrace(p.stackTrace) : undefined,
+          stack: parseStackTrace(readRecord(params, "stackTrace")),
         })
         return
       }
       case "Runtime.exceptionThrown": {
-        const p = params as RuntimeExceptionThrownParams | undefined
-        if (!p) return
-        const details = p.exceptionDetails
-        const text =
-          details?.exception?.description ?? details?.text ?? details?.exception?.value ?? "Uncaught exception"
+        if (!isRecord(params)) return
+        const { message, stack } = parseExceptionDetails(readRecord(params, "exceptionDetails"), "Uncaught exception")
         this.#emit({
           level: "error",
-          args: [String(text)],
+          args: [message],
           source: "exception",
           sessionId: sessionId || undefined,
-          stack: details?.stackTrace ? mapStackTrace(details.stackTrace) : undefined,
+          stack,
         })
         return
       }
       case "Log.entryAdded": {
-        const p = params as LogEntryAddedParams | undefined
-        if (!p?.entry) return
-        const level = mapLogLevel(p.entry.level)
+        const entry = readRecord(params, "entry")
+        if (!entry) return
         const args: string[] = []
-        if (typeof p.entry.text === "string") args.push(p.entry.text)
-        if (p.entry.url) args.push(`(${p.entry.url})`)
+        const text = readString(entry, "text")
+        if (text !== undefined) args.push(text)
+        const url = readString(entry, "url")
+        if (url) args.push(`(${url})`)
         this.#emit({
-          level,
+          level: mapLogLevel(readString(entry, "level")),
           args,
           source: "log",
           sessionId: sessionId || undefined,
-          stack: p.entry.stackTrace ? mapStackTrace(p.entry.stackTrace) : undefined,
+          stack: parseStackTrace(readRecord(entry, "stackTrace")),
         })
         return
       }
@@ -721,30 +748,48 @@ export class BrowserHandle {
   }
 }
 
-// ─── CDP shape helpers ──────────────────────────────────────────────────────
+// ─── CDP payload parsers ────────────────────────────────────────────────────
+//
+// Every CDP payload arrives untyped (see `./json-read`); these functions turn
+// the handful of shapes this class cares about into the console buffer's
+// vocabulary. Each call site used to declare its own hand-written copy of the
+// CDP shape and cast the payload to it instead.
 
-type RuntimeConsoleAPICalledParams = {
-  type?: string
-  args?: Array<{ type?: string; value?: unknown; description?: string; preview?: unknown }>
-  stackTrace?: { callFrames?: Array<{ url?: string; functionName?: string; lineNumber?: number; columnNumber?: number }> }
+/** `Runtime.StackTrace` → the console buffer's frame shape. */
+function parseStackTrace(stackTrace: unknown): ConsoleStackFrame[] | undefined {
+  const callFrames = readArray(stackTrace, "callFrames")
+  if (!callFrames?.length) return undefined
+  return callFrames.map((frame) => ({
+    url: readString(frame, "url"),
+    function: readString(frame, "functionName"),
+    line: readNumber(frame, "lineNumber"),
+    column: readNumber(frame, "columnNumber"),
+  }))
 }
 
-type RuntimeExceptionThrownParams = {
-  exceptionDetails?: {
-    text?: string
-    exception?: { description?: string; value?: unknown }
-    stackTrace?: { callFrames?: Array<{ url?: string; functionName?: string; lineNumber?: number; columnNumber?: number }> }
-  }
+/**
+ * `Runtime.ExceptionDetails` → a human-readable message plus its frames.
+ * Shared by `Runtime.exceptionThrown` (console stream) and the
+ * `Runtime.evaluate` failure path, which used to disagree on precedence.
+ */
+function parseExceptionDetails(
+  details: unknown,
+  fallbackMessage: string,
+): { message: string; stack: ConsoleStackFrame[] | undefined } {
+  const exception = readRecord(details, "exception")
+  const thrownValue = readUnknown(exception, "value")
+  const message =
+    readString(exception, "description") ??
+    readString(details, "text") ??
+    (thrownValue === undefined || thrownValue === null ? fallbackMessage : stringifyRemoteValue(thrownValue))
+  return { message, stack: parseStackTrace(readRecord(details, "stackTrace")) }
 }
 
-type LogEntryAddedParams = {
-  entry?: {
-    level?: string
-    text?: string
-    url?: string
-    source?: string
-    stackTrace?: { callFrames?: Array<{ url?: string; functionName?: string; lineNumber?: number; columnNumber?: number }> }
-  }
+/** The `stack` string `evaluate()` reports back to its caller. */
+function formatCallFrames(frames: ConsoleStackFrame[]): string {
+  return frames
+    .map((f) => `${f.function ?? "(anonymous)"} (${f.url ?? "?"}:${f.line ?? 0}:${f.column ?? 0})`)
+    .join("\n")
 }
 
 function mapConsoleType(t: string | undefined): ConsoleLevel {
@@ -780,34 +825,22 @@ function mapLogLevel(l: string | undefined): ConsoleLevel {
   }
 }
 
-function describeRemoteObject(arg: { type?: string; value?: unknown; description?: string }): string {
-  if (arg.value !== undefined) {
-    return typeof arg.value === "string" ? arg.value : safeStringify(arg.value)
-  }
-  if (typeof arg.description === "string") return arg.description
-  return arg.type ?? ""
+/** `Runtime.RemoteObject` → the one-line string the console buffer stores. */
+function describeRemoteObject(arg: unknown): string {
+  const value = readUnknown(arg, "value")
+  if (value !== undefined) return stringifyRemoteValue(value)
+  return readString(arg, "description") ?? readString(arg, "type") ?? ""
 }
 
-function safeStringify(value: unknown): string {
+function stringifyRemoteValue(value: unknown): string {
+  if (typeof value === "string") return value
   try {
-    return JSON.stringify(value)
+    return JSON.stringify(value) ?? String(value)
   } catch {
-    return String(value)
+    return "[unserializable]"
   }
 }
 
 function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
-function mapStackTrace(st: {
-  callFrames?: Array<{ url?: string; functionName?: string; lineNumber?: number; columnNumber?: number }>
-}): ConsoleStackFrame[] | undefined {
-  if (!st?.callFrames?.length) return undefined
-  return st.callFrames.map((f) => ({
-    url: f.url,
-    function: f.functionName,
-    line: f.lineNumber,
-    column: f.columnNumber,
-  }))
+  return err instanceof Error ? err.message : stringifyRemoteValue(err)
 }

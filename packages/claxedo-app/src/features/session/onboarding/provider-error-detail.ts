@@ -111,12 +111,12 @@ export function providerUsageLimitDetail(
 ) {
   const data = record(record(error)?.data)
   const raw = text(data?.message)
-  if (!raw) return
+  if (!raw) return undefined
   const message = stripRelayPrefix(raw).message
     .replace(/^[\w ]+ returned an error result:\s*/i, "")
     .trim()
   const match = message.match(/(?:you(?:'|’)ve|you have) reached your ([^.]+?) limit/i)
-  if (!match) return
+  if (!match) return undefined
   const provider = providerLabel({ providerID: context?.providerID, modelID: context?.modelID })
   const reset = message.match(/It will reset[^.]*\./i)?.[0]
   return {
@@ -148,7 +148,7 @@ const PROVIDER_NAMES: Record<string, string> = {
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   return value as Record<string, unknown>
 }
 

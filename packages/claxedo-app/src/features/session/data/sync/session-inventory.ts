@@ -1,26 +1,23 @@
 import { useGlobalSync } from "@/features/session/app-ports"
+import { asRecord } from "@/lib/record"
 export {
   removeSessionInventoryQueryData,
   removeSessionInventorySession,
 } from "./inventory-writers"
-
-export function inventoryRecord(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
 
 export function inventoryText(input: unknown) {
   return typeof input === "string" ? input : undefined
 }
 
 export function inventorySessionId(input: unknown) {
-  const row = inventoryRecord(input)
+  const row = asRecord(input)
   return inventoryText(row?.session_id)
 }
 
 export function inventorySessionAttachments(input: unknown) {
   if (!Array.isArray(input)) return []
   return input.flatMap((item) => {
-    const row = inventoryRecord(item)
+    const row = asRecord(item)
     const kind = inventoryText(row?.kind)
     const targetID = inventoryText(row?.targetID) ?? inventoryText(row?.target_id)
     return kind && targetID ? [{ kind, targetID }] : []
@@ -28,21 +25,21 @@ export function inventorySessionAttachments(input: unknown) {
 }
 
 export function inventorySessionEnvironment(input: unknown) {
-  const row = inventoryRecord(input)
-  if (!row) return
+  const row = asRecord(input)
+  if (!row) return undefined
   const kind = inventoryText(row.kind)
   const driver = inventoryText(row.driver) ?? inventoryText(row.provider)
-  if (!kind && !driver) return
+  if (!kind && !driver) return undefined
   return { ...(kind ? { kind } : {}), ...(driver ? { driver } : {}) }
 }
 
 export function inventorySessionGit(input: unknown) {
-  const row = inventoryRecord(input)
-  if (!row) return
+  const row = asRecord(input)
+  if (!row) return undefined
   const repo = inventoryText(row.repo)
   const branch = inventoryText(row.branch)
   const remote = inventoryText(row.remote)
-  if (!repo && !branch && !remote) return
+  if (!repo && !branch && !remote) return undefined
   return { ...(repo ? { repo } : {}), ...(branch ? { branch } : {}), ...(remote ? { remote } : {}) }
 }
 

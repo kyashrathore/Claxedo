@@ -17,7 +17,7 @@ export function resolveWorkspaceRouteDirectory(input: {
   const identity = workspaceRouteIdentity(input.projects, input.routeKey)
   if (identity?.directory) return identity.directory
   const key = input.routeKey?.trim()
-  if (!key) return
+  if (!key) return undefined
   if (localWorkspaceAssociationId(key)) return undefined
   return key
 }

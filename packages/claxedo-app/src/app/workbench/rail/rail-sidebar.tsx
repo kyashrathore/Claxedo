@@ -347,7 +347,7 @@ function groupFromStorage(input: unknown): Group {
 function loadView() {
   try {
     const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(VIEW_KEY)
-    if (!raw) return
+    if (!raw) return undefined
     const row = JSON.parse(raw) as Partial<View>
     const archived = row.archived
     return {
@@ -358,7 +358,7 @@ function loadView() {
       archived: archived === "all" || archived === "archived" ? archived : "active",
     } satisfies View
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -952,7 +952,7 @@ export function RailSidebar(props: RailSidebarProps) {
       const poll = createSidebarStatusPoll({
         run,
         schedule: (fn, ms) => setTimeout(fn, ms),
-        clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+        clear: (handle) => clearTimeout(handle),
         shouldRun: () =>
           fastSessionSwitchAnyQuietDelay() <= 0 &&
           (typeof document === "undefined" || document.visibilityState !== "hidden"),
@@ -1118,7 +1118,7 @@ export function RailSidebar(props: RailSidebarProps) {
     }
   }
   const sessionMetadata = (session: Row, showMetadata?: boolean): SessionNavigationDisplayRow["metadata"] => {
-    if (!showMetadata) return
+    if (!showMetadata) return undefined
     const directory = sessionDirectory(session)
     const kind = sessionRuntimeDisplayKind(session, directory)
     const workspace = projectWorkspaceInfo(session.project, directory)
@@ -1144,7 +1144,7 @@ export function RailSidebar(props: RailSidebarProps) {
         label: label || runtimeLabel(kind),
       }
     }
-    if (!showWorkspace || rootWorktree) return
+    if (!showWorkspace || rootWorktree) return undefined
     const worktreeName = workspace?.workspace_name ?? (workspaceLabel === directory ? getFilename(worktreeDir) : workspaceLabel)
     return {
       icon: "worktree",

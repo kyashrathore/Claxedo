@@ -109,7 +109,7 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
   if (
     input.sessionRef?.startsWith("central:") ||
     input.sessionRef?.startsWith("local:")
-  ) return
+  ) return undefined
   // A relay-backed session row is addressed as `workspace:<id>`, which is the
   // catalog's row under another of its identities — `projectWorkspaceForRef`
   // is what makes the two meet, so the row's own kind and id decide the
@@ -122,13 +122,13 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
   // sessions with a project; it is not evidence of relay hosting, so a
   // confirmed-local inventory record must win over the optimistic user-hosted
   // guess below.
-  if (workspace?.kind === "local") return
+  if (workspace?.kind === "local") return undefined
   const relayKind = workspaceKind(kind)
   if (isRelayBackedWorkspaceKind(relayKind)) {
     return workspaceId ? { workspaceId, kind: relayKind } : undefined
   }
-  if (!input.workspaceId) return
-  if (localWorkspaceAssociationId(input.workspaceId)) return
+  if (!input.workspaceId) return undefined
+  if (localWorkspaceAssociationId(input.workspaceId)) return undefined
   // An unknown `ws_*` row can still predate signed inventory hydration. UUIDs
   // and inventory-confirmed local records have already returned above.
   return { workspaceId: input.workspaceId, kind: "user-hosted" }

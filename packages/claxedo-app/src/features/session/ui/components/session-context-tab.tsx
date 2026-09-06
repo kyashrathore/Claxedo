@@ -211,9 +211,9 @@ export function SessionContextTab() {
   const systemPrompt = createMemo(() => {
     const msg = findLast(visibleUserMessages(), (m) => !!m.system)
     const system = msg?.system
-    if (!system) return
+    if (!system) return undefined
     const trimmed = system.trim()
-    if (!trimmed) return
+    if (!trimmed) return undefined
     return trimmed
   })
 

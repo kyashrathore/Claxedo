@@ -40,6 +40,53 @@ export type RuntimeAccessTokenActiveResult =
       reason: string
     }
 
+/**
+ * Both resolver clients — Bun (`main.ts`) and Worker (`worker.ts`) — read the
+ * control plane's JSON with these two parsers rather than asserting a type onto
+ * `Response.json()`. A half-built target used to travel all the way into
+ * routing and fail there as a confusing upstream error; it is now rejected at
+ * the one boundary that knows what the payload was supposed to be.
+ */
+export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  const { workspaceId, hostId, baseUrl, upstreamHeaders } = row
+  if (typeof workspaceId !== "string" || typeof hostId !== "string" || typeof baseUrl !== "string") return undefined
+  if (upstreamHeaders !== undefined && !isStringRecord(upstreamHeaders)) return undefined
+  const pair = relayClaimPair(row.access, row.backing)
+  if (!pair) return undefined
+  return {
+    workspaceId,
+    hostId,
+    baseUrl,
+    ...(upstreamHeaders ? { upstreamHeaders } : {}),
+    ...pair,
+  }
+}
+
+export function parseRuntimeAccessTokenActiveResult(input: unknown): RuntimeAccessTokenActiveResult | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  if (row.active === true) return { active: true }
+  if (row.active !== false) return undefined
+  if (typeof row.code !== "string" || typeof row.reason !== "string") return undefined
+  return { active: false, code: row.code, reason: row.reason }
+}
+
+function relayClaimPair(access: unknown, backing: unknown): RelayClaimPair | undefined {
+  if (access === "cloud" && backing === "cloud-vm") return { access, backing }
+  if (access === "user-hosted" && backing === "local-worktree") return { access, backing }
+  return undefined
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null
+}
+
+function isStringRecord(input: unknown): input is Record<string, string> {
+  return isRecord(input) && Object.values(input).every((value) => typeof value === "string")
+}
+
 export type RevocationLookupArgs = { jti: string; workspaceId: string; hostId: string }
 export type RevocationLookup = (args: RevocationLookupArgs) => Promise<RuntimeAccessTokenActiveResult>
 
@@ -1271,7 +1318,12 @@ function buildMetricsBody(options: WorkspaceRelayOptions): WorkspaceRelayMetrics
 }
 
 export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceRelayApp {
-  const app = new Hono() as WorkspaceRelayApp
+  // Built with its extra member in place rather than asserted onto a bare
+  // `Hono` and back-filled hundreds of lines later: the returned value matches
+  // its declared type from its first statement.
+  const app: WorkspaceRelayApp = Object.assign(new Hono(), {
+    disposeAuditSampler: () => disposeAuditSampler(options),
+  })
   const originAllowed = originMatcherFor(options)
 
   // Resource timing for the app: an admitted origin may read the timing
@@ -1356,8 +1408,6 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
     c.header("cache-control", "public, max-age=300")
     return c.json({ keys })
   })
-
-  app.disposeAuditSampler = () => disposeAuditSampler(options)
 
   /**
    * T31: ops-only metrics endpoint. Surfaces fragmentation, slow-consumer,

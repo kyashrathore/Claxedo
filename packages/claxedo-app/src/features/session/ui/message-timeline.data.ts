@@ -43,7 +43,7 @@ export namespace Timeline {
     getMessageParts: (messageID: string) => Part[],
   ) {
     const finalAssistant = assistantMessages.at(-1)
-    if (!finalAssistant) return
+    if (!finalAssistant) return undefined
     const visible = new Set([finalAssistant.id])
     for (const message of assistantMessages) {
       if (getMessageParts(message.id).some((part) => part.type === "tool" && part.tool === "task")) {
@@ -358,6 +358,7 @@ export namespace Timeline {
       const value = cleanHeading(strong[1])
       if (value) return value
     }
+    return undefined
   }
 
   function cleanHeading(value: string) {
@@ -426,8 +427,8 @@ export namespace Timeline {
       if (max === undefined) return completed
       return Math.max(max, completed)
     }, undefined)
-    if (typeof end !== "number") return
-    if (end < userMessage.time.created) return
+    if (typeof end !== "number") return undefined
+    if (end < userMessage.time.created) return undefined
     return end - userMessage.time.created
   }
 
@@ -650,9 +651,9 @@ export namespace MessageComment {
   }
 
   export const fromPart = (part: Part): MessageComment | undefined => {
-    if (part.type !== "text" || !part.synthetic) return
+    if (part.type !== "text" || !part.synthetic) return undefined
     const next = readCommentMetadata(part.metadata) ?? parseCommentNote(part.text)
-    if (!next) return
+    if (!next) return undefined
     return {
       path: next.path,
       comment: next.comment,

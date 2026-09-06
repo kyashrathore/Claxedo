@@ -95,7 +95,6 @@ export function submitWorkspaceBacking(input: {
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
   input: SubmitTransportPlacementInput<Client>,
 ) {
-  const sessionRef = () => input.sessionRef?.()
   const runtimeTransport = (dir: SubmitDirectory) => submitTransportForPlacement({
     serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
     workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
@@ -279,6 +278,6 @@ function sessionConfigPath(input: Pick<SaveSessionConfigInput, "sessionID" | "di
 /** Compare cached configuration and writes using the same canonical PATCH representation. */
 function sessionConfigSignature(input: unknown) {
   const parsed = parseExistingSessionConfig(input)
-  if (!parsed) return
+  if (!parsed) return undefined
   return JSON.stringify(sessionConfigBody(parsed))
 }

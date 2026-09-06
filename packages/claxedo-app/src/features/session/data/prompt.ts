@@ -1,7 +1,5 @@
 import type {
-  AgentAgentPart as MessageAgentPart,
   AgentContentPart as Part,
-  AgentFilePart as FilePart,
   AgentTextPart as TextPart,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"

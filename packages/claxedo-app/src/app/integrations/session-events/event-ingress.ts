@@ -172,7 +172,7 @@ export function normalizeClaxedoSessionLifecycleEvent(
   event: Extract<ClaxedoEvent, { type: "session.lifecycle" }>,
 ): ClaxedoSessionLifecycleEvent | undefined {
   const info = readLifecycleSessionInfo(event.info, event.directory)
-  if (event.phase === "created" && !info) return
+  if (event.phase === "created" && !info) return undefined
   return {
     ...event,
     info,
@@ -653,14 +653,14 @@ function projectCanonicalSessionTitle(input: {
 
 function readLifecycleSessionInfo(input: unknown, directory: DirectoryRef): LifecycleSession | undefined {
   const value = input && typeof input === "object" ? input as Partial<LifecycleSession> : undefined
-  if (!value) return
-  if (typeof value.id !== "string") return
-  if (typeof value.slug !== "string") return
-  if (typeof value.projectID !== "string") return
+  if (!value) return undefined
+  if (typeof value.id !== "string") return undefined
+  if (typeof value.slug !== "string") return undefined
+  if (typeof value.projectID !== "string") return undefined
   const sessionDirectory = typeof value.directory === "string" && value.directory ? value.directory : directory
-  if (typeof value.title !== "string") return
-  if (typeof value.version !== "string") return
-  if (!value.time || typeof value.time.created !== "number" || typeof value.time.updated !== "number") return
+  if (typeof value.title !== "string") return undefined
+  if (typeof value.version !== "string") return undefined
+  if (!value.time || typeof value.time.created !== "number" || typeof value.time.updated !== "number") return undefined
   return { ...value, directory: sessionDirectory } as LifecycleSession
 }
 
@@ -671,7 +671,7 @@ function sessionProjectionEvent(input: unknown) {
   const part = rec(properties?.part)
   const type = txt(event?.type)
   const sessionId = txt(properties?.sessionID) ?? txt(properties?.sessionId) ?? txt(info?.sessionID) ?? txt(part?.sessionID)
-  if (!type || !sessionId) return
+  if (!type || !sessionId) return undefined
   const ordinal = typeof event?.event_ordinal === "number" && Number.isFinite(event.event_ordinal)
     ? event.event_ordinal
     : undefined
@@ -700,7 +700,7 @@ function globalSessionEventType(event: RoutableEvent): SessionEventType | undefi
   if (event.type === "session.created") return "created"
   if (event.type === "session.updated") return "updated"
   if (event.type === "session.deleted") return "deleted"
-  return
+  return undefined
 }
 
 function isCentralLifecycleSession(input: LifecycleSession) {

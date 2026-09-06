@@ -100,7 +100,7 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
     ...(input.projectDirectory === undefined ? {} : { projectDirectory: input.projectDirectory }),
     ...(input.fallbackDirectory === undefined ? {} : { fallbackDirectory: input.fallbackDirectory }),
   })
-  if (!resolved) return
+  if (!resolved) return undefined
   // Local OpenCode create needs an on-disk cwd. Opaque `/w/:uuid` route keys
   // sometimes leak in as sdk.directory before the project catalog remaps them.
   // Only refuse unresolved association UUIDs — every other opaque key keeps the
@@ -115,6 +115,7 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
     title: input.text.missingWorkspaceTitle,
     description: input.text.attachWorkspaceBeforePrompt,
   })
+  return undefined
 }
 
 async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput & {
@@ -128,7 +129,7 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
     if (parsed || !directory) return parsed
     const workspace = input.workspaceForDirectory(directory)
     const kind = knownWorkspaceKind(workspace?.kind)
-    if (!workspace || !kind || kind === "local") return
+    if (!workspace || !kind || kind === "local") return undefined
     return { workspaceId: workspace.workspaceId, kind }
   }
   const existingRemoteDirectory = existingRemoteWorkspaceDirectoryForSubmit({
@@ -155,7 +156,7 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
         ? input.text.attachWorkspaceBeforePrompt
         : input.text.attachProjectBeforeCloudWorkspace,
     })
-    return
+    return undefined
   }
 
   // Track whether the create call itself rejected so we surface exactly one
@@ -172,13 +173,13 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
     })
     return undefined
   })
-  if (creationRejected) return
+  if (creationRejected) return undefined
   if (!createdWorkspace?.workspaceId) {
     input.showToast({
       title: input.text.cloudWorkspaceCreateFailedTitle,
       description: input.text.requestFailed,
     })
-    return
+    return undefined
   }
   void Promise.resolve(input.bootstrap()).catch(() => undefined)
   return createdWorkspace.workspaceId
@@ -248,7 +249,7 @@ async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & 
       title: input.text.worktreeCreateFailedTitle,
       description: input.text.selectProjectForWorktree,
     })
-    return
+    return undefined
   }
   const createdWorktree = await input.createLocalWorktree(projectDirectory).catch((err) => {
     input.showToast({
@@ -263,7 +264,7 @@ async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & 
       title: input.text.worktreeCreateFailedTitle,
       description: input.text.requestFailed,
     })
-    return
+    return undefined
   }
   input.markLocalWorktreePending(createdWorktree.directory)
   // Worktree creation registers the directory server-side before returning.

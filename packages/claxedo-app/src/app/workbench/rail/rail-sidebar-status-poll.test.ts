@@ -7,15 +7,17 @@ function fakeClock() {
   let nextId = 1
   const pending = new Map<number, { at: number; fn: () => void }>()
   return {
-    schedule(fn: () => void, ms: number) {
+    // Arrow properties, not methods: every field is handed to the poll as a
+    // bare function reference, so none of them may depend on `this`.
+    schedule: (fn: () => void, ms: number) => {
       const id = nextId++
       pending.set(id, { at: now + ms, fn })
       return id
     },
-    clear(timer: unknown) {
-      pending.delete(timer as number)
+    clear: (timer: number) => {
+      pending.delete(timer)
     },
-    advance(ms: number) {
+    advance: (ms: number) => {
       const target = now + ms
       // Fire in due order, allowing a callback to schedule its successor.
       for (;;) {

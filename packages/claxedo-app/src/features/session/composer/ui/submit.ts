@@ -166,14 +166,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       working: input.working(),
     })
     if (admission === "abort-active") return abort()
-    if (admission === "ignore") return
+    if (admission === "ignore") return undefined
 
     const goalIntent = prepareGoalComposerIntent({
       text, armed: input.goalArmed?.() ?? false, mode: userMode, prompt: currentPrompt,
       setPrompt: prompt.set, onArm: input.onGoalArm, setMode: input.setMode,
       setPopover: input.setPopover, focus: () => { input.editor()?.focus(); input.queueScroll() },
     })
-    if (goalIntent.kind === "arm") return
+    if (goalIntent.kind === "arm") return undefined
 
     input.addToHistory(currentPrompt, userMode)
     input.resetHistoryNavigation()
@@ -277,7 +277,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         attachProjectBeforeCloudWorkspace: "Attach a project before creating a cloud workspace.",
       },
     })
-    if (!resolvedDirectory) return
+    if (!resolvedDirectory) return undefined
     const sessionDirectory = resolvedDirectory.directory
     let client = sdk.client
 
@@ -300,7 +300,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         variant: "error",
       }),
     )
-    if (!isNewSession && !existingSessionConfig) return
+    if (!isNewSession && !existingSessionConfig) return undefined
     const sessionHarnessType = isNewSession ? selectedHarnessType(scope) : existingSessionConfig?.harnessType
     if (!sessionHarnessType) {
       showToast({
@@ -308,7 +308,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         description: "Select an agent connection before starting a session.",
         variant: "error",
       })
-      return
+      return undefined
     }
     // Every provider creates and sends through AgentRuntime, and the harness
     // controller is the one submitted-model authority for every harness. Pi's
@@ -404,7 +404,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     replaceSession = target.replaceSession
     if (!session) {
       clearBoot()
-      return
+      return undefined
     }
     const provisionalTitle = mode === "normal" ? provisionalSessionTitle(text) : undefined
     const finalizedSessionTarget = finalizeSubmitSessionTarget({
@@ -594,7 +594,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         reportCloudStartupError,
         showFailed: showSendFailed,
       })
-      return
+      return undefined
     }
 
     await dispatchNormalPromptSubmit({
@@ -659,6 +659,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       showSendFailed,
       worktreePreparingMessage: language.t("workspace.error.stillPreparing"),
     })
+    return undefined
   }
 
   return {

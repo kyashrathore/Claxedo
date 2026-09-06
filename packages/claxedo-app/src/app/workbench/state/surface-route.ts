@@ -131,25 +131,26 @@ export function focusedSurfaceRouteTarget(input: {
 }) {
   const hasConcreteRoute = !!(input.route.id || input.route.pageId || input.route.terminalId)
   const pendingTerminalRoute = input.route.terminalId?.startsWith("pending-") === true
-  if (input.route.terminalId && (!input.surface || input.surface.type !== "terminal")) return
-  if (pendingTerminalRoute && (!input.surface || input.surface.type !== "terminal" || routeTerminalId(input.surface) !== input.route.terminalId)) return
+  if (input.route.terminalId && (!input.surface || input.surface.type !== "terminal")) return undefined
+  if (pendingTerminalRoute && (!input.surface || input.surface.type !== "terminal" || routeTerminalId(input.surface) !== input.route.terminalId)) return undefined
   if (!input.surface) {
-    if (input.route.marketplace) return
-    if (!hasConcreteRoute || !input.activeRouteId) return
+    if (input.route.marketplace) return undefined
+    if (!hasConcreteRoute || !input.activeRouteId) return undefined
     return workspaceBrowseRoute(input.activeRouteId)
   }
 
   if (input.surface.type === "marketplace") {
-    if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return
+    if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return undefined
     return surfaceRoute("", input.surface)
   }
 
   const surfaceWorkspaceKey = surfaceWorkspaceRouteKey(input.surface, input.activeRouteId)
-  if (input.routeWorkspaceKey && hasConcreteRoute && surfaceWorkspaceKey && surfaceWorkspaceKey !== input.routeWorkspaceKey) return
+  if (input.routeWorkspaceKey && hasConcreteRoute && surfaceWorkspaceKey && surfaceWorkspaceKey !== input.routeWorkspaceKey) return undefined
   const workspaceId = surfaceWorkspaceKey ?? input.activeRouteId
-  if (!workspaceId && input.surface.type !== "session") return
-  if (workspaceId && routeMatchesSurface(input.route, workspaceId, input.surface, input.routeWorkspaceKey)) return
+  if (!workspaceId && input.surface.type !== "session") return undefined
+  if (workspaceId && routeMatchesSurface(input.route, workspaceId, input.surface, input.routeWorkspaceKey)) return undefined
   const route = surfaceRoute(workspaceId, input.surface)
   if (route) return route
   if (input.route.id || input.route.pageId) return workspaceBrowseRoute(workspaceId)
+  return undefined
 }
