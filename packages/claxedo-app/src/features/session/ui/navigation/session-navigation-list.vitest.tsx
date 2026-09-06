@@ -1,27 +1,27 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+import {
+  NavigationRow,
+  NavigationRowGlyph,
+  NavigationRowStatusGutter,
+  NavigationStatusDot,
+} from "@/app/workbench/navigation/navigation-row"
 import { workbenchDrag } from "@/app/workbench/workbench"
 import { SessionNavigation, type SessionNavigationDisplayRow } from "./session-navigation-list"
 import { TerminalSurfaceNavigation } from "../../../terminal/ui/navigation/terminal-surface-navigation"
 import type { TerminalSurfaceRow } from "./session-navigation"
 
-vi.mock("@/features/session/app-ports", async () => {
-  const navigation = await import("@/app/workbench/navigation/navigation-row")
-  return {
-    NavigationRow: navigation.NavigationRow,
-    NavigationRowGlyph: navigation.NavigationRowGlyph,
-    NavigationRowStatusGutter: navigation.NavigationRowStatusGutter,
-    NavigationStatusDot: navigation.NavigationStatusDot,
-  }
-})
-
-vi.mock("@/features/terminal/app-ports", async () => {
-  const navigation = await import("@/app/workbench/navigation/navigation-row")
-  return {
-    NavigationRow: navigation.NavigationRow,
-    NavigationStatusDot: navigation.NavigationStatusDot,
-  }
+// A `vi.mock` factory that awaits an import deadlocks vite-node here: the two
+// components under test import these same app-ports barrels in the static graph
+// that is still loading, so the factory never resolves and the file never
+// collects. Configuring the ports supplies the real components without one.
+beforeAll(() => {
+  configureAppPortsForTest({
+    session: { NavigationRow, NavigationRowGlyph, NavigationRowStatusGutter, NavigationStatusDot },
+    terminal: { NavigationRow, NavigationRowGlyph, NavigationStatusDot },
+  })
 })
 
 function dispatchPointer(

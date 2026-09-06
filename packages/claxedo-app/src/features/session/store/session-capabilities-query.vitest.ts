@@ -11,6 +11,10 @@ const harness = vi.hoisted(() => ({
   }>,
 }))
 
+const unusedGoalTransport = vi.hoisted(() => () => {
+  throw new Error("the capabilities suite does not drive goal mutations")
+})
+
 // Query lifetime owns deduplication/cancellation; transport placement has its
 // own public-route tests. Control only the response timing at this boundary.
 vi.mock("./session-transport", () => ({
@@ -19,6 +23,12 @@ vi.mock("./session-transport", () => ({
     pending.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
     harness.pending.push(pending)
   }).then(response => response.json()),
+  // `session-goal-query` binds these four into a module-level mutation record, so
+  // the mock must define them even though this suite never drives a goal mutation.
+  pauseSessionGoalByTransport: unusedGoalTransport,
+  resumeSessionGoalByTransport: unusedGoalTransport,
+  stopSessionGoalByTransport: unusedGoalTransport,
+  deleteSessionGoalByTransport: unusedGoalTransport,
 }))
 
 import {
