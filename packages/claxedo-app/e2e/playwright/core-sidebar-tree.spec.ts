@@ -1,251 +1,126 @@
 /**
- * SPEC: Rail sidebar — project/session tree
+ * Rail sidebar — project/session tree. Test titles cite the numbered
+ * behaviors below.
  *
- * PURPOSE — the left rail is the primary navigation surface: a collapsible
- * Project > (Workspace >) Session tree that lets the user see, filter, open,
- * and archive every session across every project without leaving the shell.
- * Source: `src/claxedo-ui/layouts/rail-sidebar.tsx` (disclosure/list/filter
- * logic), `src/claxedo-ui/navigation-islands/session-navigation-list.tsx`
- * (session row + status dot), `src/shell/layout/state.ts` (pin/peek/resize),
- * `src/claxedo-ui/layouts/rail-sidebar-shell.tsx` (shell chrome: resize
- * handle, mobile scrim), `src/claxedo-ui/layouts/rail-shell-chrome-state.ts`
- * (mobile drawer signal).
+ * Sources: `src/app/workbench/rail/rail-sidebar.tsx` (disclosure/list/filter),
+ * `src/features/session/ui/navigation/session-navigation-list.tsx` (session
+ * row + status dot), `src/app/layout/state.ts` (pin/peek/resize),
+ * `src/app/workbench/rail/rail-sidebar-shell.tsx` (resize handle, mobile
+ * scrim), `src/app/workbench/rail/rail-shell-chrome-state.ts` (mobile drawer
+ * signal).
  *
  * STATE MODEL —
- *   - **View options** (`Group by` / `Show status|environment|git` / `Archived`)
- *     live in one object persisted to `localStorage["claxedo.session-view.v1"]`
- *     (`VIEW_KEY`, rail-sidebar.tsx:90). Malformed JSON at that key is caught
- *     (`loadView()`, rail-sidebar.tsx:360-376) and silently replaced by
- *     `defaultView()` (`{group:"project", status:[], environment:[], git:[],
- *     archived:"active"}`, rail-sidebar.tsx:378-386) — never a thrown error.
- *   - **Disclosure open/closed** per project/workspace section is local
- *     `createSignal` state (NOT persisted); it auto-opens the first time a
- *     section gets rows/terminals or becomes the active section
- *     (`shouldAutoOpenWorkspaceSection`, rail-sidebar.logic.ts:1-9) but stays
- *     closed on subsequent empty renders once the user manually toggles it.
- *   - **Session list pages** are server state fetched per-section from
- *     `GET /api/control/session-list?scope=workspace|project&...` (built by
- *     `controlSessionNavigationListUrl`, `src/utils/workspace-control-routes.
- *     ts:87-104) via TanStack Query (`sessionListQueryOptions`,
- *     `src/shared/query/session-list.ts`); "Load more" appends a page via an
- *     explicit `cursor` fetch merged client-side (`appendSessionListPageQueryData`).
- *     Page size is `SESSION_GROUP_PAGE_SIZE = 5` (rail-sidebar.tsx:94).
- *   - **Filter option availability** (which Status/Environment/Git values show
- *     in the view menu) comes from a SEPARATE global session inventory
- *     (`sessionInventory()`, fed by `GET /api/control/sessions` via
- *     `src/context/global-sync/inventory-source.ts:450-458`), not from the
- *     paginated session-list — the two must be kept consistent by the caller.
- *   - **Per-row status dot** is derived from two independently-updated caches:
- *     `session.status`/`session.idle`/`session.error` SSE events are dispatched
- *     directly into `shellDataKeys.sessionId(id,"status")`
- *     (`applySessionStatusSseEvent`, `src/session/store/session-status-
- *     dispatcher.ts:120-166`); `permission.asked`/`question.asked` do NOT
- *     update the row directly — they only invalidate, and the actual content
- *     is refreshed by a batched `client.session.status()` +
+ *   - View options (`Group by` / `Show status|environment|git` / `Archived`)
+ *     persist to `localStorage["claxedo.session-view.v1"]`. Malformed JSON at
+ *     that key is caught and silently replaced by `defaultView()`
+ *     (`{group:"project", status:[], environment:[], git:[],
+ *     archived:"active"}`) — never a thrown error.
+ *   - Disclosure open/closed per section is local signal state, NOT persisted.
+ *   - Section rows come from `GET /api/control/session-list`, paginated at
+ *     `SESSION_GROUP_PAGE_SIZE = 5`; "Load more" appends a page via an explicit
+ *     `cursor` fetch merged client-side.
+ *   - Which Status/Environment/Git values appear in the view menu comes from a
+ *     SEPARATE global session inventory (`GET /api/control/sessions`), not from
+ *     the paginated session-list — a fixture must keep the two consistent.
+ *   - The per-row status dot has two independently-updated inputs: `session.
+ *     status`/`session.idle`/`session.error` SSE events dispatched straight
+ *     into the row's status cache, and a batched `client.session.status()` +
  *     `client.permission.list()` + `client.question.list()` poll scoped per
- *     directory, gated to once per `SIDEBAR_SESSION_STATUS_FRESH_MS` (10s)
- *     (rail-sidebar.tsx:847-995). `SwitcherStatus` priority is permission >
- *     working (busy/retry) > done (unseen) > idle
- *     (`sessionSurfaceStatus`, `src/claxedo-ui/compact-switcher/surface-
- *     status.ts:19-29`); "done" (unseen badge) is set when a row transitions
- *     from active/busy to inactive/idle while never focused
- *     (`nextUnseenDone`, surface-status.ts:89-98).
- *   - **Rapid session-switch** intent is tracked in a short-lived window
- *     (`markFastSessionSwitch`/`fastSessionSwitchAnyQuietDelay`,
- *     `src/session/store/fast-session-switch.ts`, 250ms intent / 2000ms
- *     network-quiet) that suppresses stale status/requests network writes for
- *     a session the user has already navigated away from.
- *   - **Sidebar pin/peek/width** live in `src/shell/layout/state.ts`
- *     (`createShellLayoutState`) as an in-memory command overlay on top of a
- *     `LayoutConfig`; `HOT_ZONE_WIDTH/HEIGHT = 48`px (top-left corner),
- *     `RAIL_MIN_WIDTH = 220`, `RAIL_MAX_WIDTH = 520`. Only the **committed
- *     width** is mirrored back into the persisted `claxedoState.rail` store
- *     (`commitSidebarResize`, `src/shell/app-shell-layout.tsx:256-258`, itself
- *     persisted under `localStorage["claxedo.state.v5"]`); pin/unpin toggles
- *     are session-only and do NOT survive reload (`claxedoState.rail.pin/
- *     unpin/toggle` are never called from production code — only `setWidth`
- *     is). Default boot state is `pinned:true, width:260`
- *     (`src/claxedo-ui/state/persistence.ts:27`).
- *   - **Mobile drawer** open/closed is a plain `createSignal(false)` in
- *     `useRailShellChromeState` (`rail-shell-chrome-state.ts:18`) with no
- *     persistence. Its `openMobileSidebar`/`toggleMobileSidebar` setters ARE
- *     wired (WP-C3 §3.1): `app-shell-layout.tsx` passes them down and the
- *     `md:hidden` opener button in `rail-sidebar-shell.tsx` toggles the drawer.
- *     See BEHAVIORS #14.
- *
- * ANATOMY —
- *   `[data-testid="rail-sidebar"]` — tree root.
- *   `[data-testid="sidebar-toggle"]` — pin/unpin + expand/collapse button.
- *   `[data-testid="project-header"][data-project-id][data-active]` +
- *     `[data-testid="project-group"][data-project-id]` — one row per project
- *     when `Group by: Project` (default).
- *   `[data-testid="workspace-project-header"]` +
- *     `[data-testid="workspace-project-group"]` (outer, per project) wrapping
- *     `[data-testid="workspace-header"][data-workspace-id]` (inner, per
- *     workspace directory) when `Group by: Workspace`.
- *   Each header: a `role="button"` disclosure caret (separate hit target,
- *     `aria-label="Collapse/Expand project|workspace"`, `aria-expanded`) that
- *     `stopPropagation()`s so it never fires the header's own `onClick`
- *     (select+expand); `HeaderActions` (New session / New terminal / New
- *     Claude / New Codex / kebab) fades in via `opacity-0
- *     group-hover/header:opacity-100`.
- *   `[data-testid="rail-sidebar-session-row"][data-session-id][data-session-
- *     ref][data-active]` — a session row; hovering (`.group/session`) fades in
- *     an `aria-label="Archive <title>"` button; a `[data-sidebar-status="working
- *     |permission|done"]` dot (idle renders a relative-time label instead, no
- *     dot at all).
- *   `[data-testid="rail-sidebar-session-list-loading|error|empty|done"]` —
- *     per-section list-state notices; the error notice renders a "Retry"
- *     action button.
- *   A "Load more" / "Loading..." button appears while `nextCursor` is set.
- *   rail account menu → "View options" submenu; contains a
- *     `Group by` radio (Project/Workspace), a `Show` group with conditional
- *     Status/Environment/Git submenus (rendered only when at least one loaded
- *     session carries that dimension) and an unconditional `Archived` radio
- *     (Active/All/Archived).
- *   `[aria-hidden="true"].cursor-col-resize` (no testid) — the sidebar's
- *     right-edge drag-resize handle, a sibling of `[data-testid="rail-
- *     sidebar"]`; distinct from the workspace panel's resize handle, which
- *     carries `role="separator" aria-label="Resize workspace panel"` instead.
- *   Mobile (`max-md:`): the whole rail becomes a `fixed` off-canvas drawer
- *     translated by `mobileSidebarOpen()`, preceded by a click-to-close scrim
- *     (`bg-background-stronger/70`, no testid) when open.
+ *     directory, gated to once per `SIDEBAR_SESSION_STATUS_FRESH_MS` (10s).
+ *     `permission.asked`/`question.asked` do NOT update the row directly —
+ *     they only invalidate. Dot priority is permission > working (busy/retry) >
+ *     done (unseen) > idle; "done" is set when a row goes active/busy ->
+ *     inactive/idle while never focused (`nextUnseenDone`). Idle renders a
+ *     relative-time label and no dot at all; the palette is deliberately
+ *     minimal — grey for working and done, red only for `permission`.
+ *   - Sidebar pin/peek/width live in `createShellLayoutState` as an in-memory
+ *     command overlay on a `LayoutConfig`; the hot zone is the top-left
+ *     48x48px and rail width clamps to [220,520]. Only the COMMITTED width is
+ *     mirrored into the persisted `claxedoState.rail` store (itself under
+ *     `localStorage["claxedo.state.v5"]`) — pin/unpin toggles are session-only
+ *     and do NOT survive reload (`claxedoState.rail.pin/unpin/toggle` are
+ *     never called from production code; only `setWidth` is). Boot default is
+ *     `pinned:true, width:260`.
+ *   - Mobile drawer open/closed is a plain signal with no persistence.
  *
  * BEHAVIORS —
- *   1. In `Group by: Workspace` mode, clicking a `workspace-header`'s body
- *      expands that section AND opens the workspace review side panel for that
- *      worktree (`openWorkspacePanel(section.workspaceDir)` →
- *      `workspacePanel.open("review", {workspaceDir})`, observable as
- *      `[data-testid="workspace-panel-shell"]`'s `data-state-open="true"` /
- *      `data-state-mode="review"` / `data-state-workspace-dir=<dir>`). It does
- *      NOT navigate the main route and there is no `data-active` marker on this
- *      header — route-level workspace selection is the OUTER
- *      `workspace-project-header`'s job (behavior 2's mechanism). Clicking the
- *      inner header's disclosure caret only toggles open/closed and does not
- *      select, open the panel, or navigate.
- *   2. In `Group by: Project` mode (default), clicking a `project-header`'s
- *      body selects the project's primary workspace and expands it; its
- *      disclosure caret only toggles collapse/expand.
- *   3. Hovering a header reveals its inline action buttons (opacity 0→1);
- *      hovering a session row reveals its Archive button the same way — both
- *      are effectively hidden at rest.
- *   4. A session row's status indicator moves idle (no dot, time label) →
- *      working (`data-sidebar-status="working"`, pulsing `bg-text-weak`) → done
- *      (`data-sidebar-status="done"`, solid `bg-text-weak`, unseen) as
- *      `session.status`/`session.idle` SSE events land for a row that is never
- *      opened/focused. (The palette is deliberately minimal — grey for both,
- *      red only for `permission`; `NavigationStatusDot`,
- *      `src/app/workbench/navigation/navigation-row.tsx:116-137`. The earlier
- *      "amber"/"green" wording here never matched the component.) Across a
- *      RELOAD there is no SSE frame to lean on, so a still-running session's
- *      dot is rehydrated purely from `GET /session/status`; the in-memory
- *      unseen-done flag does not survive that, so a turn that finished while
- *      the tab was away comes back as idle rather than "done".
- *   5. Clicking a session row activates it (`data-active="true"`); clicking a
- *      second row before the first click's work settles resolves
- *      deterministically onto the second row, not a stale mix of both.
- *   6. "Load more" fetches the next page (`SESSION_GROUP_PAGE_SIZE = 5` per
- *      page), appends rows without duplicating the first page, and advances
- *      the cursor; once every session is loaded the "All sessions loaded"
- *      done notice replaces the button.
- *   7. The view-options menu's `Group by` radio restructures the tree between
- *      `project-header`/`project-group` and `workspace-project-header`(+nested
- *      `workspace-header`); its `Archived` radio is threaded onto the
- *      session-list query's `archived` param, changing which sessions are
- *      fetched (active vs archived).
- *   8. View-options state persists to `localStorage["claxedo.session-view.v1"]`
- *      and survives reload; malformed JSON at that key falls back silently to
- *      `defaultView()` instead of breaking the tree.
- *   9. The session list surfaces distinct loading / error / empty notices with
- *      stable testids driven by the underlying query state; the error
- *      notice's Retry action re-fires the query.
- *   10. The per-row Archive hover button archives the session (`PATCH /session/
- *       {id}` with `time.archived`) and removes it from the active view
- *       immediately; when that request fails, the row is left exactly in
- *       place (silent no-op besides an error toast) — never optimistically
- *       removed.
+ *   1. `Group by: Workspace`: a `workspace-header` body click expands that
+ *      section AND opens the workspace review side panel for that worktree
+ *      (observable as `workspace-panel-shell`'s `data-state-open` /
+ *      `data-state-mode` / `data-state-workspace-dir`). It does NOT navigate
+ *      the main route and carries no `data-active` marker — route-level
+ *      workspace selection is the OUTER `workspace-project-header`'s job. The
+ *      inner header's caret only toggles open/closed.
+ *   2. `Group by: Project` (default): a `project-header` body click selects the
+ *      project's primary workspace and expands it; its caret only toggles.
+ *   3. Header action buttons and a row's Archive button are revealed by hover.
+ *   4. A row's dot moves idle (no dot, time label) -> working -> done as
+ *      `session.status`/`session.idle` SSE land for a row that is never
+ *      opened/focused. Across a RELOAD there is no SSE frame to lean on, so a
+ *      still-running session's dot is rehydrated purely from
+ *      `GET /session/status`; the in-memory unseen-done flag does not survive
+ *      that, so a turn that finished while the tab was away comes back as idle
+ *      rather than "done".
+ *   5. Clicking a row activates it (`data-active="true"`); a second click
+ *      before the first settles resolves onto the second row, not a stale mix.
+ *   6. "Load more" fetches the next page, appends rows without duplicating the
+ *      first page, and advances the cursor; the "All sessions loaded" done
+ *      notice replaces the button once every session is loaded.
+ *   7. `Group by` restructures the tree between `project-header`/`project-group`
+ *      and `workspace-project-header` (+ nested `workspace-header`); `Archived`
+ *      threads onto the session-list query's `archived` param, changing which
+ *      sessions are fetched.
+ *   8. View-options state survives reload; malformed JSON at the key falls back
+ *      silently to `defaultView()` instead of breaking the tree.
+ *   9. The session list surfaces distinct loading / error / empty notices under
+ *      stable testids; the error notice's Retry action re-fires the query.
+ *   10. The per-row Archive hover button archives the session (`PATCH
+ *       /session/{id}` with `time.archived`) and removes it from the active
+ *       view immediately; a failed archive leaves the row exactly in place
+ *       (silent no-op besides an error toast) — never optimistically removed.
  *   11. An unpinned, collapsed sidebar peeks open when the pointer enters the
- *       top-left 48×48px hot zone, and auto-collapses again once the pointer
- *       leaves the rail's bounding rect.
- *   12. Dragging the sidebar's right-edge resize handle live-resizes it
- *       (clamped to [220,520]px); the committed width survives a reload.
- *   13. The `sidebar-toggle` button pins+expands an unpinned/collapsed sidebar
- *       and unpins+collapses a pinned one.
+ *       top-left hot zone, and auto-collapses once the pointer leaves the
+ *       rail's bounding rect.
+ *   12. Dragging the right-edge resize handle live-resizes the rail; the
+ *       committed width survives a reload.
+ *   13. `sidebar-toggle` pins+expands an unpinned/collapsed sidebar and
+ *       unpins+collapses a pinned one.
  *   14. On a mobile viewport the rail is an off-canvas drawer: the `md:hidden`
- *       `[data-testid="mobile-sidebar-opener"]` button opens it
- *       (`openMobileSidebar`, `rail-shell-chrome-state.ts`) and flips its own
- *       `aria-expanded`; a `[data-testid="mobile-sidebar-scrim"]` appears only
- *       while open and closes the drawer when tapped; picking a session row
- *       closes the drawer AND activates the row (`RailSidebar.activateSession`
- *       invokes `onSessionSelect`, which `RailSidebarShell` wraps with
+ *       `mobile-sidebar-opener` button opens it and flips its own
+ *       `aria-expanded`; `mobile-sidebar-scrim` exists only while open and
+ *       closes the drawer when tapped; picking a session row closes the drawer
+ *       AND activates the row (`RailSidebarShell` wraps `onSessionSelect` with
  *       `closeMobileSidebar()` — the row's own navigation stays owned by
- *       `activateSession`, the shell wrapper only dismisses the drawer).
- *       LIVE since WP-C3 §3.1 wired the open path end to end — the previous
- *       former "dead code" note here was stale.
+ *       `RailSidebar.activateSession`, the shell wrapper only dismisses).
  *   15. A session created with a NON-opencode harness (e.g. Codex via ACP)
- *       becomes visible in the tree once its `session.lifecycle` "created"
- *       event reaches the client, the same way an opencode-native session's
- *       native `session.created` SSE event already does. FIXED BUG (root
- *       cause was server-side, not in this package): harness/ACP session
- *       creation (`packages/workspace-runtime/src/routes/session-core.ts`
- *       `.post("/session")`) only ever publishes a `session.lifecycle` event
- *       on `claxedoBus` (aka `workspaceRuntimeBus`) — it never emits the
- *       native opencode `session.created` event that `globalBus` carries.
- *       `packages/claxedo-local-server/src/opencode/compat-routes/events.ts`'s
- *       `streamGlobalEvents` — the handler behind BOTH `/global/event` and
- *       the local-mode `/api/wr/events` fallback, the ONLY stream a
- *       local/unsigned workspace ever opens
- *       (`claxedoEventStreamTargets` in `packages/claxedo-app/src/providers/
- *       claxedo-events.tsx` only adds a workspace-scoped connection for
- *       `cloud`/`user-hosted` kinds) — used to subscribe ONLY to `globalBus`,
- *       so a harness session's only notification was silently dropped and
- *       `applyClaxedoSessionLifecycleToSync`
- *       (`src/context/global-sync/event-ingress.ts`) never fired. Fixed by
- *       making `streamGlobalEvents` also forward `claxedoBus` events, written
+ *       becomes visible once its `session.lifecycle` "created" event reaches
+ *       the client, where an opencode-native session rides the native
+ *       `session.created` SSE event instead. Harness/ACP session creation only
+ *       ever publishes `session.lifecycle` on `claxedoBus` (aka
+ *       `workspaceRuntimeBus`); `streamGlobalEvents`
+ *       (`packages/claxedo-local-server/src/shell/events.ts`) — the handler
+ *       behind both `/global/event` and the local-mode `/api/wr/events`
+ *       fallback, the ONLY stream a local/unsigned workspace ever opens —
+ *       must therefore forward `claxedoBus` as well as `globalBus`, written
  *       flat/unwrapped to match the shape `ClaxedoEventsProvider`'s
- *       `isClaxedoEvent` guard requires. This spec's mock cannot exercise the
- *       server-side transport bug itself (Tier M mocks bypass the real
- *       server) — it pins the FRONTEND contract the fix depends on: once a
- *       `session.lifecycle` "created" event for a harness session arrives
- *       (`mock.emitFlat`, matching the real unwrapped wire shape), the
- *       already-correct frontend handling
- *       (`applySessionInventoryLifecycle`) surfaces the new row. The actual
- *       transport fix is pinned server-side by
- *       `packages/claxedo-local-server/src/opencode/compat-routes/events.test.ts`.
- *   16. The rail's account footer (`[data-testid="rail-account-trigger"]`) is
- *       keyboard-operable and focus-restoring: Enter opens the menu
- *       (`aria-expanded="true"`) exposing View options / Usage /
- *       Settings / Help (Diagnostics is env-gated — see the test's comment);
- *       ArrowRight opens the focused item's submenu and moves focus into it;
- *       Escape closes the submenu and returns focus to its parent item, and a
- *       final Escape closes the menu and returns focus to the trigger with
- *       `aria-expanded="false"`. The View-options submenu this exposes is the
- *       entry point behaviors 7/8 drive.
+ *       `isClaxedoEvent` guard requires. Tier M mocks bypass the real server,
+ *       so this spec can only pin the frontend half: given a flat
+ *       `session.lifecycle` "created" frame, `applySessionInventoryLifecycle`
+ *       surfaces the row. The transport itself is pinned by
+ *       `packages/claxedo-local-server/src/shell/events.test.ts`.
+ *   16. The account footer (`rail-account-trigger`) is keyboard-operable and
+ *       focus-restoring: Enter opens the menu, ArrowRight opens the focused
+ *       item's submenu and moves focus into it, Escape closes the submenu and
+ *       returns focus to its parent item, and a final Escape closes the menu
+ *       and returns focus to the trigger.
  *
- * INVARIANTS — disclosure-caret clicks never trigger the header body's select
- *   action and vice versa (both stopPropagation the other's handler); a
- *   completed-but-unfocused turn always ends in the "done" unseen state, never
- *   silently reverting to "idle" (see `nextUnseenDone`); archive is
- *   all-or-nothing from the tree's point of view — a failed archive leaves the
- *   row fully intact, never partially removed.
- *
- * HARNESS NOTES — the sidebar tree's OWN reads (session-list/status APIs) are
- *   harness-agnostic, but a NEWLY created session's live appearance depends on
- *   a harness-specific event path reaching the client first — see BEHAVIORS
- *   #15: opencode-native sessions ride the native `session.created` SSE
- *   event, non-opencode/harness sessions ride `session.lifecycle` instead,
- *   and (until the fix above) only the former reliably reached a
- *   local/unsigned workspace's client.
- *
- * OUT OF SCOPE — sending prompts / oracle-proved replies (every other
- *   `core-*` spec); workspace lifecycle actions reachable from the header
- *   kebab (Edit project, Delete workspace, Remove project, Share workspace —
- *   `core-workspace-lifecycle`); terminal rows (`core-terminal`); the
- *   `permission`/`question` sub-state of the status dot (it depends on a
- *   ~10s-freshness-gated background poll rather than direct SSE dispatch —
- *   see STATE MODEL — and is not exercised here to keep the suite fast; the
- *   idle→working→done cycle it shares a code path with IS covered). The mobile
- *   drawer is IN scope and covered by BEHAVIORS #14.
+ * OUT OF SCOPE — sending prompts / oracle-proved replies (every other `core-*`
+ *   spec); workspace lifecycle actions reachable from the header kebab
+ *   (`core-workspace-lifecycle`); terminal rows (`core-terminal`); the
+ *   `permission`/`question` sub-state of the status dot, which depends on the
+ *   10s-freshness-gated background poll rather than direct SSE dispatch and is
+ *   skipped to keep the suite fast (the idle->working->done cycle it shares a
+ *   code path with IS covered).
  */
 import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { sessionListRoute } from "../helpers/contracts/session-list"
@@ -256,11 +131,9 @@ const DIR = "/tmp/e2e-core-sidebar-tree"
 const PROJECT_ID = "proj_core_sidebar_tree"
 const SESSION_ID = "ses_core_sidebar_tree_mock"
 
-// Contention-tolerant ceiling for the keyboard-driven menu/focus transitions in the
-// account-footer test, which a starved CI runner was blowing past the 10s expect
-// default (doc entry 8: CI-only, focus-restoration "timing-sensitive under
-// contention"). Each assertion still awaits the actual visibility/focus transition —
-// the wider ceiling only outlasts host lag, it never weakens the assertion.
+// The account-footer test's keyboard-driven menu/focus transitions blow past the
+// 10s expect default on a contended CI runner. A ceiling, not a wait — every
+// assertion below still awaits the real visibility/focus transition.
 const MENU_FOCUS_TIMEOUT = 30_000
 
 function slug(value: string) {
@@ -330,25 +203,15 @@ async function seedProject(page: Page, opts: { dir: string; view?: ViewOverride 
  * Registered AFTER `installMockRuntime` so it wins (Playwright routes run
  * most-recently-registered-first).
  *
- * Also overrides `GET /api/workspace/resolve` (`installMockRuntime`,
- * mock-runtime.ts:608-610, always answers `workspaceId: local-${sessionId}`
- * regardless of the requested `directory` — a shared-helper gap, not fixable
- * here per the pooled-run rules). Left unpatched, every workspace-resolve
- * call — including ones for OUR real `dir` — collapses onto that one bogus
- * id, which spuriously auto-navigates the tree onto `/w/local-<sessionId>`
- * before any test interaction and confuses the review panel's per-directory
- * scoping. This override answers each request with a `workspaceId` that
- * actually reflects the directory that was queried.
+ * Also overrides `GET /api/workspace/resolve`. `installMockRuntime`'s handler
+ * answers `id: options.workspaceId ?? directory`, so the scenarios below that
+ * omit `workspaceId` would resolve every directory to the raw path string as a
+ * workspace id, and the tree would navigate onto `/w//tmp/...`. This override
+ * answers with `opts.projectId` for whichever directory was queried.
  */
 async function installSessionTreeFixtures(page: Page, opts: { dir: string; projectId: string; sessions: FixtureSession[] }) {
   let sessions = [...opts.sessions]
   let sessionListDelayMs = 0
-  // A persistent flag, not a one-shot one: TanStack Query's default `retry`
-  // silently re-issues the query on failure, so a single failing response
-  // never reaches an observable error state — it just retries and succeeds
-  // before any assertion can see it. Keep failing until the test explicitly
-  // clears it (e.g. right before exercising the Retry button, so that click
-  // actually succeeds).
   let sessionListFailing = false
   const sessionListRequests: string[] = []
 
@@ -548,8 +411,8 @@ test.describe("core sidebar tree @core", () => {
     const caret = header.locator('[role="button"][aria-label*="project"]')
     await expect(caret).toHaveAttribute("aria-expanded", "true")
 
-    // Disclosure caret click: toggles collapse only, never navigates
-    // (INVARIANTS: caret stopPropagation()s the body's select handler).
+    // The caret `stopPropagation()`s the header body's select handler, so a
+    // caret click can never reach it and never navigates.
     const draftUrl = page.url()
     await caret.click()
     await expect(caret).toHaveAttribute("aria-expanded", "false")
@@ -561,13 +424,13 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("project-header body click selects the project's primary workspace — behavior 2", async ({ page }) => {
-    // Fixed in Wave 2 (WP-B2): `openOrCreateSession`
-    // (src/claxedo-ui/layout-actions/workspace-actions.ts) now excludes the
-    // `"new"` draft sentinel from its reuse check
+    // `openOrCreateSession` (src/features/workspaces/actions/workspace-actions.ts)
+    // excludes the `"new"` draft sentinel from its reuse check
     // (`existing.sessionId && existing.sessionId !== "new"`), so a
-    // project-header body click on a bare draft route no longer treats the draft
-    // as a reusable session and navigates to the malformed `/s/new`. It routes
-    // to `workspaceSessionRoute(workspaceId)` (`/w/<workspaceId>/session`).
+    // project-header body click on a bare draft route routes to
+    // `workspaceSessionRoute(workspaceId)` (`/w/<workspaceId>/session`) instead
+    // of treating the draft as a reusable session and landing on the malformed
+    // `/s/new` dead-end the last assertion below guards against.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "primary" }) })
     await seedProject(page, { dir: DIR })
@@ -581,8 +444,6 @@ test.describe("core sidebar tree @core", () => {
     // `onWorkspaceSelect` -> `handleWorkspaceSelect` -> `openOrCreateSession`.
     await header.click({ position: { x: 60, y: 8 } })
 
-    // Fix proof: navigates to the canonical workspace session route, never the
-    // malformed `/s/new` dead-end the "new" sentinel used to produce.
     await expect(page).toHaveURL(/\/w\/.+\/session/, { timeout: 15_000 })
     await expect(page).not.toHaveURL(/\/s\/new/)
   })
@@ -601,11 +462,11 @@ test.describe("core sidebar tree @core", () => {
     // The workspace review panel is the observable effect of the BODY click
     // below, so pin its closed starting state first — otherwise the post-click
     // assertion could not tell "the click opened it" from "it was already open".
-    // Since ae3086a8 the panel shell is disposed while closed and only mounts
-    // on first open (`workspacePanelMounted`/`motion.shellMounted` gating the
+    // The panel shell is disposed while closed and only mounts on first open
+    // (`workspacePanelMounted`/`motion.shellMounted` gate the
     // `<RailWorkspacePanelShell>` Show in rail-workbench-shell.tsx), so the
-    // closed starting state is "not in the DOM at all" — stronger evidence of
-    // "closed" than the old always-mounted data-state-open="false".
+    // closed starting state is "not in the DOM at all", not
+    // `data-state-open="false"`.
     const panel = page.locator('[data-testid="workspace-panel-shell"]')
     await expect(panel).toHaveCount(0)
 
@@ -651,10 +512,10 @@ test.describe("core sidebar tree @core", () => {
 
     const header = page.locator('[data-testid="project-header"]')
     const newSessionButton = header.getByRole("button", { name: /New session in/ })
-    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): at rest
-    // the header's action cluster is NOT in the DOM at all — its wrapper only
-    // reserves the buttons' box (`railHeaderActionsBox`) so layout stays
-    // byte-stable. "Hidden at rest" is therefore count 0, not opacity 0.
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts): at rest the header's
+    // action cluster is NOT in the DOM at all — its wrapper only reserves the
+    // buttons' box (`railHeaderActionsBox`) so layout stays byte-stable.
+    // "Hidden at rest" is therefore count 0, not opacity 0.
     await expect(newSessionButton).toHaveCount(0)
     await header.hover()
     // Engaged (pointerenter): the buttons mount, and the cluster wrapper —
@@ -689,32 +550,29 @@ test.describe("core sidebar tree @core", () => {
     await expect(row).toBeVisible({ timeout: 15_000 })
 
     // Idle: no status dot at all, the relative-time label renders instead.
-    // The working/done half of behavior 4 is the sibling test below.
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
   })
 
   test("status dot moves working -> done as session.status/session.idle SSE land — behavior 4", async ({ page }) => {
     const targetId = "ses_live_0"
-    // Two independently-updated caches decide this row's dot (see SPEC STATE
-    // MODEL): the SSE dispatch into `shellDataKeys.sessionId(id,"status")`, and
-    // the sidebar's batched `client.session.status()` reconciliation. The
-    // mock's live-session map is moved in step with every frame emitted here
-    // so the two can never disagree — which is what the real server does
-    // anyway, publishing `session.status` and updating the map it serves from
-    // the same `SessionStatus.set` call (`opencode/src/session/status.ts:38-47`).
+    // Two independently-updated caches decide this row's dot: the SSE dispatch
+    // into `shellDataKeys.sessionId(id,"status")`, and the sidebar's batched
+    // `client.session.status()` reconciliation. The mock's live-session map is
+    // moved in step with every frame emitted here so the two can never
+    // disagree — which is what the real server does anyway, publishing
+    // `session.status` and updating the map it serves from the same
+    // `SessionStatus.set` call.
     //
-    // MEASURED, so nobody re-derives it from the source and gets it wrong the
-    // way this test's `fixme` note did: with the mock's OLD status handling
-    // restored, this scenario still passed 6/6. The batch fires once per
+    // MEASURED: with the mock's OLD status handling restored, this scenario
+    // still passed 6/6. The batch fires once per
     // `sessionStatusTargetSignature` change and is then gated for
     // `SIDEBAR_SESSION_STATUS_FRESH_MS` (10s), so it had already run before the
     // first emit — and it could not have contradicted anything anyway, because
     // `GET /session/status` was being answered by the shared mock's
-    // `**/session/*` catch-all with a session ROW rather than a status map (see
-    // that route's comment in mock-runtime.ts). The `setSessionStatus` calls
-    // below therefore keep the mock honest rather than papering over a live
-    // race here; where the map IS decisive is the reload scenario in the next
-    // test, which has no SSE frame to lean on at all.
+    // `**/session/*` catch-all with a session ROW rather than a status map. The
+    // `setSessionStatus` calls below therefore keep the mock honest rather than
+    // papering over a live race here; where the map IS decisive is the reload
+    // scenario in the next test, which has no SSE frame to lean on at all.
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "live" }) })
     await seedProject(page, { dir: DIR })
@@ -725,7 +583,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
 
     // idle -> working. `busy` is the only status the dot's "working" branch
-    // reads besides `retry` (`sessionSurfaceStatus`, surface-status.ts:28).
+    // reads besides `retry` (`sessionSurfaceStatus`, surface-status.ts).
     mock.setSessionStatus(targetId, { type: "busy" })
     mock.emit({ type: "session.status", properties: { sessionID: targetId, status: { type: "busy" } } })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
@@ -747,7 +605,7 @@ test.describe("core sidebar tree @core", () => {
     // The other half of the two-cache model in behavior 4, and the half no SSE
     // test can reach: a reload throws away every in-memory status cache, so a
     // session that is STILL busy on the server can only get its dot back from
-    // the batched `client.session.status()` read (rail-sidebar.tsx:912-927).
+    // the batched `client.session.status()` read in rail-sidebar.tsx.
     // If that read reports the row idle, the dot is silently wrong for up to
     // the whole rest of the turn — the row looks finished while the agent is
     // still working.
@@ -772,7 +630,6 @@ test.describe("core sidebar tree @core", () => {
     await expect(row).toBeVisible({ timeout: 15_000 })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
 
-    // Reload with the session still busy server-side: the dot must come back.
     await page.reload()
     await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -801,13 +658,12 @@ test.describe("core sidebar tree @core", () => {
     await expect(rowA).toBeVisible({ timeout: 15_000 })
     await expect(rowB).toBeVisible({ timeout: 15_000 })
 
-    // Single click activates deterministically.
     await rowA.click()
     await expect(rowA).toHaveAttribute("data-active", "true", { timeout: 15_000 })
     await expect(rowB).toHaveAttribute("data-active", "false")
 
-    // Rapid switch: click B immediately after A, before A's activation
-    // settles. The tree must land on B, not a stale mix of both.
+    // Rapid switch: alternate clicks faster than one activation can settle.
+    // The tree must land on the LAST row clicked, not a stale mix of both.
     await rowB.click()
     await rowA.click()
     await rowB.click()
@@ -831,18 +687,17 @@ test.describe("core sidebar tree @core", () => {
 
     await expect(rows).toHaveCount(7, { timeout: 15_000 })
 
-    // No duplicate rows across the two pages.
     const ids = await rows.evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-session-id")))
     expect(new Set(ids).size).toBe(ids.length)
   })
 
   test("load more's done notice replaces the button once every session is loaded — behavior 6", async ({ page }) => {
-    // Fixed in Wave 2 (WP-A7): `mergeSessionListResponses`
-    // (src/shared/query/session-list.ts) now advances an append to the
-    // freshly-fetched page's OWN `nextCursor` — including `undefined` once the
-    // server reports no further pages — instead of keeping the stale first-page
-    // cursor. So once the final page loads, `nextCursor` clears, `more()` goes
-    // falsy, the "Load more" button disappears and `doneLoaded()` fires.
+    // `mergeSessionListResponses` (src/features/session/data/query/session-list.ts)
+    // advances an append to the freshly-fetched page's OWN `nextCursor` —
+    // including `undefined` once the server reports no further pages — rather
+    // than keeping the first-page cursor. So once the final page loads,
+    // `nextCursor` clears, `more()` goes falsy, the "Load more" button
+    // disappears and `doneLoaded()` fires.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(7, { prefix: "done" }) })
     await seedProject(page, { dir: DIR })
@@ -857,8 +712,6 @@ test.describe("core sidebar tree @core", () => {
 
     await expect(rows).toHaveCount(7, { timeout: 15_000 })
 
-    // Fix proof: page 2's cursor is `undefined`, so after the append the
-    // "Load more" button is gone and the done notice renders in its place.
     await expect(loadMore).toHaveCount(0, { timeout: 15_000 })
     await expect(page.getByText("All sessions loaded.")).toBeVisible({ timeout: 15_000 })
   })
@@ -880,11 +733,9 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator(`[data-testid="workspace-header"][data-workspace-id="${PROJECT_ID}"]`)).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('[data-testid="project-header"]')).toHaveCount(0)
 
-    // Archived radio threads onto the session-list query's `archived` param.
-    // The view-options menu stays open across radio selections (it's a
-    // multi-section settings panel, not a close-on-select menu) — re-clicking
-    // the "View options" trigger here would toggle it closed instead of
-    // opening it, since it's already open from the "Workspace" click above.
+    // The view-options menu stays open across radio selections (a multi-section
+    // settings panel, not a close-on-select menu), so there is deliberately no
+    // re-open here — re-clicking the trigger would toggle it closed instead.
     fixtures.sessionListRequests.length = 0
     await page.getByRole("menuitemradio", { name: "All" }).click()
     await expect.poll(() => fixtures.sessionListRequests.some((q) => q.includes("archived=all")), { timeout: 10_000 }).toBe(true)
@@ -905,9 +756,7 @@ test.describe("core sidebar tree @core", () => {
     // "Diagnostics" is gated by `<Show when={usePlatform().platform === "desktop" ||
     // config?.sandboxEnabled !== true}>` (rail-account-menu.tsx) — this dev harness
     // bakes `VITE_SANDBOX_ENABLED=true` (.env.local) and runs the web platform (never
-    // "desktop"), so the item is permanently absent here, the same class of
-    // unreachable-by-baked-env-flag gating documented in core-settings-auth.spec.ts's
-    // HARNESS NOTES (e.g. the Sandbox-tab-absent-when-disabled scenario).
+    // "desktop"), so the item is permanently absent here.
     await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
     await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
     await expect(page.getByRole("menuitem", { name: "Help" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
@@ -1008,7 +857,6 @@ test.describe("core sidebar tree @core", () => {
     await expect(rows).toHaveCount(1)
     await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe("/s/ses_archive_1")
 
-    // Failure case: PATCH /session/:id fails -> row must remain, untouched.
     let sawArchivePatch = false
     await page.route("**/session/*", async (route) => {
       if (route.request().method() !== "PATCH") return route.fallback()
@@ -1090,8 +938,8 @@ test.describe("core sidebar tree @core", () => {
     // The server's control-plane session-list already has the row the
     // instant `POST /session` returns (recorded by claxedo-server's
     // response-sniffing middleware regardless of harness — see
-    // `packages/claxedo-server/src/deployments/local/server.ts` around its `/session`
-    // create/update/delete tap) — model that here by seeding the fixture's
+    // `packages/claxedo-server/src/deployments/self-hosted-node/app.ts` around
+    // its `/session` create/update/delete tap) — model that here by seeding the
     // list BEFORE the event arrives, exactly like the real backend.
     const now = Date.now()
     fixtures.setSessions([
@@ -1101,7 +949,7 @@ test.describe("core sidebar tree @core", () => {
     // The one notification a non-opencode/harness session's `POST /session`
     // ever publishes: a `session.lifecycle` "created" event on `claxedoBus`
     // — see BEHAVIORS #15. Injected flat/unwrapped via `emitFlat`, matching
-    // the real (fixed) wire shape `ClaxedoEventsProvider` requires.
+    // the real wire shape `ClaxedoEventsProvider` requires.
     mock.emitFlat({
       type: "session.lifecycle",
       phase: "created",
@@ -1141,10 +989,9 @@ test.describe("core sidebar tree @core", () => {
     await openTree(page, DIR)
 
     // The `docked`-state half of behavior 13, isolated from the width half the
-    // sibling test below owns (which pins the full 260 -> 0 -> 260 transition —
-    // there is no outstanding width bug; that note was stale). The toggle
-    // button is rendered only while docked (`Show when={docked()}` in
-    // rail-sidebar.tsx), so it disappearing on click IS the state flip.
+    // sibling test below owns (which pins the full 260 -> 0 -> 260 transition).
+    // The toggle button is rendered only while docked (`Show when={docked()}`
+    // in rail-sidebar.tsx), so it disappearing on click IS the state flip.
     const toggle = page.locator('[data-testid="sidebar-toggle"]')
     await expect(toggle).toBeVisible()
     await toggle.click()
@@ -1162,7 +1009,6 @@ test.describe("core sidebar tree @core", () => {
     const railWidth = () =>
       page.locator('[data-testid="rail-sidebar"]').evaluate((el) => parseFloat((el as HTMLElement).style.width) || 0)
 
-    // Docked at the default 260px.
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
 
     // Collapsing the docked rail flips `docked` (the toggle hides) AND drives
@@ -1175,7 +1021,6 @@ test.describe("core sidebar tree @core", () => {
     // leaves the corner), so the width settles at 0 without moving the mouse.
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(0)
 
-    // Re-expanding via the header "Show Sidebar" affordance restores the width.
     await page.getByRole("button", { name: "Show Sidebar" }).click()
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
     await expect(page.locator('[data-testid="sidebar-toggle"]')).toBeVisible()
@@ -1193,7 +1038,6 @@ test.describe("core sidebar tree @core", () => {
 
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
 
-    // Collapse into the unpinned, zero-width state this behavior peeks from.
     await page.locator('[data-testid="sidebar-toggle"]').click()
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(0)
     // Move the pointer clear of the corner so the toggle-collapse mute lifts.
@@ -1236,12 +1080,6 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("mobile drawer opens via the opener, scrim-closes, and closes on session select — behavior 14", async ({ page }) => {
-    // Live once WP-C3 §3.1 wired the drawer end to end: `openMobileSidebar`
-    // (rail-shell-chrome-state.ts) is a real setter reached from the `md:hidden`
-    // opener button in rail-sidebar-shell.tsx, and `RailSidebar.activateSession`
-    // now invokes `onSessionSelect`, which the shell uses to close the drawer on
-    // a session pick (the session's own navigation is owned by activateSession,
-    // so the shell wrapper only dismisses the drawer — it never re-navigates).
     await page.setViewportSize({ width: 390, height: 844 })
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "drawer" }) })
@@ -1251,12 +1089,10 @@ test.describe("core sidebar tree @core", () => {
     const opener = page.locator('[data-testid="mobile-sidebar-opener"]')
     const scrim = page.locator('[data-testid="mobile-sidebar-scrim"]')
 
-    // Closed on entry: the opener is the only reachable affordance, no scrim yet.
     await expect(opener).toBeVisible({ timeout: 10_000 })
     await expect(opener).toHaveAttribute("aria-expanded", "false")
     await expect(scrim).toHaveCount(0)
 
-    // Opener opens the drawer (scrim appears; opener stays mounted as a toggle).
     await opener.click()
     await expect(scrim).toBeVisible({ timeout: 5_000 })
     await expect(opener).toHaveAttribute("aria-expanded", "true")
@@ -1266,7 +1102,6 @@ test.describe("core sidebar tree @core", () => {
     await expect(scrim).toHaveCount(0)
     await expect(opener).toHaveAttribute("aria-expanded", "false")
 
-    // Re-open, then pick a session: the drawer closes AND the row activates.
     await opener.click()
     await expect(scrim).toBeVisible({ timeout: 5_000 })
     const row = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_drawer_0"]')

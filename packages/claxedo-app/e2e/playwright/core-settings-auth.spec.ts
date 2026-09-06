@@ -1,405 +1,35 @@
 /**
- * SPEC: Settings dialog, account/auth, providers/connections/sandbox, and the
- * signed-auth system routes (`/login`, `/cli-login`, the signed gate, the
- * top-level error page)
+ * Settings dialog, account/auth, providers/connections/sandbox, and the
+ * signed-auth system routes (`/login`, `/cli-login`, `CloudAuthGate`, the
+ * top-level error page).
  *
- * PURPOSE — the app's cross-cutting configuration surface (`DialogSettings`,
- * `src/components/dialog-settings.tsx`) plus everything that decides whether a
- * visitor even gets past the front door (`src/shell/auth/*`, `src/app.tsx`'s
- * `CloudAuthGate`, `src/pages/login.tsx`, `src/pages/cli-login.tsx`,
- * `src/pages/error.tsx`). Settings lets a user manage appearance, shortcuts,
- * providers, external-tool connections, and (when enabled) sandbox
- * credentials/network policy without leaving the workbench. The auth surfaces
- * let a hosted deployment require sign-in while a local/loopback session
- * never does, and let the CLI piggy-back a browser session to mint its own
- * token.
- *
- * STATE MODEL —
- *   Dialog: `DialogSettings` owns two local signals — `active` (which tab,
- *     default `"general"`) and `mobile` (menu vs content mode below 640px,
- *     see ANATOMY). Neither survives dialog close; reopening always starts on
- *     General/menu-mode. The dialog itself lives in the app-wide `DialogProvider`
- *     stack (`useDialog().show()`), opened from the rail sidebar's gear
- *     `IconButton` (`aria-label` = `language.t("sidebar.settings")` = "Settings",
- *     `src/claxedo-ui/layouts/rail-sidebar.tsx`).
- *   Sandbox tab: NOT gated by anything. `src/app/dialogs/settings.tsx` renders
- *     the `value="compute"` `Tabs.Trigger` (:159) and its matching
- *     `Tabs.Content` (:214) unconditionally — there is no
- *     `<Show when={sandboxEnabled()}>` wrapper and no `sandboxEnabled`
- *     reference anywhere in that file at all (`grep -c sandboxEnabled
- *     src/app/dialogs/settings.tsx` ⇒ 0). The former `VITE_SANDBOX_ENABLED`
- *     gate was deleted (owner decision — see the comment at
- *     `src/app/entry/index.tsx:94`), so the tab is ALWAYS present and there is
- *     no flag-off branch left to cover. (An earlier revision of this header
- *     described a `<Show when={sandboxEnabled()}>` gate and called its false
- *     branch "permanently untestable"; that was wrong on both counts and is
- *     corrected here. The `VITE_SANDBOX_ENABLED=true` line still sitting in
- *     `.env.local` is dead config — nothing reads it.)
- *   Principal/auth: `PrincipalProvider` (`src/shell/auth/principal-provider.tsx`)
- *     derives a `Principal` (`"anonymous" | "local" | "signed" | "org-member"`)
- *     from `useAuthSession()` + the `authEnabled` prop. `authEnabled` is
- *     `import.meta.env.VITE_AUTH_ENABLED === "true"` (`src/index.tsx`), also
- *     baked at Vite-start and `true` in this harness — so `principal.kind` is
- *     NEVER `"local"` here (that branch requires `authEnabled === false`); it
- *     is `"signed"`/`"org-member"` when `auth.status() === "signed"`, else
- *     `"anonymous"`. `useAuthSession()` wraps `src/platform/auth/browser-auth.ts`'s
- *     `useAuth()`, whose `isSignedIn()` is true whenever a provider session, a
- *     provider user, OR the test-auth bypass (`testAuth()`) is present. The test
- *     suite runs in two explicit process-wide modes: `test-user` preserves the
- *     webdriver bypass, while `local-unsigned` disables it at the Vite boundary
- *     and supplies no provider key. Signed-only behaviors stamp the test principal
- *     explicitly; general behaviors inherit the current matrix mode.
- *     Capability policy (`src/shell/auth/role.tsx`): `PrincipalPolicy.anonymous`
- *     and `.signed`/`.org-member` all grant `"view.account"`; only `.local`
- *     (empty set) denies it — meaning `Can do="view.account"` around
- *     `AccountSettingsSection` is unconditionally true in this harness.
- *   Sign-out: `auth.signOut()` clears provider state + `clearPersistedAuthState()`
- *     (every `opencode.*` / projection-cache localStorage key, preserving the
- *     dedicated `opencode.auth.lastUserId` key), then the caller navigates to
- *     `/login` with `{replace: true}`.
- *   Settings persistence: appearance/notifications/keybinds/sounds live in
- *     `useSettings()` (`src/context/settings.tsx`, localStorage-backed,
- *     survives reload — not re-verified here, owned by that context's own
- *     tests). Theme id + color scheme persist via `@opencode-ai/ui`'s theme
- *     context to dedicated localStorage keys and are applied by writing
- *     `document.documentElement.dataset.theme` / `.colorScheme` synchronously.
- *     `previewTheme`/`previewColorScheme` write the SAME dataset attributes
- *     without persisting; `cancelPreview` reverts them to the committed values.
- *   Providers: connected/popular lists come from `GET /provider` (SDK-shaped,
- *     `providerList.all` + `.connected`), `GET /provider/auth` (per-provider
- *     auth method catalog, empty ⇒ API-key-only fallback). Connect writes go
- *     through `PUT /api/claxedo/credentials` (`claxedoCredentialRequest`, see
- *     `src/utils/credential-request.ts`) for API-key and OAuth-callback via the
- *     SDK `provider.oauth.*` routes; disconnect issues `DELETE
- *     /api/claxedo/credentials/provider/:id`. Config-declared rows are managed
- *     by the connected harness and offer no credential-disconnect action.
- *   Connections: `createConnectionsStore`/`createConnectFlow`
- *     (`src/components/settings-connections-core.ts`) own a small state
- *     machine (`"form" | "submitting" | "confirm-replace" | "oauth-waiting" |
- *     "done"`) over `/api/claxedo/integrations*`. The pasted secret and form
- *     fields live ONLY in this in-memory store; `reset()` (called on the
- *     connect dialog's `onCleanup`, i.e. every close) wipes them and bumps a
- *     `generation` counter that stops any in-flight OAuth poll loop from
- *     acting on stale state.
- *   Sandbox: `SandboxSettingsSection` loads `GET /api/workspace/drivers`
- *     (default provider id + per-provider field/configured metadata) against
- *     `getDefaultBaseUrl()` (reads `window.__CLAXEDO__.serverUrl` when set,
- *     else env/origin fallbacks). `shouldUseSandboxDriverMutations` gates every
- *     mutation control on `centralTransportForServer(baseUrl) === "loopback"`;
- *     non-loopback hosts render the same data read-only.
- *   Auth routes: `/login` and `/cli-login` are plain SPA routes (`src/app.tsx`
- *     `<Route path="/login">`/`<Route path="/cli-login">`), not gated
- *     themselves — `CloudAuthGate` (in `AuthenticatedProviders`, wraps
- *     everything BELOW it) computes `needsSignedAuth = authEnabled &&
- *     centralTransportForServer(server.url) !== "loopback"` and redirects to
- *     `/login` only while `needsSignedAuth() && session.status() ===
- *     "anonymous"`. `server.url` here is `ServerProvider`'s resolved default,
- *     which on the web platform ultimately traces back to
- *     `getClaxedoServerUrl()` — hardcoded to the build-time
- *     `VITE_CLAXEDO_SERVER_URL` env var (`http://127.0.0.1:3001` in this repo),
- *     which is ALWAYS a loopback host, so `needsSignedAuth()` is always false
- *     in this harness regardless of principal (see HARNESS NOTES).
- *
- * ANATOMY —
- *   `[data-testid="rail-account-trigger"]` → "Settings" menu item — opens the dialog.
- *   `[data-slot="dialog-container"]` — the settings dialog's root once open.
- *   `[role="tab"][data-value="general"|"shortcuts"|"terminals"|"providers"|
- *     "models"|"connections"|"compute"]` — tab triggers (`aria-selected`
- *     reflects the active tab); `"compute"` (Sandbox) only exists when
- *     `sandboxEnabled`. `[data-slot="tabs-content"]` panels are one-per-tab.
- *   `.settings-mobile-menu` / `.settings-mobile-content` (on the `Tabs` root,
- *     only meaningful under a 639px max-width media query) — menu mode hides
- *     `[data-slot="tabs-content"]`, content mode hides `[data-slot="tabs-
- *     list"]` and shows `.settings-mobile-back` (click → menu mode).
- *   General tab: `[data-action="settings-color-scheme"]` /
- *     `[data-action="settings-theme"]` wrap a `Select`
- *     (`[data-slot="select-select-trigger"]` to open,
- *     `[data-slot="select-select-item"]` options, rendered in a portal);
- *     `[data-action="settings-notifications-agent"|"-permissions"|"-errors"]`
- *     wrap `Switch` (`input[type=checkbox]`); `[data-action="settings-updates-
- *     startup"]` wraps the startup-check switch; the "Check now" button has no
- *     stable testid, select it by its visible text ("Check now"/"Checking...").
- *     Account section (`Can do="view.account"`): header text "Account", a
- *     "Log out" row whose button text is "Log out".
- *   Shortcuts tab: search `TextField` (placeholder "Search shortcuts"),
- *     `data-keybind-id="<command id>"` buttons (text = current binding or
- *     "Unassigned"; "Press keys" while capturing), "Reset to defaults" button
- *     (disabled until an override exists).
- *   Providers tab: `[data-component="connected-providers-section"]` and
- *     `[data-component="custom-provider-section"]` scope rows;
- *     provider rows have no testid, select by the provider's visible name text.
- *   Connections tab: `[data-component="connections-section"]`; no per-row
- *     testid, select by integration/connection name + button text ("Connect",
- *     "Add connection", "Re-verify", "Reconnect", "Disconnect", "Disconnect?",
- *     "Confirm", "Cancel"). `DialogConnectIntegration` fields are plain
- *     `TextField`s selected by `label`; `role="radiogroup"[aria-label=
- *     "Connection scope"]` when `personalScopeEnabled`.
- *   Sandbox tab: `Select` (default provider) via
- *     `[data-slot="select-select-trigger"]`; per-provider rows are plain
- *     `input[type=text|password]` inside an expanded row, "Configure"/
- *     "Update"/"Collapse"/"Remove"/"Save" buttons by text; the read-only
- *     notice text is "Signed hosted sessions can view local sandbox providers
- *     but cannot change local credentials."
- *   `/login`: "Continue" button (disabled + "Redirecting..." while signing
- *     in); a "Terms of Service" link always renders.
- *   `/cli-login`: header text "Claxedo CLI", a single `<p>` status message
- *     that cycles through "Preparing CLI sign-in...", "Opening Claxedo
- *     sign-in...", "Approving CLI sign-in...", or an error message; a spinner
- *     renders whenever `status() !== "error"`.
- *   Error page (`src/pages/error.tsx`, top-level `ErrorBoundary` fallback in
- *     `AppBaseProviders`): title "Something went wrong", a read-only
- *     `TextField` with the formatted error chain, "Restart" button, and (only
- *     when `platform.checkUpdate` exists — never true on web, see HARNESS
- *     NOTES) a "Check for updates" button.
- *
- * BEHAVIORS —
- *   1. Opening Settings renders the General tab active by default; switching
- *      tabs updates `aria-selected` and shows exactly one non-hidden
- *      `[data-slot="tabs-content"]` panel at a time.
- *   2. The Sandbox tab (trigger + content) renders unconditionally — no config
- *      value, env flag, or `<Show>` gates it (see STATE MODEL) — and its
- *      content mounts the real `SandboxSettingsSection`.
- *   3. Under a <640px viewport the dialog boots in menu mode (full-width tab
- *      list, content hidden); selecting a tab flips to content mode (list
- *      hidden, back row + content shown); the back row returns to menu mode.
- *   4. The Account section (`Can do="view.account"`) renders for every
- *      principal kind reachable in this harness (`signed`/`org-member` via
- *      the default test-auth bypass, and `anonymous` with the bypass
- *      disabled) — the identity sub-row (email/name) only appears when a
- *      user object exists; the `local`-kind-hides-it branch requires
- *      `authEnabled=false`, unreachable here (see HARNESS NOTES).
- *   5. Clicking "Log out" calls `signOut()` and navigates to `/login`
- *      (`replace: true`).
- *   6. Hovering a `colorScheme` option live-previews
- *      `document.documentElement.dataset.colorScheme`; moving off without
- *      selecting reverts it to the committed value; selecting an option
- *      commits it.
- *   7. Notification switches (agent/permissions/errors) toggle
- *      `useSettings().notifications.*` and reflect `checked` state. The
- *      settings write is observed through the store's OWN persistence
- *      (`persisted("settings.v3", ...)`, `src/platform/settings/provider.tsx`
- *      → the `settings.v3` localStorage key), not just the checkbox's own
- *      `checked` property — an uncontrolled input flips `checked` on its own
- *      even with the store write completely broken.
- *   8. "Check for updates" / "Check for updates on startup" are disabled
- *      whenever `platform.checkUpdate` is undefined — always true on the web
- *      platform this harness runs (see HARNESS NOTES); the toast-action
- *      contract itself is desktop-only and out of e2e reach here.
- *   9. Shortcuts search filters the grouped command list; a query with zero
- *      matches shows the "No shortcuts found" empty state.
- *   10. Clicking a shortcut's key control enters capture mode ("Press keys");
- *       the next keydown becomes its new binding — asserted as the actual
- *       formatted label of the combination that was pressed
- *       (`formatKeybind`/`displayKeybindParts`, `src/app/providers/
- *       command-palette.tsx:188-243`: non-mac ⇒ `"Alt+Shift+K"`), not merely
- *       "no longer capturing", which an app that silently restored the
- *       ORIGINAL binding would satisfy too.
- *   11. Recording a combination already bound elsewhere shows a "Shortcut
- *       already in use" toast and leaves BOTH bindings unchanged — the
- *       would-be thief's row AND the row that already owned the combination
- *       are each re-read and compared to their pre-attempt labels.
- *   12. "Reset to defaults" is disabled with zero overrides, becomes enabled
- *       after one, and clicking it clears all overrides + shows a "Shortcuts
- *       reset" toast + disables itself again.
- *   13. Providers → Popular lists not-yet-connected `popularProviders`;
- *       "Connect" opens `DialogConnectProvider`; with no `/provider/auth`
- *       entry it falls back to a single API-key method and renders the key
- *       form directly; submitting PUTs `/api/claxedo/credentials` and on
- *       success marks the provider connected, closes the dialog, and toasts.
- *   14. Providers → Connected shows a source `Tag` per provider; a
- *       `source: "env"` row has no Disconnect button and shows the
- *       environment-locked description ("Connected from your environment
- *       variables", `settings.providers.connected.environmentDescription`)
- *       instead; any other source's Disconnect DELETEs
- *       `/api/claxedo/credentials/provider/:id`. The env row's
- *       zero-Disconnect assertion is paired with a positive precondition that
- *       the row locator resolved to exactly ONE element — a selector that
- *       matched nothing would otherwise satisfy the zero-count claim.
- *   15. "Custom provider" → submitting with an empty Provider ID shows an
- *       inline required-field error and sends zero credential/config
- *       requests.
- *   16. Connections lists integrations with a status chip
- *       (Connected/Degraded/Broken); Degraded rows additionally show
- *       "Re-verify"; Degraded/Broken rows show "Reconnect".
- *   17. "Connect"/"Add connection" opens `DialogConnectIntegration`; for a
- *       key-method integration, submitting the secret POSTs
- *       `/:integrationId/connect`; success closes + reloads the list; a
- *       `409 connection_exists` response switches to a confirm-replace step
- *       instead of erroring.
- *   18. For an OAuth-only integration, "Continue with OAuth" POSTs
- *       `method: "oauth"`, opens the returned URL (the spec's `window.open`
- *       stub RECORDS its argument, so "opens the URL" is asserted as the exact
- *       URL the server returned, not merely as "did not crash"), and polls
- *       `GET /attempts/:id` until `status: "complete"` (success).
- *   19. Closing the connect dialog tears the connect flow down
- *       (`onCleanup(() => flow.reset())`, `src/app/dialogs/
- *       connect-integration.tsx:46`).
- *       HONEST SCOPE — what a black-box spec can and cannot prove here:
- *         - NOT PROVABLE from a spec: "the pasted secret is cleared from
- *           memory". `createConnectFlow` is called INSIDE the component body
- *           (same file, :28), so its `createStore` is per-INSTANCE. Closing
- *           disposes the component and the store dies with it; reopening
- *           mounts a brand-new instance with a brand-new empty store. A
- *           "reopen and assert the field is empty" test therefore passes
- *           IDENTICALLY with line 46 deleted — it observes component disposal,
- *           not `reset()`. There is no in-app surface that exposes a disposed
- *           store's contents, so this half is asserted only as far as it is
- *           observable (below) and is deliberately NOT claimed in the test
- *           title.
- *         - PROVABLE and asserted: (a) the reopened form's secret input's
- *           `value` PROPERTY is empty (`toHaveValue`, not a rendered-text
- *           query — `getByText` matches text nodes and structurally cannot
- *           observe a secret sitting in an `<input>`), and no input ANYWHERE
- *           in the document holds the pasted value; (b) closing without
- *           submitting sent zero `/connect` requests, so the secret never left
- *           the browser; (c) the OTHER half of `reset()` — the `generation++`
- *           that cancels in-flight OAuth polling — IS externally observable
- *           and IS discriminating: `pollAttempt`'s loop
- *           (`src/features/settings/ui/connections-logic.ts:305-336`) is a
- *           plain async loop that nothing else cancels, so with line 46
- *           deleted it would keep hitting `GET /attempts/:id` forever after
- *           the dialog is gone. That is pinned by its own test.
- *   20. Disconnect is a two-step inline confirm ("Disconnect" → "Disconnect?"
- *       + Confirm/Cancel); Confirm DELETEs `/connections/:id` and toasts;
- *       Cancel reverts with zero request sent.
- *   21. Sandbox → the Provider dropdown picks ONE provider; when the picked
- *       one already has credentials but is not the active one, "Use for new
- *       workspaces" PUTs `/api/workspace/drivers/default` and then retires
- *       itself (the picked provider is now active).
- *   22. Sandbox → Credentials: the picked provider's field form is always
- *       open (no Configure/Update toggle); Save PUTs
- *       `/api/workspace/drivers/:id/auth` with `default: true` so configuring
- *       a provider also selects it; "Remove" DELETEs the same URL; both
- *       refresh the list and toast.
- *   23. Sandbox mutation controls are all disabled and a read-only notice
- *       renders whenever the resolved base URL is not a loopback host.
- *   24. Network Policy inside the (workspace-less) Sandbox tab always allows
- *       writes (`canWritePolicy()` unconditionally true without a
- *       `workspaceId`) — the admin/owner role gate belongs to a
- *       workspace-scoped host of the same component, not this surface.
- *   25. `/login`: already-signed visitors are redirected via `onMount`
- *       (`replace: true`) before the Continue button ever renders — the
- *       "before it ever renders" half is a real no-FLASH claim, so it is
- *       pinned by a `MutationObserver` installed before the app's first script
- *       that latches if a "Continue" button is ever added to the document, not
- *       by an after-the-fact `toHaveCount(0)` (which any post-redirect page
- *       satisfies trivially). Not-signed visitors see "Continue", which calls
- *       `auth.signIn({redirectUrl})` — recorded by the `__claxedoSignInCalls`
- *       seam (`src/platform/auth/browser-auth-test-bypass.ts`).
- *   26. `/cli-login`: a missing/invalid `callback` or `state`, or a
- *       non-`http://127.0.0.1|localhost` callback origin, is rejected
- *       immediately with "Invalid CLI sign-in callback." AND zero auth calls —
- *       the zero-call half is asserted against `__claxedoSignInCalls`, the
- *       same seam behavior 25 uses positively (that positive use is this
- *       file's proof the seam is live, so these zeroes are not vacuous).
- *   27. `/cli-login` when not signed calls `auth.signIn({redirectUrl: current
- *       URL})` and shows "Opening Claxedo sign-in..." — both the call AND its
- *       `redirectUrl` argument are asserted (`src/app/routes/cli-login.tsx:27`
- *       passes `window.location.href`, so the recorded argument must carry the
- *       `/cli-login` path plus the original `callback`/`state` query, not the
- *       bare origin that `signIn`'s own default would substitute).
- *   28. `/cli-login` when signed with valid params exchanges the browser
- *       token for a CLI token (`POST /api/auth/cli/exchange`) and auto-submits
- *       a hidden form POST to `callback` carrying `state`/`access_token`/
- *       `identity`.
- *   29. `/cli-login` exchange failure surfaces the server's error message and
- *       status flips to "error"; no form is ever submitted.
- *   30. The signed gate never redirects a loopback-transport session to
- *       `/login`, regardless of principal — verified by loading a session
- *       route as an anonymous principal and asserting the workbench paints
- *       with no redirect. The inverse (anonymous + non-loopback ⇒ forced
- *       redirect with a loading placeholder, no protected-content flash) is
- *       environment-fixed to loopback in this harness and cannot be flipped
- *       from a spec (see HARNESS NOTES).
- *   31. The top-level `ErrorPage` renders Restart always and Check-for-updates
- *       only when `platform.checkUpdate` exists (never on web) — not
- *       independently e2e-reachable here (no crash-injection harness route
- *       exists, unlike `/__e2e/dialog-matrix`; see HARNESS NOTES).
- *   32. Browser Notification permission is requested from the "Agent"/"Errors"
- *       notification toggles' own `onChange` — a real user gesture — and
- *       nowhere else: turning a toggle ON calls
- *       `requestNotificationPermission()` (`src/utils/notification-permission.ts`)
- *       at most once (a no-op once permission is no longer "default"); turn
- *       completion (`platform.notify`, `src/app/entry/main.tsx`) NEVER calls
- *       `Notification.requestPermission()` itself — it only reads the current
- *       `Notification.permission` and silently no-ops unless it is already
- *       "granted". With the Agent toggle off, a completed turn issues zero
- *       permission requests; with it on, exactly one request total survives
- *       any number of completed turns (regression pin for the "notification
- *       prompt reappears every turn" bug).
- *       FALSE-POSITIVE GUARD — `platform.notify` has a SECOND early return
- *       (`src/app/entry/main.tsx:69`: `document.visibilityState === "visible"
- *       && document.hasFocus()`) that is unconditionally true for a lone
- *       Playwright page, so by default its body never executes and
- *       "requested zero permissions" would be indistinguishable from "the code
- *       never ran". The spec therefore forces `document.hasFocus()` false
- *       before the app boots and asserts a POSITIVE control — the count of
- *       constructed `Notification` instances — so the zero/one request
- *       assertions are made against a notify path that demonstrably executed.
- *   33. The runner's declared auth mode is honest at the real account trigger:
- *       `test-user` renders "Test User" with Log out, while the mocked
- *       local-only `local-unsigned` composition renders "Local workspace"
- *       with no signed-user action and never exposes the synthetic test email.
- *
- * INVARIANTS — completed-turn oracle invariants (INVARIANTS.md #1-#4) apply
- *   only to the one scenario in this spec that drives a turn (behavior 32);
- *   every other scenario here neither sends a prompt nor renders an assistant
- *   turn, and that scenario itself asserts on the submit control's busy/ready
- *   `data-icon` state (INVARIANTS.md cross-cutting invariant #4) rather than
- *   the reply-content oracle, since it pins notification-permission plumbing,
- *   not reply rendering. The invariant this spec DOES pin beyond that:
- *   a settings mutation's optimistic UI state (Save-button visibility,
- *   expanded-row state, confirm-step) never survives a failed request as if
- *   it had succeeded — every save/connect/disconnect path is proven via both
- *   the resulting network request AND the resulting DOM state, never one
- *   alone.
- *
- * HARNESS NOTES — several gates in this feature are controlled by
- *   `import.meta.env.VITE_*` flags baked into the bundle when the shared dev
- *   server started, not flippable at runtime by an individual spec:
- *     - `VITE_AUTH_ENABLED=true` is set in `.env.local`, so `authEnabled=false`
- *       (⇒ `principal.kind==="local"`) is permanently untestable here.
- *       (`VITE_SANDBOX_ENABLED=true` is also set, but it is DEAD config — no
- *       source file reads it any more and the Sandbox tab is ungated, so there
- *       is nothing untestable about it. See STATE MODEL.)
- *     - `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001` makes
- *       `getClaxedoServerUrl()` (used by `ServerProvider`'s default server,
- *       hence `CloudAuthGate`'s `server.url`) always resolve to a loopback
- *       host, so the anonymous-forced-`/login` half of the signed gate is
- *       permanently untestable here — the pre-existing
- *       `e2e-legacy/login-roundtrip.spec.ts` hit the same wall for a
- *       different reason (authEnabled baked false at the time). The signed
- *       authentication lane owns that negative contract.
- *     - `platform.checkUpdate` is only implemented by the desktop platform
- *       object; the web platform built in `src/app/entry/main.tsx` never defines it, so
- *       every update-check affordance is permanently disabled here (behavior
- *       8) and the error page's update button never renders (behavior 31).
- *     - `getDefaultBaseUrl()` (unlike `getClaxedoServerUrl()`) DOES read
- *       `window.__CLAXEDO__.serverUrl` when present, so the Sandbox tab's
- *       loopback/non-loopback mutation gate (behavior 23) CAN be flipped at
- *       runtime by overriding that property before the app boots, without
- *       touching `CloudAuthGate`'s unrelated resolution path.
- *     - There is no `/__e2e/error-page` (or similar) crash-injection harness
- *       route analogous to `/__e2e/dialog-matrix`
- *       (`src/e2e/dialog-matrix-harness.tsx`), so the top-level
- *       `ErrorBoundary` fallback cannot be reached deterministically from a
- *       spec; see the finding filed alongside this spec recommending one.
- *     - The Playwright config owns the process-wide auth composition. Tests
- *       whose subject is explicitly signed call `stampTestAuth()` before the
- *       app boots; all other tests inherit `test-user` or `local-unsigned`
- *       from the matrix. The e2e-only signed-out seam lets the sign-out test
- *       prove the `/login` landing and persisted-state purge without silently
- *       re-enabling the webdriver bypass after navigation.
- *
- * OUT OF SCOPE — Models tab content and the model-visibility toggle
- *   (`core-model-effort-agent-controls`); Terminals tab (not in this spec's
- *   assignment); harness/model/agent selection anywhere in the composer
- *   (`core-harness-ownership-local`, `core-model-effort-agent-controls`);
- *   Agent Plugins activation surfaces; live hosted auth end-to-end
- *   (`live-user-hosted-*`); appearance
- *   font-field persistence and sound-effect playback wiring (owned by
- *   `src/context/settings.tsx`'s own tests, not a DOM contract this spec
- *   pins).
+ * Harness constraints — several gates in this feature are decided by
+ * `import.meta.env.VITE_*` flags baked into the bundle when the shared dev
+ * server started, so a spec cannot flip them at runtime:
+ *   - `VITE_AUTH_ENABLED=true`, so `authEnabled === false` — and with it
+ *     `principal.kind === "local"` — is unreachable from a spec here.
+ *   - `VITE_SANDBOX_ENABLED` in `.env.local` is dead config: no source file
+ *     reads it and the Sandbox ("compute") tab is ungated, so there is no
+ *     flag-off branch to cover.
+ *   - `platform.checkUpdate` is implemented only by the desktop platform
+ *     object, so every update-check affordance is permanently disabled on this
+ *     web build and the error page's "Check for updates" button never renders.
+ *   - `getClaxedoServerUrl()` is baked to `VITE_CLAXEDO_SERVER_URL`
+ *     (`http://127.0.0.1:3001`), always a loopback host, so `CloudAuthGate`
+ *     never redirects by default. Two dev/e2e-only runtime overrides move that
+ *     instead: `window.__CLAXEDO_E2E_SERVER_URL__` (read by
+ *     `resolveDefaultUrl()`) moves `ServerProvider`'s resolved default, hence
+ *     `CloudAuthGate`'s `server.url`; `window.__CLAXEDO__.serverUrl` (read by
+ *     `getDefaultBaseUrl()`) moves only the Sandbox tab's mutation gate and
+ *     leaves `CloudAuthGate`'s resolution path alone.
+ *   - `/__e2e/error-page?variant=` (`src/app/routes/error-page-harness.tsx`,
+ *     dev/e2e-only) mounts the real `ErrorPage` for a chosen `InitError`, so
+ *     the top-level `ErrorBoundary` fallback is reachable without a real
+ *     render-time crash.
+ *   - The Playwright config owns the process-wide auth composition
+ *     (`test-user` or `local-unsigned`). Tests whose subject is a signed
+ *     principal call `stampTestAuth()` before the app boots; every other test
+ *     inherits the matrix mode.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
@@ -454,7 +84,6 @@ function withCors(handler: (route: import("@playwright/test").Route) => Promise<
   }
 }
 
-/** Seeds one registered local project, optionally forcing a specific `__CLAXEDO__.serverUrl`. */
 async function seedProject(page: Page, dir: string, opts?: { serverUrl?: string }) {
   await page.addInitScript(
     ({ d, serverUrl }: { d: string; serverUrl?: string }) => {
@@ -478,7 +107,7 @@ async function seedProject(page: Page, dir: string, opts?: { serverUrl?: string 
   )
 }
 
-/** Opts the page out of the Playwright webdriver auto sign-in bypass (see SPEC STATE MODEL). */
+/** The app auto-signs-in whenever `navigator.webdriver` is true; this turns that bypass off. */
 async function disableTestAuthBypass(page: Page) {
   await page.addInitScript(() => {
     ;(window as typeof window & { __CLAXEDO_DISABLE_TEST_AUTH_BYPASS__?: boolean }).__CLAXEDO_DISABLE_TEST_AUTH_BYPASS__ = true
@@ -489,7 +118,7 @@ async function disableTestAuthBypass(page: Page) {
  * Latches (before the app's first script runs) whether a "Continue" button is
  * EVER attached to the document. `/login`'s redirect-if-already-signed guard is
  * a synchronous early `return null` in the component body
- * (`src/app/routes/login.tsx:37-40`), so for a signed visitor the button should
+ * (`src/app/routes/login.tsx`), so for a signed visitor the button should
  * never be created at all — a claim that an after-the-fact `toHaveCount(0)`
  * cannot make (any post-redirect page satisfies that trivially, flash or no
  * flash). A MutationObserver started at document-creation time can.
@@ -546,23 +175,17 @@ async function openSettings(page: Page) {
   return dialog
 }
 
-/** Escape is the Settings dialog's own close affordance at desktop viewport
- * (the `aria-label="Close settings"` button only renders under the
- * `max-sm:flex` mobile breakpoint) — see this file's own commentary on
- * "the Settings dialog's own escape-to-close handling" in the shortcuts
- * conflict test below for the same fact established elsewhere in this spec. */
+/** Escape is the Settings dialog's own close affordance at desktop viewport:
+ * the `aria-label="Close settings"` button only renders under the
+ * `max-sm:flex` mobile breakpoint. */
 async function closeSettings(page: Page) {
   await page.keyboard.press("Escape")
   await expect(page.locator('[data-slot="dialog-container"]').last()).toBeHidden({ timeout: 5_000 })
 }
 
-// ---------------------------------------------------------------------------
-// Notification-permission mock (behavior 32 — BUG A regression)
-// ---------------------------------------------------------------------------
-
 /**
  * Installs a scriptable `window.Notification` stub before the app's first
- * script runs, so BUG A's contract — permission requested at most once, only
+ * script runs, so the contract — permission requested at most once, only
  * from the Settings toggle, never from turn completion — can be asserted
  * without ever triggering a REAL OS/browser permission prompt.
  */
@@ -574,7 +197,7 @@ async function installMockNotificationApi(page: Page) {
     }
     w.__notificationRequestCount__ = 0
     w.__notificationInstanceCount__ = 0
-    // Force `platform.notify`'s in-view early-return (src/app/entry/main.tsx:69,
+    // Force `platform.notify`'s in-view early-return (src/app/entry/main.tsx,
     // `document.visibilityState === "visible" && document.hasFocus()`) to be
     // FALSE. Without this the notify body never executes at all for a single
     // Playwright page (always visible, always focused), and "turn completion
@@ -626,8 +249,7 @@ function notificationInstanceCount(page: Page) {
  * leaving "stop" (INVARIANTS.md cross-cutting invariant #4), not a sleep.
  * This spec pins notification-permission plumbing on session.idle here, not
  * reply rendering, so the shared turn-oracle (reply-content assertions) is
- * intentionally not used for this one scenario (see this file's own
- * INVARIANTS section). */
+ * intentionally not used for this one scenario. */
 async function driveOneTurn(page: Page, promptText: string) {
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 10_000 })
@@ -678,7 +300,6 @@ async function selectTab(page: Page, value: string) {
   await expect(tabTrigger(page, value)).toHaveAttribute("aria-selected", "true")
 }
 
-/** Opens the Select at `dataAction`, hovers/clicks the option whose text matches `label`. */
 async function openSelect(page: Page, dataAction: string) {
   await page.locator(`[data-action="${dataAction}"] [data-slot="select-select-trigger"]`).click()
 }
@@ -686,10 +307,6 @@ async function openSelect(page: Page, dataAction: string) {
 function selectOption(page: Page, label: string) {
   return page.locator('[data-slot="select-select-item"]').filter({ hasText: label })
 }
-
-// ---------------------------------------------------------------------------
-// Providers-tab route mocks (not covered by the shared mock-runtime helper)
-// ---------------------------------------------------------------------------
 
 type ProviderFixture = {
   id: string
@@ -724,7 +341,7 @@ async function mockProviderCatalog(page: Page, input: {
   }
   // Index-shaped list (one default model per connected provider) so Models can
   // still exercise detail hydration. Keep `source` so Providers disconnect tags
-  // work without a hydrate race against mock-runtime's `/provider` stub.
+  // work without a hydrate race against mock-runtime's provider stub.
   const indexCatalog = providerCatalogIndex(fullCatalog)
   const listBody = {
     all: indexCatalog.all.map((provider) => {
@@ -734,10 +351,8 @@ async function mockProviderCatalog(page: Page, input: {
     connected: indexCatalog.connected,
     default: indexCatalog.default,
   }
-  // `GET /provider?harness=<harness>&directory=<scope>` is the ONLY route the
-  // catalog comes from: `providerListQuery` reads that scoped route, and
-  // `?provider=<id>` is its detail form. The index shape below is what the real
-  // route answers.
+  // `?provider=<id>` is the catalog route's detail form; without it the same
+  // handler answers the index shape built above.
   const connectedNow = () => fullCatalog.connected
   const fulfillProvider = (route: Parameters<Parameters<Page["route"]>[1]>[0]) => {
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
@@ -753,8 +368,8 @@ async function mockProviderCatalog(page: Page, input: {
     }
     return json(route, { ...listBody, connected: connectedNow() })
   }
-  // Register both shapes last so they beat mock-runtime's `/provider` stubs
-  // (Playwright tries the most recently registered matching route first).
+  // Registered after mock-runtime's own provider stub: Playwright tries the
+  // most recently registered matching route first.
   await page.route("**/api/claxedo/agent-config/providers?**", fulfillProvider)
 }
 
@@ -795,10 +410,6 @@ async function mockCredentialRoutes(page: Page, hits: { put: unknown[]; delete: 
     }),
   )
 }
-
-// ---------------------------------------------------------------------------
-// Connections-tab route mock (not covered by the shared mock-runtime helper)
-// ---------------------------------------------------------------------------
 
 type IntegrationFixture = { id: string; name: string; methods: ("key" | "oauth")[]; capabilities: string[]; prompts?: { id: string; label: string; secret?: boolean }[] }
 type ConnectionFixture = { id: string; integrationId: string; scope: "team" | "personal"; status: "connected" | "degraded" | "broken"; accountLabel?: string }
@@ -874,10 +485,6 @@ function mockIntegrations(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Sandbox-tab route mock (not covered by the shared mock-runtime helper)
-// ---------------------------------------------------------------------------
-
 function mockSandboxDrivers(page: Page, initial: { default_driver: string; drivers: { id: string; label: string; fields: { key: string; label: string; secret?: boolean }[]; configured: boolean; source: string; default: boolean }[] }) {
   let state = initial
   const putAuthCalls: { driverId: string; body: unknown }[] = []
@@ -923,7 +530,7 @@ function mockSandboxDrivers(page: Page, initial: { default_driver: string; drive
       // `**/api/workspace/drivers**` route. Left unmocked, those hit the real
       // (unreachable in this harness) backend, reject with "Failed to fetch", and
       // — reproduced live — crash the top-level `ErrorBoundary` (src/app/entry/
-      // app.tsx:169 wraps `DialogProvider`, so the Settings dialog's own subtree
+      // app.tsx wraps `DialogProvider`, so the Settings dialog's own subtree
       // is inside it) partway through an otherwise-passing scenario, which is
       // exactly the class of failure this default exists to prevent for every
       // caller of `.install()`. A test that needs specific policy rows/groups can
@@ -968,8 +575,6 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
     })
 
-    // The core browser command explicitly enables the preview entry point; the
-    // underlying sandbox authorization and mutation contracts remain separate.
     test("the Sandbox preview flag exposes its settings tab — behavior 2", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
@@ -988,7 +593,7 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
       // Open at the default (desktop) viewport — the rail sidebar's gear
       // button reachability under <640px is the outer shell's responsive
-      // layout, not this spec's territory (OUT OF SCOPE). Resize AFTER the
+      // layout, not this spec's territory. Resize AFTER the
       // dialog is open so only the dialog's own `.settings-mobile-*` media
       // query (`src/claxedo-ui/claxedo-layout.css`, max-width:639px) is
       // under test.
@@ -1065,19 +670,12 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("test@claxedo.test")).toHaveCount(0)
     })
 
-    // Entry #17 (decision A). Previously fixme for two reasons, both fixed at
-    // the app layer (src/platform/auth/better-auth-browser-auth.ts, using the
-    // e2e seam in src/platform/auth/browser-auth-test-bypass.ts):
-    //   (1) `isSignedIn()` was unconditionally true under Playwright
-    //       (navigator.webdriver), so `/login`'s redirect-if-signed guard
-    //       bounced back to the workbench. Fixed by an EXPLICIT signed-state
-    //       override: `signOut()` sets `__CLAXEDO_TEST_SIGNED_OUT__`, which
-    //       `testAuth()` honours to report an anonymous principal — an e2e-only
-    //       seam (dev/e2e builds only), NOT a production behavior change.
-    //   (2) `signOut()` no-op'd under the bypass because the bypass branch of
-    //       the auth client never assigns its load promise, so the old
-    //       `if (!loadPromise) return` short-circuited before the purge.
-    //       Fixed: the bypass path now clears state and purges persisted keys.
+    // `isSignedIn()` is unconditionally true under Playwright
+    // (`navigator.webdriver`), which would bounce `/login` straight back to the
+    // workbench. `signOut()` therefore sets `__CLAXEDO_TEST_SIGNED_OUT__`,
+    // which `testAuth()` honours to report an anonymous principal — a
+    // dev/e2e-only seam in `src/platform/auth/browser-auth-test-bypass.ts`, not
+    // a production behavior change.
     test("Log out signs out, purges persisted auth state, and stays on /login — behavior 5", async ({ page }) => {
       await stampTestAuth(page.context())
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -1106,7 +704,6 @@ test.describe("core settings + auth @core", () => {
       // so the accessibility-tree query can't see the (rendered) button.
       await expect(page.locator("button").filter({ hasText: "Continue" })).toBeVisible({ timeout: 20_000 })
 
-      // Persisted auth state was purged by the (previously no-op) sign-out.
       const marker = await page.evaluate(() => localStorage.getItem("claxedo.marker.should-be-purged"))
       expect(marker).toBeNull()
     })
@@ -1133,15 +730,11 @@ test.describe("core settings + auth @core", () => {
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe("dark")
 
       // Move off without selecting — closing the popover cancels the preview.
-      // NOT Escape: the Settings dialog's own escape-to-close handling wins
-      // the race against the popover's escape-to-dismiss (same class of
-      // issue as the shortcuts-conflict test above — verified live with a
-      // throwaway reproduction: pressing Escape here makes the select
-      // TRIGGER itself disappear, i.e. it closes the whole dialog, not just
-      // the popover). Clicking elsewhere in the dialog is a true outside
-      // click, dismisses only the popover, and is a more literal match for
-      // the spec wording ("moving off without selecting") than a specific
-      // key anyway.
+      // NOT Escape: the Settings dialog's own escape-to-close handling wins the
+      // race against the popover's escape-to-dismiss, so Escape here makes the
+      // select TRIGGER disappear too, i.e. it closes the whole dialog and not
+      // just the popover. Clicking elsewhere in the dialog is a true outside
+      // click and dismisses only the popover.
       await page.getByRole("heading", { name: "General", exact: true }).click()
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe(committedBefore)
       // Wait for the popover to be FULLY gone (not just the preview reverted)
@@ -1157,7 +750,7 @@ test.describe("core settings + auth @core", () => {
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe("dark")
       // The EXACT committed value, not merely "something was written":
       // `@opencode-ai/ui`'s theme context writes the raw scheme string to the
-      // `opencode-color-scheme` key (packages/ui/src/theme/context.tsx:16 +
+      // `opencode-color-scheme` key (packages/ui/src/theme/context.tsx +
       // :312, via a plain `localStorage.setItem(key, value)` — no JSON
       // wrapper), so a commit that persisted the WRONG scheme (or the
       // pre-existing one) would satisfy a bare `toBeTruthy()` and must not.
@@ -1184,9 +777,9 @@ test.describe("core settings + auth @core", () => {
         // behavior 7 actually claims: a plain uncontrolled checkbox flips its
         // own `checked` with `useSettings().notifications.set*` entirely
         // broken. `useSettings()`'s store is `persisted("settings.v3", ...)`
-        // (src/platform/settings/provider.tsx:163) with no storage prefix
+        // (src/platform/settings/provider.tsx) with no storage prefix
         // (=> the bare `settings.v3` localStorage key,
-        // src/platform/persistence/persist.ts:355-362), so the store write is
+        // src/platform/persistence/persist.ts), so the store write is
         // observable end-to-end here.
         await expect
           .poll(async () =>
@@ -1220,7 +813,7 @@ test.describe("core settings + auth @core", () => {
       await driveOneTurn(page, "notification setting off turn")
       expect(await notificationRequestCount(page)).toBe(0)
       // With the setting OFF the notification provider never even calls
-      // `platform.notify` (src/app/providers/notification.tsx:270 gates on
+      // `platform.notify` (src/app/providers/notification.tsx gates on
       // `settings.notifications.agent()`), so nothing should have been
       // constructed either.
       expect(await notificationInstanceCount(page)).toBe(0)
@@ -1233,12 +826,11 @@ test.describe("core settings + auth @core", () => {
       await expect.poll(() => notificationRequestCount(page)).toBe(1)
       await closeSettings(page)
 
-      // A second, fully-completed turn with notifications now enabled must
-      // NOT request permission again — this is the actual BUG A regression:
-      // the browser's permission prompt used to reappear on every single
-      // turn completion because `platform.notify` (src/app/entry/main.tsx) called
-      // `Notification.requestPermission()` itself whenever permission was
-      // still "default".
+      // A second, fully-completed turn with notifications now enabled must NOT
+      // request permission again: the browser's permission prompt reappears on
+      // every turn completion whenever `platform.notify`
+      // (src/app/entry/main.tsx) calls `Notification.requestPermission()`
+      // itself while permission is still "default".
       await driveOneTurn(page, "notification setting on turn")
       // POSITIVE CONTROL FIRST: prove `platform.notify`'s body actually RAN
       // this time (it constructed a Notification) — otherwise the zero-new-
@@ -1299,9 +891,9 @@ test.describe("core settings + auth @core", () => {
       // satisfied by an app that silently RESTORED the original binding, which
       // is precisely the regression behavior 10 is meant to catch. The row
       // renders `formatKeybind(...)` (src/features/settings/ui/keybinds.tsx →
-      // src/app/providers/command-palette.tsx:239-243), which on a non-mac
+      // src/app/providers/command-palette.tsx), which on a non-mac
       // `navigator.platform` joins the translated modifier labels with "+"
-      // ("Alt"/"Shift", src/platform/i18n/en.ts:676-677) and upper-cases a
+      // ("Alt"/"Shift", src/platform/i18n/en.ts) and upper-cases a
       // single-character key; on mac it concatenates the glyphs with no
       // separator. Playwright's bundled Chromium reports "Win32" here
       // regardless of host OS (see the conflict test below for the same fact),
@@ -1336,7 +928,7 @@ test.describe("core settings + auth @core", () => {
       // 10) — pressing a second combo as a cross-platform hedge does nothing
       // once the first has already been consumed, so the modifier for this
       // single press must actually match `mod` (src/context/command-
-      // upstream.tsx:11, `IS_MAC = /(Mac|iPod|iPhone|iPad)/.test(navigator.
+      // upstream.tsx, `IS_MAC = /(Mac|iPod|iPhone|iPad)/.test(navigator.
       // platform)`). Playwright's bundled Chromium reports
       // `navigator.platform === "Win32"` in this harness regardless of the
       // host OS, so `mod` is always Ctrl here, never Meta/Cmd — resolve it at
@@ -1346,7 +938,7 @@ test.describe("core settings + auth @core", () => {
 
       await expect(page.getByText("Shortcut already in use")).toBeVisible({ timeout: 5_000 })
       // On conflict the capture handler toasts and `return`s WITHOUT calling
-      // `stop()` (src/components/settings-keybinds.tsx:241-250) — capture
+      // `stop()` (src/components/settings-keybinds.tsx) — capture
       // mode deliberately stays active (row still reads "Press keys") so the
       // user can immediately try a different combo. NOT Escape to exit: the
       // Settings dialog has its own escape-to-close handling that wins the
@@ -1358,11 +950,9 @@ test.describe("core settings + auth @core", () => {
       await anotherRow.click()
       await expect(anotherRow).toHaveText(beforeText ?? "")
 
-      // BOTH bindings, which is what behavior 11 claims: the row that already
-      // OWNED the combination must still own it. `paletteBinding` was read at
-      // the top of this test and then never compared — without this the
-      // "leaves both bindings unchanged" half was pure prose. Re-filter to
-      // bring the palette row back into the (currently unfiltered) list.
+      // The row that already OWNED the combination must still own it — the
+      // other half of "leaves both bindings unchanged". Re-filter to bring the
+      // palette row back into the (currently unfiltered) list.
       await page.getByPlaceholder("Search shortcuts").fill("Command Palette")
       await expect(page.locator('[data-keybind-id="command.palette"]')).toHaveText(paletteBinding ?? "")
     })
@@ -1604,10 +1194,10 @@ test.describe("core settings + auth @core", () => {
         },
       })
       await mock.install()
-      // RECORDS its argument. The old stub was `() => null`, which recorded
-      // nothing — so the "opens the URL" half of behavior 18 had no assertion
-      // behind it at all and would have passed with `options.openUrl?.(url)`
-      // (src/features/settings/ui/connections-logic.ts:389) deleted outright.
+      // The stub RECORDS its argument so the URL handed to `window.open` can be
+      // asserted; a bare `() => null` leaves the "opens the URL" half with no
+      // assertion behind it and passes with `options.openUrl?.(url)`
+      // (`src/features/settings/ui/connections-logic.ts`) deleted outright.
       await page.addInitScript(() => {
         const w = window as typeof window & { __openedUrls__?: string[]; open: typeof window.open }
         w.__openedUrls__ = []
@@ -1639,19 +1229,14 @@ test.describe("core settings + auth @core", () => {
       expect(mock.attemptCalls.length).toBeGreaterThanOrEqual(2)
     })
 
-    // TITLE IS DELIBERATELY NARROWER than the old one ("closing the connect
-    // dialog clears the pasted secret from the in-memory flow"), which this
-    // test could never have falsified: `createConnectFlow` runs INSIDE the
-    // component body (src/app/dialogs/connect-integration.tsx:28), so its
-    // store is per-instance and dies with the component. A reopened dialog is
-    // a brand-new instance with a brand-new empty store — the old assertion
-    // passed identically with the `onCleanup(() => flow.reset())` at :46
-    // deleted, and the backup `getByText("leaked-if-not-cleared")` probe
-    // matched rendered TEXT NODES, which structurally cannot observe a value
-    // sitting in an `<input>`. See behavior 19 in this file's header for the
-    // full accounting of what is and is not provable. What IS provable is
-    // asserted here (no secret in any input's value, nothing sent) and, for
-    // the one externally-visible half of `reset()`, in the next test.
+    // This cannot prove "the pasted secret is cleared from the in-memory flow":
+    // `createConnectFlow` runs INSIDE the component body
+    // (`src/app/dialogs/connect-integration.tsx`), so its store is per-instance
+    // and dies with the component. A reopened dialog is a brand-new instance
+    // with a brand-new empty store, so everything below holds identically with
+    // `onCleanup(() => flow.reset())` deleted. What it does prove is that no
+    // secret survives in any input's value and that nothing was sent; the
+    // externally-visible half of `reset()` is pinned by the next test.
     test("closing the connect dialog leaves no secret in any input and sends nothing — behavior 19 (partial: see header)", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
@@ -1672,7 +1257,7 @@ test.describe("core settings + auth @core", () => {
       // NOT "the Settings dialog underneath" — verified live (a throwaway
       // reproduction polling dialog count every 100ms showed it hit 0
       // immediately and stayed there): `useDialog().show()`
-      // (packages/ui/src/context/dialog.tsx:139-148) DISPOSES the entire
+      // (packages/ui/src/context/dialog.tsx) DISPOSES the entire
       // existing dialog stack before mounting the new one — it is a
       // stack-REPLACE, not a stack-PUSH (that's the separate `push()`
       // method, unused by `DialogConnectIntegration`'s call site). Opening
@@ -1688,18 +1273,13 @@ test.describe("core settings + auth @core", () => {
       await page.getByRole("button", { name: "Connect", exact: true }).click()
       const reopenedDialog = page.locator('[data-slot="dialog-container"]').last()
       const reopenedSecret = reopenedDialog.getByLabel("API secret")
-      // Positive precondition: the field actually re-rendered. Without this,
-      // an empty-value assertion on a locator that matched nothing would be
-      // vacuous in exactly the same way the old text-node probe was.
+      // Positive precondition: the field actually re-rendered. Without it, an
+      // empty-value assertion on a locator that matched nothing is vacuous.
       await expect(reopenedSecret).toHaveCount(1)
       // `toHaveValue` reads the input's `value` PROPERTY (the only place a
       // password input's contents ever live) — a rendered-text query cannot.
       await expect(reopenedSecret).toHaveValue("")
 
-      // Document-wide value probe, dialog-reference-independent: no input,
-      // textarea, or contenteditable anywhere holds the pasted secret. This
-      // replaces the old `getByText(...)` backup, which matched text nodes and
-      // therefore could never have observed a secret left in a form field.
       const secretLeakedIntoAField = await page.evaluate((needle: string) => {
         const fields = [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
         if (fields.some((field) => field.value.includes(needle))) return true
@@ -1709,22 +1289,19 @@ test.describe("core settings + auth @core", () => {
       }, "leaked-if-not-cleared")
       expect(secretLeakedIntoAField).toBe(false)
 
-      // Never sent: closing without submitting issued zero /connect requests,
-      // so the secret never left the browser at all.
       expect(mock.connectCalls.length).toBe(0)
       expect(JSON.stringify(mock.connectCalls)).not.toContain("leaked-if-not-cleared")
     })
 
     // The DISCRIMINATING half of behavior 19. `onCleanup(() => flow.reset())`
-    // (src/app/dialogs/connect-integration.tsx:46) does two things: it clears
+    // (`src/app/dialogs/connect-integration.tsx`) does two things: it clears
     // the store (unobservable — the store dies with the component either way,
     // see the test above) and it bumps `generation`, which is the ONLY thing
     // that stops `pollAttempt`'s loop
-    // (src/features/settings/ui/connections-logic.ts:305-336). That loop is a
-    // plain async function, not owned by Solid and not tied to the component's
-    // lifetime, so with line 46 deleted it would keep issuing
-    // `GET /attempts/:id` forever after the dialog is gone. This test fails if
-    // that cleanup is removed.
+    // (`src/features/settings/ui/connections-logic.ts`). That loop is a plain
+    // async function, not owned by Solid and not tied to the component's
+    // lifetime, so without that cleanup it would keep issuing
+    // `GET /attempts/:id` forever after the dialog is gone.
     test("closing the connect dialog mid-OAuth cancels the attempt poll loop — behavior 19", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
@@ -1887,11 +1464,9 @@ test.describe("core settings + auth @core", () => {
       await expect(
         page.getByText("Signed hosted sessions can view local sandbox providers but cannot change local credentials."),
       ).toBeVisible()
-      // Scoped to the active panel — see behavior 21's fix above for why a
-      // bare `.first()` is unstable here.
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden]) [data-slot="select-select-trigger"]').first()).toBeDisabled()
-      // The always-open form replaced the Update toggle, so the lock has to
-      // reach the credential input itself, not just the buttons around it.
+      // The credential form is always open, so the read-only lock has to reach
+      // the input itself, not just the buttons around it.
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden]) input[type="password"]').first()).toBeDisabled()
       await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled()
     })
@@ -1947,7 +1522,7 @@ test.describe("core settings + auth @core", () => {
       await page.waitForLoadState("domcontentloaded")
       // Signed (default test-bypass) visitor: the component body's synchronous
       // `if (auth.status() === "signed") { navigate(...); return null }`
-      // (src/app/routes/login.tsx:37-40) redirects and returns before the JSX
+      // (`src/app/routes/login.tsx`) redirects and returns before the JSX
       // is ever created — the URL moves off /login.
       await expect(page).not.toHaveURL(/\/login$/, { timeout: 15_000 })
       // ...and the "BEFORE Continue ever renders" half, which the URL check
@@ -1980,9 +1555,8 @@ test.describe("core settings + auth @core", () => {
       // that the click INVOKED sign-in, recorded by the e2e seam in
       // browser-auth-test-bypass.ts (__claxedoSignInCalls, DEV || VITE_CLAXEDO_E2E gated).
       await expect.poll(async () => (await signInCalls(page)).length).toBe(1)
-      // `/login` passes its own `redirectUrl()` (default "/",
-      // src/app/routes/login.tsx:29 + :44) — assert the ARGUMENT too, not just
-      // that something was called.
+      // `/login` passes its own `redirectUrl()`, which defaults to "/" — assert
+      // the ARGUMENT too, not just that something was called.
       expect((await signInCalls(page))[0]?.redirectUrl).toBe("/")
     })
   })
@@ -1993,13 +1567,12 @@ test.describe("core settings + auth @core", () => {
       await page.waitForLoadState("domcontentloaded")
       await expect(page.getByText("Claxedo CLI")).toBeVisible()
       await expect(page.getByText("Invalid CLI sign-in callback.")).toBeVisible()
-      // "zero auth calls" is half of this behavior's own title and was
-      // previously not asserted at all. The `__claxedoSignInCalls` seam is the
-      // same one the `/login` test above uses POSITIVELY (it asserts exactly
-      // one recorded call), so a zero here is a real zero, not a
-      // never-instrumented one. Settle first — the rejection is synchronous in
-      // the page's createEffect but a regression that called signIn would do so
-      // asynchronously, and an instant read could miss it.
+      // The `__claxedoSignInCalls` seam is the same one the `/login` test above
+      // uses POSITIVELY (it asserts exactly one recorded call), so a zero here
+      // is a real zero and not a never-instrumented one. Poll rather than read
+      // once: the rejection is synchronous in the page's createEffect, but a
+      // regression that called signIn would do so asynchronously and an instant
+      // read could miss it.
       await expect.poll(async () => (await signInCalls(page)).length, { timeout: 3_000 }).toBe(0)
     })
 
@@ -2022,7 +1595,7 @@ test.describe("core settings + auth @core", () => {
       // The status string alone proves only that the page took the
       // not-signed branch. Behavior 27 claims the CALL and its ARGUMENT:
       // `void auth.signIn({ redirectUrl: window.location.href })`
-      // (src/app/routes/cli-login.tsx:27). A regression that dropped the
+      // (src/app/routes/cli-login.tsx). A regression that dropped the
       // argument would fall back to `signIn`'s own default
       // (`window.location.origin`, src/platform/auth/better-auth-browser-auth.ts) and
       // silently strand the CLI handshake — the callback/state query would be
@@ -2112,11 +1685,10 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     })
 
-    // Entry #19 (decision A). Provable now via an e2e-only runtime server-URL
-    // override: `resolveDefaultUrl()` (src/app/entry/app.tsx) reads
-    // `window.__CLAXEDO_E2E_SERVER_URL__` in a dev/e2e build, so a spec can
-    // force ServerProvider's resolved default (hence CloudAuthGate's
-    // `server.url`) to a non-loopback host. Baked out of production.
+    // `resolveDefaultUrl()` (`src/app/entry/app.tsx`) reads
+    // `window.__CLAXEDO_E2E_SERVER_URL__` in a dev/e2e build — baked out of
+    // production — so a spec can force ServerProvider's resolved default (hence
+    // CloudAuthGate's `server.url`) to a non-loopback host.
     test("an anonymous principal on a non-loopback transport is force-redirected to /login — behavior 30b", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
@@ -2139,10 +1711,10 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("error page (top-level ErrorBoundary fallback)", () => {
-    // Entry #20 (decision A). Provable now via the `/__e2e/error-page?variant=`
-    // injection route (src/app/routes/error-page-harness.tsx), which mounts the
-    // real <ErrorPage> for a chosen InitError variant — the ErrorBoundary
-    // fallback content without a real render-time crash. Route is dev/e2e-only.
+    // The `/__e2e/error-page?variant=` injection route
+    // (`src/app/routes/error-page-harness.tsx`, dev/e2e-only) mounts the real
+    // <ErrorPage> for a chosen InitError variant — the ErrorBoundary fallback
+    // content without a real render-time crash.
     test("InitError variants render their formatted chain with Restart (and no Check-for-updates on web) — behavior 31", async ({ page }) => {
       await page.goto("/__e2e/error-page?variant=MCPFailed")
       await page.waitForLoadState("domcontentloaded")
@@ -2150,8 +1722,6 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByTestId("error-page-harness")).toBeVisible({ timeout: 15_000 })
       await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible()
 
-      // The formatted chain for the chosen InitError variant renders in the
-      // read-only Error Details field.
       const details = page.getByRole("textbox", { name: "Error Details" })
       await expect(details).toHaveValue(/MCPFailed[\s\S]*MCP server "github" failed/)
 

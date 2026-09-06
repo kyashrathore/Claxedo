@@ -1,221 +1,29 @@
 /**
- * SPEC: Timeline rendering — tool defaults, context grouping, diff summary, scroll
+ * Timeline rendering — tool defaults, context grouping, diff summary, scroll.
  *
- * PURPOSE — once a turn has content beyond plain text (tool calls, questions, file
- * diffs) and once a session has more than a screenful of history, the timeline module
- * (`src/pages/session/message-timeline.tsx` + `.data.ts`) is what decides what's shown
- * by default, what's grouped together, and how the viewport tracks new content vs. the
- * user's own scrolling. This spec owns that rendering/scroll layer — NOT the send flow
- * (`core-first-prompt-local`, `core-turns-reload-recovery`) and NOT the full
- * per-harness tool-renderer matrix (`core-harness-rendering-matrix`).
+ * Adjacent territory belongs to sibling specs: the send flow and its optimistic
+ * rows (`core-first-prompt-local`), reload/duplicate-row recovery and the
+ * pixel-level scroll-anchor proof for `backfillTurns`
+ * (`core-turns-reload-recovery`), the per-harness tool-renderer matrix
+ * (`core-harness-rendering-matrix`), the question-answering dock (`core-docks`),
+ * and harness selection (`core-harness-ownership-local`).
  *
- * STATE MODEL —
- *   Row derivation is pure and per-user-turn: `Timeline.constructMessageRows` (in
- *   `message-timeline.data.ts`) takes one `UserMessage` + its assistant reply
- *   message(s) and produces an ordered `TimelineRow.TimelineRow[]` (`TurnGap`,
- *   `CommentStrip`, `UserMessage`, `TurnDivider`, `AssistantPart`, `Thinking`, `Retry`,
- *   `DiffSummary`, `Error`). Rows are identity-keyed (`TimelineRow.key`) and reused
- *   across renders (`TimelineRow.reuse`) so a virtualizer (`@tanstack/solid-virtual`)
- *   can keep stable DOM nodes.
- *   Tool-part grouping: consecutive `read`/`glob`/`grep`/`list` tool parts are merged
- *   into one `{type:"context"}` `PartGroup` by `groupParts`; any other part type
- *   "flushes" the run, so two context runs separated by an unrelated tool become two
- *   separate groups. `groupParts` itself just walks whatever order it's given, but its
- *   input (`getMessageParts(messageID)`) always comes from the client's part store,
- *   which sorts every part list by `id` (`sortMessageParts` in
- *   `src/session/store/message-page.ts`) — real part IDs are monotonically increasing
- *   so this is a no-op for genuine traffic, but a fixture using descriptive, non-
- *   sortable IDs (e.g. this spec's own `toolPart` calls) must pick IDs that already sort
- *   in the intended emission order, or "consecutive" silently stops meaning what the
- *   test intends. `todowrite` is filtered out
- *   entirely (dock-only, never a row — see `hiddenTools`); a `question` tool part is
- *   filtered out of the row list ENTIRELY while `state.status` is `"pending"` or
- *   `"running"` (not just visually hidden — see `renderablePart` in
- *   `message-timeline.data.ts`).
- *   Tool-part open/closed default: `partDefaultOpen` (session-ui
- *   `message-part.tsx`) returns `settings.general.shellToolPartsExpanded()` for
- *   `bash`, `settings.general.editToolPartsExpanded()` for `edit`/`write`/`apply_patch`,
- *   and `undefined` (→ collapsed) for every other tool kind — these two booleans live
- *   in the persisted `Settings` store (`src/context/settings.tsx`, localStorage key
- *   `settings.v3`) and are toggled from Settings → General
- *   (`[data-action="settings-feed-shell-tool-parts-expanded"]` /
- *   `-edit-tool-parts-expanded`). This value only seeds a tool part's INITIAL open
- *   state; message-timeline.tsx passes it through a per-part `toolOpen` store
- *   (`toolOpen[part.id] ?? defaultOpen()`) so an untouched part stays reactive to the
- *   setting even after it renders. The `question` tool's own renderer overrides this
- *   with `defaultOpen={completed()}` (answers present ⇒ open), independent of the
- *   shell/edit settings.
- *   Diff summary: `DiffSummary` row's data comes from `UserMessage.summary.diffs`
- *   (per-turn, server-attached — not a stream event), deduped by file with the LAST
- *   occurrence in the array winning (`reduceRight` + skip-if-seen, then `.reverse()`),
- *   and only rendered when `status === "idle" || !isActive` (i.e., hidden for the
- *   turn that is still the live/busy one; visible for every settled or non-active
- *   turn) — this is enforced in `Timeline.constructMessageRows`, not CSS.
- *   Scroll: `createAutoScroll` (`packages/ui/src/hooks/create-auto-scroll.tsx`) owns
- *   "stay pinned to bottom while active, unless the user scrolled" — a `ResizeObserver`
- *   on the content re-triggers `scrollToBottom` on every size change (i.e., on every
- *   streamed delta) as long as `userScrolled()` is false; a real wheel/touch gesture
- *   away from the bottom flips `userScrolled` true and stops the auto-follow.
- *   Independently, `session.tsx` computes `ui.scroll.{overflow,bottom,jump}` from raw
- *   `scrollTop`/`scrollHeight` on every scroll frame; `jump` (the jump-to-bottom
- *   affordance) is true only once the viewport is more than
- *   `max(400, clientHeight)` px from the bottom of overflowing content. A bounded
- *   "history window" (`src/pages/session/history-window.ts`, `turnInit=4`,
- *   `turnBatch=8`, `turnScrollThreshold=200px`) renders only the most recent N
- *   already-fetched turns; scrolling within `turnScrollThreshold` of the top reveals
- *   more of the already-fetched (not re-fetched) turns via `backfillTurns`, adjusting
- *   `scrollTop` by the exact height delta added above (`preserveScroll`) so the
- *   viewport doesn't visibly jump — the deep pixel-preservation proof for THIS specific
- *   mechanism is `core-turns-reload-recovery`'s behavior 9; this spec's own "prepend"
- *   scenario instead pins the composition contract (no duplicate/orphaned rows, and
- *   jump-to-bottom still works correctly once older history has been revealed).
- *   Hash deep-link: `#message-<userMessageID>` is written/read by
- *   `useSessionHashScroll` (`src/pages/session/use-session-hash-scroll.ts`); the
- *   scrollable target's DOM id (`props.anchor(id)` = `message-<id>`, set in
- *   `session.tsx`) is placed on the `CommentStrip` row when the turn has inline review
- *   comments, and on the `UserMessage` row otherwise (`TimelineRowFrame`'s `anchor()`
- *   check in `message-timeline.tsx`) — so a commented turn's hash target scrolls to the
- *   comment strip, not the bubble underneath it.
+ * Payloads here are constructed directly in the already-normalized OpenCode v2
+ * `Part`/`Message` shape the client stores internally, so grouping and scroll
+ * behavior is isolated from harness translation.
  *
- * ANATOMY —
- *   `[data-message-id="<userMessageID>"]` — wraps EVERY row belonging to one turn
- *     (`TimelineRowFrame`); also carries `data-timeline-row="<TurnGap|CommentStrip|
- *     UserMessage|TurnDivider|AssistantPart|Thinking|Retry|DiffSummary|Error>"`.
- *   `[data-timeline-part-id="<partID>"]` — one tool/text part's wrapper
- *     (`data-component="tool-part-wrapper"` for tools); `[data-timeline-part-ids="id1,
- *     id2,..."]` — a `ContextToolGroup`'s wrapper (comma-joined member part ids).
- *   `[data-component="collapsible"]` / `[data-slot="collapsible-content"]` — every
- *     tool/context-group collapsible; the content element is only PRESENT in the DOM
- *     while open (Kobalte presence-unmounts it on close — `packages/ui/src/components/
- *     collapsible.tsx`), so its mere existence is a reliable open/closed signal.
- *   `[data-slot="context-tool-group-label"]` (shows "Exploring…"/"Explored") and
- *     `[data-slot="context-tool-group-summary"]` (e.g. "1 read · 2 searches · 1 list")
- *     inside a context group's trigger; `[data-slot="context-tool-group-item"]` per
- *     member once expanded.
- *   `[data-component="question-answers"]` / `[data-slot="question-answer-item"]` —
- *     rendered inside an answered `question` tool part.
- *   `[data-slot="session-turn-diffs"]` — the per-turn diff-summary row;
- *     `[data-slot="session-turn-diff-trigger"]` per file, `-diff-filename` for its
- *     basename text; `[data-slot="session-turn-diffs-more"]` ("+N more files", shown
- *     only when overflowing the 10-file preview) and `[data-slot="session-turn-diffs-
- *     toggle"]` (header "Show all"/"Show less") both flip the same `showAll` flag;
- *     `[data-slot="session-turn-diff-view"]` only mounts once its accordion item is
- *     expanded (lazy).
- *   The jump-to-bottom button has no stable data-attribute of its own; it is located
- *     via its icon (`[data-icon="scroll-to-latest"]`, the theme-independent semantic id)
- *     is controlled by the CSS `opacity`/`pointer-events` of its ancestor wrapper (see
- *     HARNESS/finding notes below for why a testid would help here).
- *   `[data-scrollable]:has([data-slot="session-turn-message-content"])` — the
- *     timeline's own scroll viewport (there can be other nested `[data-scrollable]`
- *     regions, e.g. a bash tool's output pane or a diff view).
- *   `[data-testid="session-page-root"]` carries `data-session-visible-user-count`
- *     (all fetched turns) and `data-session-rendered-user-count` (currently windowed
- *     subset) as plain string integers (`src/pages/session.tsx`).
- *   `#message-<userMessageID>` — the DOM id a hash deep-link targets (see STATE MODEL).
+ * Server-cursor pagination (`x-next-cursor` on `/session/:id/message`) is
+ * unreachable here: the shared mock never sets that header.
  *
- * BEHAVIORS —
- *   1. A `bash` tool part's default open/closed state follows
- *      `settings.general.shellToolPartsExpanded`, an `edit` tool part follows
- *      `settings.general.editToolPartsExpanded`, and an unrelated tool kind (e.g.
- *      `webfetch`) stays collapsed regardless of either setting.
- *   2. A `question` tool part renders no row at all while pending/running; once
- *      answered it renders already open, showing each question/answer pair.
- *   3. Consecutive `read`/`glob`/`grep`/`list` tool parts collapse into one expandable
- *      "Gathered context" group showing an aggregate read/search/list count; expanding
- *      it reveals one row per underlying call.
- *   4. A context-eligible run interrupted by an unrelated tool call (e.g.
- *      `read, read, bash, read`) renders as two independent groups, not one merged run.
- *   5. The diff-summary accordion is absent while its turn is the live/busy one and
- *      appears once the turn settles; multiple diff entries for the same file are
- *      deduped to one (the last-occurring entry wins); each file's diff view only
- *      mounts once its accordion item is expanded (lazy).
- *   6. When a turn's diff summary has more than 10 files, only the first 10 render
- *      initially with a "+N more files" affordance; expanding it reveals the rest and
- *      offers a "Show less" affordance that collapses back to the 10-file preview.
- *   7. The jump-to-bottom control is hidden while the viewport is at (or the content
- *      doesn't overflow) the bottom, appears once a real scroll gesture moves the
- *      viewport far enough from the bottom of overflowing content, and clicking it
- *      returns to the bottom.
- *   8. While a reply is actively streaming in, the timeline keeps itself pinned to the
- *      bottom as new content arrives, with no manual scrolling required.
- *   9. Scrolling to the top of a session with more already-fetched history than is
- *      initially rendered reveals the older turns in place without duplicating any row,
- *      and the jump-to-bottom control still correctly returns to (and stays at) the
- *      latest turn afterward.
- *   10. Navigating to a URL with a `#message-<id>` hash scrolls the timeline to that
- *       message on load; when the target turn carries an inline review-comment strip,
- *       the scroll lands on the comment strip (not the user bubble underneath it).
- *
- * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
- *   e2e/INVARIANTS.md) — every turn proven here that carries a final text part goes
- *   through the shared oracle; the diff-summary busy/settle gate (behavior 5) is a
- *   second, row-specific instance of the same "never hide settled content, never show
- *   settle-only content early" discipline. Harness is fixed to `opencode` throughout
- *   (harness selection is `core-harness-ownership-local`'s territory).
- *
- * HARNESS NOTES — none directly; tool-part rendering IS harness-shape-sensitive in
- *   general (raw event traces differ per harness), but that full matrix is
- *   `core-harness-rendering-matrix`'s territory. This spec constructs `Part`/`Message`
- *   payloads directly in the already-normalized OpenCode v2 shape the client stores
- *   internally, to isolate rendering/grouping/scroll behavior from harness-translation
- *   concerns.
- *
- * OUT OF SCOPE — the send flow and its optimistic-row mechanics
- *   (`core-first-prompt-local`); reload/duplicate-row recovery, prompt history, and the
- *   deep pixel-level scroll-anchor-preservation proof for `backfillTurns`
- *   (`core-turns-reload-recovery`, its behavior 9); per-harness tool-renderer identity
- *   and event-trace fidelity (`core-harness-rendering-matrix`); permission/question
- *   DOCK mechanics — this spec only touches the `question` TOOL PART rendering, not the
- *   question-answering dock UI (`core-docks`); session rename/fork/revert/archive
- *   (`core-session-actions`); server-cursor-based `historyMore`/`loadMore` pagination
- *   (`x-next-cursor`) — the shared mock's `/session/:id/message` route never sets that
- *   header, so that path is unreachable here (same limitation `core-turns-reload-
- *   recovery` documents) and is left as a finding.
- *
- * FINDINGS (reported, not fixed here — see task output) — the jump-to-bottom control
- *   has no `data-testid`/`data-slot`/`aria-label` of its own; it can only be located via
- *   its icon's sprite href, which is more brittle than the rest of this module's very
- *   consistent `data-slot` contract. Separately: `installMockRuntime`'s `/api/workspace/
- *   resolve` mock always reports a `workspaceId` (even for `kind:"local"`), which makes
- *   `workspaceRuntimeOwnsLiveEvents()` (`src/context/global-sdk.tsx`) true for every
- *   mocked session and routes live event consumption through `/api/wr/runtime-events`
- *   instead of `/global/event` — unmocked outside `installMockRuntime`'s `cloud` option,
- *   so `bus.emit()`-pushed SSE events for a turn never reach the browser here. A real
- *   send still renders because `session-controller.ts`'s `activeTurnTransition` forces a
- *   `GET .../message` refetch once the LOCAL, submit-set `activeTurn()` flag settles —
- *   a path only a real composer submit enters. Behaviors 1–6 below therefore build their
- *   tool/diff/question content through mutable overrides of the `/session/:id/message`
- *   and `/session/status` GET routes (see `installMutableSession`'s doc comment) instead
- *   of the SSE bus; only behavior 8 (which needs a genuine multi-turn stream) drives a
- *   real send. A related Playwright gotcha found while wiring those overrides: a bare
- *   `page.route()` glob pattern with no trailing wildcard suffix (e.g. a pattern ending
- *   literally in `.../session/status`, no `**` after it) requires an EXACT end-of-URL
- *   match and silently fails to match once the app appends `?directory=...` (which it
- *   does on nearly every request) — the request then falls through to the shared mock's
- *   own generic single-segment `.../session/*` catch-all (which, being a wildcard, DOES
- *   swallow query-string characters) and gets served the
- *   wrong shape with no error of any kind. Confirmed via an isolated repro outside this
- *   suite. Every override pattern in `installSeededSession`/`installMutableSession` below
- *   carries a trailing `**` for exactly this reason — a future edit that drops one will
- *   silently start being served by the wrong handler. A third, app-level finding (this
- *   spec's own investigation, reproduced deterministically, not fixed here):
- *   `useSessionHashScroll`'s `seek()` (`src/pages/session/use-session-hash-scroll.ts`)
- *   corrects the scroll offset for a `#message-<id>` deep-link exactly ONCE, from
- *   `getBoundingClientRect()` at the first moment the target element exists in the DOM.
- *   For a session tall enough that rows above the target haven't been measured yet, the
- *   virtualizer (`message-timeline.tsx`) positions those rows using its fallback
- *   `estimateSize()` until each one's real height is reported (asynchronously, per-row);
- *   once real (larger) heights land, `virtualizer.shouldAdjustScrollPositionOnItemSizeChange`
- *   (message-timeline.tsx, right after the virtualizer's construction) only auto-corrects
- *   scroll for rows whose measured end is already `<= scrollOffset` (content already fully
- *   scrolled past) — it does not cover a target further down whose preceding rows just
- *   grew past the current scroll offset. Net effect: deep-linking to a message that isn't
- *   near the top of a long/virtualized session's initially-rendered window can leave the
- *   viewport permanently short of the true target position (by however much the
- *   preceding rows' real heights exceeded the estimate), with the jump-to-bottom control
- *   visibly stuck showing even though the user just navigated to the latest message —
- *   observed directly via this spec's own attempted "jump-to-bottom" scenario before it
- *   was reworked to establish its rest position without a hash (see that test's comments).
+ * Known app gap, reproduced deterministically but not fixed: `seek()` in
+ * `use-session-hash-scroll.ts` corrects a `#message-<id>` deep-link's scroll
+ * offset exactly once, from `getBoundingClientRect()` at the first moment the
+ * target exists in the DOM. Rows above the target that are still sized by the
+ * virtualizer's `estimateSize()` grow once their real heights are reported, and
+ * `shouldAdjustScrollPositionOnItemSizeChange` (`message-timeline.tsx`) only
+ * re-corrects rows whose measured end is already `<= scrollOffset`. So a deep
+ * link into a tall session can settle permanently short of the target, leaving
+ * the jump-to-bottom control visibly stuck showing.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeOptions } from "../helpers/mock-runtime"
@@ -303,14 +111,6 @@ async function openSessionWithFirstSend(page: Page, options?: Partial<MockRuntim
   await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID), { timeout: 20_000 })
   return { mock }
 }
-
-// --- Part/message builders -------------------------------------------------
-// These construct raw SDK v2 `Part`/`Message` shapes. Every scenario below that
-// needs tool/diff/question content it can't get from the shared mock's
-// text-only `driveTurn` serves these shapes through a MUTABLE override of the
-// `/session/:id/message` (+ `/session/status`) routes rather than pushing them
-// onto the SSE bus directly — see `installMutableSession`'s doc comment for why
-// (this spec's own finding, not a documented app contract).
 
 function userInfo(id: string, text: string, extra?: Record<string, unknown>): AnyInfo {
   return {
@@ -436,15 +236,13 @@ function collapsibleContent(page: Page, partId: string) {
   return page.locator(`[data-timeline-part-id="${partId}"] [data-slot="collapsible-content"]`)
 }
 
-// Session timeline redesign (docs/plans/2026-07-16-003-...-session-timeline-redesign*,
-// ~complete as of 2026-07-18): a settled turn whose tool activity produces >=2
-// "foldable" rows (work groups, context groups, or standalone tool parts) now folds
-// behind one "Worked for Xs" `TurnFold` divider by default (`message-timeline.data.ts`
-// `canFoldSettled`/`shouldFold`) — its `Collapsible.Content` (and therefore every row
-// underneath, including nested group/tool wrappers that otherwise stay mounted
-// regardless of THEIR OWN open state) is presence-unmounted until unfolded. Every
-// scenario below that seeds >=2 foldable rows for one turn must unfold it before
-// asserting on anything nested inside.
+// A settled turn whose tool activity produces >=2 "foldable" rows (work groups, context
+// groups, or standalone tool parts) folds behind one "Worked for Xs" `TurnFold` divider
+// by default (`canFoldSettled`/`shouldFold` in `message-timeline.data.ts`) — its
+// `Collapsible.Content`, and therefore every row underneath including nested group/tool
+// wrappers that otherwise stay mounted regardless of THEIR OWN open state, is
+// presence-unmounted until unfolded. Any scenario seeding >=2 foldable rows for one turn
+// must unfold it before asserting on anything nested inside.
 async function unfoldTurnIfNeeded(page: Page, userMessageID: string) {
   const trigger = page.locator(`[data-message-id="${userMessageID}"][data-timeline-row="TurnFold"] button`)
   if ((await trigger.count()) === 0) return
@@ -462,8 +260,7 @@ async function expandWorkGroupIfPresent(page: Page, partIds: string) {
   const trigger = page.locator(`[data-timeline-part-ids="${partIds}"] [data-component="work-group-trigger"]`)
   if ((await trigger.count()) === 0) return
   // Kobalte presence-unmounts `Collapsible.Content` (here `[data-component="work-group-
-  // list"]`) while closed — the same reliable open/closed signal `collapsibleContent`'s
-  // own doc comment relies on — so its mere presence means the group is already open.
+  // list"]`) while closed, so its mere presence means the group is already open.
   const content = page.locator(`[data-timeline-part-ids="${partIds}"] [data-component="work-group-list"]`)
   if ((await content.count()) > 0) return
   await trigger.click()
@@ -484,13 +281,6 @@ async function setSwitch(page: Page, dataAction: string, checked: boolean) {
   if (isChecked !== checked) await wrapper.locator('[data-slot="switch-control"]').click()
   await expect(input).toBeChecked({ checked, timeout: 5_000 })
 }
-
-// --- Seeded (already-settled) history, for the scroll-only scenarios -------
-// These scenarios test rendering/scroll of ALREADY-RESOLVED history, not a live
-// send, so they skip the composer/oracle entirely and seed `/session/:id/message`
-// (and the session GET/list routes) directly — the same "override a route the
-// shared mock already registers" pattern the pilot spec uses for its zero-
-// workspace scenario, scoped to these tests only.
 
 function seededSessionRow() {
   return {
@@ -543,8 +333,7 @@ function seededTurnRows(count: number) {
           sessionID: SESSION_ID,
           messageID: aid,
           type: "text",
-          // Deliberately short (not the long repeated-paragraph text this
-          // fixture used earlier): the "jump-to-bottom appears once scrolled
+          // Kept short: the "jump-to-bottom appears once scrolled
           // away" scenario navigates straight to `#message-<lastUserID>`,
           // and per `session.tsx`'s `shouldAnchorBottom`
           // (`!location.hash && ...`) a hash on load disables bottom-
@@ -553,9 +342,8 @@ function seededTurnRows(count: number) {
           // virtualizer's estimated (not-yet-measured) row heights for
           // whatever precedes the target — tall, not-yet-measured rows
           // there make the one-shot correction undershoot the real
-          // position by however much those estimates were off (a real
-          // gap in `use-session-hash-scroll.ts`'s `seek()`, which never
-          // re-corrects once it succeeds once; see this spec's FINDINGS).
+          // position by however much those estimates were off, and
+          // `seek()` never re-corrects once it has succeeded once.
           // Eight short turns still comfortably overflow a 342px-tall
           // scroller (enough to exercise the scroll-up/jump-to-bottom
           // reveal below) without tripping that estimate-vs-real gap.
@@ -574,26 +362,26 @@ async function installSeededSession(page: Page, rows: Array<{ info: AnyInfo; par
   const listBody = JSON.stringify([sessionRow])
   const sessionBody = JSON.stringify(sessionRow)
   const messageBody = JSON.stringify({ messages: rows, maxEventOrdinal: 0 })
-  // Every pattern below needs a trailing `**` (even the ones with no query
-  // params of their own) — Playwright's glob matching requires an exact
-  // end-of-URL match unless the pattern ends in a wildcard, and the real app
-  // appends `?directory=...` to nearly every request. A bare `**/session/
-  // <id>` pattern silently fails to match `.../session/<id>?directory=...`
-  // and falls through to the shared mock's own generic `**/session/*`
-  // catch-all (a single-segment wildcard, which — unlike a bare literal
-  // pattern — DOES swallow query-string characters) instead of this route.
+  // Each literal route is registered twice, bare and with a `?**` suffix:
+  // Playwright's glob matching requires an exact end-of-URL match unless the
+  // pattern ends in a wildcard, and the real app appends `?directory=...` to
+  // nearly every request. A bare `**/session/<id>` pattern alone silently fails
+  // to match `.../session/<id>?directory=...`, and the request then falls
+  // through to the shared mock's own generic `**/session/*` catch-all (a
+  // single-segment wildcard, which — unlike a bare literal pattern — DOES
+  // swallow query-string characters) instead of this route.
   await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
   await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
   // Bound to the session ROW only — deliberately NOT `**/session/${SESSION_ID}**`.
   // A trailing `**` compiles to `(.*)`, so that pattern also swallows every
   // SUB-resource of the session, including `GET /session/:id/permission-mode`,
-  // which the composer fetches on every mount since the per-harness mode picker
-  // landed. Answered with the session row instead of a mode report, the picker
-  // read `modes` off a body that has none — which used to throw during render and
-  // take the whole shell into the ErrorBoundary, so `[data-claxedo]` never
-  // appeared and all nine tests here died in `gotoSession`. Two patterns for the
-  // same reason the `**/session` pair above needs two: a bare literal pattern
-  // requires an exact end-of-URL match, and the app appends `?directory=...`.
+  // which the composer fetches on every mount. Answered with the session row
+  // instead of a mode report, the mode picker reads `modes` off a body that has
+  // none and throws during render, taking the whole shell into the ErrorBoundary
+  // so `[data-claxedo]` never appears and every test here fails in `gotoSession`.
+  // Two patterns for the same reason the `**/session` pair above needs two: a
+  // bare literal pattern requires an exact end-of-URL match, and the app appends
+  // `?directory=...`.
   await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: messageBody }))
@@ -611,11 +399,7 @@ async function gotoSession(page: Page, hash?: string) {
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 }
 
-// --- Mutable seeded session, for the busy→settle / pending→answered
-// transitions (behaviors 1, 2, 5) -------------------------------------------
-//
-// FINDING (this spec's own investigation, not a documented app contract): in
-// this mock topology `/api/workspace/resolve` always reports a `workspaceId`
+// In this mock topology `/api/workspace/resolve` always reports a `workspaceId`
 // (even for a `kind:"local"` directory), which makes `workspaceRuntimeOwnsLive
 // Events()` (`src/context/global-sdk.tsx`) true and routes the client's live
 // event consumption exclusively through `/api/wr/runtime-events` — never
@@ -657,29 +441,27 @@ async function installMutableSession(
   const sessionRow = seededSessionRow()
   const listBody = JSON.stringify([sessionRow])
   const sessionBody = JSON.stringify(sessionRow)
-  // Every pattern below needs a trailing `**` — Playwright's glob matching
-  // requires an exact end-of-URL match unless the pattern ends in a
+  // Each literal route is registered twice, bare and with a `?**` suffix, and
+  // `**/session/status**` carries a trailing wildcard: Playwright's glob
+  // matching requires an exact end-of-URL match unless the pattern ends in a
   // wildcard, and the real app appends `?directory=...` to nearly every
   // request. A bare `**/session/status` pattern silently fails to match
-  // `.../session/status?directory=...` and falls through to the shared
-  // mock's own generic `**/session/*` catch-all (a single-segment wildcard,
-  // which — unlike a bare literal pattern — DOES swallow query-string
-  // characters) instead of this route, serving the wrong shape (a generic
-  // session row) with no visible error. Confirmed via an isolated Playwright
-  // repro during this spec's authoring; see the FINDINGS note in the SPEC
-  // block above.
+  // `.../session/status?directory=...` and falls through to the shared mock's
+  // own generic `**/session/*` catch-all (a single-segment wildcard, which —
+  // unlike a bare literal pattern — DOES swallow query-string characters),
+  // serving a generic session row with no visible error.
   await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
   await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
   // Bound to the session ROW only — deliberately NOT `**/session/${SESSION_ID}**`.
   // A trailing `**` compiles to `(.*)`, so that pattern also swallows every
   // SUB-resource of the session, including `GET /session/:id/permission-mode`,
-  // which the composer fetches on every mount since the per-harness mode picker
-  // landed. Answered with the session row instead of a mode report, the picker
-  // read `modes` off a body that has none — which used to throw during render and
-  // take the whole shell into the ErrorBoundary, so `[data-claxedo]` never
-  // appeared and all nine tests here died in `gotoSession`. Two patterns for the
-  // same reason the `**/session` pair above needs two: a bare literal pattern
-  // requires an exact end-of-URL match, and the app appends `?directory=...`.
+  // which the composer fetches on every mount. Answered with the session row
+  // instead of a mode report, the mode picker reads `modes` off a body that has
+  // none and throws during render, taking the whole shell into the ErrorBoundary
+  // so `[data-claxedo]` never appears and every test here fails in `gotoSession`.
+  // Two patterns for the same reason the `**/session` pair above needs two: a
+  // bare literal pattern requires an exact end-of-URL match, and the app appends
+  // `?directory=...`.
   await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({
@@ -715,9 +497,7 @@ async function scrollTimelineToTop(page: Page) {
     // Let each wheel fully apply (two rAFs) before deciding whether to wheel
     // again: an unsettled burst can land scrollTop at the top before the
     // app's gesture tracking has processed a single user scroll-up, leaving
-    // the reveal logic with nothing left to trigger it (run 374: rendered
-    // window stuck at rest for the full 30s wait). Same hardening as the
-    // reveal loop in core-turns-reload-recovery.
+    // the reveal logic with nothing left to trigger it.
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const scrollTop = await scroller.evaluate((el) => el.scrollTop)
     if (scrollTop < 100) break
@@ -777,7 +557,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "turn done")
 
-    // Session timeline redesign: 3 consecutive work-type tool parts (bash, edit,
+    // The 3 consecutive work-type tool parts (bash, edit,
     // webfetch) fold into ONE `WorkGroup` (`groupParts` in message-timeline.data.ts —
     // a work run merges once it has >=2 members). The turn itself has only that single
     // foldable row, so it stays un-turn-folded (`canFoldSettled` needs >=2 foldable
@@ -802,7 +582,6 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
 
     await expect(collapsibleContent(page, "tools_bash")).toHaveCount(1)
     await expect(collapsibleContent(page, "tools_edit")).toHaveCount(1)
-    // An unrelated tool kind stays collapsed regardless of either setting.
     await expect(collapsibleContent(page, "tools_web")).toHaveCount(0)
   })
 
@@ -839,7 +618,6 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     // Pending question renders no timeline row at all — not merely collapsed.
     await expect(page.locator('[data-timeline-part-id="q_pending"]')).toHaveCount(0)
 
-    // Answered question renders already open, showing its question/answer pair.
     const answeredContent = collapsibleContent(page, "q_answered")
     await expect(answeredContent).toHaveCount(1)
     await expect(answeredContent.locator('[data-slot="question-answer-item"]')).toHaveCount(1)
@@ -895,7 +673,6 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(listItem.locator('[data-component="animated-number"]')).toHaveAttribute("aria-label", "1")
     await expect(listItem.locator('[data-slot="tool-count-label-stem"]')).toContainText("list")
 
-    // Collapsed by default.
     await expect(group.locator('[data-slot="context-tool-group-item"]')).toHaveCount(0)
     await group.locator('[data-component="context-tool-group-trigger"]').click()
     await expect(group.locator('[data-slot="context-tool-group-item"]')).toHaveCount(4)
@@ -925,7 +702,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "split done")
 
-    // Session timeline redesign: this turn has 3 foldable rows (the 2-read context
+    // This turn has 3 foldable rows (the 2-read context
     // group, the standalone bash part, the standalone trailing read) — >=2, so it
     // auto-folds behind a "Worked for Xs" `TurnFold` divider that presence-unmounts
     // everything below it until unfolded (unlike behavior 3's single-group turn, which
@@ -977,7 +754,6 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     const filenames = diffRow.locator('[data-slot="session-turn-diff-filename"]')
     await expect(filenames).toHaveText(["b.ts", "a.ts"])
 
-    // Lazy diff view: absent until its accordion item is expanded.
     await expect(diffRow.locator('[data-slot="session-turn-diff-view"]')).toHaveCount(0)
     await triggers.first().click()
     await expect(diffRow.locator('[data-slot="session-turn-diff-view"]')).toHaveCount(1)
@@ -1000,12 +776,12 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "many files changed")
 
-    // Session timeline redesign: the diff-summary preview cap dropped from 10 to 3
-    // (`maxFiles` in `TimelineDiffSummaryRow`, src/features/session/ui/message-
-    // timeline.tsx) and the separate "+N more files" affordance was removed —
-    // overflow is surfaced only via the single `session-turn-diffs-toggle`
-    // ("Show all"/"Show less", no count), which now does double duty as both the
-    // expand and collapse control.
+    // The diff-summary preview caps at 3 files (`maxFiles` in
+    // `TimelineDiffSummaryRow`, src/features/session/ui/message-timeline.tsx).
+    // Overflow is surfaced only by the single `session-turn-diffs-toggle`
+    // ("Show all"/"Show less", no count), which does double duty as both the
+    // expand and the collapse control — there is no separate "+N more files"
+    // affordance.
     const diffRow = page.locator(`[data-message-id="${userID}"][data-timeline-row="DiffSummary"]`)
     const triggers = diffRow.locator('[data-slot="session-turn-diff-trigger"]')
     await expect(triggers).toHaveCount(3, { timeout: 30_000 })
@@ -1067,11 +843,11 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     // non-user by the app's gesture tracking and get snapped back).
     await scrollTimelineToTop(page)
 
-    // Behavior 9: older, previously-windowed-out turns get revealed with no
-    // dups. Nudge-until-revealed: the reveal is gesture-driven, so if the
-    // scroller is already at the top with the window still collapsed, only
-    // another wheel can trigger it — and an already-expanded window
-    // short-circuits before wheeling again, so the reveal is never overshot.
+    // Nudge-until-revealed: the reveal of older, previously-windowed-out turns
+    // is gesture-driven, so if the scroller is already at the top with the
+    // window still collapsed, only another wheel can trigger it — and an
+    // already-expanded window short-circuits before wheeling again, so the
+    // reveal is never overshot.
     await expect(async () => {
       const rendered = await root.getAttribute("data-session-rendered-user-count")
       if (rendered !== "8") {
@@ -1082,7 +858,6 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     }).toPass({ timeout: 30_000 })
     await expectNoDuplicateRows(page)
 
-    // Behavior 7: jump-to-bottom now visible.
     await expect.poll(() => jumpToBottomOpacity(page), { timeout: 30_000 }).toBe("1")
 
     await jumpToBottomButton(page).click()
@@ -1114,9 +889,8 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     const scroller = timelineScroller(page)
     await expect(root).toHaveAttribute("data-session-visible-user-count", "8", { timeout: 20_000 })
 
-    // Reveal the complete seeded history, then move down from the top with a
-    // real wheel gesture. This reproduces the manual failure where the first
-    // interactive range expansion remeasured rows and rewrote the offset to 0.
+    // Reproduces the failure where the first interactive range expansion
+    // remeasured rows and rewrote the scroll offset to 0.
     await scrollTimelineToTop(page)
     await scroller.hover()
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -1366,7 +1140,6 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     ]
     await installSeededSession(page, rows)
 
-    // Plain case: the anchor lands directly on the UserMessage row.
     await gotoSession(page, `#message-${plainUserID}`)
     const plainAnchor = page.locator(`#message-${plainUserID}`)
     await expect(plainAnchor).toHaveAttribute("data-timeline-row", "UserMessage", { timeout: 15_000 })

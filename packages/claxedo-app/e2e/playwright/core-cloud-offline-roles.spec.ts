@@ -1,175 +1,20 @@
 /**
- * SPEC: Workspace connection authority — offline surfaces, role gating, and the
- * panel-local readiness overlay
+ * Workspace connection authority off the happy path: the offline and access-denied
+ * surfaces, silent reconnect, the panel-local readiness overlay, and viewer-role
+ * composer gating.
  *
- * PURPOSE — a relay-backed workspace (cloud VM or user-hosted machine) is not always
- * reachable, and not every principal who can open a relay-backed workspace may mutate
- * it. This spec owns the single connection authority's non-happy-path surface: what a
- * user sees when the relay/runtime is unreachable or forbidden, how the app recovers
- * silently from a transient drop, how a panel that is NOT the main session pane shows
- * its own readiness chrome, and how a "viewer" role locks the composer down (and
- * un-locks live if the role changes) without any of this ever depending on a full page
- * reload.
+ * Two structural facts the assertions below lean on:
+ *   - `WorkspaceGate` renders `CloudStartupView` for BOTH `connecting` and
+ *     `reconnecting`, so a reconnect swaps the whole main session pane out for the
+ *     startup spinner. "Silent" recovery here means no error toast, not an undisturbed
+ *     main pane.
+ *   - `WorkspacePanelBody` deliberately bypasses that gate (`SessionPaneScope
+ *     suppressConnectionGate`) and renders its own `workspace-review-pending` overlay
+ *     off the same connection store, so the panel and the main pane can show different
+ *     chrome for one workspace at one instant.
  *
- * STATE MODEL — `src/shell/workspace/workspace-connection.ts` is the SINGLE writer for
- * every workspace's connection state, keyed by `workspaceId` in a Solid store
- * (`connections`, module-scope, ref-counted by mounted consumers via
- * `acquireWorkspaceConnection`/`releaseWorkspaceConnection`). Each entry's `status` is
- * one of: `"connecting"` (first mint/health in flight) → `"ready"` (runtime reachable)
- * → `"reconnecting"` (was ready, sustained event-stream drop, queries paused, NO
- * teardown) → `{ offline: reason }` where `reason` is `"forbidden"` (mint 401/403 — not
- * your workspace, TERMINAL, never auto-retried), `"no-host"` (user-hosted machine is
- * offline), `"unreachable"` (502/503/509/timeout/network), or `"failed"` (any other
- * mint/provision error). `local` workspaces (no relay backing) are synthesized `ready`
- * immediately (`driveConnection`'s `kind === "local"` branch) — this spec's every
- * scenario uses a `cloud` or `user-hosted` workspace.
- *   Each entry also carries `rolePlacement` (`src/shell/state/connection-placement.ts`):
- *   `role-pending` → `role-known { role }` → `reconnecting` → `disconnected`, driven by
- *   `applyWorkspaceConnectionInfo` every time the connection MINT (`GET
- *   /api/workspace/:id/connection`) or REFRESH (`POST
- *   /api/workspace/:id/connection/refresh`, called lazily by
- *   `createWorkspaceRelayConnection`'s `ensureFresh()` before any relay fetch once the
- *   token is inside its refresh window) resolves — so a role that changes on the
- *   server (a later refresh reporting a different `role`) updates this SAME store entry
- *   in place; every reader (`workspacePlacement(workspaceId)`) is reactive, so nothing
- *   downstream needs to remount to pick up the change.
- *   All of this lives in-memory only (a `queryClient`-cached promise for the mint,
- *   `createStore` for `connections`); nothing here is persisted across reload except a
- *   "was recently ready" timestamp (`localStorage['claxedo.workspace-connection.ready.v1']`,
- *   60s TTL, used only to warm-start a user-hosted reconnect — out of scope here).
- *
- * ANATOMY —
- *   `WorkspaceGate` (`src/shell/workspace/workspace-gate.tsx`) is the ONE component at
- *   the workspace-scope boundary, wrapping the whole main session pane (composer,
- *   timeline, model picker — NOT the sidebar list, which is central-DB-driven and stays
- *   live). It acquires (ref-counted) for as long as mounted and switches on
- *   `workspaceConnection(id)`:
- *     - `status === "ready"` → renders `props.children` (the real session UI).
- *     - `offline() === "forbidden"` → `WorkspaceAccessDeniedView`
- *       (`data-testid="workspace-access-denied"`, `data-component="workspace-access-denied"`);
- *       no Retry control exists in this branch at all.
- *     - `offline()` truthy (any other reason) → `WorkspaceOfflineView`
- *       (`data-testid="workspace-offline"`, `data-component="workspace-offline"`) — a
- *       title + detail from a per-reason `OFFLINE_COPY` table, and a Retry button
- *       (`data-testid="workspace-offline-retry"`) shown only when `!terminal`.
- *     - otherwise (`"connecting"` OR `"reconnecting"`) → `CloudStartupView`
- *       (`data-component="cloud-startup-view"`) — the step-pipeline spinner. Note this
- *       means `"reconnecting"` swaps the WHOLE main-pane subtree out for the spinner
- *       (same branch as first connect) — "silent" recovery in this codebase means "no
- *       error toast", not "the main pane never re-renders its chrome".
- *   `WorkspacePanelBody` (`src/claxedo-ui/layouts/workspace-panel-body.tsx`) is a
- *   SEPARATE, panel-scoped surface (the right-rail Files/Changes/Processes navigator +
- *   the embedded Review region) that explicitly does NOT use `WorkspaceGate`
- *   (`SessionPaneScope suppressConnectionGate` — see its inline comment). It reads the
- *   SAME connection store directly (`isWorkspaceReady`, `workspaceOffline`) and renders
- *   its OWN pending overlay: `[data-testid="workspace-review-pending"]`, containing
- *   "Connecting to workspace..." normally or "This workspace isn't available." when
- *   `workspaceOffline(id)` is set. Whether this overlay is shown/the Review content is
- *   mounted is governed by `reviewRegionPolicy` (`src/shell/chrome/review-region-
- *   policy.ts`): `armed = !!key && (ready || (sameKey && prevArmed))` — once a
- *   `workspaceId + "uncommitted"` key reaches `ready`, `armed` never goes false again
- *   for that SAME key, so the mounted `ReviewWorkspace` subtree — its own root is
- *   `[data-testid="review-pane-root"]` (`review-workspace.tsx`), gated by `armed` at
- *   `workspace-panel-body.tsx:246` — is never torn down by a later drop (the panel's
- *   OUTER wrapper, `div[data-review-workspace-id]`, is a weaker signal: it is gated
- *   only on `targetSessionId()`, not on `armed`/readiness, so it was never at risk of
- *   teardown in the first place). `showPending = !!key && !ready` — this is
- *   INDEPENDENT of `armed`, so the pending overlay DOES reappear on top during a
- *   same-key drop (see `review-region-policy.test.ts`'s "does not disarm the same key
- *   during a reconnect" case: `{ armed: true, showPending: true }`). A DIFFERENT key
- *   (workspace/directory switch) always starts `armed: false, showPending: true`.
- *   Composer role gate (`src/session-client/composer/role-gate.ts` +
- *   `src/shell/auth/role.tsx`): `RolePolicy.viewer` lacks `mutate.session` (and
- *   `use.terminal`/`mutate.workspace`); `submitBlockedByWorkspaceRole(workspaceId)` folds
- *   into the composer's `roleSubmitBlocked` memo, which (a) sets the design placeholder
- *   to `"Read-only workspace (viewer)"` (`promptDesignPlaceholder`), (b) is OR'd into
- *   `submitDisabled` so `[data-action="prompt-submit"]` is `disabled` with
- *   `aria-label="Read-only workspace"` (`readOnlyLabel` in `submit-control.tsx`), and (c)
- *   is checked FIRST inside `handleSubmit` (`submit-ui-state.ts`) which
- *   `event.preventDefault()`s before any submission work — the SAME `handleSubmit` is
- *   wired to both the submit button's `type="submit"` and the editor's Enter-key path
- *   (`editor-keymap.ts` line ~180), so both are blocked identically, at the handler, not
- *   just via the `disabled` attribute. Workspace-mutation-only controls (gated on
- *   `mutate.workspace`, a DIFFERENT capability neither `viewer` nor `editor` holds — only
- *   `owner`/`admin`) are hidden independently, e.g. the Processes panel's "Add process"
- *   button (`src/claxedo-ui/context/process-pane.tsx`).
- *   Toasts render as `[data-component="toast"]` (`packages/ui/src/components/toast.tsx`).
- *
- * BEHAVIORS —
- *   1. A relay-backed workspace whose connection MINT is forbidden (401/403) renders
- *      `WorkspaceAccessDeniedView` — never the offline view, never the connecting
- *      pipeline — with no Retry control, and the failure is TERMINAL: the mint fires
- *      exactly once (no auto-retry storm; `isTerminalReason("forbidden") === true`).
- *   2. A relay-backed workspace whose connection MINT fails with a non-forbidden status
- *      (503 → `"unreachable"`, 500 → `"failed"`) renders `WorkspaceOfflineView` with the
- *      reason-specific title/detail copy — a real offline screen, not
- *      `CloudStartupView`'s spinner — and, being non-terminal, exposes a Retry control
- *      that re-drives the connection (a fresh mint attempt).
- *   3. A user-hosted workspace whose runtime health probe reports the host offline
- *      (503 `user_hosted_app_offline`) renders the SAME `WorkspaceOfflineView` component
- *      with the `"no-host"` copy ("Workspace host is offline" / "claxedo up").
- *   4. A workspace connection recovering from a `ready → reconnecting → ready` cycle
- *      (the app's own sustained-event-stream-drop signal, driven here through the
- *      dev-only `window.__claxedoConnections.markReconnecting`/`markReconnected` test
- *      hooks — see `workspace-connection.ts`'s "E2E/debug escape hatch" comment) never
- *      raises an error toast at any point in the cycle, and the workspace resumes
- *      usability (composer visible and unblocked again) once reconnected, with no page
- *      reload.
- *   5. The workspace panel body's Review region shows its OWN panel-local pending
- *      overlay (`workspace-review-pending`) while the SAME workspace's connection is not
- *      yet ready — independent of, and while, the main-pane `WorkspaceGate` may be
- *      rendering something else entirely (they read the same store, but render
- *      different chrome, per ANATOMY).
- *   6. Arm-once: once a workspace/key reaches ready, the mounted `ReviewWorkspace`
- *      subtree (`[data-testid="review-pane-root"]`, gated by `armed`) survives a later
- *      same-key `reconnecting` drop without being torn down/remounted — but the
- *      pending overlay reappears ON TOP of it during that drop (armed persistence is
- *      about content-mount durability, not overlay suppression).
- *   7. Switching the panel to a DIFFERENT workspace key re-gates the policy from
- *      scratch (`armed: false, showPending: true`) regardless of the previous key's
- *      armed state.
- *   8. A `viewer`-role workspace shows the composer's read-only placeholder, disables
- *      the submit control with the read-only `aria-label`, and blocks BOTH click-submit
- *      and Enter-submit at the handler (zero `prompt_async` requests survive either
- *      attempt); a `mutate.workspace`-gated control (Processes panel's "Add process") is
- *      absent.
- *   9. A role that live-flips (viewer → editor, via a connection-refresh response that
- *      reports a different `role` than the initial mint) updates the composer's
- *      block state IN PLACE — placeholder text and submit-disabled state both change —
- *      with no navigation and no remount, because the role is read reactively off the
- *      single connection-store entry every render.
- *
- * INVARIANTS — this spec's workspaces are always `cloud`/`user-hosted` (never `local`,
- *   which is a structural no-op for the whole authority under test). Every assertion of
- *   "no toast" is proven by `page.locator('[data-component="toast"]')` staying at count
- *   0 across the whole window of the transition, not by a single point-in-time check.
- *   No scenario here sends a prompt to completion (submission is either blocked-by-role
- *   or simply never attempted), so the shared turn oracle (`e2e/helpers/turn-oracle.ts`)
- *   is not invoked by this file — the oracle's contract is for a COMPLETED assistant
- *   reply, which is out of scope for every behavior owned here.
- *
- * HARNESS NOTES — none; every workspace here uses the default `opencode` harness. The
- *   relay/mint/health surface this spec drives is IDENTICAL regardless of which harness
- *   a session would eventually use.
- *
- * OUT OF SCOPE — cloud VM provisioning pipeline steps and their own reload-resume
- *   (`core-cloud-provisioning`); harness ownership over the relay
- *   (`core-harness-ownership-cloud`); user-hosted's full 3-step connect pipeline copy
- *   and `claxedo up` share flow (`core-user-hosted-workspace`); terminal/session-relay
- *   routing correctness matrix (legacy `cloud-runtime-relay-routing.spec.ts`, harvested
- *   for route shapes here but not re-asserted route-by-route); the `editor` role's full
- *   capability surface and the `owner`/`admin` roles (only `viewer` is exercised, plus
- *   one `viewer → editor` flip — `role.tsx`'s `RolePolicy` table itself is unit-tested
- *   in `role.test.ts`); a role flipping DOWN (editor → viewer) is the SAME state-machine
- *   transition code (`transitionConnectionPlacement`'s `role` event, unconditional
- *   re-set regardless of direction — unit-pinned in `connection-placement.test.ts`) and
- *   is not separately re-proven at the DOM layer here to keep this spec's mock harness
- *   deterministic (concurrently-issued relay fetches racing a second near-expiry
- *   refresh have no ordering guarantee); Processes/Files/Changes panel CONTENT
- *   correctness (`core-processes`, `core-terminal`); the product-open question of
- *   whether role should be enforced server-side at the relay/runtime transport layer
- *   (flagged in the 25-spec plan under spec 25 — this spec pins the CURRENT UI-only
- *   contract, not a verdict on it).
+ * Every workspace here is `cloud` or `user-hosted`; a `local` workspace is synthesized
+ * ready immediately and exercises none of this.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import {
@@ -195,7 +40,7 @@ const PROJECT_ID = "proj_core13"
 // only absorbs reactive-update lag on a starved runner. Each assertion still
 // awaits the actual state transition, so a genuinely broken transition still
 // fails — the wider ceiling just outlasts the 10s expect default that a loaded
-// box was blowing (doc entry 6: CI-only, "runner-contention timing").
+// box was blowing under runner contention.
 const RECONNECT_STATE_TIMEOUT = 30_000
 
 type RelayRole = "owner" | "admin" | "editor" | "viewer"
@@ -279,17 +124,12 @@ async function seed(page: Page) {
 }
 
 /**
- * The two workspaces above, as the CONTROL PLANE lists them.
- *
- * The boot aggregate stopped carrying the project inventory, so
- * `workspaceCatalogQuery` (src/features/workspaces/data/workspace-catalog.ts)
- * now reads the central's own `/project` AND `/api/workspace?access=cloud` /
- * `?access=user-hosted`, then folds the two. These rows are the same
- * workspaces `bootstrapBody().project` declares, seen from the other side —
- * the shared `workspace_id` is what makes `mergeWorkspaceCatalog` recognise
- * them as one workspace instead of listing each twice; `remote_directory` is
- * the host's own path and addresses nothing. The row type is bound to the
- * authority's own projection (see helpers/contracts/workspace-list.ts).
+ * The two workspaces above, as the CONTROL PLANE lists them — the same workspaces
+ * `bootstrapBody().project` declares, seen from the other side. `workspaceCatalogQuery`
+ * folds the central's `/project` inventory together with `/api/workspace?access=...`,
+ * and the shared `workspace_id` is what makes `mergeWorkspaceCatalog` recognise the two
+ * sources as ONE workspace instead of listing each twice; `remote_directory` is the
+ * host's own path and addresses nothing.
  */
 function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
   return [
@@ -398,11 +238,9 @@ function mintBody(workspaceId: string, kind: "cloud" | "user-hosted", mint: Mint
 }
 
 /**
- * Installs the full workspace-relay harness: same-origin bootstrap/composer-harness
- * routes plus the connection mint/refresh + relay-origin workspace-runtime routes for
- * BOTH the cloud and user-hosted workspaces declared above. Mutating the returned
- * `state` between actions changes what the NEXT mint/refresh/health call answers —
- * every route reads `state` live, it is not snapshotted at install time.
+ * Every route reads the returned `state` live rather than snapshotting it at install
+ * time, so mutating `state` between actions changes what the NEXT mint/refresh/health
+ * call answers.
  */
 async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
   const state = defaultHarnessState()
@@ -446,14 +284,10 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // vite/preview, not an API escape. Let the web server answer it.
     if (/sprite[^/]*\.svg$/.test(url.pathname)) return route.continue()
 
-    // ---- Same-origin: bootstrap + composer-harness (central claxedo-server) ----
     if (url.pathname === "/api/claxedo/bootstrap") return json(route, bootstrapBody())
-    // The project inventory left the boot aggregate (`bootstrapGlobal` reads
-    // only `healthy`/`path`/`services` off it now), so the sidebar catalog asks
-    // the two sources directly. Unanswered, `client.project.list()` threw on
-    // this file's 598 sentinel and the WHOLE catalog query failed, which left
-    // every pane without a resolved workspace — no offline view, no
-    // access-denied view, no composer.
+    // Unanswered, `client.project.list()` throws on this file's 598 sentinel and the
+    // WHOLE sidebar catalog query fails, which leaves every pane without a resolved
+    // workspace — no offline view, no access-denied view, no composer.
     if (url.pathname === "/project" || url.pathname === "/experimental/project") {
       return json(route, bootstrapBody().project)
     }
@@ -478,8 +312,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // `/health` — a bare `/health`/`/global/health` match here left that request
     // unhandled (598), which `checkServerHealth` reads as unhealthy, which flips the
     // whole app into its permanent "Could not reach <server>" `ConnectionError`
-    // screen (`[data-claxedo]` never renders). This was a real bug in this mock, not
-    // app/env flakiness — every scenario in this file failed on it until fixed.
+    // screen (`[data-claxedo]` never renders).
     if (url.pathname === "/health" || url.pathname === "/global/health" || url.pathname === "/api/claxedo/health") {
       return json(route, { healthy: true, ok: true, version: "1.0.0-test" })
     }
@@ -491,10 +324,10 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     if (url.pathname === "/api/claxedo/agent-config/agents")
       return json(route, [{ id: "build", name: "build", mode: "primary" }])
     if (url.pathname === "/api/claxedo/agent-config/commands") return json(route, [])
-    // One stream, three spellings — both real servers mount a single handler on
-    // all of them (claxedo-local-server compat-routes/index.ts:168-177,
-    // claxedo-server routes/hosted/shell.ts:745-747). `/api/claxedo/events` is
-    // `ClaxedoEventsProvider`'s CENTRAL target, opened on every signed page.
+    // One stream, three spellings — both real servers (claxedo-local-server's
+    // compat routes, claxedo-server's hosted shell routes) mount a single handler on
+    // all of them. `/api/claxedo/events` is `ClaxedoEventsProvider`'s CENTRAL target,
+    // opened on every signed page.
     if (
       url.pathname === "/global/event" ||
       url.pathname === "/event" ||
@@ -508,7 +341,6 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       })
     }
 
-    // ---- Same-origin: workspace connection mint/refresh ----
     if (url.pathname === `/api/workspace/${WORKSPACE_ID}/connection`) {
       state.mintHits.push(WORKSPACE_ID)
       if (state.cloudMint.status !== 200) return json(route, { error: "mint failed" }, state.cloudMint.status)
@@ -547,9 +379,8 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     }
 
-    // ---- Same-origin: boot-time control-plane surface ----
-    // With the query persister installed eagerly (no longer deferred to idle),
-    // boot fires the signed workspace inventory sync, the harness-scoped central
+    // With the query persister installed eagerly, boot fires the signed
+    // workspace inventory sync, the harness-scoped central
     // provider catalog, and the loopback-bridged global event stream before the
     // first navigation settles. `/api/workspace` failures are tolerated by the
     // app (`!res.ok -> []`), but the provider catalog and the events stream sit
@@ -578,7 +409,6 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return json(route, { worktrees: [] })
     }
 
-    // ---- Same-origin: loopback-proxied user-hosted health probe ----
     // `workspace-runtime-request.ts`'s `runtimeFetch` (createWorkspaceRuntimeRequest)
     // special-cases `isLoopbackHttpUrl(serverUrl) && !preferRelayOnLoopback` (true
     // in this harness, since `getClaxedoServerUrl()` defaults to loopback
@@ -593,8 +423,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // instead of "no-host". The rest of the loopback-routed runtime surface
     // (agent/vcs/provider/session/...) IS answered by the bucket below — the
     // app's boot and panel-mount suspense queries throw on a 598 body and crash
-    // the route, so narrowing the bucket to the relay hostname is no longer
-    // viable (it was, when this spec was remediated on 2026-07-10).
+    // the route, so the bucket cannot be narrowed to the relay hostname.
     const loopbackHealthMatch = /^\/workspaces\/([^/]+)\/api\/wr\/health$/.exec(url.pathname)
     if (loopbackHealthMatch) {
       const workspaceId = loopbackHealthMatch[1]
@@ -608,7 +437,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return json(route, { healthy: true, version: "1.0.0-test" })
     }
 
-    // ---- Per-workspace runtime surface: relay origin AND loopback-bridged
+    // Per-workspace runtime surface: relay origin AND loopback-bridged
     // central origin. `createWorkspaceRuntimeRequest` routes cloud/UH runtime
     // calls through `${serverUrl}/workspaces/:id/...` whenever the server URL is
     // loopback (always true in this harness), so the same path shape arrives on
@@ -696,7 +525,7 @@ async function gotoDraft(page: Page, directory: string) {
   // other specs in this suite already use for resilience under load — the SPA never
   // needs cross-origin subresources (images/fonts) to finish for `[data-claxedo]` to
   // paint, and waiting for "load" needlessly risks the whole navigation timing out
-  // under host contention (observed directly while authoring this file).
+  // under host contention.
   await page.goto(`/${slug(directory)}/session`, { waitUntil: "domcontentloaded", timeout: 90_000 })
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -784,9 +613,8 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
     await expect(page.getByTestId("workspace-offline-retry")).toHaveCount(0)
 
-    // Terminal: give any debounced/effect-driven re-drive a beat, then assert the
-    // mint fired exactly once (no retry storm) — a real network-count assertion,
-    // not a timeout used as the sole guard.
+    // `forbidden` is terminal: give any debounced/effect-driven re-drive a beat, then
+    // assert the mint fired exactly once rather than opening a retry storm.
     await page.waitForTimeout(1_500)
     expect(state.mintHits.filter((id) => id === WORKSPACE_ID)).toEqual([WORKSPACE_ID])
   })
@@ -809,7 +637,6 @@ test.describe("core cloud offline & roles @core", () => {
     const retry = page.getByTestId("workspace-offline-retry")
     await expect(retry).toBeVisible()
 
-    // Fix the mint before retrying, then prove Retry re-drives to ready.
     state.cloudMint = { status: 200, role: "owner" }
     await retry.click()
     await waitForComposerReady(page, state)
@@ -885,8 +712,8 @@ test.describe("core cloud offline & roles @core", () => {
   }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
-    // Never resolves ready — the mint hangs (never 200s) so the panel stays pending
-    // for the whole test without racing a real connect.
+    // A failing mint never reaches ready, so the panel's own overlay stays up for the
+    // whole test instead of racing a real connect to ready.
     state.cloudMint = { status: 503 }
 
     await gotoDraft(page, DIR)
@@ -913,13 +740,11 @@ test.describe("core cloud offline & roles @core", () => {
     // gated only on `targetSessionId()`, never on connection readiness, so its own
     // presence is not proof of "arm-once". `review-pane-root` is `ReviewWorkspace`'s
     // OWN root element (review-workspace.tsx) — it only exists while that component
-    // is actually mounted, which IS gated on `reviewArmed().armed`
-    // (workspace-panel-body.tsx:246). This is the selector that actually proves the
-    // armed subtree survives a reconnect instead of being torn down/remounted.
+    // is actually mounted, which IS gated on `reviewArmed().armed`. This is the
+    // selector that actually proves the armed subtree survives a reconnect instead of
+    // being torn down and remounted.
     const reviewPaneRoot = page.locator('[data-testid="review-pane-root"]')
     await expect(reviewRegion, debugSuffix(state)).toHaveCount(1)
-    // Reactive: readiness flips true only once the mocked connect resolves. Give it
-    // the contention ceiling — it still awaits the actual attribute transition.
     await expect(reviewRegion).toHaveAttribute("data-review-workspace-ready", "true", {
       timeout: RECONNECT_STATE_TIMEOUT,
     })
@@ -949,13 +774,11 @@ test.describe("core cloud offline & roles @core", () => {
       )
       .toBe("reconnecting")
 
-    // Behavior 6: armed content is never torn down for the same key — both the outer
-    // wrapper AND the actual `ReviewWorkspace` mount it wraps are still present...
     await expect(reviewRegion, debugSuffix(state)).toHaveCount(1)
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
-    // ...even though the pending overlay legitimately reappears on top of it during
-    // the drop (reviewRegionPolicy's showPending tracks readiness independently of
-    // armed — see SPEC ANATOMY / review-region-policy.test.ts).
+    // The pending overlay legitimately reappears on top of the still-armed content
+    // during the drop: `reviewRegionPolicy`'s `showPending` tracks readiness
+    // independently of `armed`.
     await expect(page.locator('[data-testid="workspace-review-pending"]')).toBeVisible({
       timeout: RECONNECT_STATE_TIMEOUT,
     })
@@ -999,77 +822,32 @@ test.describe("core cloud offline & roles @core", () => {
     await submit.click({ force: true }).catch(() => {})
     expect(state.promptAsyncHits, debugSuffix(state)).toEqual([])
 
-    // Enter-submit is blocked at the SAME `handleSubmit` handler, independent of
-    // the button's `disabled` attribute (submit-ui-state.ts checks
-    // `roleSubmitBlocked()` first and preventDefaults) — fill text, press Enter,
-    // and prove no prompt request fires via a deterministic network assertion
-    // (never waitForTimeout alone).
+    // Enter-submit is blocked at the SAME `handleSubmit` handler, independent of the
+    // button's `disabled` attribute: `submit-ui-state.ts` checks `roleSubmitBlocked()`
+    // first and preventDefaults before any submission work.
     await editor.click()
     await editor.fill("this should never send")
     await page.keyboard.press("Enter")
     await page.waitForTimeout(800)
     expect(state.promptAsyncHits, debugSuffix(state)).toEqual([])
 
+    // "Add process" is gated on `mutate.workspace` (process-pane.tsx), which only
+    // `owner`/`admin` hold — `editor` lacks it too. Its absence therefore pins the
+    // workspace-mutation gate, not the viewer-vs-editor line the rest of this test does.
     await openWorkspaceNavigator(page, "Processes")
     await expect(page.getByRole("button", { name: "Add process" }), debugSuffix(state)).toHaveCount(0)
   })
 
-  // FINDING (2026-07-10, remediation of behaviors 4/6/7/8/9): behavior 9's premise —
-  // "the FIRST relay fetch issued once ready ... triggers a refresh before this test
-  // does anything else" — is structurally unreachable from ANY e2e run served off a
-  // loopback host (localhost/127.0.0.1), which every Playwright run in this repo is.
-  // `refreshWorkspaceConnection`/`ensureFresh()` (src/utils/workspace-relay-
-  // connection.ts:307-337) is only invoked by the REAL relay-fetch path inside
-  // `createWorkspaceRuntimeRequest` (src/utils/workspace-runtime-request.ts:220-244),
-  // which is skipped in favor of a same-origin "central server bridges the relay"
-  // path whenever `isLoopbackHttpUrl(serverUrl) && !preferRelayOnLoopback` — see that
-  // file's own already-existing comment on the analogous health-probe bridging, and
-  // this file's `loopbackHealthMatch` handler above, which documents the identical
-  // pattern for `/api/wr/health`. `getClaxedoServerUrl()` (src/utils/api.ts:211-224)
-  // is what every workspace-runtime call (agent/vcs/session/provider/command/events —
-  // confirmed via network capture: they resolve to the build-time
-  // `VITE_CLAXEDO_SERVER_URL` origin, `http://127.0.0.1:3001` in this repo's
-  // `.env.local`) resolves its central server from, and `localBackendForCurrentHost`
-  // (src/utils/api.ts:107-118) HARD-CODES that resolution to a loopback origin
-  // whenever `window.location.hostname` is itself a loopback host — which it always
-  // is when Playwright drives this app from `http://localhost:<port>`. This function
-  // does NOT consult `window.__CLAXEDO__.serverUrl` (that seam feeds a DIFFERENT
-  // function, `getDefaultBaseUrl()`, src/utils/api.ts:246-254, used by an unrelated
-  // code path) — confirmed empirically: overriding `__CLAXEDO__.serverUrl` to a
-  // non-loopback fake origin in an initScript had NO effect on which origin
-  // agent/vcs/session/provider/events resolved to. Net effect: in this harness, a
-  // relay-backed workspace's post-ready traffic is UNCONDITIONALLY bridged through
-  // the central server rather than going relay-direct from the browser, so
-  // `createWorkspaceRelayConnection` (the only production caller of
-  // `refreshWorkspaceConnection`) is never constructed and `POST
-  // /api/workspace/:id/connection/refresh` never fires — confirmed by a full 20s
-  // `expect.poll` staying at 0 while every other post-ready relay request (agent,
-  // vcs, session, provider, command, events) DOES fire and IS observed by the mock.
-  // This is not a spec-local mocking gap (spec-local `page.route` cannot patch a
-  // build-time env constant or the browser's own hostname) and not fixable without
-  // either an app-source change (an explicit e2e override seam for
-  // `getClaxedoServerUrl()`, mirroring the existing `__CLAXEDO__.serverUrl` seam for
-  // `getDefaultBaseUrl()`) or running this spec from a genuinely non-loopback host —
-  // both out of scope for this remediation pass. The role-transition STATE MACHINE
-  // itself (`transitionConnectionPlacement`'s `role` event) is already unit-pinned in
-  // `src/shell/state/connection-placement.test.ts` and
-  // `src/shell/workspace/workspace-connection.test.ts`, so the logic this behavior
-  // describes is covered — only the end-to-end "refresh fires from ambient traffic"
-  // wiring is unprovable here.
-  // Behavior 9's original premise — a near-expiry (500ms) token racing the app's
-  // post-ready relay traffic to fire a real `/connection/refresh`
-  // carrying the upgraded role — is BOTH non-deterministic AND structurally unreachable
-  // from a loopback-served harness: `refreshWorkspaceConnection` is only invoked by the
-  // relay-direct fetch path, which is bridged through the central server whenever the
-  // server URL is loopback (see `localBackendForCurrentHost`), so the refresh request
-  // never leaves the browser here. Per doc entry 34 rec A we make the sequencing
-  // deterministic by driving the role flip through the `markRole` connection seam —
-  // the SAME `{type:"role"}` placement event `applyWorkspaceConnectionInfo` feeds on a
-  // real connect/refresh — so this exercises the real placement state machine and the
-  // real composer role-gate reactivity, minus only the unreachable network hop (the
-  // transition logic itself is additionally unit-pinned in connection-placement.test.ts
-  // / workspace-connection.test.ts). Same class of dev-only escape hatch behaviors 4/6/7
-  // already use for reconnect.
+  // The role flip is driven through the `markRole` seam rather than a real
+  // `POST /connection/refresh`, because that request can never fire here:
+  // `refreshWorkspaceConnection`/`ensureFresh()` is only reached from the relay-direct
+  // fetch path, and `localBackendForCurrentHost` hard-routes every workspace-runtime
+  // call through the central server whenever `window.location.hostname` is a loopback
+  // host — which it always is under Playwright. So `createWorkspaceRelayConnection`,
+  // the only production caller of the refresh, is never constructed. `markRole` feeds
+  // the SAME `{type:"role"}` placement event `applyWorkspaceConnectionInfo` emits on a
+  // real refresh, so the placement state machine and the composer's role-gate
+  // reactivity are exercised for real; only the network hop is skipped.
   test("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload — behavior 9", async ({
     page,
   }) => {
@@ -1084,18 +862,14 @@ test.describe("core cloud offline & roles @core", () => {
     const editor = composerEditor(page)
     const submit = page.locator('[data-action="prompt-submit"]').last()
 
-    // Starts locked (viewer).
     await expect(editor, debugSuffix(state)).toHaveAttribute("aria-label", "Read-only workspace (viewer)")
 
-    // A live role upgrade arrives (viewer -> editor) without any navigation or reload.
     await page.evaluate((id) => {
       ;(
         window as typeof window & { __claxedoConnections?: { markRole?: (id: string, role: string) => void } }
       ).__claxedoConnections?.markRole?.(id, "editor")
     }, WORKSPACE_ID)
 
-    // ...and the composer unlocks in place — placeholder gone, submit enabled — on the
-    // same page instance. Contention ceiling on the reactive transition, not a sleep.
     await expect(editor, debugSuffix(state)).not.toHaveAttribute("aria-label", "Read-only workspace (viewer)", {
       timeout: RECONNECT_STATE_TIMEOUT,
     })
