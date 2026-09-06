@@ -595,8 +595,6 @@ async function main() {
 await main()
 
 
-// ── Drill page state ─────────────────────────────────────────────────────────
-
 type DrillFrame = { type: string; id?: string; payload?: unknown }
 
 declare global {

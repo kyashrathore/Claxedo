@@ -21,7 +21,7 @@ export function eraseStoreTuple<T>(
   store: [Store<T>, SetStoreFunction<T>],
 ): [Store<unknown>, SetStoreFunction<unknown>] {
   // SetStoreFunction<T>'s nine overloads are derived from T's own shape, so no
-  // declared type erases T from them; persist.ts:632 restores the T erased here.
+  // declared type erases T from them; `restoreStoreTuple` puts the T back.
   // as-any: inexpressible, not lazy — see this module's header.
   return store as unknown as [Store<unknown>, SetStoreFunction<unknown>]
 }

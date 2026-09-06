@@ -183,14 +183,11 @@ describe("expectRailStatus (B7) — rail-oracle.ts:170-222, defects 11 & 12", ()
     ).rejects.toThrow(/never showed a "working" status dot/)
   })
 
-  // 8000ms test timeout, not the file's usual short-and-fast pattern: rail-oracle.ts:196-198's
-  // glyph-containment `expect(...).toHaveCount(1)` is the ONE assertion in `expectRailStatus`
-  // that does not forward the caller's `timeout` option (unlike every other assertion in the
-  // function, which all take `{timeout}`) — verified by re-reading the source, not assumed,
-  // after this test first failed by hitting bun:test's OWN 5000ms default test-timeout while
-  // Playwright's assertion was still legitimately polling on its unconfigurable default. This
-  // is a real, load-bearing gap in the oracle (a caller cannot speed up this one check), so
-  // the honest fix is to give bun:test more room, not to shorten what's being proven.
+  // 8000ms, over bun:test's 5000ms default: `expectRailStatus`'s glyph-containment
+  // assertion is the one check in that function that does not forward the caller's
+  // `timeout`, so it polls on Playwright's own default and a caller cannot speed it up.
+  // Below 8000ms this test fails on the bun timeout while that assertion is still
+  // legitimately polling.
   test(
     "broken: dot renders on working but outside the glyph column (defect 11 — orphaned dot)",
     async () => {
