@@ -1,4 +1,3 @@
-import type { D1Database } from "@cloudflare/workers-types"
 import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/adapters/worker/better-auth-d1-compose"
 import { createHostedAgentPluginsComposition } from "../../agent-plugins/hosted-composition"

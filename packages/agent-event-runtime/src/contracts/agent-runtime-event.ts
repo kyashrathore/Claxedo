@@ -249,8 +249,13 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   diagnostic: true,
 } satisfies Record<AgentRuntimeEventType, true>
 
-// oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-export const AGENT_RUNTIME_EVENT_TYPES = Object.keys(AGENT_RUNTIME_EVENT_TYPE_REGISTRY) as AgentRuntimeEventType[]
+/** Sound because the registry is `satisfies Record<AgentRuntimeEventType, true>`: its keys are exactly the union. */
+export function isAgentRuntimeEventType(value: string): value is AgentRuntimeEventType {
+  return Object.hasOwn(AGENT_RUNTIME_EVENT_TYPE_REGISTRY, value)
+}
+
+export const AGENT_RUNTIME_EVENT_TYPES: AgentRuntimeEventType[] =
+  Object.keys(AGENT_RUNTIME_EVENT_TYPE_REGISTRY).filter(isAgentRuntimeEventType)
 
 export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   textDelta: "text-delta",
@@ -308,21 +313,53 @@ type AgentRuntimeEventFactoriesFor<Types extends Record<string, AgentRuntimeEven
 }
 type _AgentRuntimeEventFactoryCoverage = AssertEveryRuntimeEventHasFactory<MissingAgentRuntimeEventFactory>
 
-function event<T extends AgentRuntimeEventType>(
-  type: T,
-  input: AgentRuntimeEventInput<T>,
-): AgentRuntimeEventOf<T> {
-  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-  return { type, ...input } as AgentRuntimeEventOf<T>
-}
-
-function createAgentRuntimeEventFactories<Types extends Record<string, AgentRuntimeEventType>>(types: Types) {
-  return (Object.fromEntries(
-    Object.entries(types).map(([name, type]) => [
-      name,
-      (input: AgentRuntimeEventInput<AgentRuntimeEventType>) => event(type, input),
-    ]),
-  ) as unknown) as AgentRuntimeEventFactoriesFor<Types>
-}
-
-export const agentRuntimeEvent = createAgentRuntimeEventFactories(AGENT_RUNTIME_EVENT_FACTORY_TYPES)
+/**
+ * One factory per runtime event type. Written out rather than generated so every
+ * entry is checked against the union: `satisfies` rejects a missing name, an
+ * unknown name, and a body whose payload does not match the event it names.
+ */
+export const agentRuntimeEvent = {
+  textDelta: (input) => ({ type: "text-delta", ...input }),
+  thinkingDelta: (input) => ({ type: "thinking-delta", ...input }),
+  userMessageDelta: (input) => ({ type: "user-message-delta", ...input }),
+  toolStart: (input) => ({ type: "tool-start", ...input }),
+  toolInput: (input) => ({ type: "tool-input", ...input }),
+  toolStatus: (input) => ({ type: "tool-status", ...input }),
+  toolContent: (input) => ({ type: "tool-content", ...input }),
+  toolOutput: (input) => ({ type: "tool-output", ...input }),
+  toolError: (input) => ({ type: "tool-error", ...input }),
+  fileDiff: (input) => ({ type: "file-diff", ...input }),
+  stepStart: (input) => ({ type: "step-start", ...input }),
+  permissionRequest: (input) => ({ type: "permission-request", ...input }),
+  question: (input) => ({ type: "question", ...input }),
+  questionAnswered: (input) => ({ type: "question-answered", ...input }),
+  proposedPlanDelta: (input) => ({ type: "proposed-plan-delta", ...input }),
+  proposedPlanComplete: (input) => ({ type: "proposed-plan-complete", ...input }),
+  todoUpdate: (input) => ({ type: "todo-update", ...input }),
+  sessionStatus: (input) => ({ type: "session-status", ...input }),
+  sessionCompaction: (input) => ({ type: "session-compaction", ...input }),
+  harnessNotice: (input) => ({ type: "harness-notice", ...input }),
+  authStatus: (input) => ({ type: "auth-status", ...input }),
+  rateLimit: (input) => ({ type: "rate-limit", ...input }),
+  mcpServerStatus: (input) => ({ type: "mcp-server-status", ...input }),
+  goalUpdated: (input) => ({ type: "goal-updated", ...input }),
+  goalCleared: (input) => ({ type: "goal-cleared", ...input }),
+  subagentUpdated: (input) => ({ type: "subagent-updated", ...input }),
+  finish: (input) => ({ type: "finish", ...input }),
+  error: (input) => ({ type: "error", ...input }),
+  imageDelta: (input) => ({ type: "image-delta", ...input }),
+  audioDelta: (input) => ({ type: "audio-delta", ...input }),
+  resourceLinkDelta: (input) => ({ type: "resource-link-delta", ...input }),
+  thinkingAudioDelta: (input) => ({ type: "thinking-audio-delta", ...input }),
+  thinkingResourceLinkDelta: (input) => ({ type: "thinking-resource-link-delta", ...input }),
+  resourceDelta: (input) => ({ type: "resource-delta", ...input }),
+  toolLocation: (input) => ({ type: "tool-location", ...input }),
+  toolTerminal: (input) => ({ type: "tool-terminal", ...input }),
+  availableCommandsUpdate: (input) => ({ type: "available-commands-update", ...input }),
+  sessionAgent: (input) => ({ type: "session-agent", ...input }),
+  configUpdate: (input) => ({ type: "config-update", ...input }),
+  sessionInfo: (input) => ({ type: "session-info", ...input }),
+  sessionTitle: (input) => ({ type: "session-title", ...input }),
+  usage: (input) => ({ type: "usage", ...input }),
+  diagnostic: (input) => ({ type: "diagnostic", ...input }),
+} satisfies AgentRuntimeEventFactoriesFor<AgentRuntimeEventFactoryTypes>

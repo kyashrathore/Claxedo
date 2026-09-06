@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { lstat, readdir, realpath } from "node:fs/promises"
 import { appRoot, repoRoot } from "./storage"
+import { isRecord } from "./json-fields"
 
 type SourceProvenanceBase = {
   capturedAt: string
@@ -210,11 +211,7 @@ type WorkspacePackage = {
   manifest: Record<string, unknown>
 }
 
-async function packageManifestPaths(
-  repository: string,
-  absoluteDirectory: string,
-  relativeDirectory: string,
-): Promise<string[]> {
+async function packageManifestPaths(absoluteDirectory: string, relativeDirectory: string): Promise<string[]> {
   const entries = await readdir(absoluteDirectory, { withFileTypes: true })
   const result: string[] = []
   for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
@@ -222,7 +219,7 @@ async function packageManifestPaths(
     if (entry.isSymbolicLink()) throw new Error(`workspace package discovery does not follow symlink: ${relativeName}`)
     if (entry.isDirectory()) {
       if (!isGeneratedDirectory(entry.name, relativeName)) {
-        result.push(...(await packageManifestPaths(repository, path.join(absoluteDirectory, entry.name), relativeName)))
+        result.push(...(await packageManifestPaths(path.join(absoluteDirectory, entry.name), relativeName)))
       }
       continue
     }
@@ -233,11 +230,11 @@ async function packageManifestPaths(
 
 async function workspacePackages(repository: string) {
   const packagesRoot = await requiredDirectory(repository, "packages")
-  const manifests = await packageManifestPaths(repository, packagesRoot.absolute, "packages")
+  const manifests = await packageManifestPaths(packagesRoot.absolute, "packages")
   const packages = new Map<string, WorkspacePackage>()
   for (const manifestPath of manifests) {
-    const manifest = (await Bun.file(path.join(repository, manifestPath)).json()) as Record<string, unknown>
-    if (typeof manifest.name !== "string") continue
+    const manifest: unknown = await Bun.file(path.join(repository, manifestPath)).json()
+    if (!isRecord(manifest) || typeof manifest.name !== "string") continue
     const relativeDirectory = path.posix.dirname(manifestPath)
     const existing = packages.get(manifest.name)
     if (existing)

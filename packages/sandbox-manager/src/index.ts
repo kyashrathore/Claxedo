@@ -487,6 +487,15 @@ export type SandboxDriver = {
   clone?: (target: SandboxTarget, input: { name: string }) => Promise<SandboxTarget>
 }
 
+/**
+ * The lifecycle operations that coalesce per workspace. Two result shapes cover
+ * all four kinds, which is what lets a joining caller be typed without an
+ * assertion.
+ */
+type LifecycleOperation =
+  | { kind: "checkpoint" | "restore"; promise: Promise<SandboxCheckpointResult> }
+  | { kind: "stop" | "destroy"; promise: Promise<SandboxMutationResult> }
+
 export type SandboxManager = {
   ensure: (workspaceId: string, input: SandboxManagerInput) => Promise<SandboxEnsureResult>
   register: (workspaceId: string, input: SandboxRegisterInput) => Promise<SandboxMutationResult>
@@ -701,10 +710,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
   const retryCapCooldownMs = options.retryCapCooldownMs ?? 10 * 60_000
   const egressControl = options.driver.metadata.egressControl
   const onEgressUnenforced = options.onEgressUnenforced ?? defaultEgressUnenforcedSink
-  const lifecycleOperations = new Map<string, {
-    kind: "checkpoint" | "restore" | "stop" | "destroy"
-    promise: Promise<unknown>
-  }>()
+  /**
+   * At most one lifecycle operation per workspace: a second request of the SAME
+   * kind joins the one in flight, a different kind queues behind it. The entry
+   * pairs the kind with a promise of that kind's result, so a joining caller
+   * gets the right type from the overloads on `lifecycle` instead of an
+   * assertion about a promise nobody re-checked.
+   */
+  const lifecycleOperations = new Map<string, LifecycleOperation>()
 
   function reportEgressUnenforced(input: { workspaceId: string; requested: SandboxNetworkPolicy }) {
     onEgressUnenforced({
@@ -741,20 +754,38 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
   }
 
-  function lifecycle<T>(
-    workspaceId: string,
-    kind: "checkpoint" | "restore" | "stop" | "destroy",
-    run: () => Promise<T>,
-  ) {
-    const current = lifecycleOperations.get(workspaceId)
-    if (current?.kind === kind) return current.promise as Promise<T>
-    const operation = (current?.promise.catch(() => undefined) ?? Promise.resolve()).then(run)
-    lifecycleOperations.set(workspaceId, { kind, promise: operation })
+  /** A different kind queues behind whatever is already running for the workspace. */
+  function lifecycleQueue(current: LifecycleOperation | undefined) {
+    return current?.promise.catch(() => undefined) ?? Promise.resolve()
+  }
+
+  function lifecycleSettle<T>(workspaceId: string, entry: LifecycleOperation, operation: Promise<T>) {
+    lifecycleOperations.set(workspaceId, entry)
     return operation.finally(() => {
-      if (lifecycleOperations.get(workspaceId)?.promise === operation) {
-        lifecycleOperations.delete(workspaceId)
-      }
+      if (lifecycleOperations.get(workspaceId) === entry) lifecycleOperations.delete(workspaceId)
     })
+  }
+
+  function checkpointLifecycle(
+    workspaceId: string,
+    kind: "checkpoint" | "restore",
+    run: () => Promise<SandboxCheckpointResult>,
+  ): Promise<SandboxCheckpointResult> {
+    const current = lifecycleOperations.get(workspaceId)
+    if (current?.kind === kind) return current.promise
+    const operation = lifecycleQueue(current).then(run)
+    return lifecycleSettle(workspaceId, { kind, promise: operation }, operation)
+  }
+
+  function mutationLifecycle(
+    workspaceId: string,
+    kind: "stop" | "destroy",
+    run: () => Promise<SandboxMutationResult>,
+  ): Promise<SandboxMutationResult> {
+    const current = lifecycleOperations.get(workspaceId)
+    if (current?.kind === kind) return current.promise
+    const operation = lifecycleQueue(current).then(run)
+    return lifecycleSettle(workspaceId, { kind, promise: operation }, operation)
   }
 
   async function leaseTarget(lease: SandboxLease): Promise<SandboxTargetResult> {
@@ -1012,7 +1043,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       return { ok: true, ...(await options.driver.snapshot(target)) }
     },
     async checkpoint(workspaceId, input) {
-      return await lifecycle(workspaceId, "checkpoint", () => captureSandboxCheckpoint({
+      return await checkpointLifecycle(workspaceId, "checkpoint", () => captureSandboxCheckpoint({
         workspaceId,
         request: input,
         leaseStore: options.leaseStore,
@@ -1022,7 +1053,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       }))
     },
     async restore(workspaceId, input) {
-      return await lifecycle(workspaceId, "restore", () => restoreSandboxCheckpoint({
+      return await checkpointLifecycle(workspaceId, "restore", () => restoreSandboxCheckpoint({
         workspaceId,
         request: input,
         leaseStore: options.leaseStore,
@@ -1031,7 +1062,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       }))
     },
     async stop(workspaceId) {
-      return await lifecycle(workspaceId, "stop", async () => {
+      return await mutationLifecycle(workspaceId, "stop", async () => {
         const lease = await options.leaseStore.get(workspaceId)
         if (lease?.status === "stopped") return { ok: true as const, status: "stopped" as const }
         const target = await this.target(workspaceId)
@@ -1046,7 +1077,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       })
     },
     async destroy(workspaceId) {
-      return await lifecycle(workspaceId, "destroy", async () => {
+      return await mutationLifecycle(workspaceId, "destroy", async () => {
         const lease = await options.leaseStore.get(workspaceId)
         if (lease?.status === "destroyed") return { ok: true as const, status: "destroyed" as const }
         const target = await this.target(workspaceId)

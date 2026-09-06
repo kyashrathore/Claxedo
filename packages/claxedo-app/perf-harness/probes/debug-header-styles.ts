@@ -27,7 +27,7 @@ const report = await page.evaluate(() => {
   const pick = (element: Element | null | undefined, props: string[]) => {
     if (!element) return null
     const style = getComputedStyle(element)
-    const rect = (element as HTMLElement).getBoundingClientRect()
+    const rect = element.getBoundingClientRect()
     return {
       rect: { x: Math.round(rect.x), w: Math.round(rect.width), h: Math.round(rect.height) },
       ...Object.fromEntries(props.map((prop) => [prop, style.getPropertyValue(prop)])),

@@ -4,13 +4,12 @@ import { spawnSync } from "node:child_process"
 import { pathToFileURL } from "node:url"
 import path from "node:path"
 
-type Manifest = {
-  claxedoDependencyPatches?: Record<string, string>
-}
+import { parseJsonObject, record, stringRecord } from "./json"
 
 const root = path.resolve(import.meta.dirname, "..")
-const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as Manifest
-const patches = manifest.claxedoDependencyPatches ?? {}
+const manifestFile = path.join(root, "package.json")
+const manifest = parseJsonObject(await readFile(manifestFile, "utf8"), manifestFile)
+const patches = stringRecord(manifest.claxedoDependencyPatches)
 
 export async function runGitApply(directory: string, patch: string, args: string[]) {
   // Dependency patches are package-relative data transforms, not repository
@@ -50,10 +49,11 @@ async function packageDirectories(name: string, version: string) {
     visited.add(canonical)
     const candidate = path.join(canonical, name)
     try {
-      const installed = JSON.parse(await readFile(path.join(candidate, "package.json"), "utf8"))
+      const installedFile = path.join(candidate, "package.json")
+      const installed = parseJsonObject(await readFile(installedFile, "utf8"), installedFile)
       if (installed.version === version) directories.add(await realpath(candidate))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      if (record(error)?.code !== "ENOENT") throw error
     }
     for (const entry of await readdir(canonical, { withFileTypes: true })) {
       if (entry.name === ".bun") {

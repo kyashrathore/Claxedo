@@ -1,14 +1,12 @@
-import type { SessionAttachment } from "./types"
+import { isOneOf, jsonRecord as rec } from "../../platform/runtime/lib/json"
+import { SESSION_ATTACHMENT_KINDS, type SessionAttachment } from "./types"
+export { jsonRecord as rec } from "../../platform/runtime/lib/json"
 import type { Workspace } from "../../workspace/store"
 
-const KINDS = new Set(["review", "page"])
+
 
 export function now() {
   return Date.now()
-}
-
-export function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
 }
 
 export function txt(input: unknown) {
@@ -38,13 +36,21 @@ export function tags(input: unknown) {
 
 export function attachments(input: unknown) {
   if (!Array.isArray(input)) return undefined
-  return uniq(input.flatMap((item) => {
+  const seen = new Set<string>()
+  const out: SessionAttachment[] = []
+  for (const item of input) {
     const row = rec(item)
     const kind = txt(row?.kind)
     const targetID = txt(row?.targetID) ?? txt(row?.target_id)
-    if (!kind || !targetID || !KINDS.has(kind)) return []
-    return [{ kind: kind as SessionAttachment["kind"], targetID }]
-  }).map((item) => JSON.stringify(item))).map((item) => JSON.parse(item) as SessionAttachment)
+    if (!targetID || !isOneOf(kind, SESSION_ATTACHMENT_KINDS)) continue
+    // Deduplicated on the pair, which is what the previous
+    // stringify/uniq/parse round trip was doing.
+    const key = `${kind}\u0000${targetID}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ kind, targetID })
+  }
+  return out
 }
 
 export function root(input: string, by: Map<string, { parentID?: string }>, seen = new Set<string>()): string {
@@ -79,7 +85,7 @@ export function storedSessionRef(input: {
 export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
   const item = rec(input)
   const session_id = txt(item?.id)
-  if (!session_id || (item?.host !== undefined && !host(item.host))) return
+  if (!session_id || (item?.host !== undefined && !host(item.host))) return undefined
   const time = stamp(item)
   const workspace_id = ws?.id ?? txt(item?.workspaceID) ?? null
   const hostValue = host(item?.host) ?? "workspace"

@@ -59,7 +59,7 @@ test("requireLocalServerBundle names the artifact and the command that builds it
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-no-bundle-"))
   try {
     expect(() => requireLocalServerBundle(empty)).toThrow(
-      new RegExp(`${path.join("resources", "claxedo-server", "index.js").replace(/\\/g, "\\\\")}`),
+      new RegExp(path.join("resources", "claxedo-server", "index.js").replace(/\\/g, "\\\\")),
     )
     expect(() => requireLocalServerBundle(empty)).toThrow(/prebuild/)
   } finally {

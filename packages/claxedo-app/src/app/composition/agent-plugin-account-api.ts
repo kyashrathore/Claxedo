@@ -4,8 +4,9 @@ import {
   agentPluginMutationResult,
   agentPluginSkillResult,
   type AgentPluginApi,
-  type AgentPluginStatusResult,
 } from "@/features/agent-plugins/api"
+import { recordOrEmpty } from "@/lib/record"
+import { decodeHostedResult, type DecodedHostedResult } from "@/platform/account/hosted-operations"
 
 /**
  * Hosted inputs cross Electron's IPC, which structured-clones them. Catalog
@@ -14,23 +15,30 @@ import {
  * object could not be cloned". Bodies are JSON by contract, so a JSON round
  * trip is exactly the plain copy the channel needs.
  */
-export function plainHostedInput<T extends Record<string, unknown> | undefined>(input: T): T {
-  return input === undefined ? input : (JSON.parse(JSON.stringify(input)) as T)
+export function plainHostedInput(input: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  return input === undefined ? input : recordOrEmpty(JSON.parse(JSON.stringify(input)))
 }
 
-async function run(
+async function run<N extends HostedOperationName>(
   account: AccountPort,
-  operation: HostedOperationName,
+  operation: N,
   input?: Record<string, unknown>,
-): Promise<AgentPluginStatusResult> {
-  return await account.run<AgentPluginStatusResult>(operation, plainHostedInput(input))
+): Promise<DecodedHostedResult<N>> {
+  // `AccountPort.run` answers `unknown`; the operation's own decoder in
+  // `HOSTED_OPERATIONS` (`statusResult` for every Agent Plugins op) is what
+  // turns it back into a status envelope, and names the operation when the
+  // hosted side answers with something else. The name is a type parameter so
+  // the envelope is READ OFF that decoder rather than declared here — a caller
+  // naming an operation decoded some other way is a compile error, not a shape
+  // that arrives wearing a status it never had.
+  return decodeHostedResult(operation, await account.run(operation, plainHostedInput(input)))
 }
 
 /** Signed desktop Agent Plugins client over the credential-owning AccountPort. */
 export function accountAgentPluginApi(account: AccountPort): AgentPluginApi {
   return {
     async catalog(options = {}) {
-      const operation: HostedOperationName = options.projectId
+      const operation = options.projectId
         ? options.refresh
           ? "agentPlugins.catalog.project.refresh"
           : "agentPlugins.catalog.project"
@@ -44,7 +52,7 @@ export function accountAgentPluginApi(account: AccountPort): AgentPluginApi {
       ))
     },
     async skill(options) {
-      const operation: HostedOperationName = options.projectId ? "agentPlugins.skill.project" : "agentPlugins.skill"
+      const operation = options.projectId ? "agentPlugins.skill.project" : "agentPlugins.skill"
       return agentPluginSkillResult(await run(account, operation, {
         pluginInstanceId: options.pluginInstanceId,
         skill: options.skill,

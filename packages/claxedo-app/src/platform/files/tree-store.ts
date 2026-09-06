@@ -5,6 +5,8 @@ import {
   fileRequestRuntimeKey,
   type FileRequestRuntime,
 } from "@/platform/files/file-request-cache"
+import { errorMessage } from "@/lib/server-errors"
+import { isCancelledError } from "@/lib/abort-error"
 
 type DirectoryState = {
   expanded: boolean
@@ -21,16 +23,6 @@ type TreeStoreOptions = {
   onError: (message: string) => void
 }
 
-function errorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "string") return error
-  return "Unknown error"
-}
-
-function isCancelledError(error: unknown) {
-  if (!(error instanceof Error)) return false
-  return error.name === "CancelledError" || error.name === "AbortError" || error.message === "CancelledError"
-}
 
 export function createFileTreeStore(options: TreeStoreOptions) {
   const [tree, setTree] = createStore<{

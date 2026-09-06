@@ -350,7 +350,7 @@ test.describe("core harness ownership (local) @core", () => {
   // test in this file headroom above the default so a slow (not stuck) navigation
   // doesn't fail the whole scenario. This is a per-file timeout bump, not a weakened
   // assertion — every wait inside the tests is still a deterministic poll/expect.
-  test.beforeEach(async ({}, testInfo) => {
+  test.beforeEach(async (_fixtures, testInfo) => {
     testInfo.setTimeout(120_000)
   })
 

@@ -13,6 +13,20 @@ import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-swi
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { createTransport } from "@/platform/runtime/transport"
 
+/**
+ * A prototype-chained override: `next` answers everything `base` does except the
+ * members redefined here, and `base` keeps whatever internal state its own
+ * methods close over. `Object.create` types as `any`, so the shape is restored
+ * by ASSIGNMENT to `T` rather than asserted at each of the three call sites that
+ * used to write this by hand.
+ */
+function overriding<T extends object>(base: T, overrides: PropertyDescriptorMap): T {
+  const next: T = Object.create(base)
+  Object.defineProperties(next, overrides)
+  return next
+}
+
+
 type SDKEventMap = {
   [key in GlobalSdkEvent["type"]]: Extract<GlobalSdkEvent, { type: key }>
 }
@@ -139,8 +153,7 @@ const sDKContextInput = {
         return { data, response }
       }
 
-      const file = Object.create(client.file) as typeof client.file
-      Object.defineProperties(file, {
+      const file = overriding(client.file, {
         list: {
           value: (params: { directory?: string; workspace?: string; path: string }, options?: WorkspaceRuntimeRequestOptions) => {
             const scopedDirectory = params.directory ?? directory
@@ -164,33 +177,32 @@ const sDKContextInput = {
         },
       })
 
-      const find = Object.create(client.find) as typeof client.find
-      Object.defineProperty(find, "files", {
-        value: (params: {
-          directory?: string
-          workspace?: string
-          query: string
-          dirs?: "true" | "false"
-          type?: "file" | "directory"
-          limit?: number
-        }, options?: WorkspaceRuntimeRequestOptions) => {
-          const scopedDirectory = params.directory ?? directory
-          return runtimeResponse(scopedDirectory, (runtime) =>
-            runtime.files.search({
-              query: params.query,
-              dirs: params.dirs,
-              type: params.type,
-              limit: params.limit,
-            }, runtimeRequestOptions(options)))
+      const find = overriding(client.find, {
+        files: {
+          value: (params: {
+            directory?: string
+            workspace?: string
+            query: string
+            dirs?: "true" | "false"
+            type?: "file" | "directory"
+            limit?: number
+          }, options?: WorkspaceRuntimeRequestOptions) => {
+            const scopedDirectory = params.directory ?? directory
+            return runtimeResponse(scopedDirectory, (runtime) =>
+              runtime.files.search({
+                query: params.query,
+                dirs: params.dirs,
+                type: params.type,
+                limit: params.limit,
+              }, runtimeRequestOptions(options)))
+          },
         },
       })
 
-      const wrapped = Object.create(client) as typeof client
-      Object.defineProperties(wrapped, {
+      return overriding(client, {
         file: { value: file },
         find: { value: find },
       })
-      return wrapped
     }
 
     const client = createMemo(() =>

@@ -1,4 +1,5 @@
 import { appRoot } from "../storage"
+import { isRecord, numberField } from "../json-fields"
 import type { ScenarioId, DiagnosticsOverheadEvidence } from "../types"
 import { drain } from "./environment"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -39,8 +40,11 @@ export async function startFlowProfiler(browser: Browser, scenario: ScenarioId) 
     if (sampling) return
     sampling = true
     pendingSample = readBrowserProcessInfo(session)
-      .then((value) => {
-        profilerProcess.stdin.write(`${JSON.stringify({
+      .then(async (value) => {
+        // Awaited so the sample is actually handed to the profiler before the
+        // next tick can start: `FileSink.write` returns a promise once its
+        // buffer needs flushing.
+        await profilerProcess.stdin.write(`${JSON.stringify({
           at: Date.now(),
           processes: value.processInfo,
         })}\n`)
@@ -57,7 +61,7 @@ export async function startFlowProfiler(browser: Browser, scenario: ScenarioId) 
   } catch (error) {
     clearInterval(sampleTimer)
     await pendingSample
-    profilerProcess.stdin.end()
+    await profilerProcess.stdin.end()
     profilerProcess.kill()
     await Promise.race([profilerProcess.exited, Bun.sleep(2_000)])
     await detachBrowserSession(session)
@@ -72,7 +76,10 @@ export async function startFlowProfiler(browser: Browser, scenario: ScenarioId) 
       stopped = true
       clearInterval(sampleTimer)
       await pendingSample
-      profilerProcess.stdin.end()
+      // Awaited before waiting on exit: the profiler writes its evidence when
+      // stdin closes, and racing the close against the exit timeout could
+      // report a timeout for work that had not been asked for yet.
+      await profilerProcess.stdin.end()
       const exitCode = await Promise.race([
         profilerProcess.exited,
         Bun.sleep(20_000).then(() => undefined),
@@ -84,7 +91,8 @@ export async function startFlowProfiler(browser: Browser, scenario: ScenarioId) 
       }
       try {
         if (exitCode !== 0) throw new Error(`Diagnostics flow profiler exited with ${String(exitCode)}`)
-        const evidence = await Bun.file(output).json() as Record<string, unknown>
+        const evidence: unknown = await Bun.file(output).json()
+        if (!isRecord(evidence)) throw new Error("Diagnostics flow profiler evidence was not an object")
         const fields = [
           "retainedBytes",
           "retainedProcesses",
@@ -94,13 +102,25 @@ export async function startFlowProfiler(browser: Browser, scenario: ScenarioId) 
           "collections",
           "sampleCount",
         ] as const
-        if (fields.some((field) => typeof evidence[field] !== "number" || !Number.isFinite(evidence[field]))) {
-          throw new Error("Diagnostics flow profiler evidence was incomplete")
+        const read = (field: (typeof fields)[number]) => {
+          const value = numberField(evidence, field)
+          if (value === undefined || !Number.isFinite(value)) {
+            throw new Error("Diagnostics flow profiler evidence was incomplete")
+          }
+          return value
         }
-        return Object.fromEntries(fields.map((field) => [field, evidence[field]])) as Omit<
-          DiagnosticsOverheadEvidence,
-          "controlHeadline" | "enabledHeadline"
-        >
+        // Built field by field rather than through `Object.fromEntries`, whose
+        // return type cannot say which keys it produced and so needed an
+        // assertion to become this evidence shape.
+        return {
+          retainedBytes: read("retainedBytes"),
+          retainedProcesses: read("retainedProcesses"),
+          droppedTicks: read("droppedTicks"),
+          maxSourceDurationMs: read("maxSourceDurationMs"),
+          maxReconciliationDurationMs: read("maxReconciliationDurationMs"),
+          collections: read("collections"),
+          sampleCount: read("sampleCount"),
+        } satisfies Omit<DiagnosticsOverheadEvidence, "controlHeadline" | "controlRepetitions" | "enabledHeadline">
       } finally {
         await detachBrowserSession(session)
         await rm(directory, { recursive: true, force: true })

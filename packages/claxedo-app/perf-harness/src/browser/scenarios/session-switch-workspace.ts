@@ -91,7 +91,7 @@ const observeSessionSwitch = async (params: {
       .some((row) => (row.textContent ?? "").trim())
   }
   const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
-  const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  const oldContent = window.__claxedoPerfOldPanelContent
   // The old surface stops being the user's surface either by leaving the
   // document, or by being retained under a body host the panel has PROVED
   // inert: marked not-displayed, hidden from the accessibility tree, and
@@ -167,7 +167,7 @@ const observeSessionSwitch = async (params: {
     requestAnimationFrame(tick)
   })
   performance.clearMarks(params.mark)
-  delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  delete window.__claxedoPerfOldPanelContent
   return {
     completionMs,
     acknowledgedMs,
@@ -244,7 +244,7 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
       const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
       if (presentation === "closed") {
         if (shell) throw new Error(`${cell} expected a closed source workspace panel`)
-        delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+        delete window.__claxedoPerfOldPanelContent
         return
       }
       const activeTab = shell?.querySelector<HTMLElement>("[data-slot='workspace-tab'][data-selected='true']")
@@ -265,7 +265,7 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
       })
       if (!content) throw new Error(`${cell} source has no displayed workspace surface`)
-      ;(window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent = content
+      window.__claxedoPerfOldPanelContent = content
     }, { contentSelector: SESSION_SWITCH_PANEL_CONTENT_SELECTOR, presentation, cell,
       filePath: SESSION_SWITCH_SUBSTANTIAL_FILE_PATH, fileLines: SESSION_SWITCH_SUBSTANTIAL_FILE_LINES })
   }

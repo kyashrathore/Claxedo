@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcess } from "child_process"
 import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
@@ -62,8 +63,8 @@ export type ACPWebSocketConnection = {
 export type ACPConnection = ACPProcessConnection | ACPStreamableHttpConnection | ACPWebSocketConnection
 
 export function validateACPConnection(input: unknown): ACPConnection {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("connection must be an object")
-  const row = input as Record<string, unknown>
+  const row = asRecord(input)
+  if (!row) throw new Error("connection must be an object")
   const supportsMcpServers = optionalBoolean(row.supportsMcpServers, "supportsMcpServers")
   if (row.kind === "process") {
     requireOnlyFields(row, ["kind", "command", "args", "env", "supportsMcpServers"])
@@ -206,6 +207,8 @@ export function createACPTransportFactory(connection: ACPConnection): ACPTranspo
         protocols: connection.protocols,
         headers: connection.headers,
       })
+    default:
+      throw new Error(`Unknown ACP connection kind: ${JSON.stringify(connection)}`)
   }
 }
 

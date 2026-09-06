@@ -70,7 +70,8 @@ describe("managed document session hydration", () => {
     const replacement = `${hydrated}.replacement`
     await fs.writeFile(replacement, "agent edit")
     await fs.rename(replacement, hydrated)
-    for (let attempt = 0; attempt < 40 && writes === 0; attempt++) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (writes > 0) break
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect({ canonical, writes }).toEqual({ canonical: "agent edit", writes: 1 })

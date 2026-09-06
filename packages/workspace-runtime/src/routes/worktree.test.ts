@@ -42,14 +42,22 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
   }
 }
 
+/**
+ * The worktree-manager double, returned alongside the mocks behind it.
+ *
+ * `ensure` is handed back directly rather than read off `manager` at the
+ * assertion: reading it there detaches a method from the object it was
+ * declared on, which is what a real manager's `this` would notice.
+ */
 function fixture() {
   const records = [record("ses_visible"), record("ses_private")]
+  const ensure = mock(async ({ sessionId }: { sessionId: string }) => record(sessionId))
   const manager = {
     list: mock(() => records),
     get: mock((sessionId: string) => records.find((item) => item.sessionId === sessionId)),
-    ensure: mock(async ({ sessionId }: { sessionId: string }) => record(sessionId)),
+    ensure,
   } as unknown as WorkspaceWorktreeManager
-  return { manager }
+  return { manager, ensure }
 }
 
 function managedApp(
@@ -109,15 +117,15 @@ describe("WorktreeRoutes managed private-session access", () => {
   })
 
   test("authorizes create before manager mutation and denies viewer writes", async () => {
-    const { manager } = fixture()
-    const ensure = manager.ensure as ReturnType<typeof mock>
+    const { manager, ensure } = fixture()
+
     const denied = await managedApp(manager).request("http://localhost/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId: "ses_private" }),
     })
     expect(denied.status).toBe(403)
-    expect(ensure).not.toHaveBeenCalled()
+    expect(ensure.mock.calls.length).toBe(0)
 
     const viewer = await managedApp(manager, { role: "viewer" }).request("http://localhost/", {
       method: "POST",
@@ -125,7 +133,7 @@ describe("WorktreeRoutes managed private-session access", () => {
       body: JSON.stringify({ sessionId: "ses_visible" }),
     })
     expect(viewer.status).toBe(403)
-    expect(ensure).not.toHaveBeenCalled()
+    expect(ensure.mock.calls.length).toBe(0)
 
     const created = await managedApp(manager).request("http://localhost/", {
       method: "POST",

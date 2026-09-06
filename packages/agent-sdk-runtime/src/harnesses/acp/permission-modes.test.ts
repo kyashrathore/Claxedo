@@ -9,7 +9,7 @@ const conn = (reply: unknown = {}) => {
     calls,
     ctx: {
       request: async (method: string, params: unknown) => {
-        calls.push({ method: String(method), params })
+        calls.push({ method, params })
         return reply
       },
     } as never,

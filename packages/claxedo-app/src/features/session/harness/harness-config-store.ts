@@ -83,7 +83,7 @@ export function createHarnessConfigStore() {
     projects: () => projectsQuery.data ?? [],
   })
   const harnessStore = createHarnessStore(localStorage)
-  const runtimeSessionActions = createHarnessRuntimeSessionActions<ClaimInput>({
+  const runtimeSessionActions = createHarnessRuntimeSessionActions({
     base,
     runtime: harnessRuntime,
   })

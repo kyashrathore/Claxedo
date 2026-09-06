@@ -6,6 +6,7 @@ import type { DocumentIndexEntry } from "../../index-store"
 import type { DocumentRead } from "../../port"
 import { fetchRelayResponse, parseRelayJson, type RelayHttpOptions } from "../../relay-http"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { asRecord } from "../../../platform/json/index"
 
 export function createHostedDocumentRuntimeBroker(
   services: ControlPlaneServices,
@@ -121,15 +122,13 @@ export function createHostedDocumentRuntimeBroker(
         options,
       )
       if (!response.response.ok) throw new Error(`Session runtime hydration failed: ${response.response.status}`)
-      const result = parseRelayJson(response.body, "Session runtime hydration")
-      if (!result || typeof result !== "object" || Array.isArray(result) ||
-        typeof (result as Record<string, unknown>).path !== "string" || !(result as Record<string, unknown>).path)
+      const hydratedPath = asRecord(parseRelayJson(response.body, "Session runtime hydration"))?.path
+      if (typeof hydratedPath !== "string" || !hydratedPath)
         throw new Error("Session runtime hydration response is invalid")
       await input.registerCapability?.({
         jti: capability.jti,
         jobExpiresAt,
       })
-      const hydratedPath = (result as Record<string, unknown>).path as string
       if (input.registerCapability) {
         const activation = await fetchRelayResponse(fetcher,
           `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}/api/wr/documents/${encodeURIComponent(input.sessionId)}/${encodeURIComponent(input.entry.id)}/activate`,
@@ -148,13 +147,8 @@ export function createHostedDocumentRuntimeBroker(
         if (!activation.response.ok) {
           throw new Error(`Session runtime document activation failed: ${activation.response.status}`)
         }
-        const activated = parseRelayJson(activation.body, "Session runtime document activation")
-        if (
-          !activated ||
-          typeof activated !== "object" ||
-          Array.isArray(activated) ||
-          (activated as Record<string, unknown>).path !== hydratedPath
-        ) {
+        const activated = asRecord(parseRelayJson(activation.body, "Session runtime document activation"))
+        if (activated?.path !== hydratedPath) {
           throw new Error("Session runtime document activation response is invalid")
         }
       }
@@ -249,17 +243,18 @@ export function createHostedDocumentRuntimeBroker(
       )
       if (!response.response.ok)
         throw new Error(`Session document conflict resolution failed: ${response.response.status}`)
-      const result = parseRelayJson(response.body, "Session document conflict resolution")
-      if (!result || typeof result !== "object" || Array.isArray(result) ||
-        typeof (result as Record<string, unknown>).path !== "string" || !(result as Record<string, unknown>).path ||
-        ("preserved" in result && typeof (result as Record<string, unknown>).preserved !== "string")) {
+      const result = asRecord(parseRelayJson(response.body, "Session document conflict resolution"))
+      const path = result?.path
+      const preserved = result?.preserved
+      if (
+        typeof path !== "string" || !path ||
+        (result !== undefined && "preserved" in result && typeof preserved !== "string")
+      ) {
         throw new Error("Session document conflict resolution response is invalid")
       }
       return {
-        path: (result as Record<string, unknown>).path as string,
-        ...(typeof (result as Record<string, unknown>).preserved === "string"
-          ? { preserved: (result as Record<string, unknown>).preserved as string }
-          : {}),
+        path,
+        ...(typeof preserved === "string" ? { preserved } : {}),
         version: input.current.version,
       }
     },
@@ -267,14 +262,12 @@ export function createHostedDocumentRuntimeBroker(
 }
 
 function workspaceIdFrom(value: unknown) {
-  if (!value || typeof value !== "object") return undefined
-  const record = value as Record<string, unknown>
+  const record = asRecord(value)
+  if (!record) return undefined
   return (
     string(record.workspace_id) ??
     string(record.workspaceId) ??
-    (record.workspace && typeof record.workspace === "object"
-      ? string((record.workspace as Record<string, unknown>).workspace_id)
-      : undefined)
+    string(asRecord(record.workspace)?.workspace_id)
   )
 }
 

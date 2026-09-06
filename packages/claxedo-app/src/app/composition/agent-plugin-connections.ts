@@ -1,6 +1,3 @@
-import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "@/features/agent-plugins/connections"
-import type { ConnectionsRequest } from "@/platform/account/integrations-request"
-
 /**
  * The marketplace's connection port over the ONE integrations request the
  * app has (`createIntegrationsRequest`): signed desktop → named account
@@ -12,12 +9,13 @@ import type { ConnectionsRequest } from "@/platform/account/integrations-request
  * (it returns the body itself), so every marketplace open failed with
  * "Hosted operation returned an invalid response status".
  */
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
+
+import { isRecord } from "@/lib/record"
+import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "@/features/agent-plugins/connections"
+import type { ConnectionsRequest } from "@/platform/account/integrations-request"
 
 export function connectionSummary(value: unknown): AgentPluginConnectionSummary | undefined {
-  if (!record(value)) return undefined
+  if (!isRecord(value)) return undefined
   const row = value
   if (
     typeof row.id !== "string"
@@ -30,12 +28,12 @@ export function connectionSummary(value: unknown): AgentPluginConnectionSummary 
 
 async function failure(response: Response, label: string) {
   const body: unknown = await response.json().catch(() => undefined)
-  const nested = record(body) && record(body.error) ? body.error : undefined
+  const nested = isRecord(body) && isRecord(body.error) ? body.error : undefined
   const detail = typeof nested?.message === "string"
     ? nested.message
-    : record(body) && typeof body.message === "string"
+    : isRecord(body) && typeof body.message === "string"
       ? body.message
-      : record(body) && typeof body.code === "string"
+      : isRecord(body) && typeof body.code === "string"
         ? body.code
         : undefined
   return new Error(`${label} (${response.status}${detail ? `: ${detail}` : ""})`)
@@ -50,7 +48,7 @@ export function agentPluginConnectionPort(input: {
       const response = await input.request("")
       if (!response.ok) throw await failure(response, "Connections request failed")
       const body: unknown = await response.json().catch(() => undefined)
-      const rows = record(body) && Array.isArray(body.connections) ? body.connections : []
+      const rows = isRecord(body) && Array.isArray(body.connections) ? body.connections : []
       return {
         connections: rows
           .map(connectionSummary)

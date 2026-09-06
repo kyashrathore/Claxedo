@@ -1,8 +1,9 @@
 import type { MarkedExtension, Tokens } from "marked"
 import type { BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
+import { isKeyOf } from "../utils/record"
 import { markedCodeSpanBoundary } from "./marked-code-span"
-import type { ThemeRegistrationResolved } from "@pierre/diffs"
+import type { ThemeRegistration } from "@pierre/diffs"
 
 export const OpenCodeTheme = {
   name: "OpenCode",
@@ -373,7 +374,9 @@ export const OpenCodeTheme = {
     "variable.constant": "var(--syntax-constant)",
     "variable.defaultLibrary": "var(--syntax-unknown)",
   },
-} as unknown as ThemeRegistrationResolved
+  // `ThemeRegistration`, not `...Resolved`: this theme carries `tokenColors` rather than
+  // the resolved `settings`, and shiki resolves the two when it loads the theme.
+} satisfies ThemeRegistration
 
 async function renderMathExpressions(html: string) {
   if (!html.includes("$$") && !html.includes("\\(")) return html
@@ -417,12 +420,13 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
 
-    let language = lang || "text"
-    if (!(language in bundledLanguages)) {
-      language = "text"
-    }
-    if (!highlighter.getLoadedLanguages().includes(language)) {
-      await highlighter.loadLanguage(language as BundledLanguage)
+    // `text` is shiki's plain-text pseudo-language: it has no grammar in `bundledLanguages`
+    // and must not be handed to `loadLanguage`, which is why the two are typed apart here.
+    const requested = lang || "text"
+    const bundled: BundledLanguage | undefined = isKeyOf(bundledLanguages, requested) ? requested : undefined
+    const language: BundledLanguage | "text" = bundled ?? "text"
+    if (bundled && !highlighter.getLoadedLanguages().includes(bundled)) {
+      await highlighter.loadLanguage(bundledLanguages[bundled])
     }
 
     const highlighted = highlighter.codeToHtml(code, {

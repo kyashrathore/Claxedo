@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { describe, expect, mock, test } from "bun:test"
 import type { OpenCodeHost } from "./host"
 import { createInteractionPort } from "./interaction-port"
-import { authorizeWorkspace } from "./scope"
+import { WorkspaceScope } from "./scope"
 
 function host(lifecycle: "cold" | "migrating" | "ready", rows: { permissions?: unknown[]; forms?: unknown[] } = {}) {
   const client = {
@@ -22,7 +22,7 @@ function host(lifecycle: "cold" | "migrating" | "ready", rows: { permissions?: u
 }
 
 const directory = realpathSync(mkdtempSync(join(tmpdir(), "claxedo-interaction-port-")))
-const scope = authorizeWorkspace({ workspaceID: "ws_1", directory })
+const scope = WorkspaceScope.authorize({ workspaceID: "ws_1", directory })
 
 describe("createInteractionPort", () => {
   test("a host that is not serving has no pending interactions and is not booted by the read", async () => {

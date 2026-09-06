@@ -29,6 +29,7 @@ import {
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
+import { asRecord, isRecord, readJsonRecord, stringField } from "../platform/json/index"
 import { signedOrError } from "../workspace/route-support"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
 import { createRequestTiming } from "./request-timing"
@@ -39,10 +40,6 @@ type SignedSources = (auth: SignedControlPlaneAuth) => CatalogSourceProvider
 
 function error(code: string, message: string) {
   return { error: { code, message } }
-}
-
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 function harnesses(value: unknown): AgentPluginHarnessId[] | undefined {
@@ -61,16 +58,18 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]) {
 }
 
 function userMutation(value: unknown): Omit<MutateSignedUserActivation, "artifact"> | undefined {
-  if (!record(value) || typeof value.pluginInstanceId !== "string" || !value.pluginInstanceId) return undefined
+  if (!isRecord(value)) return undefined
+  const pluginInstanceId = stringField(value, "pluginInstanceId")
+  if (!pluginInstanceId) return undefined
   if (!hasOnlyKeys(value, ["pluginInstanceId", "harnessIds", "choice", "expectedRevision", "target"])) return undefined
   const selectedHarnesses = harnesses(value.harnessIds)
   const revision = expectedRevision(value.expectedRevision)
-  const target = record(value.target) ? value.target : undefined
+  const target = asRecord(value.target)
   const choice = value.choice === null ? undefined : value.choice
   if (!selectedHarnesses || revision === undefined || (choice !== true && choice !== false && choice !== undefined)) return undefined
   if (target?.scope === "all-projects") {
     if (!hasOnlyKeys(target, ["scope"])) return undefined
-    return { pluginInstanceId: value.pluginInstanceId, harnessIds: selectedHarnesses, choice, expectedRevision: revision, target: { scope: "all-projects" as const } }
+    return { pluginInstanceId, harnessIds: selectedHarnesses, choice, expectedRevision: revision, target: { scope: "all-projects" as const } }
   }
   if (target?.scope !== "projects"
     || !hasOnlyKeys(target, ["scope", "projectIds"])
@@ -78,7 +77,7 @@ function userMutation(value: unknown): Omit<MutateSignedUserActivation, "artifac
     || target.projectIds.length === 0
     || !target.projectIds.every((item): item is string => typeof item === "string" && Boolean(item.trim()))) return undefined
   return {
-    pluginInstanceId: value.pluginInstanceId,
+    pluginInstanceId,
     harnessIds: selectedHarnesses,
     choice,
     expectedRevision: revision,
@@ -87,25 +86,25 @@ function userMutation(value: unknown): Omit<MutateSignedUserActivation, "artifac
 }
 
 function organizationMutation(value: unknown): Omit<MutateSignedOrganizationDefault, "artifact"> | undefined {
-  if (!record(value) || typeof value.pluginInstanceId !== "string" || !value.pluginInstanceId) return undefined
+  if (!isRecord(value)) return undefined
+  const pluginInstanceId = stringField(value, "pluginInstanceId")
+  if (!pluginInstanceId) return undefined
   if (!hasOnlyKeys(value, ["pluginInstanceId", "harnessIds", "choice", "expectedRevision"])) return undefined
   const selectedHarnesses = harnesses(value.harnessIds)
   const revision = expectedRevision(value.expectedRevision)
   if (value.choice !== true && value.choice !== null) return undefined
   const choice: true | undefined = value.choice === true ? true : undefined
   if (!selectedHarnesses || revision === undefined) return undefined
-  return { pluginInstanceId: value.pluginInstanceId, harnessIds: selectedHarnesses, choice, expectedRevision: revision }
+  return { pluginInstanceId, harnessIds: selectedHarnesses, choice, expectedRevision: revision }
 }
 
 function updateMutation(value: unknown): Omit<UpdateSignedArtifactPin, "artifact"> & { authority: "user" | "organization" } | undefined {
-  if (!record(value)
-    || !hasOnlyKeys(value, ["pluginInstanceId", "authority", "expectedRevision"])
-    || typeof value.pluginInstanceId !== "string"
-    || !value.pluginInstanceId
-    || (value.authority !== "user" && value.authority !== "organization")) return undefined
+  if (!isRecord(value) || !hasOnlyKeys(value, ["pluginInstanceId", "authority", "expectedRevision"])) return undefined
+  const pluginInstanceId = stringField(value, "pluginInstanceId")
+  if (!pluginInstanceId || (value.authority !== "user" && value.authority !== "organization")) return undefined
   const revision = expectedRevision(value.expectedRevision)
   if (revision === undefined) return undefined
-  return { pluginInstanceId: value.pluginInstanceId, authority: value.authority, expectedRevision: revision }
+  return { pluginInstanceId, authority: value.authority, expectedRevision: revision }
 }
 
 async function currentCandidate(sources: SignedSources, auth: SignedControlPlaneAuth, pluginInstanceId: string) {
@@ -152,14 +151,13 @@ async function canManageOrganization(input: {
   me: unknown
 }) {
   if (!input.services.authority) return false
-  const orgId = record(input.me) && typeof input.me.org_id === "string"
-    ? input.me.org_id
-    : await input.services.authority.resolveOrgId(input.auth).catch(() => undefined)
+  const orgId = stringField(asRecord(input.me), "org_id")
+    ?? await input.services.authority.resolveOrgId(input.auth).catch(() => undefined)
   if (!orgId) return false
   const result = await input.services.authority.listOrgs(input.auth)
   if (!Array.isArray(result)) return false
   return result.some((value) => {
-    if (!record(value)) return false
+    if (!isRecord(value)) return false
     return value.org_id === orgId && (value.role === "admin" || value.role === "owner")
   })
 }
@@ -418,13 +416,11 @@ export function HostedAgentPluginRoutes(input: {
     })
     const workspaces: unknown[] = Array.isArray(workspaceResult) ? workspaceResult : []
     const projects = [...new Map<string, { id: string; label: string }>(workspaces.flatMap((workspace) => {
-      if (!record(workspace)) return []
-      const id = typeof workspace.project_id === "string" ? workspace.project_id : undefined
+      const row = asRecord(workspace)
+      const id = stringField(row, "project_id")
       if (!id) return []
-      const label = typeof workspace.project_name === "string" && workspace.project_name.trim()
-        ? workspace.project_name
-        : id
-      return [[id, { id, label }] as const]
+      const name = stringField(row, "project_name")
+      return [[id, { id, label: name?.trim() ? name : id }] as const]
     })).values()].toSorted((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
     return c.json({
       revision: after,
@@ -493,7 +489,7 @@ export function HostedAgentPluginRoutes(input: {
     const authResult = await authenticate(c.req.raw)
     if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
     const auth = authResult.auth
-    const body = userMutation(await c.req.json().catch(() => undefined))
+    const body = userMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid signed Agent Plugins activation request"), 400)
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     let revision: number | undefined
@@ -518,7 +514,7 @@ export function HostedAgentPluginRoutes(input: {
     const authResult = await authenticate(c.req.raw)
     if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
     const auth = authResult.auth
-    const body = organizationMutation(await c.req.json().catch(() => undefined))
+    const body = organizationMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Organization defaults accept only true or return-to-default"), 400)
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     let revision: number | undefined
@@ -546,7 +542,7 @@ export function HostedAgentPluginRoutes(input: {
     const authResult = await authenticate(c.req.raw)
     if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
     const auth = authResult.auth
-    const body = updateMutation(await c.req.json().catch(() => undefined))
+    const body = updateMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid Agent Plugins update request"), 400)
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     const ownedPin = body.authority === "user" ? known?.pins.user : known?.pins.organization

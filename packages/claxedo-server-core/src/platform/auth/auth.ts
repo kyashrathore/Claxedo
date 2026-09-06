@@ -252,8 +252,8 @@ export function controlPlaneAuthConfig(
   return localOnlyAuthAdapter().config
 }
 
-export function bearerToken(header: string | null) {
-  if (!header) return
+export function bearerToken(header: string | null): string | undefined {
+  if (!header) return undefined
   const match = /^Bearer\s+(.+)$/i.exec(header.trim())
   return match?.[1]?.trim() || undefined
 }

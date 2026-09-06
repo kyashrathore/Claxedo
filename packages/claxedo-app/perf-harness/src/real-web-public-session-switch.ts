@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import { readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { agentAppViewport } from "./agent-display-contract"
+import { isRecord, recordField } from "./json-fields"
 import { measureSessionActivation } from "./agent-browser-observer"
 import { performanceMetricDelta, readPerformanceMetrics } from "./frame-sampler"
 import {
@@ -52,7 +53,7 @@ try {
       return performance.timeOrigin
     })
     const before = await readPerformanceMetrics(cdp)
-    const measured = await measureSessionActivation(page as never, destination)
+    const measured = await measureSessionActivation(page, destination)
     const after = await readPerformanceMetrics(cdp)
     if (measured.state !== "exact") throw new Error(`${benchmarkCase.caseId} failed: ${measured.reason}`)
     const messageResponse = await finishMessageResponse(benchmarkCase.sessionState === "cold")
@@ -194,8 +195,16 @@ try {
   }
   const resultPath = path.join(outputDirectory, "result.json")
   await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`)
-  const verified = JSON.parse(await readFile(resultPath, "utf8")) as typeof result
-  if (verified.observations.length !== 40 || Object.keys(verified.summary).length !== 4) {
+  // Reads back what was just written to prove the file is complete. Only the
+  // two counts are checked, so the reader reads only those.
+  const verified: unknown = JSON.parse(await readFile(resultPath, "utf8"))
+  const verifiedObservations = isRecord(verified) ? verified.observations : undefined
+  const verifiedSummary = isRecord(verified) ? recordField(verified, "summary") : undefined
+  if (
+    !Array.isArray(verifiedObservations) ||
+    verifiedObservations.length !== 40 ||
+    Object.keys(verifiedSummary ?? {}).length !== 4
+  ) {
     throw new Error("real web result verification failed")
   }
   console.log(resultPath)
@@ -231,7 +240,7 @@ function summarize(observations: Observation[]) {
   ].map((lane) => {
     const selected = observations.filter((item) => item.case.id === lane)
     const durations = selected.map((item) => item.durationMs).toSorted((left, right) => left - right)
-    const means = (key: string) => selected.reduce((sum, item) => sum + Number(item.renderer[key] ?? 0), 0) / selected.length
+    const means = (key: string) => selected.reduce((sum, item) => sum + (item.renderer[key] ?? 0), 0) / selected.length
     return [lane, {
       count: selected.length,
       completionMs: stats(durations),

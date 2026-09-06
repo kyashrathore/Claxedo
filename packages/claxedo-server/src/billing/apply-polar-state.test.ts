@@ -153,7 +153,8 @@ describe("customer.state_changed translation", () => {
       },
       PRODUCTS,
     )
-    expect(args!.org_states.map((entry) => entry.org_id).sort()).toEqual(["org_doc_1", "org_doc_2"])
+    expect(args!.org_states.map((entry) => entry.org_id).sort((left, right) => String(left).localeCompare(String(right))))
+      .toEqual(["org_doc_1", "org_doc_2"])
   })
 })
 

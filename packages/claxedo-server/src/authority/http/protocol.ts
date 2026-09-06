@@ -77,10 +77,6 @@ export const runtimeSnapshotInput = z.object({
   }).optional(),
 }).strict()
 
-export function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
 export function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
@@ -89,7 +85,8 @@ export function num(input: unknown) {
   return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }
 
-export async function json(req: Request) {
+/** The raw parsed body, `unknown` rather than `any`, for a schema or `asRecord` to narrow. */
+export async function json(req: Request): Promise<unknown> {
   return await req.json().catch(() => ({}))
 }
 
@@ -121,8 +118,8 @@ export function assertRuntimeMutationAuth(
       "Workspace runtime control token is required",
     )
   }
-  if (auth.reason !== "workspace-runtime-control-token") return
-  if (req.headers.get("x-workspace-id")?.trim() === workspaceId) return
+  if (auth.reason !== "workspace-runtime-control-token") return undefined
+  if (req.headers.get("x-workspace-id")?.trim() === workspaceId) return undefined
   throw new ControlPlaneProtocolError(
     403,
     "workspace_runtime_control_token_mismatch",
@@ -164,7 +161,7 @@ function runtimeAuth(req: Request): ControlPlaneAuthContext | undefined {
   if (!verifyWorkspaceRuntimeControlToken(
     req.headers.get("x-workspace-id")?.trim(),
     bearerToken(req.headers.get("authorization")),
-  )) return
+  )) return undefined
   return {
     mode: "unsigned-local",
     reason: "workspace-runtime-control-token",

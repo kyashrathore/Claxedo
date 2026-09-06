@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile)
 
 export function repoNameFromUrl(repoUrl: string | undefined) {
   const trimmed = repoUrl?.trim()
-  if (!trimmed) return
+  if (!trimmed) return undefined
   const last = trimmed.replace(/\.git$/, "").split("/").pop()
   return last && last.length > 0 ? last : undefined
 }

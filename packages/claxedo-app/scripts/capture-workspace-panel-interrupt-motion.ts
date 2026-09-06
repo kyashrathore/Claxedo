@@ -323,7 +323,18 @@ async function measureRapidOpenCloseOpen(
   closedStart: PanelSample,
   minDelta: number,
 ): Promise<RapidReversalTrace> {
-  const trace = await page.evaluate(async ({ startAt, rapidClickDelayMs }) => {
+  type MeasuredTrace = Omit<RapidReversalTrace,
+    | "longFrameGaps"
+    | "visibleJumps"
+    | "visibleJumpBudgetPx"
+    | "maxFrameDeltaMs"
+    | "allClicksAvailable"
+    | "startedOpeningBeforeClose"
+    | "startedClosingBeforeReopen"
+    | "reopenedFromPartialClose"
+    | "finalOpenSettled"
+  >
+  const trace: MeasuredTrace = await page.evaluate(async ({ startAt, rapidClickDelayMs }) => {
     const readPanel = (name: string) => {
       const panel = document.querySelector<HTMLElement>('[data-testid="workspace-panel-shell"]')
       if (!panel) throw new Error("Workspace panel shell is missing")
@@ -443,17 +454,7 @@ async function measureRapidOpenCloseOpen(
         finalOpen,
       },
     }
-  }, { startAt, rapidClickDelayMs }) as Omit<RapidReversalTrace,
-    | "longFrameGaps"
-    | "visibleJumps"
-    | "visibleJumpBudgetPx"
-    | "maxFrameDeltaMs"
-    | "allClicksAvailable"
-    | "startedOpeningBeforeClose"
-    | "startedClosingBeforeReopen"
-    | "reopenedFromPartialClose"
-    | "finalOpenSettled"
-  >
+  }, { startAt, rapidClickDelayMs })
 
   const visibleJumpBudgetPx = Math.max(48, closedStart.width * 0.2)
   const isRestingOpen = (frame: Pick<PanelSample, "open" | "x" | "width">) =>

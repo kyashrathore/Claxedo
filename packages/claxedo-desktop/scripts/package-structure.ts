@@ -104,7 +104,7 @@ export function asarStructuralGlobs(): string[] {
  * they are the one exception to "bundled from an entry point".
  */
 export function isDeclaredStructuralEntry(entry: string): boolean {
-  if (ASAR_STRUCTURAL_FILES.includes(entry as (typeof ASAR_STRUCTURAL_FILES)[number])) return true
+  if (ASAR_STRUCTURAL_FILES.some((file) => file === entry)) return true
   return ASAR_STRUCTURAL_ROOTS.some((root) => entry === root || entry.startsWith(`${root}/`))
 }
 

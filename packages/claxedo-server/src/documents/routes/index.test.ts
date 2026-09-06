@@ -495,8 +495,8 @@ describe("DocumentsRoutes", () => {
   })
 
   test("pins and returns the exact immutable snapshot used for work intake", async () => {
-    const pinSnapshot = vi.fn(backend.workspace.pinSnapshot)
-    const unpinSnapshot = vi.fn(backend.workspace.unpinSnapshot)
+    const pinSnapshot = vi.fn(backend.workspace.pinSnapshot.bind(backend.workspace))
+    const unpinSnapshot = vi.fn(backend.workspace.unpinSnapshot.bind(backend.workspace))
     const app = new Hono().route(
       "/documents",
       DocumentsRoutes({

@@ -1,20 +1,18 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { workbenchDrag } from "@/features/session/app-ports"
+import { workbenchDrag } from "@/app/workbench/workbench"
 import { SessionNavigation, type SessionNavigationDisplayRow } from "./session-navigation-list"
 import { TerminalSurfaceNavigation } from "../../../terminal/ui/navigation/terminal-surface-navigation"
 import type { TerminalSurfaceRow } from "./session-navigation"
 
 vi.mock("@/features/session/app-ports", async () => {
   const navigation = await import("@/app/workbench/navigation/navigation-row")
-  const workbench = await import("@/app/workbench/workbench")
   return {
     NavigationRow: navigation.NavigationRow,
     NavigationRowGlyph: navigation.NavigationRowGlyph,
     NavigationRowStatusGutter: navigation.NavigationRowStatusGutter,
     NavigationStatusDot: navigation.NavigationStatusDot,
-    workbenchDrag: workbench.workbenchDrag,
   }
 })
 

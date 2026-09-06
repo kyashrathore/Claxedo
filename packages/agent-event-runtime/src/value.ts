@@ -1,16 +1,9 @@
-/** Canonical "is this a plain JSON object?" guard for harness payloads. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { asRecord, asText, isRecord } from "@claxedo/agent-runtime-contract"
 
-export function object(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
-
-export function text(value: unknown): string | undefined {
-  if (typeof value !== "string" || !value) return undefined
-  return value
-}
+/** Harness payload readers. The structural guards live in the contract package. */
+export { isRecord }
+export const object = asRecord
+export const text = asText
 
 /** JSON text for diagnostics and error surfaces. Never throws on cycles or BigInt. */
 export function jsonText(value: unknown): string {

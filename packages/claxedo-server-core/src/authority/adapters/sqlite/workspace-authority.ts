@@ -1,8 +1,9 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { asOrgId, hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
+import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type {
   HostEnrollment,
-  OrgId,
   ProjectAction,
   ProjectRoleResult,
   SessionShareFanoutTarget,
@@ -1719,7 +1720,7 @@ export function createSqliteWorkspaceAuthority(
           last_seen_at: row.last_seen_at,
           expires_at: row.expires_at,
           workspace_ids: [],
-          acked_workspace_ids: JSON.parse(row.acked_workspace_ids) as string[],
+          acked_workspace_ids: ackedWorkspaceIds(row.acked_workspace_ids),
         }
         group.workspace_ids.push(row.workspace_id)
         groups.set(row.host_id, group)
@@ -1987,7 +1988,6 @@ export function createSqliteWorkspaceAuthority(
       return recordUserRuntimeToken(who, args)
     },
     async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args) {
-      const db = database()
       const who = user(auth)
       if (who.token_identifier !== args.actorId || who.kind !== args.actorKind) denied()
       return recordUserRuntimeToken(who, args)
@@ -2133,4 +2133,14 @@ export function createSqliteWorkspaceAuthority(
     },
   }
   return Object.assign(workspaceAuthority, privateSessions)
+}
+
+/** The host's acknowledged workspace ids, as persisted by `markSecondDeviceOpen`. */
+function ackedWorkspaceIds(json: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(json)
+    return Array.isArray(parsed) ? parsed.flatMap((item) => jsonString(item) ?? []) : []
+  } catch {
+    return []
+  }
 }

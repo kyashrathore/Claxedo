@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { workspaceRuntimePtyHistoryDir } from "../env"
 import { safeTrimStart } from "./safe-slice"
+import { rec, str } from "../json-value"
 
 export function historyPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
   const key = Buffer.from(directory).toString("base64url")
@@ -18,10 +19,10 @@ export async function readHistorySessionId(
   root = workspaceRuntimePtyHistoryDir(),
 ) {
   try {
-    const parsed = JSON.parse(await fs.readFile(historySessionPath(directory, id, root), "utf8")) as { sessionId?: unknown }
-    return typeof parsed.sessionId === "string" && parsed.sessionId ? parsed.sessionId : undefined
+    const parsed = rec(JSON.parse(await fs.readFile(historySessionPath(directory, id, root), "utf8")))
+    return str(parsed?.sessionId) || undefined
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -148,14 +149,13 @@ export async function createDiskHistory(input: { directory: string; id: string; 
 
   const flush = () => {
     if (!staged) return queue
-    const chunk = staged
+    const chunk: string = staged
     staged = ""
     queue = queue
       .then(() => fs.appendFile(file, chunk))
-      .then(() => {
+      .then(async () => {
         bytes += chunk.length
-        if (bytes <= input.limit) return
-        return compact()
+        if (bytes > input.limit) await compact()
       })
       .catch(() => {})
     return queue
@@ -165,9 +165,9 @@ export async function createDiskHistory(input: { directory: string; id: string; 
   await fs
     .mkdir(path.dirname(file), { recursive: true })
     .then(() => fs.stat(file))
-    .then((stat) => {
+    .then(async (stat) => {
       bytes = stat.size
-      if (bytes > input.limit) return compact()
+      if (bytes > input.limit) await compact()
     })
     .catch(() => {
       bytes = 0

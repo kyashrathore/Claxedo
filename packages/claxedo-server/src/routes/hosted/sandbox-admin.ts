@@ -5,6 +5,7 @@ import type { ControlPlaneTelemetry } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { internalAdminAuthorized } from "../../platform/http/internal-admin-auth"
 import { emitSandboxLeaseClosed } from "../../platform/telemetry/product/metering"
+import { readJsonRecord, stringField } from "../../platform/json/index"
 
 export type HostedSandboxAdminOptions = {
   adminToken?: string
@@ -29,6 +30,7 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
       return c.json(errorBody("sandbox_admin_unauthorized", "Sandbox admin routes require a matching bearer token"), 401)
     }
     await next()
+    return undefined
   })
 
   app.post("/internal/sandbox-manager/gc", async (c) => {
@@ -86,8 +88,8 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
     if (!options.sandboxManager) {
       return c.json(errorBody("sandbox_unavailable", "Cloud sandbox is not configured"), 501)
     }
-    const body = await c.req.json().catch(() => undefined) as { workspaceId?: unknown } | undefined
-    const workspaceId = clean(typeof body?.workspaceId === "string" ? body.workspaceId : undefined)
+    const body = await readJsonRecord(c.req.raw)
+    const workspaceId = clean(stringField(body, "workspaceId"))
     if (!workspaceId) {
       return c.json(errorBody("sandbox_admin_invalid_request", "Releasing a sandbox lease requires a workspaceId"), 400)
     }

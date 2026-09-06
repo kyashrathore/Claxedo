@@ -12,6 +12,8 @@
  * testable.
  */
 
+import { readField, readString } from "@/lib/record"
+
 type TabActions = {
   addSession(dir: string, sessionId: string, title: string): string | undefined
   addTerminal(dir: string, terminalId: string, title: string): string | undefined
@@ -24,21 +26,19 @@ type ProjectInfo = {
   sandboxes?: string[]
 }
 
-type EventDetails = {
-  type: string
-  properties?: {
-    info?: {
-      id?: string
-      title?: string
-      directory?: string
-      cwd?: string
-    }
-  }
-}
-
+/**
+ * One frame as the global SDK emitter delivers it.
+ *
+ * `properties` is `unknown` on purpose. It used to be declared as
+ * `{ info?: { id?, title?, directory?, cwd? } }`, which is the shape of only
+ * TWO of the emitter's event types — so the caller had to pass `event.listen`
+ * through `as any` for the subscription to compile at all, and the cast then
+ * hid whether this listener could read anything the emitter actually sends.
+ * The fields it wants are read out below instead of declared here.
+ */
 type ListenEvent = {
   name: string // directory
-  details: EventDetails
+  details: { type: string; properties?: unknown }
 }
 
 export type BatchAutoTabDeps = {
@@ -66,30 +66,32 @@ function isSandboxDirectory(directory: string, projects: ProjectInfo[]): boolean
 export function createBatchAutoTabListener(deps: BatchAutoTabDeps): () => void {
   return deps.listen((e) => {
     const event = e.details
-    const info = event?.properties?.info
+    const info = readField(event?.properties, "info")
+    const id = readString(info, "id")
+    const title = readString(info, "title")
     const directory =
       e.name && e.name !== "global"
         ? e.name
-        : info?.directory || info?.cwd || e.name
+        : readString(info, "directory") || readString(info, "cwd") || e.name
 
     if (!directory || !event?.type) return
 
     const projects = deps.projects()
     if (!isSandboxDirectory(directory, projects)) return
 
-    if (!info?.id) return
+    if (!id) return
 
     if (event.type === "session.created") {
       // Skip if a content already exists for this session
-      if (deps.adapters.findSession(directory, info.id)) return
-      deps.adapters.addSession(directory, info.id, info.title || "Session")
+      if (deps.adapters.findSession(directory, id)) return
+      deps.adapters.addSession(directory, id, title || "Session")
       return
     }
 
     if (event.type === "pty.created") {
       // Skip if a content already exists for this PTY
-      if (deps.adapters.findTerminal(directory, info.id)) return
-      deps.adapters.addTerminal(directory, info.id, info.title || "Terminal")
+      if (deps.adapters.findTerminal(directory, id)) return
+      deps.adapters.addTerminal(directory, id, title || "Terminal")
       return
     }
   })

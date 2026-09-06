@@ -6,7 +6,7 @@
  */
 import { afterAll, describe, expect, test, beforeEach, mock } from "bun:test"
 import { createRoot } from "solid-js"
-import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpers"
+import { createMockSDK, createMockStorage, createTerminalApiModule, installFetchMock } from "./test-support/terminal-fixture"
 
 // ---------------------------------------------------------------------------
 // Register mocks
@@ -18,39 +18,29 @@ const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platfo
 const realRouterModule = { ...(await import("@solidjs/router")) }
 const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)) }
 
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
-  mock.module("@/platform/persistence/persist", () => realPersistModule)
-  mock.module("@solidjs/router", () => realRouterModule)
-  mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
+// `mock.module` returns a promise; awaiting it means the hook does not resolve
+// until the module graph has actually been swapped back, so a later file in the
+// same process cannot observe a half-restored module.
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
+  await mock.module("@/platform/persistence/persist", () => realPersistModule)
+  await mock.module("@solidjs/router", () => realRouterModule)
+  await mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
-mock.module("@opencode-ai/ui/context", () => ({
+await mock.module("@opencode-ai/ui/context", () => ({
   createSimpleContext: () => ({ use: () => {}, provider: () => {} }),
 }))
 
-mock.module("@/app/providers/sdk/sdk", () => ({
+await mock.module("@/app/providers/sdk/sdk", () => ({
   useSDK: () => { throw new Error("useSDK called outside test") },
 }))
 
-mock.module("@/platform/api/api", () => ({
-  authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
-  getClaxedoServerUrl: () => "http://127.0.0.1:3001",
-  getDefaultBaseUrl: () => "http://127.0.0.1:3001",
-  // Stub remaining api.ts exports — see terminal-relay-lifecycle.test.ts
-  api: {} as Record<string, unknown>,
-  isDemoMode: () => false,
-  isDemoPath: () => false,
-  isEmbedMode: () => false,
-  fixDir: (input: string | undefined) => input,
-  configureApiRuntime: () => undefined,
-  resetApiRuntime: () => undefined,
-  normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
-}))
+await mock.module("@/platform/api/api", () => createTerminalApiModule("http://127.0.0.1:3001"))
 
 // Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so a
 // partial mock would break later files that import its other exports.
-mock.module("@/platform/persistence/persist", () => ({
+await mock.module("@/platform/persistence/persist", () => ({
   ...realPersistModule,
   Persist: {
     ...realPersistModule.Persist,
@@ -94,11 +84,11 @@ mock.module("@/platform/persistence/persist", () => ({
   removePersisted: () => Promise.resolve(),
 }))
 
-mock.module("@solidjs/router", () => ({
+await mock.module("@solidjs/router", () => ({
   useParams: () => ({ dir: "/workspace" }),
 }))
 
-mock.module("@/features/terminal/core/terminal-recovery", () => {
+await mock.module("@/features/terminal/core/terminal-recovery", () => {
   const executed = new Set<string>()
   const claimed = new Set<string>()
   const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`

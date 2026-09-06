@@ -24,14 +24,20 @@ function required() {
   return ports
 }
 
-function bind<K extends keyof ReviewAppPorts>(key: K) {
-  return ((...args: never[]) => (required()[key] as (...values: never[]) => unknown)(...args)) as ReviewAppPorts[K]
+/**
+ * A lazy stand-in for one port: the shell configures the ports after this module
+ * is evaluated, so each export must defer the lookup to call time. Reading the
+ * port through `select` keeps the argument and return types inferred from the
+ * real function, which is why no cast is needed to produce one.
+ */
+function bind<A extends unknown[], R>(select: (ports: ReviewAppPorts) => (...args: A) => R) {
+  return (...args: A) => select(required())(...args)
 }
 
-export const useFile = bind("useFile")
-export const usePrompt = bind("usePrompt")
-export const useSDK = bind("useSDK")
-export const createPanePreferences = bind("createPanePreferences")
-export const reviewModePreferenceScope = bind("reviewModePreferenceScope")
-export const DialogReleaseNotes = bind("DialogReleaseNotes")
+export const useFile = bind((ports) => ports.useFile)
+export const usePrompt = bind((ports) => ports.usePrompt)
+export const useSDK = bind((ports) => ports.useSDK)
+export const createPanePreferences = bind((ports) => ports.createPanePreferences)
+export const reviewModePreferenceScope = bind((ports) => ports.reviewModePreferenceScope)
+export const DialogReleaseNotes = bind((ports) => ports.DialogReleaseNotes)
 export type Highlight = ReleaseNotes.Highlight

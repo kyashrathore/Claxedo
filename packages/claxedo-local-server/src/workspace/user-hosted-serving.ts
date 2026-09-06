@@ -285,14 +285,14 @@ function openWorkspaceTunnel(input: {
       // This socket serves exactly the workspace it registered for. A frame
       // naming any other workspace is not this connection's to answer, even
       // when the same machine happens to serve that one too.
-      if (requested !== workspaceId) return
+      if (requested !== workspaceId) return undefined
       // What a remote caller on THIS workspace's tunnel may reach on this
       // machine, and where it lands: the daemon's own families denied
       // outright, its OpenCode-compat root family for provider auth/OAuth/
       // project metadata, everything else the workspace runtime itself
       // (`user-hosted-surface.ts` for the full design).
       const target = userHostedSurface({ localBaseUrl: serving.localBaseUrl, workspaceId, path })
-      if (target.kind === "deny") return
+      if (target.kind === "deny") return undefined
       return target.url
     },
     tokenProvider: async () => serving.token.current,

@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono"
+import { jsonRecord } from "../runtime/lib/json"
 
 /**
  * Request peer-address primitives.
@@ -23,7 +24,12 @@ function loopbackHost(input: string) {
 // address to be loopback whenever connection info is resolvable. This module
 // is on the Worker-safe list, so the Node socket is duck-typed — no node:*
 // imports.
-type IncomingMessageLike = { socket?: { remoteAddress?: string } }
+/** The remote address a node-server `IncomingMessage` carries, if it has one. */
+function incomingRemoteAddress(incoming: unknown): string | undefined {
+  const socket = jsonRecord(jsonRecord(incoming)?.socket)
+  const address = socket?.remoteAddress
+  return typeof address === "string" && address ? address : undefined
+}
 
 const requestPeerAddresses = new WeakMap<Request, string>()
 /**
@@ -81,9 +87,8 @@ export function loopbackReplayHeaders(input: Record<string, string>): Record<str
 // both @hono/node-server and @hono/node-ws). Absent env (Workers, in-process
 // test fetch) this is a no-op.
 export function stampRequestPeerAddress(request: Request, env: unknown) {
-  const incoming = (env as { incoming?: IncomingMessageLike } | null | undefined)?.incoming
-  const address = incoming?.socket?.remoteAddress
-  if (typeof address === "string" && address) requestPeerAddresses.set(request, address)
+  const address = incomingRemoteAddress(jsonRecord(env)?.incoming)
+  if (address) requestPeerAddresses.set(request, address)
 }
 
 export function peerAddressStamp(): MiddlewareHandler {
@@ -101,9 +106,8 @@ export function peerAddressStamp(): MiddlewareHandler {
 function nodeServerPeerAddress(request: Request): string | undefined {
   for (const sym of Object.getOwnPropertySymbols(request)) {
     if (sym.description !== "incomingKey") continue
-    const incoming = (request as unknown as Record<symbol, IncomingMessageLike | undefined>)[sym]
-    const address = incoming?.socket?.remoteAddress
-    if (typeof address === "string" && address) return address
+    const address = incomingRemoteAddress(Reflect.get(request, sym))
+    if (address) return address
   }
   return undefined
 }

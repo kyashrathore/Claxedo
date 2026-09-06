@@ -2,10 +2,10 @@ import { createEffect, createMemo, createSignal, onCleanup, type ValidComponent 
 import { Dynamic } from "solid-js/web"
 import "./text-shimmer-v2.css"
 
-export const TextShimmerV2 = <T extends ValidComponent = "span">(props: {
+export const TextShimmerV2 = (props: {
   text: string
   class?: string
-  as?: T
+  as?: ValidComponent
   active?: boolean
   offset?: number
 }) => {

@@ -450,9 +450,12 @@ export async function runMemoryLane(options: {
         browserTeardowns,
         familyGrowth: Object.fromEntries(
           Object.keys({ ...firstFamilies, ...lastFamilies })
-            .map((family) => [family, (lastFamilies[family] ?? 0) - (firstFamilies[family] ?? 0)])
-            .filter(([, delta]) => (delta as number) !== 0)
-            .sort((a, b) => (b[1] as number) - (a[1] as number))
+            // Typed as a tuple so `delta` stays a number: `.map` to an array
+            // literal widens to `(string | number)[]`, which is why the sort
+            // and filter below each had to assert it back.
+            .map((family): [string, number] => [family, (lastFamilies[family] ?? 0) - (firstFamilies[family] ?? 0)])
+            .filter(([, delta]) => delta !== 0)
+            .sort(([, left], [, right]) => right - left)
             .slice(0, 8),
         ),
         ...(snapshot?.retainers.length ? { topRetainers: snapshot.retainers.slice(0, 5) } : {}),

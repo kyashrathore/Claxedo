@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { remoteWorkspaceSessionAccessPolicy } from "./remote-session-authority"
+import { fetchBodyJson, fetchUrl } from "./test-support/fetch-double"
+import { rec } from "./json-value"
 
 const input = {
   actor: { actorId: "actor_b", actorKind: "human" as const },
@@ -19,7 +21,7 @@ describe("remote workspace session authority", () => {
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
       fetch: async (_url, init) => {
-        bodies.push(JSON.parse(String(init?.body)))
+        bodies.push(fetchBodyJson(init?.body))
         return Response.json({ allowed: true })
       },
     })
@@ -41,14 +43,14 @@ describe("remote workspace session authority", () => {
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
       fetch: async (url, init) => {
-        requests.push({ url: String(url), init })
+        requests.push({ url: fetchUrl(url), init })
         return Response.json({ allowed: true })
       },
     })
 
     expect((await policy.authorize({ ...input, operation: "message_read" })).allowed).toBe(true)
     expect((await policy.authorize({ ...input, operation: "prompt" })).allowed).toBe(true)
-    expect(policy.registerSession).toBeDefined()
+    expect(typeof policy.registerSession).toBe("function")
     expect((await policy.registerSession!({
       ...input,
       operation: "session_create",
@@ -56,7 +58,7 @@ describe("remote workspace session authority", () => {
     })).allowed).toBe(true)
     expect(requests.map((request) => ({
       authorization: new Headers(request.init?.headers).get("authorization"),
-      body: JSON.parse(String(request.init?.body)),
+      body: fetchBodyJson(request.init?.body),
     }))).toEqual([
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "read" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
@@ -116,7 +118,7 @@ test("turn lease responses are validated and renewals send only the bound lease 
   const policy = remoteWorkspaceSessionAccessPolicy({
     url: "https://control.test/authorize",
     fetch: async (_url, init) => {
-      const body = JSON.parse(String(init?.body))
+      const body = rec(fetchBodyJson(init?.body)) ?? {}
       requests.push({ headers: new Headers(init?.headers), body })
       return Response.json(body.action === "turn_release" ? { released: true } : lease)
     },

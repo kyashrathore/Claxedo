@@ -532,6 +532,18 @@ export class UnknownHostedOperation extends Error {}
 export class MissingOperationParameter extends Error {}
 
 /**
+ * Every operation parameter ends up in a URL path segment, a query value or a
+ * header, so it has to be a scalar. Passing an object used to stringify to the
+ * literal `[object Object]` and travel to the control plane as if that were
+ * the caller's intent; it is a caller bug and is refused as one.
+ */
+function operationParameter(name: string, key: string, value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value)
+  throw new MissingOperationParameter(`operation "${name}" requires ${key} to be a string, number or boolean`)
+}
+
+/**
  * Turn a named operation plus parameters into the one request it stands for.
  *
  * Rejects an unknown name rather than falling through to a default. There is no
@@ -549,7 +561,10 @@ export function resolveHostedOperation(
 
   let path = operation.path
   if (path.endsWith("/*")) {
-    const subpath = String(input.subpath ?? "")
+    const subpath =
+      input.subpath === undefined || input.subpath === null
+        ? ""
+        : operationParameter(name, "subpath", input.subpath)
     if (subpath.includes("..") || subpath.includes("://") || subpath.startsWith("//")) {
       throw new MissingOperationParameter(`operation "${name}" requires a safe subpath`)
     }
@@ -565,7 +580,7 @@ export function resolveHostedOperation(
         throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
       }
       // Encoded, so a parameter cannot add a path segment or a query string.
-      return encodeURIComponent(String(value))
+      return encodeURIComponent(operationParameter(name, key, value))
     })
   }
 
@@ -576,12 +591,12 @@ export function resolveHostedOperation(
       if (value === undefined || value === null || value === "") {
         throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
       }
-      params.set(key, String(value))
+      params.set(key, operationParameter(name, key, value))
     }
     for (const key of operation.optionalQuery ?? []) {
       const value = input[key]
       if (value === undefined || value === null || value === "") continue
-      params.set(key, String(value))
+      params.set(key, operationParameter(name, key, value))
     }
     const qs = params.toString()
     if (qs) path = `${path}?${qs}`
@@ -591,7 +606,7 @@ export function resolveHostedOperation(
   for (const [param, headerName] of Object.entries(operation.headers ?? {})) {
     const value = input[param]
     if (value === undefined || value === null || value === "") continue
-    headers[headerName] = String(value)
+    headers[headerName] = operationParameter(name, param, value)
   }
 
   // Only carried when actually present, so a resolved request keeps the exact
@@ -622,6 +637,17 @@ export function resolveHostedOperation(
 }
 
 /** The IPC channel a named operation travels on. One per operation, by name. */
+/** Whether a channel-supplied string names one of the reviewed operations. */
+export function isHostedOperationName(value: string): value is HostedOperationName {
+  return Object.hasOwn(HOSTED_OPERATIONS, value)
+}
+
+/**
+ * The closed set, as data. Built by filtering rather than asserting
+ * `Object.keys`, so nothing here claims a name the table does not hold.
+ */
+export const HOSTED_OPERATION_NAMES: HostedOperationName[] = Object.keys(HOSTED_OPERATIONS).filter(isHostedOperationName)
+
 export function hostedOperationChannel(name: HostedOperationName) {
   return `claxedo.account.operation:${name}`
 }

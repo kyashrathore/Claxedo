@@ -4,13 +4,15 @@ export function createSubmitCommentActions(context: {
   add: (item: CommentItem & { type: "file" }) => unknown
   remove: (key: string) => unknown
 }) {
+  // Arrow properties: both are handed to the submit controller as bare
+  // references, so neither may depend on `this`.
   return {
-    restore(items: Array<CommentItem & { key?: string }>) {
+    restore: (items: Array<CommentItem & { key?: string }>) => {
       for (const { key: _storedKey, ...item } of items) {
         context.add({ type: "file", ...item })
       }
     },
-    remove(items: { key: string }[]) {
+    remove: (items: { key: string }[]) => {
       for (const item of items) context.remove(item.key)
     },
   }
@@ -95,6 +97,11 @@ export function createPromptCommentRouter(input: PromptCommentRouterInput) {
     const tab = input.files.tab(item.path)
     input.tabs().open(tab)
     input.tabs().setActive(tab)
-    Promise.resolve(input.files.load(item.path)).finally(() => queueCommentFocus())
+    // Focus is queued once the load settles either way. `.catch` before the
+    // continuation so a failed load does not become an unhandled rejection —
+    // the file store already reports the failure through its own state.
+    void Promise.resolve(input.files.load(item.path))
+      .catch(() => undefined)
+      .then(() => queueCommentFocus())
   }
 }

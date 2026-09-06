@@ -10,8 +10,10 @@ type Input = {
   directory?: string | null
 }
 
-async function sessionHarness(input: Pick<Input, "sessionId" | "workspaceId" | "directory">) {
-  if (!input.sessionId) return
+async function sessionHarness(
+  input: Pick<Input, "sessionId" | "workspaceId" | "directory">,
+): Promise<SessionHarness | undefined> {
+  if (!input.sessionId) return undefined
   const ws = await resolveWorkspace({
     workspaceId: input.workspaceId ?? undefined,
     directory: input.directory ?? undefined,
@@ -22,13 +24,13 @@ async function sessionHarness(input: Pick<Input, "sessionId" | "workspaceId" | "
     if (cfg?.harness) return normalize(cfg.harness)
   }
   const meta = await sessionMeta(input.sessionId)
-  if (!meta?.directory) return
+  if (!meta?.directory) return undefined
   const hit = await resolveWorkspace({
     directory: meta.directory,
   })
-  if (!hit) return
+  if (!hit) return undefined
   const cfg = getSessionConfig(hit.id, input.sessionId)
-  if (cfg?.harness) return normalize(cfg.harness)
+  return cfg?.harness ? normalize(cfg.harness) : undefined
 }
 
 export async function resolveHarnessForRequest(input: Input = {}): Promise<SessionHarness> {

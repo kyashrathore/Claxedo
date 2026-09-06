@@ -22,7 +22,7 @@ describe("retired vocabulary guard", () => {
       .filter((file) => !baselineSet.has(file))
       .map(
         (file) =>
-          `${file}: retired "runner"/"runnerHost" vocabulary -- use "harness"/"harnessHost" (see src/${"platform/runtime/session-url.ts"} for the one documented legacy-compat exception)`,
+          `${file}: retired "runner"/"runnerHost" vocabulary -- use "harness"/"harnessHost" (see src/platform/runtime/session-url.ts for the one documented legacy-compat exception)`,
       )
 
     expect(offenders).toEqual([])

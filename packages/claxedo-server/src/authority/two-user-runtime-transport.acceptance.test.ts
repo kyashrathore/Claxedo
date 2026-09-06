@@ -21,6 +21,7 @@ import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/s
 import { createRelayHostAuthMiddleware } from "../../../workspace-runtime/src/workspace-host-service-auth"
 import { WorkspaceCheckpointRoutes } from "../workspace/routes/checkpoints"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
+import { fetchUrl } from "../test-support/fetch-calls"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-runtime-"))
 const previous = Object.fromEntries([
@@ -279,7 +280,7 @@ function runtimeAdapter() {
         sessionID: sessionId,
         messageID: input.userMessageId!,
         type: "text" as const,
-        text: String((input.parts[0] as { text?: unknown } | undefined)?.text ?? ""),
+        text: textPartText(input.parts[0]),
       }
       const assistant = buildAssistantMessage({
         id: input.assistantMessageId,
@@ -414,7 +415,7 @@ describe("two-user signed runtime transport acceptance", () => {
     })
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "http://control.test/api/runtime-authority/session-authorize",
-      fetch: async (input, init) => oracle.request(String(input), init),
+      fetch: async (input, init) => oracle.request(fetchUrl(input), init),
     })
     const runtimeApp = new Hono()
     runtimeApp.use("*", createRelayHostAuthMiddleware({
@@ -629,7 +630,7 @@ describe("two-user signed runtime transport acceptance", () => {
     bobReconnect.close()
     expect((await runtimeRequest(runtimeApp, bobRht, "/session/ses_runtime_private")).status).toBe(403)
     await expect((await runtimeRequest(runtimeApp, bobRht, "/session")).json()).resolves.toEqual([])
-    runtime.dispose()
+    await runtime.dispose()
   }, 30_000)
 })
 
@@ -673,4 +674,10 @@ function runtimeRequest(app: Hono, token: string, pathname: string, init: Reques
   headers.set("x-workspace-id", "ws_runtime_private")
   headers.set("x-forwarded-by", "workspace-relay")
   return app.request(`http://runtime.test${pathname}`, { ...init, headers })
+}
+
+/** The prompt's first part is a text part; anything else has no text to echo back. */
+function textPartText(part: unknown) {
+  const text = part && typeof part === "object" && "text" in part ? part.text : undefined
+  return typeof text === "string" ? text : ""
 }

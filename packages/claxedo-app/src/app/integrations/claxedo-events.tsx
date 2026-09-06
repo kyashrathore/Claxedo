@@ -13,6 +13,7 @@ import {
   type ParentProps,
 } from "solid-js"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
+import { asRecord, readString } from "@/lib/record"
 import type { AccountState } from "@/platform/account/account-port"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
@@ -51,6 +52,7 @@ import {
   reconnectDelayMs,
 } from "../providers/claxedo-events-reconnect"
 import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
+import { errorMessage } from "@/lib/server-errors"
 
 // ─── Event Types (must match claxedo-server-core/src/platform/runtime/lib/bus.ts) ─────────────
 
@@ -209,22 +211,27 @@ export function normalizeClaxedoStreamEvent(
     if (input.type === "heartbeat") return input
     return addressClaxedoEvent(input, address)
   }
-  const envelope = input && typeof input === "object" && !Array.isArray(input)
-    ? input as { directory?: unknown; payload?: unknown }
-    : undefined
-  const payload = envelope?.payload
-  if (!isClaxedoEvent(payload)) return undefined
-  if (payload.type === "heartbeat") return payload
-  const addressed = addressClaxedoEvent(payload, address)
-  if ("directory" in addressed && typeof addressed.directory === "string" && addressed.directory) return addressed
-  const directory = typeof envelope?.directory === "string" && envelope.directory ? envelope.directory : undefined
-  if (!directory) return addressed
-  return { ...addressed, directory: address(directory) } as ClaxedoEvent
+  const envelope = asRecord(input)
+  const payload = asRecord(envelope?.payload)
+  if (!payload) return undefined
+  if (payload.type === "heartbeat") return { type: "heartbeat" }
+  // The envelope's directory addresses a payload that names none of its own.
+  // Stamped on the FRAME, before it is read as a `ClaxedoEvent`: stamping it
+  // after meant re-declaring the result to be one, which is false for the arms
+  // whose contract has no `directory` at all (`pty.*`, `agent.lifecycle`,
+  // `provision`). It also leaves `addressClaxedoEvent` as the single place the
+  // address translation is applied, instead of two branches applying it apart.
+  const envelopeDirectory = readString(envelope, "directory")
+  const framed = readString(payload, "directory") || !envelopeDirectory
+    ? payload
+    : { ...payload, directory: envelopeDirectory }
+  if (!isClaxedoEvent(framed) || framed.type === "heartbeat") return undefined
+  return addressClaxedoEvent(framed, address)
 }
 
 function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
   if (!("directory" in event) || typeof event.directory !== "string" || !event.directory) return event
-  return { ...event, directory: address(event.directory) } as ClaxedoEvent
+  return { ...event, directory: address(event.directory) }
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────
@@ -268,7 +275,7 @@ export function useClaxedoEventsOptional() {
 // Distinguishes the relay edge (network/CORS) from the Runtime Access Token
 // mint (control-plane status) from the relayed runtime response.
 function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTarget) {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   const name = error instanceof Error ? error.name : typeof error
   const ctx = target.kind === "central"
     ? { stream: "central" as const, url: target.url }

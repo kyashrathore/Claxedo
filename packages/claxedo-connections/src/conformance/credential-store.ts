@@ -7,7 +7,7 @@
 // promise that a stored secret is never observable outside the two secret
 // seams. No case below asserts a secret's value; they assert shape, status
 // gating, and — where the port must hide it — the secret's ABSENCE.
-import type { CredentialRecord, CredentialStorePort } from "../types.js"
+import type { CredentialStorePort } from "../types.js"
 
 export const CREDENTIAL_STORE_CONFORMANCE_VERSION = 1 as const
 
@@ -75,12 +75,12 @@ export function credentialStoreConformance(
 
     testCase("get never echoes secret material", async () => {
       const store = await seed()
-      const record = (await store.get(PROVIDER_A)) as CredentialRecord & Record<string, unknown>
-      assert(record !== undefined, "get lost the stored credential")
-      const serialized = JSON.stringify(record)
+      const stored = await store.get(PROVIDER_A)
+      assert(stored !== undefined, "get lost the stored credential")
+      const serialized = JSON.stringify(stored)
       assert(!serialized.includes(SECRET_A), "get echoed the stored secret through its metadata record")
       for (const key of ["secret", "secure_ref", "secureRef", "token", "accessToken", "value"]) {
-        assert(!(key in record), `get exposed a secret-bearing key: ${key}`)
+        assert(!(key in stored), `get exposed a secret-bearing key: ${key}`)
       }
     }),
 

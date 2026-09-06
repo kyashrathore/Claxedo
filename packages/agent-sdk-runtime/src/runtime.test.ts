@@ -19,14 +19,13 @@ import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
 import type { AgentMessage, AgentRuntimeStreamEvent, PromptInput, RuntimeDirectory, SessionConfig } from "./index"
-import { storeRows } from "./test-utils/store-internals"
 
-test("disposing a runtime leaves its injected store open for its owner", () => {
+test("disposing a runtime leaves its injected store open for its owner", async () => {
   let closed = 0
   const store = createMemoryRuntimeStore()
   Object.assign(store, { close() { closed++ } })
   const runtime = createAgentRuntime({ store, harnesses: [] })
-  runtime.dispose()
+  await runtime.dispose()
   expect(closed).toBe(0)
 })
 
@@ -251,7 +250,7 @@ describe("createAgentRuntime", () => {
     await runtime.dispose()
     await create
     expect(disposed).toBe(1)
-    const rows = storeRows(store)
+    const rows = store
     const lease = rows.acquireTurnLease("stopping")
     expect(lease).toBeDefined()
     rows.releaseTurnLease("stopping", lease!)
@@ -275,7 +274,7 @@ describe("createAgentRuntime", () => {
 
   test("disposal waits for admitted producer finalization and refuses later work", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })
     let disposed = 0
@@ -380,7 +379,7 @@ describe("createAgentRuntime", () => {
     await expect(runtime.goals.delete(session.id, "/repo")).resolves.toEqual({ ok: true, goal: null })
     expect(calls).toEqual(["read", "start:Ship safely", "pause", "resume", "stop", "delete"])
     expect(messagesSent).toBe(0)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("delivers provider-originated Goal updates to runtime subscribers exactly once", async () => {
@@ -432,7 +431,7 @@ describe("createAgentRuntime", () => {
     // A provider-driven transition never passes through a runtime mutation.
     goal = { ...goal!, status: "paused", updatedAt: 2 }
     mirrorToHub(session.id, goal)
-    runtime.dispose()
+    await runtime.dispose()
 
     const payloads: Array<{ type: string }> = []
     for await (const event of subscription) payloads.push(event.payload)
@@ -495,7 +494,7 @@ describe("createAgentRuntime", () => {
       goal: { status: "paused" },
     })
     expect(calls).toEqual(["start", "stop"])
-    runtime.dispose()
+    await runtime.dispose()
 
     const payloads: Array<{ type: string }> = []
     for await (const event of subscription) payloads.push(event.payload)
@@ -564,7 +563,7 @@ describe("createAgentRuntime", () => {
     expect(first).toMatchObject({ status: "fulfilled", value: { ok: true, goal: { objective: "First" } } })
     expect(second).toMatchObject({ status: "rejected", reason: { code: "goal_already_exists" } })
     expect({ reads, starts }).toEqual({ reads: 2, starts: 1 })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("reports unavailable Goal capabilities and existing state without admitting mutations", async () => {
@@ -648,7 +647,7 @@ describe("createAgentRuntime", () => {
     await expect(runtime.goals.stop(session.id, "/repo"))
       .rejects.toMatchObject({ code: "goal_unavailable", message: unavailableReason })
     expect(mutations).toEqual([])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects invalid, duplicate, unsupported, and cross-directory Goal work before adapter mutation", async () => {
@@ -715,7 +714,7 @@ describe("createAgentRuntime", () => {
     await expect(runtime.goals.pause(session.id, "/repo")).rejects.toMatchObject({ code: "goal_action_unavailable" })
     await expect(runtime.goals.delete(session.id, "/other")).rejects.toMatchObject({ code: "goal_scope_mismatch" })
     expect(calls).toEqual([])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("resolves one lazy adapter for concurrent callers", async () => {
@@ -739,7 +738,7 @@ describe("createAgentRuntime", () => {
     ])
 
     expect(resolutions).toBe(1)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("ends a slow subscription with an explicit overflow notice", async () => {
@@ -761,7 +760,7 @@ describe("createAgentRuntime", () => {
       },
     })
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects an interaction missing from the canonical pending snapshot", async () => {
@@ -788,7 +787,7 @@ describe("createAgentRuntime", () => {
       questionAnswers: 0,
       questionRejects: 0,
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects interactions when no registered harness implements the reply", async () => {
@@ -803,7 +802,7 @@ describe("createAgentRuntime", () => {
       .rejects.toThrow("Question question_unlisted not found")
     await expect(runtime.questions.reject("question_unlisted", "/repo"))
       .rejects.toThrow("Question question_unlisted not found")
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("routes a listed interaction to the adapter that owns its session", async () => {
@@ -842,12 +841,12 @@ describe("createAgentRuntime", () => {
 
     await runtime.permissions.respond("perm_1", "deny", "/repo")
     expect(responders).toEqual(["claude"])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects a bound session whose canonical runtime config is missing", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const sessionConfigReads: string[] = []
     rows.bindSession({
       sessionId: "ses_missing_config",
@@ -866,12 +865,12 @@ describe("createAgentRuntime", () => {
       .rejects.toThrow("Session ses_missing_config has no runtime config")
     expect(rows.getSessionConfig("ses_missing_config")).toBeFalsy()
     expect(sessionConfigReads).toEqual([])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("never derives a runtime config for a session the store has not bound", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const sessionConfigReads: string[] = []
     const runtime = createAgentRuntime({ store, harnesses: [testHarness({ sessionConfigReads })] })
 
@@ -883,12 +882,12 @@ describe("createAgentRuntime", () => {
       .rejects.toThrow("Session ses_never_bound has no runtime config")
     expect(sessionConfigReads).toEqual([])
     expect(rows.getSessionConfig("ses_never_bound")).toBeFalsy()
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects session operations when no adapter can be named for the session", async () => {
     const store = createMemoryRuntimeStore()
-    storeRows(store).bindSession({
+    store.bindSession({
       sessionId: "ses_missing_config",
       directory: "/repo",
       agentSessionId: "native_missing_config",
@@ -905,7 +904,7 @@ describe("createAgentRuntime", () => {
       .rejects.toThrow("Session ses_missing_config has no runtime config")
     await expect(runtime.turns.start({ sessionId: "ses_missing_config", text: "hello" }))
       .rejects.toThrow("Session ses_missing_config has no runtime config")
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects todo reads when the selected harness does not implement them", async () => {
@@ -920,7 +919,7 @@ describe("createAgentRuntime", () => {
 
     await expect(runtime.todos.list(session.id, "/repo"))
       .rejects.toThrow("This harness does not support todos")
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("keeps the runtime inventory current after adapter-backed update and delete", async () => {
@@ -945,7 +944,7 @@ describe("createAgentRuntime", () => {
 
   test("persists adapter-accepted config updates through both public namespaces", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [handoffHarness({ id: "pi" })],
@@ -961,7 +960,7 @@ describe("createAgentRuntime", () => {
 
     await runtime.config.update(session.id, { agent: "review" }, "/repo")
     expect(rows.getSessionConfig(session.id)).toMatchObject({ variant: "high", agent: "review" })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("persists runtime-owned config through both namespaces without adapter writes", async () => {
@@ -985,15 +984,15 @@ describe("createAgentRuntime", () => {
     })
     await runtime.sessions.updateConfig(session.id, { variant: "high" }, "/repo")
     await runtime.config.update(session.id, { agent: "review" }, "/repo")
-    expect(storeRows(store).getSessionConfig(session.id)).toMatchObject({ variant: "high", agent: "review" })
+    expect(store.getSessionConfig(session.id)).toMatchObject({ variant: "high", agent: "review" })
     await expect(runtime.config.update(session.id, { agent: "wrong" }, "/other")).rejects.toThrow()
-    expect(storeRows(store).getSessionConfig(session.id)?.agent).toBe("review")
-    runtime.dispose()
+    expect(store.getSessionConfig(session.id)?.agent).toBe("review")
+    await runtime.dispose()
   })
 
   test("routes harness changes from config.update through conversation handoff", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const handoffs: string[] = []
     const runtime = createAgentRuntime({
       store,
@@ -1016,12 +1015,12 @@ describe("createAgentRuntime", () => {
       from: { id: "pi", access: "native" },
       pending: true,
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("resolves a target harness lazily for conversation handoff", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const handoffs: string[] = []
     const resolutions: string[] = []
     let targetAdapter: AgentHarnessAdapter | undefined
@@ -1056,12 +1055,12 @@ describe("createAgentRuntime", () => {
     expect(resolutions).toEqual(["claude:native"])
     expect(handoffs).toEqual(["ses_lazy"])
     expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("continues across harnesses in a fresh native thread with the completed transcript", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const prompts: string[] = []
     const handoffs: string[] = []
     const handoffSystems: string[] = []
@@ -1115,12 +1114,12 @@ describe("createAgentRuntime", () => {
     expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
     expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
     expect(prompts).toHaveLength(1)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("snapshots only canonical store history during handoff", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const prompts: string[] = []
     const runtime = createAgentRuntime({
       store,
@@ -1172,12 +1171,12 @@ describe("createAgentRuntime", () => {
     expect(continued.prompt.system).toContain("Assistant:\nI will remember that.")
     await tick()
     expect(prompts).toHaveLength(1)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("keeps a pending handoff when the first target-harness turn fails", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", turnError: "target failed" })],
@@ -1196,12 +1195,12 @@ describe("createAgentRuntime", () => {
       pending: true,
     })
     expect(pending?.transcript).toContain('<session-handoff from="pi">')
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("does not carry a source-harness model into the target harness", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" })],
@@ -1216,12 +1215,12 @@ describe("createAgentRuntime", () => {
     await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
 
     expect(rows.getSessionConfig(session.id)?.model).toBeUndefined()
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("restores the source binding when target-harness configuration fails", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", configError: "configuration failed" })],
@@ -1237,7 +1236,7 @@ describe("createAgentRuntime", () => {
     expect(rows.getAgentSessionId(session.id)).toBe("ses_rollback")
     expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "pi", access: "native" })
     expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("creates a session, starts a turn, and publishes events", async () => {
@@ -1279,7 +1278,7 @@ describe("createAgentRuntime", () => {
       { info: { role: "user" } },
       { info: { role: "assistant" } },
     ])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("executes only through the complete canonical binding and reads history from the store", async () => {
@@ -1339,7 +1338,7 @@ describe("createAgentRuntime", () => {
 
   test("rejects a caller-supplied id bound to another workspace before adapter creation", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     let creates = 0
     const runtime = createAgentRuntime({
       store,
@@ -1381,7 +1380,7 @@ describe("createAgentRuntime", () => {
     })).rejects.toThrow("execution binding workspaceId mismatch")
     expect(creates).toBe(2)
     expect(rows.getExecutionBinding("session-bound")).toEqual(binding)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("carries a turn permission mode into the harness prompt", async () => {
@@ -1401,7 +1400,7 @@ describe("createAgentRuntime", () => {
     await tick()
 
     expect(modes).toEqual(["agent-full-access"])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("carries the turn author into the harness prompt and omits it when absent", async () => {
@@ -1424,7 +1423,7 @@ describe("createAgentRuntime", () => {
     await tick()
 
     expect(authors).toEqual([author, "absent"])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("leaves an operator ACP model at its own default when no model is selected", async () => {
@@ -1449,7 +1448,7 @@ describe("createAgentRuntime", () => {
 
     expect(turn.prompt.model).toEqual({ providerID: "connection:openclaw", modelID: "default" })
     expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("applies the selected runtime model before creating a session", async () => {
@@ -1466,12 +1465,12 @@ describe("createAgentRuntime", () => {
     })
 
     expect(calls).toEqual(["setModel:gpt-5.5", "createSession"])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("commits streamed compatibility events to replay before publishing", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -1504,12 +1503,12 @@ describe("createAgentRuntime", () => {
         parts: [{ id: "part_1", text: "streamed reply" }],
       },
     ])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("aliases emitted assistant ids back to the submitted assistant id", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -1566,12 +1565,12 @@ describe("createAgentRuntime", () => {
     expect(published.find((event) => event.payload.type === "session.usage")?.payload).toMatchObject({
       properties: { sessionID: session.id, messageID: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("aliases assistant parts even when they arrive before assistant metadata", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -1605,12 +1604,12 @@ describe("createAgentRuntime", () => {
       },
     ])
     expect(rows.getMessages(session.id)).toHaveLength(2)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("projects runtime-native text chunks into durable replay", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -1637,7 +1636,7 @@ describe("createAgentRuntime", () => {
         parts: [{ type: "text", text: "projected reply" }],
       },
     ])
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("event subscriptions close immediately when returned while idle", async () => {
@@ -1649,7 +1648,7 @@ describe("createAgentRuntime", () => {
 
     await expect(iterator.return?.()).resolves.toMatchObject({ done: true })
     await expect(iterator.next()).resolves.toMatchObject({ done: true })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects turn starts before returning when the session is unknown", async () => {
@@ -1662,7 +1661,7 @@ describe("createAgentRuntime", () => {
       sessionId: "missing",
       text: "hello",
     })).rejects.toThrow("Session missing not found")
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("publishes the authoritative busy status before a slow native harness yields", async () => {
@@ -1706,7 +1705,7 @@ describe("createAgentRuntime", () => {
 
     release()
     await iterator.return?.()
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects a concurrent turn before persisting any part of it", async () => {
@@ -1715,7 +1714,7 @@ describe("createAgentRuntime", () => {
       release = resolve
     })
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -1749,7 +1748,7 @@ describe("createAgentRuntime", () => {
 
     release()
     await tick()
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects directoryless sessions before native session creation", async () => {
@@ -1784,7 +1783,7 @@ describe("createAgentRuntime", () => {
       status: null,
       lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("records a durable turn outcome when a committing adapter already emitted terminal events", async () => {
@@ -1808,12 +1807,12 @@ describe("createAgentRuntime", () => {
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("rejects a committing adapter terminal write after a durable fence takeover", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     let runtimeStore: {
       startTurn(input: unknown): unknown
       appendEvent(input: unknown): unknown
@@ -1880,7 +1879,7 @@ describe("createAgentRuntime", () => {
     expect((rows.getMessages(session.id) as Array<{ info: { id: string } }>).map((message) => message.info.id))
       .toContain("replacement_r")
     expect(lastTurnOf(rows, session.id)).toBeUndefined()
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("auto-titles placeholder sessions on first idle", async () => {
@@ -1906,7 +1905,7 @@ describe("createAgentRuntime", () => {
       title: "fix the terminal pane",
       lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("records compat errors as failed turn outcomes", async () => {
@@ -1941,7 +1940,7 @@ describe("createAgentRuntime", () => {
       status: "error",
       lastTurn: { status: "failed", error: "protocol down", assistantMessageId: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("records thrown adapter errors as failed turn outcomes", async () => {
@@ -1973,14 +1972,14 @@ describe("createAgentRuntime", () => {
       status: "error",
       lastTurn: { status: "failed", error: "adapter exploded", assistantMessageId: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test.each(["error", "not_found"] as const)("a failed abort (%s) keeps admission until the executing turn finishes", async (failure) => {
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -2042,7 +2041,7 @@ describe("createAgentRuntime", () => {
       status: null,
       lastTurn: { status: "cancelled", reason: "abort", assistantMessageId: "msg_1_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("an acknowledged abort releases admission and fences a stuck turn's late events", async () => {
@@ -2051,7 +2050,7 @@ describe("createAgentRuntime", () => {
       releaseFirst = resolve
     })
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -2109,11 +2108,11 @@ describe("createAgentRuntime", () => {
       status: null,
       lastTurn: { status: "completed", assistantMessageId: "msg_2_r" },
     })
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("removes pending interactions when deleting a session", () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -2153,7 +2152,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("preserves message parts across later message metadata updates", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -2196,7 +2195,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("persists session.updated into the store projection", () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -2233,7 +2232,7 @@ describe("createAgentRuntime", () => {
       await first.turns.start({ sessionId: session.id, messageId: "msg_1", text: "exec: printf durable" })
       await events
       await tick()
-      first.dispose()
+      await first.dispose()
 
       const second = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
@@ -2246,7 +2245,7 @@ describe("createAgentRuntime", () => {
         status: null,
         lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
       }])
-      second.dispose()
+      await second.dispose()
     } finally {
       removeTestTempDir(root)
     }
@@ -2271,7 +2270,7 @@ describe("createAgentRuntime", () => {
       await first.turns.start({ sessionId: session.id, messageId: "msg_1", text: "fail" })
       await events
       await tick()
-      first.dispose()
+      await first.dispose()
 
       const second = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
@@ -2283,7 +2282,7 @@ describe("createAgentRuntime", () => {
         status: "error",
         lastTurn: { status: "failed", error: "sqlite failure", assistantMessageId: "msg_1_r" },
       })
-      second.dispose()
+      await second.dispose()
     } finally {
       removeTestTempDir(root)
     }
@@ -2292,7 +2291,7 @@ describe("createAgentRuntime", () => {
   test("sqlite commits each acknowledged mutation without waiting for close", () => {
     const root = tempRoot()
     try {
-      const store = storeRows(createSqliteRuntimeStore({ root }))
+      const store = createSqliteRuntimeStore({ root })
       store.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "ses_1" })
       for (let i = 0; i < 100; i++) {
         store.appendEvent({
@@ -2310,15 +2309,15 @@ describe("createAgentRuntime", () => {
         close(): void
       }
       expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
-      reopened.close()
-      store.close()
+      reopened.close?.()
+      store.close?.()
     } finally {
       removeTestTempDir(root)
     }
   })
 
   test("records failed turn errors on the active assistant message", () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -2351,7 +2350,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("memory store starts the same active assistant turn exactly once", () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     store.bindSession({
       sessionId: "ses_once",
       directory: "/repo",
@@ -2383,7 +2382,7 @@ describe("createAgentRuntime", () => {
 
   test("keeps the specific runtime error after a generic error status", async () => {
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({

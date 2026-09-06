@@ -1,4 +1,10 @@
+import type { UsageFilterDimension, UsageFilters } from "@claxedo/usage-contract"
+import { isJsonRecord } from "../platform/runtime/lib/json"
 import type { TurnUsageRevision } from "./contracts"
+
+// The browser-facing contract owns the dimension vocabulary; this module owns
+// the server-side facts and the runtime lists that go with it.
+export type { UsageFilterDimension, UsageFilters } from "@claxedo/usage-contract"
 
 export type ExternalUsageBucket = {
   app: string
@@ -10,8 +16,43 @@ export type ExternalUsageBucket = {
   tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
 }
 
-export type UsageFilterDimension = "app" | "provider" | "harness" | "model" | "location" | "session" | "workspace"
-export type UsageFilters = Partial<Record<UsageFilterDimension, string>>
+/**
+ * A dimension that a single usage revision carries. "app" is excluded: it
+ * separates Claxedo's own turns from the other coding tools found on the
+ * machine, so it is a property of the source, not of a revision.
+ */
+export type UsageBreakdownDimension = Exclude<UsageFilterDimension, "app">
+
+/** Every dimension the usage routes accept, in menu order. */
+export const USAGE_FILTER_DIMENSIONS = [
+  "app",
+  "provider",
+  "harness",
+  "model",
+  "location",
+  "session",
+  "workspace",
+] as const satisfies readonly UsageFilterDimension[]
+
+/** The dimensions that can be derived from a revision. */
+export const USAGE_BREAKDOWN_DIMENSIONS = [
+  "provider",
+  "harness",
+  "model",
+  "location",
+  "session",
+  "workspace",
+] as const satisfies readonly UsageBreakdownDimension[]
+
+/** Narrow a query-string value to a dimension the routes accept. */
+export function isUsageFilterDimension(value: string): value is UsageFilterDimension {
+  return USAGE_FILTER_DIMENSIONS.some((dimension) => dimension === value)
+}
+
+/** Narrow a dimension to the subset a revision can be grouped by. */
+export function isUsageBreakdownDimension(value: string): value is UsageBreakdownDimension {
+  return USAGE_BREAKDOWN_DIMENSIONS.some((dimension) => dimension === value)
+}
 
 export function usageLocation(value: TurnUsageRevision["location"]) {
   return value === "local" || value === "user-hosted" ? "local" : "cloud"
@@ -21,7 +62,7 @@ export function usageModelKey(provider: string, model: string) {
   return model.includes("/") ? model : `${provider}/${model}`
 }
 
-export function usageFactDimension(fact: TurnUsageRevision, dimension: Exclude<UsageFilterDimension, "app">) {
+export function usageFactDimension(fact: TurnUsageRevision, dimension: UsageBreakdownDimension) {
   if (dimension === "provider") return fact.providerId
   if (dimension === "harness") return fact.harness
   if (dimension === "model") return usageModelKey(fact.providerId, fact.modelId)
@@ -32,15 +73,23 @@ export function usageFactDimension(fact: TurnUsageRevision, dimension: Exclude<U
 
 export function usageFactMatches(fact: TurnUsageRevision, filters: UsageFilters) {
   if (filters.app && filters.app.toLowerCase() !== "claxedo") return false
-  return (["provider", "harness", "model", "location", "session", "workspace"] as const)
+  return USAGE_BREAKDOWN_DIMENSIONS
     .every((dimension) => !filters[dimension] || usageFactDimension(fact, dimension) === filters[dimension])
 }
 
-export function usageFactFilterOptions(facts: readonly TurnUsageRevision[]) {
-  return Object.fromEntries((["provider", "harness", "model", "location", "session", "workspace"] as const).map((dimension) => [
-    dimension,
-    [...new Set(facts.map((fact) => usageFactDimension(fact, dimension)))].toSorted(),
-  ])) as Record<Exclude<UsageFilterDimension, "app">, string[]>
+export function usageFactFilterOptions(
+  facts: readonly TurnUsageRevision[],
+): Record<UsageBreakdownDimension, string[]> {
+  const values = (dimension: UsageBreakdownDimension) =>
+    [...new Set(facts.map((fact) => usageFactDimension(fact, dimension)))].toSorted()
+  return {
+    provider: values("provider"),
+    harness: values("harness"),
+    model: values("model"),
+    location: values("location"),
+    session: values("session"),
+    workspace: values("workspace"),
+  }
 }
 
 export type UsageMetricTotals = {
@@ -193,31 +242,30 @@ export function mergeUsageSeries(...series: readonly UsageSeries[]): UsageSeries
   return { totals, daily: [...days].map(([key, value]) => ({ date: key, ...value })).toSorted((a, b) => a.date.localeCompare(b.date)) }
 }
 
-export function centralProjectionSeries(value: unknown): UsageSeries {
-  const source = value as { totals?: Record<string, unknown>; daily?: Array<Record<string, unknown>> } | null
-  const map = (row: Record<string, unknown> = {}): UsageMetricTotals => ({
-    turnCount: Number(row.turn_count ?? 0),
-    input: Number(row.input_tokens ?? 0),
-    output: Number(row.output_tokens ?? 0),
-    reasoning: Number(row.reasoning_tokens ?? 0),
-    cacheRead: Number(row.cache_read_tokens ?? 0),
-    cacheWrite: Number(row.cache_write_tokens ?? 0),
+export function centralProjectionSeries(source: CentralUsageProjection): UsageSeries {
+  const map = (row: CentralUsageRow = {}): UsageMetricTotals => ({
+    turnCount: rowNumber(row, "turn_count"),
+    input: rowNumber(row, "input_tokens"),
+    output: rowNumber(row, "output_tokens"),
+    reasoning: rowNumber(row, "reasoning_tokens"),
+    cacheRead: rowNumber(row, "cache_read_tokens"),
+    cacheWrite: rowNumber(row, "cache_write_tokens"),
     unknownCategories: ["input", "output", "reasoning", "cache_read", "cache_write"]
-      .reduce((sum, name) => sum + Number(row.turn_count ?? 0) - Number(row[`${name}_known_count`] ?? 0), 0),
-    partialTurnCount: Number(row.partial_turn_count ?? 0),
-    unavailableTurnCount: Number(row.unavailable_turn_count ?? 0),
-    errorTurnCount: Number(row.error_turn_count ?? 0),
+      .reduce((sum, name) => sum + rowNumber(row, "turn_count") - rowNumber(row, `${name}_known_count`), 0),
+    partialTurnCount: rowNumber(row, "partial_turn_count"),
+    unavailableTurnCount: rowNumber(row, "unavailable_turn_count"),
+    errorTurnCount: rowNumber(row, "error_turn_count"),
   })
   return {
-    totals: map(source?.totals),
-    daily: (source?.daily ?? []).map((row) => ({ date: String(row.date), ...map(row) })),
+    totals: map(source.totals),
+    // A daily point without a date keeps its long-standing "undefined" key so a
+    // malformed payload still shows up as one visibly wrong bucket rather than
+    // silently merging into a real day.
+    daily: (source.daily ?? []).map((row) => ({ date: rowText(row, "date", "undefined"), ...map(row) })),
   }
 }
 
-export function groupUsageFacts(
-  facts: readonly TurnUsageRevision[],
-  dimension: "provider" | "harness" | "model" | "location" | "session" | "workspace",
-) {
+export function groupUsageFacts(facts: readonly TurnUsageRevision[], dimension: UsageBreakdownDimension) {
   const grouped = new Map<string, UsageMetricTotals>()
   for (const fact of facts) {
     const value = usageFactDimension(fact, dimension)
@@ -238,4 +286,124 @@ export function groupUsageFacts(
     grouped.set(value, row)
   }
   return [...grouped].map(([value, totals]) => ({ value, ...totals })).toSorted((a, b) => a.value.localeCompare(b.value))
+}
+
+/**
+ * ── The control-plane usage payload, parsed once ────────────────────────────
+ *
+ * `UsageLedger.usageDashboard` and `UsageLedger.usageBreakdown` return the
+ * remote control plane's JSON, so their declared type is `unknown`. Every
+ * consumer used to re-describe the slice it wanted with an inline cast
+ * (`(value as { breakdown?: unknown; models?: ... } | null)`), which meant the
+ * payload's shape lived in a dozen places and none of them checked anything.
+ * This section is the single boundary: `readCentralUsage` turns the `unknown`
+ * into a typed projection, and the row accessors read the individual fields.
+ *
+ * It lives beside `centralProjectionSeries` because that is what consumes it:
+ * the central payload's only job here is to become a `UsageSeries`.
+ *
+ * Rows stay `Record<string, unknown>` on purpose. Server versions differ on
+ * spelling (`input` vs `input_tokens`), so a row is read field by field
+ * through `rowNumber` / `rowText`, which take the candidate keys in order.
+ */
+/** One row of a control-plane usage payload, in whichever spelling that server used. */
+export type CentralUsageRow = Record<string, unknown>
+
+/** The fields of the control-plane usage payload this package reads. */
+export type CentralUsageProjection = {
+  /** Summary totals for the whole range. */
+  totals?: CentralUsageRow
+  /** Per-day summary totals. */
+  daily?: CentralUsageRow[]
+  /** Breakdown rows for the requested dimension. */
+  breakdown?: CentralUsageRow[]
+  /** Per-day breakdown rows for the requested dimension. */
+  dailyBreakdown?: CentralUsageRow[]
+  /** Model rows attributed to the requested dimension's groups. */
+  breakdownModels?: CentralUsageRow[]
+  /** Model rows for the whole range. */
+  models?: CentralUsageRow[]
+  /** Per-day model rows. */
+  dailyModels?: CentralUsageRow[]
+  /** Local/cloud split rows. */
+  locations?: CentralUsageRow[]
+  /**
+   * The bounded source revisions behind the aggregate. Present only on servers
+   * that publish them; it stays `undefined` otherwise, so a caller can tell
+   * "no facts published" from "published, and empty".
+   */
+  facts?: CentralUsageRow[]
+  /** Rows of a paged breakdown response. */
+  rows?: CentralUsageRow[]
+  /** Filter options the server can offer, by dimension. */
+  filters?: Record<string, string[]>
+  /** Cursor for the next page of a paged breakdown response. */
+  next?: string
+}
+
+/** Every payload field that carries a list of rows. */
+const ROW_FIELDS = [
+  "daily",
+  "breakdown",
+  "dailyBreakdown",
+  "breakdownModels",
+  "models",
+  "dailyModels",
+  "locations",
+  "facts",
+  "rows",
+] as const
+
+function readRows(value: unknown): CentralUsageRow[] | undefined {
+  return Array.isArray(value) ? value.filter(isJsonRecord) : undefined
+}
+
+function readFilterOptions(value: unknown): Record<string, string[]> | undefined {
+  if (!isJsonRecord(value)) return undefined
+  const options: Record<string, string[]> = {}
+  for (const [dimension, entries] of Object.entries(value)) {
+    if (Array.isArray(entries)) options[dimension] = entries.filter((entry) => typeof entry === "string")
+  }
+  return options
+}
+
+/** Parse a control-plane usage payload. A payload that is not an object reads as empty. */
+export function readCentralUsage(value: unknown): CentralUsageProjection {
+  if (!isJsonRecord(value)) return {}
+  const projection: CentralUsageProjection = {}
+  if (isJsonRecord(value.totals)) projection.totals = value.totals
+  for (const field of ROW_FIELDS) {
+    const rows = readRows(value[field])
+    if (rows) projection[field] = rows
+  }
+  const filters = readFilterOptions(value.filters)
+  if (filters) projection.filters = filters
+  if (typeof value.next === "string") projection.next = value.next
+  return projection
+}
+
+/**
+ * Read a numeric field, taking the first key that is present.
+ * A present-but-unparsable value stays `NaN` rather than falling through to the
+ * next spelling, so a malformed payload does not look like a valid zero.
+ */
+export function rowNumber(row: CentralUsageRow, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = row[key]
+    if (value !== undefined && value !== null) return Number(value)
+  }
+  return 0
+}
+
+/**
+ * Read an identity field. Anything that is not a string, number or boolean —
+ * an object, an array, a missing key — reads as `fallback`, which callers use
+ * to drop the row. Stringifying an object here produced `"[object Object]"`
+ * breakdown rows.
+ */
+export function rowText(row: CentralUsageRow, key: string, fallback = ""): string {
+  const value = row[key]
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  return fallback
 }

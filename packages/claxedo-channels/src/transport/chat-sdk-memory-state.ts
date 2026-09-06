@@ -36,15 +36,31 @@ export function createMemoryStateAdapter(): StateAdapter {
     async connect() {},
     async disconnect() {},
 
+    // `get`/`getList` assert the caller-chosen `T`, and the assertion is the
+    // vendor interface's rather than this adapter's: `StateAdapter` declares
+    // `get<T = unknown>(key): Promise<T | null>` — an unconstrained type
+    // parameter on the READER, over a store every writer fills with `unknown`.
+    // Three exits were measured against this package's tsconfig and all fail:
+    //   - Typing the map once as `Map<string, T>` is impossible; `T` belongs to
+    //     each call, not to the adapter, and one key's value is not another's.
+    //   - Implementing `get` non-generically as `(key) => Promise<unknown>` is
+    //     rejected: TypeScript checks the target against a fresh `T`, so
+    //     `unknown` "could be instantiated with an arbitrary type".
+    //   - Extracting the two reads into a shared
+    //     `storedValue<T>(value: unknown): T` is worse, not better: it turns a
+    //     localized claim into a reusable unsound cast anything can import, and
+    //     the linter flags it again as a caller-chosen return type layered on
+    //     the assertion it was meant to isolate.
+    // No runtime check can substitute either — `T` is not known at runtime.
     async get<T = unknown>(key: string): Promise<T | null> {
       const entry = values.get(key)
-      if (!live(entry, now())) {
+      if (!entry || !live(entry, now())) {
         values.delete(key)
         return null
       }
-      return entry!.value as T
+      return entry.value as T
     },
-    async set<T = unknown>(key: string, value: T, ttlMs?: number) {
+    async set(key: string, value: unknown, ttlMs?: number) {
       values.set(key, { value, expiresAt: withTtl(ttlMs) })
     },
     async setIfNotExists(key: string, value: unknown, ttlMs?: number): Promise<boolean> {

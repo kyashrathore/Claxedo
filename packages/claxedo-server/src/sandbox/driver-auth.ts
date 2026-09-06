@@ -3,6 +3,7 @@ import { getCredentialByProvider, resolveSecret } from "@claxedo/server-core/cre
 import {
   sandboxDriverAuth,
 } from "@claxedo/sandbox-manager/driver-catalog"
+import { parseJsonRecord } from "../platform/json/index"
 import {
   sandboxDriverCredentialFields,
   type SandboxDriverAuth,
@@ -11,13 +12,6 @@ import {
 } from "@claxedo/sandbox-contract"
 
 
-function json(secret: string) {
-  try {
-    return JSON.parse(secret) as Record<string, unknown>
-  } catch {
-    return
-  }
-}
 
 export function hasManagedSandboxDriverAuth(id: SandboxDriverID) {
   return !!getCredentialByProvider(id, "sandbox_driver")
@@ -35,7 +29,7 @@ export async function sandboxDriverAuthManaged<T extends SandboxDriverID>(
   id: T,
 ): Promise<SandboxDriverAuth[T] | undefined> {
   const secret = await resolveSecret(id, "sandbox_driver")
-  if (!secret) return
+  if (!secret) return undefined
   return parseManagedAuth(id, secret)
 }
 
@@ -57,7 +51,7 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
 // no edit here, and there is no per-driver list left to disagree about.
 function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): SandboxDriverAuth[T] | undefined {
   const fields = sandboxDriverCredentialFields[id]
-  const parsed = json(secret)
+  const parsed = parseJsonRecord(secret)
 
   const values =
     parsed
@@ -73,7 +67,7 @@ function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): San
         // way. A bare string can only ever be a single-field driver's value.
         singleFieldLegacyValues(fields, secret)
 
-  if (Object.keys(values).length !== fields.length) return
+  if (Object.keys(values).length !== fields.length) return undefined
   return values as SandboxDriverAuth[T]
 }
 

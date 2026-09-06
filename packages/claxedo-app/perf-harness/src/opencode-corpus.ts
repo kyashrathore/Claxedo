@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util"
+import { isRecord } from "./json-fields"
 import type { EventMessagePartUpdated, EventMessageUpdated } from "@claxedo/agent-event-runtime/client-presentation"
 import {
   importOpenCodeFixtureSessions,
@@ -8,10 +9,21 @@ import {
 } from "@claxedo/workspace-runtime/testing"
 
 type Data = Record<string, unknown>
+/** JSON as the SDK's schemas describe it. */
+type JsonValue = string | number | boolean | null | JsonValue[] | { readonly [key: string]: JsonValue }
+/** The finish reasons an assistant message may carry, per the fixture schema. */
+const ASSISTANT_FINISH_REASONS = ["stop", "length", "tool-calls", "content-filter", "error", "unknown"] as const
 type Session = { id: string; projectId: string; directory: string; title: string; created: number; updated: number }
 type Message = { id: string; sessionId: string; data: Data }
 type Part = { id: string; messageId: string; ordinal: number; data: Data; updatedAt?: number }
 type TranscriptEvent = EventMessageUpdated | EventMessagePartUpdated
+type TranscriptMessageInfo = EventMessageUpdated["properties"]["info"]
+type TranscriptPart = EventMessagePartUpdated["properties"]["part"]
+/** The part discriminants the transcript owner accepts, pinned to its own union. */
+const TRANSCRIPT_PART_TYPES = [
+  "text", "reasoning", "file", "tool", "subtask", "step-start", "step-finish",
+  "snapshot", "patch", "agent", "retry", "compaction", "handoff",
+] as const satisfies readonly TranscriptPart["type"][]
 
 /** Holds the pinned transcript records and converts their native SDK copy. */
 export class OpenCodeCorpus {
@@ -57,15 +69,31 @@ export class OpenCodeCorpus {
     if (!text(event.id) || !this.sessions.has(sessionId) || this.recordedIds.has(key)) {
       throw new Error("Invalid corpus event identity")
     }
-    const value = record(event.type === "message.updated" ? event.properties.info : event.properties.part)
+    const value = record(structuredClone(event.type === "message.updated" ? event.properties.info : event.properties.part))
     const message = this.messages.get(text(event.type === "message.updated" ? value.id : value.messageID))
     if (value.sessionID !== sessionId || message?.sessionId !== sessionId) {
       throw new Error("Corpus event disagrees with its transcript owner")
     }
-    if (event.type === "message.part.updated") number(event.properties.time)
+    // Rebuild the envelope the transcript owner declares. The recorded record is
+    // transport JSON, so its fields are read here rather than carried forward.
+    const recorded: TranscriptEvent = event.type === "message.updated"
+      ? {
+          id: event.id,
+          type: "message.updated",
+          properties: { sessionID: sessionId, info: messageInfo(value, text(value.id), sessionId) },
+        }
+      : {
+          id: event.id,
+          type: "message.part.updated",
+          properties: {
+            sessionID: sessionId,
+            time: number(event.properties.time),
+            part: contentPart(value, text(value.id), text(value.messageID), sessionId),
+          },
+        }
     this.recordedIds.add(key)
     const events = this.recordedEvents.get(sessionId) ?? []
-    events.push(structuredClone(event) as TranscriptEvent)
+    events.push(recorded)
     this.recordedEvents.set(sessionId, events)
   }
 
@@ -120,7 +148,7 @@ export class OpenCodeCorpus {
         type: "message.updated",
         properties: {
           sessionID: sessionId,
-          info: { ...message.data, id: message.id, sessionID: sessionId } as EventMessageUpdated["properties"]["info"],
+          info: messageInfo(message.data, message.id, sessionId),
         },
       }
       const parts = [...(this.messageParts.get(message.id)?.values() ?? [])].sort((a, b) => a.ordinal - b.ordinal)
@@ -131,12 +159,7 @@ export class OpenCodeCorpus {
           properties: {
             sessionID: sessionId,
             time: number(part.updatedAt),
-            part: {
-              ...part.data,
-              id: part.id,
-              messageID: message.id,
-              sessionID: sessionId,
-            } as EventMessagePartUpdated["properties"]["part"],
+            part: contentPart(part.data, part.id, message.id, sessionId),
           },
         }
       }
@@ -198,9 +221,7 @@ export class OpenCodeCorpus {
         content.push({ type: value.type, text: text(value.text) })
       } else if (value.type === "tool") {
         const source = record(value.state)
-        // The SDK validates the JSON input at import; this assertion is confined
-        // to the corpus wire-format conversion rather than spread across writers.
-        const input = record(source.input) as Extract<Tool["state"], { status: "completed" }>["input"]
+        const input = jsonRecord(source.input)
         let state: Tool["state"]
         if (source.status === "completed") {
           state = { status: "completed", input, content: [{ type: "text", text: text(source.output) }] }
@@ -213,15 +234,21 @@ export class OpenCodeCorpus {
             metadata:
               source.metadata === undefined
                 ? {}
-                : (record(source.metadata) as Extract<Tool["state"], { status: "running" }>["metadata"]),
+                : jsonRecord(source.metadata),
           }
         } else if (source.status === "pending") {
           state = { status: "streaming", input: text(source.raw) }
-        } else throw new Error(`Unsupported corpus tool state: ${source.status}`)
+        } else throw new Error(`Unsupported corpus tool state: ${JSON.stringify(source.status)}`)
         content.push({ type: "tool", id, name: text(value.tool), time: { created, completed }, state })
       } else {
-        throw new Error(`Unsupported assistant corpus part: ${value.type}`)
+        throw new Error(`Unsupported assistant corpus part: ${JSON.stringify(value.type)}`)
       }
+    }
+    const finish = data.finish === undefined
+      ? undefined
+      : ASSISTANT_FINISH_REASONS.find((reason) => reason === data.finish)
+    if (data.finish !== undefined && finish === undefined) {
+      throw new Error(`Unsupported assistant finish reason: ${JSON.stringify(data.finish)}`)
     }
     return {
       id: message.id,
@@ -233,7 +260,7 @@ export class OpenCodeCorpus {
       ...(Object.keys(snapshot).length ? { snapshot } : {}),
       ...(data.cost !== undefined ? { cost: number(data.cost) } : {}),
       ...(data.tokens !== undefined ? { tokens: tokens(data.tokens) } : {}),
-      ...(data.finish ? { finish: text(data.finish) as Assistant["finish"] } : {}),
+      ...(finish ? { finish } : {}),
     }
   }
 }
@@ -249,9 +276,65 @@ function tokens(value: unknown) {
   }
 }
 
+/**
+ * Read a corpus message record as the transcript owner's message info.
+ *
+ * The corpus keeps a message's identity beside its data, and its data is an
+ * unvalidated record. Naming the identity and the role is what lets the event
+ * carry its declared type; `AgentMessageInfo` accepts the rest of the record
+ * through its index signature.
+ */
+function messageInfo(data: Data, id: string, sessionID: string): TranscriptMessageInfo {
+  return { ...data, id, sessionID, role: text(data.role) }
+}
+
+/**
+ * The transcript owner's part, as opposed to an arbitrary corpus record.
+ *
+ * Checks the identity and the discriminant its consumers branch on — the same
+ * fields `agent-conversation-codec.isAgentPart` checks at the live event
+ * boundary. The per-variant payload stays as the corpus recorded it; `message()`
+ * is what validates that against the SDK's schema on the way into a database.
+ */
+function isTranscriptPart(value: unknown): value is TranscriptPart {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.messageID === "string"
+    && typeof value.sessionID === "string"
+    && TRANSCRIPT_PART_TYPES.some((type) => type === value.type)
+}
+
+function contentPart(data: Data, id: string, messageID: string, sessionID: string): TranscriptPart {
+  const part = { ...data, id, messageID, sessionID }
+  if (!isTranscriptPart(part)) throw new Error(`Unsupported corpus part: ${JSON.stringify(data.type)}`)
+  return part
+}
+
 function record(value: unknown): Data {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a corpus object")
-  return value as Data
+  if (!isRecord(value)) throw new Error("Expected a corpus object")
+  return value
+}
+
+/**
+ * Read a corpus value as JSON the SDK's schemas accept.
+ *
+ * The tool-state inputs and metadata cross into SDK types keyed by `JsonValue`,
+ * which `Record<string, unknown>` is not. Walking the value is what turns
+ * "trust me" into a check, and the corpus is materialized once per run.
+ */
+function jsonValue(value: unknown): JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value
+  }
+  if (Array.isArray(value)) return value.map(jsonValue)
+  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, jsonValue(item)]))
+  throw new Error("Expected corpus JSON")
+}
+
+function jsonRecord(value: unknown): { readonly [key: string]: JsonValue } {
+  const parsed = jsonValue(value)
+  if (!isRecord(parsed)) throw new Error("Expected a corpus JSON object")
+  return parsed
 }
 
 function text(value: unknown): string {

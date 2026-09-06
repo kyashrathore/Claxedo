@@ -133,7 +133,7 @@ function ReviewCommentMenu(props: {
 
 function diffId(file: string): string | undefined {
   const sum = checksum(file)
-  if (!sum) return
+  if (!sum) return undefined
   return `session-review-diff-${sum}`
 }
 
@@ -222,12 +222,13 @@ export const SessionReview = (props: SessionReviewProps) => {
     queue()
     const next = props.onScroll
     if (!next) return
-    if (Array.isArray(next)) {
-      const [fn, data] = next as [(data: unknown, event: Event) => void, unknown]
-      fn(data, event)
+    // Solid accepts either a plain handler or its bound `[handler, data]` form. The bound
+    // form is typed as an interface with numeric keys, not a tuple, so it is indexed.
+    if (typeof next === "function") {
+      next(event)
       return
     }
-    ;(next as JSX.EventHandler<HTMLDivElement, Event>)(event)
+    next[0](next[1], event)
   }
 
   onCleanup(() => {
@@ -377,8 +378,8 @@ export const SessionReview = (props: SessionReviewProps) => {
                     const diffCanRender = () => diff().additions !== 0 || diff().deletions !== 0
 
                     const expanded = createMemo(() => open().includes(file))
-                    const mounted = createMemo(() => expanded() && (!!store.visible[file] || pinned(file)))
-                    const force = () => !!store.force[file]
+                    const mounted = createMemo(() => expanded() && (store.visible[file] || pinned(file)))
+                    const force = () => store.force[file]
 
                     const comments = createMemo(() => grouped().get(file) ?? [])
                     const commentedLines = createMemo(() => comments().map((c) => c.selection))

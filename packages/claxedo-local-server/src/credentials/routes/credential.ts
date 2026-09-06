@@ -158,6 +158,7 @@ export function CredentialRoutes(
         throw error
       }
       await next()
+      return undefined
     })
   }
   if (options.token) {
@@ -173,6 +174,7 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_unauthorized", "Missing or invalid credentials token"), 401)
       }
       await next()
+      return undefined
     })
   }
   app.use(async (c, next) => {
@@ -185,6 +187,7 @@ export function CredentialRoutes(
       throw error
     }
     await next()
+    return undefined
   })
   return app
     .get("/", async (c) => {

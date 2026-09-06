@@ -2,6 +2,7 @@
 import type { ParentProps } from "solid-js"
 import { useAuthSession } from "./auth-session"
 import { IdentityProvider, type Principal } from "./identity-provider"
+import { readString } from "@/lib/record"
 
 /**
  * The user id a signed principal carries until the profile lookup names it.
@@ -28,19 +29,19 @@ export function PrincipalProvider(
   const auth = useAuthSession()
   const principal = (): Principal => {
     if (auth.status() === "signed") {
-      const user = auth.user() as { id?: string } | undefined
+      const userId = readString(auth.user(), "id")
       const organization = auth.organization()
       if (organization?.id) {
         return {
           kind: "org-member",
-          userId: user?.id ?? UNNAMED_SIGNED_USER_ID,
+          userId: userId ?? UNNAMED_SIGNED_USER_ID,
           orgId: organization.id,
           memberships: [],
         }
       }
       return {
         kind: "signed",
-        userId: user?.id ?? UNNAMED_SIGNED_USER_ID,
+        userId: userId ?? UNNAMED_SIGNED_USER_ID,
       }
     }
     const signedAccount = props.signedAccount?.()

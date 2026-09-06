@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { asRecord, isRecord, readArray, readBoolean, readField, readFiniteNumber, readString, recordOrEmpty } from "./record"
+import { asRecord, isRecord, onlyStrings, readArray, readBoolean, readField, readFiniteNumber, readString, readStringArray, recordOrEmpty } from "./record"
 
 describe("isRecord", () => {
   test("accepts plain objects", () => {
@@ -42,5 +42,29 @@ describe("field readers", () => {
   test("return undefined for non-record inputs", () => {
     expect(readField(null, "a")).toBeUndefined()
     expect(readString([1], "a")).toBeUndefined()
+  })
+})
+
+describe("onlyStrings", () => {
+  test("keeps only the string entries of an array", () => {
+    expect(onlyStrings(["a", 1, null, "b", undefined, {}])).toEqual(["a", "b"])
+  })
+
+  test("answers an empty list for anything that is not an array", () => {
+    expect(onlyStrings(undefined)).toEqual([])
+    expect(onlyStrings("a")).toEqual([])
+    expect(onlyStrings({ 0: "a", length: 1 })).toEqual([])
+  })
+})
+
+describe("readStringArray", () => {
+  test("reads and filters the array at a key", () => {
+    expect(readStringArray({ tags: ["a", 2, "b"] }, "tags")).toEqual(["a", "b"])
+  })
+
+  test("distinguishes an absent list from one holding no strings", () => {
+    expect(readStringArray({}, "tags")).toBeUndefined()
+    expect(readStringArray({ tags: [1, 2] }, "tags")).toEqual([])
+    expect(readStringArray({ tags: "a" }, "tags")).toBeUndefined()
   })
 })

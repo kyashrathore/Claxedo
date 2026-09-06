@@ -8,7 +8,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
-import { number, object, text } from "../value"
+import { number, object, text } from "../../value"
 
 export type CursorSdkAdapterState = {
   assistantTextByRunId: Record<string, string>

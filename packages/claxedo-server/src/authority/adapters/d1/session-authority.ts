@@ -20,6 +20,7 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { asRecord, numberField, parseJson } from "../../../platform/json/index"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -1576,7 +1577,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               .bind(value)
               .first<{ user_id: string }>()
       if (!user) {
-        if (allowMissing) return
+        if (allowMissing) return undefined
         throw sessionShareError("session_share_target_not_found")
       }
       return { kind: "user", id: user.user_id }
@@ -1589,7 +1590,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         .bind(orgId)
         .first<{ org_id: string }>()
       if (!org) {
-        if (allowMissing) return
+        if (allowMissing) return undefined
         throw sessionShareError("session_share_target_not_found")
       }
       return { kind: "org", id: org.org_id }
@@ -1600,7 +1601,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .bind(teamId)
       .first<{ team_id: string }>()
     if (!team) {
-      if (allowMissing) return
+      if (allowMissing) return undefined
       throw sessionShareError("session_share_target_not_found")
     }
     return { kind: "team", id: team.team_id }
@@ -2076,8 +2077,8 @@ function canonicalMessages(input: unknown[]): CanonicalMessage[] {
   }
   const ids = new Set<string>()
   return input.map((message, ordinal) => {
-    const row = record(message)
-    const info = record(row?.info)
+    const row = asRecord(message)
+    const info = asRecord(row?.info)
     const id = optionalText(
       typeof row?.id === "string" ? row.id : typeof info?.id === "string" ? info.id : undefined,
       "message.id",
@@ -2112,11 +2113,11 @@ function canonicalMessages(input: unknown[]): CanonicalMessage[] {
 }
 
 function publicMessage(row: MessageRow) {
-  const parsed = JSON.parse(row.data_json) as unknown
-  const message = record(parsed)
+  const parsed = parseJson(row.data_json)
+  const message = asRecord(parsed)
   if (!message) return parsed
-  const info = record(message.info) ?? {}
-  const claxedo = record(info.claxedo) ?? {}
+  const info = asRecord(message.info) ?? {}
+  const claxedo = asRecord(info.claxedo) ?? {}
   const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
   const { claxedo: _untrustedClaxedo, ...safeInfo } = info
   const canonicalClaxedo =
@@ -2139,14 +2140,12 @@ function encodeMessagePageCursor(sessionId: string, ordinal: number) {
 function decodeMessagePageCursor(sessionId: string, input: string) {
   try {
     if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const value = JSON.parse(decodeURIComponent(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length))) as {
-      sessionId?: unknown
-      ordinal?: unknown
-    }
-    if (value.sessionId !== sessionId || !Number.isSafeInteger(value.ordinal) || (value.ordinal as number) < 0) {
+    const value = asRecord(parseJson(decodeURIComponent(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length))))
+    const ordinal = numberField(value, "ordinal")
+    if (value?.sessionId !== sessionId || ordinal === undefined || !Number.isSafeInteger(ordinal) || ordinal < 0) {
       throw new Error("invalid cursor payload")
     }
-    return value.ordinal as number
+    return ordinal
   } catch {
     throw new AgentMessagePageError(400, "Invalid message page cursor")
   }
@@ -2212,10 +2211,6 @@ function requireText(value: string, name: string, max = 512) {
     )
   }
   return result
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 }
 
 function denied(message = "Session authorization was denied") {

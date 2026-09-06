@@ -39,21 +39,17 @@ function withPreservedError(current: Message | undefined, next: Message): Messag
   return { ...next, error } as Message
 }
 
-function propertyRecord(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
-
-function messageAuthorRecord(message: Message | undefined) {
-  if (!message || message.role !== "user") return undefined
-  return propertyRecord(propertyRecord((message as { claxedo?: unknown }).claxedo)?.author)
+// `claxedo.author` is declared on the contract's user message, so it is read
+// through the narrowed arm rather than dug out of an untyped record.
+function messageAuthor(message: Message | undefined) {
+  return message?.role === "user" ? message.claxedo?.author : undefined
 }
 
 export function withPreservedAuthor(current: Message | undefined, next: Message): Message {
   if (next.role !== "user") return next
-  const currentAuthor = messageAuthorRecord(current)
-  if (!currentAuthor || messageAuthorRecord(next)) return next
-  const nextClaxedo = propertyRecord((next as { claxedo?: unknown }).claxedo) ?? {}
-  return { ...next, claxedo: { ...nextClaxedo, author: currentAuthor } } as Message
+  const currentAuthor = messageAuthor(current)
+  if (!currentAuthor || messageAuthor(next)) return next
+  return { ...next, claxedo: { ...next.claxedo, author: currentAuthor } }
 }
 
 export function preserveMessageFields(current: Message | undefined, next: Message): Message {

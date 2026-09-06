@@ -9,6 +9,8 @@
  * carries diagnostics-transport messages.
  */
 
+import { readNumber, readUnknown } from "./json-read"
+
 const READY_TYPE = "claxedo-server-ready" as const
 
 export type ClaxedoServerReadyMessage = {
@@ -21,9 +23,8 @@ export function claxedoServerReadyMessage(port: number): ClaxedoServerReadyMessa
 }
 
 export function parseClaxedoServerReadyMessage(input: unknown): ClaxedoServerReadyMessage | null {
-  if (typeof input !== "object" || input === null) return null
-  const record = input as Record<string, unknown>
-  if (record.type !== READY_TYPE) return null
-  if (typeof record.port !== "number" || !Number.isInteger(record.port)) return null
-  return { type: READY_TYPE, port: record.port }
+  if (readUnknown(input, "type") !== READY_TYPE) return null
+  const port = readNumber(input, "port")
+  if (port === undefined || !Number.isInteger(port)) return null
+  return { type: READY_TYPE, port }
 }

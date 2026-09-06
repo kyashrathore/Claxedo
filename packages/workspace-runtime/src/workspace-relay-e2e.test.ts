@@ -159,6 +159,35 @@ function sessionAuthorityStub(input: {
   }
 }
 
+/**
+ * Await a server stop, but never let teardown outlive the test.
+ *
+ * `stop(true)` resolves once every socket is really closed, so awaiting it is
+ * what keeps the next test from starting on a port the previous one still
+ * holds. The relay is the exception, and measurably so: after this harness's
+ * PTY exchange, `relayServer.stop(true)` never settles even though the client
+ * socket is already CLOSED and `pendingRequests` is 0 — one accepted
+ * WebSocket stays in `pendingWebSockets` forever, and a *forced* stop cannot
+ * reclaim it. A synthetic `Bun.serve` proxying a live WebSocket force-stops in
+ * well under a second, so this is the relay's socket bookkeeping, not a Bun
+ * limitation. Filed against `workspace-relay`; the bound stays until it is
+ * fixed, and it is the same bound `runBoundedTeardown` gives production
+ * shutdown in `workspace-relay/src/main.ts` for exactly this reason.
+ */
+async function stopWithinTeardown(label: string, stop: () => Promise<void>) {
+  let expiry: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    stop(),
+    new Promise<void>((resolve) => {
+      expiry = setTimeout(() => {
+        console.warn(`[workspace-relay-e2e] ${label} did not settle within 2000ms; continuing teardown`)
+        resolve()
+      }, 2_000)
+    }),
+  ])
+  clearTimeout(expiry)
+}
+
 async function stopChild(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode) return
   await new Promise<void>((resolve) => {
@@ -289,9 +318,9 @@ async function relayHarness() {
       now: Date.now() - 60_000,
     }, runtime.privateKey, "EdDSA"),
     async close() {
-      relayServer.stop(true)
+      await stopWithinTeardown("relayServer.stop", () => relayServer.stop(true))
       runtimeServer.close()
-      authority.stop()
+      await authority.stop()
       if (previousAuthorityUrl === undefined) {
         delete process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]
       } else {
@@ -375,7 +404,7 @@ async function processSeparatedRelayHarness() {
     await waitForRuntime(runtimeUrl)
   } catch (err) {
     await stopChild(child)
-    authority.stop()
+    await authority.stop()
     await fs.rm(workspaceDir, { recursive: true, force: true })
     throw new Error(`${err instanceof Error ? err.message : String(err)}\n${logs.join("")}`, { cause: err })
   }
@@ -419,9 +448,9 @@ async function processSeparatedRelayHarness() {
       role: "editor",
     }, runtime.privateKey, "EdDSA"),
     async close() {
-      relayServer.stop(true)
+      await stopWithinTeardown("relayServer.stop", () => relayServer.stop(true))
       await stopChild(child)
-      authority.stop()
+      await authority.stop()
       await fs.rm(workspaceDir, { recursive: true, force: true })
     },
   }

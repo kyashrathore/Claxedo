@@ -4,6 +4,7 @@ import { useSDK, useClaxedoEventsOptional } from "@/features/terminal/app-ports"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { scopeUrl } from "@/lib/url"
 import { defaultTitleNumber } from "@/lib/terminal-title"
+import { isRecord } from "@/lib/record"
 import { clearInitialCommandMarker } from "@/features/terminal/core/terminal-recovery"
 import { pickPersistBufferEvictions } from "@/features/terminal/core/terminal-buffer"
 import { mergeCreatedTerminal, nextTerminalNumber, type LocalPTY, type NewTerminalInput } from "@/features/terminal/providers/shared"
@@ -33,10 +34,6 @@ type TerminalCacheEntry = {
 }
 
 const scope = scopeUrl
-
-function obj(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 function str(value: unknown) {
   return typeof value === "string" ? value : undefined
@@ -74,10 +71,10 @@ export function workspaceRelativeCwd(workspaceDir: string, cwd: string | undefin
 }
 
 function pty(value: unknown): LocalPTY | undefined {
-  if (!obj(value)) return
+  if (!isRecord(value)) return undefined
 
   const id = str(value.id)
-  if (!id) return
+  if (!id) return undefined
 
   const title = str(value.title) ?? ""
   const cwd = str(value.cwd)
@@ -114,7 +111,7 @@ function pty(value: unknown): LocalPTY | undefined {
 }
 
 function migrateTerminalState(value: unknown) {
-  if (!obj(value)) return value
+  if (!isRecord(value)) return value
 
   const seen = new Set<string>()
   const all = (Array.isArray(value.all) ? value.all : []).flatMap((item) => {
@@ -159,7 +156,12 @@ type TerminalSessionOptions = {
 }
 
 async function ptyResponse<T>(res: Response): Promise<T> {
-  if (res.ok) return res.json() as Promise<T>
+  if (res.ok) {
+    // The single place a PTY route's body is trusted to match its contract
+    // type; every read of a PTY payload goes through that type instead.
+    const parsed: T = await res.json()
+    return parsed
+  }
   const text = await res.text().catch(() => "")
   // Preserve status so pending-create handling can distinguish a definitive 4xx
   // from an ambiguous transport failure after the server may have created a PTY.
@@ -245,8 +247,8 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
   // Helper: subscribe to PTY events from ClaxedoEventsProvider (claxedo mode)
   // or fall back to SDK events (vanilla mode). ClaxedoEvent has flat structure
   // (event.id / event.info), SDK events use event.properties.*.
-  const ptyEvent = <T extends "pty.exited" | "pty.created" | "pty.updated" | "pty.deleted">(
-    type: T,
+  const ptyEvent = (
+    type: "pty.exited" | "pty.created" | "pty.updated" | "pty.deleted",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (props: any) => void,
   ): (() => void) => {
@@ -481,9 +483,11 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       // Preserve the Solid store node so keyed PTY renders only remount when
       // the PTY identity actually changes (for example clone/recovery).
       batch(() => {
-        for (const [key, value] of Object.entries(pty)) {
-          setStore("all", index, key as keyof LocalPTY, value as LocalPTY[keyof LocalPTY])
-        }
+        // A partial object MERGES into the store node rather than replacing it,
+        // which is the same per-field write the explicit loop here used to do —
+        // without having to re-assert each `Object.entries` pair back into
+        // `LocalPTY`'s key/value types.
+        setStore("all", index, pty)
         // This is where a terminal's serialized scrollback enters the store
         // (mount cleanup calls `update` with the snapshot), so it is where the
         // combined snapshots have to be brought back inside budget. Per-buffer
@@ -731,7 +735,7 @@ function createTerminalContextValue() {
     },
     new: (input?: NewTerminalInput) => {
       const current = safeWorkspace()
-      if (!current) return
+      if (!current) return undefined
       return current.new(input)
     },
     update: (pty: Partial<LocalPTY> & { id: string }) => {

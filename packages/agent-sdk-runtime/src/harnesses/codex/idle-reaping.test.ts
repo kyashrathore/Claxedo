@@ -185,7 +185,7 @@ describe("Codex app-server idle reaping", () => {
     expect(pids.length).toBeGreaterThan(1)
     expect(pids[1]).not.toBe(first)
 
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("does not reap a turn that is still inside a long silent tool call", async () => {
@@ -213,7 +213,7 @@ describe("Codex app-server idle reaping", () => {
     expect(events.length).toBeGreaterThan(0)
     expect(pids).toHaveLength(1)
 
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("a turn whose app-server never starts leaves no lease behind", async () => {
@@ -240,7 +240,7 @@ describe("Codex app-server idle reaping", () => {
     await expect(driver.runTurn(turnInput(dir))).rejects.toThrow()
 
     expect(driver.idle.activeLeases()).toBe(0)
-    driver.dispose?.()
+    await driver.dispose?.()
   })
 })
 

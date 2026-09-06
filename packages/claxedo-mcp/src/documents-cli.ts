@@ -1,6 +1,6 @@
 import { callDocuments, DocumentToolError } from "./documents-tools"
+import type { ControlPlaneRequest } from "./control-plane-request"
 
-type Request = (requestPath: string, init?: RequestInit) => Promise<unknown>
 
 type IO = {
   stdout(value: string): void
@@ -14,7 +14,7 @@ const usage = [
 
 export async function runDocumentsCli(
   argv: string[],
-  request: Request,
+  request: ControlPlaneRequest,
   io: IO,
   defaults?: { directory?: string; sessionId?: string },
 ) {

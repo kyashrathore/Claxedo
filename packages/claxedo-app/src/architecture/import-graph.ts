@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { prodSourcePaths } from "./scanners"
+import { asRecord, readField } from "../lib/record"
 
 const importPattern =
   /(?:^|[\s;])(import|export)\b([^'"`;()]*?)from\s*["']([^"']+)["']|(?:^|[\s;])import\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g
@@ -185,14 +186,13 @@ function rootFiles(appRoot: string) {
   const roots = ["app/entry/main.tsx", "app/entry/local.tsx", "app/entry/index.tsx"].filter((file) =>
     existsSync(path.join(appRoot, "src", file)),
   )
-  const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
-    exports?: Record<string, string>
-  }
+  const pkg: unknown = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8"))
+  const exports = asRecord(readField(pkg, "exports")) ?? {}
   return [
     ...new Set([
       ...roots,
       ...browserAuthBuildRoots(appRoot),
-      ...Object.values(pkg.exports ?? {}).flatMap((target) => exportRoots(appRoot, target)),
+      ...Object.values(exports).flatMap((target) => (typeof target === "string" ? exportRoots(appRoot, target) : [])),
     ]),
   ]
 }

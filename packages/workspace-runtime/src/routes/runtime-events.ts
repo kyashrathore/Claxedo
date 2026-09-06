@@ -39,6 +39,10 @@ export type WorkspaceRuntimeStreamGapEvent = {
 
 type StreamFrame = WorkspaceRuntimeEvent | WorkspaceRuntimeStreamGapEvent
 
+function isStreamGapEvent(event: StreamFrame): event is WorkspaceRuntimeStreamGapEvent {
+  return event.type === "stream.replay-gap"
+}
+
 /**
  * Frames whose loss strands UI state in a shape nothing else self-heals: an
  * exit/stop that never arrives leaves a terminal or managed process pinned to
@@ -146,7 +150,10 @@ export function runtimeBusEventsHandler(
     const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy, "sessionID")
     if (isSessionEventScopeResponse(scope)) return scope
     const allows = scope.managed
-      ? (event: StreamFrame) => workspaceRuntimeEventSessionId(event as WorkspaceRuntimeEvent) === scope.sessionId
+      // A replay-gap frame is this route's own notice, not a bus event, so it
+      // is excluded by the discriminant rather than run through the bus-event
+      // session resolver as if it were one.
+      ? (event: StreamFrame) => !isStreamGapEvent(event) && workspaceRuntimeEventSessionId(event) === scope.sessionId
       : (_event: StreamFrame) => true
     const opened = source.open(await (options.principal?.(c) ?? eventDeliveryPrincipal(c)))
     await opened.ready

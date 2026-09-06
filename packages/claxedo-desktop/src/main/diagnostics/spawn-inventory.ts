@@ -401,9 +401,9 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
   },
 ] as const
 
-export function harnessInventory<
-  Definition extends { key: string; id: string; access: "native" | "acp" },
->(definitions: readonly Definition[]) {
+export function harnessInventory(
+  definitions: readonly { key: string; id: string; access: "native" | "acp" }[],
+) {
   return definitions.flatMap((definition) => {
     const process =
       definition.access === "acp"

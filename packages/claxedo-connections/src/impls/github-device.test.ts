@@ -11,7 +11,7 @@ function recording(responses: Array<{ status?: number; body: unknown }>) {
     const headers = new Headers(init?.headers)
     calls.push({
       url,
-      body: new URLSearchParams(String(init?.body ?? "")),
+      body: new URLSearchParams(typeof init?.body === "string" ? init.body : ""),
       accept: headers.get("Accept") ?? undefined,
     })
     const next = responses[Math.min(index++, responses.length - 1)]

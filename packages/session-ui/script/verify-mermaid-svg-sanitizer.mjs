@@ -29,10 +29,13 @@
  * Playwright's browsers and mermaid resolve out of packages/claxedo-app, which is
  * where this repo keeps both.
  */
+import { rmSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+
+import { runBunBuild } from "../../../script/bun-build"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PACKAGE = resolve(HERE, "..")
@@ -51,11 +54,22 @@ await Bun.write(
   `import { sanitizeSvg } from "../src/components/markdown-cache"\n` +
     `;(globalThis as any).sanitizeSvg = sanitizeSvg\n`,
 )
-const built = await Bun.build({ entrypoints: [entry], target: "browser", minify: false })
-if (!built.success) {
-  console.error(built.logs.join("\n"))
-  throw new Error("failed to bundle sanitizeSvg")
-}
+// The per-log `level: message (file:line:col)` report this script used to build
+// by hand now lives in `runBunBuild`, which every Bun.build caller in the repo
+// shares. It takes Bun's default `throw: true`, so the failure arrives as a
+// thrown error carrying those same lines plus the original AggregateError as
+// `cause` -- strictly more than the old branch printed, and one behaviour
+// instead of two.
+const built = await runBunBuild(
+  "failed to bundle sanitizeSvg",
+  { entrypoints: [entry], target: "browser", minify: false },
+  // `.verify-entry.ts` is generated just above and deleted just below, on the
+  // success path only. A failed bundle used to skip that delete and strand it
+  // in this directory -- untracked, so invisible to `git diff`, and a stray
+  // `.ts` file the root lint run then picks up. Same class as the
+  // `dist.pending-<pid>` leak that put this hook on the helper.
+  { onFailure: () => rmSync(entry, { force: true }) },
+)
 const sanitizerBundle = await built.outputs[0].text()
 await Bun.file(entry).delete()
 

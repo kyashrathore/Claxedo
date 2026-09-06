@@ -2,6 +2,7 @@ import type { OpenCodeLaunchDocument } from "./launch-policy"
 import type {
   AgentAgent,
   AgentCommand,
+  AgentContentPart,
   AgentMessage,
   AgentPermission,
   AgentQuestion,
@@ -16,9 +17,10 @@ import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { Mcp } from "@opencode-ai/plugin"
 import type { OpenCodeRuntime } from "./runtime"
-import { authorizeWorkspace, type WorkspaceScope } from "./scope"
+import { WorkspaceScope } from "./scope"
 import type { ProjectedEvent } from "./event-pump"
 import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
+import { rec, str } from "../json-value"
 
 type AdapterOptions = Readonly<{
   runtime: OpenCodeRuntime
@@ -39,21 +41,44 @@ function session(row: SessionSummary): AgentSession {
   }
 }
 
-function contentPart(sessionID: string, messageID: string, item: unknown, ordinal: number): unknown {
-  if (!item || typeof item !== "object") return item
-  const row = item as Record<string, unknown>
-  return {
+/**
+ * Content-part types this contract models. The engine owns the per-variant
+ * fields (the port keeps assistant content opaque), so the discriminator is
+ * what is checked: a part of an unmodelled type has no consumer downstream and
+ * is dropped rather than carried as an untyped passenger.
+ */
+const AGENT_PART_TYPES: ReadonlySet<string> = new Set([
+  "text", "reasoning", "file", "tool", "subtask", "step-start", "step-finish",
+  "snapshot", "patch", "agent", "retry", "compaction", "handoff",
+])
+
+/** One assistant content part, stamped with the ids the contract requires. */
+function contentPart(
+  sessionID: string,
+  messageID: string,
+  item: unknown,
+  ordinal: number,
+): AgentContentPart | undefined {
+  const row = rec(item)
+  if (!row || !AGENT_PART_TYPES.has(str(row.type) ?? "")) return undefined
+  const part = {
     ...row,
     id: openCodePartId(messageID, "assistant", row, ordinal),
     sessionID,
     messageID,
   }
+  return isAgentContentPart(part) ? part : undefined
+}
+
+/** The part types above, as the predicate that produces the contract type. */
+function isAgentContentPart(value: Record<string, unknown>): value is Record<string, unknown> & AgentContentPart {
+  return AGENT_PART_TYPES.has(str(value.type) ?? "")
 }
 
 function message(sessionID: string, row: SessionMessage): AgentMessage {
-  const parts = row.type === "user"
+  const parts: AgentMessage["parts"] = row.type === "user"
     ? [{ id: openCodePartId(row.id, "user", {}, 0), sessionID, messageID: row.id, type: "text", text: row.text ?? "" }]
-    : (row.content ?? []).map((part, index) => contentPart(sessionID, row.id, part, index))
+    : (row.content ?? []).flatMap((part, index) => contentPart(sessionID, row.id, part, index) ?? [])
   return {
     info: {
       id: row.id,
@@ -67,12 +92,12 @@ function message(sessionID: string, row: SessionMessage): AgentMessage {
       ...(row.model === undefined ? {} : { providerID: row.model.providerID, modelID: row.model.id }),
       ...(row.metadata === undefined ? {} : { harnessPayload: row.metadata }),
     },
-    parts: parts as AgentMessage["parts"],
+    parts,
   }
 }
 
 function record(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {}
+  return rec(input) ?? {}
 }
 
 function stringList(input: unknown): string[] {
@@ -111,15 +136,28 @@ function snapshotMcpServers(input: Record<string, unknown>): Record<string, Mcp.
   return servers
 }
 
+/**
+ * Recognise one Agent Plugins server row.
+ *
+ * A predicate, not an assertion: these rows are ALREADY in the SDK's config
+ * shape and carry fields this file does not model (`cwd`, for one), so the row
+ * itself must survive. Checking the discriminator and its one required field is
+ * what the plugin contract actually promises.
+ */
+function isPluginServerConfig(row: Record<string, unknown>): row is Record<string, unknown> & Mcp.ServerConfig {
+  if (row.type === "local") return stringList(row.command).length > 0
+  return row.type === "remote" && typeof row.url === "string" && row.url.length > 0
+}
+
 /** Agent Plugins already project their servers in the SDK config shape; only the discriminator is checked. */
 function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
   const servers: Record<string, Mcp.ServerConfig> = {}
   for (const [name, value] of Object.entries(input)) {
     const row = record(value)
-    const local = row.type === "local" && stringList(row.command).length > 0
-    const remote = row.type === "remote" && typeof row.url === "string" && row.url.length > 0
-    if (!local && !remote) throw new Error(`Agent Plugins OpenCode MCP server ${name} must be a local or remote server`)
-    servers[name] = row as unknown as Mcp.ServerConfig
+    if (!isPluginServerConfig(row)) {
+      throw new Error(`Agent Plugins OpenCode MCP server ${name} must be a local or remote server`)
+    }
+    servers[name] = row
   }
   return servers
 }
@@ -175,7 +213,7 @@ function prompt(input: PromptInput) {
       files.push({ ref: row.url, ...(typeof row.filename === "string" ? { name: row.filename } : {}) })
       continue
     }
-    throw new Error(`OpenCode SDK prompt part ${String(row.type ?? "unknown")} has no canonical V2 mapping`)
+    throw new Error(`OpenCode SDK prompt part ${str(row.type) ?? "unknown"} has no canonical V2 mapping`)
   }
   return {
     text: text.join("\n"),
@@ -284,7 +322,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
 
   private scope(directory: RuntimeDirectory): WorkspaceScope {
     if (!directory) throw new Error("OpenCode SDK operations require a workspace directory")
-    return authorizeWorkspace({ workspaceID: this.workspaceID, directory })
+    return WorkspaceScope.authorize({ workspaceID: this.workspaceID, directory })
   }
 
   readHarnessCapabilities() {

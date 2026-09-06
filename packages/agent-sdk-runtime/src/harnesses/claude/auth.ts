@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 export type ClaudeAuthEnv = {
   ANTHROPIC_API_KEY?: string
   ANTHROPIC_AUTH_TOKEN?: string
@@ -20,11 +21,11 @@ export function claudeAuthEnv(input: string | undefined): ClaudeAuthEnv {
   const oauth = clean(parsed?.CLAUDE_CODE_OAUTH_TOKEN)
     ?? clean(parsed?.accessToken)
     ?? clean(parsed?.access_token)
-    ?? clean(record(parsed?.claudeAiOauth)?.accessToken)
-    ?? clean(record(parsed?.claudeAiOauth)?.access_token)
-    ?? clean(record(parsed?.oauth)?.accessToken)
-    ?? clean(record(parsed?.oauth)?.access_token)
-    ?? clean(record(parsed?.oauth)?.access)
+    ?? clean(asRecord(parsed?.claudeAiOauth)?.accessToken)
+    ?? clean(asRecord(parsed?.claudeAiOauth)?.access_token)
+    ?? clean(asRecord(parsed?.oauth)?.accessToken)
+    ?? clean(asRecord(parsed?.oauth)?.access_token)
+    ?? clean(asRecord(parsed?.oauth)?.access)
   if (oauth) return { CLAUDE_CODE_OAUTH_TOKEN: oauth }
 
   if (/^sk-ant-o/i.test(raw)) return { CLAUDE_CODE_OAUTH_TOKEN: raw }
@@ -43,14 +44,8 @@ function clean(input: unknown) {
 function json(input: string) {
   try {
     const value = JSON.parse(input) as unknown
-    return record(value)
+    return asRecord(value)
   } catch {
     return undefined
   }
-}
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
 }

@@ -15,7 +15,9 @@ import {
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { OrgId, ProjectId, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
+import { isRecord, stringField } from "../../platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 
 /** The project scope a user default addresses; never a real project ID. */
@@ -180,10 +182,6 @@ const WORKSPACE_ACCESS_SQL = `
 `
 
 const PIN_COLUMNS = "plugin_instance_id, artifact_digest, source_id, relative_path, source_revision"
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
 
 function invalid(detail: string): never {
   throw new Error(`D1 returned an invalid Agent Plugins ${detail}`)
@@ -597,11 +595,9 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
 
   private async resolveScope(auth: SignedControlPlaneAuth): Promise<Scope> {
     const me = await this.authority.usersMe(auth)
-    if (!record(me)) invalid("principal")
+    if (!isRecord(me)) invalid("principal")
     const userId = text(me.user_id, "principal")
-    const orgId = typeof me.org_id === "string" && me.org_id
-      ? me.org_id
-      : await this.authority.resolveOrgId(auth)
+    const orgId = stringField(me, "org_id") || (await this.authority.resolveOrgId(auth))
     return { userId, orgId }
   }
 
@@ -633,10 +629,8 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     // came from that same authority, so the brand is restored rather than
     // invented.
     const result = await this.authority.authorizeProject(auth, {
-      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-      orgId: scope.orgId as OrgId,
-      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-      projectId: projectId as ProjectId,
+      orgId: asOrgId(scope.orgId),
+      projectId: asProjectId(projectId),
       action,
     })
     if (!result.ok) throw denied("Agent Plugins project access denied")
@@ -645,7 +639,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   private async requireOrganizationAdmin(auth: SignedControlPlaneAuth, scope: Scope) {
     const orgs = await this.authority.listOrgs(auth)
     if (!Array.isArray(orgs)) invalid("organization list")
-    const administrator = orgs.some((row) => record(row)
+    const administrator = orgs.some((row) => isRecord(row)
       && row.org_id === scope.orgId
       && (row.role === "owner" || row.role === "admin"))
     if (!administrator) throw denied("Agent Plugins organization admin access required")

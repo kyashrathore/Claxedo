@@ -6,4 +6,5 @@ export function workspaceFileResourcePath(pathName: string): string | undefined 
   if (route?.family === "file") return `/file${pathName.slice(route.path.length)}`
   if (route?.family === "fileSearch") return `/find/file${pathName.slice(route.path.length)}`
   if (pathName === "/file" || pathName.startsWith("/file/") || pathName === "/find/file") return pathName
+  return undefined
 }

@@ -73,7 +73,7 @@ import { syntheticVisibleClick, waitForWorkspaceReviewContent } from "../src/bro
 //     startApp() rebuild the dist for whatever port you pass instead.
 //
 // The probe never touches application source; it only drives the built app.
-import { chromium, type Locator, type Page } from "@playwright/test"
+import { chromium, type Locator } from "@playwright/test"
 // Causal attribution (script/style/layout + the trusted-window trace) is
 // opt-in inside frame-sampler, read at call time. The probe exists to print
 // that attribution, so it turns the flag on for itself unless overridden.
@@ -154,6 +154,27 @@ const sessionRowActivate = async (target: (typeof sessions)[number]): Promise<Lo
   return page.locator("[role='button'], button, a").filter({ hasText: target.title }).first()
 }
 
+/**
+ * An element this probe has stamped.
+ *
+ * The stamp is an expando rather than an attribute on purpose: the probe is
+ * asking whether the SAME node survived the switch, and writing an attribute
+ * would itself be a DOM mutation inside the window being measured.
+ */
+type StampedElement = HTMLElement & {
+  __claxedoPerfShellToken?: true
+  __claxedoPerfContentToken?: true
+}
+
+declare global {
+  interface Window {
+    /** Count of `data-review-rendered-files` rewrites seen since the last stamp. */
+    __claxedoPerfReviewChurn?: number
+    /** The observer counting them, kept so the next stamp can retire it. */
+    __claxedoPerfChurnObserver?: MutationObserver
+  }
+}
+
 const stampWorkspaceIdentity = async () => {
   await page.evaluate((contentSelector) => {
     const visible = (element: Element) => {
@@ -162,24 +183,23 @@ const stampWorkspaceIdentity = async () => {
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    if (shell) (shell as unknown as Record<string, unknown>).__claxedoPerfShellToken = true
-    const content = Array.from(document.querySelectorAll<HTMLElement>(contentSelector)).find(visible)
+    const shell = document.querySelector<StampedElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    if (shell) shell.__claxedoPerfShellToken = true
+    const content = Array.from(document.querySelectorAll<StampedElement>(contentSelector)).find(visible)
     if (content) {
-      ;(content as unknown as Record<string, unknown>).__claxedoPerfContentToken = true
-      ;(window as unknown as Record<string, unknown>).__claxedoPerfOldPanelContent = content
+      content.__claxedoPerfContentToken = true
+      window.__claxedoPerfOldPanelContent = content
     }
-    const w = window as unknown as { __claxedoPerfReviewChurn?: number; __claxedoPerfChurnObserver?: MutationObserver }
-    w.__claxedoPerfChurnObserver?.disconnect()
-    w.__claxedoPerfReviewChurn = 0
+    window.__claxedoPerfChurnObserver?.disconnect()
+    window.__claxedoPerfReviewChurn = 0
     const corpus = document.querySelector("[data-review-rendered-files][data-review-total-files]")
     if (corpus) {
       const observer = new MutationObserver((records) => {
-        w.__claxedoPerfReviewChurn = (w.__claxedoPerfReviewChurn ?? 0) +
+        window.__claxedoPerfReviewChurn = (window.__claxedoPerfReviewChurn ?? 0) +
           records.filter((record) => record.attributeName === "data-review-rendered-files").length
       })
       observer.observe(corpus, { attributes: true, attributeFilter: ["data-review-rendered-files"] })
-      w.__claxedoPerfChurnObserver = observer
+      window.__claxedoPerfChurnObserver = observer
     }
   }, PANEL_CONTENT_SELECTOR)
 }
@@ -192,14 +212,13 @@ const readWorkspaceIdentity = async () =>
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
-    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-    const content = Array.from(document.querySelectorAll<HTMLElement>(contentSelector)).find(visible)
-    const w = window as unknown as { __claxedoPerfReviewChurn?: number; __claxedoPerfChurnObserver?: MutationObserver }
-    w.__claxedoPerfChurnObserver?.disconnect()
+    const shell = document.querySelector<StampedElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    const content = Array.from(document.querySelectorAll<StampedElement>(contentSelector)).find(visible)
+    window.__claxedoPerfChurnObserver?.disconnect()
     return {
-      shellTokenPreserved: shell ? (shell as unknown as Record<string, unknown>).__claxedoPerfShellToken === true : false,
-      contentTokenPreserved: content ? (content as unknown as Record<string, unknown>).__claxedoPerfContentToken === true : false,
-      reviewRenderedFilesChurn: w.__claxedoPerfReviewChurn ?? 0,
+      shellTokenPreserved: shell?.__claxedoPerfShellToken === true,
+      contentTokenPreserved: content?.__claxedoPerfContentToken === true,
+      reviewRenderedFilesChurn: window.__claxedoPerfReviewChurn ?? 0,
     }
   }, PANEL_CONTENT_SELECTOR)
 

@@ -17,6 +17,7 @@ import {
 } from "./better-auth-d1-cutover-gate.cf"
 import { requireDeploymentReleaseState, type DeploymentReleaseIdentity } from "./better-auth-d1-release-state.cf"
 import { requiredReleaseIdentifier } from "./better-auth-d1-release-identity.cf"
+import { asRecord } from "../../platform/json/index"
 
 export type BetterAuthD1OperatorEnv = {
   AUTH_DB: D1Database
@@ -83,8 +84,9 @@ async function operatorSubjectHash(env: BetterAuthD1OperatorEnv) {
 }
 
 function objectBody(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("operator body must be an object")
-  return value as Record<string, unknown>
+  const body = asRecord(value)
+  if (!body) throw new Error("operator body must be an object")
+  return body
 }
 
 function stringField(body: Record<string, unknown>, name: string) {

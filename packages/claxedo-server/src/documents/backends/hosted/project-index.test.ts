@@ -472,7 +472,7 @@ describe("Listing bound", () => {
     // A backend that always enumerates fully has no listPage; the service must not claim truncation.
     const complete = createHostedDocumentIndex(countingStore().store)
     await complete.create(entry(1))
-    const { listPage: _listPage, ...withoutListPage } = complete
+    const withoutListPage = { ...complete, listPage: undefined }
     const plain = createDocumentsService({
       index: withoutListPage,
       workspace: {} as never,

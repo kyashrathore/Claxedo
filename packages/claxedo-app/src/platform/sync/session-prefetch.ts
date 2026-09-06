@@ -52,7 +52,7 @@ export function splitSessionPrefetchPage(
   count = SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT,
 ) {
   const page = info.page
-  if (!page || page.messages.length === 0) return
+  if (!page || page.messages.length === 0) return undefined
   const budget = Math.max(2, count)
   const tail = page.messages.at(-1)!
   const owningUser = page.messages.findLastIndex((message) => message.role === "user")
@@ -231,7 +231,7 @@ function prefetchGenerationKey() {
 }
 
 function prefetchQueryInfo(queryKey: readonly unknown[]) {
-  if (queryKey[0] !== "shell" || queryKey[1] !== "session" || typeof queryKey[2] !== "string") return
+  if (queryKey[0] !== "shell" || queryKey[1] !== "session" || typeof queryKey[2] !== "string") return undefined
   if (queryKey[3] === "message-prefetch") {
     const data = queryClient.getQueryData<SessionPrefetchMeta>(queryKey)
     return { type: "meta" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : data?.directory }
@@ -242,4 +242,5 @@ function prefetchQueryInfo(queryKey: readonly unknown[]) {
   if (queryKey[3] === "message-prefetch-revision") {
     return { type: "revision" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : undefined }
   }
+  return undefined
 }

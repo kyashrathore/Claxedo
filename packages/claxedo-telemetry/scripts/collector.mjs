@@ -22,7 +22,30 @@ const args = process.argv.slice(2)
 const port = Number(args[args.indexOf("--port") + 1]) || 4318
 const quiet = args.includes("--quiet")
 
-/** traceId -> spans. Kept whole so a tree can be drawn once a trace goes quiet. */
+/**
+ * @typedef {string | number | boolean | undefined} AttributeValue
+ * @typedef {Record<string, AttributeValue>} Attributes
+ * @typedef {{ name: string, attributes: Attributes }} SpanEvent
+ * @typedef {{
+ *   service: AttributeValue,
+ *   traceId: string,
+ *   spanId: string,
+ *   parentSpanId: string | undefined,
+ *   name: string,
+ *   kind: number,
+ *   start: bigint,
+ *   end: bigint,
+ *   status: number,
+ *   statusMessage: string | undefined,
+ *   attributes: Attributes,
+ *   events: SpanEvent[],
+ * }} Span
+ */
+
+/**
+ * traceId -> spans. Kept whole so a tree can be drawn once a trace goes quiet.
+ * @type {Map<string, Span[]>}
+ */
 const traces = new Map()
 /** traceId -> timer that prints the trace once no new span has arrived. */
 const pending = new Map()
@@ -33,6 +56,10 @@ const pending = new Map()
  */
 const SETTLE_MS = 1_500
 
+/**
+ * @param {{ stringValue?: string, intValue?: string | number, doubleValue?: number, boolValue?: boolean } | undefined} value
+ * @returns {AttributeValue}
+ */
 function attributeValue(value) {
   if (!value) return undefined
   if (value.stringValue !== undefined) return value.stringValue
@@ -42,6 +69,10 @@ function attributeValue(value) {
   return undefined
 }
 
+/**
+ * @param {{ key: string, value?: Parameters<typeof attributeValue>[0] }[] | undefined} list
+ * @returns {Attributes}
+ */
 function attributes(list) {
   return Object.fromEntries((list ?? []).map((entry) => [entry.key, attributeValue(entry.value)]))
 }
@@ -86,6 +117,7 @@ function print(traceId) {
   const spans = traces.get(traceId)
   if (!spans || quiet) return
 
+  /** @type {Map<string, Span[]>} */
   const byParent = new Map()
   const ids = new Set(spans.map((span) => span.spanId))
   for (const span of spans) {

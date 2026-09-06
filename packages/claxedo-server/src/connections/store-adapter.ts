@@ -9,16 +9,17 @@ import {
   type ConnectionRow,
   type ConnectionStorePort,
   type CredentialStorePort,
-  type IntegrationCapability,
 } from "@claxedo/connections"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { ClaxedoDB } from "../platform/db"
 import { ClaxedoConnectionTable } from "./connection.sql"
+import { storedCapabilities, storedFields } from "./stored-columns"
 
 export function createCredentialStoreAdapter(credentials: ControlPlaneCredentials): CredentialStorePort {
   const credentialFor = async (providerId: string) => {
     const current = await credentials.getCredentialByProvider(providerId)
     if (current) return { credential: current, providerId }
+    return undefined
   }
 
   return {
@@ -73,8 +74,8 @@ function toRow(record: ConnectionRowRecord): ConnectionRow {
     integrationId: record.integration_id,
     ...(record.owner !== null ? { owner: record.owner } : {}),
     ...(record.account_label !== null ? { accountLabel: record.account_label } : {}),
-    grantedCapabilities: JSON.parse(record.granted_capabilities) as IntegrationCapability[],
-    fields: JSON.parse(record.fields) as Record<string, string>,
+    grantedCapabilities: storedCapabilities(record.granted_capabilities),
+    fields: storedFields(record.fields),
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   }

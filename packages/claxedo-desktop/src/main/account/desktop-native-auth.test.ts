@@ -4,6 +4,16 @@ import { createDesktopNativeAuth, revocationRejectedTheToken } from "./desktop-n
 import { REDIRECT_PATH, type OAuthSeams } from "./oauth-flow"
 import type { RefreshExchange } from "./electron-seams"
 
+/** The URL of a `fetch` double's argument, whichever of the three forms it takes. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+/** A `fetch` double's body. Everything under test sends a string. */
+function requestBody(body: BodyInit | null | undefined): string {
+  return typeof body === "string" ? body : ""
+}
+
 const NOW = 1_800_000_000_000
 const CORE = "https://core.example.com"
 
@@ -63,8 +73,8 @@ function harness() {
     setTimeout: () => ({ cancel: () => {} }),
   }
   const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
-    requests.push({ url: String(url), init })
-    if (String(url) === `${CORE}/api/claxedo/auth/descriptor`) return Response.json(descriptor())
+    requests.push({ url: requestUrl(url), init })
+    if (requestUrl(url) === `${CORE}/api/claxedo/auth/descriptor`) return Response.json(descriptor())
     return new Response(null, { status: 200 })
   }) as typeof fetch
   const refresh: RefreshExchange = async (input) => {
@@ -126,7 +136,7 @@ describe("descriptor-selected desktop native auth", () => {
     await expect(h.auth.revoke(signed.credential)).resolves.toEqual({ state: "confirmed" })
     const request = h.requests.find((candidate) => candidate.url.endsWith("/oauth2/revoke"))
     expect(request?.init?.redirect).toBe("manual")
-    const body = new URLSearchParams(String(request?.init?.body))
+    const body = new URLSearchParams(requestBody(request?.init?.body))
     expect(body.get("client_id")).toBe("desktop-better-auth")
     expect(body.get("token")).toBe("refresh-1")
     expect(body.get("resource")).toBeNull()
@@ -165,8 +175,8 @@ describe("descriptor fetch resilience", () => {
     const descriptorCalls: string[] = []
     let remaining = failures
     const fetchImpl = (async (url: string | URL | Request) => {
-      if (String(url) === `${CORE}/api/claxedo/auth/descriptor`) {
-        descriptorCalls.push(String(url))
+      if (requestUrl(url) === `${CORE}/api/claxedo/auth/descriptor`) {
+        descriptorCalls.push(requestUrl(url))
         if (remaining > 0) {
           remaining -= 1
           throw failure

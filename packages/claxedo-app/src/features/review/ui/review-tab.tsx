@@ -21,7 +21,6 @@ import { createPanePreferences, reviewModePreferenceScope, useFile, usePrompt, u
 import {
   cloneReviewSurfaceState,
   restoredOpenDiffs,
-  type ReviewDiffStyle,
   type ReviewSurfaceState,
 } from "@/features/review/review-surface-state"
 import { useComments } from "@/platform/comments/provider"
@@ -59,6 +58,7 @@ import {
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { afterVisibleWork } from "./review-deferred-work"
 import { warmDiffHighlightWorkerPool } from "@/ui/session-kit-loaders"
+import { callEventHandler } from "@/ui/event-handler"
 
 
 export type ReviewTabProps = {
@@ -85,7 +85,8 @@ export type ReviewTabProps = {
   focusedDiffPath?: string
   focusedDiffVersion?: number
   onOpenFile: (path: string) => void
-  scrollRef?: (el: HTMLDivElement) => void
+  /** Forwarded verbatim to the review surfaces; see `ReviewSessionProps.scrollRef`. */
+  scrollRef?: (el: HTMLElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
 }
 
@@ -652,16 +653,7 @@ export function ReviewTab(props: ReviewTabProps) {
                     )
                   }
                   scrollRef={props.scrollRef}
-                  onScrollEvent={(event) => {
-                    const handler = props.onScroll
-                    if (!handler) return
-                    if (Array.isArray(handler)) {
-                      const [fn, data] = handler as [(data: unknown, ev: Event) => void, unknown]
-                      fn(data, event)
-                      return
-                    }
-                    ;(handler as (ev: Event) => void)(event)
-                  }}
+                  onScrollEvent={(event) => callEventHandler(props.onScroll, event)}
                   onDiffRendered={() => setRenderedHunks((count) => count + 1)}
                 />
               ) : (

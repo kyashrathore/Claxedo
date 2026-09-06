@@ -5,6 +5,12 @@ import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-cre
 import { createProviderAuthService, ProviderAuthError } from "./service"
 import { ProviderAuthRoutes } from "../routes/provider-auth"
 
+/** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
+function jsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error(`expected a JSON string request body, got ${typeof body}`)
+  return JSON.parse(body)
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 }
@@ -110,8 +116,9 @@ describe("OAuth pending state is keyed by tenant", () => {
           return json({ device_auth_id: `dev-${issued}`, user_code: `CODE-${issued}`, interval: "1" })
         }
         if (url.endsWith("/api/accounts/deviceauth/token")) {
-          const body = JSON.parse(String(init?.body ?? "{}")) as { device_auth_id?: string }
-          exchanged.push(body.device_auth_id ?? "")
+          const body = init?.body === undefined ? {} : jsonBody(init.body)
+          const deviceAuthId = body && typeof body === "object" && "device_auth_id" in body ? body.device_auth_id : undefined
+          exchanged.push(typeof deviceAuthId === "string" ? deviceAuthId : "")
           return json({ authorization_code: "auth_code", code_verifier: "verifier" })
         }
         if (url.endsWith("/oauth/token")) {

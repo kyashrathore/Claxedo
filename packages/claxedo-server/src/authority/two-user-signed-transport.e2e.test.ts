@@ -62,8 +62,6 @@ const services = createControlPlaneServices({
 const app = createSelfHostedApp(services).app
 const inspectAuthority = openAuthorityDb({ path: authorityPath })
 
-type SignedAuth = Exclude<Awaited<ReturnType<typeof controlPlaneAuthContext>>, { mode: "unsigned-local" }>
-
 afterAll(async () => {
   inspectAuthority().close()
   embedded.close()

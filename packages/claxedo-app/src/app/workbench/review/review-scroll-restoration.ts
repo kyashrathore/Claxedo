@@ -38,7 +38,7 @@ export function createReviewScrollRestoration(input: {
   let frame: number | undefined
   let captureFrame: number | undefined
   let observer: MutationObserver | undefined
-  let element: HTMLDivElement | undefined
+  let element: HTMLElement | undefined
   let restoring = false
   let position: ReviewScrollPosition = input.initial ?? { top: 0 }
   let action = "created"
@@ -178,7 +178,7 @@ export function createReviewScrollRestoration(input: {
   }
   let resizeObserver: ResizeObserver | undefined
   let lastViewportWidth: number | undefined
-  const bind = (next: HTMLDivElement) => {
+  const bind = (next: HTMLElement) => {
     element = next
     action = "bound"
     Object.defineProperty(next, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY, {

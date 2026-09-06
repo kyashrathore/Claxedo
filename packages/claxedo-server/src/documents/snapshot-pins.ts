@@ -40,7 +40,7 @@ export function expiredSnapshotLease(pin: string, now: number) {
 }
 
 function parseLease(pin: string) {
-  if (!pin.startsWith("lease:")) return
+  if (!pin.startsWith("lease:")) return undefined
   const [, rawExpiresAt, purpose] = pin.split(":", 3)
   const expiresAt = Number(rawExpiresAt)
   if (!Number.isFinite(expiresAt) || !purpose) throw new DocumentInvalidEntryError("Snapshot lease pin is invalid")

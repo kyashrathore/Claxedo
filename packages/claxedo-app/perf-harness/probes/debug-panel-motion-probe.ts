@@ -62,9 +62,8 @@ const installProbe = async (page: import("@playwright/test").Page) => {
   await page.evaluate(({ COLUMN, SHELL }) => {
     let record: MotionRecord | undefined
     const targetName = (node: EventTarget | null) => {
-      const element = node as HTMLElement | null
-      if (!element?.dataset) return "?"
-      return element.dataset.testid ?? element.tagName.toLowerCase()
+      if (!(node instanceof HTMLElement)) return "?"
+      return node.dataset.testid ?? node.tagName.toLowerCase()
     }
     window.__motionProbe = {
       start(label: string) {
@@ -77,8 +76,8 @@ const installProbe = async (page: import("@playwright/test").Page) => {
           if (!element) return
           for (const kind of ["transitionrun", "transitionstart", "transitionend", "transitioncancel"]) {
             element.addEventListener(kind, (event) => {
-              const transition = event as TransitionEvent
-              if (transition.target !== element) return
+              if (!(event instanceof TransitionEvent) || event.target !== element) return
+              const transition = event
               current.events.push({
                 atMs: performance.now() - started,
                 kind,
@@ -129,10 +128,10 @@ const clickToggle = async (page: import("@playwright/test").Page, label: string)
 
 const report = async (page: import("@playwright/test").Page) => {
   await page.waitForTimeout(1_200)
-  const record = await page.evaluate(() => {
-    const value = window.__motionProbe?.read()
-    return value ? JSON.parse(JSON.stringify(value)) as MotionRecord : undefined
-  })
+  // Structured-cloned in the page rather than JSON round-tripped and re-typed:
+  // `read()` already returns a `MotionRecord`, and the clone keeps the value
+  // serializable across the evaluate boundary without losing that type.
+  const record = await page.evaluate(() => structuredClone(window.__motionProbe?.read()))
   if (!record) {
     console.log("  (no record)")
     return

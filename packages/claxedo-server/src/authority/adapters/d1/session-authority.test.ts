@@ -64,7 +64,7 @@ async function setup() {
     workspace,
     sessions,
     now,
-    advancePast(expiresAt: number) {
+    advancePast: (expiresAt: number) => {
       currentTime = Math.max(currentTime, expiresAt)
     },
   }

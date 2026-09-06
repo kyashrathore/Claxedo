@@ -19,6 +19,7 @@
 //     declared on both sides and does round-trip the draft — see
 //     `ImageAttachmentPart` in `providers/prompt.tsx`)
 //   - document mentions (the picker stays a Claxedo surface on the `@` list)
+import { asRecord } from "@/lib/record"
 import { batch, createEffect, createMemo, createSignal } from "solid-js"
 import { readWithoutSuspending } from "@/features/session/composer/suspense-safe-resource"
 // From the LIGHT prompt boundary, NOT "@/ui/session-kit": this engine is in the
@@ -93,6 +94,11 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
 
   const draft = promptDraftControllerInput(() => input.prompt.capture())
 
+  // The controller round-trips whatever `capture()` returned as opaque metadata,
+  // so the comments are checked on the way back in rather than asserted.
+  const historyComments = (value: unknown): PromptHistoryComment[] =>
+    Array.isArray(value) ? value.filter(isPromptHistoryComment) : []
+
   const controller = createPromptInputV2Controller({
     store: draft.store,
     identity: draft.identity,
@@ -101,7 +107,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
         history.entries(entryMode).map((entry) => ({ prompt: entry.prompt, metadata: entry.comments })),
       add: (prompt, entryMode) => history.addToHistory(prompt, entryMode),
       capture: () => history.historyComments(),
-      restore: (metadata) => history.applyComments((metadata ?? []) as PromptHistoryComment[]),
+      restore: (metadata) => history.applyComments(historyComments(metadata)),
     },
     commands: () => slashCommands().map(slashCommandSuggestion),
     context: () => contextOptions().map(atOptionSuggestion),
@@ -311,4 +317,11 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
       onSlashSelect: (item: SlashCommand) => dispatch({ type: "popover.select", item: slashCommandSuggestion(item) }),
     },
   }
+}
+
+function isPromptHistoryComment(value: unknown): value is PromptHistoryComment {
+  const row = asRecord(value)
+  return typeof row?.id === "string" && typeof row.path === "string"
+    && typeof row.comment === "string" && typeof row.time === "number"
+    && !!asRecord(row.selection)
 }

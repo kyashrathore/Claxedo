@@ -22,6 +22,7 @@
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isJsonRecord, jsonRecord, parseJsonRecord } from "../platform/runtime/lib/json"
 import { dataDir } from "../platform/runtime/lib/paths"
 import { requireCredentialRegistryLookup } from "./registry"
 
@@ -82,13 +83,47 @@ function cachePath(env: NodeJS.ProcessEnv = process.env) {
   return override || path.join(dataDir(), "opencode-model-catalog.json")
 }
 
+/**
+ * The models.dev catalog, read once at its boundary.
+ *
+ * Every field of a provider entry is optional because the upstream document is
+ * not ours: this narrows the envelope (an object of provider entries) and lets
+ * each entry's fields be read as they are, rather than asserting a shape the
+ * document never promised.
+ */
+function readCatalog(value: unknown): Record<string, ModelsDevProvider> | undefined {
+  if (!isJsonRecord(value)) return undefined
+  const catalog: Record<string, ModelsDevProvider> = {}
+  for (const [id, entry] of Object.entries(value)) {
+    const provider = jsonRecord(entry)
+    if (!provider) continue
+    catalog[id] = {
+      ...(typeof provider.id === "string" ? { id: provider.id } : {}),
+      ...(typeof provider.name === "string" ? { name: provider.name } : {}),
+      ...(Array.isArray(provider.env) ? { env: provider.env.filter((item) => typeof item === "string") } : {}),
+      ...(isJsonRecord(provider.models) ? { models: readModels(provider.models) } : {}),
+    }
+  }
+  return catalog
+}
+
+function readModels(models: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {}
+  for (const [id, model] of Object.entries(models)) {
+    const record = jsonRecord(model)
+    if (record) out[id] = record
+  }
+  return out
+}
+
 function readCache(env: NodeJS.ProcessEnv): { at: number; body: Record<string, ModelsDevProvider> } | undefined {
   const file = cachePath(env)
   if (!fs.existsSync(file)) return undefined
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { at?: number; body?: unknown }
-    if (typeof parsed.at !== "number" || !parsed.body || typeof parsed.body !== "object") return undefined
-    return { at: parsed.at, body: parsed.body as Record<string, ModelsDevProvider> }
+    const parsed = parseJsonRecord(fs.readFileSync(file, "utf8"))
+    const body = readCatalog(parsed?.body)
+    if (typeof parsed?.at !== "number" || !body) return undefined
+    return { at: parsed.at, body }
   } catch {
     // A corrupt cache is not a reason to fail; it is a reason to refetch.
     return undefined
@@ -108,11 +143,9 @@ function writeCache(body: Record<string, ModelsDevProvider>, env: NodeJS.Process
 async function fetchCatalog(fetchImpl: CatalogFetch): Promise<Record<string, ModelsDevProvider>> {
   const response = await fetchImpl(MODELS_DEV_URL)
   if (!response.ok) throw new OpenCodeCatalogUnavailableError(`models.dev responded ${response.status}`)
-  const body = await response.json() as unknown
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new OpenCodeCatalogUnavailableError("models.dev returned a non-object catalog")
-  }
-  return body as Record<string, ModelsDevProvider>
+  const body = readCatalog(await response.json())
+  if (!body) throw new OpenCodeCatalogUnavailableError("models.dev returned a non-object catalog")
+  return body
 }
 
 /**

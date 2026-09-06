@@ -140,4 +140,59 @@ describe("workspace diff client relay transport", () => {
     ])
     expect(calls.slice(1).every((call) => call.authorization === "Bearer rat_1")).toBe(true)
   })
+  // The route's body used to be handed straight back under whatever type the
+  // call site named. These assert what the readers actually keep, so a future
+  // "just cast it" regression fails here instead of surfacing an `undefined`
+  // label in a ref picker.
+  test("drops malformed entries from a refs body instead of surfacing them", async () => {
+    const client = createWorkspaceDiffClient({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/main",
+      request: (async () =>
+        Response.json({
+          branches: ["main", 7, null],
+          branchChoices: [{ gitRef: "origin/dev", sourceBranch: "dev" }, { sourceBranch: "orphan" }],
+          tags: "v1",
+          recent: [{ hash: "abc", subject: "first" }, { hash: "def" }],
+        })) as typeof fetch,
+      resolveWorkspaceRuntime: async () => undefined,
+    })
+
+    expect(await client.refs("/repo/main")).toEqual({
+      branches: ["main"],
+      branchChoices: [{ gitRef: "origin/dev", sourceBranch: "dev" }],
+      tags: [],
+      recent: [{ hash: "abc", subject: "first" }],
+    })
+  })
+
+  test("keeps only the fields a diff row and a targets body actually carry", async () => {
+    const bodyFor = (url: string) =>
+      url.includes("/vcs/file")
+        ? Response.json({ file: "README.md", additions: 3, deletions: "many", patch: 12 })
+        : Response.json({ defaultRef: 4, candidates: ["origin/dev", 9] })
+    const client = createWorkspaceDiffClient({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/main",
+      request: (async (input) => bodyFor(requestUrl(input))) as typeof fetch,
+      resolveWorkspaceRuntime: async () => undefined,
+    })
+
+    expect(await client.vcsFile({ directory: "/repo/main", mode: "uncommitted", file: "README.md" })).toEqual({
+      file: "README.md",
+      additions: 3,
+    })
+    expect(await client.targets("/repo/main")).toEqual({ candidates: ["origin/dev"] })
+  })
+
+  test("answers undefined for a diff row with no file path", async () => {
+    const client = createWorkspaceDiffClient({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/main",
+      request: (async () => Response.json({ patch: "diff --git a/x b/x" })) as typeof fetch,
+      resolveWorkspaceRuntime: async () => undefined,
+    })
+
+    expect(await client.vcsFile({ directory: "/repo/main", mode: "uncommitted", file: "x" })).toBeUndefined()
+  })
 })

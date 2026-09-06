@@ -33,3 +33,36 @@ export function fetchDouble(handler: FetchHandler): typeof fetch {
   })
   return impl
 }
+
+/**
+ * The URL a `fetch` double was called with, as text.
+ *
+ * `String(input)` looks equivalent but is not: a `Request` stringifies to
+ * "[object Request]", so a double that happens to be handed one starts
+ * asserting against a placeholder instead of a URL. Reading `.url` is the only
+ * form that covers all three shapes `fetch` accepts.
+ */
+export function fetchUrl(input: string | URL | Request): string {
+  if (typeof input === "string") return input
+  return input instanceof URL ? input.href : input.url
+}
+
+/**
+ * A `fetch` double's request body as text.
+ *
+ * Every double in this package sends JSON as a string, so anything else is a
+ * test bug rather than a body to coerce: `String(body)` on a `Blob` or a
+ * `FormData` yields "[object Blob]", which then fails a JSON parse several
+ * assertions later with no hint of the cause.
+ */
+export function fetchBodyText(body: BodyInit | null | undefined): string {
+  if (body === null || body === undefined) return ""
+  if (typeof body === "string") return body
+  throw new Error("fetch double received a non-string body; it records text bodies only")
+}
+
+/** {@link fetchBodyText}, parsed. `undefined` when there was no body. */
+export function fetchBodyJson(body: BodyInit | null | undefined): unknown {
+  const text = fetchBodyText(body)
+  return text ? JSON.parse(text) : undefined
+}

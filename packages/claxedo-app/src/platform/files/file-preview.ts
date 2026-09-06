@@ -25,4 +25,5 @@ export function imagePreviewUrl(input: {
   if (extension === "svg" && input.text !== undefined) {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(input.text)}`
   }
+  return undefined
 }

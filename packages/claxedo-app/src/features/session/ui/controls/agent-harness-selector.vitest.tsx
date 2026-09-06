@@ -700,20 +700,20 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 describe("AgentHarnessSelector — readiness UI", () => {
   test("readiness 'polling' shows the Connecting pill and not the Unavailable error", () => {
     readiness = "polling"
-    const { getAllByText, getByTestId, queryByText } = render(() => (
+    const view = render(() => (
       <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
     ))
-    expect(getAllByText("Connecting")).toHaveLength(2)
-    expect(getByTestId("model-trigger-content").textContent).toBe("Connecting")
-    expect(queryByText("Unavailable")).toBeNull()
+    expect(view.getAllByText("Connecting")).toHaveLength(2)
+    expect(view.getByTestId("model-trigger-content").textContent).toBe("Connecting")
+    expect(view.queryByText("Unavailable")).toBeNull()
   })
 
   test("readiness 'error' does not show the Connecting pill", () => {
     readiness = "error"
-    const { queryByText } = render(() => (
+    const view = render(() => (
       <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
     ))
-    expect(queryByText("Connecting")).toBeNull()
+    expect(view.queryByText("Connecting")).toBeNull()
   })
 
   // Cross-WP pin (fixme ledger core-harness-ownership-local:515), now LIVE after
@@ -730,11 +730,11 @@ describe("AgentHarnessSelector — readiness UI", () => {
     })
     expect(patch.readiness).toBe("polling")
     readiness = patch.readiness!
-    const { getAllByText, queryByText } = render(() => (
+    const view = render(() => (
       <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
     ))
-    expect(getAllByText("Connecting")).toHaveLength(2)
-    expect(queryByText("Unavailable")).toBeNull()
+    expect(view.getAllByText("Connecting")).toHaveLength(2)
+    expect(view.queryByText("Unavailable")).toBeNull()
   })
 })
 

@@ -12,10 +12,17 @@
  * boundary in `app/entry/app.tsx` and the app-shell boundary in
  * `app/app-shell-bootstrap.tsx`.
  */
+declare global {
+  interface Window {
+    /** Set by `markShellRevealed`; see this module's header for why it lives on the window. */
+    __claxedoShellRevealed?: boolean
+  }
+}
+
 export function shellRevealedOnce() {
-  return (window as { __claxedoShellRevealed?: boolean }).__claxedoShellRevealed === true
+  return window.__claxedoShellRevealed === true
 }
 
 export function markShellRevealed() {
-  ;(window as { __claxedoShellRevealed?: boolean }).__claxedoShellRevealed = true
+  window.__claxedoShellRevealed = true
 }

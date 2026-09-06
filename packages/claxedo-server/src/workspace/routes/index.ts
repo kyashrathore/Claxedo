@@ -29,7 +29,7 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
-import { apiError, captureWorkspaceTelemetry, parsedBody, rec, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
+import { apiError, captureWorkspaceTelemetry, parsedBody, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
 import { controlPlaneRateLimitError } from "../runtime-token-guards"
 import { repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
@@ -38,6 +38,7 @@ import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/san
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
+import { asRecord } from "../../platform/json/index"
 
 const createBody = z
   .object({
@@ -242,7 +243,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             return c.json({
               workspaces:
                 Array.isArray(workspaces) && access === "user-hosted"
-                  ? workspaces.filter((item) => rec(item)?.access === "user-hosted")
+                  ? workspaces.filter((item) => asRecord(item)?.access === "user-hosted")
                   : workspaces,
             })
           } catch (err) {
@@ -278,7 +279,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           }, 400)
         }
         const rawBody = await c.req.json().catch(() => ({}))
-        if (rec(rawBody)?.hostId) {
+        if (asRecord(rawBody)?.hostId) {
           return c.json({
             error: apiError("host_assignment_identity_server_owned", "Host assignment machine identity is server-owned"),
           }, 400)

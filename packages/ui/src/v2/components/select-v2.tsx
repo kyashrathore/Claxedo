@@ -1,5 +1,6 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { selectItemText } from "../../utils/select-item"
 import "./select-v2.css"
 
 function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
@@ -98,7 +99,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
     state.key = undefined
   }
 
-  const keyFor = (item: T) => (local.value ? local.value(item) : String(item as string))
+  const keyFor = (item: T) => (local.value ? local.value(item) : selectItemText(item))
+  const labelFor = (item: T) => (local.label ? local.label(item) : selectItemText(item))
 
   const move = (item: T | undefined) => {
     if (!local.onHighlight) return
@@ -131,8 +133,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       fitViewport={local.fitViewport ?? false}
       value={local.current}
       options={grouped()}
-      optionValue={(x) => (local.value ? local.value(x) : String(x as string))}
-      optionTextValue={(x) => (local.label ? local.label(x) : String(x as string))}
+      optionValue={keyFor}
+      optionTextValue={labelFor}
       optionGroupChildren="options"
       placeholder={local.placeholder}
       sectionComponent={(sectionProps) => (
@@ -153,9 +155,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
           <Kobalte.ItemLabel data-slot="menu-v2-item-content" as="span">
             {local.children
               ? local.children(itemProps.item.rawValue)
-              : local.label
-                ? local.label(itemProps.item.rawValue)
-                : String(itemProps.item.rawValue as string)}
+              : labelFor(itemProps.item.rawValue)}
           </Kobalte.ItemLabel>
           <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" forceMount>
             <CheckSmall />
@@ -163,8 +163,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         </Kobalte.Item>
       )}
       onChange={(next) => {
-        const v = next == null ? null : Array.isArray(next) ? ((next[0] as T) ?? null) : (next as T)
-        local.onSelect?.(v)
+        // `multiple={false}` above, so Kobalte only ever reports a single option or null.
+        local.onSelect?.(next ?? null)
         stop()
       }}
       onOpenChange={(open) => {
@@ -189,8 +189,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
           <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass} classList={{ "ui-select-v2-value-text": true }}>
             {(st) => {
               const selected = st.selectedOption()
-              if (local.label && selected != null) return local.label(selected)
-              return selected != null ? (selected as string) : ""
+              if (selected == null) return ""
+              return labelFor(selected)
             }}
           </Kobalte.Value>
         </div>

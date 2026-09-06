@@ -24,7 +24,8 @@ export async function openWorkspaceFileTab(
         if (!element) return undefined
         const rect = element.getBoundingClientRect()
         const style = getComputedStyle(element)
-        const data = (element as HTMLElement | SVGElement).dataset
+        // `dataset` lives on HTMLElement and SVGElement, not on Element.
+        const data = element instanceof HTMLElement || element instanceof SVGElement ? element.dataset : {}
         return {
           tag: element.tagName.toLowerCase(),
           testId: data.testid,

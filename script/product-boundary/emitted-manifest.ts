@@ -3,6 +3,7 @@ import path from "node:path"
 
 import type { BuildManifest } from "./normalize-build-manifest"
 import type { Policy } from "./policy"
+import { parseJsonObject, record } from "../json"
 import { REPO_ROOT } from "./closure"
 
 function matchesPrefix(value: string, prefix: string) {
@@ -17,13 +18,14 @@ function assertStrings(value: unknown, field: string): string[] {
 }
 
 export function readBuildManifest(file: string): BuildManifest {
-  const value = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<BuildManifest>
+  const value = parseJsonObject(fs.readFileSync(file, "utf8"), file)
   if (typeof value.entry !== "string") throw new Error("entry must be a string")
   const modules = assertStrings(value.modules, "modules")
   const chunks = assertStrings(value.chunks, "chunks")
-  if (!value.edges || typeof value.edges !== "object") throw new Error("edges must be an object")
-  const staticEdges = assertStrings(value.edges.static, "edges.static")
-  const dynamicEdges = assertStrings(value.edges.dynamic, "edges.dynamic")
+  const edges = record(value.edges)
+  if (!edges) throw new Error("edges must be an object")
+  const staticEdges = assertStrings(edges.static, "edges.static")
+  const dynamicEdges = assertStrings(edges.dynamic, "edges.dynamic")
   return { entry: value.entry, modules, chunks, edges: { static: staticEdges, dynamic: dynamicEdges } }
 }
 

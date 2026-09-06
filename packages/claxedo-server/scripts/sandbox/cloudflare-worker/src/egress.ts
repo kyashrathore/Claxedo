@@ -85,23 +85,35 @@ export async function verifyEgressToken(
   signingSecret: string,
   now: () => number = Date.now,
 ): Promise<EgressTokenClaims | null> {
-  const parts = token.split(".")
-  if (parts.length !== 3) return null
-  const [header, payload, sig] = parts as [string, string, string]
+  const [header, payload, sig, ...extra] = token.split(".")
+  if (header === undefined || payload === undefined || sig === undefined || extra.length !== 0) return null
   const key = await hmacKey(signingSecret)
   const expected = b64urlEncode(
     new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${header}.${payload}`))),
   )
   if (!timingSafeEqual(sig, expected)) return null
-  let claims: EgressTokenClaims
+  let parsed: unknown
   try {
-    claims = JSON.parse(new TextDecoder().decode(b64urlDecode(payload))) as EgressTokenClaims
+    parsed = JSON.parse(new TextDecoder().decode(b64urlDecode(payload)))
   } catch {
     return null
   }
-  if (typeof claims.sub !== "string" || !Array.isArray(claims.hosts) || typeof claims.exp !== "number") return null
-  if (claims.exp <= Math.floor(now() / 1000)) return null
+  const claims = isEgressTokenClaims(parsed) ? parsed : null
+  if (!claims || claims.exp <= Math.floor(now() / 1000)) return null
   return claims
+}
+
+function isEgressTokenClaims(value: unknown): value is EgressTokenClaims {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+  // This Worker is its own deployable package and cannot reach the server's
+  // shared `platform/json` guards, so the narrowing is spelled out here.
+  const claims: { sub?: unknown; hosts?: unknown; exp?: unknown } = value
+  return (
+    typeof claims.sub === "string" &&
+    Array.isArray(claims.hosts) &&
+    claims.hosts.every((host) => typeof host === "string") &&
+    typeof claims.exp === "number"
+  )
 }
 
 /** How the sandbox names its egress target: header carries the absolute upstream URL. */

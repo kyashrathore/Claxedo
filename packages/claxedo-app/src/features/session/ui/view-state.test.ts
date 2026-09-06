@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentPresentationMessage as Message, AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { ProjectedAgentMessage } from "../conversation/agent-conversation-codec"
 import {
   applyTimelinePrependAnchor,
   captureTimelinePrependAnchor,
@@ -530,6 +531,26 @@ describe("Claxedo session loaded-empty rendering", () => {
       revertMessageId: "m-3",
     }).map((item) => item.id)).toEqual(["m-1"])
     expect(visibleSessionUserMessages({ userMessages: users })).toBe(users)
+  })
+
+  test("the optimistic stub for a just-sent turn stays in the user rows", () => {
+    // `chatMessageToAgentMessage` emits this shape for a composed message the
+    // runtime has not echoed back yet. It carries no `agent`/`model`, so a
+    // filter that keeps only contract rows drops the message the user just typed
+    // out of the timeline until the round trip lands.
+    const optimistic: ProjectedAgentMessage = {
+      origin: "optimistic",
+      id: "m-2",
+      role: "user",
+      sessionID: "",
+      time: { created: 2 },
+    }
+
+    const users = sessionUserMessages([message("m-1"), optimistic])
+
+    expect(users.map((item) => item.id)).toEqual(["m-1", "m-2"])
+    expect(visibleSessionUserMessages({ userMessages: users, revertMessageId: "m-3" }))
+      .toHaveLength(2)
   })
 
   test("new-session composer readiness follows the shared workspace authority", () => {

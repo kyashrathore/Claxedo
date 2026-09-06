@@ -1,4 +1,5 @@
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
+import { asRecord } from "@/lib/record"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { resolveRecovery, rememberRecovery } from "../workbench/pane-terminal-recovery"
@@ -9,6 +10,7 @@ import {
   originOf,
   readCachedEntry,
   terminalScopedPlacement,
+  type CacheKey,
   type CacheTtl,
 } from "./terminal-scoped-cache"
 
@@ -49,11 +51,6 @@ const nullable = (value: unknown) => {
   return next
 }
 
-const record = (value: unknown) => {
-  if (!value || typeof value !== "object") return
-  return value as Record<string, unknown>
-}
-
 const workspace = (value: unknown) => {
   const next = optional(value)
   if (!next) return undefined
@@ -64,9 +61,9 @@ const workspace = (value: unknown) => {
 
 const target = (sdkUrl: string, terminalId: string) => {
   const site = originOf(sdkUrl)
-  if (!site) return
+  if (!site) return undefined
   const id = resolve(text(terminalId))
-  if (!id) return
+  if (!id) return undefined
   return {
     site,
     id,
@@ -74,7 +71,8 @@ const target = (sdkUrl: string, terminalId: string) => {
   }
 }
 
-const previewCacheKey = (cacheKey: string) => ["shell", "terminal-session-preview", cacheKey, "cache"] as const
+const previewCacheKey = (cacheKey: string): CacheKey<TerminalSessionPreview> =>
+  ["shell", "terminal-session-preview", cacheKey, "cache"] as const
 const previewRequestKey = (cacheKey: string) => ["shell", "terminal-session-preview", cacheKey, "request"] as const
 
 const previewPath = (terminalId: string, directory?: string) => {
@@ -105,7 +103,7 @@ export const cachedTerminalSessionPreview = (
   pruneCache()
   const nextTarget = target(sdkUrl, terminalId)
   if (!nextTarget) return undefined
-  return readCachedEntry<TerminalSessionPreview>(previewCacheKey(nextTarget.cacheKey), PREVIEW_TTL)
+  return readCachedEntry(previewCacheKey(nextTarget.cacheKey), PREVIEW_TTL)
 }
 
 export const aliasTerminalSessionPreview = (oldId: string, newId: string) => {
@@ -116,9 +114,9 @@ export const aliasTerminalSessionPreview = (oldId: string, newId: string) => {
 }
 
 const parse = (value: unknown): TerminalSessionPreview | null => {
-  const body = record(value)
+  const body = asRecord(value)
   if (!body || body.success !== true) return null
-  const session = record(body.session)
+  const session = asRecord(body.session)
   if (!session) return null
   const terminalId = optional(body.terminalId) || optional(session.terminalId)
   if (!terminalId) return null
@@ -156,18 +154,25 @@ export type TerminalSessionPreviewOptions = {
   } | null>
 }
 
-const previewTransport = (
+/**
+ * The preview's own fetch for one placement. Returns the bound function rather
+ * than the transport, so no call site carries a detached `transport.fetch`.
+ */
+const previewFetch = (
   site: string,
   dir: string,
   request: typeof fetch,
   workspace?: Awaited<ReturnType<NonNullable<TerminalSessionPreviewOptions["resolveWorkspaceRuntime"]>>>,
   signedWorkspace?: ReturnType<typeof cachedSignedWorkspace>,
-) => createTransport({
-  placement: terminalScopedPlacement(site, workspace, signedWorkspace),
-  serverUrl: site,
-  directory: dir,
-  request,
-})
+): PreviewRequest => {
+  const transport = createTransport({
+    placement: terminalScopedPlacement(site, workspace, signedWorkspace),
+    serverUrl: site,
+    directory: dir,
+    request,
+  })
+  return (url, init) => transport.fetch(url, init)
+}
 
 async function fetchPreviewBody(url: string, request: PreviewRequest, headers?: Record<string, string>) {
   return request(url, headers ? { headers } : undefined)
@@ -185,19 +190,16 @@ export const loadTerminalSessionPreview = (
   const nextTarget = target(sdkUrl, terminalId)
   if (!nextTarget) return Promise.resolve(null)
 
-  // Discriminate the union: a TerminalSessionPreviewOptions object has
-  // a `request` (or `directory`) property; the legacy callers pass the
-  // fetch function directly.
-  const isOptions = typeof requestOrOptions === "object" && requestOrOptions !== null && (
-    "request" in requestOrOptions || "directory" in requestOrOptions ||
-    "resolveWorkspaceRuntime" in requestOrOptions
-  )
-  const opts: TerminalSessionPreviewOptions = isOptions
-    ? requestOrOptions
-    : { request: requestOrOptions as typeof fetch }
+  // Legacy callers pass the fetch function directly; everyone else passes an
+  // options object. `typeof` separates the two exactly — the old property sniff
+  // sent an options object carrying none of those three keys down the fetch
+  // branch, where it would have been called as a function.
+  const opts: TerminalSessionPreviewOptions = typeof requestOrOptions === "function"
+    ? { request: requestOrOptions }
+    : requestOrOptions
   const request = opts.request ?? fetch
 
-  return loadCachedEntry<TerminalSessionPreview>({
+  return loadCachedEntry({
     cacheKey: previewCacheKey(nextTarget.cacheKey),
     requestKey: previewRequestKey(nextTarget.cacheKey),
     ttl: PREVIEW_TTL,
@@ -212,12 +214,12 @@ export const loadTerminalSessionPreview = (
         if (resolved && isRelayBackedWorkspaceKind(resolved.kind) && resolved.workspaceId) {
           return fetchPreviewBody(
             previewPath(nextTarget.id),
-            previewTransport(nextTarget.site, opts.directory, request, resolved, signedWorkspace).fetch,
+            previewFetch(nextTarget.site, opts.directory, request, resolved, signedWorkspace),
           )
         }
         return fetchPreviewBody(
           previewPath(nextTarget.id, opts.directory),
-          previewTransport(nextTarget.site, opts.directory, request, resolved, signedWorkspace).fetch,
+          previewFetch(nextTarget.site, opts.directory, request, resolved, signedWorkspace),
         )
       }
       return fetchPreviewBody(

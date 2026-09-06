@@ -22,7 +22,6 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Page } from "@playwright/test"
 import { e2eAppViteEnvironment } from "../auth-mode"
 import { freePort } from "./free-port"
 

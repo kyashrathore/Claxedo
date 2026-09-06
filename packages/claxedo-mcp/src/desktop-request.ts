@@ -1,3 +1,5 @@
+import { record, text } from "./json"
+
 /**
  * Minimal HTTP helper for reaching the claxedo-desktop local bridge.
  *
@@ -38,9 +40,15 @@ export function readDesktopEnv(env: NodeJS.ProcessEnv = process.env): DesktopEnv
   }
 }
 
-export type DesktopSuccess<T> = { ok: true; status: number; data: T }
+/**
+ * `data` stays `unknown`: a generic parameter here would let a caller name any
+ * response type and receive an unchecked value back, which is the same rule the
+ * documents-tools `Request` port states. Callers narrow with the parsers beside
+ * the shapes they expect.
+ */
+export type DesktopSuccess = { ok: true; status: number; data: unknown }
 export type DesktopFailure = { ok: false; status?: number; error: string }
-export type DesktopResponse<T> = DesktopSuccess<T> | DesktopFailure
+export type DesktopResponse = DesktopSuccess | DesktopFailure
 
 export type DesktopRequestOptions = RequestInit & {
   /** Override for tests — defaults to `process.env`. */
@@ -57,10 +65,10 @@ export type DesktopRequestOptions = RequestInit & {
  * Returns a discriminated result so callers never throw across the
  * MCP/tool-call boundary on network errors.
  */
-export async function desktopRequest<T = unknown>(
+export async function desktopRequest(
   path: string,
   options: DesktopRequestOptions = {},
-): Promise<DesktopResponse<T>> {
+): Promise<DesktopResponse> {
   const { env, fetchImpl = fetch, timeoutMs = 15_000, ...init } = options
   const { url, token } = readDesktopEnv(env)
   if (!url || !token) {
@@ -82,16 +90,13 @@ export async function desktopRequest<T = unknown>(
       headers,
       signal: init.signal ?? controller.signal,
     })
-    const text = await res.text()
-    const data: unknown = text ? safeJsonParse(text) : null
+    const payload = await res.text()
+    const data: unknown = payload ? safeJsonParse(payload) : null
     if (!res.ok) {
-      const message =
-        (typeof data === "object" && data !== null && typeof (data as { error?: unknown }).error === "string"
-          ? (data as { error: string }).error
-          : undefined) ?? `desktop bridge returned HTTP ${res.status}`
+      const message = text(record(data)?.error) ?? `desktop bridge returned HTTP ${res.status}`
       return { ok: false, status: res.status, error: message }
     }
-    return { ok: true, status: res.status, data: data as T }
+    return { ok: true, status: res.status, data }
   } catch (err) {
     return {
       ok: false,

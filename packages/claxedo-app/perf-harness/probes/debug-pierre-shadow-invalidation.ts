@@ -169,7 +169,8 @@ const results = await page.evaluate(async () => {
     const node = document.createElement("style")
     node.setAttribute("data-theme-css", "")
     node.textContent = THEME_CSS
-    styleHosts[styleIndex++ % styleHosts.length].appendChild(node)
+    styleHosts[styleIndex % styleHosts.length].appendChild(node)
+    styleIndex += 1
   })
 
   // --- F. append a <style> node WITHOUT any @layer statement --------------
@@ -184,7 +185,8 @@ const results = await page.evaluate(async () => {
   await record("F append <style> (no @layer)", "same append, layer statement removed", 5, () => {
     const node = document.createElement("style")
     node.textContent = THEME_CSS_NO_LAYER
-    plainHosts[plainIndex++ % plainHosts.length].appendChild(node)
+    plainHosts[plainIndex % plainHosts.length].appendChild(node)
+    plainIndex += 1
   })
 
   // --- G. rewrite the text of an ALREADY-APPENDED <style> -----------------
@@ -264,7 +266,8 @@ const results = await page.evaluate(async () => {
   await settle()
   let removeIndex = 0
   await record("L remove <style> from shadow root", "cleanChildNodes' themeCSSStyle.remove()", 5, () => {
-    removable[removeIndex++ % removable.length].remove()
+    removable[removeIndex % removable.length].remove()
+    removeIndex += 1
   })
 
   // --- M..R. `:has()` anchors in the DOCUMENT's own stylesheets -----------
@@ -341,10 +344,6 @@ const results = await page.evaluate(async () => {
   // --- S..Z. DOCUMENT-scope acts the app itself can perform ---------------
   // These are the remaining ways a page can mark every element for recalc.
   // `W` is the deliberate control: it is the floor by construction.
-  const g = globalThis as unknown as {
-    CSS?: { highlights?: { set: (n: string, h: unknown) => void; delete: (n: string) => void } }
-    Highlight?: new (...ranges: Range[]) => unknown
-  }
   const documentSheet = new CSSStyleSheet()
   documentSheet.replaceSync(":root { --pierre-probe-doc: 1; }")
   await record("S document.adoptedStyleSheets rewrite", "same list re-assigned on the document", 5, () => {
@@ -360,17 +359,21 @@ const results = await page.evaluate(async () => {
   for (const node of headStyles) node.remove()
   await settle()
 
-  if (g.CSS?.highlights && typeof g.Highlight === "function") {
+  // `CSS.highlights` and `Highlight` are the CSS Custom Highlight API. Both are
+  // feature-detected: an older engine has neither, and this act is then skipped.
+  const highlights = CSS.highlights as HighlightRegistry | undefined
+  if (highlights && typeof Highlight === "function") {
     const target = document.body.firstElementChild ?? document.body
     let highlightTick = 0
     await record("U CSS.highlights set/delete", "the file-find highlight registry mutation", 5, () => {
-      if (highlightTick++ % 2 === 0) {
+      if (highlightTick % 2 === 0) {
         const range = document.createRange()
         range.selectNodeContents(target)
-        g.CSS!.highlights!.set("pierre-probe-find", new g.Highlight!(range))
-      } else g.CSS!.highlights!.delete("pierre-probe-find")
+        highlights.set("pierre-probe-find", new Highlight(range))
+      } else highlights.delete("pierre-probe-find")
+      highlightTick += 1
     })
-    g.CSS.highlights.delete("pierre-probe-find")
+    highlights.delete("pierre-probe-find")
   }
 
   let rootTick = 0

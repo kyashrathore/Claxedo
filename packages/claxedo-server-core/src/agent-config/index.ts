@@ -57,6 +57,7 @@ export {
   createVmConnectionSecretResolver,
   publicConnectionUnavailable,
 } from "./connection-secrets"
+import { jsonRecord, jsonStringRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 export type {
   ConnectionSecretUnavailableReason,
   PublicConnectionUnavailable,
@@ -168,18 +169,8 @@ function sanitizeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64)
 }
 
-function stringRecord(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input)
-    && Object.values(input).every((item) => typeof item === "string")
-    ? input as Record<string, string>
-    : undefined
-}
-
-function record(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
-}
+const stringRecord = jsonStringRecord
+const record = jsonRecord
 
 // ── Trusted generic connections ───────────────────────────────────────────
 
@@ -315,8 +306,9 @@ function validateUserAgentConfig(input: unknown): UserAgentConfig {
 
 function validateNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, { kind: "native" }> | undefined {
   const row = record(input)
-  if (!row || row.kind !== "native" || typeof row.harnessId !== "string" || !isNativeHarnessId(row.harnessId)) return
-  if (Object.keys(row).some((key) => key !== "kind" && key !== "harnessId")) return
+  if (!row || row.kind !== "native" || typeof row.harnessId !== "string" || !isNativeHarnessId(row.harnessId))
+    return undefined
+  if (Object.keys(row).some((key) => key !== "kind" && key !== "harnessId")) return undefined
   return { kind: "native", harnessId: row.harnessId }
 }
 
@@ -360,7 +352,7 @@ export function sandboxDriverConfig(
 
 function sandboxDriverAuthConfig(input: unknown): SandboxDriverConfig["auth"] | undefined {
   const row = record(input)
-  if (!row) return
+  if (!row) return undefined
 
   const auth: NonNullable<SandboxDriverConfig["auth"]> = {}
   const daytona = record(row.daytona)
@@ -403,9 +395,9 @@ function sandboxDriverAuthConfig(input: unknown): SandboxDriverConfig["auth"] | 
   return Object.keys(auth).length ? auth : undefined
 }
 
-function credential(row: Record<string, unknown> | undefined, key: string) {
+function credential(row: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = row?.[key]
-  if (typeof value !== "string") return
+  if (typeof value !== "string") return undefined
   const txt = value.trim()
   return txt ? txt : undefined
 }

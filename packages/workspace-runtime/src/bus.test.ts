@@ -39,8 +39,9 @@ describe("workspaceRuntimeBus", () => {
   it("is one process-wide instance across separate module evaluations", async () => {
     // dist ships each public entry as its own bundle, each inlining bus.ts.
     // Query-suffixed imports stand in for those duplicate module instances.
-    const a = (await import(`./bus?bundle=${"a"}`)) as typeof import("./bus")
-    const b = (await import(`./bus?bundle=${"b"}`)) as typeof import("./bus")
+    const suffix = (tag: string) => `./bus?bundle=${tag}`
+    const a = (await import(suffix("a"))) as typeof import("./bus")
+    const b = (await import(suffix("b"))) as typeof import("./bus")
     expect(a).not.toBe(b)
     expect(a.workspaceRuntimeBus).toBe(b.workspaceRuntimeBus)
     expect(a.workspaceRuntimeBus).toBe(workspaceRuntimeBus)

@@ -1,8 +1,9 @@
 import path from "node:path"
 import { mkdir } from "node:fs/promises"
 import { Database } from "bun:sqlite"
-import type { ClientPresentationEvent } from "@claxedo/agent-event-runtime/client-presentation"
 import type { OpenCodeCorpus } from "./opencode-corpus"
+import { loadRuntimeStore, loadSessionMetaStore, loadWorkspaceStore } from "./production-modules"
+import type { RegisteredWorkspace } from "./production-modules"
 import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
 
 export async function registerWorkspace(input: {
@@ -11,16 +12,7 @@ export async function registerWorkspace(input: {
   projectId: string
   projectName: string
 }) {
-  const workspaceStoreModule = "../../../claxedo-server-core/src/workspace/store/index.ts"
-  const { ensureWorkspace } = (await import(workspaceStoreModule)) as {
-    ensureWorkspace(input: {
-      workspaceId: string
-      project_id: string
-      project_name: string
-      workspace_name: string
-      directory: string
-    }): Promise<{ id: string } | undefined>
-  }
+  const { ensureWorkspace } = await loadWorkspaceStore()
   await withClaxedoDataDirectory(input.dataDirectory, async () => {
     const workspace = await ensureWorkspace({
       workspaceId: input.projectId,
@@ -31,13 +23,6 @@ export async function registerWorkspace(input: {
     })
     if (!workspace) throw new Error("Claxedo production workspace store rejected the benchmark workspace")
   })
-}
-
-type RegisteredWorkspace = {
-  id: string
-  project_id?: string
-  directory: string
-  kind: "local" | "cloud"
 }
 
 /** The native SDK and the Claxedo journal own different persisted views of a session. */
@@ -52,48 +37,11 @@ export async function persistClaxedoCorpus(input: { dataDirectory: string; corpu
 
 /** Publish corpus identity and actual transcript records through their production owners. */
 export async function registerCorpusSessions(input: { dataDirectory: string; corpus: OpenCodeCorpus }) {
-  const runtimeStoreModule = "../../../workspace-runtime/src/store.ts"
-  const { RuntimeStore } = (await import(runtimeStoreModule)) as {
-    RuntimeStore: new (root: string) => {
-      bindSession(input: {
-        sessionId: string
-        directory: string
-        title: string
-        agentSessionId: string
-        createdAt: number
-        updatedAt: number
-      }): void
-      updateSessionConfig(
-        id: string,
-        update: { harness: { id: "opencode"; access: "native" }; variant: null; agent: null },
-        input: { directory: string },
-      ): unknown
-      appendEvent(input: { sessionId: string; agentSessionId: string; payload: ClientPresentationEvent }): unknown
-      flush(): void
-      close(): void
-    }
-  }
-  const sessionMetaModule = "../../../claxedo-server-core/src/session/meta/index.ts"
-  const { putSessionMeta } = (await import(sessionMetaModule)) as {
-    putSessionMeta(
-      sessionID: string,
-      value: {
-        ws: RegisteredWorkspace
-        workspaceID: string
-        directory: string
-        host: "workspace"
-        title: string
-        createdAt: number
-        updatedAt: number
-      },
-    ): Promise<unknown>
-  }
+  const { RuntimeStore } = await loadRuntimeStore()
+  const { putSessionMeta } = await loadSessionMetaStore()
+  const { getWorkspace } = await loadWorkspaceStore()
   const sessions = [...input.corpus.sessions.values()]
   const projects = Map.groupBy(sessions, (session) => session.projectId)
-  const workspaceStoreModule = "../../../claxedo-server-core/src/workspace/store/index.ts"
-  const { getWorkspace } = (await import(workspaceStoreModule)) as {
-    getWorkspace(id: string): Promise<RegisteredWorkspace | undefined>
-  }
   await withClaxedoDataDirectory(input.dataDirectory, async () => {
     const workspaces = new Map<string, RegisteredWorkspace>()
     for (const [projectId, members] of projects) {

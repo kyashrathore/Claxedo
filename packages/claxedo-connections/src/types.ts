@@ -208,6 +208,19 @@ export const CONNECTION_ERROR_CODES = [
 ] as const
 export type ConnectionErrorCode = (typeof CONNECTION_ERROR_CODES)[number]
 
+/**
+ * Every code a token lookup can fail with. Named once so the error class and
+ * the service result agree: `code: string` on the result forced the service to
+ * assert its own value back into the error's union on every throw.
+ */
+export const CONNECTION_TOKEN_FAILURE_CODES = [
+  ...CONNECTION_ERROR_CODES,
+  "connection_refresh_transient",
+  "connection_not_found",
+  "capability_not_granted",
+] as const
+export type ConnectionTokenFailureCode = (typeof CONNECTION_TOKEN_FAILURE_CODES)[number]
+
 // Thrown by a host credential-store adapter whose secret seam is absent
 // (e.g. a fail-closed hosted stub). Routes map it to 503.
 export class ConnectionsUnavailableError extends Error {

@@ -4,10 +4,12 @@ import { cpus, tmpdir } from "node:os"
 import { createRequire } from "node:module"
 import { join, resolve } from "node:path"
 import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { createServer } from "node:net"
 import { createInterface } from "node:readline"
 import pidtree from "pidtree"
+
+import { asRecord, readArray, readNumber, readRecord, readString, readUnknown } from "../src/shared/json-read"
 
 import { createProcessMetricsSource } from "../src/main/diagnostics/process-metrics-source"
 import { createIsolatedPosixProcessMetricsWorker } from "../src/main/diagnostics/process-metrics-worker"
@@ -31,7 +33,9 @@ import type { ElectronDiagnosticsSource } from "../src/main/diagnostics/electron
 export const DIAGNOSTICS_CPU_OVERHEAD_BUDGET = process.env.CI ? 1.5 : 1
 export const DIAGNOSTICS_RETAINED_BYTES_BUDGET = 20 * 1024 * 1024
 const SECRET_SENTINEL = "claxedo-diagnostics-secret-must-not-cross"
-const packageUsage = createRequire(import.meta.url)("pidusage") as Pidusage
+// Named on the binding rather than asserted: `require` answers `any`, so
+// the declaration IS the contract for the slice this smoke uses.
+const packageUsage: Pidusage = createRequire(import.meta.url)("pidusage")
 
 export type DiagnosticsSmokeEvidence = {
   mode: "source" | "packaged"
@@ -325,7 +329,7 @@ export async function runSourceSmoke() {
           sources: beforeAction.sources.map((source) => ({
             source: source.source,
             state: source.state,
-            ...(source.state === "healthy" ? {} : { reason: (source as { reason?: string }).reason }),
+            ...(source.state === "healthy" ? {} : { reason: readString(source, "reason") }),
           })),
         })}`,
       )
@@ -467,7 +471,8 @@ export async function runPackagedSmoke() {
       )
       const contributorOwner = snapshot.owners.find((owner) => owner.id === contributor?.ownerId)
       if (!contributorOwner) throw new Error("Packaged startup did not produce a measured contributor")
-      const text = await client.evaluate<string>(
+      const text = await evaluateText(
+        client,
         `[...document.querySelectorAll('[role="dialog"]')]
           .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
           ?.textContent ?? ""`,
@@ -539,10 +544,12 @@ async function packagedActionSafety(
   serverOwnerId: string,
 ): Promise<DiagnosticsSmokeEvidence["actionSafety"]> {
   const invalidToken = "diagnostics-invalid-token-00000000"
-  const first = await client.evaluate<LocalDiagnostics.ActionResult>(
+  const first = await evaluateActionResult(
+    client,
     `window.api.processDiagnostics.stop(${JSON.stringify({ action: "stop", token: invalidToken })})`,
   )
-  const second = await client.evaluate<LocalDiagnostics.ActionResult>(
+  const second = await evaluateActionResult(
+    client,
     `window.api.processDiagnostics.stop(${JSON.stringify({ action: "stop", token: invalidToken })})`,
   )
   if (
@@ -575,21 +582,22 @@ async function packagedActionSafety(
     return "packaged-read-only"
   }
   const stop = actionGrant(snapshot, "diagnostics-packaged-stop", "stop")
-  const stopped = await client.evaluate<LocalDiagnostics.ActionResult>(
+  const stopped = await evaluateActionResult(
+    client,
     `window.api.processDiagnostics.stop(${JSON.stringify({ action: "stop", token: stop.token })})`,
   )
   if (!stopped.ok) throw new Error(`Packaged owner-scoped Stop failed: ${stopped.code}`)
-  const replayed = await client.evaluate<LocalDiagnostics.ActionResult>(
+  const replayed = await evaluateActionResult(
+    client,
     `window.api.processDiagnostics.stop(${JSON.stringify({ action: "stop", token: stop.token })})`,
   )
   if (replayed.ok || replayed.code !== "invalid-token") {
     throw new Error("Packaged owner-scoped Stop token was not single-use")
   }
-  const afterStop = await client.evaluate<LocalDiagnostics.RetainedSnapshot>(
-    `window.api.processDiagnostics.getSnapshot()`,
-  )
+  const afterStop = await evaluateSnapshot(client, `window.api.processDiagnostics.getSnapshot()`)
   const kill = actionGrant(afterStop, "diagnostics-packaged-kill", "kill")
-  const killed = await client.evaluate<LocalDiagnostics.ActionResult>(
+  const killed = await evaluateActionResult(
+    client,
     `window.api.processDiagnostics.kill(${JSON.stringify({ action: "kill", token: kill.token })})`,
   )
   if (!killed.ok) throw new Error(`Packaged owner-scoped Kill failed: ${killed.code}`)
@@ -613,8 +621,9 @@ function actionGrant(
   return grant
 }
 
+/** The dialog's own flags; each member is a boolean the page computed. */
 async function renderedTaskEvidence(client: CdpClient) {
-  return await client.evaluate<NonNullable<DiagnosticsSmokeEvidence["renderedProduct"]>>(`(() => {
+  const value = await client.evaluate(`(() => {
     const root = [...document.querySelectorAll('[role="dialog"]')]
       .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
     if (!root) return {}
@@ -646,6 +655,19 @@ async function renderedTaskEvidence(client: CdpClient) {
       churnEvidence,
     }
   })()`)
+  // Each member is a boolean the expression above computed; a page that did
+  // not render the dialog answers `{}`, and every flag reads as "not observed"
+  // rather than arriving typed and undefined.
+  const flag = (key: string) => readUnknown(value, key) === true
+  return {
+    intervalIdentified: flag("intervalIdentified"),
+    electronContributor: flag("electronContributor"),
+    serverContributor: flag("serverContributor"),
+    sidecarContributor: flag("sidecarContributor"),
+    memoryGrowthContributor: flag("memoryGrowthContributor"),
+    limitationDisclosed: flag("limitationDisclosed"),
+    churnEvidence: flag("churnEvidence"),
+  }
 }
 
 export function requirePackagedSourceHealth(
@@ -678,14 +700,16 @@ async function connectToPackagedApp(port: number, application: Bun.Subprocess) {
     }
     const targets = await fetch(`http://127.0.0.1:${String(port)}/json`, {
       signal: AbortSignal.timeout(2_000),
-    }).then((response) => response.json() as Promise<Array<{
-      type: string
-      url: string
-      webSocketDebuggerUrl: string
-    }>>).catch(() => [])
-    const target = targets.find((item) =>
-      item.type === "page" && item.url.includes("/out/renderer/index.local.html"))
-    if (target) return await createCdpClient(target.webSocketDebuggerUrl)
+    })
+      .then((response): Promise<unknown> => response.json())
+      .catch(() => [])
+    // Read, not asserted: `/json` is the browser's own inventory, and only
+    // three of its fields matter here.
+    const target = (Array.isArray(targets) ? targets : []).find(
+      (item) => readString(item, "type") === "page" && readString(item, "url")?.includes("/out/renderer/index.local.html"),
+    )
+    const debuggerUrl = readString(target, "webSocketDebuggerUrl")
+    if (debuggerUrl) return await createCdpClient(debuggerUrl)
     await Bun.sleep(250)
   }
   throw new Error("Packaged Claxedo DevTools endpoint did not become reachable")
@@ -694,9 +718,10 @@ async function connectToPackagedApp(port: number, application: Bun.Subprocess) {
 async function waitForMainWindow(client: CdpClient) {
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
-    const ready = await client.evaluate<boolean>(
+    const ready = await evaluateBoolean(
+      client,
       `document.readyState === "complete" && typeof window.api?.processDiagnostics?.getSnapshot === "function"`,
-    ).catch(() => false)
+    )
     if (ready) return
     await Bun.sleep(500)
   }
@@ -706,7 +731,7 @@ async function waitForMainWindow(client: CdpClient) {
 async function openDiagnosticsDialog(client: CdpClient) {
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
-    const opened = await client.evaluate<boolean>(`(() => {
+    const opened = await evaluateBoolean(client, `(() => {
       const dialog = [...document.querySelectorAll('[role="dialog"]')]
         .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
       if (dialog) return true
@@ -723,21 +748,24 @@ async function openDiagnosticsDialog(client: CdpClient) {
       if (!item) return false
       item.click()
       return true
-    })()`).catch(() => false)
+    })()`)
     if (opened) {
-      const ready = await client.evaluate<boolean>(
+      const ready = await evaluateBoolean(
+        client,
         `[...document.querySelectorAll('[role="dialog"]')]
           .some((candidate) =>
             candidate.getAttribute("aria-label") === "Local performance diagnostics" &&
             candidate.textContent.includes("Collector"))`,
-      ).catch(() => false)
+      )
       if (ready) return
     }
     await Bun.sleep(250)
   }
-  const screen = await client.evaluate<string>(
+  const screen = await evaluateText(
+    client,
     `document.body?.innerText?.replace(/\\s+/g, " ").slice(0, 500) ?? "<empty>"`,
-  ).catch(() => "<unavailable>")
+    "<unavailable>",
+  )
   throw new Error(`Packaged Diagnostics dialog did not become reachable from fresh state: ${screen}`)
 }
 
@@ -769,9 +797,8 @@ async function waitForSnapshot(client: CdpClient) {
   const deadline = Date.now() + 180_000
   let last: LocalDiagnostics.RetainedSnapshot | undefined
   while (Date.now() < deadline) {
-    const snapshot = await client.evaluate<LocalDiagnostics.RetainedSnapshot | undefined>(
-      `window.api?.processDiagnostics?.getSnapshot?.()`,
-    ).catch(() => undefined)
+    const raw = await client.evaluate(`window.api?.processDiagnostics?.getSnapshot?.()`).catch(() => undefined)
+    const snapshot = raw === undefined ? undefined : LocalDiagnostics.RetainedSnapshot.parse(raw)
     last = snapshot ?? last
     if (
       snapshot &&
@@ -820,8 +847,32 @@ function requiredPackagedSources(platform: NodeJS.Platform) {
 }
 
 type CdpClient = {
-  evaluate<T = unknown>(expression: string): Promise<T>
+  /**
+   * Answers `unknown`. `Runtime.evaluate` returns whatever the page produced
+   * and CDP promises nothing about its shape, so each caller below reads what
+   * it needs — through the diagnostics contract's own schema where one exists
+   * — instead of naming a `T` that nothing checks.
+   */
+  evaluate(expression: string): Promise<unknown>
   close(): void
+}
+
+/** The four answer shapes this smoke reads out of the packaged renderer. */
+async function evaluateBoolean(client: CdpClient, expression: string): Promise<boolean> {
+  return (await client.evaluate(expression).catch(() => false)) === true
+}
+
+async function evaluateText(client: CdpClient, expression: string, fallback = ""): Promise<string> {
+  const value = await client.evaluate(expression).catch(() => fallback)
+  return typeof value === "string" ? value : fallback
+}
+
+async function evaluateActionResult(client: CdpClient, expression: string) {
+  return LocalDiagnostics.ActionResult.parse(await client.evaluate(expression))
+}
+
+async function evaluateSnapshot(client: CdpClient, expression: string) {
+  return LocalDiagnostics.RetainedSnapshot.parse(await client.evaluate(expression))
 }
 
 async function createCdpClient(url: string): Promise<CdpClient> {
@@ -857,30 +908,28 @@ async function createCdpClient(url: string): Promise<CdpClient> {
     pending.clear()
   }
   socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as {
-      id?: number
-      result?: unknown
-      error?: { message?: string }
-    }
-    if (message.id === undefined) return
-    const request = pending.get(message.id)
+    const message: unknown = JSON.parse(String(event.data))
+    const id = readNumber(message, "id")
+    if (id === undefined) return
+    const request = pending.get(id)
     if (!request) return
-    pending.delete(message.id)
+    pending.delete(id)
     clearTimeout(request.timer)
-    if (message.error) {
-      request.reject(new Error(message.error.message ?? "CDP command failed"))
+    const error = readRecord(message, "error")
+    if (error) {
+      request.reject(new Error(readString(error, "message") ?? "CDP command failed"))
       return
     }
-    request.resolve(message.result)
+    request.resolve(readUnknown(message, "result"))
   })
-  const command = <T>(method: string, params: Record<string, unknown> = {}) =>
-    new Promise<T>((resolveCommand, reject) => {
+  const command = (method: string, params: Record<string, unknown> = {}) =>
+    new Promise<unknown>((resolveCommand, reject) => {
       const id = ++sequence
       const timer = setTimeout(() => {
         pending.delete(id)
         reject(new Error(`Packaged renderer CDP command timed out: ${method}`))
       }, 15_000)
-      pending.set(id, { resolve: resolveCommand as (value: unknown) => void, reject, timer })
+      pending.set(id, { resolve: resolveCommand, reject, timer })
       try {
         socket.send(JSON.stringify({ id, method, params }))
       } catch (error) {
@@ -893,24 +942,25 @@ async function createCdpClient(url: string): Promise<CdpClient> {
   socket.addEventListener("error", () => rejectPending(new Error("Packaged renderer CDP failed")))
   await command("Runtime.enable")
   return {
-    async evaluate<T>(expression: string) {
-      const output = await command<{
-        result: { value?: T; description?: string }
-        exceptionDetails?: { text?: string; exception?: { description?: string } }
-      }>("Runtime.evaluate", {
+    // Answers `unknown`: `Runtime.evaluate` returns whatever the page produced
+    // and CDP promises nothing about it, so callers narrow at their own site
+    // instead of naming a `T` here that nothing checks.
+    async evaluate(expression: string): Promise<unknown> {
+      const output = await command("Runtime.evaluate", {
         expression,
         awaitPromise: true,
         returnByValue: true,
         userGesture: true,
       })
-      if (output.exceptionDetails) {
+      const exceptionDetails = readRecord(output, "exceptionDetails")
+      if (exceptionDetails) {
         throw new Error(
-          output.exceptionDetails.exception?.description ??
-          output.exceptionDetails.text ??
+          readString(readRecord(exceptionDetails, "exception"), "description") ??
+          readString(exceptionDetails, "text") ??
           "Packaged renderer evaluation failed",
         )
       }
-      return output.result.value as T
+      return readUnknown(readUnknown(output, "result"), "value")
     },
     close() {
       rejectPending(new Error("Packaged renderer CDP closed"))
@@ -1100,7 +1150,8 @@ async function measureDiagnosticsTreeCpu(enabled: boolean) {
           maxage: 0,
           ...(process.platform === "darwin" ? { usePs: true } : {}),
         }).catch(() => undefined)
-        if (stats) result[pid] = stats as { cpu: number }
+        const cpu = readNumber(stats, "cpu")
+        if (cpu !== undefined) result[pid] = { cpu }
       }
       return result
     }
@@ -1239,13 +1290,15 @@ function createCdpFlowSource(rootPids: number[]): DiagnosticsSource {
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
   lines.on("line", (line) => {
     try {
-      const input = JSON.parse(line) as { at?: unknown; processes?: unknown }
-      if (typeof input.at !== "number" || !Array.isArray(input.processes)) return
+      const input: unknown = JSON.parse(line)
+      const at = readNumber(input, "at")
+      const processes = readArray(input, "processes")
+      if (at === undefined || !processes) return
       latest = {
-        at: input.at,
-        processes: input.processes.flatMap((value) => {
-          if (!value || typeof value !== "object") return []
-          const entry = value as Record<string, unknown>
+        at,
+        processes: processes.flatMap((value) => {
+          const entry = asRecord(value)
+          if (!entry) return []
           if (
             typeof entry.id !== "number" ||
             !Number.isInteger(entry.id) ||

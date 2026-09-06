@@ -80,7 +80,8 @@ const solid = (await import(require_.resolve("vite-plugin-solid"))).default
 const MERMAID_PACKAGE = resolve(dirname(require_.resolve("mermaid/package.json")))
 
 // Generated, not committed: the fixture is written fresh on every run and removed
-// in the `finally` below, exactly like verify-mermaid-svg-sanitizer.mjs's entry.
+// in the `finally` below, so a failure part-way through cannot strand it in the
+// source tree.
 const ROOT = join(HERE, ".mermaid-wiring")
 
 // MERMAID_WIRING_DEBUG=1 dumps what each streamed chunk actually put in the DOM.

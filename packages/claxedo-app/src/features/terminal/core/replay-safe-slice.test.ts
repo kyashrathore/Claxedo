@@ -123,7 +123,7 @@ describe("safeTrimStart", () => {
   test("does not leave a partial escape at the head", () => {
     // Cap lands inside the colour sequence; the trimmed head must not start
     // mid-CSI or xterm prints the parameter bytes as literal text.
-    const text = "old output" + `${ESC}[1;31m` + "new output"
+    const text = `old output${ESC}[1;31mnew output`
     const trimmed = safeTrimStart(text, 14)
     expect(trimmed.startsWith(`${ESC}[`)).toBe(false)
     expect(trimmed).toBe("new output")

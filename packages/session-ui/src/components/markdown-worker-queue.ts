@@ -58,7 +58,13 @@ export function createLatestWorkerQueue<T extends { key: string }>(input: {
     },
     pending: () => slots.size,
     async idle() {
-      while (running) await running
+      // `schedule` can start a fresh run from inside the previous run's `finally`, so the
+      // in-flight promise has to be re-read after every await rather than awaited once.
+      let current = running
+      while (current) {
+        await current
+        current = running
+      }
     },
   }
 }

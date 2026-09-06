@@ -81,18 +81,18 @@ export function groupCommentsByFile<T extends { file: string }>(comments: readon
 /** Stable DOM id for a file's diff block (undefined for un-checksummable input). */
 export function diffId(file: string): string | undefined {
   const sum = checksum(file)
-  if (!sum) return
+  if (!sum) return undefined
   return `session-review-diff-${sum}`
 }
 
 export function diffTestId(file: string): string | undefined {
   const id = diffId(file)
-  if (!id) return
+  if (!id) return undefined
   return `${id}-item`
 }
 
 export function diffTriggerTestId(file: string): string | undefined {
   const id = diffId(file)
-  if (!id) return
+  if (!id) return undefined
   return `${id}-trigger`
 }

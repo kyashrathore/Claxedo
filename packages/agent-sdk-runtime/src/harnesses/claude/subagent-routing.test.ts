@@ -5,7 +5,6 @@ import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createMemoryRuntimeStore } from "../../stores/memory"
-import { storeRows } from "../../test-utils/store-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "../shared/sdk-runtime-adapter"
 import { ingestClaudeSdkMessage } from "./driver"
 
@@ -134,7 +133,7 @@ function claudeDriver(): SdkRuntimeDriver {
 
 describe("Claude native subagent routing", () => {
   test("admits lifecycle under the parent and projects child tools only into the child Session", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
     const runtimeEvents: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
@@ -174,6 +173,6 @@ describe("Claude native subagent routing", () => {
       sessionId: parent.id,
       payload: expect.objectContaining({ type: "usage", contextUsed: 9000 }),
     }))
-    adapter.dispose()
+    await adapter.dispose()
   })
 })

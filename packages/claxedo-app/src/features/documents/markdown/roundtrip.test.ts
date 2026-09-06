@@ -40,7 +40,7 @@ describe("Markdown adversarial corpus", () => {
   })
 
   test("checks every docs Markdown file for byte-stable rich-mode admission", async () => {
-    const names = [...new Bun.Glob("**/*.md").scanSync({ cwd: docsDirectory })].sort()
+    const names = [...new Bun.Glob("**/*.md").scanSync({ cwd: docsDirectory })].sort((a, b) => a.localeCompare(b))
     const counts = { rich: 0, source: 0, rejected: 0, roundtrip_mismatch: 0, unsupported_syntax: 0 }
 
     for (const name of names) {

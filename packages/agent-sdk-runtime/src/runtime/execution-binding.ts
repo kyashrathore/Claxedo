@@ -24,7 +24,7 @@ export function requireExecutionBinding(
       message: `Session ${sessionId} has no complete execution binding`,
     })
   }
-  const session = store.getSession(sessionId) as { directory?: string } | null
+  const session = store.getSession(sessionId)
   const config = store.getSessionConfig(sessionId)
   if (!session || !config) {
     throw new AgentRuntimeContractError({

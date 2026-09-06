@@ -32,24 +32,24 @@ export function logicalOwner(relPath: string): string | null {
 }
 
 export function dependencyViolation(from: string, to: string): string | undefined {
-  if (from === to) return
-  if (from.startsWith("legacy/")) return
+  if (from === to) return undefined
+  if (from.startsWith("legacy/")) return undefined
   if (to.startsWith("legacy/")) return `${from} imports ${to}: final owners cannot depend on legacy paths`
-  if (from === "architecture") return
+  if (from === "architecture") return undefined
   if (to === "architecture") return `${from} imports architecture: production owners cannot depend on guard tooling`
-  if (from === "app") return
+  if (from === "app") return undefined
   if (from.startsWith("features/")) {
-    if (to === "ui" || to === "lib" || to.startsWith("platform/")) return
+    if (to === "ui" || to === "lib" || to.startsWith("platform/")) return undefined
     if (to.startsWith("features/")) return `${from} imports ${to}: feature-to-feature imports must be composed by app/integrations`
     return `${from} imports ${to}: features may depend only on platform, ui, and lib`
   }
   if (from.startsWith("platform/")) {
-    if (to.startsWith("platform/")) return
-    if (to === "lib") return
+    if (to.startsWith("platform/")) return undefined
+    if (to === "lib") return undefined
     return `${from} imports ${to}: platform capabilities may depend only on other platform capabilities and lib`
   }
   if (from === "ui") {
-    if (to === "lib") return
+    if (to === "lib") return undefined
     return `ui imports ${to}: reusable UI may depend only on lib`
   }
   if (from === "lib") return `lib imports ${to}: lib must remain dependency-light and owner-independent`

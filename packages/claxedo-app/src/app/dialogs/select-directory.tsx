@@ -14,6 +14,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { cachedDirectoryChildrenRequest } from "@/platform/query/directory-search-cache"
 import { ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import { useCheckServerHealth } from "@/app/connection/server-health"
+import { onlyStrings, readString } from "@/lib/record"
 import {
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
@@ -35,6 +36,23 @@ type DirectoryEntry = {
   name: string
   absolute: string
   type?: string
+}
+
+/**
+ * The rows a local file listing carries, as this picker reads them.
+ *
+ * A row without both a name and an absolute path cannot be offered as a folder
+ * — it would render as a blank entry the user can select — so it is dropped
+ * here rather than named as a `DirectoryEntry[]` the response never proved.
+ */
+function directoryEntries(body: unknown): DirectoryEntry[] {
+  return (Array.isArray(body) ? body : []).flatMap((item) => {
+    const name = readString(item, "name")
+    const absolute = readString(item, "absolute")
+    if (name === undefined || absolute === undefined) return []
+    const type = readString(item, "type")
+    return [{ name, absolute, ...(type === undefined ? {} : { type }) }]
+  })
 }
 
 function cleanInput(value: string) {
@@ -163,9 +181,13 @@ function useDirectorySearch(args: {
 }) {
   let current = 0
 
-  const json = async <T,>(pathname: string, params: Record<string, string | number | undefined>, fallback: T) => {
+  // Answers the body as `unknown`: the two callers below each read the shape
+  // they need. The generic `json<T>(..., fallback)` this replaced let a caller
+  // NAME the response shape, so an unreachable or malformed local runtime
+  // handed the picker a value it then walked as if the server had confirmed it.
+  const jsonBody = async (pathname: string, params: Record<string, string | number | undefined>): Promise<unknown> => {
     const serverUrl = args.serverUrl()
-    if (!isLoopbackUrl(serverUrl) && !(await args.localExecution())) return fallback
+    if (!isLoopbackUrl(serverUrl) && !(await args.localExecution())) return undefined
     const url = new URL(pathname, serverUrl)
     for (const [key, value] of Object.entries(params)) {
       if (value === undefined) continue
@@ -174,8 +196,8 @@ function useDirectorySearch(args: {
     const res = await localRequest(serverUrl, args.request)(url, {
       headers: { Accept: "application/json" },
     }).catch(() => undefined)
-    if (!res?.ok) return fallback
-    return await res.json().catch(() => fallback) as T
+    if (!res?.ok) return undefined
+    return await res.json().catch(() => undefined)
   }
 
   const scoped = (value: string) => {
@@ -200,12 +222,11 @@ function useDirectorySearch(args: {
     return cachedDirectoryChildrenRequest({
       serverUrl: args.serverUrl(),
       directory: key,
-      list: () => json<DirectoryEntry[]>(
+      list: () => jsonBody(
         workspaceRuntimeFilePath({ resource: "file", scope: key, path: "" }),
         {},
-        [],
-      ).then((nodes) =>
-        nodes
+      ).then((body) =>
+        directoryEntries(body)
           .filter((n) => n.type === "directory")
           .map((n) => ({ name: n.name, absolute: trimTrailing(normalizeDriveRoot(n.absolute)) })),
       ),
@@ -233,7 +254,7 @@ function useDirectorySearch(args: {
     const isPath = raw.startsWith("~") || !!rootOf(raw) || raw.includes("/")
     const query = normalizeDriveRoot(scopedInput.path)
     if (!isPath) {
-      const results = await json<string[]>(
+      const results = onlyStrings(await jsonBody(
         workspaceRuntimeFindFilePath({
           scope: scopedInput.directory,
           query,
@@ -241,8 +262,7 @@ function useDirectorySearch(args: {
           limit: 50,
         }),
         {},
-        [],
-      )
+      ))
       if (!active()) return []
       return results.map((rel) => joinPath(scopedInput.directory, rel)).slice(0, 50)
     }

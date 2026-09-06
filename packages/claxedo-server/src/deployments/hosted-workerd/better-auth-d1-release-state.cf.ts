@@ -283,7 +283,7 @@ function assertIdentity(identity: DeploymentReleaseIdentity) {
       name.endsWith("Posture")
     )
       continue
-    if (!IDENTIFIER.test(value as string)) {
+    if (typeof value !== "string" || !IDENTIFIER.test(value)) {
       throw new Error(`${name} must be an explicit 8-128 character deployment identifier`)
     }
   }
@@ -1056,8 +1056,9 @@ function verifyStateIdentity(
   missingMessage = "deployment release state is not initialized",
 ) {
   if (!state) throw new Error(missingMessage)
-  for (const [name, value] of Object.entries(expected)) {
-    if (state[name as keyof DeploymentReleaseIdentity] !== value) {
+  for (const name of Object.keys(expected)) {
+    // `name` comes from the identity's own keys, so it indexes both sides.
+    if (!isReleaseIdentityKey(name) || state[name] !== expected[name]) {
       throw new Error(`deployment release state ${name} does not match this Worker build`)
     }
   }
@@ -1146,4 +1147,30 @@ export async function requireDeploymentReleaseState(
     )
     .first<DeploymentReleaseState>()
   return verifyStateIdentity(state, expected)
+}
+
+
+/**
+ * Every identity key, checked by the compiler: a field added to
+ * `DeploymentReleaseIdentity` and not listed here fails this declaration, so
+ * the comparison below cannot silently stop covering it.
+ */
+const RELEASE_IDENTITY_KEYS = {
+  deploymentId: true,
+  releaseSequence: true,
+  releaseId: true,
+  workerBuildId: true,
+  platformVersionId: true,
+  browserBuildId: true,
+  relayBuildId: true,
+  authConfigurationId: true,
+  requestLimiterNamespaceId: true,
+  adapterProfile: true,
+  productPosture: true,
+  sandboxPosture: true,
+  serviceManifestId: true,
+} satisfies Record<keyof DeploymentReleaseIdentity, true>
+
+function isReleaseIdentityKey(name: string): name is keyof DeploymentReleaseIdentity {
+  return Object.hasOwn(RELEASE_IDENTITY_KEYS, name)
 }

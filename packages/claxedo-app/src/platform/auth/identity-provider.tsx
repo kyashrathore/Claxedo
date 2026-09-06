@@ -36,9 +36,10 @@ export function IdentityProvider(props: {
   principal: Accessor<Principal> | Principal
   children: JSX.Element
 }) {
-  const principal = typeof props.principal === "function"
-    ? props.principal
-    : () => props.principal as Principal
+  // Bound to a const so the `typeof` narrowing survives into the accessor;
+  // reading `props.principal` inside the closure would widen it back.
+  const given = props.principal
+  const principal = typeof given === "function" ? given : () => given
   return (
     <IdentityContext.Provider value={{ principal }}>
       {props.children}
@@ -67,5 +68,9 @@ export function principalDataScope(principal: Principal) {
     case "local": return `local:${principal.deviceId}`
     case "signed": return `signed:${principal.userId}`
     case "org-member": return `org-member:${principal.userId}:${principal.orgId}`
+    default: {
+      const unmapped: never = principal
+      throw new Error(`no data scope for principal ${JSON.stringify(unmapped)}`)
+    }
   }
 }

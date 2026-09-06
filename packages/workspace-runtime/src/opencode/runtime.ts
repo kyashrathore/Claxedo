@@ -42,7 +42,9 @@ export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRun
   const listeners = new Set<(event: ProjectedEvent) => void>()
   const pump: EventPump = createEventPump(host, {
     onEvent(event) {
-      for (const listener of [...listeners]) listener(event)
+      // Iterated over a copy: a listener that unsubscribes during dispatch
+      // would otherwise mutate the set mid-iteration and skip its neighbour.
+      for (const listener of Array.from(listeners)) listener(event)
     },
   })
   let closing: Promise<void> | undefined

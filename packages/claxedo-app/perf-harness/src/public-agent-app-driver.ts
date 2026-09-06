@@ -5,9 +5,11 @@ import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { serveDriver, type DriverHandlers, type PrepareParams } from "agent-app-benchmark/driver-sdk"
-import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
+import type { WorkspaceFixtureManifest, WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import { measureSessionActivation } from "./agent-browser-observer"
-import { launchPackagedClaxedo, type ClaxedoLaunch } from "./agent-claxedo-launcher"
+import { readFlag } from "./page-value"
+import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
+import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
 import { materializeClaxedoPublicCorpus, type ClaxedoPublicMaterialization } from "./public-corpus-materializer"
 import {
   executeWorkspacePanelAction,
@@ -16,6 +18,7 @@ import {
   publicPanelLoadPresets,
   WORKSPACE_PANEL_ACTIONS,
   SESSION_NAVIGATION_TYPES,
+  PUBLIC_PANEL_LOAD_PROFILES,
   type PanelTarget,
   type PublicPanelLoadPreset,
   type PublicPanelLoadPresets,
@@ -30,13 +33,12 @@ export const PUBLIC_SCENARIO_IDS = [
   "workspace-panel-v1",
 ] as const
 
-type OwnedProcess = {
-  pid: number
-  startTimeMs: number
-  owner: "application"
-  category: string
-  role?: "main"
-}
+/**
+ * A launched process as the public driver reports it: exactly what the launcher
+ * accounts for, plus the role this driver assigns. Previously a hand-written
+ * copy of the launcher's type, which is why both read sites asserted.
+ */
+type OwnedProcess = LaunchedProcess & { role?: "main" }
 
 type ReadinessReceipt = {
   endpoint: "correct-content-painted-and-input-ready"
@@ -105,18 +107,21 @@ type DriverDependencies = {
     destination: Target,
     preset?: PublicPanelLoadPreset,
   ): Promise<NavigationMeasurement>
-  shutdown(): Promise<{ terminated: OwnedProcess[]; survivors: OwnedProcess[] }>
+  shutdown(): Promise<ShutdownResult>
 }
 
 type PanelMeasurement = Awaited<ReturnType<typeof executeWorkspacePanelAction>>
 type NavigationMeasurement = Awaited<ReturnType<typeof executeSessionNavigation>>
+
+/** What a shutdown accounts for: every process it ended, and every one it did not. */
+type ShutdownResult = { terminated: OwnedProcess[]; survivors: OwnedProcess[] }
 
 export type ClaxedoPublicDriver = {
   hello(): Promise<Record<string, unknown>>
   prepare(params: PrepareParams): Promise<Record<string, unknown>>
   launch(params: LaunchParams): Promise<Record<string, unknown>>
   execute(params: ExecuteParams): Promise<Record<string, unknown>>
-  shutdown(): Promise<Record<string, unknown>>
+  shutdown(): Promise<ShutdownResult>
 }
 
 export function createClaxedoPublicDriver(dependencies: DriverDependencies): ClaxedoPublicDriver {
@@ -145,7 +150,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
     hello: async () => ({ ...dependencies.hello, scenarios: [...PUBLIC_SCENARIO_IDS] }),
     prepare: async (params) => {
       if (prepared) throw new Error("Claxedo driver is already prepared")
-      if (!PUBLIC_SCENARIO_IDS.includes(params.scenarioId as (typeof PUBLIC_SCENARIO_IDS)[number])) {
+      if (!PUBLIC_SCENARIO_IDS.some((id) => id === params.scenarioId)) {
         throw new Error(`Claxedo does not support scenario ${params.scenarioId}`)
       }
       let panelLoadPresets: PublicPanelLoadPresets | undefined
@@ -316,10 +321,11 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
 async function makeDefaultDependencies(): Promise<DriverDependencies> {
   const repoRoot = path.resolve(import.meta.dir, "../../../..")
   const executable = await discoverPackagedExecutable()
-  const desktopPackage = JSON.parse(
+  const desktopPackage: unknown = JSON.parse(
     await readFile(path.join(repoRoot, "packages/claxedo-desktop/package.json"), "utf8"),
-  ) as { version?: unknown }
-  if (typeof desktopPackage.version !== "string" || desktopPackage.version.length === 0)
+  )
+  const desktopVersion = isRecord(desktopPackage) ? textField(desktopPackage, "version") : undefined
+  if (desktopVersion === undefined || desktopVersion.length === 0)
     throw new Error("Claxedo desktop version is missing")
   const sourceCommit = await gitOutput(repoRoot, ["rev-parse", "HEAD"])
   if (!/^[0-9a-f]{40}$/u.test(sourceCommit)) throw new Error("Claxedo source revision is invalid")
@@ -357,7 +363,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     if (!launch) return { terminated: [], survivors: [] }
     const result = await launch.shutdown()
     if (removeState && result.survivors.length === 0 && stateRoot) await rm(stateRoot, { recursive: true, force: true })
-    return { terminated: result.terminated as OwnedProcess[], survivors: result.survivors as OwnedProcess[] }
+    return { terminated: result.terminated, survivors: result.survivors }
   }
 
   const startState = async (stateRoot: string, disposable: boolean): Promise<ActiveLaunch> => {
@@ -381,7 +387,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     activeStateRoot = stateRoot
     removeActiveState = disposable
     return {
-      processes: [{ ...(launch.process as OwnedProcess), role: "main" }],
+      processes: [{ ...launch.process, role: "main" }],
       readiness: readinessReceipt(launch.coldReady.endTimestamp),
       clock: {
         kind: "single-monotonic-clock",
@@ -395,7 +401,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
   return {
     hello: {
       protocolVersion: 1,
-      application: { id: "claxedo", name: "Claxedo", version: desktopPackage.version, buildDigestSha256 },
+      application: { id: "claxedo", name: "Claxedo", version: desktopVersion, buildDigestSha256 },
       driver: { name: "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
@@ -468,7 +474,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
         throw new Error("Claxedo workspace-panel action is not on the control session")
       }
       return executeWorkspacePanelAction({
-        page: current.page as never,
+        page: current.page,
         benchmarkCase,
         fixture: workspaceFixture,
         preset,
@@ -477,7 +483,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     executeSessionNavigation: async (benchmarkCase, source, destination, preset) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
       return executeSessionNavigation({
-        page: current.page as never,
+        page: current.page,
         benchmarkCase,
         source,
         destination,
@@ -496,10 +502,10 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
  * laid out and visible, the same identity check the readiness observer uses.
  */
 async function sessionRootVisible(
-  page: { evaluate: <T>(fn: (id: string) => T, id: string) => Promise<T> },
+  page: { evaluate: (fn: (id: string) => unknown, id: string) => Promise<unknown> },
   sessionId: string,
 ) {
-  return page.evaluate((id) => {
+  return readFlag(await page.evaluate((id) => {
     const root = document.querySelector<HTMLElement>(
       `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
     )
@@ -507,7 +513,7 @@ async function sessionRootVisible(
     const rect = root.getBoundingClientRect()
     const style = getComputedStyle(root)
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-  }, sessionId)
+  }, sessionId))
 }
 
 /** Copies the app-side logs of a failed unmeasured launch out of the private run directory before it is discarded. */
@@ -587,16 +593,113 @@ function requiredString(params: Record<string, unknown>, name: string) {
   return value
 }
 
-function prepareParams(params: Record<string, unknown>): PrepareParams {
-  const workspaceFixtureManifest = params.workspaceFixtureManifest
-  if (
-    workspaceFixtureManifest !== undefined &&
-    (!workspaceFixtureManifest ||
-      typeof workspaceFixtureManifest !== "object" ||
-      Array.isArray(workspaceFixtureManifest))
-  ) {
-    throw new Error("Claxedo driver requires an object workspaceFixtureManifest")
+const stringList = (record: Record<string, unknown>, key: string): string[] | undefined => {
+  const value = record[key]
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) return undefined
+  return value.filter((entry) => typeof entry === "string")
+}
+
+/** Read the fixture's generation parameters, which decide every file it holds. */
+function parseWorkspaceLoad(load: Record<string, unknown> | undefined): WorkspaceLoad | undefined {
+  if (!load || load.generator !== "agent-app-workspace-v1") return undefined
+  const counts = [
+    "directoryCount",
+    "sourceFileCount",
+    "sourceFileBytes",
+    "changedFileCount",
+    "diffHunksPerFile",
+    "diffLinesPerHunk",
+    "openFileTabCount",
+  ] as const
+  const read = counts.map((name) => [name, numberField(load, name)] as const)
+  if (read.some(([, value]) => value === undefined)) return undefined
+  return {
+    generator: "agent-app-workspace-v1",
+    directoryCount: numberField(load, "directoryCount") ?? 0,
+    sourceFileCount: numberField(load, "sourceFileCount") ?? 0,
+    sourceFileBytes: numberField(load, "sourceFileBytes") ?? 0,
+    changedFileCount: numberField(load, "changedFileCount") ?? 0,
+    diffHunksPerFile: numberField(load, "diffHunksPerFile") ?? 0,
+    diffLinesPerHunk: numberField(load, "diffLinesPerHunk") ?? 0,
+    openFileTabCount: numberField(load, "openFileTabCount") ?? 0,
   }
+}
+
+/**
+ * Read an unvalidated `workspaceFixtureManifest` from the driver protocol.
+ *
+ * The benchmark SDK's own `verifyWorkspaceFixtureManifest` takes an
+ * already-typed manifest, so it cannot be the boundary for JSON off the wire.
+ * This checks the fields the harness reads — the file identities, the changed
+ * and open path lists, and the digests that make the fixture reproducible —
+ * and rejects anything else, instead of asserting the shape and failing later
+ * inside a scenario.
+ */
+function parseWorkspaceFixtureManifest(value: unknown): WorkspaceFixtureManifest {
+  if (!isRecord(value)) throw new Error("Claxedo driver requires an object workspaceFixtureManifest")
+  const seed = textField(value, "seed")
+  const manifestDigestSha256 = textField(value, "manifestDigestSha256")
+  const directories = stringList(value, "directories")
+  const changedFilePaths = stringList(value, "changedFilePaths")
+  const openFilePaths = stringList(value, "openFilePaths")
+  const load = parseWorkspaceLoad(recordField(value, "load"))
+  const rawFiles = recordsField(value, "files")
+  if (
+    value.schemaVersion !== 1 ||
+    value.generator !== "agent-app-workspace-v1" ||
+    seed === undefined ||
+    manifestDigestSha256 === undefined ||
+    !directories ||
+    !changedFilePaths ||
+    !openFilePaths ||
+    !load ||
+    !rawFiles
+  ) {
+    throw new Error("Claxedo driver workspaceFixtureManifest does not match agent-app-workspace-v1")
+  }
+  const files = rawFiles.map((file) => {
+    const filePath = textField(file, "path")
+    const byteLength = numberField(file, "byteLength")
+    const initialDigestSha256 = textField(file, "initialDigestSha256")
+    const currentDigestSha256 = textField(file, "currentDigestSha256")
+    const hunks = (recordsField(file, "hunks") ?? []).map((hunk) => ({
+      startLine: numberField(hunk, "startLine") ?? -1,
+      lineCount: numberField(hunk, "lineCount") ?? -1,
+    }))
+    if (
+      filePath === undefined ||
+      byteLength === undefined ||
+      typeof file.changed !== "boolean" ||
+      initialDigestSha256 === undefined ||
+      currentDigestSha256 === undefined ||
+      hunks.some((hunk) => hunk.startLine < 0 || hunk.lineCount < 0)
+    ) {
+      throw new Error("Claxedo driver workspaceFixtureManifest has an unreadable file entry")
+    }
+    return { path: filePath, byteLength, changed: file.changed, hunks, initialDigestSha256, currentDigestSha256 }
+  })
+  return {
+    schemaVersion: 1,
+    generator: "agent-app-workspace-v1",
+    seed,
+    load,
+    directories,
+    files,
+    changedFilePaths,
+    openFilePaths,
+    manifestDigestSha256,
+  }
+}
+
+// The protocol hands these three readers whatever the caller sent. They take
+// `unknown` and check it, rather than being declared as already-validated
+// records and asserted into at the call site.
+function prepareParams(params: unknown): PrepareParams {
+  if (!isRecord(params)) throw new Error("Claxedo driver prepare requires an object")
+  const workspaceFixtureManifest =
+    params.workspaceFixtureManifest === undefined
+      ? undefined
+      : parseWorkspaceFixtureManifest(params.workspaceFixtureManifest)
   return {
     scenarioId: requiredString(params, "scenarioId"),
     scenarioDigestSha256: requiredString(params, "scenarioDigestSha256"),
@@ -606,22 +709,17 @@ function prepareParams(params: Record<string, unknown>): PrepareParams {
     corpusDefinitionDigestSha256: requiredString(params, "corpusDefinitionDigestSha256"),
     eventSchemaDigestSha256: requiredString(params, "eventSchemaDigestSha256"),
     runDirectory: requiredString(params, "runDirectory"),
-    ...(params.scenarioDefinition &&
-    typeof params.scenarioDefinition === "object" &&
-    !Array.isArray(params.scenarioDefinition)
-      ? { scenarioDefinition: params.scenarioDefinition as Record<string, unknown> }
-      : {}),
+    ...(isRecord(params.scenarioDefinition) ? { scenarioDefinition: params.scenarioDefinition } : {}),
     ...(typeof params.fixtureSeed === "string" ? { fixtureSeed: params.fixtureSeed } : {}),
-    ...(workspaceFixtureManifest
-      ? { workspaceFixtureManifest: workspaceFixtureManifest as WorkspaceFixtureManifest }
-      : {}),
+    ...(workspaceFixtureManifest ? { workspaceFixtureManifest } : {}),
     ...(typeof params.workspaceFixtureDigestSha256 === "string"
       ? { workspaceFixtureDigestSha256: params.workspaceFixtureDigestSha256 }
       : {}),
   }
 }
 
-function launchParams(params: Record<string, unknown>): LaunchParams {
+function launchParams(params: unknown): LaunchParams {
+  if (!isRecord(params)) throw new Error("Claxedo driver launch requires an object")
   return {
     scenarioId: requiredString(params, "scenarioId"),
     stateHandle: requiredString(params, "stateHandle"),
@@ -630,13 +728,89 @@ function launchParams(params: Record<string, unknown>): LaunchParams {
   }
 }
 
-function executeParams(params: Record<string, unknown>): ExecuteParams {
-  if (!params.case || typeof params.case !== "object" || Array.isArray(params.case))
-    throw new Error("Claxedo driver requires a benchmark case")
+/**
+ * Read an unvalidated benchmark case from the driver protocol.
+ *
+ * The four case shapes are discriminated by `workload` (or, for the start
+ * case, by `startMode`). Asserting the union here let a malformed case reach a
+ * scenario and fail as a missing session id mid-measurement; reading it here
+ * names the bad field at the protocol boundary.
+ */
+function parseBenchmarkCase(value: unknown): SwitchCase | StartCase | SessionNavigationCase | WorkspacePanelCase {
+  if (!isRecord(value)) throw new Error("Claxedo driver requires a benchmark case")
+  const caseId = textField(value, "caseId")
+  if (caseId === undefined) throw new Error("Claxedo driver benchmark case is missing caseId")
+  const workload = textField(value, "workload")
+
+  if (workload === "session-navigation") {
+    const navigationType = SESSION_NAVIGATION_TYPES.find((entry) => entry === textField(value, "navigationType"))
+    const trend = textField(value, "trend")
+    const transcriptBytes = numberField(value, "transcriptBytes")
+    const sourceSessionId = textField(value, "sourceSessionId")
+    const destinationSessionId = textField(value, "destinationSessionId")
+    const loadProfile = PUBLIC_PANEL_LOAD_PROFILES.find((entry) => entry === textField(value, "loadProfile"))
+    if (
+      !navigationType ||
+      (trend !== "history-size" && trend !== "panel-load") ||
+      transcriptBytes === undefined ||
+      sourceSessionId === undefined ||
+      destinationSessionId === undefined
+    ) {
+      throw new Error(`Claxedo driver session-navigation case ${caseId} is incomplete`)
+    }
+    return {
+      caseId,
+      workload,
+      trend,
+      navigationType,
+      transcriptBytes,
+      sourceSessionId,
+      destinationSessionId,
+      ...(loadProfile ? { loadProfile } : {}),
+    }
+  }
+
+  if (workload === "workspace-panel-interaction") {
+    const action = WORKSPACE_PANEL_ACTIONS.find((entry) => entry === textField(value, "action"))
+    const loadProfile = PUBLIC_PANEL_LOAD_PROFILES.find((entry) => entry === textField(value, "loadProfile"))
+    if (!action || !loadProfile) throw new Error(`Claxedo driver workspace-panel case ${caseId} is incomplete`)
+    return { caseId, workload, action, loadProfile }
+  }
+
+  if (
+    workload === "isolated-latency" ||
+    workload === "transcript-size-latency" ||
+    workload === "progressive-resource" ||
+    workload === "resource-control"
+  ) {
+    const destinationSessionId = textField(value, "destinationSessionId")
+    if (destinationSessionId === undefined) {
+      throw new Error(`Claxedo driver switch case ${caseId} is missing destinationSessionId`)
+    }
+    const sessionState = textField(value, "sessionState")
+    const sourceSessionId = textField(value, "sourceSessionId")
+    return {
+      caseId,
+      workload,
+      destinationSessionId,
+      ...(sessionState === "cold" || sessionState === "warm" ? { sessionState } : {}),
+      ...(sourceSessionId === undefined ? {} : { sourceSessionId }),
+    }
+  }
+
+  const startMode = textField(value, "startMode")
+  if (startMode === "new-application-state" || startMode === "initialized-application-state") {
+    return { caseId, startMode }
+  }
+  throw new Error(`Claxedo driver does not support benchmark case ${caseId}`)
+}
+
+function executeParams(params: unknown): ExecuteParams {
+  if (!isRecord(params)) throw new Error("Claxedo driver execute requires an object")
   return {
     scenarioId: requiredString(params, "scenarioId"),
     ...(typeof params.stateHandle === "string" ? { stateHandle: params.stateHandle } : {}),
-    case: params.case as SwitchCase | StartCase | SessionNavigationCase | WorkspacePanelCase,
+    case: parseBenchmarkCase(params.case),
   }
 }
 
@@ -644,14 +818,14 @@ export async function runClaxedoPublicDriver() {
   const driver = createClaxedoPublicDriver(await makeDefaultDependencies())
   const handlers: DriverHandlers = {
     hello: async () => driver.hello(),
-    prepare: async (params) => driver.prepare(prepareParams(params as unknown as Record<string, unknown>)),
+    prepare: async (params) => driver.prepare(prepareParams(params)),
     launch: async (params) => driver.launch(launchParams(params)),
     execute: async (params) => driver.execute(executeParams(params)),
     shutdown: async () => driver.shutdown(),
   }
   const cleanup = async () => {
-    const result = await driver.shutdown()
-    if ((result.survivors as unknown[]).length > 0) throw new Error("Claxedo driver cleanup left a surviving process")
+    const { survivors } = await driver.shutdown()
+    if (survivors.length > 0) throw new Error("Claxedo driver cleanup left a surviving process")
   }
   const terminate = (code: number) => void cleanup().finally(() => process.exit(code))
   process.once("SIGINT", () => terminate(130))

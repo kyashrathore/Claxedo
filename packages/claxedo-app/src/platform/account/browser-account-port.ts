@@ -25,7 +25,7 @@ export function browserAccountPort(auth: AuthSession, run: RunHostedOperation): 
     signOut: async () => {
       await auth.signOut()
     },
-    run: (operation, input) => run(operation, input) as never,
+    run: (operation, input) => run(operation, input),
   }
 }
 

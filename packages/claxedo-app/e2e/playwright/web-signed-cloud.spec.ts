@@ -144,7 +144,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
   // DIAGNOSTIC, permanent — see the identical note in `web-signed-userhosted
   // .spec.ts`: surfaces the fixture's own server log on any non-green result,
   // which is otherwise invisible from a client-side Playwright error alone.
-  test.afterEach(async ({}, testInfo) => {
+  test.afterEach(async (_fixtures, testInfo) => {
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
     console.log(
       `\n[web-signed-cloud] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,

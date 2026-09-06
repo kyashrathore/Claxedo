@@ -2,9 +2,10 @@ import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
-import { ControlPlaneProtocolError, num, rec, txt, type ControlPlaneHttpOptions } from "./protocol"
+import { ControlPlaneProtocolError, num, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./runtime-transport"
 import type { RelayRole } from "@claxedo/workspace-relay"
+import { asRecord } from "../../platform/json/index"
 
 function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
@@ -46,7 +47,7 @@ export async function pullControlSession(
     throw new ControlPlaneProtocolError(403, "workspace_authorization_denied", "Workspace write authority is required")
   }
   const { ws } = scope
-  const session = await verifiedRuntimeJson<unknown>(services, options, {
+  const session = await verifiedRuntimeJson(services, options, {
     workspaceId: ws.id,
     ws,
     ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
@@ -79,7 +80,7 @@ export async function pullControlSessionMessages(
   if (input.expectedEventOrdinal !== undefined && input.expectedEventOrdinal < currentOrdinal) {
     return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }
   }
-  const pulled = await verifiedRuntimeJson<unknown>(services, options, {
+  const pulled = await verifiedRuntimeJson(services, options, {
     workspaceId: ws.id,
     ws,
     ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
@@ -91,7 +92,7 @@ export async function pullControlSessionMessages(
   assertPulledSession(payload.session, input.sessionId)
   const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
-    const intakeReady = await runtimeJson<unknown>(services, options, {
+    const intakeReady = await runtimeJson(services, options, {
       workspaceId: ws.id,
       ws,
       ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
@@ -237,7 +238,7 @@ function relayRole(value: unknown): RelayRole | undefined {
 }
 
 function sessionStamp(input: Record<string, unknown>) {
-  const time = rec(input.time)
+  const time = asRecord(input.time)
   const createdAt = num(time?.created) ?? num(input.created_at)
   const updatedAt = num(time?.updated) ?? num(input.updated_at) ?? createdAt
   return {
@@ -247,10 +248,10 @@ function sessionStamp(input: Record<string, unknown>) {
 }
 
 function sessionVisibility(_ws: Workspace, input: unknown) {
-  const row = rec(input)
-  if (!row) return
+  const row = asRecord(input)
+  if (!row) return undefined
   const sessionId = txt(row.id)
-  if (!sessionId) return
+  if (!sessionId) return undefined
   const title = txt(row.title) ?? txt(row.slug)
   return {
     sessionId,
@@ -260,8 +261,8 @@ function sessionVisibility(_ws: Workspace, input: unknown) {
 }
 
 function messagesPayload(input: unknown) {
-  const row = rec(input)
-  if (!row || !Array.isArray(row.messages) || !rec(row.session)) {
+  const row = asRecord(input)
+  if (!row || !Array.isArray(row.messages) || !asRecord(row.session)) {
     throw new ControlPlaneProtocolError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -299,12 +300,12 @@ function messagesPayload(input: unknown) {
 }
 
 function sessionPayloadId(input: unknown) {
-  const row = rec(input)
+  const row = asRecord(input)
   return txt(row?.id) ?? txt(row?.sessionId) ?? txt(row?.sessionID)
 }
 
 function assertPulledSession(input: unknown, sessionId: string) {
-  if (sessionPayloadId(input) === sessionId) return
+  if (sessionPayloadId(input) === sessionId) return undefined
   throw new ControlPlaneProtocolError(
     409,
     "workspace_runtime_session_mismatch",
@@ -313,10 +314,10 @@ function assertPulledSession(input: unknown, sessionId: string) {
 }
 
 function sessionIsIdle(input: unknown, sessionId: string) {
-  const statuses = rec(input)
+  const statuses = asRecord(input)
   if (!statuses) return false
   if (!(sessionId in statuses)) return true
-  return rec(statuses[sessionId])?.type === "idle"
+  return asRecord(statuses[sessionId])?.type === "idle"
 }
 
 async function upsertSignedSessionVisibility(

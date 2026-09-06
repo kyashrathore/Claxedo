@@ -9,21 +9,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-function mediaRecord(value: unknown) {
-  if (!isRecord(value)) return
-  return value
+function mediaRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
 }
 
-export function normalizeMimeType(type: string | undefined) {
-  if (!type) return
+export function normalizeMimeType(type: string | undefined): string | undefined {
+  if (!type) return undefined
   const mime = type.split(";", 1)[0]?.trim().toLowerCase()
-  if (!mime) return
+  if (!mime) return undefined
   if (mime === "audio/x-aac") return "audio/aac"
   if (mime === "audio/x-m4a") return "audio/mp4"
   return mime
 }
 
-export function fileExtension(path: string | undefined) {
+export function fileExtension(path: string | undefined): string {
   if (!path) return ""
   const idx = path.lastIndexOf(".")
   if (idx === -1) return ""
@@ -35,71 +34,75 @@ export function mediaKindFromPath(path: string | undefined): MediaKind | undefin
   if (ext === "svg") return "svg"
   if (imageExtensions.has(ext)) return "image"
   if (audioExtensions.has(ext)) return "audio"
+  return undefined
 }
 
-export function isBinaryContent(value: MediaValue) {
+export function isBinaryContent(value: MediaValue): boolean {
   return mediaRecord(value)?.type === "binary"
 }
 
-function validDataUrl(value: string, kind: MediaKind) {
+function validDataUrl(value: string, kind: MediaKind): string | undefined {
   if (kind === "svg") return value.startsWith("data:image/svg+xml") ? value : undefined
   if (kind === "image") return value.startsWith("data:image/") ? value : undefined
   if (value.startsWith("data:audio/x-aac;")) return value.replace("data:audio/x-aac;", "data:audio/aac;")
   if (value.startsWith("data:audio/x-m4a;")) return value.replace("data:audio/x-m4a;", "data:audio/mp4;")
   if (value.startsWith("data:audio/")) return value
+  return undefined
 }
 
-export function dataUrlFromMediaValue(value: MediaValue, kind: MediaKind) {
-  if (!value) return
+export function dataUrlFromMediaValue(value: MediaValue, kind: MediaKind): string | undefined {
+  if (!value) return undefined
 
   if (typeof value === "string") {
     return validDataUrl(value, kind)
   }
 
   const record = mediaRecord(value)
-  if (!record) return
+  if (!record) return undefined
 
-  if (typeof record.content !== "string") return
+  if (typeof record.content !== "string") return undefined
 
   const mime = normalizeMimeType(typeof record.mimeType === "string" ? record.mimeType : undefined)
-  if (!mime) return
+  if (!mime) return undefined
 
   if (kind === "svg") {
-    if (mime !== "image/svg+xml") return
+    if (mime !== "image/svg+xml") return undefined
     if (record.encoding === "base64") return `data:image/svg+xml;base64,${record.content}`
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(record.content)}`
   }
 
-  if (kind === "image" && !mime.startsWith("image/")) return
-  if (kind === "audio" && !mime.startsWith("audio/")) return
-  if (record.encoding !== "base64") return
+  if (kind === "image" && !mime.startsWith("image/")) return undefined
+  if (kind === "audio" && !mime.startsWith("audio/")) return undefined
+  if (record.encoding !== "base64") return undefined
 
   return `data:${mime};base64,${record.content}`
 }
 
-function decodeBase64Utf8(value: string) {
-  if (typeof atob !== "function") return
+function decodeBase64Utf8(value: string): string | undefined {
+  if (typeof atob !== "function") return undefined
 
   try {
     const raw = atob(value)
     const bytes = Uint8Array.from(raw, (x) => x.charCodeAt(0))
     if (typeof TextDecoder === "function") return new TextDecoder().decode(bytes)
     return raw
-  } catch {}
+  } catch {
+    return undefined
+  }
 }
 
-export function svgTextFromValue(value: MediaValue) {
+export function svgTextFromValue(value: MediaValue): string | undefined {
   const record = mediaRecord(value)
-  if (!record) return
-  if (typeof record.content !== "string") return
+  if (!record) return undefined
+  if (typeof record.content !== "string") return undefined
 
   const mime = normalizeMimeType(typeof record.mimeType === "string" ? record.mimeType : undefined)
-  if (mime !== "image/svg+xml") return
+  if (mime !== "image/svg+xml") return undefined
   if (record.encoding === "base64") return decodeBase64Utf8(record.content)
   return record.content
 }
 
-export function hasMediaValue(value: MediaValue) {
+export function hasMediaValue(value: MediaValue): boolean {
   if (typeof value === "string") return value.length > 0
   const record = mediaRecord(value)
   if (!record) return false

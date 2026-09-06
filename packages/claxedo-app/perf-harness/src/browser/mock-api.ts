@@ -73,7 +73,7 @@ export async function installMockApi(
     })
     await page.addInitScript(() => {
       const original = globalThis.fetch
-      const wrapped = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      const logging = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
         try {
           const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
           if (/workspace\/resolve|\/provider|\/api\/claxedo\/session|\/vcs|permission-mode|\/meta(?:\?|$)|\/session\/[^/]+\/config/.test(url)) {
@@ -82,7 +82,10 @@ export async function installMockApi(
         } catch {}
         return original.call(this, input, init)
       }
-      globalThis.fetch = wrapped as typeof globalThis.fetch
+      // The rest of `fetch` is carried over rather than dropped: the assertion
+      // this replaced installed a bare function, so anything on the original
+      // (`preconnect`) stopped existing once the harness wrapped it.
+      globalThis.fetch = Object.assign(logging, { preconnect: original.preconnect })
     })
   }
   await page.routeWebSocket(/\/api\/wr\/pty\/[^/]+\/connect(?:\?|$)/, (socket) => {

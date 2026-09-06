@@ -69,77 +69,77 @@ function tap(el: HTMLElement, focusHolder: HTMLElement) {
 
 describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
   test("row appears once the terminal is focused and hides when it blurs", () => {
-    const { getByTestId, queryByRole } = render(() => <Harness onKey={() => {}} />)
-    const textarea = getByTestId("xterm-textarea")
+    const view = render(() => <Harness onKey={() => {}} />)
+    const textarea = view.getByTestId("xterm-textarea")
 
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
     textarea.focus()
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
     textarea.blur()
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
   })
 
   test("REGRESSION: the row survives a tap and delivers the key without unmounting", () => {
     const onKey = vi.fn()
-    const { getByTestId, getByRole, queryByRole } = render(() => <Harness onKey={onKey} />)
-    const textarea = getByTestId("xterm-textarea")
+    const view = render(() => <Harness onKey={onKey} />)
+    const textarea = view.getByTestId("xterm-textarea")
 
     textarea.focus()
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
 
     // Old wiring (plain onClick button, no preventDefault) would steal focus here
     // → container focusout → active() false → the row unmounts mid-tap and this
     // getByRole throws. The fix keeps focus on the textarea.
-    tap(getByRole("button", { name: "Escape" }), textarea)
+    tap(view.getByRole("button", { name: "Escape" }), textarea)
 
     expect(onKey).toHaveBeenCalledTimes(1)
     expect(onKey).toHaveBeenCalledWith("\x1b")
     // Row is still mounted and the terminal is still focused.
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
     expect(document.activeElement).toBe(textarea)
   })
 
   test("REGRESSION: repeated taps all reach the PTY (row does not unmount between keys)", () => {
     const onKey = vi.fn()
-    const { getByTestId, getByRole, queryByRole } = render(() => <Harness onKey={onKey} />)
-    const textarea = getByTestId("xterm-textarea")
+    const view = render(() => <Harness onKey={onKey} />)
+    const textarea = view.getByTestId("xterm-textarea")
     textarea.focus()
 
-    tap(getByRole("button", { name: "Up arrow" }), textarea)
-    tap(getByRole("button", { name: "Down arrow" }), textarea)
-    tap(getByRole("button", { name: "Tab" }), textarea)
+    tap(view.getByRole("button", { name: "Up arrow" }), textarea)
+    tap(view.getByRole("button", { name: "Down arrow" }), textarea)
+    tap(view.getByRole("button", { name: "Tab" }), textarea)
 
     expect(onKey.mock.calls.map((c) => c[0])).toEqual(["\x1b[A", "\x1b[B", "\t"])
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
     expect(document.activeElement).toBe(textarea)
   })
 
   test("sticky Ctrl survives taps: arm (no emit) then a Ctrl-modified arrow, then disarms", () => {
     const onKey = vi.fn()
-    const { getByTestId, getByRole } = render(() => <Harness onKey={onKey} />)
-    const textarea = getByTestId("xterm-textarea")
+    const view = render(() => <Harness onKey={onKey} />)
+    const textarea = view.getByTestId("xterm-textarea")
     textarea.focus()
 
-    const ctrl = getByRole("button", { name: "Control" })
+    const ctrl = view.getByRole("button", { name: "Control" })
     tap(ctrl, textarea)
     expect(onKey).not.toHaveBeenCalled()
     expect(ctrl.getAttribute("aria-pressed")).toBe("true")
 
-    tap(getByRole("button", { name: "Right arrow" }), textarea)
+    tap(view.getByRole("button", { name: "Right arrow" }), textarea)
     expect(onKey).toHaveBeenCalledTimes(1)
     expect(onKey).toHaveBeenCalledWith("\x1b[1;5C")
     expect(ctrl.getAttribute("aria-pressed")).toBe("false")
 
-    tap(getByRole("button", { name: "Right arrow" }), textarea)
+    tap(view.getByRole("button", { name: "Right arrow" }), textarea)
     expect(onKey).toHaveBeenLastCalledWith("\x1b[C")
   })
 
   test("accessory keys are non-focus-stealing (tabIndex=-1 + pointerdown default prevented)", () => {
-    const { getByTestId, getByRole } = render(() => <Harness onKey={() => {}} />)
-    const textarea = getByTestId("xterm-textarea")
+    const view = render(() => <Harness onKey={() => {}} />)
+    const textarea = view.getByTestId("xterm-textarea")
     textarea.focus()
 
-    const esc = getByRole("button", { name: "Escape" })
+    const esc = view.getByRole("button", { name: "Escape" })
     expect(esc.getAttribute("tabindex")).toBe("-1")
 
     const down = createEvent.pointerDown(esc, { bubbles: true, cancelable: true })
@@ -153,23 +153,23 @@ describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
 
 describe("TerminalAccessoryRow — gate composition (media × focus)", () => {
   test("hidden on desktop even when focused (media gate off)", () => {
-    const { queryByRole } = render(() => (
+    const view = render(() => (
       <TerminalAccessoryRow onKey={() => {}} visible={() => false} active={() => true} />
     ))
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
   })
 
   test("hidden on a mobile background pane (media on, focus off)", () => {
-    const { queryByRole } = render(() => (
+    const view = render(() => (
       <TerminalAccessoryRow onKey={() => {}} visible={() => true} active={() => false} />
     ))
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
   })
 
   test("visible only when BOTH the media gate and terminal focus are on", () => {
-    const { queryByRole } = render(() => (
+    const view = render(() => (
       <TerminalAccessoryRow onKey={() => {}} visible={() => true} active={() => true} />
     ))
-    expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
+    expect(view.queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
   })
 })

@@ -1,10 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { MachineInstalledEntry } from "./types"
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
+import { isRecord } from "../../platform/json"
 
 async function readJson(file: string): Promise<unknown> {
   try {
@@ -26,13 +23,13 @@ async function readJson(file: string): Promise<unknown> {
 export async function readClaudeInstalled(input: { home: string }): Promise<MachineInstalledEntry[]> {
   const pluginsDir = path.join(input.home, ".claude", "plugins")
   const installed = await readJson(path.join(pluginsDir, "installed_plugins.json"))
-  if (!record(installed) || !record(installed.plugins)) return []
+  if (!isRecord(installed) || !isRecord(installed.plugins)) return []
 
   const entries: MachineInstalledEntry[] = []
   for (const [key, value] of Object.entries(installed.plugins)) {
     if (!Array.isArray(value) || value.length === 0) continue
     const first: unknown = value[0]
-    if (!record(first) || typeof first.installPath !== "string" || !first.installPath) continue
+    if (!isRecord(first) || typeof first.installPath !== "string" || !first.installPath) continue
     const at = key.lastIndexOf("@")
     const name = at === -1 ? key : key.slice(0, at)
     const marketplace = at === -1 ? undefined : key.slice(at + 1)

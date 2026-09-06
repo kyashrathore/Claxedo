@@ -17,13 +17,24 @@ export type NormalizedProviderListResponse = {
   connected: Array<string>
 }
 
+/**
+ * A session row as this view needs one.
+ *
+ * `slug` and `version` are required on `AgentPresentationSession` and read
+ * nowhere in this package; inventory-sourced rows carry neither, so demanding
+ * them only forced the caller to assert. Complete rows still satisfy this.
+ */
+type DataSession =
+  & Omit<AgentPresentationSession, "slug" | "version">
+  & Partial<Pick<AgentPresentationSession, "slug" | "version">>
+
 type Data = {
   agent?: {
     name: string
     color?: string
   }[]
   provider?: NormalizedProviderListResponse
-  session: AgentPresentationSession[]
+  session: DataSession[]
   session_status: {
     [sessionID: string]: AgentRuntimeStatus
   }

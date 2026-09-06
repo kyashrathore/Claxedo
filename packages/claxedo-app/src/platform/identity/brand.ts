@@ -16,6 +16,17 @@
 /** Shared nominal-brand utility (promoted out of `platform/sync/keys.ts`). */
 export type Brand<T, Name extends string> = T & { readonly __scope: Name }
 
+/**
+ * THE mint. Applying a nominal brand is exactly a type assertion — that is the
+ * mechanism, and no narrowing can stand in for it, because the brand has no
+ * runtime existence to check. So it happens here, once, behind a name, and the
+ * mint sites below (and `platform/sync/keys.ts`) call it instead of each
+ * writing their own cast.
+ */
+export function brand<T, Name extends string>(value: T): Brand<T, Name> {
+  return value as Brand<T, Name>
+}
+
 /** Sense 1 — a filesystem directory path. NEVER a control-plane id. */
 export type DirectoryRef = Brand<string, "DirectoryRef">
 
@@ -28,7 +39,7 @@ export type WorkspaceId = Brand<string, "WorkspaceId">
  * New call sites outside those owners are debt — receive the brand instead.
  */
 export function asDirectoryRef(value: string): DirectoryRef {
-  return value as DirectoryRef
+  return brand(value)
 }
 
 /**
@@ -36,5 +47,5 @@ export function asDirectoryRef(value: string): DirectoryRef {
  * in `legacy-resolver.ts` and the `/w/:workspaceId` route param in `route.ts`.
  */
 export function asWorkspaceId(value: string): WorkspaceId {
-  return value as WorkspaceId
+  return brand(value)
 }

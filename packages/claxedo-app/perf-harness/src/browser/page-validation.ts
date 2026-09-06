@@ -12,20 +12,25 @@ type SessionRequestCountsForValidation = {
 
 export async function browserFailureDiagnostics(page: Page, monitor: ReturnType<typeof monitorPage>, error: unknown) {
   const base = error instanceof Error ? error.message : String(error)
-  const [url, title, body, boundaryError, perfState] = await Promise.all([
-    page.url(),
+  // `page.url()` is synchronous; awaiting it inside `Promise.all` said it was
+  // fetched alongside the others when it is read immediately.
+  const url = page.url()
+  const [title, body, boundaryError, perfState] = await Promise.all([
     page.title().catch(() => ""),
     page.locator("body").innerText({ timeout: 500 }).catch(() => ""),
     readBoundaryError(page),
     page.evaluate(() => {
-      const state = JSON.parse(localStorage.getItem("claxedo.state.v5") ?? "{}") as {
-        workspacePanel?: unknown
-        workbench?: { focusedPaneId?: unknown; panes?: unknown }
-      }
+      // Persisted state is whatever the last build wrote; this diagnostic
+      // reports the three fields it can find and stays silent about the rest.
+      const isRecord = (value: unknown): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value)
+      const parsed: unknown = JSON.parse(localStorage.getItem("claxedo.state.v5") ?? "{}")
+      const state = isRecord(parsed) ? parsed : {}
+      const workbench = isRecord(state.workbench) ? state.workbench : undefined
       return {
         workspacePanel: state.workspacePanel,
-        focusedPaneId: state.workbench?.focusedPaneId,
-        panes: state.workbench?.panes,
+        focusedPaneId: workbench?.focusedPaneId,
+        panes: workbench?.panes,
         shell: document.querySelector("[data-testid='workspace-panel-shell']")?.getAttribute("data-open"),
         pending: !!document.querySelector("[data-testid='workspace-review-pending']"),
         review: document.querySelectorAll("[data-review-diff-style]").length,

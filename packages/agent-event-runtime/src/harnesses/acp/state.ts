@@ -1,4 +1,4 @@
-import { object, text as str } from "../value"
+import { object, text as str } from "../../value"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "../../contracts/agent-runtime-event"
 import type { ToolIntent } from "../../contracts/agent-runtime-event"

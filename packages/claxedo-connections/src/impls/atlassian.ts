@@ -1,5 +1,6 @@
 import type { ConnectionFields, IntegrationDeclaration, IntegrationImpl, VerifyResult } from "../types.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
+import { record, text } from "../json.js"
 
 // Strict host allowlist: verify() sends `Basic base64(email:token)` to this
 // host, so accepting arbitrary https origins would let a mistyped or
@@ -68,10 +69,10 @@ export function atlassianIntegration(options: IntegrationFetchOptions = {}): {
           })
           if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
           if (!res.ok) return { ok: false, reason: "network" }
-          const body = (await res.json().catch(() => ({}))) as { displayName?: unknown }
+          const displayName = text(record(await res.json().catch(() => ({})))?.displayName)
           return {
             ok: true,
-            ...(typeof body.displayName === "string" ? { accountLabel: body.displayName } : {}),
+            ...(displayName ? { accountLabel: displayName } : {}),
             // Persist the origin this call actually authenticated against, not
             // the raw string the caller typed. Consumers then read a value that
             // already satisfies the strict rule instead of re-deriving it.

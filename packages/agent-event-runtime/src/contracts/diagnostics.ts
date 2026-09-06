@@ -1,4 +1,9 @@
-export type RuntimeDiagnosticSeverity = "debug" | "info" | "warn" | "error"
+import { object, text } from "../value"
+
+/** The declared severities, as the single source for both the type and the parser. */
+const RUNTIME_DIAGNOSTIC_SEVERITIES = ["debug", "info", "warn", "error"] as const
+
+export type RuntimeDiagnosticSeverity = (typeof RUNTIME_DIAGNOSTIC_SEVERITIES)[number]
 
 export type RuntimeDiagnostic = {
   code: string
@@ -30,26 +35,26 @@ export function runtimeDiagnostic(input: {
   }
 }
 
+function diagnosticSeverity(value: unknown): RuntimeDiagnosticSeverity | undefined {
+  return RUNTIME_DIAGNOSTIC_SEVERITIES.find((severity) => severity === value)
+}
+
+/** Parses an unknown payload into diagnostics, dropping rows that carry no code or message. */
 export function normalizeDiagnostics(input: unknown): RuntimeDiagnostic[] {
   if (!Array.isArray(input)) return []
-  return input.flatMap((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return []
-    const row = item as Record<string, unknown>
-    if (typeof row.code !== "string" || typeof row.message !== "string") return []
-    const severity =
-      row.severity === "debug" || row.severity === "info" || row.severity === "warn" || row.severity === "error"
-        ? row.severity
-        : "warn"
+  return input.flatMap((item: unknown) => {
+    const row = object(item)
+    if (!row) return []
+    const { code, message } = row
+    if (typeof code !== "string" || typeof message !== "string") return []
     return [runtimeDiagnostic({
-      code: row.code,
-      message: row.message,
-      severity,
-      source: typeof row.source === "string" ? row.source : undefined,
-      method: typeof row.method === "string" ? row.method : undefined,
+      code,
+      message,
+      severity: diagnosticSeverity(row.severity) ?? "warn",
+      source: text(row.source),
+      method: text(row.method),
       raw: row.raw,
-      details: row.details && typeof row.details === "object" && !Array.isArray(row.details)
-        ? row.details as Record<string, unknown>
-        : undefined,
+      details: object(row.details),
     })]
   })
 }

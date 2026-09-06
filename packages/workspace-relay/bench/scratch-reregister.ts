@@ -23,16 +23,10 @@ import { exportPKCS8 } from "jose"
 import { benchHostTunnelTokenFromPrivatePem, createBenchIdentity } from "./lib/tokens"
 import { startBenchResolver } from "./lib/resolver"
 import { startEchoTarget } from "./lib/echo-target"
+import { freePort } from "./lib/ports"
 import { startWorkspaceRelayHostTunnel } from "../../workspace-runtime/src/workspace-relay-host-tunnel"
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
-
-async function freePort(): Promise<number> {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response("ok") })
-  const port = probe.port ?? 0
-  probe.stop(true)
-  return port
-}
 
 async function waitForHealth(url: string, timeoutMs = 15_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
@@ -140,4 +134,4 @@ async function main() {
   process.exit(exitCode)
 }
 
-main()
+await main()

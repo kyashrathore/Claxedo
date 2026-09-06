@@ -9,6 +9,7 @@ import {
   type RotatableBackend,
 } from "./rotate"
 import { CREDENTIALS_KEK_ENV, CREDENTIALS_KEK_NEXT_ENV } from "@claxedo/server-core/credentials/envelope"
+import { fetchBodyText } from "../../test-support/fetch-calls"
 
 function memoryBackend(): SecretBackend & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -356,7 +357,7 @@ describe("hosted (Cloudflare KV) rotation", () => {
       }
       const key = decodeURIComponent(url.pathname.split("/values/")[1] ?? "")
       if (init?.method === "PUT") {
-        seed.set(key, String(init.body))
+        seed.set(key, fetchBodyText(init.body))
         return new Response("ok", { status: 200 })
       }
       const value = seed.get(key)

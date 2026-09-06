@@ -7,26 +7,26 @@ import { createWorkspaceHost } from "./runtime"
 const exposure = privateNetworkWorkspaceRuntimeExposure({ name: "test", guard: () => true, runtimeAuth: () => true })
 
 describe("managed workspace SessionAccessPolicy composition", () => {
-  test("refuses to mount managed session routes without a policy", () => {
+  test("refuses to mount managed session routes without a policy", async () => {
     const host = createWorkspaceHost()
     expect(() => host.mount(new Hono(), { exposure })).toThrow("Managed workspace session routes require SessionAccessPolicy")
-    host.dispose()
+    await host.dispose()
   })
 
-  test("refuses to mount a workspace-role-only policy on a managed host", () => {
+  test("refuses to mount a workspace-role-only policy on a managed host", async () => {
     const host = createWorkspaceHost({ sessionAccessPolicy: managedWorkspaceSessionAccessPolicy() })
     expect(() => host.mount(new Hono(), { exposure })).toThrow(
       "Managed workspace session routes require authority-backed SessionAccessPolicy",
     )
-    host.dispose()
+    await host.dispose()
   })
 
-  test("keeps caller-owned embedded composition in explicit local scope", () => {
+  test("keeps caller-owned embedded composition in explicit local scope", async () => {
     const host = createWorkspaceHost({ sessionAccessPolicy: managedWorkspaceSessionAccessPolicy() })
     expect(() => host.mount(new Hono(), {
       exposure: embeddedWorkspaceRuntimeExposure({ owner: "test", guard: () => true }),
     })).not.toThrow()
-    host.dispose()
+    await host.dispose()
   })
 
   test("does not expose removed OpenCode Session V2 proxy routes", async () => {
@@ -37,6 +37,6 @@ describe("managed workspace SessionAccessPolicy composition", () => {
       expect((await app.request("http://localhost" + pathname)).status).toBe(404)
       expect((await app.request("http://localhost" + pathname, { method: "POST" })).status).toBe(404)
     }
-    host.dispose()
+    await host.dispose()
   })
 })

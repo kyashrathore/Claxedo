@@ -2,6 +2,7 @@ import type {
   MachineRemoteAccessPort,
   MachineRemoteAccessStatus,
 } from "@/platform/remote-access/machine-remote-access-port"
+import { isRecord, readUnknown } from "../../shared/json-read"
 
 /**
  * The port over Electron IPC, where the Host Connector lives.
@@ -73,13 +74,13 @@ const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "unshare"
  * changed under a renderer that did not, and the half that is missing would
  * fail at the worst moment rather than at startup.
  */
+function isHostConnectorBridge(value: unknown): value is HostConnectorBridge {
+  return isRecord(value) && BRIDGE_MEMBERS.every((member) => typeof value[member] === "function")
+}
+
 export function hostConnectorBridge(scope: unknown = globalThis): HostConnectorBridge | undefined {
-  const api = (scope as { api?: { hostConnector?: HostConnectorBridge } }).api?.hostConnector
-  if (!api) return undefined
-  for (const member of BRIDGE_MEMBERS) {
-    if (typeof api[member] !== "function") return undefined
-  }
-  return api
+  const bridge = readUnknown(readUnknown(scope, "api"), "hostConnector")
+  return isHostConnectorBridge(bridge) ? bridge : undefined
 }
 
 /**

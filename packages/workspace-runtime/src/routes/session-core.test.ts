@@ -22,7 +22,6 @@ import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memo
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
-import type { AgentMessageInfo as Message } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -1846,7 +1845,7 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     finish?.()
     expect((await first).status).toBe(200)
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("prompt_async continues after its accepted client request disconnects", async () => {

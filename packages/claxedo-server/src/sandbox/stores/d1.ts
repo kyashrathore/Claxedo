@@ -19,14 +19,12 @@ import type {
   SandboxLeaseAcquireResult,
   SandboxLeasePatch,
   SandboxLeaseStore,
-  SandboxCheckpointReference,
-  SandboxPersistenceCapabilities,
-  SandboxRestoreStatus,
 } from "@claxedo/sandbox-manager"
 import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import type { D1Database } from "@cloudflare/workers-types"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { sandboxLeaseStatus } from "./lease-status"
+import { sandboxLeaseRowStatus, sandboxLeaseStatus } from "./lease-status"
+import { toSandboxLeaseRow } from "./lease-row"
 
 const TABLE = "sandbox_leases"
 
@@ -62,99 +60,19 @@ const COLUMNS = [
 /** Everything except the primary key and `created_at`, which an upsert preserves. */
 const CONFLICT_COLUMNS = COLUMNS.filter((column) => column !== "workspace_id" && column !== "created_at")
 
-type StoredLeaseStatus = SandboxLeaseRow["status"]
-
-const STORED_STATUSES: readonly StoredLeaseStatus[] = [
-  "pending",
-  "acquiring",
-  "starting",
-  "ready",
-  "unhealthy",
-  "backoff",
-  "stopping",
-  "stopped",
-  "destroyed",
-  "failed",
-]
-
 /**
- * Port status -> stored row status. The inverse (`sandboxLeaseStatus`) lives in
- * `./lease-status.ts` and is shared; this direction is lossy in the same way
- * `sqlite.ts` is lossy, and is kept byte-identical to it on purpose.
+ * D1 hands back `Record<string, unknown>`; the narrowing every column needs is
+ * `./lease-row`'s, and all this does is map this table's `*_json` column names
+ * onto the shared ones.
  */
-function storedStatus(input: SandboxLease): StoredLeaseStatus {
-  if (input.status === "ready" || input.status === "stopped") return input.status
-  if (input.status === "unavailable") return input.nextRetryAt === undefined ? "failed" : "backoff"
-  if (input.status === "destroyed") return "destroyed"
-  return "acquiring"
-}
-
-/** An unrecognized stored status reads as `unavailable`, matching `sandboxLeaseStatus`'s fallthrough. */
-function readStatus(input: unknown): StoredLeaseStatus {
-  return STORED_STATUSES.find((status) => status === input) ?? "failed"
-}
-
-function text(input: unknown): string | null {
-  return typeof input === "string" ? input : null
-}
-
-function integer(input: unknown): number | null {
-  return typeof input === "number" ? input : null
-}
-
-/**
- * A JSON column is only trusted when it parses AND yields an object. The
- * database's `json_valid` check accepts `"1"` and `"null"` too, neither of
- * which is a lease field, so a bare cast would hand the manager a number typed
- * as a checkpoint reference.
- */
-function jsonObject<T>(input: unknown): T | null {
-  const raw = text(input)
-  if (!raw) return null
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as T) : null
-  } catch {
-    return null
-  }
-}
-
-function labels(input: unknown): Record<string, string> | null {
-  const parsed = jsonObject<Record<string, unknown>>(input)
-  if (!parsed) return null
-  const entries = Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string")
-  return Object.fromEntries(entries)
-}
-
 function toLeaseRow(row: Record<string, unknown>): SandboxLeaseRow {
-  return {
-    workspace_id: text(row.workspace_id) ?? "",
-    lease_id: text(row.lease_id) ?? "",
-    home_region: text(row.home_region) ?? undefined,
-    epoch: integer(row.epoch) ?? 0,
-    status: readStatus(row.status),
-    driver: (text(row.driver) ?? "") as SandboxLeaseRow["driver"],
-    driver_resource_id: text(row.driver_resource_id),
-    driver_snapshot_id: text(row.driver_snapshot_id),
-    sandbox_id: text(row.sandbox_id),
-    url: text(row.url),
-    retry_count: integer(row.retry_count) ?? 0,
-    next_retry_at: integer(row.next_retry_at),
-    last_heartbeat_at: integer(row.last_heartbeat_at),
-    last_activity_at: integer(row.last_activity_at),
-    last_health_failure_at: integer(row.last_health_failure_at),
-    last_error: text(row.last_error),
-    compute_class: text(row.compute_class) as SandboxLeaseRow["compute_class"],
-    accel_base_image_id: text(row.accel_base_image_id),
-    accel_prepared_image_id: text(row.accel_prepared_image_id),
-    accel_snapshot_id: text(row.accel_snapshot_id),
-    labels: labels(row.labels_json),
-    checkpoint: jsonObject<SandboxCheckpointReference>(row.checkpoint_json),
-    persistence: jsonObject<SandboxPersistenceCapabilities>(row.persistence_json),
-    restore: jsonObject<SandboxRestoreStatus>(row.restore_json),
-    created_at: integer(row.created_at) ?? 0,
-    updated_at: integer(row.updated_at) ?? 0,
-  }
+  return toSandboxLeaseRow({
+    ...row,
+    labels: row.labels_json,
+    checkpoint: row.checkpoint_json,
+    persistence: row.persistence_json,
+    restore: row.restore_json,
+  })
 }
 
 function toSandboxLease(input: SandboxLeaseRow): SandboxLease {
@@ -197,7 +115,7 @@ function rowValues(
     lease.hostId ?? current?.lease_id ?? `${lease.workspaceId}:${lease.epoch}`,
     lease.homeRegion,
     lease.epoch,
-    storedStatus(lease),
+    sandboxLeaseRowStatus(lease),
     lease.driver,
     lease.driverResourceId ?? null,
     current?.driver_snapshot_id ?? null,
@@ -316,7 +234,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
 
     async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) {
       const current = await read(workspaceId)
-      if (!current || current.epoch !== expectedEpoch) return
+      if (!current || current.epoch !== expectedEpoch) return undefined
       const next = applySandboxLeasePatch(toSandboxLease(current), patch, clock())
       const values = rowValues(next, current)
       const result = await database
@@ -335,7 +253,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
 
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       const current = await read(workspaceId)
-      if (!current || current.epoch !== expectedEpoch) return
+      if (!current || current.epoch !== expectedEpoch) return undefined
       const failedAt = clock()
       const next: SandboxLease = {
         ...toSandboxLease(current),

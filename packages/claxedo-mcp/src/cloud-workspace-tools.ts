@@ -1,22 +1,13 @@
 import { z } from "zod"
+import { record, text } from "./json"
 import {
   assertCloudWorkspaceLifecycleApproval,
   type CloudWorkspaceLifecycleAction,
 } from "./tool-policy"
+import type { ControlPlaneRequest } from "./control-plane-request"
+import type { RegisterMcpTool } from "./mcp-tool"
 
-type RegisterTool = <Shape extends Record<string, z.ZodTypeAny>>(
-  name: string,
-  config: {
-    description: string
-    inputSchema: Shape
-    _meta?: Record<string, unknown>
-  },
-  handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<unknown>,
-) => void
-
-type Request = (path: string, init?: RequestInit) => Promise<unknown>
-
-export function registerCloudWorkspaceTools(register: RegisterTool, request: Request, readOnly = false) {
+export function registerCloudWorkspaceTools(register: RegisterMcpTool, request: ControlPlaneRequest, readOnly = false) {
   register(
     "cloud_workspace_status",
     {
@@ -70,11 +61,8 @@ export function registerCloudWorkspaceTools(register: RegisterTool, request: Req
       if (action === "restore") {
         const inspected = args.checkpoint_id
           ? undefined
-          : await request(checkpointsPath(args.workspace_id), { method: "GET" }) as {
-              checkpoint?: { id?: unknown }
-            }
-        const checkpointId = args.checkpoint_id
-          ?? (typeof inspected?.checkpoint?.id === "string" ? inspected.checkpoint.id : undefined)
+          : record(await request(checkpointsPath(args.workspace_id), { method: "GET" }))
+        const checkpointId = args.checkpoint_id ?? text(record(inspected?.checkpoint)?.id)
         if (!checkpointId) throw new Error("workspace has no checkpoint to restore")
         return result(await request(
           `${checkpointsPath(args.workspace_id)}/${encodeURIComponent(checkpointId)}/restore`,

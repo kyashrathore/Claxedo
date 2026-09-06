@@ -1,6 +1,8 @@
-import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, isAgentRuntimeEventType, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { eventDirectoryForLiveSession } from "./live-session"
 import type { LiveSession } from "../global-sdk-event-fetch"
+import { asRecord } from "@/lib/record"
 
 type EventDirectory = string
 
@@ -13,24 +15,34 @@ export type RuntimeEventEnvelope = {
   payload: AgentRuntimeEvent
 }
 
-export function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+/**
+ * A frame whose `type` names an event of the contract version this app speaks.
+ *
+ * `isAgentRuntimeEventType` is sound over the contract's own registry (it is
+ * declared `satisfies Record<AgentRuntimeEventType, true>`), and the caller has
+ * already required an EXACT `contractVersion` match — so a producer that
+ * reaches here cannot emit a type outside that registry, and the per-arm fields
+ * the projection reads are the same ones the matching version guarantees.
+ */
+function isAgentRuntimeEvent(value: unknown): value is AgentRuntimeEvent {
+  const payload = asRecord(value)
+  return typeof payload?.type === "string" && isAgentRuntimeEventType(payload.type)
 }
 
 export function runtimeEnvelope(input: unknown): RuntimeEventEnvelope | undefined {
-  const row = record(input)
-  const payload = record(row?.payload)
+  const row = asRecord(input)
   if (row?.contractVersion !== AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return undefined
-  if (typeof row?.directory !== "string") return undefined
+  if (typeof row.directory !== "string") return undefined
   if (typeof row.sessionId !== "string") return undefined
-  if (typeof payload?.type !== "string") return undefined
+  const payload = row.payload
+  if (!isAgentRuntimeEvent(payload)) return undefined
   return {
     contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
     directory: row.directory,
     sessionId: row.sessionId,
     ...(typeof row.agentSessionId === "string" ? { agentSessionId: row.agentSessionId } : {}),
     ...(typeof row.assistantMessageId === "string" ? { assistantMessageId: row.assistantMessageId } : {}),
-    payload: payload as AgentRuntimeEvent,
+    payload,
   }
 }
 
@@ -44,11 +56,11 @@ export function runtimeEnvelope(input: unknown): RuntimeEventEnvelope | undefine
  * just looks frozen. This detects the case so the provider can say so.
  */
 export function runtimeContractMismatch(input: unknown): { contractVersion: unknown } | undefined {
-  const row = record(input)
+  const row = asRecord(input)
   if (!row || row.contractVersion === undefined) return undefined
   if (row.contractVersion === AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return undefined
   if (typeof row.directory !== "string" || typeof row.sessionId !== "string") return undefined
-  if (typeof record(row.payload)?.type !== "string") return undefined
+  if (typeof asRecord(row.payload)?.type !== "string") return undefined
   return { contractVersion: row.contractVersion }
 }
 
@@ -56,7 +68,12 @@ export function runtimeContractMismatchMessage(contractVersion: unknown) {
   return `This workspace runtime is running an incompatible version: it emits agent event contract v${String(contractVersion)}, but this app requires v${AGENT_RUNTIME_EVENT_CONTRACT_VERSION}. Update the workspace runtime — its live session updates cannot be applied.`
 }
 
-type MismatchEvent = { type: string; properties: Record<string, unknown> }
+/**
+ * Typed as the presentation arms these frames actually are, so the compiler —
+ * not an assertion at the enqueue site — checks that the two literals below
+ * still match the contract they are published onto.
+ */
+type MismatchEvent = Extract<AgentPresentationEvent, { type: "runtime.diagnostic" | "session.error" }>
 
 /**
  * The compat events that carry a contract mismatch to the UI.
@@ -65,15 +82,22 @@ type MismatchEvent = { type: string; properties: Record<string, unknown> }
  * session's busy status (so the session stops looking frozen) and appends a
  * visible error notification. The `runtime.diagnostic` frame carries the
  * machine-readable code alongside it, mirroring the replay-gap notice.
+ *
+ * The `session.error` arm of the contract requires an `id`, which this producer
+ * never supplied — the assertion at the publish site hid that. These are locally
+ * minted events, so they get a stable identity of their own: the same mismatch
+ * on the same session is the same event, which is also what the caller's
+ * once-per-version latch already assumes.
  */
 export function runtimeContractMismatchEvents(input: {
   contractVersion: unknown
   sessionID: string
 }): MismatchEvent[] {
   const message = runtimeContractMismatchMessage(input.contractVersion)
+  const id = `runtime.contract_version_mismatch:${input.sessionID}:${String(input.contractVersion)}`
   return [
-    { type: "runtime.diagnostic", properties: { sessionID: input.sessionID, code: "runtime.contract_version_mismatch", message, severity: "error" } },
-    { type: "session.error", properties: { sessionID: input.sessionID, error: { name: "UnknownError", data: { message } } } },
+    { id, type: "runtime.diagnostic", properties: { sessionID: input.sessionID, code: "runtime.contract_version_mismatch", message, severity: "error" } },
+    { id, type: "session.error", properties: { sessionID: input.sessionID, error: { name: "UnknownError", data: { message } } } },
   ]
 }
 

@@ -47,7 +47,7 @@ export type SubmitDirectoryProvisionInput = {
   readonly createCloudWorkspace: (projectId: string) => Promise<{ readonly workspaceId?: string } | undefined>
   readonly createLocalWorktree: (directory: SubmitDirectory) => Promise<{ readonly directory?: SubmitDirectory } | undefined>
   readonly markLocalWorktreePending: (directory: SubmitDirectory) => void
-  readonly bootstrap: () => Promise<unknown> | unknown
+  readonly bootstrap: () => unknown
   readonly showToast: (toast: SubmitToast) => void
   readonly errorMessage: (err: unknown) => string
   readonly text: {

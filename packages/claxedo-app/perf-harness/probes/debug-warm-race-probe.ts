@@ -280,7 +280,7 @@ const interrupt = await measureIsolatedInteraction<{
         name: entry.name.replace(/^https?:\/\/[^/]+/, ""),
         startMs: Math.round(entry.startTime - started),
         durationMs: Math.round(entry.duration),
-        initiator: (entry as PerformanceResourceTiming).initiatorType,
+        initiator: entry instanceof PerformanceResourceTiming ? entry.initiatorType : "",
       }))
     performance.clearMarks(mark)
     performance.clearMarks(openMark)

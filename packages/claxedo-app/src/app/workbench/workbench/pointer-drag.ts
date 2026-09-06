@@ -53,6 +53,9 @@ const [state, setState] = createSignal<DragState>({
   y: 0,
 })
 
+// Every fan-out below iterates `dropZones.slice()`, not the list itself: a
+// zone's callback may run the cleanup `registerDropZone` handed it, which
+// splices the live list mid-iteration and would skip the next zone.
 const dropZones: DropZone[] = []
 
 let ghostEl: HTMLElement | null = null
@@ -116,7 +119,7 @@ export const workbenchDrag = {
     setState({ active: true, contentId: input.contentId, sourceKind: input.sourceKind, x: input.x, y: input.y })
     ensureGhost(input.label ?? "")
     positionGhost(input.x, input.y)
-    for (const zone of [...dropZones]) zone.onMove?.(input.contentId, input.x, input.y)
+    for (const zone of dropZones.slice()) zone.onMove?.(input.contentId, input.x, input.y)
   },
 
   /** Live pointer position during a drag. */
@@ -126,7 +129,7 @@ export const workbenchDrag = {
     setState({ ...s, x, y })
     positionGhost(x, y)
     if (s.contentId == null) return
-    for (const zone of [...dropZones]) zone.onMove?.(s.contentId, x, y)
+    for (const zone of dropZones.slice()) zone.onMove?.(s.contentId, x, y)
   },
 
   /** Pointer released over a target — commit the drop. */
@@ -135,7 +138,7 @@ export const workbenchDrag = {
     if (!s.active) return
     setState({ ...s, active: false })
     removeGhost()
-    if (s.contentId != null) for (const zone of [...dropZones]) zone.onDrop?.(s.contentId, s.x, s.y)
+    if (s.contentId != null) for (const zone of dropZones.slice()) zone.onDrop?.(s.contentId, s.x, s.y)
   },
 
   /** Drag aborted (Escape / pointercancel) — targets must NOT commit. */
@@ -144,7 +147,7 @@ export const workbenchDrag = {
     if (!s.active) return
     setState({ ...s, active: false })
     removeGhost()
-    for (const zone of [...dropZones]) zone.onCancel?.()
+    for (const zone of dropZones.slice()) zone.onCancel?.()
   },
 }
 

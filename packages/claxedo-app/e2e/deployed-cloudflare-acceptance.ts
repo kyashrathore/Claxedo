@@ -51,7 +51,7 @@
 
 import fs from "node:fs/promises"
 import path from "node:path"
-import { generateKeyPairSync, sign, type JsonWebKey } from "node:crypto"
+import { generateKeyPairSync, sign } from "node:crypto"
 import { chromium, type BrowserContext } from "@playwright/test"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnel } from "@claxedo/workspace-runtime/relay"
 
@@ -1041,7 +1041,7 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
     process.stdout.write(`Deployed two-user Cloudflare acceptance passed. Evidence: ${resultFile}\n`)
   } finally {
     activeTunnel?.close()
-    localRuntime?.stop(true)
+    await localRuntime?.stop(true)
     await Promise.all([owner.close(), member.close()])
   }
 }

@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
+import { POLICY_KINDS } from "./types"
 
 export const ClaxedoNetworkPolicyTable = sqliteTable(
   "claxedo_network_policy",
@@ -7,7 +8,7 @@ export const ClaxedoNetworkPolicyTable = sqliteTable(
     workspace_id: text(), // null = global default
     harness: text(), // null = all harnesses
     target: text().notNull(), // exact host, wildcard domain, or provider preset name
-    kind: text().notNull(), // host | domain | group
+    kind: text({ enum: POLICY_KINDS }).notNull(),
     constraints_json: text().notNull().default("{}"), // port/path restrictions, enabled flag
     created_at: integer().notNull(),
     updated_at: integer().notNull(),

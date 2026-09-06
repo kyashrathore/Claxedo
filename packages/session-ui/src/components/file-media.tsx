@@ -41,7 +41,7 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
   const cfg = () => props.media
   const kind = createMemo(() => {
     const media = cfg()
-    if (!media || media.mode === "off") return
+    if (!media || media.mode === "off") return undefined
     return mediaKindFromPath(media.path)
   })
 
@@ -67,18 +67,18 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
   const direct = createMemo(() => {
     const media = cfg()
     const k = kind()
-    if (!media || (k !== "image" && k !== "audio")) return
+    if (!media || (k !== "image" && k !== "audio")) return undefined
     return dataUrlFromMediaValue(mediaValue(media, k), k)
   })
 
   const request = createMemo(() => {
     const media = cfg()
     const k = kind()
-    if (!media || (k !== "image" && k !== "audio")) return
-    if (media.current !== undefined) return
-    if (deleted()) return
-    if (direct()) return
-    if (!media.path || !media.readFile) return
+    if (!media || (k !== "image" && k !== "audio")) return undefined
+    if (media.current !== undefined) return undefined
+    if (deleted()) return undefined
+    if (direct()) return undefined
+    if (!media.path || !media.readFile) return undefined
 
     return {
       key: `${k}:${media.path}`,
@@ -147,25 +147,25 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
   })
   const audioMime = createMemo(() => {
     const input = request()
-    if (!input || remote.key !== input.key) return
+    if (!input || remote.key !== input.key) return undefined
     return remote.mime
   })
 
   const svgSource = createMemo(() => {
     const media = cfg()
-    if (!media || kind() !== "svg") return
+    if (!media || kind() !== "svg") return undefined
     return svgTextFromValue(media.current)
   })
   const svgSrc = createMemo(() => {
     const media = cfg()
-    if (!media || kind() !== "svg") return
+    if (!media || kind() !== "svg") return undefined
     return dataUrlFromMediaValue(media.current, "svg")
   })
   const svgInvalid = createMemo(() => {
     const media = cfg()
-    if (!media || kind() !== "svg") return
-    if (svgSource() !== undefined) return
-    if (!hasMediaValue(media.current)) return
+    if (!media || kind() !== "svg") return undefined
+    if (svgSource() !== undefined) return undefined
+    if (!hasMediaValue(media.current)) return undefined
     return [media.path, media.current] as const
   })
 

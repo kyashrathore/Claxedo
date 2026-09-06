@@ -5,7 +5,7 @@
 import { reducers } from "../reducers/index"
 import { selectors as pureSelectors } from "../selectors"
 import { validate } from "../validate"
-import type { Edge, Pane, PaneRect, Snapshot, WorkbenchState } from "../types"
+import type { Edge, MovePaneTarget, Pane, PaneRect, Snapshot, WorkbenchState } from "../types"
 
 export type StateHarness = {
   state: () => WorkbenchState
@@ -20,7 +20,7 @@ export type StateHarness = {
     split: {
       split: (targetPaneId: string, edge: Edge, contentId: string) => void
       close: (paneId: string, opts?: { destroyContent: boolean }) => void
-      move: (contentId: string, fromPaneId: string, toPaneId: string | "new") => void
+      move: (contentId: string, fromPaneId: string, toPaneId: MovePaneTarget) => void
       focus: (paneId: string) => void
       resize: (path: ReadonlyArray<"a" | "b">, ratio: number) => void
     }
@@ -58,7 +58,7 @@ export function harness(initial?: WorkbenchState): StateHarness {
         apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
       close: (paneId: string, opts?: { destroyContent: boolean }) =>
         apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId: string, fromPaneId: string, toPaneId: string | "new") =>
+      move: (contentId: string, fromPaneId: string, toPaneId: MovePaneTarget) =>
         apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId: string) => apply((s) => reducers.split.focus(s, paneId)),
       resize: (path: ReadonlyArray<"a" | "b">, ratio: number) =>

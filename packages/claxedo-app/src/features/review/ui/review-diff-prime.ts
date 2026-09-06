@@ -104,14 +104,14 @@ export function createReviewDiffPrime(input: {
    * it does not gate there — while for a collapsed row it still does.
    */
   const pendingFileDiff = (diff: ReviewDiffShape, forcing: boolean) => {
-    if (!hasDiffContent(diff) || mediaKindFromPath(diff.file)) return
+    if (!hasDiffContent(diff) || mediaKindFromPath(diff.file)) return undefined
     const tooLarge = exceedsDiffLimit({
       changedLines: changedLineCount(diff),
       expanded: true,
       forced: forcing || input.isForcedFile(diff.file),
       media: false,
     })
-    if (tooLarge) return
+    if (tooLarge) return undefined
     return resolveFileDiff(diff)
   }
 

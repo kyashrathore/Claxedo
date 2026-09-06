@@ -39,10 +39,17 @@ export type DiagnosticsSource = {
   dispose?(): void
 }
 
+/**
+ * What a `setTimeout` hands back: a Node handle in the app, a number in a fake
+ * clock. Declared instead of `unknown` so `realClock` can pass the handle
+ * straight to `clearTimeout` rather than asserting its type back.
+ */
+export type DiagnosticsTimerHandle = ReturnType<typeof setTimeout> | number
+
 export type DiagnosticsClock = {
   now(): number
-  setTimeout(callback: () => void, delayMs: number): unknown
-  clearTimeout(id: unknown): void
+  setTimeout(callback: () => void, delayMs: number): DiagnosticsTimerHandle
+  clearTimeout(id: DiagnosticsTimerHandle): void
 }
 
 type UtilityProcessLike = {
@@ -104,8 +111,8 @@ export function createProfiler(options: {
     ...sourceBase,
     state: "warming-up",
   }
-  let timer: unknown
-  let burstTimer: unknown
+  let timer: DiagnosticsTimerHandle | undefined
+  let burstTimer: DiagnosticsTimerHandle | undefined
   let inFlight = false
   let burstPending = false
   let disposed = false
@@ -124,7 +131,9 @@ export function createProfiler(options: {
   >()
   const actions = createDiagnosticsActions({
     generation,
-    now: clock.now,
+    // Wrapped, not passed: `DiagnosticsClock.now` is a method, so handing the
+    // reference over would detach it from whichever clock implements it.
+    now: () => clock.now(),
     ...(options.actionToken ? { token: options.actionToken } : {}),
     ...(options.actionTtlMs ? { ttlMs: options.actionTtlMs } : {}),
   })
@@ -276,6 +285,7 @@ export function createProfiler(options: {
       if (sample.at >= at || sample.processId !== processId) continue
       return sample
     }
+    return undefined
   }
 
   function recordSpikes(observation: DiagnosticsObservation, previous: LocalDiagnostics.MetricPoint | undefined) {
@@ -385,8 +395,10 @@ export function createProfiler(options: {
     markers.push(marker)
   }
 
-  function recordLifecycle(marker: Omit<LocalDiagnostics.LifecycleMarker, "type" | "id" | "at"> & { at?: number }) {
-    if (disposed) return
+  function recordLifecycle(
+    marker: Omit<LocalDiagnostics.LifecycleMarker, "type" | "id" | "at"> & { at?: number },
+  ): string | undefined {
+    if (disposed) return undefined
     const id = nextMarkerId()
     appendMarker({
       type: "lifecycle",
@@ -985,7 +997,7 @@ function completeValues(
   const values = readings
     .filter((reading): reading is Extract<typeof reading, { state: "available" }> => reading.state === "available")
     .map((reading) => reading.value)
-  if (values.length !== readings.length) return
+  if (values.length !== readings.length) return undefined
   return values
 }
 
@@ -1069,5 +1081,5 @@ function byteLength(value: unknown) {
 const realClock: DiagnosticsClock = {
   now: () => Date.now(),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+  clearTimeout: (id) => clearTimeout(id),
 }

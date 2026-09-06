@@ -132,7 +132,6 @@ describe("numeric paging", () => {
 describe("the surface projection", () => {
   test("drops non-text parts and the omitted user envelope fields", () => {
     const projected = projectMockSurfacePage<
-      { type: string; text?: string },
       { info: Record<string, unknown>; parts: Array<{ type: string; text?: string }> }
     >([
       {

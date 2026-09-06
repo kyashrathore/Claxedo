@@ -35,24 +35,24 @@ const realCloudStartupModule = {
   ...(await import(`${import.meta.dir}/../ui/components/cloud-startup-view.tsx?session-actions-restore`)),
 }
 
-afterAll(() => {
-  mock.module("@/features/session/ui/components/cloud-startup-view", () => realCloudStartupModule)
+afterAll(async () => {
+  await mock.module("@/features/session/ui/components/cloud-startup-view", () => realCloudStartupModule)
 })
 
 let createSessionActions: typeof import("./session-actions").createSessionActions
 
 beforeAll(async () => {
-  mock.module("@opencode-ai/ui/dialog", () => ({
+  await mock.module("@opencode-ai/ui/dialog", () => ({
     Dialog: () => null,
   }))
-  mock.module("@opencode-ai/ui/toast", () => ({
+  await mock.module("@opencode-ai/ui/toast", () => ({
     showToast: () => 0,
   }))
-  mock.module("../../../app/dialogs/index", () => ({
+  await mock.module("../../../app/dialogs/index", () => ({
     DialogDeleteSession: () => null,
     DialogRecoverWorkspace: () => null,
   }))
-  mock.module("@/features/session/ui/components/cloud-startup-view", () => ({
+  await mock.module("@/features/session/ui/components/cloud-startup-view", () => ({
     CloudStartupView: () => null,
     isForbiddenConnectionError: () => false,
   }))

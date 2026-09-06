@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { record } from "../platform/json"
 
 const execFileAsync = promisify(execFile)
 
@@ -33,7 +34,7 @@ export async function gitRun(dir: string, args: string[]) {
       err: text(out.stderr),
     }
   } catch (err) {
-    const cause = err as { stdout?: unknown; stderr?: unknown; message?: string }
+    const cause = record(err) ?? {}
     return {
       ok: false as const,
       out: text(cause.stdout),
@@ -95,6 +96,7 @@ export async function locate(rows: { path?: string; branch?: string }[], dir: st
     if (!row.path) continue
     if (await canon(row.path) === key) return row
   }
+  return undefined
 }
 
 export async function defaultBranch(dir: string) {
@@ -134,7 +136,7 @@ export async function shell(dir: string, cmd: string) {
       err: text(out.stderr),
     }
   } catch (err) {
-    const cause = err as { stdout?: unknown; stderr?: unknown; message?: string }
+    const cause = record(err) ?? {}
     return {
       ok: false as const,
       out: text(cause.stdout),

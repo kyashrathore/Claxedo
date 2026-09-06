@@ -31,7 +31,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { useSDK } from "@/features/session/app-ports"
 import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
-import { parkedPaneQueryOptions } from "../store/pane-query-observer"
+import { parkedPaneQueryOptions, type PaneQueryOptions } from "../store/pane-query-observer"
 import {
   cycleModelVariant,
   getConfiguredAgentVariant,
@@ -75,17 +75,21 @@ async function loadSessionConfig(input: SessionConfigRequest, signal?: AbortSign
     })
 }
 
-function sessionConfigRawOptions(input: SessionConfigRequest | undefined) {
+// The runtime's `/config` payload is an unparsed JSON boundary: `decodeSessionConfig`
+// and `localSelectionStateFromSessionConfig` are the parsers, so `unknown` is the
+// honest query data type. Stating the return type collapses the parked and live
+// arms into one shape for `useQuery`/`fetchQuery`.
+function sessionConfigRawOptions(input: SessionConfigRequest | undefined): PaneQueryOptions<unknown> {
   if (!input) return {
     ...parkedPaneQueryOptions<unknown>("session-config-raw", "no-session"),
     staleTime: SESSION_CONFIG_STALE_TIME,
   }
-  return queryOptions<unknown>({
+  return {
     queryKey: sessionConfigRawQueryKey(sessionConfigQueryScope(input)),
     enabled: true,
     staleTime: SESSION_CONFIG_STALE_TIME,
     queryFn: async ({ signal }) => await loadSessionConfig(input, signal),
-  })
+  }
 }
 
 function sessionConfigSelectionOptions(input: SessionConfigRequest | undefined) {
@@ -359,10 +363,10 @@ const localContextInput = {
 
     const agent = {
       list,
-      current() {
+      current: () => {
         return pickAgent(scope()?.agent ?? store.current)
       },
-      set(name: string | undefined) {
+      set: (name: string | undefined) => {
         const item = pickAgent(name)
         if (!item) {
           setStore("current", undefined)
@@ -391,7 +395,7 @@ const localContextInput = {
           setStore("draft", next)
         })
       },
-      move(direction: 1 | -1) {
+      move: (direction: 1 | -1) => {
         const items = list()
         if (items.length === 0) {
           setStore("current", undefined)
@@ -460,23 +464,72 @@ const localContextInput = {
 
     const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
 
+    const variant = {
+      configured,
+      selected,
+      current: () => {
+        const resolved = resolveModelVariant({
+          variants: variant.list(),
+          selected: variant.selected(),
+          configured: variant.configured(),
+        })
+        if (resolved) return resolved
+        const model = current()
+        if (!model) return undefined
+        const saved = models.variant.get({ providerID: model.provider.id, modelID: model.id })
+        if (saved && variant.list().includes(saved)) return saved
+        return undefined
+      },
+      list: () => {
+        const item = current()
+        if (!item?.variants) return []
+        return Object.keys(item.variants)
+      },
+      set: (value: string | undefined) => {
+        batch(() => {
+          const model = current()
+          setStore("last", {
+            type: "variant",
+            agent: agent.current()?.name,
+            model: model ? { providerID: model.provider.id, modelID: model.id } : null,
+            variant: value ?? null,
+          })
+          write({ variant: value ?? null })
+          if (model) {
+            models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
+          }
+        })
+      },
+      cycle: () => {
+        const items = variant.list()
+        if (items.length === 0) return
+        variant.set(
+          cycleModelVariant({
+            variants: items,
+            selected: variant.selected(),
+            configured: variant.configured(),
+          }),
+        )
+      },
+    }
+
     const model = {
       ready: models.ready,
       restorePending,
-      currentSource() {
+      currentSource: () => {
         return currentModelKey()?.source
       },
-      selected() {
+      selected: () => {
         return scope()?.model
       },
-      selectionCatalogPending() {
+      selectionCatalogPending: () => {
         return selectionCatalogPending(scope()?.model)
       },
       current,
       recent,
       list: models.list,
       hydrate: models.hydrate,
-      cycle(direction: 1 | -1) {
+      cycle: (direction: 1 | -1) => {
         const items = recent()
         const item = current()
         if (!item) return
@@ -492,8 +545,11 @@ const localContextInput = {
         if (!entry) return
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
-      set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        startTransition(() =>
+      set: (item: ModelKey | undefined, options?: { recent?: boolean }) => {
+        // Fire-and-forget: the returned promise only reports when the transition
+        // settles, and the callback below is synchronous, so there is nothing to
+        // await and no rejection path of ours.
+        void startTransition(() =>
           batch(() => {
             setStore("last", {
               type: "model",
@@ -509,71 +565,24 @@ const localContextInput = {
           }),
         )
       },
-      visible(item: ModelKey, defaults?: Record<string, string>) {
+      visible: (item: ModelKey, defaults?: Record<string, string>) => {
         return models.visible(item, defaults)
       },
-      setVisibility(item: ModelKey, visible: boolean) {
+      setVisibility: (item: ModelKey, visible: boolean) => {
         models.setVisibility(item, visible)
       },
-      variant: {
-        configured,
-        selected,
-        current() {
-          const resolved = resolveModelVariant({
-            variants: this.list(),
-            selected: this.selected(),
-            configured: this.configured(),
-          })
-          if (resolved) return resolved
-          const model = current()
-          if (!model) return undefined
-          const saved = models.variant.get({ providerID: model.provider.id, modelID: model.id })
-          if (saved && this.list().includes(saved)) return saved
-          return undefined
-        },
-        list() {
-          const item = current()
-          if (!item?.variants) return []
-          return Object.keys(item.variants)
-        },
-        set(value: string | undefined) {
-          batch(() => {
-            const model = current()
-            setStore("last", {
-              type: "variant",
-              agent: agent.current()?.name,
-              model: model ? { providerID: model.provider.id, modelID: model.id } : null,
-              variant: value ?? null,
-            })
-            write({ variant: value ?? null })
-            if (model) {
-              models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
-            }
-          })
-        },
-        cycle() {
-          const items = this.list()
-          if (items.length === 0) return
-          this.set(
-            cycleModelVariant({
-              variants: items,
-              selected: this.selected(),
-              configured: this.configured(),
-            }),
-          )
-        },
-      },
+      variant,
     }
 
     const result = {
       model,
       agent,
       session: {
-        reset() {
+        reset: () => {
           setStore("draft", undefined)
           clearLocalSelectionHandoff(localDraftSelectionHandoffID(sdk.directory))
         },
-        promote(dir: string, session: string, state?: State) {
+        promote: (dir: string, session: string, state?: State) => {
           const next = cloneLocalSelectionState(state ?? snapshot())
           if (!next) return
 
@@ -594,7 +603,7 @@ const localContextInput = {
 
           setStore("draft", undefined)
         },
-        restore(msg: { sessionID: string; agent: string; model: ModelKey }) {
+        restore: (msg: { sessionID: string; agent: string; model: ModelKey }) => {
           const session = id()
           if (!session) return
           if (msg.sessionID !== session) return

@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
 import { callDocuments, registerDocumentTools } from "./documents-tools"
 
+/** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
+function jsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error(`expected a JSON string request body, got ${typeof body}`)
+  return JSON.parse(body)
+}
+
 describe("document discovery tools", () => {
   it("lists metadata without passing through content bodies", async () => {
     const request = vi.fn(async () => [
@@ -49,7 +55,7 @@ describe("document discovery tools", () => {
           },
         ]
       expect(path).toBe("/documents/document-1/agent-open")
-      expect(JSON.parse(String(init?.body))).toEqual({ session_id: "session-1" })
+      expect(jsonBody(init?.body)).toEqual({ session_id: "session-1" })
       return { document_id: "document-1", display_name: "Plan", path: "/data/documents/project-1/document-1/plan.md" }
     })
 
@@ -69,7 +75,7 @@ describe("document discovery tools", () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path.includes("archived=all")) return [{ id: "document-1", display_name: "Plan", archived_at: null }]
       expect(path).toBe("/documents/document-1/agent-open")
-      expect(JSON.parse(String(init?.body))).toEqual({ session_id: "session-1" })
+      expect(jsonBody(init?.body)).toEqual({ session_id: "session-1" })
       return { document_id: "document-1", display_name: "Plan", path: "/data/documents/document-1/plan.md" }
     })
 
@@ -209,7 +215,7 @@ describe("document discovery tools", () => {
     const handlers = new Map<string, (input: Record<string, unknown>) => Promise<unknown>>()
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path.includes("archived=all")) return [{ id: "document-1", display_name: "Plan", archived_at: null }]
-      expect(JSON.parse(String(init?.body))).toEqual({ session_id: "session-current" })
+      expect(jsonBody(init?.body)).toEqual({ session_id: "session-current" })
       return { document_id: "document-1", display_name: "Plan", path: "/repo/.claxedo/plan.md" }
     })
     registerDocumentTools((name, _config, handler) => handlers.set(name, handler), request, {

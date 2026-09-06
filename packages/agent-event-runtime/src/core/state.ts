@@ -45,7 +45,11 @@ export function projectionSnapshot<State>(projection: string, state: State): Pro
  * data: functions/symbols are dropped, BigInts become strings, and circular
  * references are marked instead of throwing.
  */
-export function cloneSnapshotValue<T>(value: T): T {
+export function cloneSnapshotValue<T>(value: T): T
+// The JSON fallback deliberately degrades values `structuredClone` rejects, so
+// the implementation is typed at the boundary it actually honours (`unknown`)
+// and the overload above states the contract callers rely on.
+export function cloneSnapshotValue(value: unknown): unknown {
   if (value === undefined || value === null) return value
   try {
     return structuredClone(value)
@@ -60,6 +64,6 @@ export function cloneSnapshotValue<T>(value: T): T {
       }
       return item
     })
-    return (json === undefined ? undefined : JSON.parse(json)) as T
+    return json === undefined ? undefined : JSON.parse(json)
   }
 }

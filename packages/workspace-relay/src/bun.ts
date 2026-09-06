@@ -4,6 +4,7 @@ import {
   TUNNEL_PROTOCOL_VERSION,
   validateTunnelMessage,
   type TunnelHeaderMap,
+  type TunnelMessage,
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
@@ -22,6 +23,7 @@ import { WorkspaceRelayAuthError, verifyHostTunnelToken, type RuntimeAccessToken
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
 import { isUserHostedTarget } from "./user-hosted-forwarding"
+import { resolveUpstreamWebSocket, type UpstreamWebSocketConstructor } from "./upstream-websocket"
 
 /**
  * Bun expresses HTTP idle timeout in seconds. Runtime SSE heartbeats arrive
@@ -59,7 +61,7 @@ type RelayHostTunnelWebSocketData = {
   hostId: string
   workspaceIds: string[]
   pending: Map<string, PendingTunnelHttpResponse>
-  channels: Map<string, Bun.ServerWebSocket<RelayUserHostedClientWebSocketData>>
+  channels: Map<string, RelayUserHostedClientWebSocket>
   heartbeat?: ReturnType<typeof setInterval>
   missedPongs: number
   // T11: per-WS buffer for fragmented WebSocket frames that arrive as partial
@@ -84,9 +86,23 @@ type RelayWebSocketData =
   | RelayHostTunnelWebSocketData
   | RelayUserHostedClientWebSocketData
 
-type UpstreamWebSocketConstructor = {
-  new(url: string, options: Bun.WebSocketOptions): WebSocket
-}
+/** The socket type Bun hands every handler: one type carrying the data union. */
+type RelayWebSocket = Bun.ServerWebSocket<RelayWebSocketData>
+type RelayClientWebSocket = Bun.ServerWebSocket<RelayClientWebSocketData>
+type RelayHostTunnelWebSocket = Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
+type RelayUserHostedClientWebSocket = Bun.ServerWebSocket<RelayUserHostedClientWebSocketData>
+
+/*
+ * `RelayWebSocketData` is a discriminated union, but `Bun.ServerWebSocket<T>`
+ * wraps it: testing `ws.data.kind` narrows `ws.data` and leaves `ws` at the
+ * union-typed socket, so every per-kind helper used to be reached through a
+ * cast. These three predicates are the one place that turns the runtime
+ * discriminant into the socket type those helpers require.
+ */
+const isRelayClientSocket = (ws: RelayWebSocket): ws is RelayClientWebSocket => ws.data.kind === "client"
+const isHostTunnelSocket = (ws: RelayWebSocket): ws is RelayHostTunnelWebSocket => ws.data.kind === "host-tunnel"
+const isUserHostedClientSocket = (ws: RelayWebSocket): ws is RelayUserHostedClientWebSocket =>
+  ws.data.kind === "user-hosted-client"
 
 type PendingTunnelHttpResponse = {
   controller: ReadableStreamDefaultController<Uint8Array>
@@ -160,11 +176,18 @@ export type WorkspaceRelayBunOptions = WorkspaceRelayHostTunnelOptions & Workspa
     now?: () => number
   }
 
+/**
+ * Declared as function-valued properties, not methods, because every member is
+ * a closure over the adapter's counters and is routinely handed around
+ * detached (`metricsSources.fragmentation ?? telemetry.getFragmentationStats`).
+ * None of them reads `this`, and the same shape is used by
+ * `WorkspaceRelayMetricsSources` in `./server`.
+ */
 export type WorkspaceRelayBunTelemetry = {
-  getFragmentationStats(): FragmentationStats
-  resetFragmentationStats(): void
-  getSlowConsumerStats(): SlowConsumerStats
-  resetSlowConsumerStats(): void
+  getFragmentationStats: () => FragmentationStats
+  resetFragmentationStats: () => void
+  getSlowConsumerStats: () => SlowConsumerStats
+  resetSlowConsumerStats: () => void
 }
 
 /**
@@ -180,12 +203,16 @@ export type WorkspaceRelayBunTelemetry = {
  * `pendingCount()` reports the total number of in-flight tunnel HTTP
  * responses across every connected host tunnel — this is what the operator
  * polls via `waitForDrain(timeoutMs)` before hard-closing remaining sockets.
+ *
+ * Function-valued properties rather than methods, for the same reason as
+ * `WorkspaceRelayBunTelemetry`: `isDraining` and `pendingCount` are passed
+ * detached into `createWorkspaceRelay`, and none of them reads `this`.
  */
 export type WorkspaceRelayBunDrainController = {
-  isDraining(): boolean
-  setDraining(value: boolean): void
-  pendingCount(): number
-  waitForDrain(timeoutMs: number): Promise<{ drained: boolean; remaining: number }>
+  isDraining: () => boolean
+  setDraining: (value: boolean) => void
+  pendingCount: () => number
+  waitForDrain: (timeoutMs: number) => Promise<{ drained: boolean; remaining: number }>
 }
 
 // Per-tunnel resource caps.
@@ -237,15 +264,15 @@ const WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
  * unconditionally. Bounding the Cloudflare path needs a protocol-level
  * credit/ack window instead.
  */
-export const relayBufferedBytes = (socket: unknown) => {
-  const method = (socket as { getBufferedAmount?: () => number }).getBufferedAmount
-  if (typeof method === "function") {
-    const measured = method.call(socket)
-    if (typeof measured === "number" && Number.isFinite(measured)) return measured
-    return undefined
+export const relayBufferedBytes = (socket: unknown): number | undefined => {
+  if (typeof socket !== "object" || socket === null) return undefined
+  if ("getBufferedAmount" in socket && typeof socket.getBufferedAmount === "function") {
+    const measured: unknown = socket.getBufferedAmount()
+    return typeof measured === "number" && Number.isFinite(measured) ? measured : undefined
   }
   // Browser-shaped sockets (and doubles that mimic one) carry the property.
-  const property = (socket as { bufferedAmount?: unknown }).bufferedAmount
+  if (!("bufferedAmount" in socket)) return undefined
+  const property: unknown = socket.bufferedAmount
   return typeof property === "number" && Number.isFinite(property) ? property : undefined
 }
 
@@ -386,8 +413,8 @@ function preOpenFrameBytes(message: string | Buffer<ArrayBuffer>) {
 }
 
 function safeCloseCode(input: number | undefined, fallback = 1011) {
-  if (!Number.isInteger(input)) return fallback
-  const code = input as number
+  if (input === undefined || !Number.isInteger(input)) return fallback
+  const code = input
   if (code === 1000) return code
   if (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) return code
   if (code >= 3000 && code <= 4999) return code
@@ -433,7 +460,7 @@ function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
 }
 
-function sendRelayWebSocketTrace(ws: Bun.ServerWebSocket<RelayClientWebSocketData>) {
+function sendRelayWebSocketTrace(ws: RelayClientWebSocket) {
   const trace = ws.data.trace
   if (!trace || trace.emitted) return
   trace.emitted = true
@@ -453,6 +480,7 @@ function relayWebSocketPayload(input: MessageEvent["data"]): string | ArrayBuffe
     copy.set(new Uint8Array(input.buffer, input.byteOffset, input.byteLength))
     return copy
   }
+  return undefined
 }
 
 function headersRecord(headers: Headers) {
@@ -495,9 +523,9 @@ type RelayOriginMatcher = (origin: string) => boolean
 // (./cors-origins), used when a deployment configures no `allowedOrigins`.
 const defaultRelayOriginMatcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
 
-function allowedCorsOrigin(origin: string | null, matcher: RelayOriginMatcher) {
-  if (!origin) return
-  if (matcher(origin)) return origin
+function allowedCorsOrigin(origin: string | null, matcher: RelayOriginMatcher): string | undefined {
+  if (!origin) return undefined
+  return matcher(origin) ? origin : undefined
 }
 
 function requireAllowedOrigin(request: Request, matcher: RelayOriginMatcher) {
@@ -554,11 +582,11 @@ function decodedFrame(frame: TunnelWsFrame) {
 }
 
 function tunnelMessage(
-  ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>,
+  ws: RelayHostTunnelWebSocket,
   input: string | Buffer<ArrayBuffer>,
   stats: FragmentationStats,
-) {
-  if (typeof input !== "string") return
+): TunnelMessage | undefined {
+  if (typeof input !== "string") return undefined
   // T11: defensive parse with per-WS reassembly. Some intermediate proxies
   // fragment WS frames; concat with any prior partial and retry.
   const combined = ws.data.messageBuffer.length > 0
@@ -574,11 +602,11 @@ function tunnelMessage(
       stats.oversizedClosed += 1
       ws.data.messageBuffer = ""
       ws.close(1009, "Tunnel message buffer exceeded 4 MB")
-      return
+      return undefined
     }
     stats.fragmentsBuffered += 1
     ws.data.messageBuffer = combined
-    return
+    return undefined
   }
   // Successful parse — clear any retained buffer.
   ws.data.messageBuffer = ""
@@ -587,10 +615,10 @@ function tunnelMessage(
   if (validated.reason === "protocol_mismatch") {
     ws.close(1002, `Tunnel protocol mismatch: expected ${validated.expected_protocol}`)
   }
-  return
+  return undefined
 }
 
-function sendTunnelPing(ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>) {
+function sendTunnelPing(ws: RelayHostTunnelWebSocket) {
   if (ws.readyState !== WebSocket.OPEN) return
   ws.data.missedPongs += 1
   ws.send(JSON.stringify(makeTunnelPing()))
@@ -627,8 +655,8 @@ function failPendingHttpResponse(input: {
 }
 
 function cleanupHostTunnelSocket(input: {
-  ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
-  hostTunnels: Map<string, Bun.ServerWebSocket<RelayHostTunnelWebSocketData>>
+  ws: RelayHostTunnelWebSocket
+  hostTunnels: Map<string, RelayHostTunnelWebSocket>
   hostTunnelStateDebounce: Map<string, HostTunnelStateEntry>
   options: WorkspaceRelayOptions
   bunOptions: WorkspaceRelayBunOptions
@@ -781,7 +809,7 @@ function drainPendingChunks(entry: PendingTunnelHttpResponse) {
 // keeping up) or into the overflow buffer (consumer slow). Starts the
 // slow-consumer watchdog the first time a chunk overflows.
 function enqueueChunkWithBackpressure(input: {
-  ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
+  ws: RelayHostTunnelWebSocket
   requestId: string
   entry: PendingTunnelHttpResponse
   chunk: Uint8Array
@@ -838,7 +866,7 @@ export const __slowConsumerInternalsForTest = {
 }
 
 async function tunnelHttpRequest(input: {
-  ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
+  ws: RelayHostTunnelWebSocket
   request: Request
   originAllowed: RelayOriginMatcher
   workspaceId: string
@@ -1066,7 +1094,7 @@ async function directHttpRequest(input: {
 }
 
 function hostTunnel(
-  hostTunnels: Map<string, Bun.ServerWebSocket<RelayHostTunnelWebSocketData>>,
+  hostTunnels: Map<string, RelayHostTunnelWebSocket>,
   hostId: string,
 ) {
   const tunnel = hostTunnels.get(hostId)
@@ -1143,8 +1171,8 @@ function watchClientAccess(
 }
 
 export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptions: WorkspaceRelayBunOptions = {}) {
-  const hostTunnels = new Map<string, Bun.ServerWebSocket<RelayHostTunnelWebSocketData>>()
-  const relayClients = new Set<Bun.ServerWebSocket<RelayClientWebSocketData>>()
+  const hostTunnels = new Map<string, RelayHostTunnelWebSocket>()
+  const relayClients = new Set<RelayClientWebSocket>()
   const hostTunnelRegistrations = new Map<string, HostTunnelRegistrationTracker>()
   const directHttpLimiter = createDirectHttpLimiter(bunOptions.directHttpConcurrency)
   const hostTunnelStateDebounce = new Map<string, HostTunnelStateEntry>()
@@ -1242,7 +1270,14 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
   }
 
   return {
-    async fetch(request: Request, server: Bun.Server<RelayWebSocketData>) {
+    // A function-valued property rather than a method: `main.ts` hands it
+    // straight to `Bun.serve({ fetch: handler.fetch })`, detached from this
+    // object, and it closes over the adapter's state rather than reading `this`.
+    //
+    // `undefined` is Bun's contract for "this request became a WebSocket":
+    // `server.upgrade()` has already taken ownership of the socket, so there is
+    // no HTTP response left to return.
+    fetch: async (request: Request, server: Bun.Server<RelayWebSocketData>): Promise<Response | undefined> => {
       const url = new URL(request.url)
       const workspaceId = workspaceIdFromPath(url.pathname)
       const hostId = hostIdFromTunnelPath(url.pathname)
@@ -1320,7 +1355,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           },
         })) {
           tracker.recent.push(now)
-          return
+          return undefined
         }
         return new Response("WebSocket upgrade failed", { status: 400 })
       }
@@ -1404,7 +1439,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             relayHostToken: relay.request.relayHostToken,
           },
         })) {
-          return
+          return undefined
         }
         return new Response("WebSocket upgrade failed", { status: 400 })
       }
@@ -1442,16 +1477,16 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             : {}),
         },
       })) {
-        return
+        return undefined
       }
       return new Response("WebSocket upgrade failed", { status: 400 })
     },
     websocket: {
       maxPayloadLength: WS_MAX_PAYLOAD_LENGTH_BYTES,
-      message(ws: Bun.ServerWebSocket<RelayWebSocketData>, message: string | Buffer<ArrayBuffer>) {
-        if (ws.data.kind === "host-tunnel") {
+      message(ws: RelayWebSocket, message: string | Buffer<ArrayBuffer>) {
+        if (isHostTunnelSocket(ws)) {
           const parsed = tunnelMessage(
-            ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>,
+            ws,
             message,
             fragmentationStats,
           )
@@ -1466,7 +1501,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           if (parsed?.type === "host.registration.update") {
             const update = parsed
             const workspaceIds = [...new Set(update.workspace_ids)]
-            const hostSocket = ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
+            const hostSocket = ws
             const hostId = hostSocket.data.hostId
             const authorizationRequest = new Request(
               `http://relay.local/host-tunnels/${encodeURIComponent(hostId)}`,
@@ -1515,7 +1550,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             const entry = ws.data.pending.get(parsed.request_id)
             if (entry) {
               enqueueChunkWithBackpressure({
-                ws: ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>,
+                ws: ws,
                 requestId: parsed.request_id,
                 entry,
                 chunk: decoded((parsed).body_base64),
@@ -1581,7 +1616,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }
           return
         }
-        if (ws.data.kind === "user-hosted-client") {
+        if (isUserHostedClientSocket(ws)) {
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId)
           if (!tunnel) {
             ws.close(1011, "User-hosted tunnel disconnected")
@@ -1599,6 +1634,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }))
           return
         }
+        if (!isRelayClientSocket(ws)) return
         if (ws.data.upstream?.readyState === WebSocket.OPEN) {
           ws.data.upstream.send(message)
           return
@@ -1619,8 +1655,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         ws.data.queuedBytes = queuedBytes + frameBytes
         ws.data.queue.push({ payload: message, queuedAt: performance.now() })
       },
-      open(ws: Bun.ServerWebSocket<RelayWebSocketData>) {
-        if (ws.data.kind === "host-tunnel") {
+      open(ws: RelayWebSocket) {
+        if (isHostTunnelSocket(ws)) {
           const previous = hostTunnels.get(ws.data.hostId)
           if (previous && previous !== ws) {
             cleanupHostTunnelSocket({
@@ -1635,13 +1671,13 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             })
             closeWebSocket(previous, 1012, "Host tunnel replaced by a newer connection", 1012)
           }
-          hostTunnels.set(ws.data.hostId, ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>)
+          hostTunnels.set(ws.data.hostId, ws)
           options.directory?.registerHostTunnel({
             hostId: ws.data.hostId,
             workspaceIds: ws.data.workspaceIds,
           })
           ws.data.heartbeat = setInterval(() => {
-            const hostWs = ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
+            const hostWs = ws
             if (hostWs.data.missedPongs > (bunOptions.hostTunnelMaxMissedPongs ?? HOST_TUNNEL_MAX_MISSED_PONGS_DEFAULT)) {
               closeWebSocket(ws, 1001, "Host tunnel heartbeat timed out", 1001)
               return
@@ -1657,14 +1693,14 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           })
           return
         }
-        if (ws.data.kind === "user-hosted-client") {
-          watchClientAccess(ws as Bun.ServerWebSocket<RelayUserHostedClientWebSocketData>, options, bunOptions)
+        if (isUserHostedClientSocket(ws)) {
+          watchClientAccess(ws, options, bunOptions)
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId)
           if (!tunnel) {
             ws.close(1011, "User-hosted tunnel disconnected")
             return
           }
-          tunnel.data.channels.set(ws.data.channelId, ws as Bun.ServerWebSocket<RelayUserHostedClientWebSocketData>)
+          tunnel.data.channels.set(ws.data.channelId, ws)
           if (tunnel.readyState !== WebSocket.OPEN) {
             closeWebSocket(ws, 1011, "User-hosted tunnel disconnected")
             return
@@ -1687,10 +1723,11 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }))
           return
         }
-        relayClients.add(ws as Bun.ServerWebSocket<RelayClientWebSocketData>)
-        watchClientAccess(ws as Bun.ServerWebSocket<RelayClientWebSocketData>, options, bunOptions)
+        if (!isRelayClientSocket(ws)) return
+        relayClients.add(ws)
+        watchClientAccess(ws, options, bunOptions)
         const data = ws.data
-        const UpstreamWebSocket = bunOptions.upstreamWebSocket ?? (WebSocket as unknown as UpstreamWebSocketConstructor)
+        const UpstreamWebSocket = resolveUpstreamWebSocket(bunOptions.upstreamWebSocket)
         if (data.trace) data.trace.upstreamStartedAt = performance.now()
         const upstream = new UpstreamWebSocket(data.upstreamUrl, {
           headers: data.headers,
@@ -1715,7 +1752,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               (max, item) => Math.max(max, openedAt - item.queuedAt),
               0,
             )
-            sendRelayWebSocketTrace(ws as Bun.ServerWebSocket<RelayClientWebSocketData>)
+            sendRelayWebSocketTrace(ws)
           }
           for (const item of data.queue.splice(0)) upstream.send(item.payload)
           data.queuedBytes = 0
@@ -1739,10 +1776,10 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           closeWebSocket(ws, 1011, "Upstream WebSocket connection failed")
         }
       },
-      close(ws: Bun.ServerWebSocket<RelayWebSocketData>, code: number, reason: string) {
-        if (ws.data.kind === "host-tunnel") {
+      close(ws: RelayWebSocket, code: number, reason: string) {
+        if (isHostTunnelSocket(ws)) {
           cleanupHostTunnelSocket({
-            ws: ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>,
+            ws: ws,
             hostTunnels,
             hostTunnelStateDebounce,
             options,
@@ -1758,7 +1795,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }
           return
         }
-        if (ws.data.kind === "user-hosted-client") {
+        if (isUserHostedClientSocket(ws)) {
           clearClientAccessWatchers(ws.data)
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId)
           tunnel?.data.channels.delete(ws.data.channelId)
@@ -1773,7 +1810,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }
           return
         }
-        relayClients.delete(ws as Bun.ServerWebSocket<RelayClientWebSocketData>)
+        if (!isRelayClientSocket(ws)) return
+        relayClients.delete(ws)
         clearClientAccessWatchers(ws.data)
         if (ws.data.upstreamOpenTimer) clearTimeout(ws.data.upstreamOpenTimer)
         if (ws.data.upstream) closeWebSocket(ws.data.upstream, code, reason, 1000)

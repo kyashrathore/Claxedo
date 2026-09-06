@@ -1,17 +1,9 @@
-import fs from "fs"
 import path from "path"
+import { readApiManifest, readPackageJson } from "./manifest-files"
 
 const root = path.resolve(import.meta.dirname, "..")
-const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
-  name: string
-  version: string
-  exports: Record<string, unknown>
-}
-const manifest = JSON.parse(fs.readFileSync(path.join(root, "docs/api-manifest.json"), "utf8")) as {
-  package: string
-  version: string
-  entrypoints: Record<string, unknown>
-}
+const packageJson = readPackageJson(root)
+const manifest = readApiManifest(root)
 
 const exported = Object.keys(packageJson.exports)
   .map((key) => key === "." ? packageJson.name : `${packageJson.name}/${key.slice(2)}`)

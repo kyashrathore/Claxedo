@@ -72,6 +72,12 @@ export function BasicToolV2(props: BasicToolV2Props) {
     local.onOpenChange?.(value)
   }
 
+  /** The trigger when it is not a structured title: plain JSX. */
+  const plainTrigger = (): JSX.Element => {
+    const value = local.trigger
+    return isTriggerTitle(value) ? undefined : value
+  }
+
   return (
     <Collapsible
       {...rest}
@@ -87,7 +93,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
     >
       <Collapsible.Trigger as="div" role="button" data-slot="basic-tool-v2-trigger" class="ui-basic-tool-v2-trigger">
         <div data-slot="basic-tool-v2-labels">
-          <Show when={isTriggerTitle(local.trigger) && local.trigger} fallback={local.trigger as JSX.Element}>
+          <Show when={isTriggerTitle(local.trigger) && local.trigger} fallback={plainTrigger()}>
             {(title) => (
               <>
                 <span data-slot="basic-tool-v2-title">

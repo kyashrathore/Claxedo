@@ -7,6 +7,8 @@
  */
 
 import { accountRunBridge } from "./hosted-control-call"
+import { readBoolean } from "@/lib/record"
+import { hasBridgeMembers, preloadAccountBridge } from "./preload-bridge"
 import type { AccountState, HostedOperationName } from "./account-port"
 
 type StreamBridge = {
@@ -20,27 +22,18 @@ type StreamBridge = {
   onStreamError: (listener: (payload: { streamId: string; message: string }) => void) => () => void
 }
 
+const STREAM_MEMBERS = [
+  "streamOpen",
+  "streamStart",
+  "streamClose",
+  "onStreamChunk",
+  "onStreamEnd",
+  "onStreamError",
+] as const satisfies readonly (keyof StreamBridge)[]
+
 function streamBridge(): StreamBridge | undefined {
-  const account = (globalThis as { api?: { account?: Record<string, unknown> } }).api?.account
-  if (!account) return undefined
-  for (const member of [
-    "streamOpen",
-    "streamStart",
-    "streamClose",
-    "onStreamChunk",
-    "onStreamEnd",
-    "onStreamError",
-  ] as const) {
-    if (typeof account[member] !== "function") return undefined
-  }
-  return {
-    streamOpen: account.streamOpen as StreamBridge["streamOpen"],
-    streamStart: account.streamStart as StreamBridge["streamStart"],
-    streamClose: account.streamClose as StreamBridge["streamClose"],
-    onStreamChunk: account.onStreamChunk as StreamBridge["onStreamChunk"],
-    onStreamEnd: account.onStreamEnd as StreamBridge["onStreamEnd"],
-    onStreamError: account.onStreamError as StreamBridge["onStreamError"],
-  }
+  const account = preloadAccountBridge()
+  return hasBridgeMembers<StreamBridge>(account, STREAM_MEMBERS) ? account : undefined
 }
 
 /**
@@ -115,7 +108,7 @@ export async function openAccountStreamResponse(input: {
             // or a harness sets this flag in the renderer.
             if (
               typeof payload.sentAt === "number" ||
-              (globalThis as { __CLAXEDO_ACCOUNT_PERF__?: boolean }).__CLAXEDO_ACCOUNT_PERF__
+              readBoolean(globalThis, "__CLAXEDO_ACCOUNT_PERF__") === true
             ) {
               console.debug("[account-perf]", "account.stream_open_to_renderer_first_byte_ms", detail)
             }

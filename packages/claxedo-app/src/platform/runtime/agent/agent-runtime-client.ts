@@ -38,6 +38,7 @@ import {
   type AgentRuntimeSessionResource,
 } from "./agent-runtime-urls"
 import { requestName, sessionPerf } from "@/platform/performance/session-perf"
+import { errorMessage } from "@/lib/server-errors"
 
 function appendHarnessSelection(query: URLSearchParams, selection: HarnessSelection | undefined) {
   if (selection) Object.entries(harnessSelectionQuery(selection)).forEach(([key, value]) => query.set(key, value))
@@ -115,13 +116,16 @@ function deleteResult(input: unknown): { ok: true } {
 }
 
 function jsonInit(method: "POST" | "PATCH" | "PUT", body?: unknown, init?: RequestInit): RequestInit {
+  // `HeadersInit` is a Headers, a `[name, value][]`, or a record. Merging it as
+  // an object literal only handled the record: an array form spread in as
+  // numeric indices and the caller's headers were silently dropped. `Headers`
+  // normalizes all three, and the caller still wins over the default type.
+  const headers = new Headers({ "Content-Type": "application/json" })
+  for (const [name, value] of new Headers(init?.headers)) headers.set(name, value)
   return {
     ...init,
     method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init?.headers),
-    },
+    headers,
     body: JSON.stringify(body ?? {}),
   }
 }
@@ -280,7 +284,7 @@ export function createAgentRuntimeClient(options: {
       span.end({ status: response.status, ok: response.ok })
       return response
     } catch (error) {
-      span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      span.end({ ok: false, error: errorMessage(error) })
       throw error
     }
     async function sessionResourceResponse() {
@@ -308,6 +312,10 @@ export function createAgentRuntimeClient(options: {
         }), init)
       case "direct":
         return await request(runtimeUrl, init)
+      default: {
+        const unrouted: never = route
+        throw new Error(`no runtime transport for route ${JSON.stringify(unrouted)}`)
+      }
     }
     }
   }
@@ -339,7 +347,7 @@ export function createAgentRuntimeClient(options: {
       method,
       path: input.path.split("?")[0] ?? input.path,
       ...(target?.workspaceId ? { workspaceId: target.workspaceId } : {}),
-      ...(target?.workspace?.kind ? { workspaceKind: String(target.workspace.kind) } : {}),
+      ...(target?.workspace?.kind ? { workspaceKind: target.workspace.kind } : {}),
     })
     try {
       const response = await runtimeTransport({
@@ -351,7 +359,7 @@ export function createAgentRuntimeClient(options: {
       span.end({ status: response.status, ok: response.ok, url: requestName(response.url || input.path) })
       return response
     } catch (error) {
-      span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      span.end({ ok: false, error: errorMessage(error) })
       throw error
     }
   }

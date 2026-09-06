@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "./services"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { pullHostedControlSessionMessages } from "./hosted-session-pull"
+import { fetchUrl } from "../test-support/fetch-calls"
 
 const originalFetch = globalThis.fetch
 
@@ -89,7 +90,7 @@ describe("hosted session pull", () => {
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url === "https://relay.eu.test/workspaces/ws_1/global/health") {
         return Response.json({ workspaceId: "ws_1" })
       }
@@ -129,7 +130,7 @@ describe("hosted session pull", () => {
     // carries its canonical session, so checkpointing must not add a second
     // health probe plus a separate session read.
     expect(fetch).toHaveBeenCalledTimes(3)
-    expect(String(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
+    expect(fetchUrl(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
       workspaceId: "ws_1",
       sessionId: "session-1",
@@ -170,7 +171,7 @@ describe("hosted session pull", () => {
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url === "https://relay.eu.test/workspaces/ws_1/global/health") {
         return Response.json({ workspaceId: "ws_1" })
       }
@@ -295,7 +296,7 @@ describe("hosted session pull", () => {
       syncSessionMessages,
     } as never
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/session/session-1/message?snapshot=1")) {
         return Response.json({
@@ -350,7 +351,7 @@ describe("hosted session pull", () => {
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_other" })
       return new Response("unexpected runtime request", { status: 500 })
     })
@@ -367,7 +368,7 @@ describe("hosted session pull", () => {
     })
 
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(String(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
+    expect(fetchUrl(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
     expect(syncSessionMessages).not.toHaveBeenCalled()
     expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
   })

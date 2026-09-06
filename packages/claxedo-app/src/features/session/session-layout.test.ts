@@ -11,8 +11,8 @@ const realModules = new Map<string, Record<string, unknown>>()
 for (const specifier of ["@/features/session/providers/session-params", "@opencode-ai/ui/utils/encode", "@/app/providers/layout"]) {
   realModules.set(specifier, { ...(await import(specifier)) })
 }
-afterAll(() => {
-  for (const [specifier, exports] of realModules) mock.module(specifier, () => exports)
+afterAll(async () => {
+  for (const [specifier, exports] of realModules) await mock.module(specifier, () => exports)
 })
 
 let paneParams:
@@ -28,14 +28,14 @@ function layoutKey(key: unknown) {
   return key()
 }
 
-mock.module("@/features/session/providers/session-params", () => ({
+await mock.module("@/features/session/providers/session-params", () => ({
   useSessionParams: () => {
     if (paneParams) return paneParams
     throw new Error("outside workbench")
   },
 }))
 
-mock.module("@opencode-ai/ui/utils/encode", () => ({
+await mock.module("@opencode-ai/ui/utils/encode", () => ({
   base64Decode: (value: string) => value.replace(/^encoded:/, ""),
   base64Encode: (value: string) => `encoded:${value}`,
   checksum: (value: string) => value || undefined,
@@ -43,7 +43,7 @@ mock.module("@opencode-ai/ui/utils/encode", () => ({
   sampledChecksum: (value: string) => value || undefined,
 }))
 
-mock.module("@/app/providers/layout", () => ({
+await mock.module("@/app/providers/layout", () => ({
   getAvatarColors: () => ({
     background: "var(--surface-info-base)",
     foreground: "var(--text-base)",

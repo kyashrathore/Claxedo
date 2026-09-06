@@ -6,7 +6,6 @@ import { Show, createContext, createMemo, createSignal, onCleanup, useContext, t
 import { useConfigOptional } from "@/app/providers/config"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { useAccountPort } from "@/platform/account/account-provider"
-import { type AuthDisplayUser } from "@/platform/auth/auth-display"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -118,7 +117,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
   const account = useAccountPort()
   const config = useConfigOptional()
   const language = useLanguage()
-  const user = createMemo(() => auth.user() as AuthDisplayUser | undefined)
+  const user = createMemo(() => auth.user() ?? undefined)
   const accountState = createMemo(() => account.state())
   const signed = createMemo(() => accountState().status === "signed")
   const pending = createMemo(() => accountState().status === "pending")

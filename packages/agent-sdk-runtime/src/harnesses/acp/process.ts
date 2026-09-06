@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "crypto"
 import {
   client,
@@ -201,9 +202,7 @@ export class ACPProcess {
             log.info("ACP sessionUpdate: agent changed mode", { sessionId: params.sessionId, currentModeId })
           }
         }
-        const updateMeta = params.update && typeof params.update === "object"
-          ? (params.update as { _meta?: Record<string, unknown> })._meta
-          : undefined
+        const updateMeta = asRecord(asRecord(params.update)?._meta)
         if (updateMeta && "goal" in updateMeta) {
           this.goalListeners.get(params.sessionId)?.(this.normalizeGoal(updateMeta.goal, params.sessionId))
         }
@@ -355,11 +354,11 @@ export class ACPProcess {
 
   private normalizeGoal(input: unknown, sessionId: string): RuntimeGoalSnapshot | null {
     if (input === null) return null
-    const outer = input && typeof input === "object" ? input as Record<string, unknown> : null
+    const outer = asRecord(input)
     const value = outer && "goal" in outer ? outer.goal : input
     if (value === null) return null
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("ACP Goal response is malformed")
-    const row = value as Record<string, unknown>
+    const row = asRecord(value)
+    if (!row) throw new Error("ACP Goal response is malformed")
     if (
       typeof row.objective !== "string"
       || !isRuntimeGoalStatus(row.status)

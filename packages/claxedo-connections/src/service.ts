@@ -17,6 +17,7 @@ import {
   type IntegrationCapability,
   type IntegrationDeclaration,
   type VerifyResult,
+  type ConnectionTokenFailureCode,
 } from "./types.js"
 
 function declaredNonSecretFields(
@@ -67,7 +68,7 @@ export type ConnectResult =
 
 export type TokenResult =
   | { ok: true; response: ConnectionTokenResponse }
-  | { ok: false; status: 403 | 404 | 409 | 503; code: string; credentialStatus?: string }
+  | { ok: false; status: 403 | 404 | 409 | 503; code: ConnectionTokenFailureCode; credentialStatus?: string }
 
 export type RepositoryListResult =
   | { ok: true; repositories: CodeHostRepository[] }
@@ -196,7 +197,7 @@ export function createConnectionsService(deps: {
       fields: row.fields,
       async getToken() {
         const result = await getToken(row.id, capability)
-        if (!result.ok) throw new ConnectionTokenError(result.status, result.code as ConnectionTokenError["code"])
+        if (!result.ok) throw new ConnectionTokenError(result.status, result.code)
         return result.response
       },
       reportAuthFailure: (reason: string) => reportAuthFailure(row.id, reason),

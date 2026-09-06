@@ -67,8 +67,8 @@ await context.addInitScript(() => {
     })
   })
   const originalFetch = window.fetch.bind(window)
-  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = input instanceof Request ? input.url : String(input)
+  const logged: typeof window.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString()
     fetchLog.push({
       url,
       atMs: performance.now(),
@@ -77,7 +77,8 @@ await context.addInitScript(() => {
         : {}),
     })
     return originalFetch(input, init)
-  }) as typeof window.fetch
+  }
+  window.fetch = logged
 })
 
 const page = await context.newPage()

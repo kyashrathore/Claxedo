@@ -18,7 +18,7 @@ export async function handleCodexServerRequest(input: {
 }) {
   const method = text(input.message.method) ?? "request"
   const params = record(input.message.params) ?? {}
-  const requestId = String(input.message.id ?? randomUUID())
+  const requestId = text(input.message.id) ?? numberText(input.message.id) ?? randomUUID()
   const threadId = text(params.threadId) ?? text(params.conversationId)
   const active = threadId ? input.activeThreads.get(threadId) : undefined
   const payload = { ...params, requestId }
@@ -142,4 +142,9 @@ function permissionResponse(
     }
   }
   return { decision: allow ? session ? "acceptForSession" : "accept" : decision === "deny" ? "decline" : "cancel" }
+}
+
+/** A JSON-RPC id may arrive as a number; render it without stringifying an object. */
+function numberText(value: unknown): string | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : undefined
 }

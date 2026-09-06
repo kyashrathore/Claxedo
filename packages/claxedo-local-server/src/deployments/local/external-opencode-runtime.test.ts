@@ -42,7 +42,10 @@ async function serve(handler: (request: Request) => Response | Promise<Response>
     const response = await handler(request)
     outgoing.writeHead(response.status, Object.fromEntries(response.headers))
     const reader = response.body?.getReader()
-    if (!reader) return void outgoing.end()
+    if (!reader) {
+      outgoing.end()
+      return
+    }
     const close = () => {
       void reader.cancel().catch(() => undefined)
     }

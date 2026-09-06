@@ -2,10 +2,9 @@ import { harnessWorkspaceRuntimeRef } from "./store-policy"
 import { describe, expect, test } from "bun:test"
 import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"
 import type { HarnessScopeInput } from "./store-policy"
-import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 import { connectionHarness } from "@/platform/identity/harness-selection"
+import { requestUrl } from "@/lib/url"
 
-type ClaimInput = HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
 
 const sessionConfig = {
   agent: "build",
@@ -20,14 +19,14 @@ const canonicalSession = {
 describe("harness runtime session actions", () => {
   test("creates prepared sessions through the explicit runtime transport with canonical config", async () => {
     const requests: Array<{ url: string; method: string; body: unknown }> = []
-    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+    const actions = createHarnessRuntimeSessionActions({
       base: "http://127.0.0.1:3001",
       runtime: runtime({
         sessionFetch: async (resource, init) => {
           requests.push({
-            url: String(resource),
+            url: requestUrl(resource),
             method: init?.method ?? "GET",
-            body: init?.body ? JSON.parse(String(init.body)) : undefined,
+            body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
           })
           return Response.json(canonicalSession)
         },
@@ -53,7 +52,7 @@ describe("harness runtime session actions", () => {
 
   test("skips delete outside local config or workspace runtime scopes", async () => {
     let clients = 0
-    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+    const actions = createHarnessRuntimeSessionActions({
       base: "https://claxedo.example.test",
       runtime: runtime({ useLocal: false }),
       createClient: () => {
@@ -73,7 +72,7 @@ describe("harness runtime session actions", () => {
   })
 
   test("rejects the legacy SDK response envelope", async () => {
-    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+    const actions = createHarnessRuntimeSessionActions({
       base: "http://127.0.0.1:3001",
       runtime: runtime({
         sessionFetch: async () => Response.json({ data: { id: "ses_legacy" } }),
@@ -89,11 +88,11 @@ describe("harness runtime session actions", () => {
 
   test("deletes eligible prepared sessions and propagates runtime failures", async () => {
     const requests: Array<{ url: string; method: string }> = []
-    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+    const actions = createHarnessRuntimeSessionActions({
       base: "http://127.0.0.1:3001",
       runtime: runtime({
         sessionFetch: async (resource, init) => {
-          requests.push({ url: String(resource), method: init?.method ?? "GET" })
+          requests.push({ url: requestUrl(resource), method: init?.method ?? "GET" })
           return Response.json(
             { error: { code: "delete_failed", message: "Session is still running" } },
             { status: 409 },
@@ -117,7 +116,7 @@ describe("harness runtime session actions", () => {
 
   test("deletes workspace-runtime prepared sessions through the scoped request", async () => {
     const deletes: string[] = []
-    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+    const actions = createHarnessRuntimeSessionActions({
       base: "https://claxedo.example.test",
       runtime: runtime({ useLocal: false }),
       createClient: () => client({
@@ -141,10 +140,10 @@ describe("harness runtime session actions", () => {
   test("applies the workspace relay prefix exactly once", async () => {
     const urls: string[] = []
     const request: typeof fetch = async (resource) => {
-      urls.push(String(resource))
+      urls.push(requestUrl(resource))
       return Response.json(canonicalSession)
     }
-    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+    const actions = createHarnessRuntimeSessionActions({
       base: "http://127.0.0.1:3001",
       runtime: runtime({
         useLocal: false,

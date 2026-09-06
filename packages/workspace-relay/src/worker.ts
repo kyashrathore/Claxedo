@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, exportJWK, importJWK, importPKCS8, importSPKI } from "jose"
+import { createRemoteJWKSet, exportJWK, importPKCS8, importSPKI } from "jose"
 import {
   createWorkspaceRelayDurableObjectGateway,
   createWorkspaceRelayDurableObjectRoom,
@@ -19,7 +19,7 @@ import {
   type RevocationLookup,
   type TargetLookup,
 } from "./server"
-import type { RelayKey, RuntimeAccessTokenClaims } from "./auth"
+import { deriveRelayHostKid, deriveRelayHostPublicKey, type RelayKey, type RuntimeAccessTokenClaims } from "./auth"
 
 export type WorkspaceRelayWorkerEnv = Record<string, unknown> & {
   WORKSPACE_RELAY_ROOM?: WorkspaceRelayDurableObjectNamespace
@@ -95,17 +95,6 @@ function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWor
   return value
 }
 
-function hex(bytes: ArrayBuffer) {
-  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-}
-
-async function deriveKidFromPublicKey(publicKey: CryptoKey) {
-  const jwk = await exportJWK(publicKey)
-  const material = jwk.x ?? jwk.n ?? ""
-  if (!material) throw new Error("Cannot derive kid: public key has no public component")
-  return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material))).slice(0, 16)
-}
-
 export function workspaceRelayWorkerResolverUrl(env: WorkspaceRelayWorkerEnv) {
   const resolverUrl = clean(env.CLAXEDO_RELAY_RESOLVER_URL)
   if (resolverUrl) return resolverUrl.replace(/\/+$/, "")
@@ -131,21 +120,17 @@ async function loadRelayHostKeys(env: WorkspaceRelayWorkerEnv) {
   const explicitPublicPem = pem(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_PEM)
   const publicKey = explicitPublicPem
     ? await importSPKI(explicitPublicPem, "EdDSA", { extractable: true })
-    : await importJWK(
-        ((jwk) => ({ kty: jwk.kty, crv: jwk.crv, x: jwk.x }))(await exportJWK(privateKey)),
-        "EdDSA",
-        { extractable: true },
-      ) as CryptoKey
+    : await deriveRelayHostPublicKey(privateKey)
   const current: RelayHostPublicKey = {
     publicKey,
-    kid: clean(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveKidFromPublicKey(publicKey),
+    kid: clean(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveRelayHostKid(publicKey),
   }
   const nextPem = pem(env.CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM)
   const nextPublicKey = nextPem ? await importSPKI(nextPem, "EdDSA", { extractable: true }) : undefined
-  const next = nextPem
+  const next = nextPublicKey
     ? {
-        publicKey: nextPublicKey!,
-        kid: clean(env.CLAXEDO_RELAY_HOST_NEXT_KID) ?? await deriveKidFromPublicKey(nextPublicKey!),
+        publicKey: nextPublicKey,
+        kid: clean(env.CLAXEDO_RELAY_HOST_NEXT_KID) ?? await deriveRelayHostKid(nextPublicKey),
       }
     : undefined
   return { privateKey, publicKeys: next ? [current, next] : [current], currentKid: current.kid }
@@ -223,24 +208,41 @@ export async function workspaceRelayDurableObjectOptions(
   }
 }
 
+/**
+ * The `DurableObjectState` workerd hands a room, modelled structurally like the
+ * rest of this package's Cloudflare surface (see `./cloudflare`) — this package
+ * deliberately carries no `@cloudflare/workers-types` dependency.
+ *
+ * Everything is optional because `cloudflare.ts` treats hibernation and alarms
+ * as capabilities to DETECT: an older runtime, or a harness standing in for
+ * one, may provide neither, and the room degrades rather than failing.
+ */
+export type WorkspaceRelayRoomState = {
+  acceptWebSocket?: (socket: WorkspaceRelayDurableObjectSocket) => void
+  getWebSockets?: () => WorkspaceRelayDurableObjectSocket[]
+  storage?: {
+    getAlarm?: () => Promise<number | null>
+    setAlarm?: (scheduledTime: number) => Promise<void>
+    deleteAlarm?: () => Promise<void>
+  }
+}
+
 export class WorkspaceRelayRoom {
   private room?: ReturnType<typeof createWorkspaceRelayDurableObjectRoom>
   private loading?: Promise<ReturnType<typeof createWorkspaceRelayDurableObjectRoom>>
 
   constructor(
-    private state: unknown,
+    private state: WorkspaceRelayRoomState,
     private env: WorkspaceRelayWorkerEnv,
   ) {}
 
   private hibernation(): WorkspaceRelayDurableObjectHibernation | undefined {
-    const state = this.state as {
-      acceptWebSocket?: (socket: WorkspaceRelayDurableObjectSocket) => void
-      getWebSockets?: () => WorkspaceRelayDurableObjectSocket[]
-    }
-    if (!state.acceptWebSocket || !state.getWebSockets) return
+    const state = this.state
+    const { acceptWebSocket, getWebSockets } = state
+    if (!acceptWebSocket || !getWebSockets) return undefined
     return {
-      acceptWebSocket: (socket) => state.acceptWebSocket!(socket),
-      getWebSockets: () => state.getWebSockets!(),
+      acceptWebSocket: (socket) => acceptWebSocket.call(state, socket),
+      getWebSockets: () => getWebSockets.call(state),
     }
   }
 
@@ -250,18 +252,14 @@ export class WorkspaceRelayRoom {
    * what enforces revocation on an idle hibernated connection.
    */
   private alarms(): WorkspaceRelayDurableObjectAlarms | undefined {
-    const storage = (this.state as {
-      storage?: {
-        getAlarm?: () => Promise<number | null>
-        setAlarm?: (scheduledTime: number) => Promise<void>
-        deleteAlarm?: () => Promise<void>
-      }
-    }).storage
-    if (!storage?.getAlarm || !storage.setAlarm) return
+    const storage = this.state.storage
+    if (!storage) return undefined
+    const { getAlarm, setAlarm, deleteAlarm } = storage
+    if (!getAlarm || !setAlarm) return undefined
     return {
-      getAlarm: () => storage.getAlarm!(),
-      setAlarm: (scheduledTime) => storage.setAlarm!(scheduledTime),
-      ...(storage.deleteAlarm ? { deleteAlarm: () => storage.deleteAlarm!() } : {}),
+      getAlarm: () => getAlarm.call(storage),
+      setAlarm: (scheduledTime) => setAlarm.call(storage, scheduledTime),
+      ...(deleteAlarm ? { deleteAlarm: () => deleteAlarm.call(storage) } : {}),
     }
   }
 

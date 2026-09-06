@@ -219,8 +219,9 @@ describe("query persister", () => {
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
 
     const restored = queryClient.getQueryData<{ all: unknown; connected: string[] }>(["controlPlane", "base", "providers"])
-    expect(restored?.all instanceof Map).toBe(true)
-    expect((restored?.all as Map<string, { id: string }>).get("opencode")?.id).toBe("opencode")
+    const all = restored?.all
+    if (!(all instanceof Map)) throw new Error("restored providers did not rehydrate as a Map")
+    expect(all.get("opencode")?.id).toBe("opencode")
     expect(restored?.connected).toEqual(["opencode"])
   })
 

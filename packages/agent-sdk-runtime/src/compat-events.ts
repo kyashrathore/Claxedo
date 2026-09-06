@@ -9,6 +9,7 @@ import type {
   AgentSession,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
@@ -33,7 +34,6 @@ type EventSessionStatus = Extract<AgentPresentationEvent, { type: "session.statu
 type EventSessionUpdated = Extract<AgentPresentationEvent, { type: "session.updated" }>
 type EventSessionUsage = Extract<AgentPresentationEvent, { type: "session.usage" }>
 type EventTodoUpdated = Extract<AgentPresentationEvent, { type: "todo.updated" }>
-type EventServerConnected = Extract<AgentPresentationEvent, { type: "server.connected" }>
 
 export type CompatPart = AgentContentPart
 export type CompatPromptFormat =
@@ -57,7 +57,7 @@ export type CompatEnvelope = {
 // These helpers are the package-level constructors for Claxedo client-presentation
 // events. Route/adapters should use them instead of hand-assembling shapes
 // except when they are validating external harness payloads.
-const kinds = new Set<CompatEvent["type"]>([
+const kinds: ReadonlySet<string> = new Set<CompatEvent["type"]>([
   "message.updated",
   "message.part.updated",
   "message.part.delta",
@@ -82,24 +82,22 @@ const kinds = new Set<CompatEvent["type"]>([
   "server.heartbeat",
 ])
 
-function rec(input: unknown): Record<string, unknown> | null {
-  return input !== null && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : null
-}
-
 export function withDir(directory: string, payload: CompatEvent): CompatEnvelope {
   return { directory, payload }
 }
 
+/**
+ * An unknown frame is a compat event when it names one of the kinds and carries
+ * a properties object. Sound because `kinds` is built from `CompatEvent["type"]`
+ * and holds every member of it.
+ */
+function isCompatEvent(value: unknown): value is CompatEvent {
+  const row = asRecord(value)
+  return !!row && typeof row.type === "string" && kinds.has(row.type) && !!asRecord(row.properties)
+}
+
 export function toCompatEvent(input: unknown): CompatEvent | null {
-  const row = rec(input)
-  if (!row) return null
-  const type = row.type
-  if (typeof type !== "string" || !kinds.has(type as CompatEvent["type"])) return null
-  const properties = rec(row.properties)
-  if (!properties) return null
-  return row as CompatEvent
+  return isCompatEvent(input) ? input : null
 }
 
 export function eventSessionId(event: CompatEvent): string | undefined {
@@ -239,8 +237,8 @@ export function messageUpdated(info: EventMessageUpdated["properties"]["info"]):
 }
 
 export function buildUserPromptParts(sessionID: string, messageID: string, parts: unknown[]): CompatPart[] {
-  return parts.map((part, index) => {
-    const row = rec(part) ?? {}
+  return parts.map((part, index): CompatPart => {
+    const row = asRecord(part) ?? {}
     const id = typeof row.id === "string" ? row.id : `${messageID}-part-${index}`
     if (row.type === "text") {
       return { id, sessionID, messageID, type: "text", text: typeof row.text === "string" ? row.text : "" }
@@ -255,7 +253,7 @@ export function buildUserPromptParts(sessionID: string, messageID: string, parts
       }
     }
     return { id, sessionID, messageID, type: "text", text: JSON.stringify(part), synthetic: true }
-  }) as CompatPart[]
+  })
 }
 
 export function messagePartUpdated(part: CompatPart): EventMessagePartUpdated {

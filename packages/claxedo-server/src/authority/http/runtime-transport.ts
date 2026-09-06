@@ -7,6 +7,7 @@ import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
 import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
+import { asRecord } from "../../platform/json/index"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
   const url = new URL(path, "http://workspace-runtime.local")
@@ -16,7 +17,7 @@ export function runtimePath(path: string, query?: Record<string, string | undefi
   return `${url.pathname}${url.search}`
 }
 
-export async function verifiedRuntimeJson<T>(
+export async function verifiedRuntimeJson(
   services: ControlPlaneServices,
   options: ControlPlaneHttpOptions,
   input: {
@@ -28,21 +29,26 @@ export async function verifiedRuntimeJson<T>(
     path: string
   },
 ) {
-  const health = await runtimeJson<Record<string, unknown>>(services, options, {
+  const health = asRecord(await runtimeJson(services, options, {
     ...input,
     path: WORKSPACE_RUNTIME_IDENTITY_PATH,
-  })
-  if (txt(health.workspaceId) !== input.workspaceId) {
+  }))
+  if (txt(health?.workspaceId) !== input.workspaceId) {
     throw new ControlPlaneProtocolError(
       409,
       "workspace_runtime_mismatch",
       "Workspace runtime identity does not match requested workspace",
     )
   }
-  return await runtimeJson<T>(services, options, input)
+  return await runtimeJson(services, options, input)
 }
 
-export async function runtimeJson<T>(
+/**
+ * The parsed body, as `unknown`. Every caller either wants a record (and reaches
+ * it through `asRecord`) or passes the value straight to a schema, so the
+ * caller-chosen `<T>` this used to carry only asserted a shape nobody checked.
+ */
+export async function runtimeJson(
   services: ControlPlaneServices,
   options: ControlPlaneHttpOptions,
   input: {
@@ -58,7 +64,7 @@ export async function runtimeJson<T>(
     ...input,
     init: { headers: { accept: "application/json" } },
   })
-  if (res.ok) return (await res.json()) as T
+  if (res.ok) return await res.json().catch(() => undefined)
   throw new ControlPlaneProtocolError(
     res.status,
     "workspace_runtime_pull_failed",

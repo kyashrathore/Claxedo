@@ -129,8 +129,9 @@ export function preparePersistedSessionRevocation(
   persistenceState.revokedScopes.set(scope, token)
   const isActive = () => persistenceState.revokedScopes.get(scope) === token
 
+  // Arrow property: the conversation registry re-exports this as `purgePersisted`.
   return {
-    async purge() {
+    purge: async () => {
       if (!storage || !isActive()) return
       const pending = [...persistenceState.pendingOperations]
         .filter(([key]) => conversationPersistenceKeyMatchesSession(key, sessionID, namespace))

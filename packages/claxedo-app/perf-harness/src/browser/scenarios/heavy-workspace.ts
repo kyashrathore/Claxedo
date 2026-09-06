@@ -67,14 +67,24 @@ async function readHeavyWorkspaceScrollDiagnostic(page: Page) {
     // Under disposal the Review body (and its scroll element) is unmounted
     // while another workspace tab is active; the workspace root carries the
     // same diagnostic for exactly that state. Prefer the live scroll element.
-    const scroll = document.querySelector<HTMLElement>(
+    const scroll = document.querySelector<ReviewScrollElement>(
       `[data-testid='workspace-panel-shell'] [data-testid='review-pane-root'] ${scrollSelector}`,
-    ) ?? document.querySelector<HTMLElement>(
+    ) ?? document.querySelector<ReviewScrollElement>(
       "[data-testid='workspace-panel-shell'] [data-testid='review-pane-root']",
     )
-    const diagnostic = scroll && (scroll as unknown as Record<string, unknown>).__claxedoReviewScrollDiagnostic
-    return typeof diagnostic === "function" ? diagnostic() : undefined
+    return scroll?.__claxedoReviewScrollDiagnostic?.()
   }, HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR)
+}
+
+/**
+ * The Review scroller, with the diagnostic hook the app attaches to it.
+ *
+ * An expando the product installs on the element, so it is described here on
+ * the element type this scenario queries rather than asserted out of the node
+ * at each read.
+ */
+type ReviewScrollElement = HTMLElement & {
+  __claxedoReviewScrollDiagnostic?: () => HeavyWorkspaceReviewObservation["scrollDiagnostic"]
 }
 
 export async function heavyWorkspaceReopen(
@@ -594,13 +604,10 @@ async function activateHeavyWorkspaceReview(
         )
         const root = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']") ?? [])
           .find(visible)
-        const scroll = root?.querySelector<HTMLElement>(scrollSelector)
+        const scroll = root?.querySelector<ReviewScrollElement>(scrollSelector)
         const semanticBody = !!scroll && visible(scroll)
         finalIdentity = identity()
-        const diagnostic = scroll && (scroll as unknown as Record<string, unknown>).__claxedoReviewScrollDiagnostic
-        scrollDiagnostic = typeof diagnostic === "function"
-          ? (diagnostic as () => HeavyWorkspaceReviewObservation["scrollDiagnostic"])()
-          : undefined
+        scrollDiagnostic = scroll?.__claxedoReviewScrollDiagnostic?.()
         const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
         if (panelVisible && activeReview && !semanticBody) blankFrames++
         const loading = semanticBody && !!root?.querySelector(

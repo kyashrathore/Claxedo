@@ -23,7 +23,9 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
   const [loading, setLoading] = createSignal(true)
   const [error, setError] = createSignal<string>()
   const [disconnected, setDisconnected] = createSignal(false)
-  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
+  // Only ids the user has toggled are present, so a read is `boolean | undefined`
+  // — declaring plain `boolean` made the `!!` below look redundant when it is not.
+  const [expanded, setExpanded] = createSignal<Record<string, boolean | undefined>>({})
   const [busy, setBusy] = createSignal<string>()
   const [sessionScan, setSessionScan] = createSignal<LocalDiagnostics.SessionMemoryScanResult>()
   const [sessionScanBusy, setSessionScanBusy] = createSignal(false)
@@ -709,14 +711,14 @@ function sourceTransition(
   previous: LocalDiagnostics.SourceStatus[] | undefined,
   next: LocalDiagnostics.SourceStatus[],
 ) {
-  if (!previous) return
+  if (!previous) return undefined
   const prior = new Map(previous.map((source) => [`${source.domain}:${source.source}`, source.state]))
   const changes = next.flatMap((source) => {
     const state = prior.get(`${source.domain}:${source.source}`)
     if (!state || state === source.state) return []
     return [`${source.source} on ${source.domain} changed from ${state} to ${source.state}`]
   })
-  if (changes.length === 0) return
+  if (changes.length === 0) return undefined
   return `Collector source update: ${changes.join("; ")}.`
 }
 

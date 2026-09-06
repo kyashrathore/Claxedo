@@ -34,7 +34,7 @@ describe("Agent Plugins client", () => {
   test("Refresh is a read-only catalog query and activation carries optimistic revision", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const request = async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url: String(input), init })
+      calls.push({ url: requestUrl(input), init })
       return Response.json(init?.method === "POST"
         ? { revision: 8, reconciliation: { state: "applied" } }
         : { revision: 7, supportedHarnesses: [], candidates: [], errors: [] })
@@ -46,7 +46,7 @@ describe("Agent Plugins client", () => {
 
     expect(calls[0]?.url).toBe("http://127.0.0.1:2593/api/claxedo/plugins/projects/project_1/refresh")
     expect(calls[1]?.url).toBe("http://127.0.0.1:2593/api/claxedo/plugins/activation")
-    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
+    expect(requestJson(calls[1]?.init)).toEqual({
       pluginInstanceId: "source/plugin",
       harnessIds: ["codex"],
       choice: true,
@@ -112,7 +112,7 @@ describe("Agent Plugins client", () => {
     const api = agentPluginApi({
       baseUrl: "http://127.0.0.1:2593",
       request: async (input) => {
-        calls.push(String(input))
+        calls.push(requestUrl(input))
         return Response.json({ name: "search", description: "Search the docs", markdown: "# Search\n" })
       },
     })
@@ -204,3 +204,17 @@ describe("withCurrentRevision", () => {
     expect(isAgentPluginRevisionConflict(new Error("moved"))).toBe(false)
   })
 })
+
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

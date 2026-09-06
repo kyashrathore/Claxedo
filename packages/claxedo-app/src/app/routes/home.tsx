@@ -1,5 +1,5 @@
 // Claxedo keeps the home override for hosted project creation and loopback project ensure.
-import { createMemo, For, Match, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
@@ -17,6 +17,16 @@ import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import type { ClaxedoProject } from "@/platform/api/claxedo-api-types"
+
+/**
+ * When a project was last touched, or `undefined` for one whose source carries
+ * no timestamps at all (the embedded engine's project payload has none). Such a
+ * project still opens; it just sorts last and shows no "when".
+ */
+function projectActivityTime(project: ClaxedoProject) {
+  return project.time?.updated ?? project.time?.created
+}
 
 export default function Home() {
   const queryOptions = useQueryOptions()
@@ -31,7 +41,7 @@ export default function Home() {
   const homedir = createMemo(() => pathQuery.data?.home ?? "")
   const recent = createMemo(() => {
     return (projectsQuery.data ?? [])
-      .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+      .toSorted((a, b) => (projectActivityTime(b) ?? 0) - (projectActivityTime(a) ?? 0))
       .slice(0, 5)
   })
 
@@ -83,9 +93,11 @@ export default function Home() {
                     onClick={() => openProject(project.worktree, project)}
                   >
                     {project.worktree.replace(homedir(), "~")}
-                    <div class="text-14-regular text-text-weak">
-                      {formatRelativeTime(project.time.updated ?? project.time.created)}
-                    </div>
+                    <Show when={projectActivityTime(project)}>
+                      {(time) => (
+                        <div class="text-14-regular text-text-weak">{formatRelativeTime(time())}</div>
+                      )}
+                    </Show>
                   </Button>
                 )}
               </For>

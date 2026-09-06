@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 export function transcriptText(messages: unknown[]) {
   return messages.flatMap((message) => readableTranscriptText(message)).filter(Boolean).join("\n\n")
 }
@@ -5,11 +6,11 @@ export function transcriptText(messages: unknown[]) {
 function readableTranscriptText(value: unknown): string[] {
   if (typeof value === "string") return value.trim() ? [value.trim()] : []
   if (Array.isArray(value)) return value.flatMap(readableTranscriptText)
-  if (!value || typeof value !== "object") return []
-  const record = value as Record<string, unknown>
-  if (typeof record.text === "string") return readableTranscriptText(record.text)
-  if (typeof record.content === "string" || Array.isArray(record.content)) return readableTranscriptText(record.content)
-  if (record.message) return readableTranscriptText(record.message)
+  const row = asRecord(value)
+  if (!row) return []
+  if (typeof row.text === "string") return readableTranscriptText(row.text)
+  if (typeof row.content === "string" || Array.isArray(row.content)) return readableTranscriptText(row.content)
+  if (row.message) return readableTranscriptText(row.message)
   return []
 }
 
@@ -23,7 +24,7 @@ export async function openSubagentTranscript(
   observation: SubagentObservation,
 ): Promise<OpenedSubagentTranscript | undefined> {
   const transcript = observation.transcript
-  if (transcript?.kind !== "file" || !transcript.ref) return
+  if (transcript?.kind !== "file" || !transcript.ref) return undefined
   return await registrar?.open?.({ parentSessionId, handle: transcript.ref })
 }
 
@@ -61,6 +62,7 @@ export function subagentOutcome(observation: SubagentObservation) {
   if (observation.status === "killed" || observation.status === "interrupted") {
     return { status: "cancelled" as const, completedAt, reason: observation.status }
   }
+  return undefined
 }
 import type { SubagentObservation } from "../../subagent-admission"
 import type { SdkRuntimeTranscriptRegistrar } from "./sdk-runtime-driver"

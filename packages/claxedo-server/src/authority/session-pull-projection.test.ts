@@ -25,6 +25,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
 
 import { pullControlSession, pullControlSessionMessages } from "./http/session-pull"
 import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
+import { fetchUrl } from "../test-support/fetch-calls"
 
 const originalFetch = globalThis.fetch
 
@@ -111,7 +112,7 @@ function stubHostedTransport(svc: ControlPlaneServices, runtime: (path: string) 
     getRelayEndpoint: vi.fn(async () => "https://relay.example.test"),
   } as never
   const fetch = vi.fn(async (input: string | URL | Request) => {
-    const url = String(input)
+    const url = fetchUrl(input)
     const suffix = url.replace("https://relay.example.test/workspaces/ws_1", "")
     return runtime(suffix)
   })

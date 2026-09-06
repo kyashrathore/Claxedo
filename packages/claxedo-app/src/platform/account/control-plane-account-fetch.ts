@@ -8,6 +8,8 @@
 import { authFetch } from "@/platform/api/api"
 import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
+import { recordOrEmpty } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body ?? null), {
@@ -20,7 +22,7 @@ function hostedErrorResponse(error: unknown): Response {
   const hosted = parseHostedHttpError(error)
   if (hosted) return jsonResponse(hosted.body ?? { message: hosted.detail }, hosted.status)
   return jsonResponse(
-    { error: { message: error instanceof Error ? error.message : String(error) } },
+    { error: { message: errorMessage(error) } },
     500,
   )
 }
@@ -37,12 +39,17 @@ function queryRecord(url: URL): Record<string, string> {
   return out
 }
 
+/** The three projection verbs the route pattern above can match. */
+function projectionAction(value: string | undefined) {
+  return value === "register" || value === "checkpoint" || value === "repair" ? value : undefined
+}
+
 async function readJsonBody(input: RequestInfo | URL, init?: RequestInit): Promise<Record<string, unknown>> {
   const source = input instanceof Request ? input.clone() : input
   const request = new Request(source, init)
   if (!request.body) return {}
   try {
-    return await request.json() as Record<string, unknown>
+    return recordOrEmpty(await request.json())
   } catch {
     return {}
   }
@@ -91,16 +98,14 @@ export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetc
       const projection = /^\/api\/control\/workspaces\/([^/]+)\/sessions\/([^/]+)\/(register|checkpoint|repair)$/.exec(
         url.pathname,
       )
-      if (projection && method === "POST") {
-        const action = projection[3] as "register" | "checkpoint" | "repair"
+      const action = projection ? projectionAction(projection[3]) : undefined
+      if (projection && action && method === "POST") {
         const body = await readJsonBody(input, init)
-        const opName = (
-          action === "register"
-            ? "session.projection.register"
-            : action === "checkpoint"
-              ? "session.projection.checkpoint"
-              : "session.projection.repair"
-        ) as HostedOperationName
+        const opName = action === "register"
+          ? "session.projection.register"
+          : action === "checkpoint"
+            ? "session.projection.checkpoint"
+            : "session.projection.repair"
         return jsonResponse(await runOp(opName, {
           workspaceId: decodeURIComponent(projection[1]),
           sessionId: decodeURIComponent(projection[2]),

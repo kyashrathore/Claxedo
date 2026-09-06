@@ -1,8 +1,11 @@
 export const GLOBAL_TAG = "global"
 export const GLOBAL_SHOW_TAG = "global:default"
 
+/** The attachment kinds a session can carry. The runtime list is what boundary parsers narrow against. */
+export const SESSION_ATTACHMENT_KINDS = ["review", "page"] as const
+
 export type SessionAttachment = {
-  kind: "review" | "page"
+  kind: (typeof SESSION_ATTACHMENT_KINDS)[number]
   targetID: string
 }
 

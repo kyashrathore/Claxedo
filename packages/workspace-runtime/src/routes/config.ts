@@ -6,6 +6,7 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { WorkspaceRuntimeManagementAuth, WorkspaceRuntimeManagementTarget } from "../management-auth"
 import { WorkspaceRuntimeRoutes } from "./manifest"
+import { isRecord as record, str } from "../json-value"
 
 const log = Log.create({ service: "config-route" })
 
@@ -36,6 +37,7 @@ export function requestedSessionHarness(req: { query(name: string): string | und
     if (!connectionId.trim()) throw new HTTPException(400, { message: "connectionId must not be empty" })
     return { id: connectionId, access: "connection" }
   }
+  return undefined
 }
 
 export type RuntimeCommandItem = {
@@ -91,39 +93,36 @@ type AuthCtx = {
 
 type AuthVerdict = { ok: true } | { ok: false; code: string; message: string; status: 401 | 403 }
 
-function record(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
-}
-
 function stringRecord(input: unknown): input is Record<string, string> {
   return record(input) && Object.values(input).every((item) => typeof item === "string")
 }
 
 function normalizeSelection(input: unknown): RuntimeHarnessSelection | undefined {
-  if (!record(input)) return
-  if (
-    input.kind === "native"
-    && typeof input.harnessId === "string"
-    && RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === input.harnessId)
-    && Object.keys(input).every((key) => key === "kind" || key === "harnessId")
-  ) return { kind: "native", harnessId: input.harnessId as RuntimeNativeHarnessId }
+  if (!record(input)) return undefined
+  if (input.kind === "native" && Object.keys(input).every((key) => key === "kind" || key === "harnessId")) {
+    // `find` over the canonical list yields the literal type; a membership test
+    // would leave a bare `string` and force an assertion.
+    const harnessId = RUNTIME_NATIVE_HARNESS_IDS.find((id) => id === input.harnessId)
+    if (harnessId) return { kind: "native", harnessId }
+  }
   if (
     input.kind === "connection"
     && typeof input.connectionId === "string"
     && input.connectionId.trim().length > 0
     && Object.keys(input).every((key) => key === "kind" || key === "connectionId")
   ) return { kind: "connection", connectionId: input.connectionId }
+  return undefined
 }
 
 function normalizeDescriptor(input: unknown): RuntimeConnectionDescriptor | undefined {
-  if (!record(input)) return
-  if (typeof input.connectionId !== "string" || !input.connectionId.trim()) return
-  if (typeof input.providerKey !== "string" || !input.providerKey.trim()) return
-  if (typeof input.configRevision !== "number" || !Number.isSafeInteger(input.configRevision) || input.configRevision < 1) return
-  if (typeof input.enabled !== "boolean" || !record(input.config)) return
-  if (input.secretRefs !== undefined && !stringRecord(input.secretRefs)) return
+  if (!record(input)) return undefined
+  if (typeof input.connectionId !== "string" || !input.connectionId.trim()) return undefined
+  if (typeof input.providerKey !== "string" || !input.providerKey.trim()) return undefined
+  if (typeof input.configRevision !== "number" || !Number.isSafeInteger(input.configRevision) || input.configRevision < 1) return undefined
+  if (typeof input.enabled !== "boolean" || !record(input.config)) return undefined
+  if (input.secretRefs !== undefined && !stringRecord(input.secretRefs)) return undefined
   const allowed = new Set(["connectionId", "providerKey", "configRevision", "enabled", "config", "secretRefs"])
-  if (Object.keys(input).some((key) => !allowed.has(key))) return
+  if (Object.keys(input).some((key) => !allowed.has(key))) return undefined
   return {
     connectionId: input.connectionId,
     providerKey: input.providerKey,
@@ -136,13 +135,21 @@ function normalizeDescriptor(input: unknown): RuntimeConnectionDescriptor | unde
 
 function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, unknown>> | undefined {
   if (input === undefined) return {}
-  if (!record(input)) return
+  if (!record(input)) return undefined
   const rows: Record<string, Record<string, unknown>> = {}
   for (const [harnessId, value] of Object.entries(input)) {
-    if (!isAgentHarnessId(harnessId) || !record(value)) return
+    if (!isAgentHarnessId(harnessId) || !record(value)) return undefined
     rows[harnessId] = value
   }
   return rows
+}
+
+/** One command entry as the wire may carry it, or `undefined` when malformed. */
+function normalizeCommand(input: unknown): RuntimeCommandItem | undefined {
+  if (!record(input)) return undefined
+  const name = str(input.name)
+  const content = str(input.content)
+  return name !== undefined && content !== undefined ? { name, content } : undefined
 }
 
 const RUNTIME_SNAPSHOT_KEYS = new Set([
@@ -163,30 +170,45 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
     || !record(input.mcp)
     || !Array.isArray(input.connections)
     || !stringRecord(input.auth)
-  ) return
+  ) return undefined
   // Unknown fields are rejected rather than silently dropped: a producer that
   // sends a field this runtime does not model would otherwise believe it took.
-  if (Object.keys(input).some((key) => !RUNTIME_SNAPSHOT_KEYS.has(key))) return
-  const connections = input.connections.map(normalizeDescriptor)
-  if (connections.some((row) => !row)) return
-  const ids = connections.map((row) => row!.connectionId)
-  if (new Set(ids).size !== ids.length) return
+  if (Object.keys(input).some((key) => !RUNTIME_SNAPSHOT_KEYS.has(key))) return undefined
+  // Collected instead of mapped-then-asserted, so the array's element type comes
+  // from the validator rather than from a claim about it.
+  const connections: RuntimeConnectionDescriptor[] = []
+  for (const row of input.connections) {
+    const descriptor = normalizeDescriptor(row)
+    if (!descriptor) return undefined
+    connections.push(descriptor)
+  }
+  const ids = connections.map((row) => row.connectionId)
+  if (new Set(ids).size !== ids.length) return undefined
   const defaultHarness = input.defaultHarness === undefined ? undefined : normalizeSelection(input.defaultHarness)
-  if (input.defaultHarness !== undefined && !defaultHarness) return
-  if (defaultHarness?.kind === "connection" && !connections.some((row) => row!.connectionId === defaultHarness.connectionId)) return
+  if (input.defaultHarness !== undefined && !defaultHarness) return undefined
+  if (defaultHarness?.kind === "connection" && !connections.some((row) => row.connectionId === defaultHarness.connectionId)) return undefined
   const harnessLaunch = normalizeHarnessLaunch(input.harnessLaunch)
-  if (!harnessLaunch) return
-  if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return
-  if (input.commands !== undefined && (!Array.isArray(input.commands) || !input.commands.every((row) => record(row) && typeof row.name === "string" && typeof row.content === "string"))) return
+  if (!harnessLaunch) return undefined
+  if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return undefined
+  let commands: RuntimeCommandItem[] | undefined
+  if (input.commands !== undefined) {
+    if (!Array.isArray(input.commands)) return undefined
+    commands = []
+    for (const row of input.commands) {
+      const command = normalizeCommand(row)
+      if (!command) return undefined
+      commands.push(command)
+    }
+  }
   return {
     version: 3,
     mcp: input.mcp,
-    connections: connections as RuntimeConnectionDescriptor[],
+    connections,
     ...(defaultHarness ? { defaultHarness } : {}),
     auth: input.auth,
     ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
-    ...(Array.isArray(input.commands) ? { commands: input.commands as RuntimeCommandItem[] } : {}),
+    ...(commands ? { commands } : {}),
   }
 }
 
@@ -254,7 +276,7 @@ export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promis
           },
         }, verdict.status)
       }
-      const raw = await boundedJsonBody<RuntimeSnapshot | null>(c, null)
+      const raw = await boundedJsonBody(c)
       const body = normalizeRuntimeSnapshot(raw)
       if (!body) {
         return c.json(errorBody("invalid_runtime_snapshot", "Invalid runtime snapshot"), 400)

@@ -466,7 +466,7 @@ test.describe("real cloud relay @core @tier-real", () => {
     scripted = undefined
   })
 
-  test.beforeEach(async ({}, testInfo) => {
+  test.beforeEach(async (_fixtures, testInfo) => {
     // Real relay + real tunnel + real engine boot: the first turn of a scenario
     // pays a genuine multi-second cost that a mocked lane never sees.
     testInfo.setTimeout(300_000)

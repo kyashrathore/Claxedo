@@ -48,7 +48,7 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
       if (!ws) return c.json([])
       const url = new URL("/agent", "http://sandbox-manager.local")
       url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
-      const agents = await sandboxJson<unknown[]>(
+      const agents = await sandboxJson(
         ws,
         `${url.pathname}${url.search}`,
         undefined,

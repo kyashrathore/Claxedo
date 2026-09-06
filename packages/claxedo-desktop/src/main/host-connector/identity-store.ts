@@ -3,7 +3,8 @@ import { join } from "node:path"
 
 import type { SafeStorageApi } from "../account/credential-store"
 import { secureStorageVerdict } from "../account/secure-storage"
-import type { HostConnectorBootstrapIdentity } from "./child-protocol"
+import { asRecord, readString } from "../../shared/json-read"
+import { isJsonWebKey, type HostConnectorBootstrapIdentity } from "./child-protocol"
 
 export type MachineIdentityFile = {
   read(): string | undefined
@@ -36,19 +37,12 @@ export type HostConnectorIdentityStoreResult =
   | { ok: true; identity?: HostConnectorBootstrapIdentity }
   | { ok: false; reason: "no-secure-storage"; detail: string }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-}
-
+/** The stored record must carry the PRIVATE half, or it cannot sign a beat. */
 function privateIdentity(value: unknown): HostConnectorBootstrapIdentity | undefined {
-  const input = record(value)
-  const jwk = record(input?.privateKeyJwk)
-  if (typeof input?.hostId !== "string" || !input.hostId || typeof jwk?.kty !== "string" || typeof jwk.d !== "string") {
-    return
-  }
-  return { hostId: input.hostId, privateKeyJwk: input.privateKeyJwk as JsonWebKey }
+  const hostId = readString(value, "hostId")
+  const privateKeyJwk = asRecord(value)?.privateKeyJwk
+  if (!hostId || !isJsonWebKey(privateKeyJwk) || typeof privateKeyJwk.d !== "string") return undefined
+  return { hostId, privateKeyJwk }
 }
 
 function secureBackend(input: { safeStorage: SafeStorageApi; platform: NodeJS.Platform }) {
@@ -86,7 +80,7 @@ export function loadHostConnectorIdentity(input: {
   } catch {
     return reject("could not be parsed")
   }
-  const recordValue = record(parsed)
+  const recordValue = asRecord(parsed)
   if (recordValue?.backend !== backend || typeof recordValue.ciphertext !== "string") {
     return reject(recordValue?.backend !== backend ? "backend-changed" : "has no ciphertext")
   }
@@ -99,7 +93,7 @@ export function loadHostConnectorIdentity(input: {
   }
   const identity = privateIdentity(secret)
   if (!identity) {
-    const candidate = record(secret)
+    const candidate = asRecord(secret)
     return reject(typeof candidate?.hostId === "string" ? "has no private key" : "has no host id")
   }
   return { ok: true, identity }

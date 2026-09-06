@@ -5,7 +5,7 @@ import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import { WorkspaceScope, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
   materializeClaxedoPublicCorpus,
@@ -85,8 +85,8 @@ describe("public OpenCode corpus materialization", () => {
       // the fixture's path to another SDK instance would validate the same bug.
       const runtimeModule = "../../../claxedo-server-core/src/opencode/sdk-runtime.ts"
       const { openCodeSdkRuntime, drainOpenCodeSdkRuntime } = (await import(runtimeModule)) as {
-        openCodeSdkRuntime(): OpenCodeRuntime
-        drainOpenCodeSdkRuntime(): Promise<void>
+        openCodeSdkRuntime: () => OpenCodeRuntime
+        drainOpenCodeSdkRuntime: () => Promise<void>
       }
       const dataDirectory = path.join(root, "state", "data")
       await withClaxedoDataDirectory(dataDirectory, async () => {
@@ -103,7 +103,7 @@ describe("public OpenCode corpus materialization", () => {
           exposure: loopbackWorkspaceRuntimeExposure(),
         })
         try {
-          const scope = authorizeWorkspace({ workspaceID: workspaceId, directory: target.workspaceDirectory })
+          const scope = WorkspaceScope.authorize({ workspaceID: workspaceId, directory: target.workspaceDirectory })
           expect((await sdk.sessions.get(scope, target.sessionId)).title).toBe(target.title)
           expect((await sdk.sessions.messages(scope, target.sessionId)).messages).toHaveLength(2)
           for (const query of ["view=latest-turn", "snapshot=1"]) {

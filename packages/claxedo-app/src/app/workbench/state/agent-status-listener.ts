@@ -14,6 +14,7 @@ import type { ClaxedoStateApi } from "./provider"
 import { contentScopeDir, type ContentMeta } from "./types"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 import { terminalAgentStatusFromEventType } from "@/features/terminal/core/terminal-agent-status"
+import { readField, readString } from "@/lib/record"
 
 type AgentLifecycleEvent = Extract<ClaxedoEvent, { type: "agent.lifecycle" }>
 
@@ -248,12 +249,11 @@ function useSessionStatusListener() {
 
   createEffect(() => {
     const unsub = globalSDK.event.listen((e) => {
-      // as-any: SDK event details are opaque, but session lifecycle events carry this known payload.
-      const event = e.details as unknown as { type: string; properties: Record<string, unknown> }
+      // SDK event details are opaque; this listener reads two frames out of them.
+      const type = readString(e.details, "type")
+      const sessionID = readString(readField(e.details, "properties"), "sessionID")
 
-      if (event.type === "session.idle") {
-        const { sessionID } = event.properties as { sessionID: string }
-
+      if (type === "session.idle" && sessionID) {
         const result = findSessionContent(state, sessionID)
         if (!result) return
 
@@ -265,10 +265,7 @@ function useSessionStatusListener() {
         }
       }
 
-      if (event.type === "session.error") {
-        const { sessionID } = event.properties as { sessionID?: string }
-        if (!sessionID) return
-
+      if (type === "session.error" && sessionID) {
         const result = findSessionContent(state, sessionID)
         if (!result) return
 
@@ -458,7 +455,7 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
         directory: relayWorkspaceId ? undefined : directory,
         request,
         resolveWorkspaceRuntime: ({ directory }) => resolveWorkspaceRuntime(directory, request),
-      }).json<Array<{ id: string }>>(
+      }).json(
         // A local workspace can still have a stable workspaceId. That identity
         // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`
         // exists at the relay edge, while the local runtime is addressed by
@@ -467,7 +464,13 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
         terminalPtyApiPath(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }),
         { headers: { Accept: "application/json" } },
       )
-      for (const pty of ptys) livePtyIds.add(pty.id)
+      // Only the ids matter here: this reconcile answers "which PTYs does the
+      // runtime still have", and a row without one cannot clear or keep an
+      // indicator either way.
+      for (const pty of Array.isArray(ptys) ? ptys : []) {
+        const id = readString(pty, "id")
+        if (id) livePtyIds.add(id)
+      }
     }
   } catch {
     clearAllAgentIndicators(state)

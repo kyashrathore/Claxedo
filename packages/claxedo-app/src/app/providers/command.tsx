@@ -8,9 +8,9 @@ import {
 import { CommandBusProvider, useCommandBus, useCommandBusOptional } from "@/app/integrations/command-bus-provider"
 import {
   legacyCommandTrigger,
+  legacyCommandTriggerPayload,
   legacyCommandTriggerType,
   type CommandTriggerCompatSource,
-  type LegacyCommandTriggerCommand,
 } from "@/app/integrations/compat-command-trigger"
 
 export * from "./command-palette"
@@ -48,8 +48,10 @@ function LegacyCommandBusBridge(props: { children: JSX.Element }): JSX.Element {
   const bus = useCommandBus()
   const command = useUpstreamCommand()
   createEffect(() => {
-    const unregister = bus.register<LegacyCommandTriggerCommand>(legacyCommandTriggerType, (event) => {
-      command.trigger(event.payload.id, event.payload.legacySource)
+    const unregister = bus.register(legacyCommandTriggerType, (event) => {
+      const payload = legacyCommandTriggerPayload(event)
+      if (!payload) return
+      command.trigger(payload.id, payload.legacySource)
     })
     onCleanup(unregister)
   })

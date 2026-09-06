@@ -43,6 +43,7 @@ export function resolvePiExecutable(env: NodeJS.ProcessEnv = process.env): strin
       /* Continue PATH discovery; an explicit path has only one candidate. */
     }
   }
+  return undefined
 }
 export function requirePiExecutable() {
   const binary = resolvePiExecutable()

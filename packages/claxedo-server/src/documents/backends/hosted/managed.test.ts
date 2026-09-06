@@ -16,8 +16,9 @@ import { createHostedDocumentIndex } from "./index"
 import type { DocumentIndexEntry } from "../../index-store"
 import { createHostedDocumentsBackend } from "./backend"
 import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { documentWorkspaceConformance } from "../../port-conformance"
-import type { DocumentEntry } from "../../port"
+import type { DocumentEntry, SnapshotID } from "../../port"
 import { MAX_SNAPSHOT_METADATA_BYTES } from "../../snapshot-pins"
 import { forgetHydratedSessionRuntime, hydrateSessionDocument, syncHydratedSessionDocuments } from "../../session-hydration"
 
@@ -58,6 +59,27 @@ function emulator() {
     },
   }
   return { store, objects, reads: () => reads }
+}
+
+/**
+ * The signed control-plane identity `agentOpen` seals into a document job.
+ *
+ * `isSealedControlPlaneAuth` in `backend.ts` re-checks `mode`, `subject`,
+ * `tokenIdentifier` and `issuer` when the job is reopened, because AES-GCM
+ * proves the bytes are ours but not that they came from a current build. A
+ * partial identity therefore does not fail at the call — it fails later, inside
+ * `runtimeWriteback`, as "Document job authority is corrupt".
+ */
+function signedAuth(): SignedControlPlaneAuth {
+  return {
+    mode: "signed",
+    token: "user-bearer",
+    user: {
+      subject: "user_1",
+      tokenIdentifier: "token_1",
+      issuer: "https://issuer.test",
+    },
+  }
 }
 
 function fixture() {
@@ -600,7 +622,7 @@ describe("hosted managed documents and session write-back", () => {
     const collecting = new Promise<void>((resolve) => {
       reached = resolve
     })
-    let candidate: string | undefined
+    let candidate: SnapshotID | undefined
     const workspace = createHostedManagedDocumentWorkspace({
       store: storage.store,
       maxSnapshots: 1,
@@ -619,7 +641,10 @@ describe("hosted managed documents and session write-back", () => {
       actor: { type: "user", id: "user" },
     })
     await collecting
-    await workspace.pinSnapshot(handle, candidate as never, "keep")
+    // The GC claim hook is what makes this a race at all; without it the pin
+    // below would run against no candidate and the test would pass vacuously.
+    if (!candidate) throw new Error("the snapshot GC claim hook never ran")
+    await workspace.pinSnapshot(handle, candidate, "keep")
     release()
     await writing
     expect((await workspace.listSnapshots(handle)).find((snapshot) => snapshot.id === candidate)?.pins).toEqual([
@@ -942,7 +967,7 @@ describe("hosted managed documents and session write-back", () => {
       env,
     )
     await backend.agentOpen!(indexed, "session_1", {
-      auth: { user: { subject: "user_1" } } as never,
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     await registerCapability!({ jti: capability.jti, jobExpiresAt })
@@ -1080,15 +1105,7 @@ describe("hosted managed documents and session write-back", () => {
       { markdown: "before", actor: { type: "user", id: "user" } },
     )
     await first.agentOpen!(entry, "session_1", {
-      auth: {
-        mode: "signed",
-        token: "user-bearer",
-        user: {
-          subject: "user_1",
-          tokenIdentifier: "token_1",
-          issuer: "https://issuer.test",
-        },
-      },
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     const second = createHostedDocumentsBackend(r2(storage), options)
@@ -1146,15 +1163,7 @@ describe("hosted managed documents and session write-back", () => {
     expect(new TextDecoder().decode(storage.objects.get(jobKey)!.body)).not.toContain("sealedAuth")
     vi.useRealTimers()
     await third.agentOpen!(entry, "session_dispose", {
-      auth: {
-        mode: "signed",
-        token: "user-bearer",
-        user: {
-          subject: "user_1",
-          tokenIdentifier: "token_1",
-          issuer: "https://issuer.test",
-        },
-      },
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     await third.runtimeDispose!(entry, {
@@ -1167,15 +1176,7 @@ describe("hosted managed documents and session write-back", () => {
     const disposed = [...storage.objects.entries()].find(([key]) => key.includes("session_dispose"))
     expect(new TextDecoder().decode(disposed![1].body)).not.toContain("sealedAuth")
     await third.agentOpen!(entry, "session_race", {
-      auth: {
-        mode: "signed",
-        token: "user-bearer",
-        user: {
-          subject: "user_1",
-          tokenIdentifier: "token_1",
-          issuer: "https://issuer.test",
-        },
-      },
+      auth: signedAuth(),
       origin: "https://control.test",
     })
     const raceKey = [...storage.objects.keys()].find((key) => key.includes("session_race"))!

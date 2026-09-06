@@ -5,6 +5,7 @@
  * without importing server.ts (which connects a live stdio transport as a
  * side effect of module load).
  */
+import { bool, record, records, text } from "./json"
 
 export type SessionMessage = {
   info?: { id?: string; role?: string; error?: { message?: string; data?: { message?: string } } | null }
@@ -14,6 +15,48 @@ export type SessionMessage = {
 const clean = (value: unknown) => {
   if (typeof value !== "string") return ""
   return value.trim()
+}
+
+// ---------------------------------------------------------------------------
+// Reading a message off the wire
+//
+// `SessionMessage` is entirely optional fields, so the old
+// `httpRequest<SessionMessage>` looked harmless — but it also accepted a string,
+// an array, or an error envelope and handed it on as a message. These parsers
+// produce the declared shape from anything, so the only thing a caller has to
+// handle is "no text yet", which it already handles.
+// ---------------------------------------------------------------------------
+
+function parseMessageError(value: unknown): NonNullable<NonNullable<SessionMessage["info"]>["error"]> | undefined {
+  const row = record(value)
+  if (!row) return undefined
+  const data = record(row.data)
+  return {
+    message: text(row.message),
+    ...(data ? { data: { message: text(data.message) } } : {}),
+  }
+}
+
+export function parseSessionMessage(value: unknown): SessionMessage {
+  const row = record(value)
+  if (!row) return {}
+  const info = record(row.info)
+  const parts = records(row.parts).map((part) => ({
+    type: text(part.type),
+    // Part text is passed through untrimmed: `messageText` trims, and a part
+    // whose text is only whitespace must stay distinguishable from one with no
+    // text field at all.
+    text: typeof part.text === "string" ? part.text : undefined,
+    ignored: bool(part.ignored),
+  }))
+  return {
+    ...(info ? { info: { id: text(info.id), role: text(info.role), error: parseMessageError(info.error) } } : {}),
+    ...(Array.isArray(row.parts) ? { parts } : {}),
+  }
+}
+
+export function parseSessionMessages(value: unknown): SessionMessage[] {
+  return Array.isArray(value) ? value.map((item) => parseSessionMessage(item)) : []
 }
 
 export const messageText = (message: SessionMessage) =>

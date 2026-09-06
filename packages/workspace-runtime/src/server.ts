@@ -176,9 +176,9 @@ export type WorkspaceRuntimeCorsOrigin = (
   exposure: WorkspaceRuntimeExposure,
 ) => string | undefined
 
-function loopbackCorsOrigin(origin: string) {
-  if (origin.startsWith("http://localhost:")) return origin
-  if (origin.startsWith("http://127.0.0.1:")) return origin
+function loopbackCorsOrigin(origin: string): string | undefined {
+  const loopback = origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")
+  return loopback ? origin : undefined
 }
 
 /**
@@ -280,7 +280,7 @@ type WorkspaceRuntimeDrainOptions = {
 
 type WorkspaceRuntimeShutdownReason = NodeJS.Signals | "unhandledRejection" | "uncaughtException"
 
-async function drainStep(errors: unknown[], run: () => unknown | Promise<unknown>) {
+async function drainStep(errors: unknown[], run: () => unknown) {
   try {
     await run()
   } catch (err) {
@@ -450,7 +450,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
 
   const app = new Hono()
 
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
+  // Kept on the object rather than destructured: both are closures over the
+  // app that `createNodeWebSocket` just built, and calling them through it
+  // keeps that ownership visible.
+  const nodeWebSocket = createNodeWebSocket({ app })
 
   app.use("*", async (c, next) => {
     const startedAt = performance.now()
@@ -611,7 +614,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   )
 
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
-  host.mount(app, { core: { upgradeWebSocket }, exposure: options.exposure! })
+  host.mount(app, { core: { upgradeWebSocket: nodeWebSocket.upgradeWebSocket }, exposure: options.exposure! })
 
   let disposal: Promise<void> | undefined
   const dispose = () => {
@@ -628,7 +631,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     disposal = host.dispose()
     return disposal
   }
-  return { app, host: { ...host, dispose }, dispose, injectWebSocket, upgradeWebSocket }
+  return {
+    app,
+    host: { ...host, dispose },
+    dispose,
+    injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) =>
+      nodeWebSocket.injectWebSocket(server),
+    upgradeWebSocket: nodeWebSocket.upgradeWebSocket,
+  }
 }
 
 export type WorkspaceRuntimeLifecycleOptions = {

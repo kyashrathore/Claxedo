@@ -42,7 +42,7 @@ describe("production rich editor Markdown parity", () => {
   })
 
   test("round-trips every repository document admitted by the detector with the production configuration", async () => {
-    for (const name of [...new Bun.Glob("**/*.md").scanSync({ cwd: docsDirectory })].sort()) {
+    for (const name of [...new Bun.Glob("**/*.md").scanSync({ cwd: docsDirectory })].sort((a, b) => a.localeCompare(b))) {
       const markdown = await Bun.file(resolve(docsDirectory, name)).text()
       const detected = detectMarkdown(markdown)
       if (detected.status !== "rich") continue

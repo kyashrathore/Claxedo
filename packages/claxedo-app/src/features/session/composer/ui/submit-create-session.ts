@@ -83,11 +83,14 @@ export function createCloudStartupController(input: {
     })
   }
 
+  // Arrow properties: the caller destructures these off the controller
+  // (`const { publish, clear, reportError } = cloudStartup`), so none of them
+  // may depend on `this`.
   return {
-    remember(state: Omit<CloudStartupState, "open">) {
+    remember: (state: Omit<CloudStartupState, "open">) => {
       lastState = state
     },
-    publish(status: string, message: string) {
+    publish: (status: string, message: string) => {
       if (!input.enabled) return
       lastState = {
         id: lastState?.id,
@@ -97,11 +100,11 @@ export function createCloudStartupController(input: {
       }
       publishState()
     },
-    clear() {
+    clear: () => {
       if (input.enabled) input.onCloudStartup?.()
       lastState = undefined
     },
-    reportError(err: unknown) {
+    reportError: (err: unknown) => {
       if (!input.enabled) return
       const message = input.errorMessage(err)
       lastState = {

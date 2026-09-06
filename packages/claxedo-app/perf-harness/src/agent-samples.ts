@@ -1,5 +1,6 @@
-import type { AgentAppProfile, AgentAppScenario } from "./agent-driver-contract"
-import type { AgentMetricValue, PrimaryAgentAppMetric } from "./agent-metrics"
+import { AGENT_APP_PROFILES, AGENT_APP_SCENARIOS, type AgentAppProfile, type AgentAppScenario } from "./agent-driver-contract"
+import { PRIMARY_AGENT_APP_METRICS, readAgentMetricValue, type AgentMetricValue, type PrimaryAgentAppMetric } from "./agent-metrics"
+import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
 
 export type ClockEvidence = {
   sequence: number
@@ -115,6 +116,104 @@ export function driverClock(input: {
     observerMethod: input.observerMethod,
     startTimestamp: input.startTimestamp,
     endTimestamp: input.endTimestamp,
+  }
+}
+
+/**
+ * Read a sample that came back across the driver's JSON boundary.
+ *
+ * The inverse of `rawMetricSample` above, which is the only thing that produces
+ * these records. The vocabulary fields are checked against the same lists the
+ * request decoder uses, so a sample naming an unknown metric is rejected here
+ * rather than reaching a report and a baseline comparison.
+ */
+export function readRawMetricSample(value: unknown): RawMetricSample {
+  if (!isRecord(value)) throw new Error("raw metric sample must be an object")
+  const sampleId = textField(value, "sampleId")
+  const attemptId = textField(value, "attemptId")
+  const profile = AGENT_APP_PROFILES.find((entry) => entry === value.profile)
+  const scenario = AGENT_APP_SCENARIOS.find((entry) => entry === value.scenario)
+  const metric = PRIMARY_AGENT_APP_METRICS.find((entry) => entry === value.metric)
+  const evidence = recordsField(value, "evidence")
+  if (
+    value.schemaVersion !== 1 || sampleId === undefined || attemptId === undefined ||
+    !profile || !scenario || !metric || !evidence
+  ) {
+    throw new Error(`raw metric sample is incomplete: ${JSON.stringify(value.sampleId)}`)
+  }
+  return {
+    schemaVersion: 1,
+    sampleId,
+    attemptId,
+    profile,
+    scenario,
+    metric,
+    observation: readAgentMetricValue(value.observation),
+    evidence: evidence.map(readClockEvidence),
+    validity: readValidity(recordField(value, "validity")),
+  }
+}
+
+function readClockEvidence(value: Record<string, unknown>): ClockEvidence {
+  const sequence = numberField(value, "sequence")
+  const name = textField(value, "name")
+  const clockOwner = textField(value, "clockOwner")
+  const clockDomain = textField(value, "clockDomain")
+  const resolutionMs = numberField(value, "resolutionMs")
+  const observerMethod = textField(value, "observerMethod")
+  const startTimestamp = numberField(value, "startTimestamp")
+  const endTimestamp = numberField(value, "endTimestamp")
+  if (
+    sequence === undefined || name === undefined || clockOwner === undefined || clockDomain === undefined ||
+    resolutionMs === undefined || observerMethod === undefined ||
+    startTimestamp === undefined || endTimestamp === undefined
+  ) {
+    throw new Error("clock evidence is missing a required field")
+  }
+  return { sequence, name, clockOwner, clockDomain, resolutionMs, observerMethod, startTimestamp, endTimestamp }
+}
+
+function readValidityCheckEvidence(value: Record<string, unknown>): ValidityCheckEvidence {
+  const check = textField(value, "check")
+  if (check === undefined || typeof value.passed !== "boolean") {
+    throw new Error("validity evidence requires a check and a verdict")
+  }
+  const mode = textField(value, "mode")
+  const expectedSha256 = textField(value, "expectedSha256")
+  const actualSha256 = textField(value, "actualSha256")
+  const expectedCount = numberField(value, "expectedCount")
+  const actualCount = numberField(value, "actualCount")
+  return {
+    check,
+    passed: value.passed,
+    ...(mode === undefined ? {} : { mode }),
+    ...(expectedSha256 === undefined ? {} : { expectedSha256 }),
+    ...(actualSha256 === undefined ? {} : { actualSha256 }),
+    ...(expectedCount === undefined ? {} : { expectedCount }),
+    ...(actualCount === undefined ? {} : { actualCount }),
+  }
+}
+
+function readValidity(value: Record<string, unknown> | undefined): RawMetricSample["validity"] {
+  const evidence = value && recordsField(value, "evidence")
+  if (!value || !evidence) throw new Error("raw metric samples require a validity record")
+  if (value.status === "valid") return { status: "valid", evidence: evidence.map(readValidityCheckEvidence) }
+  const failures = recordsField(value, "failures")
+  if (value.status !== "invalid" || !failures) {
+    throw new Error(`unsupported sample validity status: ${JSON.stringify(value.status)}`)
+  }
+  return {
+    status: "invalid",
+    evidence: evidence.map(readValidityCheckEvidence),
+    failures: failures.map((failure) => {
+      const code = textField(failure, "code")
+      const message = textField(failure, "message")
+      const rows = recordsField(failure, "evidence")
+      if (code === undefined || message === undefined || !rows) {
+        throw new Error("sample validity failure is missing a required field")
+      }
+      return { code, message, evidence: rows.map(readValidityCheckEvidence) }
+    }),
   }
 }
 

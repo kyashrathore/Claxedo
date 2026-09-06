@@ -2,42 +2,10 @@ import { deleteLease, getLease, leaseTransaction, listLeases, upsertLease } from
 import { applySandboxLeasePatch } from "@claxedo/sandbox-manager"
 import type { SandboxLeaseAcquireInput, SandboxLeaseAcquireResult, SandboxLeasePatch, SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { sandboxLeaseStatus } from "./lease-status"
-
-type StoredLeaseStatus =
-  | "pending"
-  | "acquiring"
-  | "starting"
-  | "ready"
-  | "unhealthy"
-  | "backoff"
-  | "failed"
-  | "stopping"
-  | "stopped"
-  | "destroyed"
-
-/**
- * Stored row status -> port status. Delegates to `sandboxLeaseStatus` so this
- * adapter and the supervisor-state compatibility layer cannot disagree.
- *
- * They previously diverged on `"stopping"`: this file fell through to
- * `"acquiring"` (coming UP) while sibling mapped it to `"stopped"` (going
- * DOWN) — opposite meanings for the same row. No writer emits `"stopping"`
- * today, so the split never fired, but two hand-maintained copies of one
- * conversion is how it would.
- */
-function status(input: StoredLeaseStatus): SandboxLease["status"] {
-  return sandboxLeaseStatus(input as Parameters<typeof sandboxLeaseStatus>[0])
-}
+import { sandboxLeaseRowStatus, sandboxLeaseStatus } from "./lease-status"
+import { leaseDriver } from "./lease-row"
 
 type StoredLease = NonNullable<ReturnType<typeof getLease>>
-
-function storedStatus(input: SandboxLease): StoredLeaseStatus {
-  if (input.status === "ready" || input.status === "stopped") return input.status
-  if (input.status === "unavailable") return input.nextRetryAt === undefined ? "failed" : "backoff"
-  if (input.status === "destroyed") return "destroyed"
-  return "acquiring"
-}
 
 function toSandboxLease(input: StoredLease): SandboxLease {
   return {
@@ -45,7 +13,7 @@ function toSandboxLease(input: StoredLease): SandboxLease {
     homeRegion: normalizeClaxedoRegion(input.home_region),
     driver: input.driver,
     epoch: input.epoch,
-    status: status(input.status),
+    status: sandboxLeaseStatus(input.status),
     retryCount: input.retry_count,
     createdAt: input.created_at,
     updatedAt: input.updated_at,
@@ -70,8 +38,8 @@ function write(input: SandboxLease, current?: StoredLease, options?: { lastHealt
     lease_id: input.hostId ?? current?.lease_id ?? `${input.workspaceId}:${input.epoch}`,
     home_region: input.homeRegion,
     epoch: input.epoch,
-    status: storedStatus(input),
-    driver: input.driver as never,
+    status: sandboxLeaseRowStatus(input),
+    driver: leaseDriver(input.driver),
     driver_resource_id: input.driverResourceId ?? null,
     driver_snapshot_id: current?.driver_snapshot_id ?? null,
     sandbox_id: input.sandboxId ?? null,
@@ -138,7 +106,7 @@ export function createSqliteLeaseStore(): SandboxLeaseStore {
     async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) {
       return leaseTransaction(() => {
         const current = getLease(workspaceId)
-        if (!current || current.epoch !== expectedEpoch) return
+        if (!current || current.epoch !== expectedEpoch) return undefined
         const next = applySandboxLeasePatch(toSandboxLease(current), patch, Date.now())
         write(next, current)
         return next
@@ -147,7 +115,7 @@ export function createSqliteLeaseStore(): SandboxLeaseStore {
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       return leaseTransaction(() => {
         const current = getLease(workspaceId)
-        if (!current || current.epoch !== expectedEpoch) return
+        if (!current || current.epoch !== expectedEpoch) return undefined
         const failedAt = Date.now()
         const next = {
           ...toSandboxLease(current),

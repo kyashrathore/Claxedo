@@ -31,7 +31,7 @@ async function main(){
     const cmd=[`RELAY_URL=${JSON.stringify(relay)}`,`HOST_ID="host_bench"`,`WORKSPACE_ID=${JSON.stringify(ws)}`,`LOCAL_URL="http://localhost:${port}"`,`HTT="$(cat /tmp/a.htt)"`,`nohup node /tmp/agent.cjs>/tmp/agent.log 2>&1 & echo ok`].join(" ")
     await sb.process.executeSessionCommand("a",{command:`bash -lc '${cmd}'`,runAsync:true})
     let reg=false
-    for(let t=0;t<20&&!reg;t++){await new Promise(r=>setTimeout(r,2000));const tl=await sb.process.executeCommand(`bash -lc 'cat /tmp/agent.log 2>/dev/null||true'`);if(/"type":"open"/.test(String(tl.result??tl.stdout??"")))reg=true}
+    for(let t=0;t<20&&!reg;t++){await new Promise(r=>setTimeout(r,2000));const tl=await sb.process.executeCommand(`bash -lc 'cat /tmp/agent.log 2>/dev/null||true'`);if(/"type":"open"/.test(tl.result))reg=true}
     const pv=await sb.getPreviewLink(port)
     manifest[i]={workspaceId:ws,hostId:"host_bench",port,sandboxId:id,directHttpUrl:pv.url,directWsUrl:pv.url.replace(/^http/,"ws"),previewToken:pv.token??null,registered:reg}
     console.error(`sandbox ${i} ${id} ws=${ws} registered=${reg}`)

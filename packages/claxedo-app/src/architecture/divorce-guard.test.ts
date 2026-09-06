@@ -27,6 +27,16 @@ function listSourceFiles(dir: string): string[] {
   })
 }
 
+/**
+ * Narrow parsed JSON without asserting. This guard deliberately imports nothing
+ * from the package it is guarding — including `@/lib/record`, which is the
+ * canonical reader everywhere else — so that a broken product module can never
+ * be the reason the divorce guard stops running.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 describe("upstream divorce guard", () => {
   test("configs no longer resolve anything against packages/app/src", () => {
     for (const config of ["vite.cloud.config.ts", "tsconfig.json", "vitest.config.ts"]) {
@@ -36,12 +46,10 @@ describe("upstream divorce guard", () => {
   })
 
   test("package.json declares no @opencode-ai/app dependency", () => {
-    const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as Record<
-      string,
-      Record<string, string> | unknown
-    >
+    const pkg: unknown = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8"))
+    if (!isRecord(pkg)) throw new Error("package.json is not an object")
     for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-      const deps = (pkg[section] ?? {}) as Record<string, string>
+      const deps = isRecord(pkg[section]) ? pkg[section] : {}
       const offenders = Object.keys(deps).filter((name) => name === UPSTREAM_PKG)
       expect(offenders).toEqual([])
     }

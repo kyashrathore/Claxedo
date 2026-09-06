@@ -18,12 +18,12 @@ import type { AgentProcessObserver } from "../../process-observer"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { AgentSessionBinding } from "./agent-session-index"
 import type { RuntimeEventRoute, ChildProjectionTarget } from "./child-event-routing"
-import type { AgentRuntimeStore } from "./runtime-store"
+import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
-export type SdkRuntimeStore = AgentRuntimeStore
+export type SdkRuntimeStore = AgentRuntimeStoreCore
 export type JsonRecord = Record<string, unknown>
 
 export type SdkRuntimeTranscriptRegistrar = {

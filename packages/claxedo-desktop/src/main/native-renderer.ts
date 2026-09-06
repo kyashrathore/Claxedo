@@ -17,7 +17,7 @@ export function createOneShotNativeRenderer(input: {
   validate?: (output: string) => boolean
   invalidOutputMessage?: string
 }) {
-  if (!input.path || !existsSync(input.path)) return
+  if (!input.path || !existsSync(input.path)) return undefined
 
   return (source: string) => {
     if (typeof source !== "string") return Promise.reject(new Error(`${input.name} source must be a string`))

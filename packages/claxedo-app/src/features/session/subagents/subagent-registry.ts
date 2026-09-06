@@ -218,19 +218,24 @@ export function createSubagentRegistry(): SubagentRegistry {
         flight = created
       }
 
-      const consumer = {} as HydrationConsumer
       let released = false
-      const release = () => {
-        if (released) return
-        released = true
-        options?.signal?.removeEventListener("abort", release)
-        flight.consumers.delete(consumer)
-        if (flight.consumers.size > 0 || hydrationInFlight.get(parentSessionId) !== flight) return
-        hydrationInFlight.delete(parentSessionId)
-        bumpHydrationEpoch(parentSessionId)
-        flight.controller.abort()
+      // Built complete rather than assembled from an asserted empty object: the
+      // consumer and its `release` are mutually recursive, and a property arrow
+      // closes over `consumer` at CALL time, so no placeholder is needed.
+      const consumer: HydrationConsumer = {
+        ...(options?.signal ? { signal: options.signal } : {}),
+        release: () => {
+          if (released) return
+          released = true
+          options?.signal?.removeEventListener("abort", release)
+          flight.consumers.delete(consumer)
+          if (flight.consumers.size > 0 || hydrationInFlight.get(parentSessionId) !== flight) return
+          hydrationInFlight.delete(parentSessionId)
+          bumpHydrationEpoch(parentSessionId)
+          flight.controller.abort()
+        },
       }
-      Object.assign(consumer, { signal: options?.signal, release })
+      const release = consumer.release
       flight.consumers.add(consumer)
       options?.signal?.addEventListener("abort", release, { once: true })
       if (options?.signal?.aborted) release()
@@ -244,14 +249,20 @@ export function createSubagentRegistry(): SubagentRegistry {
   }
 }
 
-function applyMutable<Field extends MutableField>(
-  entry: MutableEntry,
-  event: SubagentUpdatedEvent,
-  field: Field,
-) {
+function applyMutable(entry: MutableEntry, event: SubagentUpdatedEvent, field: MutableField) {
   const value = event[field]
   if (value === undefined || event.revision <= (entry.fieldRevisions[field] ?? 0)) return
-  entry[field] = value as MutableEntry[Field]
+  // Per-field assignment: `entry[field] = event[field]` is sound only when the key
+  // is a single literal, and writing through the union key needed an assertion
+  // that hid exactly that. The event and the entry declare the same type for each.
+  switch (field) {
+    case "mode": entry.mode = event.mode; break
+    case "status": entry.status = event.status; break
+    case "label": entry.label = event.label; break
+    case "subagentType": entry.subagentType = event.subagentType; break
+    case "description": entry.description = event.description; break
+    case "transcript": entry.transcript = event.transcript; break
+  }
   entry.fieldRevisions[field] = event.revision
 }
 
@@ -283,10 +294,10 @@ function applyStatus(
   entry.fieldRevisions.status = event.revision
 }
 
-function applyImmutable<Field extends ImmutableField>(
+function applyImmutable(
   entry: MutableEntry,
   event: SubagentUpdatedEvent,
-  field: Field,
+  field: ImmutableField,
   diagnostics: SubagentRegistryDiagnostic[],
 ) {
   const value = event[field]

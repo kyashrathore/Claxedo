@@ -1,5 +1,7 @@
 /** Provider-neutral authentication contracts for hosted control planes. */
 
+import { isJsonRecord, isNonEmptyString, isOneOf } from "../runtime/lib/json"
+
 export const AUTH_ADAPTERS = ["better-auth", "custom"] as const
 export const AUTH_CLIENT_KINDS = ["browser", "cli", "desktop"] as const
 export const AUTH_ASSURANCE_LEVELS = ["insufficient", "single-factor", "multi-factor", "phishing-resistant"] as const
@@ -248,36 +250,38 @@ export type ApplicationIdentityResolver = (
   request?: Request,
 ) => Promise<ApplicationIdentityResolution>
 
-function present(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function isOneOf<const T extends readonly string[]>(value: unknown, values: T): value is T[number] {
-  return typeof value === "string" && (values as readonly string[]).includes(value)
-}
-
 function invalidCredentials(): AuthenticationError {
   return new AuthenticationError(401, "invalid_credentials", "Authentication credential is invalid")
 }
 
-function exactStringArray(value: unknown, allowed?: readonly string[]): string[] {
+/** A non-empty array of unique, non-blank strings. */
+function exactStringArray(value: unknown): string[] {
   if (!Array.isArray(value) || value.length === 0) throw invalidCredentials()
   const result: string[] = []
   const seen = new Set<string>()
   for (const item of value) {
-    if (!present(item) || seen.has(item) || (allowed && !allowed.includes(item))) throw invalidCredentials()
+    if (!isNonEmptyString(item) || seen.has(item)) throw invalidCredentials()
     seen.add(item)
     result.push(item)
   }
   return result
 }
 
+/** The same, restricted to a closed set — and typed as that set's members. */
+function exactStringUnionArray<const Allowed extends readonly string[]>(
+  value: unknown,
+  allowed: Allowed,
+): Allowed[number][] {
+  const result: Allowed[number][] = []
+  for (const item of exactStringArray(value)) {
+    if (!isOneOf(item, allowed)) throw invalidCredentials()
+    result.push(item)
+  }
+  return result
+}
+
 function assertUniqueConfiguredStrings(value: readonly string[], message: string) {
-  if (value.length === 0 || value.some((entry) => !present(entry)) || new Set(value).size !== value.length) {
+  if (value.length === 0 || value.some((entry) => !isNonEmptyString(entry)) || new Set(value).size !== value.length) {
     throw new AuthenticationError(503, "auth_configuration_invalid", message)
   }
 }
@@ -286,7 +290,7 @@ function assertClientDescriptor(
   name: "browser" | "cli" | "desktop",
   value: { clientId: string; resource: string; scopes: readonly string[] },
 ) {
-  if (!present(value.clientId) || !present(value.resource)) {
+  if (!isNonEmptyString(value.clientId) || !isNonEmptyString(value.resource)) {
     throw new AuthenticationError(
       503,
       "auth_configuration_invalid",
@@ -301,9 +305,9 @@ function assertClientDescriptor(
 
 function assertNativeRevocationDescriptor(name: "cli" | "desktop", value: unknown, tokenEndpointOrigin: string) {
   if (
-    !isRecord(value) ||
+    !isJsonRecord(value) ||
     !isOneOf(value.protocol, ["rfc7009", "adapter-native"] as const) ||
-    !present(value.endpoint) ||
+    !isNonEmptyString(value.endpoint) ||
     !isExactHttpsUrl(value.endpoint) ||
     new URL(value.endpoint).origin !== tokenEndpointOrigin ||
     (value.protocol === "rfc7009" && value.tokenEndpointAuthMethod !== "none")
@@ -355,8 +359,8 @@ function isExactHttpsUrl(value: string) {
 function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
   if (
     !isOneOf(descriptor.adapter, AUTH_ADAPTERS) ||
-    !present(descriptor.deploymentId) ||
-    !present(descriptor.configurationVersion) ||
+    !isNonEmptyString(descriptor.deploymentId) ||
+    !isNonEmptyString(descriptor.configurationVersion) ||
     !isExactHttpsUrl(descriptor.issuer) ||
     !Number.isFinite(descriptor.expiresAt) ||
     descriptor.expiresAt <= now ||
@@ -385,7 +389,7 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
     const cookie = descriptor.browser.cookie
     if (
       descriptor.browser.credentialPolicy !== "reject-cookie-and-authorization" ||
-      !present(cookie?.name) ||
+      !isNonEmptyString(cookie?.name) ||
       !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(cookie.name) ||
       cookie.path !== "/" ||
       !
@@ -441,7 +445,7 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
 }
 
 function parseCommonClient(value: Record<string, unknown>) {
-  if (!present(value.id) || !present(value.resource)) throw invalidCredentials()
+  if (!isNonEmptyString(value.id) || !isNonEmptyString(value.resource)) throw invalidCredentials()
   return {
     id: value.id,
     resource: value.resource,
@@ -455,9 +459,9 @@ function parseVerifiedSession(
   now: number,
   maxFutureSkewMs: number,
 ): VerifiedAuthSession {
-  if (!isRecord(value)) throw invalidCredentials()
+  if (!isJsonRecord(value)) throw invalidCredentials()
   if (value.adapter !== descriptor.adapter || value.issuer !== descriptor.issuer) throw invalidCredentials()
-  if (!present(value.subject) || !present(value.sessionId)) throw invalidCredentials()
+  if (!isNonEmptyString(value.subject) || !isNonEmptyString(value.sessionId)) throw invalidCredentials()
   if (
     typeof value.authenticatedAt !== "number" ||
     !Number.isFinite(value.authenticatedAt) ||
@@ -466,7 +470,7 @@ function parseVerifiedSession(
   )
     throw invalidCredentials()
 
-  const methods = exactStringArray(value.methods, AUTHENTICATION_EVIDENCE_METHODS) as AuthenticationEvidenceMethod[]
+  const methods = exactStringUnionArray(value.methods, AUTHENTICATION_EVIDENCE_METHODS)
   const assurance =
     value.assurance === undefined
       ? "insufficient"
@@ -475,14 +479,14 @@ function parseVerifiedSession(
         : (() => {
             throw invalidCredentials()
           })()
-  if (!isRecord(value.client) || !isOneOf(value.client.kind, AUTH_CLIENT_KINDS)) throw invalidCredentials()
+  if (!isJsonRecord(value.client) || !isOneOf(value.client.kind, AUTH_CLIENT_KINDS)) throw invalidCredentials()
 
   const common = parseCommonClient(value.client)
   let client: AuthClientBinding
   if (value.client.kind === "browser") {
     if (
       value.client.tokenKind !== "browser-session" ||
-      !present(value.client.origin) ||
+      !isNonEmptyString(value.client.origin) ||
       !descriptor.browser.trustedOrigins.includes(value.client.origin)
     )
       throw invalidCredentials()
@@ -554,10 +558,12 @@ function assertUnambiguousCredential(request: Request, descriptor: AuthAdapterDe
   }
 }
 
-function resolveApplicationIdentity(result: ApplicationIdentityResolution) {
+function resolveApplicationIdentity(
+  result: ApplicationIdentityResolution,
+): Extract<ApplicationIdentityResolution, { state: "active" }> {
   switch (result.state) {
     case "active":
-      if (!present(result.userId) || !present(result.actorId)) {
+      if (!isNonEmptyString(result.userId) || !isNonEmptyString(result.actorId)) {
         throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
       }
       return result
@@ -568,6 +574,12 @@ function resolveApplicationIdentity(result: ApplicationIdentityResolution) {
     case "deleted":
       throw new AuthenticationError(403, "account_deleted", "Application account is deleted")
     case "unavailable":
+      throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+    default:
+      // `resolveIdentity` is supplied by the deployment, so a state outside the
+      // union can arrive at runtime. Falling out of the switch returned
+      // `undefined` and the caller read `.userId` off it — a TypeError instead
+      // of the 503 this failure actually is.
       throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
   }
 }

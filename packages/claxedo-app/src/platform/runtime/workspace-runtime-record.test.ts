@@ -109,7 +109,6 @@ describe("workspace runtime record", () => {
       }
     }
     host.window = {
-      ...host.window,
       location: host.window?.location ?? { pathname: "/" },
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",

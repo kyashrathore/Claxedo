@@ -1,6 +1,7 @@
 // Send-phase glue: wait for a still-provisioning worktree, fire the dispatch,
 // and roll back if anything throws. Owns the pending prompt entry for the
 // lifetime of one send.
+import { asRecord, readField } from "@/lib/record"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { dispatchPrompt } from "./dispatch"
 import { clearPendingPrompt, registerPendingPrompt, setPromptSessionStatus } from "./pending"
@@ -70,16 +71,15 @@ export function rollbackPromptDispatch(input: RollbackPromptDispatchContext) {
 }
 
 export function isPromptAdmissionConflict(error: unknown) {
-  const record = error && typeof error === "object" ? error as Record<string, unknown> : undefined
+  const record = asRecord(error)
   if (record?.code === PROMPT_ADMISSION_CONFLICT_CODE) return true
-  const data = record?.data && typeof record.data === "object" ? record.data as Record<string, unknown> : undefined
+  const data = asRecord(record?.data)
   if (data?.code === PROMPT_ADMISSION_CONFLICT_CODE) return true
   const candidates = [record?.responseBody, record?.message]
   return candidates.some((candidate) => {
     if (typeof candidate !== "string") return false
     try {
-      const body = JSON.parse(candidate) as { error?: { code?: unknown } }
-      return body.error?.code === PROMPT_ADMISSION_CONFLICT_CODE
+      return readField(asRecord(JSON.parse(candidate))?.error, "code") === PROMPT_ADMISSION_CONFLICT_CODE
     } catch {
       return false
     }

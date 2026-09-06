@@ -1,6 +1,8 @@
+import z from "zod"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { SaveRequest, SaveResponse } from "@/features/documents/state/persistence-controller"
+import { readField, readString } from "@/lib/record"
 
 export type DocumentSummary = {
   id: string
@@ -67,6 +69,83 @@ export type DocumentQuery = {
   archived?: "active" | "archived" | "all"
 }
 
+/**
+ * Wire schemas for the document shapes above.
+ *
+ * Every read here answers through `hostedControlCall`, which has two producers:
+ * the hosted operation's decoder in `HOSTED_OPERATIONS` — `array` or `object`,
+ * which proves the container and nothing about the fields — and a raw HTTP body.
+ * Neither is a `DocumentSummary` until something parses one. The
+ * `z.ZodType<…>` annotations tie each schema to the type it certifies, so a
+ * field added to one and not the other is a compile error.
+ *
+ * A declared-nullable field accepts a missing key as well as an explicit null:
+ * the two say the same thing about a document, and only one of the two
+ * transports bothers to send the key.
+ */
+const nullableString = z.string().nullable().optional().transform(value => value ?? null)
+
+const DocumentSummarySchema: z.ZodType<DocumentSummary> = z.object({
+  id: z.string(),
+  project_id: z.string(),
+  display_name: z.string(),
+  origin_kind: z.enum(["managed", "repository"]),
+  placement_kind: z.enum(["local", "hosted"]),
+  placement_id: z.string(),
+  managed_relative_path: nullableString,
+  repository_id: nullableString,
+  workspace_id: nullableString,
+  repository_relative_path: nullableString,
+  branch: nullableString,
+  status: z.string(),
+  session_id: nullableString,
+  archived_at: nullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+  last_opened_at: nullableString,
+  last_known_file_version: nullableString,
+})
+
+const DocumentContentSchema: z.ZodType<DocumentContent> = z.object({
+  markdown: z.string(),
+  version: z.string(),
+  modifiedAt: z.number(),
+})
+
+const DocumentAgentOpenSchema: z.ZodType<DocumentAgentOpen> = z.object({
+  document_id: z.string(),
+  display_name: z.string(),
+  path: z.string(),
+})
+
+const DocumentSnapshotSchema: z.ZodType<DocumentSnapshot> = z.object({
+  id: z.string(),
+  sha256: z.string(),
+  size: z.number(),
+  reason: z.string(),
+  actor: z.object({ type: z.enum(["user", "agent", "system"]), id: z.string() }),
+  sessionId: z.string().optional(),
+  createdAt: z.number(),
+  pins: z.array(z.string()),
+})
+
+const RuntimeConflictResolutionSchema = z.object({
+  path: z.string(),
+  preserved: z.string().optional(),
+  version: z.string(),
+})
+
+const ExportEnvelopeSchema = z.object({ bytesBase64: z.string() })
+
+/** `transitions` is loose here on purpose; `parseTransitions` settles it below. */
+const DocumentStatusRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+  position: z.number(),
+  transitions: z.union([z.array(z.string()), z.string()]),
+})
+
 export class DocumentApiError extends Error {
   constructor(
     readonly code: string,
@@ -92,23 +171,40 @@ function documentsUrl(input?: { id?: string; path?: string | string[]; query?: D
   return url
 }
 
-async function json<T>(response: Response): Promise<T> {
+/**
+ * The route body, unchecked.
+ *
+ * This used to hand back a caller-named `T` over `JSON.parse`, which meant the
+ * contract types above were asserted rather than established. The schemas do
+ * that now, in `documentCall`, where both transports meet.
+ */
+async function json(response: Response): Promise<unknown> {
   const text = await response.text()
-  if (response.ok) return JSON.parse(text) as T
-  const body = parseErrorBody(text)
-  throw new DocumentApiError(body.code, response.status, body.message)
+  if (!response.ok) {
+    const body = parseErrorBody(text)
+    throw new DocumentApiError(body.code, response.status, body.message)
+  }
+  return JSON.parse(text)
+}
+
+/**
+ * The documents error envelope, read once.
+ *
+ * Both transports send `{ error: … }`: the JSON routes send an object with
+ * `code`/`message`, the hosted control plane sends the code as a bare string.
+ * These were parsed in two places that disagreed on which half wins.
+ */
+function documentErrorFields(body: unknown, fallbackMessage: string) {
+  const error = readField(body, "error")
+  return {
+    code: readString(error, "code") || (typeof error === "string" ? error : "") || "document_request_failed",
+    message: readString(error, "message") || fallbackMessage,
+  }
 }
 
 function parseErrorBody(text: string) {
   try {
-    const body = JSON.parse(text) as { error?: { code?: unknown; message?: unknown } | string }
-    if (typeof body.error === "object" && body.error) {
-      return {
-        code: typeof body.error.code === "string" ? body.error.code : "document_request_failed",
-        message: typeof body.error.message === "string" ? body.error.message : text,
-      }
-    }
-    return { code: typeof body.error === "string" ? body.error : "document_request_failed", message: text }
+    return documentErrorFields(JSON.parse(text), text)
   } catch (error) {
     return { code: "document_request_failed", message: text || String(error) }
   }
@@ -123,31 +219,31 @@ function queryParams(query: DocumentQuery = {}) {
   }
 }
 
-async function request<T>(url: URL, init?: RequestInit) {
+async function request(url: URL, init?: RequestInit) {
   const headers = new Headers(init?.headers)
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
-  return json<T>(await authFetch(String(url), { ...init, headers }))
+  return json(await authFetch(String(url), { ...init, headers }))
 }
 
+/**
+ * One documents operation, over whichever transport is available, checked once.
+ *
+ * `parse` runs on the result rather than inside the fallback because the hosted
+ * branch needs it just as much: `HOSTED_OPERATIONS` proves `documents.get`
+ * answers *an object*, and every reader below wants a `DocumentSummary`.
+ */
 async function documentCall<T>(
   operation: Parameters<typeof hostedControlCall>[0],
   input: Record<string, unknown>,
-  fallback: () => Promise<T>,
+  fallback: () => Promise<unknown>,
+  parse: (raw: unknown) => T,
 ): Promise<T> {
   try {
-    return await hostedControlCall(operation, input, fallback)
+    return parse(await hostedControlCall(operation, input, fallback))
   } catch (error) {
     const hosted = parseHostedHttpError(error)
     if (hosted) {
-      const body = hosted.body as { error?: { code?: string; message?: string } | string } | null
-      const code = typeof body?.error === "object" && body.error?.code
-        ? body.error.code
-        : typeof body?.error === "string"
-          ? body.error
-          : "document_request_failed"
-      const message = typeof body?.error === "object" && body.error?.message
-        ? body.error.message
-        : hosted.detail
+      const { code, message } = documentErrorFields(hosted.body, hosted.detail)
       throw new DocumentApiError(code, hosted.status, message)
     }
     throw error
@@ -160,21 +256,24 @@ export const documentsApi = {
     return documentCall(
       "documents.list",
       queryParams({ ...query, archived }),
-      () => request<DocumentSummary[]>(documentsUrl({ query: { ...query, archived } })),
+      () => request(documentsUrl({ query: { ...query, archived } })),
+      raw => z.array(DocumentSummarySchema).parse(raw),
     )
   },
   get(id: string) {
     return documentCall(
       "documents.get",
       { id },
-      () => request<DocumentSummary>(documentsUrl({ id })),
+      () => request(documentsUrl({ id })),
+      raw => DocumentSummarySchema.parse(raw),
     )
   },
   content(id: string) {
     return documentCall(
       "documents.content.get",
       { id },
-      () => request<DocumentContent>(documentsUrl({ id, path: "content" })),
+      () => request(documentsUrl({ id, path: "content" })),
+      raw => DocumentContentSchema.parse(raw),
     )
   },
   async open(id: string): Promise<OpenDocument> {
@@ -185,71 +284,83 @@ export const documentsApi = {
     // behind everything the first one let through, roughly doubling the open
     // latency. The archived guard still runs before content is handed back; on
     // an archived document the concurrent content read is simply discarded.
-    const [summary, content] = await Promise.all([documentsApi.get(id), documentsApi.content(id)])
-    if (summary.archived_at) throw new DocumentApiError("document_archived", 410, "This document is archived.")
+    //
+    // `allSettled`, not `all`, is what makes that last sentence true: an
+    // archived document's content read is the one most likely to fail, and
+    // `Promise.all` would hand its rejection to the caller instead of the typed
+    // `document_archived`. Discarding the read means discarding its failure too.
+    const [summary, content] = await Promise.allSettled([documentsApi.get(id), documentsApi.content(id)])
+    if (summary.status === "rejected") throw summary.reason
+    if (summary.value.archived_at) throw new DocumentApiError("document_archived", 410, "This document is archived.")
+    if (content.status === "rejected") throw content.reason
     return {
       id,
-      displayName: summary.display_name,
-      summary,
-      ...content,
+      displayName: summary.value.display_name,
+      summary: summary.value,
+      ...content.value,
     }
   },
   agentOpen(id: string, sessionId: string) {
     return documentCall(
       "documents.agentOpen",
       { id, session_id: sessionId },
-      () => request<DocumentAgentOpen>(documentsUrl({ id, path: "agent-open" }), {
+      () => request(documentsUrl({ id, path: "agent-open" }), {
         method: "POST",
         body: JSON.stringify({ session_id: sessionId }),
       }),
+      raw => DocumentAgentOpenSchema.parse(raw),
     )
   },
   resolveRuntimeConflict(id: string, input: { sessionId: string; choice: "durable" | "draft" }) {
     return documentCall(
       "documents.runtimeConflictResolve",
       { id, session_id: input.sessionId, choice: input.choice },
-      () => request<{ path: string; preserved?: string; version: string }>(
+      () => request(
         documentsUrl({ id, path: ["runtime-conflict", "resolve"] }),
         {
           method: "POST",
           body: JSON.stringify({ session_id: input.sessionId, choice: input.choice }),
         },
       ),
+      raw => RuntimeConflictResolutionSchema.parse(raw),
     )
   },
   snapshots(id: string) {
     return documentCall(
       "documents.snapshots",
       { id },
-      () => request<DocumentSnapshot[]>(documentsUrl({ id, path: "snapshots" })),
+      () => request(documentsUrl({ id, path: "snapshots" })),
+      raw => z.array(DocumentSnapshotSchema).parse(raw),
     )
   },
   restoreSnapshot(id: string, snapshotId: string, expectedVersion: string) {
     return documentCall(
       "documents.snapshots.restore",
       { id, snapshotId, ifMatch: expectedVersion },
-      () => request<DocumentContent>(documentsUrl({ id, path: ["snapshots", snapshotId, "restore"] }), {
+      () => request(documentsUrl({ id, path: ["snapshots", snapshotId, "restore"] }), {
         method: "POST",
         headers: { "If-Match": expectedVersion },
         body: JSON.stringify({}),
       }),
+      raw => DocumentContentSchema.parse(raw),
     )
   },
   moveToRepository(id: string, destination: { workspaceId: string; path: string }) {
     return documentCall(
       "documents.moveToRepository",
       { id, workspace_id: destination.workspaceId, path: destination.path },
-      () => request<DocumentSummary>(documentsUrl({ id, path: "move-to-repository" }), {
+      () => request(documentsUrl({ id, path: "move-to-repository" }), {
         method: "POST",
         body: JSON.stringify({ workspace_id: destination.workspaceId, path: destination.path }),
       }),
+      raw => DocumentSummarySchema.parse(raw),
     )
   },
   async save(id: string, input: SaveRequest): Promise<SaveResponse> {
     const run = await signedAccountRun()
     if (run) {
       try {
-        const saved = await documentCall<DocumentContent>(
+        const saved = await documentCall(
           "documents.content.put",
           {
             id,
@@ -260,6 +371,7 @@ export const documentsApi = {
           async () => {
             throw new Error("unreachable")
           },
+          raw => DocumentContentSchema.parse(raw),
         )
         return { ok: true, version: saved.version }
       } catch (error) {
@@ -290,7 +402,7 @@ export const documentsApi = {
         current: { displayName: current.displayName, markdown: current.markdown },
       }
     }
-    const saved = await json<DocumentContent>(response)
+    const saved = DocumentContentSchema.parse(await json(response))
     return { ok: true, version: saved.version }
   },
   create(input: { projectId?: string; directory?: string; displayName: string; markdown?: string }) {
@@ -302,7 +414,7 @@ export const documentsApi = {
         ...(input.projectId ? { project_id: input.projectId } : {}),
         ...(input.directory ? { directory: input.directory } : {}),
       },
-      () => request<DocumentSummary>(documentsUrl(), {
+      () => request(documentsUrl(), {
         method: "POST",
         body: JSON.stringify({
           project_id: input.projectId,
@@ -311,6 +423,7 @@ export const documentsApi = {
           markdown: input.markdown ?? "",
         }),
       }),
+      raw => DocumentSummarySchema.parse(raw),
     )
   },
   createFromRepository(input: {
@@ -329,7 +442,7 @@ export const documentsApi = {
         ...(input.directory ? { directory: input.directory } : {}),
         ...(input.displayName ? { display_name: input.displayName } : {}),
       },
-      () => request<DocumentSummary>(documentsUrl({ path: "from-repo" }), {
+      () => request(documentsUrl({ path: "from-repo" }), {
         method: "POST",
         body: JSON.stringify({
           project_id: input.projectId,
@@ -339,6 +452,7 @@ export const documentsApi = {
           display_name: input.displayName,
         }),
       }),
+      raw => DocumentSummarySchema.parse(raw),
     )
   },
   async exportBytes(id: string) {
@@ -347,13 +461,14 @@ export const documentsApi = {
       { id },
       async () => {
         const response = await authFetch(String(documentsUrl({ id, path: "export" })))
-        if (!response.ok) return await json<never>(response)
+        if (!response.ok) return await json(response)
         const bytes = new Uint8Array(await response.arrayBuffer())
         // Match the AccountPort envelope so the common path below is one decode.
         let binary = ""
         for (const byte of bytes) binary += String.fromCharCode(byte)
         return { bytesBase64: btoa(binary) }
       },
+      raw => ExportEnvelopeSchema.parse(raw),
     )
     const binary = atob(envelope.bytesBase64)
     const out = new Uint8Array(binary.length)
@@ -364,15 +479,25 @@ export const documentsApi = {
     const rows = await documentCall(
       "documents.statuses",
       queryParams(query),
-      () => request<Array<Omit<DocumentStatus, "transitions"> & { transitions: string[] | string }>>(
-        documentsUrl({ path: "statuses", query }),
-      ),
+      () => request(documentsUrl({ path: "statuses", query })),
+      raw => z.array(DocumentStatusRowSchema).parse(raw),
     )
     return rows.map((row) => ({
       ...row,
-      transitions: typeof row.transitions === "string" ? (JSON.parse(row.transitions) as string[]) : row.transitions,
+      transitions: parseTransitions(row.transitions),
     }))
   },
 }
 
 export type DocumentsApi = typeof documentsApi
+
+/**
+ * `transitions` arrives either as a JSON array or as the JSON TEXT of one,
+ * depending on whether the row came back through the control plane's
+ * pass-through or straight from SQLite.
+ */
+function parseTransitions(value: string[] | string): string[] {
+  if (typeof value !== "string") return value
+  const parsed: unknown = JSON.parse(value)
+  return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []
+}

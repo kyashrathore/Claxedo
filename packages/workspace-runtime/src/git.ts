@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { runtimeEnvText } from "./env"
+import { rec } from "./json-value"
 
 export const GIT_TIMEOUT_MS = 10_000
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024
@@ -75,7 +76,8 @@ export function createBoundedGit(options: BoundedGitOptions = {}) {
     })
     const result = await Promise.race([execution, timeout]).catch((err) => {
       if (err instanceof GitTimeoutError) throw err
-      if ((err as { killed?: boolean; signal?: NodeJS.Signals })?.killed || (err as { signal?: NodeJS.Signals })?.signal === "SIGTERM") {
+      const failure = rec(err)
+      if (failure?.killed === true || failure?.signal === "SIGTERM") {
         throw new GitTimeoutError(args)
       }
       throw err

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { PostHog } from "posthog-node"
 import { buildInstallProperties, reportInstall, resolveInstallId } from "./install-telemetry"
+import type { TelemetryEventSink } from "./telemetry"
 
 const roots: string[] = []
 
@@ -29,13 +29,13 @@ function scratch() {
 /** Records what a real PostHog client would have been asked to send. */
 function fakeClient() {
   const captured: Array<{ distinctId: string; event: string; properties: Record<string, unknown> }> = []
-  const client = {
-    capture: (payload: { distinctId: string; event: string; properties: Record<string, unknown> }) => {
-      captured.push(payload)
+  const client: TelemetryEventSink = {
+    capture: (payload) => {
+      captured.push({ distinctId: payload.distinctId, event: payload.event, properties: payload.properties ?? {} })
     },
     flush: () => Promise.resolve(),
   }
-  return { client: client as unknown as PostHog, captured }
+  return { client, captured }
 }
 
 describe("resolveInstallId", () => {
@@ -134,21 +134,21 @@ describe("reportInstall", () => {
 
   test("a throwing client never propagates", async () => {
     const dir = scratch()
-    const throwing = {
+    const throwing: TelemetryEventSink = {
       capture: () => {
         throw new Error("posthog exploded")
       },
       flush: () => Promise.resolve(),
-    } as unknown as PostHog
+    }
     expect(reportInstall(throwing, { userDataDir: dir, appVersion: "0.0.64", channel: "prod" })).resolves.toBeUndefined()
   })
 
   test("a rejecting flush never propagates", async () => {
     const dir = scratch()
-    const rejecting = {
+    const rejecting: TelemetryEventSink = {
       capture: () => {},
       flush: () => Promise.reject(new Error("network down")),
-    } as unknown as PostHog
+    }
     expect(reportInstall(rejecting, { userDataDir: dir, appVersion: "0.0.64", channel: "prod" })).resolves.toBeUndefined()
   })
 
@@ -161,10 +161,10 @@ describe("reportInstall", () => {
 
   test("a hung flush is bounded rather than awaited forever", async () => {
     const dir = scratch()
-    const hanging = {
+    const hanging: TelemetryEventSink = {
       capture: () => {},
       flush: () => new Promise<void>(() => {}),
-    } as unknown as PostHog
+    }
     // Resolves via the timeout race, not the flush.
     expect(reportInstall(hanging, { userDataDir: dir, appVersion: "0.0.64", channel: "prod" }, 5)).resolves.toBeUndefined()
   })

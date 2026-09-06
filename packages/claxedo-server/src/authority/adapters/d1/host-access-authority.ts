@@ -9,6 +9,7 @@ import type {
   WorkspaceAuthority,
   WorkspaceShareTarget,
 } from "@claxedo/server-core/platform/auth/authority"
+import { asRecord, parseJson } from "../../../platform/json/index"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -363,7 +364,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         last_seen_at: row.last_seen_at,
         expires_at: row.expires_at,
         workspace_ids: [],
-        acked_workspace_ids: JSON.parse(row.acked_workspace_ids) as string[],
+        acked_workspace_ids: storedStringList(row.acked_workspace_ids),
       }
       group.workspace_ids.push(row.workspace_id)
       groups.set(row.host_id, group)
@@ -1077,12 +1078,8 @@ export function hostEnrollmentHeartbeatPayloadV2(input: {
 
 async function verifiedPublicKey(input: string) {
   const value = requireText(input, "publicKey", 8_000)
-  let jwk: JsonWebKey
-  try {
-    jwk = JSON.parse(value) as JsonWebKey
-  } catch {
-    throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host public key")
-  }
+  const jwk = storedJsonWebKey(value)
+  if (!jwk) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host public key")
   if (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.x !== "string" || typeof jwk.y !== "string" || jwk.d) {
     throw new D1HostAccessAuthorityError("host_attestation_denied", "Host public key must be a public P-256 JWK")
   }
@@ -1095,12 +1092,8 @@ async function verifiedPublicKey(input: string) {
 }
 
 async function verifyHostSignature(input: { publicKey: string; payload: string; signature: string }) {
-  let jwk: JsonWebKey
-  try {
-    jwk = JSON.parse(input.publicKey) as JsonWebKey
-  } catch {
-    throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid stored host public key")
-  }
+  const jwk = storedJsonWebKey(input.publicKey)
+  if (!jwk) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid stored host public key")
   const signatureBytes = base64UrlBytes(requireText(input.signature, "signature", 2_000))
   const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"])
   if (!await crypto.subtle.verify(
@@ -1216,8 +1209,10 @@ function base64UrlBytes(input: string) {
 }
 
 async function sha256(value: Uint8Array) {
-  const bytes = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
-  const result = await crypto.subtle.digest("SHA-256", bytes)
+  // A fresh copy rather than a view: `crypto.subtle.digest` takes a BufferSource,
+  // and slicing the underlying buffer through `as ArrayBuffer` also asserted away
+  // the SharedArrayBuffer case the DOM type admits.
+  const result = await crypto.subtle.digest("SHA-256", Uint8Array.from(value))
   return Array.from(new Uint8Array(result), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
@@ -1259,4 +1254,24 @@ function isDenied(error: unknown) {
 function isUniqueFailure(error: unknown) {
   const text = String(error)
   return text.includes("UNIQUE constraint failed") || text.includes("constraint failed") && text.includes("unique")
+}
+
+
+/** A stored JSON array of ids; a column that is not one contributes no ids. */
+function storedStringList(raw: string): string[] {
+  try {
+    const parsed = parseJson(raw)
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []
+  } catch {
+    return []
+  }
+}
+
+/** A stored JWK, read as the record it is; the caller checks the key material itself. */
+function storedJsonWebKey(raw: string): JsonWebKey | undefined {
+  try {
+    return asRecord(parseJson(raw))
+  } catch {
+    return undefined
+  }
 }

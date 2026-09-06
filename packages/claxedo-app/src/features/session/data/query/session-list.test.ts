@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { requestUrl } from "@/lib/url"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import {
@@ -88,7 +89,7 @@ describe("session list query cache", () => {
         limit: 2,
       },
       request: async (input, init) => {
-        calls.push({ url: String(input), headers: new Headers(init?.headers) })
+        calls.push({ url: requestUrl(input), headers: new Headers(init?.headers) })
         return new Response(JSON.stringify(response()))
       },
     }))
@@ -114,7 +115,7 @@ describe("session list query cache", () => {
         limit: 2,
       },
       request: async (input) => {
-        calls.push(String(input))
+        calls.push(requestUrl(input))
         return new Response(JSON.stringify(response()))
       },
     }))
@@ -143,7 +144,7 @@ describe("session list query cache", () => {
         cursor: "cursor:1",
       },
       request: async (input) => {
-        calls.push(String(input))
+        calls.push(requestUrl(input))
         return new Response(JSON.stringify(response()))
       },
     }))
@@ -161,7 +162,7 @@ describe("session list query cache", () => {
         limit: 2,
       },
       request: async (input, init) => {
-        calls.push({ url: String(input), headers: new Headers(init?.headers) })
+        calls.push({ url: requestUrl(input), headers: new Headers(init?.headers) })
         return new Response(JSON.stringify(response()))
       },
     }))

@@ -1,12 +1,12 @@
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessDecision,
-  type SessionAccessStreamDecision,
+  type SessionAccessPolicyInput,
   type SessionAuthorityInput,
   type SessionTurnLeaseDecision,
-  type SessionTurnReleaseDecision,
   sessionAccessRequiresWrite,
 } from "./session-access-policy"
+import { bool, num, rec, str } from "./json-value"
 
 export const WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL"
 
@@ -28,11 +28,22 @@ export function remoteWorkspaceSessionAccessPolicy(
     timeoutMs?: number
   } = {},
 ) {
-  const request = async (
-    input: SessionAuthorityInput,
+  /**
+   * POST one authority action and let `decode` name its SUCCESS shape.
+   *
+   * Every failure — no URL, a missing turn id, a transport error, a non-2xx
+   * response, an unreadable success body — is an `AuthorityDenial`, and that is
+   * a member of all four decision types the policy hooks return. Only the
+   * success shape varies by action, so the caller supplies the decoder for it
+   * and the return type comes out exact. Previously one function returned the
+   * union of all four and nine call sites asserted their way back out of it.
+   */
+  const request = async <T>(
+    input: AuthorityRequestInput,
     action: AuthorityAction,
+    decode: (body: Record<string, unknown> | undefined) => T | AuthorityDenial,
     requestOptions?: AuthorityRequestOptions,
-  ): Promise<AuthorityDecision> => {
+  ): Promise<T | AuthorityDenial> => {
     const url = options.url?.trim()
     if (!url || (!input.credential && !requestOptions?.lease && !requestOptions?.leaseId)) {
       return denied(503, "session_authority_unavailable")
@@ -59,38 +70,38 @@ export function remoteWorkspaceSessionAccessPolicy(
         body: JSON.stringify(authorityRequestBody(input, action, requestOptions)),
         signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
       })
-      return await decodeAuthorityResponse(response, action, requestOptions?.stream === true)
+      if (!response.ok) return deniedFromResponse(response, await jsonBody(response))
+      return decode(await jsonBody(response))
     } catch {
       return denied(503, "session_authority_unavailable")
     }
   }
   const authorize = (input: SessionAuthorityInput) =>
-    request(input, sessionAccessRequiresWrite(input) ? "write" : "read") as Promise<SessionAccessDecision>
+    request(input, sessionAccessRequiresWrite(input) ? "write" : "read", decodeAllowed)
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: true,
     authority: {
       authorizeSessionRead: authorize,
       authorizeSessionWrite: authorize,
       authorizeSessionStream: (input, lease) =>
-        request(input, sessionAccessRequiresWrite(input) ? "write" : "read", {
+        request(input, sessionAccessRequiresWrite(input) ? "write" : "read", decodeStreamLease, {
           stream: true,
           ...(lease ? { lease } : {}),
-        }) as Promise<SessionAccessStreamDecision>,
-      registerSession: (input) => request(input, "register") as Promise<SessionAccessDecision>,
-      acquireTurn: (input) =>
-        request(input, "turn_acquire", { turnId: input.turnId }) as Promise<SessionTurnLeaseDecision>,
+        }),
+      registerSession: (input) => request(input, "register", decodeAllowed),
+      acquireTurn: (input) => request(input, "turn_acquire", decodeTurnLease, { turnId: input.turnId }),
       renewTurn: (input) =>
-        request(input, "turn_renew", {
+        request(input, "turn_renew", decodeTurnLease, {
           turnId: input.turnId,
           leaseId: input.leaseId,
           fencingToken: input.fencingToken,
-        }) as Promise<SessionTurnLeaseDecision>,
+        }),
       releaseTurn: (input) =>
-        request(input, "turn_release", {
+        request(input, "turn_release", decodeTurnRelease, {
           turnId: input.turnId,
           leaseId: input.leaseId,
           fencingToken: input.fencingToken,
-        }) as Promise<SessionTurnReleaseDecision>,
+        }),
     },
   })
   policy.authorizeHost = async (input) => {
@@ -107,32 +118,29 @@ export function remoteWorkspaceSessionAccessPolicy(
         signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
       })
       if (response.ok) return { allowed: true }
-      const body = (await response.json().catch(() => undefined)) as
-        { error?: { code?: unknown; message?: unknown } } | undefined
+      const error = rec((await jsonBody(response))?.error)
       const status = response.status === 401 ? 401 : response.status === 503 ? 503 : 403
-      return denied(
-        status,
-        typeof body?.error?.code === "string" ? body.error.code : "host_authority_denied",
-        typeof body?.error?.message === "string" ? body.error.message : undefined,
-      )
+      return denied(status, str(error?.code) ?? "host_authority_denied", str(error?.message))
     } catch {
       return denied(503, "session_authority_unavailable")
     }
   }
   policy.markRegistrationAmbiguous = (input) =>
-    request(input as SessionAuthorityInput, "registration_ambiguous", {
-      reason: input.reason,
-    }) as Promise<SessionAccessDecision>
+    request(input, "registration_ambiguous", decodeAllowed, { reason: input.reason })
   policy.beginRegistrationCompensation = (input) =>
-    request(input as SessionAuthorityInput, "compensation_begin", {
-      reason: input.reason,
-    }) as Promise<SessionAccessDecision>
+    request(input, "compensation_begin", decodeAllowed, { reason: input.reason })
   policy.completeRegistrationCompensation = (input) =>
-    request(input as SessionAuthorityInput, "compensation_complete", {
-      reason: input.reason,
-    }) as Promise<SessionAccessDecision>
+    request(input, "compensation_complete", decodeAllowed, { reason: input.reason })
   return policy
 }
+
+/**
+ * What a transport call actually reads: the session it is about plus the proof,
+ * cancellation and registration fields. Narrower than `SessionAuthorityInput`
+ * on purpose — the registration hooks carry no `actor`, and typing the request
+ * as if they did is what forced three `as SessionAuthorityInput` casts.
+ */
+type AuthorityRequestInput = SessionAccessPolicyInput & { sessionId: string }
 
 type AuthorityRequestOptions = {
   lease?: string
@@ -143,11 +151,72 @@ type AuthorityRequestOptions = {
   fencingToken?: number
 }
 
-type AuthorityDecision =
-  SessionAccessDecision | SessionAccessStreamDecision | SessionTurnLeaseDecision | SessionTurnReleaseDecision
+/**
+ * The refusal shape shared by every decision type: `SessionAccessDecision`,
+ * `SessionAccessStreamDecision`, `SessionTurnLeaseDecision` and
+ * `SessionTurnReleaseDecision` all include it verbatim.
+ */
+type AuthorityDenial = Exclude<SessionAccessDecision, { allowed: true }>
+
+/** The authority's JSON body, or `undefined` when there is not a readable one. */
+async function jsonBody(response: Response): Promise<Record<string, unknown> | undefined> {
+  return rec(await response.json().catch(() => undefined))
+}
+
+/** A plain grant: the action succeeded and carries no payload. */
+function decodeAllowed(): { allowed: true } {
+  return { allowed: true }
+}
+
+function decodeStreamLease(
+  body: Record<string, unknown> | undefined,
+): { allowed: true; lease: string; expiresAt: number } | AuthorityDenial {
+  const lease = str(body?.lease)
+  const expiresAt = num(body?.expiresAt)
+  if (lease === undefined || expiresAt === undefined) return denied(503, "session_authority_invalid_response")
+  return { allowed: true, lease, expiresAt }
+}
+
+function decodeTurnLease(
+  body: Record<string, unknown> | undefined,
+): Exclude<SessionTurnLeaseDecision, AuthorityDenial> | AuthorityDenial {
+  const turnId = str(body?.turnId)
+  const leaseId = str(body?.leaseId)
+  const fencingToken = body?.fencingToken
+  const acquiredAt = num(body?.acquiredAt)
+  const expiresAt = num(body?.expiresAt)
+  if (
+    turnId === undefined || leaseId === undefined || !positiveInteger(fencingToken)
+    || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
+  ) return denied(503, "session_authority_invalid_response")
+  return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt }
+}
+
+function decodeTurnRelease(body: Record<string, unknown> | undefined): { released: boolean } | AuthorityDenial {
+  const released = bool(body?.released)
+  return released === undefined ? denied(503, "session_authority_invalid_response") : { released }
+}
+
+/** Map a non-2xx authority response onto the refusal the caller should see. */
+function deniedFromResponse(response: Response, body: Record<string, unknown> | undefined): AuthorityDenial {
+  const error = rec(body?.error)
+  const status = response.status === 401 ? 401 : response.status === 409 ? 409 : response.status === 503 ? 503 : 403
+  return denied(
+    status,
+    str(error?.code)
+      ?? (status === 401
+        ? "session_authority_proof_invalid"
+        : status === 409
+          ? "session_turn_in_progress"
+          : status === 503
+            ? "session_authority_unavailable"
+            : "session_private"),
+    str(error?.message),
+  )
+}
 
 function authorityRequestBody(
-  input: SessionAuthorityInput,
+  input: AuthorityRequestInput,
   action: AuthorityAction,
   requestOptions?: AuthorityRequestOptions,
 ) {
@@ -164,63 +233,6 @@ function authorityRequestBody(
     ...(requestOptions?.leaseId ? { leaseId: requestOptions.leaseId } : {}),
     ...(requestOptions?.fencingToken !== undefined ? { fencingToken: requestOptions.fencingToken } : {}),
   }
-}
-
-async function decodeAuthorityResponse(
-  response: Response,
-  action: AuthorityAction,
-  stream: boolean,
-): Promise<AuthorityDecision> {
-  if (response.ok) {
-    if (action === "turn_release") {
-      const body = (await response.json().catch(() => undefined)) as { released?: unknown } | undefined
-      return typeof body?.released === "boolean"
-        ? { released: body.released }
-        : denied(503, "session_authority_invalid_response")
-    }
-    if (action === "turn_acquire" || action === "turn_renew") {
-      const body = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined
-      if (
-        typeof body?.turnId !== "string" ||
-        typeof body.leaseId !== "string" ||
-        !positiveInteger(body.fencingToken) ||
-        typeof body.acquiredAt !== "number" ||
-        typeof body.expiresAt !== "number" ||
-        body.expiresAt <= body.acquiredAt
-      )
-        return denied(503, "session_authority_invalid_response")
-      return {
-        allowed: true,
-        turnId: body.turnId,
-        leaseId: body.leaseId,
-        fencingToken: body.fencingToken,
-        acquiredAt: body.acquiredAt,
-        expiresAt: body.expiresAt,
-      }
-    }
-    if (!stream) return { allowed: true }
-    const body = (await response.json().catch(() => undefined)) as { lease?: unknown; expiresAt?: unknown } | undefined
-    if (typeof body?.lease !== "string" || typeof body.expiresAt !== "number") {
-      return denied(503, "session_authority_invalid_response")
-    }
-    return { allowed: true, lease: body.lease, expiresAt: body.expiresAt }
-  }
-  const body = (await response.json().catch(() => undefined)) as
-    { error?: { code?: unknown; message?: unknown } } | undefined
-  const status = response.status === 401 ? 401 : response.status === 409 ? 409 : response.status === 503 ? 503 : 403
-  return denied(
-    status,
-    typeof body?.error?.code === "string"
-      ? body.error.code
-      : status === 401
-        ? "session_authority_proof_invalid"
-        : status === 409
-          ? "session_turn_in_progress"
-          : status === 503
-            ? "session_authority_unavailable"
-            : "session_private",
-    typeof body?.error?.message === "string" ? body.error.message : undefined,
-  )
 }
 
 export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, string | undefined> = process.env) {

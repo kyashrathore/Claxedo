@@ -4,7 +4,7 @@ import type { SdkRuntimeStore } from "./sdk-runtime-driver"
 import { extractTextFromParts } from "./sdk-runtime-values"
 
 export function commitSdkAutomaticTitle(store: SdkRuntimeStore, id: string, agentSessionId: string, directory: string, parts: unknown[]) {
-  const session = store.getSession(id) as { title?: string | null } | null
+  const session = store.getSession(id)
   if (hasConcreteSessionTitle(session?.title)) return null
   const text = extractTextFromParts(parts)
   if (!text) return null

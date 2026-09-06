@@ -1,8 +1,8 @@
 import type {
   AgentPermission as PermissionRequest,
-  AgentPresentationSession as Session,
   AgentQuestion as QuestionRequest,
 } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoSession as Session } from "@/features/session/data/session-types"
 
 function sessionTreeRequest<T>(
   session: Session[],

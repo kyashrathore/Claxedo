@@ -10,6 +10,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/sources/routes"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { isRecord, stringField } from "../../platform/json/index"
 
 /**
  * The authority capabilities this store consumes.
@@ -33,10 +34,6 @@ type SourceRow = {
 }
 
 const COLUMNS = "id, authority, owner, repository, ref, added_at"
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
 
 function invalid(detail: string): never {
   throw new Error(`D1 returned an invalid Agent Plugins source ${detail}`)
@@ -191,16 +188,16 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
 
   private async scope(auth: SignedControlPlaneAuth): Promise<Scope> {
     const me = await this.authority.usersMe(auth)
-    if (!record(me)) invalid("principal")
+    if (!isRecord(me)) invalid("principal")
     const userId = text(me.user_id, "principal")
-    const orgId = typeof me.org_id === "string" && me.org_id ? me.org_id : await this.authority.resolveOrgId(auth)
+    const orgId = stringField(me, "org_id") || (await this.authority.resolveOrgId(auth))
     return { userId, orgId }
   }
 
   private async organizationAdmin(auth: SignedControlPlaneAuth, scope: Scope) {
     const orgs = await this.authority.listOrgs(auth)
     if (!Array.isArray(orgs)) invalid("organization list")
-    return orgs.some((row) => record(row)
+    return orgs.some((row) => isRecord(row)
       && row.org_id === scope.orgId
       && (row.role === "owner" || row.role === "admin"))
   }

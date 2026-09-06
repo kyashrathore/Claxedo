@@ -12,7 +12,6 @@ import { createCodexAppServerDriver } from "../codex/driver"
 import type { CodexGoalController } from "../codex/goal"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
-import { storeRows } from "../../test-utils/store-internals"
 import type { AgentRuntimeStreamEvent } from "../../index"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 
@@ -66,10 +65,10 @@ function projectedGoal() {
 describe("SdkRuntimeAdapter", () => {
   test.each(["prompt", "goal"] as const)("disposal awaits the full committing %s producer after its driver stops", async (kind) => {
     const root = mkdtempSync(path.join(tmpdir(), "sdk-shutdown-"))
-    const store = storeRows(createSqliteRuntimeStore({ root }))
+    const store = createSqliteRuntimeStore({ root })
     let closed = 0
-    const close = store.close.bind(store)
-    store.close = () => { closed++; close() }
+    const close = store.close?.bind(store)
+    store.close = () => { closed++; close?.() }
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })
     let start!: () => void
@@ -106,7 +105,7 @@ describe("SdkRuntimeAdapter", () => {
       await consume
       await shutdown
       expect(closed).toBe(1)
-      const reopened = storeRows(createSqliteRuntimeStore({ root }))
+      const reopened = createSqliteRuntimeStore({ root })
       try { expect(JSON.stringify(reopened.getMessages("session-1"))).toContain("driver shutdown tail") }
       finally { reopened.close?.() }
     } finally {
@@ -128,7 +127,7 @@ describe("SdkRuntimeAdapter", () => {
       updatedAt: 1,
     })
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         nativeGoal: {
@@ -168,12 +167,12 @@ describe("SdkRuntimeAdapter", () => {
       goal: { status: "paused" },
     })
     expect(order).toEqual(["stop", "abort"])
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("refuses to delete a live native Goal the provider would re-emit", async () => {
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         nativeGoal: {
@@ -188,14 +187,14 @@ describe("SdkRuntimeAdapter", () => {
       ok: false,
       status: "unsupported",
     })
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   // A native Goal lives in a provider process: after a restart the driver has
   // nothing to stop while the store still projects the Goal as `blocked`.
   // Clearing that projection is the only way it can leave the session.
   test.each(["stop", "delete"] as const)("%s clears a native Goal the driver lost across a restart", async (action) => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
     const runtime: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtime.push(event))
@@ -226,14 +225,14 @@ describe("SdkRuntimeAdapter", () => {
       ok: false,
       status: "not_found",
     })
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("deletes a live native Goal through a driver that can clear it at the provider", async () => {
     const order: string[] = []
     let live: ReturnType<typeof projectedGoal> | null = projectedGoal()
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         nativeGoal: {
@@ -268,18 +267,18 @@ describe("SdkRuntimeAdapter", () => {
     // first would let the next iteration re-report a Goal that is already gone.
     expect(order).toEqual(["stop", "delete"])
     await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toBeNull()
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("exposes one Goal resource per adapter rather than rebuilding it per access", async () => {
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({ ...minimalSdkRuntimeDriver(), nativeGoal: nativeGoalStub() }),
     })
 
     expect(adapter.goals).toBeDefined()
     expect(adapter.goals).toBe(adapter.goals)
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("forgets a deleted session's Goal publication so a reused id is not deduped away", async () => {
@@ -288,7 +287,7 @@ describe("SdkRuntimeAdapter", () => {
     eventHub.subscribeRuntime((event) => runtime.push(event))
     let host: SdkRuntimeDriverHost | undefined
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       eventHub,
       driver: (driverHost) => {
         host = driverHost
@@ -311,13 +310,13 @@ describe("SdkRuntimeAdapter", () => {
     // The dedupe entry is per session, so a session recreated under the same id
     // must publish its Goal again instead of having it swallowed forever.
     expect(goalUpdates()).toHaveLength(2)
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("applies the requested permission mode before the provider turn", async () => {
     const order: string[] = []
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         setPermissionMode: async (_sessionId, modeId) => {
@@ -340,11 +339,11 @@ describe("SdkRuntimeAdapter", () => {
     }, path.resolve("/repo"))) {}
 
     expect(order).toEqual(["mode:full-access", "turn"])
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("admits revisioned subagent observations and reuses one opaque child target across interaction edges", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
     const runtime: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtime.push(event))
@@ -417,11 +416,11 @@ describe("SdkRuntimeAdapter", () => {
     expect(child.agent_session_id).toBe("provider-child")
     expect(JSON.stringify(store.getMessages(session.id))).not.toContain("child-only")
     expect(JSON.stringify(store.getMessages(child.id))).toContain("child-only")
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("routes child compat output to the child store without yielding it in the parent stream", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
     const runtime: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtime.push(event))
@@ -481,13 +480,13 @@ describe("SdkRuntimeAdapter", () => {
       agentSessionId: "provider-child-thread",
       payload: { type: "text-delta", delta: "child-only text" },
     }))
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("adopts a requested deterministic Session without creating a second agent thread", async () => {
     let created = 0
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         createAgentSession: async () => ({ id: `thread-${++created}` }),
@@ -499,11 +498,11 @@ describe("SdkRuntimeAdapter", () => {
     await expect(adapter.createSession(path.resolve("/repo"), "Stable retry", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
     expect(created).toBe(1)
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test.each(["claude", "codex", "cursor"] as const)("%s native generates and persists a title after the first turn", async (type) => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new SdkRuntimeAdapter({
       store,
       driver: () => ({
@@ -538,17 +537,17 @@ describe("SdkRuntimeAdapter", () => {
         info: expect.objectContaining({ title: `fix ${type} native title` }),
       }),
     }))
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("requires a workspace directory at cwd-dependent boundaries", async () => {
     const item = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => minimalSdkRuntimeDriver(),
     })
 
     await expect(item.listPermissions(undefined as never)).rejects.toThrow("workspace directory is required")
-    item.dispose()
+    await item.dispose()
   })
 
   test("process death clears pending permissions, questions, active turns, and threads", () => {
@@ -616,11 +615,11 @@ describe("SdkRuntimeAdapter", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(goalController.turnQueues.size).toBe(0)
-    driver.dispose?.()
+    await driver.dispose?.()
   })
 
   test("explicit abort persists an interruption sentinel without emitting a session error", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     let started: (() => void) | undefined
     const running = new Promise<void>((resolve) => {
       started = resolve
@@ -663,7 +662,7 @@ describe("SdkRuntimeAdapter", () => {
       name: "MessageAbortedError",
       data: { message: "Aborted by user" },
     })
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("does not acknowledge an abort until the adapter busy lock is retired", async () => {
@@ -677,7 +676,7 @@ describe("SdkRuntimeAdapter", () => {
     })
     let turns = 0
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         runTurn: async () => {
@@ -719,11 +718,11 @@ describe("SdkRuntimeAdapter", () => {
     }
     expect(replacementEvents.map((event) => event.type)).not.toContain("session.error")
     expect(turns).toBe(2)
-    adapter.dispose()
+    await adapter.dispose()
   })
 
-  test("dispose aborts and closes active turns", () => {
-    const store = storeRows(createMemoryRuntimeStore())
+  test("dispose aborts and closes active turns", async () => {
+    const store = createMemoryRuntimeStore()
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "native-1" })
     let host!: SdkRuntimeDriverHost
     const item = new SdkRuntimeAdapter({
@@ -753,7 +752,7 @@ describe("SdkRuntimeAdapter", () => {
       reject: () => { rejected = true },
     })
 
-    item.dispose()
+    await item.dispose()
 
     expect(abort.signal.aborted).toBe(true)
     expect(closed).toBe(true)
@@ -765,7 +764,7 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("per-session config updates do not mutate the adapter-wide model", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const item = new SdkRuntimeAdapter({ store, driver: () => minimalSdkRuntimeDriver() })
     const session = await item.createSession(path.resolve("/work"))
 
@@ -780,7 +779,7 @@ describe("SdkRuntimeAdapter", () => {
       variant: null,
       agent: null,
     })
-    item.dispose()
+    await item.dispose()
   })
 })
 
@@ -788,7 +787,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
   /** The busy lock follows turn lifetime rather than consumer iteration lifetime. */
   function lockProbeAdapter(events: unknown[]) {
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: () => minimalSdkRuntimeDriver(),
     })
     const internals = adapter as unknown as {
@@ -862,7 +861,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
   })
 
   test("yields the provider error instead of a placeholder session.error", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new SdkRuntimeAdapter({
       store,
       driver: () => ({
@@ -906,6 +905,6 @@ describe("SdkRuntimeAdapter busy lock", () => {
         },
       },
     })
-    adapter.dispose()
+    await adapter.dispose()
   })
 })

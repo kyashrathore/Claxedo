@@ -84,87 +84,108 @@ export type DiagnosticsTransportMessage =
   | DiagnosticsOperationRequest
   | DiagnosticsOperationResult
 
+/**
+ * One named validator per message shape, in the same style as `binding()` and
+ * `descriptor()` below.
+ *
+ * These used to be inline in the parser, which then asserted `input as
+ * DiagnosticsOwnerEvent` on the way out — an assertion the checks above it had
+ * already earned but could not express, because `input` is a
+ * `Record<string, unknown>` and TypeScript does not accumulate per-property
+ * narrowings into a union member. Written as type predicates, the same checks
+ * ARE the proof, so the parser below carries no assertion at all.
+ */
+type OwnerEventOf<T extends DiagnosticsOwnerEvent["type"]> = Extract<DiagnosticsOwnerEvent, { type: T }>
+
+function ownerRegistered(input: unknown): input is OwnerEventOf<"owner-registered"> {
+  return (
+    record(input) &&
+    exact(input, ["type", "at", "binding", "descriptor"]) &&
+    timestamp(input.at) &&
+    binding(input.binding) &&
+    descriptor(input.descriptor)
+  )
+}
+
+function ownerUpdated(input: unknown): input is OwnerEventOf<"owner-updated"> {
+  return (
+    record(input) &&
+    exactOptional(input, ["type", "at", "binding", "ownerId", "ownerGeneration", "lifecycle"], ["pid"]) &&
+    timestamp(input.at) &&
+    binding(input.binding) &&
+    identifier(input.ownerId) &&
+    identifier(input.ownerGeneration) &&
+    oneOf(input.lifecycle, ["starting", "ready", "detached"]) &&
+    (input.pid === undefined || pid(input.pid))
+  )
+}
+
+function ownerExited(input: unknown): input is OwnerEventOf<"owner-exited"> {
+  return (
+    record(input) &&
+    exactOptional(
+      input,
+      ["type", "at", "binding", "ownerId", "ownerGeneration", "reason", "observedLifetimeMs"],
+      ["exitCode"],
+    ) &&
+    timestamp(input.at) &&
+    binding(input.binding) &&
+    identifier(input.ownerId) &&
+    identifier(input.ownerGeneration) &&
+    oneOf(input.reason, ["exited", "error", "timeout", "cancelled", "disposed", "detached"]) &&
+    timestamp(input.observedLifetimeMs) &&
+    (input.exitCode === undefined || integer(input.exitCode))
+  )
+}
+
+function operationRequest(input: unknown): input is DiagnosticsOperationRequest {
+  return (
+    record(input) &&
+    exact(input, ["type", "binding", "requestId", "ownerOperationId", "ownerGeneration", "operation", "identity"]) &&
+    binding(input.binding) &&
+    identifier(input.requestId) &&
+    identifier(input.ownerOperationId) &&
+    identifier(input.ownerGeneration) &&
+    oneOf(input.operation, ["stop", "kill"]) &&
+    identity(input.identity)
+  )
+}
+
+function operationResult(input: unknown): input is DiagnosticsOperationResult {
+  return (
+    record(input) &&
+    exact(input, ["type", "binding", "requestId", "result"]) &&
+    binding(input.binding) &&
+    identifier(input.requestId) &&
+    oneOf(input.result, [
+      "completed",
+      "owner-unavailable",
+      "operation-unavailable",
+      "identity-mismatch",
+      "operation-failed",
+      "duplicate-request",
+    ])
+  )
+}
+
 export function parseDiagnosticsTransportMessage(input: unknown):
   | { success: true; data: DiagnosticsTransportMessage }
   | { success: false; error: string } {
-  if (!record(input) || typeof input.type !== "string") return invalid()
-  if (input.type === "owner-registered") {
-    if (!exact(input, ["type", "at", "binding", "descriptor"])) return invalid()
-    if (!timestamp(input.at) || !binding(input.binding) || !descriptor(input.descriptor)) return invalid()
-    return valid(input as DiagnosticsOwnerEvent)
-  }
-  if (input.type === "owner-updated") {
-    if (!exactOptional(input, ["type", "at", "binding", "ownerId", "ownerGeneration", "lifecycle"], ["pid"])) {
+  if (!record(input)) return invalid()
+  switch (input.type) {
+    case "owner-registered":
+      return ownerRegistered(input) ? valid(input) : invalid()
+    case "owner-updated":
+      return ownerUpdated(input) ? valid(input) : invalid()
+    case "owner-exited":
+      return ownerExited(input) ? valid(input) : invalid()
+    case "owner-operation-request":
+      return operationRequest(input) ? valid(input) : invalid()
+    case "owner-operation-result":
+      return operationResult(input) ? valid(input) : invalid()
+    default:
       return invalid()
-    }
-    if (
-      !timestamp(input.at) ||
-      !binding(input.binding) ||
-      !identifier(input.ownerId) ||
-      !identifier(input.ownerGeneration) ||
-      !oneOf(input.lifecycle, ["starting", "ready", "detached"]) ||
-      (input.pid !== undefined && !pid(input.pid))
-    ) return invalid()
-    return valid(input as DiagnosticsOwnerEvent)
   }
-  if (input.type === "owner-exited") {
-    if (
-      !exactOptional(
-        input,
-        ["type", "at", "binding", "ownerId", "ownerGeneration", "reason", "observedLifetimeMs"],
-        ["exitCode"],
-      )
-    ) return invalid()
-    if (
-      !timestamp(input.at) ||
-      !binding(input.binding) ||
-      !identifier(input.ownerId) ||
-      !identifier(input.ownerGeneration) ||
-      !oneOf(input.reason, ["exited", "error", "timeout", "cancelled", "disposed", "detached"]) ||
-      !timestamp(input.observedLifetimeMs) ||
-      (input.exitCode !== undefined && !integer(input.exitCode))
-    ) return invalid()
-    return valid(input as DiagnosticsOwnerEvent)
-  }
-  if (input.type === "owner-operation-request") {
-    if (
-      !exact(input, [
-        "type",
-        "binding",
-        "requestId",
-        "ownerOperationId",
-        "ownerGeneration",
-        "operation",
-        "identity",
-      ])
-    ) return invalid()
-    if (
-      !binding(input.binding) ||
-      !identifier(input.requestId) ||
-      !identifier(input.ownerOperationId) ||
-      !identifier(input.ownerGeneration) ||
-      !oneOf(input.operation, ["stop", "kill"]) ||
-      !identity(input.identity)
-    ) return invalid()
-    return valid(input as DiagnosticsOperationRequest)
-  }
-  if (input.type === "owner-operation-result") {
-    if (!exact(input, ["type", "binding", "requestId", "result"])) return invalid()
-    if (
-      !binding(input.binding) ||
-      !identifier(input.requestId) ||
-      !oneOf(input.result, [
-        "completed",
-        "owner-unavailable",
-        "operation-unavailable",
-        "identity-mismatch",
-        "operation-failed",
-        "duplicate-request",
-      ])
-    ) return invalid()
-    return valid(input as DiagnosticsOperationResult)
-  }
-  return invalid()
 }
 
 export function matchesDiagnosticsBinding(binding: DiagnosticsBinding, expected: DiagnosticsBinding) {
@@ -271,7 +292,7 @@ function exactOptional(input: Record<string, unknown>, required: string[], optio
 }
 
 function oneOf<T extends string>(input: unknown, values: readonly T[]): input is T {
-  return typeof input === "string" && values.includes(input as T)
+  return typeof input === "string" && values.some((value) => value === input)
 }
 
 function text(input: unknown, max: number): input is string {

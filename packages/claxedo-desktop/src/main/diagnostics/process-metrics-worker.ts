@@ -1,11 +1,15 @@
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcessByStdio } from "node:child_process"
+import type { Readable, Writable } from "node:stream"
 import { constants, cpus, setPriority, tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+
+import { readArray, readNumber, readString, readUnknown } from "../../shared/json-read"
 
 import {
   parseWindowsCimRow,
+  validPid,
   windowsCpuMachinePercent,
   windowsCreationIdentity,
   type WindowsCimRow,
@@ -43,6 +47,54 @@ export type ProcessMetricSample = ProcessTreeEntry & {
   memoryImpact?: { kind: LocalDiagnostics.MemoryImpactKind; bytes: number }
 }
 
+/**
+ * The worker answers over a pipe, so every reply below arrives as `unknown`.
+ *
+ * These are the readers for the three reply shapes. `isProcessTreeEntry` is
+ * also the ENTRY-side check: `process-metrics-worker-entry.ts` used to keep a
+ * private copy of it under the name `validEntry`, so the same three fields
+ * were described twice and could drift apart.
+ */
+export function isProcessTreeEntry(value: unknown): value is ProcessTreeEntry {
+  const ppid = readNumber(value, "ppid")
+  return (
+    validPid(readNumber(value, "pid")) &&
+    ppid !== undefined &&
+    Number.isInteger(ppid) &&
+    ppid >= 0 &&
+    validPid(readNumber(value, "rootPid"))
+  )
+}
+
+function isReconcileReply(value: unknown): value is { entries: ProcessTreeEntry[]; truncated: boolean } {
+  const entries = readArray(value, "entries")
+  return !!entries && entries.every(isProcessTreeEntry) && typeof readUnknown(value, "truncated") === "boolean"
+}
+
+function isProcessMetricSample(value: unknown): value is ProcessMetricSample {
+  if (!isProcessTreeEntry(value)) return false
+  if (!LocalDiagnostics.CreationIdentity.safeParse(readUnknown(value, "creation")).success) return false
+  const cpuMachinePercent = readUnknown(value, "cpuMachinePercent")
+  if (cpuMachinePercent !== undefined && typeof cpuMachinePercent !== "number") return false
+  const rssBytes = readUnknown(value, "rssBytes")
+  if (rssBytes !== undefined && typeof rssBytes !== "number") return false
+  const memoryImpact = readUnknown(value, "memoryImpact")
+  return memoryImpact === undefined || LocalDiagnostics.MemoryImpactReading.safeParse(memoryImpact).success
+}
+
+function isSampleReply(value: unknown): value is ProcessMetricSample[] {
+  return Array.isArray(value) && value.every(isProcessMetricSample)
+}
+
+function isCreationIdentity(value: unknown): value is LocalDiagnostics.CreationIdentity {
+  return LocalDiagnostics.CreationIdentity.safeParse(value).success
+}
+
+/** `clear` answers with no value at all. */
+function isNoReply(value: unknown): value is undefined {
+  return value === undefined
+}
+
 export type ProcessMetricsWorker = {
   reconcile(rootPids: number[]): Promise<{ entries: ProcessTreeEntry[]; truncated: boolean }>
   sample(entries: ProcessTreeEntry[], at: number): Promise<ProcessMetricSample[]>
@@ -70,7 +122,16 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
   memoryHelperPath?: string
 }): ProcessMetricsWorker {
   const policy = diagnosticsWorkerProcessOptions(options.platform)
-  let child: ReturnType<typeof spawn> | undefined
+  /**
+   * `["pipe", "pipe", "ignore"]` in `ensureChild` selects node's
+   * `SpawnOptionsWithStdioTuple<StdioPipe, StdioPipe, StdioNull>` overload, so
+   * the spawn itself proves `stdin` is a `Writable` and `stdout` a `Readable`.
+   * `ReturnType<typeof spawn>` resolves to the LAST overload rather than the
+   * one selected, widening both back to nullable — which is what forced the
+   * non-null assertions this type replaces. Keep the two in sync: change the
+   * stdio tuple and this type changes with it.
+   */
+  let child: ChildProcessByStdio<Writable, Readable, null> | undefined
   const pending = new Map<
     number,
     {
@@ -86,21 +147,18 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
 
   return {
     reconcile(rootPids) {
-      return request("reconcile", { rootPids: boundedPids(rootPids) }) as Promise<{
-        entries: ProcessTreeEntry[]
-        truncated: boolean
-      }>
+      return request("reconcile", { rootPids: boundedPids(rootPids) }, isReconcileReply)
     },
     sample(entries, at) {
-      return request("sample", { entries: uniqueEntries(entries).slice(0, MAX_DIAGNOSTICS_PIDS), at }) as Promise<
-        ProcessMetricSample[]
-      >
+      return request("sample", { entries: uniqueEntries(entries).slice(0, MAX_DIAGNOSTICS_PIDS), at }, isSampleReply)
     },
     probeCreation(pid) {
-      return request("probeCreation", { pid }) as Promise<LocalDiagnostics.CreationIdentity>
+      return request("probeCreation", { pid }, isCreationIdentity)
     },
     clear() {
-      if (!disposed) void request("clear", {})
+      // Fire-and-forget by design; `request` rejects on a bad reply and the
+      // rejection is swallowed here because nothing waits on a cache clear.
+      if (!disposed) void request("clear", {}, isNoReply).catch(() => undefined)
     },
     dispose() {
       if (disposed) return
@@ -110,18 +168,29 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
     },
   }
 
-  function request(method: string, input: object) {
+  /**
+   * The single place a worker reply becomes a typed value.
+   *
+   * Each caller passes the reader for the shape it expects, so a reply that
+   * does not match rejects the request instead of being asserted into the
+   * caller's type and failing somewhere further away.
+   */
+  function request<T>(method: string, input: object, accept: (value: unknown) => value is T): Promise<T> {
     if (disposed || Date.now() < restartAfter) return Promise.reject(new Error("process metrics worker unavailable"))
     ensureChild()
-    if (!child?.stdin?.writable) return Promise.reject(new Error("process metrics worker unavailable"))
+    const stdin = child?.stdin
+    if (!stdin?.writable) return Promise.reject(new Error("process metrics worker unavailable"))
     const id = ++sequence
-    return new Promise<unknown>((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       pending.set(id, {
-        resolve,
+        resolve: (value) => {
+          if (accept(value)) resolve(value)
+          else reject(new Error(`process metrics worker returned an invalid ${method} reply`))
+        },
         reject,
         timer: setTimeout(() => timeout(id), options.requestTimeoutMs ?? DIAGNOSTICS_COLLECTOR_TIMEOUT_MS),
       })
-      child!.stdin!.write(`${JSON.stringify({ id, method, ...input })}\n`)
+      stdin.write(`${JSON.stringify({ id, method, ...input })}\n`)
     })
   }
 
@@ -158,8 +227,8 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
       },
       stdio: ["pipe", "pipe", "ignore"],
     })
-    child.stdout!.setEncoding("utf8")
-    child.stdout!.on("data", (chunk: string) => {
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => {
       buffer += chunk
       if (buffer.length > 4 * 1024 * 1024) {
         const current = child
@@ -174,14 +243,15 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
       buffer = lines.pop() ?? ""
       lines.forEach((line) => {
         try {
-          const envelope = JSON.parse(line) as { id?: unknown; ok?: unknown; value?: unknown }
-          if (!Number.isInteger(envelope.id)) return
-          const request = pending.get(envelope.id as number)
+          const envelope: unknown = JSON.parse(line)
+          const id = readNumber(envelope, "id")
+          if (id === undefined || !Number.isInteger(id)) return
+          const request = pending.get(id)
           if (!request) return
-          pending.delete(envelope.id as number)
+          pending.delete(id)
           clearTimeout(request.timer)
-          if (envelope.ok === true) {
-            request.resolve(envelope.value)
+          if (readUnknown(envelope, "ok") === true) {
+            request.resolve(readUnknown(envelope, "value"))
             return
           }
           request.reject(new Error("process metrics worker failed"))
@@ -411,7 +481,8 @@ export function createWindowsCimQuery(
       if (selected.length === 0) return Promise.resolve([])
       if (Date.now() < restartAfter) return Promise.reject(new Error("Windows metrics source is recovering"))
       ensureChild()
-      if (!child?.stdin?.writable) return Promise.reject(new Error("Windows metrics source unavailable"))
+      const stdin = child?.stdin
+      if (!stdin?.writable) return Promise.reject(new Error("Windows metrics source unavailable"))
       return new Promise<unknown[]>((resolve, reject) => {
         const request = {
           resolve,
@@ -425,7 +496,7 @@ export function createWindowsCimQuery(
           }, childWarmed ? timeoutMs : coldStartTimeoutMs),
         }
         pending.push(request)
-        child!.stdin!.write(`${JSON.stringify({ pids: selected, memoryImpact: options?.memoryImpact === true })}\n`)
+        stdin.write(`${JSON.stringify({ pids: selected, memoryImpact: options?.memoryImpact === true })}\n`)
       })
     },
     dispose() {
@@ -446,21 +517,21 @@ export function createWindowsCimQuery(
       if (!request) return
       clearTimeout(request.timer)
       try {
-        const envelope = JSON.parse(line) as { ok?: unknown; rows?: unknown; reason?: unknown }
-        if (envelope.ok !== true || !Array.isArray(envelope.rows) || envelope.rows.length > MAX_DIAGNOSTICS_PIDS) {
+        const envelope: unknown = JSON.parse(line)
+        const rows = readArray(envelope, "rows")
+        if (readUnknown(envelope, "ok") !== true || !rows || rows.length > MAX_DIAGNOSTICS_PIDS) {
           // The worker's own reason when it sent one, so a CIM failure is
           // distinguishable from a malformed envelope. Everything past the
           // colon comes from the worker's capped message field.
+          const reason = readString(envelope, "reason")
           request.reject(
             new Error(
-              typeof envelope.reason === "string" && envelope.reason
-                ? `Windows metrics response rejected: ${envelope.reason.slice(0, 200)}`
-                : "Windows metrics response rejected",
+              reason ? `Windows metrics response rejected: ${reason.slice(0, 200)}` : "Windows metrics response rejected",
             ),
           )
           return
         }
-        request.resolve(envelope.rows)
+        request.resolve(rows)
       } catch {
         request.reject(new Error("Windows metrics response rejected: unparsable response"))
       }

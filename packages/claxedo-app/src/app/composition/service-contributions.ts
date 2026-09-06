@@ -10,6 +10,7 @@ import {
   HOSTED_CONTENT_TYPES,
   type HostedContributionLoader,
 } from "./product-contributions"
+import { recordOrEmpty } from "@/lib/record"
 
 // `documents` is the hosted set's only first-party service today, so its
 // content types are exactly `HOSTED_CONTENT_TYPES`. Derived rather than
@@ -23,7 +24,7 @@ export type ServiceContributionLoaders = Partial<Record<FirstPartyServiceId, Hos
 export type ServiceContributionsInput = {
   local: readonly ContentSurfaceContribution[]
   loaders: ServiceContributionLoaders
-  signedIn(): boolean
+  signedIn: () => boolean
   register(surface: ContentSurfaceContribution): void
   unregister(surface: ContentSurfaceContribution): void
 }
@@ -31,26 +32,31 @@ export type ServiceContributionsInput = {
 export function createServiceContributions(input: ServiceContributionsInput) {
   const localIds = () => input.local.map((surface) => surface.id)
   const installedIds = new Set<string>()
-  const ports = Object.fromEntries(FIRST_PARTY_SERVICE_IDS.map((serviceId) => [
-    serviceId,
-    createContentSurfaceActivation({
-      signedIn: input.signedIn,
-      load: async () => {
-        const loader = input.loaders[serviceId]
-        if (!loader) throw new Error(`${serviceId} contribution loader is not configured`)
-        return (await loader()).contentSurfaces
-      },
-      register(surface) {
-        input.register(surface)
-        installedIds.add(surface.id)
-      },
-      unregister(surface) {
-        input.unregister(surface)
-        installedIds.delete(surface.id)
-      },
-      registeredIds: () => [...localIds(), ...installedIds],
-    }),
-  ])) as Record<FirstPartyServiceId, ReturnType<typeof createContentSurfaceActivation>>
+  const createPort = (serviceId: FirstPartyServiceId) => createContentSurfaceActivation({
+    signedIn: input.signedIn,
+    load: async () => {
+      const loader = input.loaders[serviceId]
+      if (!loader) throw new Error(`${serviceId} contribution loader is not configured`)
+      return (await loader()).contentSurfaces
+    },
+    register(surface) {
+      input.register(surface)
+      installedIds.add(surface.id)
+    },
+    unregister(surface) {
+      input.unregister(surface)
+      installedIds.delete(surface.id)
+    },
+    registeredIds: () => [...localIds(), ...installedIds],
+  })
+  // Written out per service, like `SERVICE_CONTENT_TYPES` above, and checked by
+  // `satisfies`: `Object.fromEntries` types its result by the index signature
+  // alone, so asserting it back to a complete record claimed a key for every
+  // first-party service whether or not one was built. A new service id now
+  // fails to compile here instead.
+  const ports = {
+    documents: createPort("documents"),
+  } satisfies Record<FirstPartyServiceId, ReturnType<typeof createContentSurfaceActivation>>
   let catalog: BrowserServiceCatalog = []
 
   return {
@@ -60,7 +66,7 @@ export function createServiceContributions(input: ServiceContributionsInput) {
     // type this composition cannot actually render must never be reported as
     // available because a descriptor said "enabled".
     availableContentTypes: () => [
-      ...input.local.map((surface) => String(surface.surface)),
+      ...input.local.map((surface) => surface.surface),
       ...FIRST_PARTY_SERVICE_IDS.filter((serviceId) => ports[serviceId].active()).flatMap(
         (serviceId) => SERVICE_CONTENT_TYPES[serviceId],
       ),
@@ -175,7 +181,7 @@ export function configuredServiceContributions() {
  */
 export async function synchronizeServiceCatalogFromBootstrap(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  const bootstrap = value as Record<string, unknown>
+  const bootstrap = recordOrEmpty(value)
   const target = configuredServiceContributions()
   if (!target) return false
   if (bootstrap.authenticated === false) {

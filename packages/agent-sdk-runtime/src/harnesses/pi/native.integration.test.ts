@@ -5,10 +5,8 @@ import path from "node:path"
 import { createAgentRuntime } from "../../runtime"
 import { pi } from "../../harnesses"
 import { PiRpcProcess } from "./rpc-process"
-import type { AgentMessage } from "../../index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { GOAL_PROMPT_TEXT } from "../shared/goal-protocol"
-import { storeRows } from "../../test-utils/store-internals"
 
 /** A real pinned Pi process and native tools; only the provider HTTP response is deterministic. */
 test.skipIf(!process.env.PI_EXECUTABLE)(
@@ -79,7 +77,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       }),
     )
     const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
+    const rows = store
     const create = () =>
       createAgentRuntime({ store, harnesses: [pi({ binary: process.env.PI_EXECUTABLE!, agentDir })] })
     let runtime = create()
@@ -130,7 +128,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       expect(usage.reduce((sum, event) => sum + event.observation.tokens.input, 0)).toBe(24)
       expect(usage.reduce((sum, event) => sum + event.observation.tokens.output, 0)).toBe(16)
       expect(
-        (rows.getMessages(session.id) as AgentMessage[]).find((message) => message.info.role === "assistant")?.info
+        rows.getMessages(session.id).find((message) => message.info.role === "assistant")?.info
           .time,
       ).toHaveProperty("completed")
       const files = await fs.readdir(path.join(agentDir, "sessions"))
@@ -179,7 +177,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       expect(JSON.stringify(requests.at(-1)!.messages)).toContain(GOAL_PROMPT_TEXT.evaluatorObjectiveLabel)
     } finally {
       await runtime.dispose()
-      server.stop(true)
+      await server.stop(true)
       await fs.rm(directory, { recursive: true, force: true })
     }
   },
@@ -212,7 +210,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
     )
     await fs.writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }))
     const { PiHarnessAdapter } = await import("./index")
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new PiHarnessAdapter({ store, binary: process.env.PI_EXECUTABLE!, agentDir })
     try {
       const session = await adapter.createSession(directory)

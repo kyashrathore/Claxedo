@@ -9,6 +9,7 @@ import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../run
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { sandboxDriverCatalog } from "../driver-catalog"
+import { driverErrorSignals, isTransientDriverError } from "./transient-error"
 
 export type DaytonaSandboxLike = {
   id: string
@@ -152,12 +153,11 @@ function daytonaSecretName(workspaceId: string, secretName: string) {
   return `claxedo-${safe(workspaceId)}-${safe(secretName)}`
 }
 
+/** Markers this driver's SDK has been seen to use for a retryable failure. */
+const TRANSIENT_MARKERS = ["timeout", "pending", "starting"] as const
+
 function transientDriverError(err: unknown) {
-  const shaped = err as { response?: { status?: number }; status?: number; name?: string; message?: string }
-  const status = shaped.response?.status ?? shaped.status
-  if (typeof status === "number" && status >= 500) return true
-  const text = `${shaped.name ?? ""} ${shaped.message ?? ""}`.toLowerCase()
-  return text.includes("timeout") || text.includes("pending") || text.includes("starting")
+  return isTransientDriverError(err, TRANSIENT_MARKERS)
 }
 
 // Async so the vendor SDK loads only when the default client is actually
@@ -523,9 +523,7 @@ export function createDaytonaSandboxDriver(
       await sandboxById(target.sandboxId)
         .then((sandbox) => sandbox.delete(operationTimeout))
         .catch((err) => {
-          const status = (err as { response?: { status?: number }; status?: number }).response?.status
-            ?? (err as { status?: number }).status
-          if (status !== 404) throw err
+          if (driverErrorSignals(err).status !== 404) throw err
         })
     },
 

@@ -86,6 +86,45 @@ type FrameRecord = {
 
 type ClickRecord = { t: number; sessionId: string }
 
+/** One session root that is currently painting, and where its box is. */
+type PaintedRecord = {
+  sessionId: string
+  messageCount: string
+  visibility: string
+  opacity: string
+  contentVisibility: string
+  rect: { x: number; y: number; w: number; h: number }
+  slotHasPane: boolean
+  slotVisibility: string
+  slotOpacity: string
+  slotContentVisibility: string
+  slotDisplay: string
+  slotInert: boolean
+}
+
+/**
+ * The in-page overlay probe.
+ *
+ * `shifts` and `longTasks` were previously bolted onto the installed object
+ * through `Record<string, unknown>` and re-declared at every read, so the type
+ * the probe advertised was never the object it published. This is all of it.
+ */
+type Probe = {
+  frames: FrameRecord[]
+  clicks: ClickRecord[]
+  shifts: ShiftRecord[]
+  longTasks: Array<{ t: number; d: number }>
+  running: boolean
+  start: () => void
+  stop: () => void
+}
+
+declare global {
+  interface Window {
+    __overlayProbe?: Probe
+  }
+}
+
 type ShiftRecord = {
   t: number
   value: number
@@ -134,18 +173,14 @@ const sessionRowActivate = async (target: (typeof sessions)[number]): Promise<Lo
 }
 
 await page.evaluate(() => {
-  type Probe = {
-    frames: unknown[]
-    clicks: unknown[]
-    running: boolean
-    start: () => void
-    stop: () => void
-  }
-  const w = window as unknown as { __overlayProbe?: Probe }
-  if (w.__overlayProbe) return
+  if (window.__overlayProbe) return
+  const shifts: ShiftRecord[] = []
+  const longTasks: Array<{ t: number; d: number }> = []
   const state: Probe = {
     frames: [],
     clicks: [],
+    shifts,
+    longTasks,
     running: false,
     start() {
       state.frames = []
@@ -159,31 +194,23 @@ await page.evaluate(() => {
       state.running = false
     },
   }
-  const shifts: Array<Record<string, unknown>> = []
-  const longTasks: Array<{ t: number; d: number }> = []
   try {
     new PerformanceObserver((list) => {
       if (!state.running) return
-      for (const raw of list.getEntries()) {
-        const entry = raw as unknown as {
-          startTime: number
-          value: number
-          hadRecentInput: boolean
-          sources?: Array<{ node?: Element; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }>
-        }
+      for (const entry of list.getEntries()) {
         shifts.push({
           t: entry.startTime,
-          value: entry.value,
-          hadRecentInput: entry.hadRecentInput,
+          value: entry.value ?? 0,
+          hadRecentInput: entry.hadRecentInput ?? false,
           sources: (entry.sources ?? []).map((source) => {
-            const node = source.node as HTMLElement | undefined
+            const node = source.node instanceof HTMLElement ? source.node : undefined
             const label = (element: HTMLElement): string => {
               const testid = element.getAttribute?.("data-testid")
               const slot = element.getAttribute?.("data-slot")
               const part = element.getAttribute?.("data-part-type") ?? element.getAttribute?.("data-message-role")
               const key = testid ?? slot ?? part
               if (key) return `${element.tagName.toLowerCase()}[${key}]`
-              const cls = (element.className?.toString?.() ?? "").trim().split(/\s+/).slice(0, 3).join(".")
+              const cls = element.className.trim().split(/\s+/).slice(0, 3).join(".")
               return `${element.tagName.toLowerCase()}${cls ? "." + cls : ""}`
             }
             const describe = (element: HTMLElement | null | undefined): string => {
@@ -218,14 +245,12 @@ await page.evaluate(() => {
       for (const entry of list.getEntries()) longTasks.push({ t: entry.startTime, d: entry.duration })
     }).observe({ type: "longtask", buffered: false })
   } catch {}
-  ;(state as unknown as Record<string, unknown>).shifts = shifts
-  ;(state as unknown as Record<string, unknown>).longTasks = longTasks
   document.addEventListener(
     "pointerdown",
     (event) => {
       if (!state.running) return
-      const target = event.target as Element | null
-      const row = target?.closest?.<HTMLElement>("[data-testid='rail-sidebar-session-row']")
+      const target = event.target instanceof Element ? event.target : undefined
+      const row = target?.closest<HTMLElement>("[data-testid='rail-sidebar-session-row']")
       if (!row) return
       state.clicks.push({ t: performance.now(), sessionId: row.getAttribute("data-session-id") ?? "" })
     },
@@ -240,7 +265,7 @@ await page.evaluate(() => {
     if (!state.running) return
     const t = performance.now()
     const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"))
-    const painting: Array<Record<string, unknown>> = []
+    const painting: PaintedRecord[] = []
     for (const root of roots) {
       const style = getComputedStyle(root)
       const rect = root.getBoundingClientRect()
@@ -259,14 +284,12 @@ await page.evaluate(() => {
         messageCount: root.getAttribute("data-session-message-count") ?? "",
         visibility: style.visibility,
         opacity: style.opacity,
-        contentVisibility: (style as unknown as Record<string, string>).contentVisibility ?? "",
+        contentVisibility: style.contentVisibility,
         rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
         slotHasPane: !!slot?.getAttribute("data-pane-id"),
         slotVisibility: slotStyle?.visibility ?? "",
         slotOpacity: slotStyle?.opacity ?? "",
-        slotContentVisibility: slotStyle
-          ? ((slotStyle as unknown as Record<string, string>).contentVisibility ?? "")
-          : "",
+        slotContentVisibility: slotStyle?.contentVisibility ?? "",
         slotDisplay: slotStyle?.display ?? "",
         slotInert: !!slot?.hasAttribute("inert"),
       })
@@ -281,7 +304,7 @@ await page.evaluate(() => {
     let assignedSlots = 0
     for (const slot of slots) {
       const style = getComputedStyle(slot)
-      const cv = (style as unknown as Record<string, string>).contentVisibility ?? ""
+      const cv = style.contentVisibility
       if (slot.getAttribute("data-pane-id")) assignedSlots += 1
       if (style.visibility === "hidden") continue
       if (cv === "hidden") continue
@@ -336,8 +359,8 @@ await page.evaluate(() => {
     let overlap: string | null = null
     for (let i = 0; i < painting.length && !overlap; i++) {
       for (let j = i + 1; j < painting.length; j++) {
-        const a = painting[i] as PaintedLike
-        const b = painting[j] as PaintedLike
+        const a = painting[i]
+        const b = painting[j]
         if (a.sessionId === b.sessionId) continue
         if (overlaps(a.rect, b.rect)) {
           overlap = `${a.sessionId}|${b.sessionId}`
@@ -368,8 +391,7 @@ await page.evaluate(() => {
     })
     requestAnimationFrame(tick)
   }
-  type PaintedLike = { rect: { x: number; y: number; w: number; h: number }; sessionId: string }
-  ;(window as unknown as { __overlayProbe: Probe }).__overlayProbe = state
+  window.__overlayProbe = state
 })
 
 type RoundResult = {
@@ -389,7 +411,9 @@ for (let round = 0; round < ROUNDS; round++) {
     chain.push(sessions[(round * 3 + i + 1) % sessions.length])
   }
   await page.evaluate(() => {
-    ;(window as unknown as { __overlayProbe: { start: () => void } }).__overlayProbe.start()
+    const probe = window.__overlayProbe
+    if (!probe) throw new Error("the overlay probe is not installed on this page")
+    probe.start()
   })
   for (const target of chain) {
     const control = await sessionRowActivate(target)
@@ -397,18 +421,17 @@ for (let round = 0; round < ROUNDS; round++) {
     await page.waitForTimeout(CLICK_INTERVAL_MS)
   }
   await page.waitForTimeout(700)
-  const captured = (await page.evaluate(() => {
-    const probe = (window as unknown as {
-      __overlayProbe: { stop: () => void; frames: unknown[]; clicks: unknown[]; shifts: unknown[]; longTasks: unknown[] }
-    }).__overlayProbe
+  const captured = await page.evaluate(() => {
+    const probe = window.__overlayProbe
+    if (!probe) throw new Error("the overlay probe is not installed on this page")
     probe.stop()
     return {
       frames: probe.frames,
       clicks: probe.clicks,
-      shifts: (probe as unknown as { shifts: unknown[] }).shifts.slice(),
-      longTasks: (probe as unknown as { longTasks: unknown[] }).longTasks.slice(),
+      shifts: probe.shifts.slice(),
+      longTasks: probe.longTasks.slice(),
     }
-  })) as { frames: FrameRecord[]; clicks: ClickRecord[]; shifts: ShiftRecord[]; longTasks: Array<{ t: number; d: number }> }
+  })
   results.push({
     round,
     order: chain.map((s) => s.id),

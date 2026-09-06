@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterAll, describe, expect, test, vi } from "vitest"
+import { fetchUrl } from "../../test-support/fetch-calls"
 
 const root = path.join(realpathSync(os.tmpdir()), `credential-verification-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -80,7 +81,7 @@ describe("credential verification integration", () => {
     })
 
     const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-      if (String(input) === TOKEN_URL) {
+      if (fetchUrl(input) === TOKEN_URL) {
         return Response.json({ access_token: "access_renewed", refresh_token: "refresh_renewed" })
       }
       return Response.json({ id: "response_1" })
@@ -94,9 +95,9 @@ describe("credential verification integration", () => {
 
     expect(await verified.json()).toEqual({ result: "ok", health: "ok", verified_at: 2_000 })
     // The provider was actually probed, with the renewed token.
-    const probe = request.mock.calls.find(([url]) => String(url) !== TOKEN_URL)
+    const probe = request.mock.calls.find(([url]) => fetchUrl(url) !== TOKEN_URL)
     expect(probe).toBeDefined()
-    expect((probe![1]?.headers as Record<string, string>).Authorization).toBe("Bearer access_renewed")
+    expect(new Headers(probe![1]?.headers).get("authorization")).toBe("Bearer access_renewed")
 
     const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
     expect(stored.access).toBe("access_renewed")
@@ -127,7 +128,7 @@ describe("credential verification integration", () => {
     const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       // Raw provider response, deliberately not `Response.json({ error: ... })`:
       // that construct is reserved for our own route bodies and is guarded.
-      if (String(input) === TOKEN_URL) {
+      if (fetchUrl(input) === TOKEN_URL) {
         return new Response(JSON.stringify({ error: "invalid_grant" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
@@ -143,7 +144,7 @@ describe("credential verification integration", () => {
     const verified = await app.request(`http://localhost/${credential.id}/verify`, { method: "POST" })
 
     expect(await verified.json()).toEqual({ result: "expired", health: "expired", verified_at: 2_000 })
-    expect(request.mock.calls.every(([url]) => String(url) === TOKEN_URL)).toBe(true)
+    expect(request.mock.calls.every(([url]) => fetchUrl(url) === TOKEN_URL)).toBe(true)
     const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
     expect(stored.access).toBe("access_dead")
     expect(getCredential(credential.id)?.expires_at).toBe(1_000)

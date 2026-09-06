@@ -4,6 +4,8 @@ import { constants, watch, type FSWatcher } from "node:fs"
 import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 import { syncDirectory } from "./fs-durability"
 import { contentHash } from "./version"
+import { asRecord, parseJson } from "../platform/json/index"
+import { errorCode } from "../platform/errors/index"
 
 type ManifestEntry = {
   documentId: string
@@ -132,17 +134,11 @@ async function hydrateSessionDocumentNow(input: HydrateSessionDocumentInput) {
 
   const documents = sessions.get(input.sessionId) ?? new Map<string, HydratedDocument>()
   let tail: Promise<void> = Promise.resolve()
-  const document: HydratedDocument = {
-    ...hydrated.entry,
-    sessionId: input.sessionId,
-    root,
-    manifestPath,
-    syncContent: input.sync,
-    sync: undefined as unknown as () => Promise<void>,
-    watcher: undefined as unknown as FSWatcher,
-    ...(input.faults?.beforeReadOpen ? { beforeReadOpen: input.faults.beforeReadOpen } : {}),
-  }
-  document.sync = () => {
+  // `sync` and `watcher` both close over the document they belong to, so they
+  // are built first and the document is constructed complete. It used to be
+  // built with `undefined as unknown as ...` in both slots and patched two
+  // statements later, which left a window where the type was a lie.
+  const sync = (): Promise<void> => {
     if (document.state === "conflicted") {
       return Promise.reject(document.error ?? new Error(`Hydrated document ${document.documentId} is conflicted`))
     }
@@ -160,7 +156,7 @@ async function hydrateSessionDocumentNow(input: HydrateSessionDocumentInput) {
     })
     return tail
   }
-  document.watcher = watch(hydrated.directory, { persistent: false }, () => {
+  const watcher = watch(hydrated.directory, { persistent: false }, () => {
     if (!isCurrent(document)) return
     if (document.timer) clearTimeout(document.timer)
     document.timer = setTimeout(() => {
@@ -169,7 +165,17 @@ async function hydrateSessionDocumentNow(input: HydrateSessionDocumentInput) {
       })
     }, 100)
   })
-  document.watcher.on("error", (error) => {
+  const document: HydratedDocument = {
+    ...hydrated.entry,
+    sessionId: input.sessionId,
+    root,
+    manifestPath,
+    syncContent: input.sync,
+    sync,
+    watcher,
+    ...(input.faults?.beforeReadOpen ? { beforeReadOpen: input.faults.beforeReadOpen } : {}),
+  }
+  watcher.on("error", (error) => {
     void withDocumentLifecycle(document.sessionId, document.documentId, async () => {
       if (!isCurrent(document)) return
       await reportWatcherError(document, error)
@@ -177,7 +183,7 @@ async function hydrateSessionDocumentNow(input: HydrateSessionDocumentInput) {
       console.error(`[session-hydration] failed to handle watcher error for ${document.documentId}:`, reportError)
     })
   })
-  input.faults?.afterWatcherCreated?.(document.watcher)
+  input.faults?.afterWatcherCreated?.(watcher)
   documents.set(input.documentId, document)
   sessions.set(input.sessionId, documents)
   return hydrated.canonical
@@ -420,23 +426,24 @@ async function readManifest(manifestPath: string): Promise<Manifest> {
     throw error
   })
   if (value === undefined) return { version: 1, documents: [] }
-  const parsed = JSON.parse(value) as Partial<Manifest>
-  if (
-    parsed.version !== 1 ||
-    !Array.isArray(parsed.documents) ||
-    parsed.documents.some(
-      (document) =>
-        !document ||
-        typeof document.documentId !== "string" ||
-        typeof document.path !== "string" ||
-        typeof document.baseVersion !== "string" ||
-        typeof document.lastSyncedHash !== "string" ||
-        (document.state !== "active" && document.state !== "conflicted"),
-    )
-  ) {
+  const parsed = asRecord(parseJson(value))
+  const documents = parsed?.documents
+  if (parsed?.version !== 1 || !Array.isArray(documents) || !documents.every(isManifestEntry)) {
     throw new Error("Hydrated document manifest is invalid")
   }
-  return parsed as Manifest
+  return { version: 1, documents }
+}
+
+function isManifestEntry(value: unknown): value is ManifestEntry {
+  const entry = asRecord(value)
+  return (
+    !!entry &&
+    typeof entry.documentId === "string" &&
+    typeof entry.path === "string" &&
+    typeof entry.baseVersion === "string" &&
+    typeof entry.lastSyncedHash === "string" &&
+    (entry.state === "active" || entry.state === "conflicted")
+  )
 }
 
 async function writeManifest(manifestPath: string, manifest: Manifest) {
@@ -461,7 +468,7 @@ async function renameReplacingManifest(temp: string, manifestPath: string) {
       await fs.rename(temp, manifestPath)
       return
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
+      const code = errorCode(error)
       if (attempt >= 9 || (code !== "EPERM" && code !== "EACCES")) {
         await fs.rm(temp, { force: true }).catch(() => undefined)
         throw error

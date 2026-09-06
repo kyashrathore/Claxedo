@@ -94,7 +94,9 @@ export type WorkspaceRouteOptions = {
    */
   requireCloudWorkspaceEntitlement?: (
     auth: SignedControlPlaneAuth,
-  ) => Promise<{ status: 400 | 401 | 402 | 403 | 503; body: unknown } | undefined>
+  ) => Promise<
+    { status: 400 | 401 | 402 | 403 | 503; body: { error: { code: string; message: string } } } | undefined
+  >
 }
 
 export function relayRole(input?: string): RelayRole {
@@ -118,10 +120,6 @@ export function signedAccessOptions(request: Request, options: WorkspaceRouteOpt
       ? { requireSigned: true as const }
       : {}),
   }
-}
-
-export function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 export function txt(input: unknown) {
@@ -187,7 +185,7 @@ export async function routeAuth(
     requireSigned?: boolean
   },
 ) {
-  if (!options.requireSigned && !bearerToken(request.headers.get("authorization"))) return
+  if (!options.requireSigned && !bearerToken(request.headers.get("authorization"))) return undefined
   const context = await controlPlaneAuthContext(request, {
     authentication: options.authentication,
     config: options.authConfig,
@@ -266,7 +264,7 @@ export async function hostTunnelCredential(
   },
 ) {
   const signer = configuredHostTunnelTokenSigner(options)
-  if (!signer) return
+  if (!signer) return undefined
   return await signer({
     subject: auth.user.subject,
     hostId: input.hostId,

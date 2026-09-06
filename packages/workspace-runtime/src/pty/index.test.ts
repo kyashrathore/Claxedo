@@ -17,7 +17,7 @@ let nextPid = 41000
 let nextSpawnPid: number | undefined
 const nativeKills: number[] = []
 
-mock.module("@lydell/node-pty", () => ({
+await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
     const pid = nextSpawnPid ?? nextPid++
     nextSpawnPid = undefined
@@ -138,7 +138,7 @@ describe("Pty lifecycle cleanup", () => {
     await waitFor(() => Pty.snapshot(info.id).includes("hello"))
     await Pty.remove(info.id)
 
-    expect(ws.close).toHaveBeenCalled()
+    expect(ws.tracker.closeCount).toBeGreaterThan(0)
     expect(await fs.readFile(historyPath(info.cwd, info.id), "utf8")).toContain("hello")
     expect(Pty.get(info.id)).toBeUndefined()
     if (process.platform !== "win32") {
@@ -235,13 +235,25 @@ describe("Pty lifecycle cleanup", () => {
   })
 })
 
+/**
+ * A `WSContext` double, with a plain counter for the one thing tests assert on.
+ *
+ * The counter exists so an assertion reads `ws.closed`, not `ws.close` — the
+ * latter reads a method off the context and hands it to `expect`, which is
+ * exactly the detached-method shape that goes wrong when the real `WSContext`
+ * ever needs `this`.
+ */
 function socket() {
-  return {
+  const tracker = { closeCount: 0 }
+  const ws = {
     readyState: 1,
     bufferedAmount: 0,
     send: mock(() => {}),
-    close: mock(() => {}),
+    close: mock(() => {
+      tracker.closeCount += 1
+    }),
   } as unknown as WSContext
+  return Object.assign(ws, { tracker })
 }
 
 async function waitFor(predicate: () => boolean) {

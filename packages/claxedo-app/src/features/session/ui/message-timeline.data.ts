@@ -1,11 +1,15 @@
+import { asRecord, isRecord, readField, readString } from "@/lib/record"
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as Part,
   AgentRuntimeStatus as SessionStatus,
   AgentSnapshotFileDiff as SnapshotFileDiff,
-  AgentUserMessage as UserMessage,
 } from "@claxedo/agent-runtime-contract"
+// The row builder reads a user message's `id`, `time` and optional `summary`,
+// all of which the optimistic stub carries, so it takes the projected row and
+// the just-typed turn renders before the runtime echoes it back.
+import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
 import {
   isTurnAdmissionConflict,
@@ -125,17 +129,17 @@ export namespace Timeline {
             ),
           ]
         : groupParts(visibleAssistantPartRefs).map((group) => ({ type: "part" as const, group }))
-    if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
+    if (previousUserMessage) rows.push(TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
       rows.push(
-        new TimelineRow.CommentStrip({
+        TimelineRow.CommentStrip({
           userMessageID: userMessage.id,
         }),
       )
 
     rows.push(
-      new TimelineRow.UserMessage({
+      TimelineRow.UserMessage({
         userMessageID: userMessage.id,
         anchor: comments.length === 0,
       }),
@@ -143,7 +147,7 @@ export namespace Timeline {
 
     if (compaction) {
       rows.push(
-        new TimelineRow.TurnDivider({
+        TimelineRow.TurnDivider({
           userMessageID: userMessage.id,
           label: "compaction",
         }),
@@ -151,7 +155,7 @@ export namespace Timeline {
     }
     if (handoff) {
       rows.push(
-        new TimelineRow.TurnDivider({
+        TimelineRow.TurnDivider({
           userMessageID: userMessage.id,
           label: "handoff",
           harness: handoffHarnessLabel(handoff.to?.id),
@@ -222,7 +226,7 @@ export namespace Timeline {
     // hides the work beneath it; unfolded reveals it in place.
     if (canFoldSettled || canFoldRunning) {
       rows.push(
-        new TimelineRow.TurnFold({
+        TimelineRow.TurnFold({
           userMessageID: userMessage.id,
           durationMs,
           foldCount: foldableCount,
@@ -238,7 +242,7 @@ export namespace Timeline {
     assistantItems.forEach((item, itemIndex) => {
       if (item.type === "interrupted") {
         rows.push(
-          new TimelineRow.TurnDivider({
+          TimelineRow.TurnDivider({
             userMessageID: userMessage.id,
             label: "interrupted",
             ...(typeof durationMs === "number" ? { durationMs } : {}),
@@ -250,7 +254,7 @@ export namespace Timeline {
       if (shouldFold(item, itemIndex)) return
 
       rows.push(
-        new TimelineRow.AssistantPart({
+        TimelineRow.AssistantPart({
           userMessageID: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
@@ -267,19 +271,19 @@ export namespace Timeline {
         .find((value): value is string => !!value)
 
       rows.push(
-        new TimelineRow.Thinking({
+        TimelineRow.Thinking({
           userMessageID: userMessage.id,
           reasoningHeading: heading,
         }),
       )
     }
 
-    if (isActive && status === "retry") rows.push(new TimelineRow.Retry({ userMessageID: userMessage.id }))
+    if (isActive && status === "retry") rows.push(TimelineRow.Retry({ userMessageID: userMessage.id }))
 
     const diffs = uniqueSummaryDiffs(userMessage.summary?.diffs)
     if (diffs.length > 0 && (status === "idle" || !isActive)) {
       rows.push(
-        new TimelineRow.DiffSummary({
+        TimelineRow.DiffSummary({
           userMessageID: userMessage.id,
           diffs,
         }),
@@ -300,12 +304,12 @@ export namespace Timeline {
       // the collapsed detail, never in the summary sentence.
       // `responseBody` is present on only some members of the wire error union,
       // so read it structurally rather than narrowing by name.
-      const rawBody = (error.data as { responseBody?: unknown } | undefined)?.responseBody
+      const rawBody = readField(error.data, "responseBody")
       const body = typeof rawBody === "string" ? rawBody.trim() : ""
       const turnAdmissionConflict = isTurnAdmissionConflict(error)
       const recoveryClass = sessionRecoveryClass(error)
       rows.push(
-        new TimelineRow.Error({
+        TimelineRow.Error({
           userMessageID: userMessage.id,
           text: body && body !== message ? `${message}\n${body}` : message,
           // Attach the recovery class on every turn, not just index 0. The class is
@@ -394,33 +398,35 @@ export namespace Timeline {
       if (start !== -1 && end > start) json = read(text.slice(start, end + 1))
     }
 
-    if (!record(json)) return message
+    if (!isRecord(json)) return message
 
-    const err = record(json.error) ? json.error : undefined
+    const err = asRecord(json.error)
     if (err) {
-      const type = typeof err.type === "string" ? err.type : undefined
-      const msg = typeof err.message === "string" ? err.message : undefined
+      const type = readString(err, "type")
+      const msg = readString(err, "message")
       if (type && msg) return `${type}: ${msg}`
       if (msg) return msg
       if (type) return type
-      const code = typeof err.code === "string" ? err.code : undefined
+      const code = readString(err, "code")
       if (code) return code
     }
 
-    const msg = typeof json.message === "string" ? json.message : undefined
+    const msg = readString(json, "message")
     if (msg) return msg
 
-    const reason = typeof json.error === "string" ? json.error : undefined
+    const reason = readString(json, "error")
     if (reason) return reason
 
     return message
   }
 
-  function record(value: unknown): value is Record<string, unknown> {
-    return !!value && typeof value === "object" && !Array.isArray(value)
-  }
-
-  export function turnDurationMs(userMessage: UserMessage, assistantMessages: AssistantMessage[]) {
+  // The turn's start is the only thing read off the user message, so that is all
+  // the parameter asks for: a projected row that never reached the runtime still
+  // has a creation stamp, and a turn it opened still has a measurable duration.
+  export function turnDurationMs(
+    userMessage: { time: { created: number } },
+    assistantMessages: AssistantMessage[],
+  ) {
     const end = assistantMessages.reduce<number | undefined>((max, item) => {
       const completed = item.time.completed
       if (typeof completed !== "number") return max

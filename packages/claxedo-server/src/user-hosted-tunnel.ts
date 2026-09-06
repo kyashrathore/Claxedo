@@ -147,8 +147,8 @@ export async function startUserHostedMachineTunnel(input: {
     resolveLocalUrl: ({ workspaceId, path }) => {
       // The relay carries only workspace-runtime traffic. CentralServer-owned
       // routes remain loopback-only even when a malicious relay asks for one.
-      if (!registration.current.has(workspaceId)) return
-      if (routeOwnership(new URL(path, "http://workspace.local").pathname).handler !== RouteHandler.SandboxRuntime) return
+      if (!registration.current.has(workspaceId)) return undefined
+      if (routeOwnership(new URL(path, "http://workspace.local").pathname).handler !== RouteHandler.SandboxRuntime) return undefined
       return new URL(
         `/workspaces/${encodeURIComponent(workspaceId)}/${path.replace(/^\/+/, "")}`,
         `${normalized(localBaseUrl)}/`,

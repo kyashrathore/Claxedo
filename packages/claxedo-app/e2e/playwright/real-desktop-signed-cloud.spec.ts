@@ -271,7 +271,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
     ).toMatchObject({ workspaces: expect.any(Array) })
   })
 
-  test("explicit Remote Access is single-flight and revocation wins a delayed heartbeat", async ({}, testInfo) => {
+  test("explicit Remote Access is single-flight and revocation wins a delayed heartbeat", async (_fixtures, testInfo) => {
     const before = await stats()
     const userDataDir = await seedCredential(-1)
     const app = await relaunch(userDataDir)

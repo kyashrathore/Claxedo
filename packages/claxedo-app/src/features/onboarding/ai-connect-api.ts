@@ -1,4 +1,5 @@
 import { claxedoCredentialRequest, type ClaxedoCredentialRequestInput } from "@/platform/api/credential-request"
+import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 import type { AICredentialVerification, AIDiscoveryItem, AIDiscoveryProbe } from "./ai-connect-state"
 
 export type AIConnectRequest = (input?: ClaxedoCredentialRequestInput, init?: RequestInit) => Promise<Response>
@@ -9,6 +10,13 @@ export type AIVerificationResult = {
   result: AICredentialVerification
 }
 
+/**
+ * A credential the server named back to us, reduced to what verification needs.
+ * The save, list and discovery routes each spell the id differently on the wire;
+ * every one of them is parsed into this single shape.
+ */
+type CredentialRef = { credentialId: string; providerId: string }
+
 export async function discoverAIConnections(input: {
   serverUrl?: string
   request?: AIConnectRequest
@@ -16,13 +24,15 @@ export async function discoverAIConnections(input: {
   const res = await (input.request ?? claxedoCredentialRequest)({ serverUrl: input.serverUrl, action: "discover" }, {
     method: "POST",
   })
-  const body = await res.json() as { discovery_id?: unknown; items?: unknown }
-  if (typeof body.discovery_id !== "string" || !Array.isArray(body.items)) {
+  const body: unknown = await res.json()
+  const discoveryId = readString(body, "discovery_id")
+  const items = readArray(body, "items")
+  if (discoveryId === undefined || !items) {
     throw new Error("Credential discovery returned an invalid response")
   }
   return {
-    discoveryId: body.discovery_id,
-    items: body.items.flatMap(redactedDiscoveryItem),
+    discoveryId,
+    items: items.flatMap(redactedDiscoveryItem),
   }
 }
 
@@ -44,9 +54,9 @@ export async function saveDiscoveredAIConnections(input: {
       })),
     }),
   })
-  const body = await res.json() as { saved?: unknown }
-  if (!Array.isArray(body.saved)) throw new Error("Credential discovery save returned an invalid response")
-  const credentials = body.saved.flatMap(redactedSavedCredential)
+  const saved = readArray(await res.json(), "saved")
+  if (!saved) throw new Error("Credential discovery save returned an invalid response")
+  const credentials = saved.flatMap(redactedSavedCredential)
   if (credentials.length !== input.items.length) throw new Error("Credential discovery save returned incomplete results")
   return Promise.all(credentials.map((credential) => verifyAIConnection({
     ...credential,
@@ -75,8 +85,7 @@ export async function connectAIKey(input: {
       secret: input.apiKey,
     }),
   })
-  const body = await res.json() as { credential?: unknown }
-  const credential = redactedCredentialId(body.credential)
+  const credential = redactedCredentialId(readField(await res.json(), "credential"))
   if (!credential) throw new Error("Credential save returned an invalid response")
   return verifyAIConnection({ ...credential, serverUrl: input.serverUrl, request })
 }
@@ -92,9 +101,9 @@ export async function verifyAIConnection(input: {
     credentialId: input.credentialId,
     action: "verify",
   }, { method: "POST" })
-  const body = await res.json() as { result?: unknown }
-  if (!isVerificationResult(body.result)) throw new Error("Credential verification returned an invalid response")
-  return { credentialId: input.credentialId, providerId: input.providerId, result: body.result }
+  const result = readField(await res.json(), "result")
+  if (!isVerificationResult(result)) throw new Error("Credential verification returned an invalid response")
+  return { credentialId: input.credentialId, providerId: input.providerId, result }
 }
 
 export async function verifyProviderAIConnections(input: {
@@ -116,58 +125,54 @@ export async function verifyProviderAIConnections(input: {
 
 async function listCredentialIds(serverUrl: string | undefined, request: AIConnectRequest) {
   const res = await request({ serverUrl })
-  const body = await res.json() as { credentials?: unknown }
-  if (!Array.isArray(body.credentials)) throw new Error("Credential listing returned an invalid response")
-  return body.credentials.flatMap((value) => {
+  const credentials = readArray(await res.json(), "credentials")
+  if (!credentials) throw new Error("Credential listing returned an invalid response")
+  return credentials.flatMap((value) => {
     const credential = redactedCredentialId(value)
     return credential ? [credential] : []
   })
 }
 
 function redactedDiscoveryItem(value: unknown): AIDiscoveryItem[] {
-  if (!value || typeof value !== "object") return []
-  const item = value as Record<string, unknown>
-  if (
-    typeof item.provider_id !== "string" ||
-    typeof item.kind !== "string" ||
-    typeof item.label !== "string" ||
-    typeof item.origin !== "string"
-  ) return []
+  const providerId = readString(value, "provider_id")
+  const kind = readString(value, "kind")
+  const label = readString(value, "label")
+  const origin = readString(value, "origin")
+  if (providerId === undefined || kind === undefined || label === undefined || origin === undefined) return []
+  const accountId = readString(value, "account_id")
+  const freshUntil = readFiniteNumber(value, "fresh_until")
+  const probe = redactedProbe(readField(value, "probe"))
   return [{
-    providerId: item.provider_id,
-    kind: item.kind,
-    label: item.label,
-    origin: item.origin,
-    ...(typeof item.account_id === "string" ? { accountId: item.account_id } : {}),
-    ...(typeof item.fresh_until === "number" ? { freshUntil: item.fresh_until } : {}),
-    ...(item.already_connected === true ? { alreadyConnected: true } : {}),
-    ...(redactedProbe(item.probe) ? { probe: redactedProbe(item.probe)! } : {}),
+    providerId,
+    kind,
+    label,
+    origin,
+    ...(accountId === undefined ? {} : { accountId }),
+    ...(freshUntil === undefined ? {} : { freshUntil }),
+    ...(readBoolean(value, "already_connected") === true ? { alreadyConnected: true } : {}),
+    ...(probe ? { probe } : {}),
   }]
 }
 
 function redactedProbe(value: unknown): AIDiscoveryProbe | undefined {
-  if (!value || typeof value !== "object") return
-  const probe = value as Record<string, unknown>
-  if (probe.state === "working") return { state: "working" }
-  if (probe.state !== "broken" && probe.state !== "unknown") return
-  return {
-    state: probe.state,
-    reason: typeof probe.reason === "string" ? probe.reason : "",
-  }
+  const state = readString(value, "state")
+  if (state === "working") return { state: "working" }
+  if (state !== "broken" && state !== "unknown") return undefined
+  return { state, reason: readString(value, "reason") ?? "" }
 }
 
-function redactedCredentialId(value: unknown) {
-  if (!value || typeof value !== "object") return
-  const item = value as Record<string, unknown>
-  if (typeof item.id !== "string" || typeof item.provider_id !== "string") return
-  return { credentialId: item.id, providerId: item.provider_id }
+function redactedCredentialId(value: unknown): CredentialRef | undefined {
+  const credentialId = readString(value, "id")
+  const providerId = readString(value, "provider_id")
+  if (credentialId === undefined || providerId === undefined) return undefined
+  return { credentialId, providerId }
 }
 
-function redactedSavedCredential(value: unknown) {
-  if (!value || typeof value !== "object") return []
-  const item = value as Record<string, unknown>
-  if (typeof item.credential_id !== "string" || typeof item.provider_id !== "string") return []
-  return [{ credentialId: item.credential_id, providerId: item.provider_id }]
+function redactedSavedCredential(value: unknown): CredentialRef[] {
+  const credentialId = readString(value, "credential_id")
+  const providerId = readString(value, "provider_id")
+  if (credentialId === undefined || providerId === undefined) return []
+  return [{ credentialId, providerId }]
 }
 
 function isVerificationResult(value: unknown): value is AICredentialVerification {

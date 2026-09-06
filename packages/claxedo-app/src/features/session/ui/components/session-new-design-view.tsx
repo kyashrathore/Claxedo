@@ -34,17 +34,15 @@ import {
   MAIN_WORKTREE,
   newSessionEnvironmentOptions,
   repoDerivedProjectLabel,
-  type NewSessionWorkspaceKind,
   type ProjectWorkspace,
 } from "./session-new-workspace-options"
+import { workspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { validWorktree } from "@/platform/sync/worktree"
 import { showToast } from "@opencode-ai/ui/toast"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import type { NewSessionBranchChoice, NewSessionBranchState } from "./session-new-branch-source"
-
-export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
 
 type ProjectIconMeta = { url?: string; override?: string; color?: string }
 
@@ -74,9 +72,9 @@ const projectAvatarSource = (icon?: ProjectIconMeta) => {
 
 export function NewSessionDesignView(props: {
   worktree: string
-  workspaceKind: NewSessionWorkspaceKind
+  workspaceKind: WorkspaceKind
   onWorktreeChange: (value: string) => void
-  onWorkspaceKindChange: (value: NewSessionWorkspaceKind) => void
+  onWorkspaceKindChange: (value: WorkspaceKind) => void
   /** Settled Git revision/source-branch pair used when a new execution workspace is provisioned. */
   branch?: NewSessionBranchChoice
   branches?: readonly NewSessionBranchChoice[]
@@ -230,7 +228,7 @@ export function NewSessionDesignView(props: {
   // environment and worktree chips.
   const selfHostedWorkspace = createMemo(() => props.workspaceKind === "user-hosted")
 
-  const environmentLabel = (kind: NewSessionWorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
+  const environmentLabel = (kind: WorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
   // The server's own account of itself: whether it runs workspaces on its
   // filesystem. That, not the platform or the URL, decides whether "Local"
   // and "Select project" (a folder on this machine) exist here.
@@ -370,7 +368,10 @@ export function NewSessionDesignView(props: {
           label: environmentLabel(kind),
           detail: kind === "cloud" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
         })),
-        onSelect: (value) => props.onWorkspaceKindChange(value as NewSessionWorkspaceKind),
+        onSelect: (value) => {
+          const kind = workspaceKind(value)
+          if (kind) props.onWorkspaceKindChange(kind)
+        },
       })
     }
     chips.push({

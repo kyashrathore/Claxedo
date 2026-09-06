@@ -1,4 +1,5 @@
 import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
+import { requestUrl } from "@/lib/url"
 
 export function harnessQueryFetch(input: {
   request?: typeof fetch
@@ -11,7 +12,7 @@ export function harnessQueryFetch(input: {
   const baseUrl = input.baseUrl ?? "http://claxedo.local"
   return async (requestInput, init) => {
     const next = requestInput instanceof Request ? new Request(requestInput, init) : undefined
-    const url = new URL(next?.url ?? String(requestInput), baseUrl)
+    const url = new URL(requestUrl(requestInput), baseUrl)
     for (const [key, value] of Object.entries(harnessSelectionQuery(harnessType))) {
       url.searchParams.set(key, value)
     }

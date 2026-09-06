@@ -58,7 +58,6 @@ export type NavigationDragPayload =
   | { type: "terminal"; terminalId: string; contentId: string }
 
 export type NavigationDragStart = {
-  event: DragEvent
   row: SessionNavigationRow | TerminalSurfaceRow
   payload: NavigationDragPayload
   setWorkbenchDragData: (contentId: string) => void

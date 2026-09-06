@@ -3,6 +3,7 @@ import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydr
 import type { HarnessStoreState } from "./store-state"
 import type { HarnessScopeInput } from "./store-policy"
 import { harnessSelectionId, type HarnessType } from "./profile"
+import { requestUrl } from "@/lib/url"
 
 type ScopeInput = HarnessScopeInput
 const CLAUDE_CONNECTION = { kind: "connection", connectionId: "claude-team" } as const
@@ -92,7 +93,7 @@ function createSubject(input?: {
           },
       ),
       localHarnessConfigFetch: () => async (url: RequestInfo | URL) => {
-        statusUrls.push(String(url))
+        statusUrls.push(requestUrl(url))
         return response(input?.statusBody ?? {
           harness: { id: "claude-team", access: "connection" },
           model: "sonnet",

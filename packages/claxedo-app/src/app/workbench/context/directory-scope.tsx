@@ -55,6 +55,12 @@ import {
   DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS,
 } from "@/features/session/data/query/deferred-directory-resource"
 import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
+import { readField } from "@/lib/record"
+
+/** The two fields every host subagent row carries; the rest are optional. */
+function isHostSubagentRow(value: unknown): value is HostSubagentRow {
+  return typeof readField(value, "subagentKey") === "string" && typeof readField(value, "revision") === "number"
+}
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
@@ -101,7 +107,8 @@ function DirectoryDataProvider(props: ParentProps<{
       async (signal) => {
         const response = await sdk.request(path, { signal })
         if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
-        return await response.json() as HostSubagentRow[]
+        const rows: unknown = await response.json()
+        return Array.isArray(rows) ? rows.filter(isHostSubagentRow) : []
       },
       (rows, active) => hydrateSubagentRows(subagents, parentSessionId, rows, active),
       { signal: callerSignal },

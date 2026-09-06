@@ -166,13 +166,13 @@ export function SessionReviewV2(props: SessionReviewV2Props) {
 
   const prev = () => {
     const files = props.files
-    if (files.length === 0) return
+    if (files.length === 0) return undefined
     return files[(fileIndex() - 1 + files.length) % files.length]
   }
 
   const next = () => {
     const files = props.files
-    if (files.length === 0) return
+    if (files.length === 0) return undefined
     return files[(fileIndex() + 1) % files.length]
   }
 

@@ -136,6 +136,7 @@ import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
+import { readArray, readField, readString } from "@/lib/record"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -179,7 +180,7 @@ export function SessionListNotice(props: {
         <button
           type="button"
           class="shrink-0 text-xs text-text-weak hover:text-text-base transition-colors duration-100"
-          onClick={(e: MouseEvent) => {
+          onClick={(e) => {
             e.stopPropagation()
             void props.onAction?.()
           }}
@@ -194,9 +195,26 @@ export function SessionListNotice(props: {
 type Group = "project" | "workspace"
 type Archive = "active" | "all" | "archived"
 
+const ARCHIVE_STATES: readonly string[] = ["active", "all", "archived"]
+
+/** The dictionary entry for a workspace role, keyed so the lookup is checked. */
+const WORKSPACE_ROLE_LABEL_KEYS = {
+  owner: "sidebar.workspace.role.owner",
+  admin: "sidebar.workspace.role.admin",
+  editor: "sidebar.workspace.role.editor",
+  viewer: "sidebar.workspace.role.viewer",
+} as const
+
+function workspaceRoleLabelKey(role: string | undefined) {
+  const keys: Partial<Record<string, (typeof WORKSPACE_ROLE_LABEL_KEYS)[keyof typeof WORKSPACE_ROLE_LABEL_KEYS]>> =
+    WORKSPACE_ROLE_LABEL_KEYS
+  return (role === undefined ? undefined : keys[role]) ?? WORKSPACE_ROLE_LABEL_KEYS.viewer
+}
+const isArchive = (value: unknown): value is Archive => typeof value === "string" && ARCHIVE_STATES.includes(value)
+
 function showCloud(input: {
   worktree: string
-  workspaces?: Record<string, { kind: RuntimeKind }>
+  workspaces?: Record<string, { kind?: RuntimeKind }>
   workspaceDir?: string
   local: boolean
 }) {
@@ -348,13 +366,14 @@ function loadView() {
   try {
     const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(VIEW_KEY)
     if (!raw) return undefined
-    const row = JSON.parse(raw) as Partial<View>
-    const archived = row.archived
+    const row: unknown = JSON.parse(raw)
+    const archived = readField(row, "archived")
+    const strings = (key: string) => readArray(row, key)?.filter((item): item is string => typeof item === "string") ?? []
     return {
-      group: groupFromStorage(row.group),
-      status: Array.isArray(row.status) ? row.status.filter((item): item is string => typeof item === "string") : [],
-      environment: Array.isArray(row.environment) ? row.environment.filter((item): item is string => typeof item === "string") : [],
-      git: Array.isArray(row.git) ? row.git.filter((item): item is string => typeof item === "string") : [],
+      group: groupFromStorage(readString(row, "group")),
+      status: strings("status"),
+      environment: strings("environment"),
+      git: strings("git"),
       archived: archived === "all" || archived === "archived" ? archived : "active",
     } satisfies View
   } catch {
@@ -459,12 +478,12 @@ export function RailSidebar(props: RailSidebarProps) {
   const terminal = useOptionalTerminal()
   let railRef: HTMLElement | undefined
   const sessionInventoryQuery = useQuery(() =>
-    sessionInventoryQueryOptions<SessionInventoryRow>({
+    sessionInventoryQueryOptions({
       baseUrl: globalSDK.url,
     }),
   )
   const sessionInventory = createMemo(() =>
-    sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
+    sessionInventoryQuery.data ?? emptySessionInventory(),
   )
 
   const expanded = createMemo(() => props.railExpanded)
@@ -1438,7 +1457,7 @@ export function RailSidebar(props: RailSidebarProps) {
 
               <DropdownMenu.Group>
                 <DropdownMenu.GroupLabel>Archived</DropdownMenu.GroupLabel>
-                <DropdownMenu.RadioGroup value={view().archived} onChange={(v) => setArchive(v as Archive)}>
+                <DropdownMenu.RadioGroup value={view().archived} onChange={(v) => { if (isArchive(v)) setArchive(v) }}>
                   <DropdownMenu.RadioItem value="active" closeOnSelect={false}>
                     <span class="flex-1">Active</span>
                     <Show when={view().archived === "active"}>
@@ -1617,7 +1636,7 @@ export function RailSidebar(props: RailSidebarProps) {
                       ...input.project,
                       expanded: input.project.expanded ?? false,
                     }
-                    dialog.show(() => <DialogEditProject project={item} />)
+                    void dialog.show(() => <DialogEditProject project={item} />)
                   }}
                 >
                   <Icon name="pencil-line" size="small" />
@@ -1748,9 +1767,9 @@ export function RailSidebar(props: RailSidebarProps) {
                 class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
                 classList={{ "opacity-60": sessionListLoadingMore() }}
-                onClick={(e: MouseEvent) => {
+                onClick={(e) => {
                   void loadMoreGlobalSessionList()
-                  ;(e.currentTarget as HTMLButtonElement).blur()
+                  e.currentTarget.blur()
                 }}
               >
                 {sessionListLoadingMore() ? `${language.t("common.loading")}...` : language.t("common.loadMore")}
@@ -1804,9 +1823,7 @@ export function RailSidebar(props: RailSidebarProps) {
         publishedByThisMachine: sharedWorkspacesForMeta.shared(
           workspaceRowId(section.project, section.workspaceDir),
         ),
-        label: (key, role) => key === "role"
-          ? language.t(`sidebar.workspace.role.${role}` as "sidebar.workspace.role.viewer")
-          : language.t(`sidebar.workspace.${key}`),
+        label: (key, role) => key === "role" ? language.t(workspaceRoleLabelKey(role)) : language.t(`sidebar.workspace.${key}`),
       })
     })
     // Every relay-backed workspace names its id here, not just a cloud one: it
@@ -1901,7 +1918,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <span
               class="size-4 shrink-0 flex items-center justify-center relative" role="button" tabIndex={0}
               aria-label={open() ? "Collapse workspace" : "Expand workspace"} aria-expanded={open()}
-              onClick={(e: MouseEvent) => {
+              onClick={(e) => {
                 e.stopPropagation()
                 setManuallyToggled(true)
                 setOpen(!_open())
@@ -1996,9 +2013,9 @@ export function RailSidebar(props: RailSidebarProps) {
                 class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
                 classList={{ "opacity-60": sessionListLoadingMore() }}
-                onClick={(e: MouseEvent) => {
+                onClick={(e) => {
                   void loadMoreWorkspaceSessionList()
-                  ;(e.currentTarget as HTMLButtonElement).blur()
+                  e.currentTarget.blur()
                 }}
               >
                 {sessionListLoadingMore() ? `${language.t("common.loading")}...` : language.t("common.loadMore")}
@@ -2139,7 +2156,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 "text-text-base/85": !active(),
               }}
               aria-label={open() ? "Collapse project" : "Expand project"} aria-expanded={open()}
-              onClick={(e: MouseEvent) => {
+              onClick={(e) => {
                 e.stopPropagation()
                 setOpen(!open())
               }}
@@ -2210,9 +2227,9 @@ export function RailSidebar(props: RailSidebarProps) {
                 class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
                 classList={{ "opacity-60": sessionListLoadingMore() }}
-                onClick={(e: MouseEvent) => {
+                onClick={(e) => {
                   void loadMoreProjectSessionList()
-                  ;(e.currentTarget as HTMLButtonElement).blur()
+                  e.currentTarget.blur()
                 }}
               >
                 {sessionListLoadingMore() ? `${language.t("common.loading")}...` : language.t("common.loadMore")}
@@ -2271,7 +2288,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 "text-text-base/85": !active(),
               }}
               aria-label={open() ? "Collapse project" : "Expand project"} aria-expanded={open()}
-              onClick={(e: MouseEvent) => {
+              onClick={(e) => {
                 e.stopPropagation()
                 setOpen(!open())
               }}

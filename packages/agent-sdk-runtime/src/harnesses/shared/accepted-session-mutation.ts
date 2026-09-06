@@ -1,12 +1,12 @@
 import type { AgentSession, SessionConfig, SessionConfigUpdate } from "../../index"
-import type { AgentRuntimeStore } from "./runtime-store"
+import type { AgentRuntimeStoreCore } from "./runtime-store"
 
 export function acceptedSessionUpdate(
-  store: AgentRuntimeStore,
+  store: AgentRuntimeStoreCore,
   sessionId: string,
   updates: { title?: string; time?: { archived?: number } },
 ): AgentSession | null {
-  const current = store.getSession(sessionId) as AgentSession | null
+  const current = store.getSession(sessionId)
   if (!current) return null
   return {
     ...current,

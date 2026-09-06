@@ -403,7 +403,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         sessionId: sessionItem.id,
       })
       removeDirectorySessionCacheRow(directory, sessionItem.id)
-      removeSessionInventoryQueryData<SessionItem>({
+      removeSessionInventoryQueryData({
         baseUrl: props.globalSDK.url,
         session: {
           id: sessionItem.id,

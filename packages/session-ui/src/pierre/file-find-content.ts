@@ -74,7 +74,7 @@ export function assignFindRanges<Range>(
   slotsByLine: ReadonlyMap<number, readonly number[]>,
   rows: Iterable<{ line: number; ranges: readonly Range[] }>,
 ): Array<Range | undefined> {
-  const assigned: Array<Range | undefined> = new Array(matchCount).fill(undefined)
+  const assigned: Array<Range | undefined> = Array.from({ length: matchCount }, () => undefined)
   for (const row of rows) {
     const slots = slotsByLine.get(row.line)
     if (!slots) continue

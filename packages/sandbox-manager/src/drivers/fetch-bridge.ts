@@ -1,3 +1,4 @@
+import { record } from "../json"
 import type { SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from ".."
 
 export type FetchBridgeSandboxDriverOptions = {
@@ -22,6 +23,14 @@ function assertLifecycleSettings(options: FetchBridgeSandboxDriverOptions) {
   }
 }
 
+/** Provider labels are an open string map; anything else is dropped, not trusted. */
+function stringMap(input: unknown): Record<string, string> | undefined {
+  const row = record(input)
+  if (!row) return undefined
+  const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  return Object.fromEntries(entries)
+}
+
 function headers(token?: string) {
   return {
     "content-type": "application/json",
@@ -30,8 +39,8 @@ function headers(token?: string) {
 }
 
 function target(input: unknown): SandboxTarget | { provisioning: true; retryAfterMs: number } {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Fetch bridge sandbox driver returned an invalid response")
-  const row = input as Record<string, unknown>
+  const row = record(input)
+  if (!row) throw new Error("Fetch bridge sandbox driver returned an invalid response")
   if (row.status === "provisioning") {
     return {
       provisioning: true,
@@ -47,9 +56,7 @@ function target(input: unknown): SandboxTarget | { provisioning: true; retryAfte
     url: row.url,
     hostId: row.hostId,
     driverResourceId: typeof row.driverResourceId === "string" ? row.driverResourceId : undefined,
-    labels: row.labels && typeof row.labels === "object" && !Array.isArray(row.labels)
-      ? row.labels as Record<string, string>
-      : undefined,
+    labels: stringMap(row.labels),
   }
 }
 
@@ -60,11 +67,8 @@ function bridgeTarget(input: unknown): SandboxTarget {
 }
 
 function targetList(input: unknown) {
-  const rows = Array.isArray(input)
-    ? input
-    : input && typeof input === "object" && !Array.isArray(input) && Array.isArray((input as Record<string, unknown>).targets)
-      ? (input as { targets: unknown[] }).targets
-      : undefined
+  const targets = record(input)?.targets
+  const rows = Array.isArray(input) ? input : Array.isArray(targets) ? targets : undefined
   if (!rows) throw new Error("Fetch bridge sandbox driver returned an invalid target list")
   return rows.map(bridgeTarget)
 }

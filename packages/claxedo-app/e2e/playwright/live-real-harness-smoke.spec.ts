@@ -359,7 +359,7 @@ async function registerWorkspace(dir: string) {
   if (!res.ok) {
     throw new Error(
       `GATING: failed to pre-register workspace ${dir} via ${url} (${res.status}) — ` +
-        `${await res.text().catch(() => "<no body>")}`,
+        (await res.text().catch(() => "<no body>")),
     )
   }
 }
@@ -529,7 +529,7 @@ test.describe("live real-harness smoke @live", () => {
     await Promise.all(scratchDirs.map((dir) => fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)))
   })
 
-  test.beforeEach(async ({}, testInfo) => {
+  test.beforeEach(async (_fixtures, testInfo) => {
     // Real agent turns take several real seconds each (see HARNESS NOTES latency
     // table); 3 turns + reload per scenario needs headroom above the file default.
     testInfo.setTimeout(240_000)

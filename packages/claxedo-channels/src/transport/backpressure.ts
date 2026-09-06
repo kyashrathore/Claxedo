@@ -1,3 +1,5 @@
+import { record } from "../json"
+
 export type RetryAfterMs = (error: unknown) => number | undefined
 
 export function channelRetryDelayMs(input: {
@@ -11,34 +13,27 @@ export function channelRetryDelayMs(input: {
     ?? input.retryDelayMs * 2 ** input.attempt
 }
 
-function retryAfterMs(error: unknown) {
-  if (!error || typeof error !== "object") return
-  const row = error as {
-    retryAfterMs?: unknown
-    headers?: unknown
-    response?: {
-      headers?: unknown
-    }
-  }
+function retryAfterMs(error: unknown): number | undefined {
+  const row = record(error)
+  if (!row) return undefined
   return normalizedDelay(row.retryAfterMs)
     ?? retryAfterHeaderMs(row.headers)
-    ?? retryAfterHeaderMs(row.response?.headers)
+    ?? retryAfterHeaderMs(record(row.response)?.headers)
 }
 
-function retryAfterHeaderMs(headers: unknown) {
-  if (!headers || typeof headers !== "object") return
-  const row = headers as {
-    get?: (name: string) => unknown
-  }
-  return retryAfterValueMs(typeof row.get === "function" ? row.get("retry-after") : undefined)
+function retryAfterHeaderMs(headers: unknown): number | undefined {
+  const row = record(headers)
+  const get = row?.get
+  if (typeof get !== "function") return undefined
+  return retryAfterValueMs(get.call(headers, "retry-after"))
 }
 
-function retryAfterValueMs(value: unknown) {
+function retryAfterValueMs(value: unknown): number | undefined {
   if (typeof value !== "string") return normalizedDelay(value)
   const seconds = Number(value)
   if (Number.isFinite(seconds)) return normalizedDelay(seconds * 1000)
   const at = Date.parse(value)
-  if (!Number.isFinite(at)) return
+  if (!Number.isFinite(at)) return undefined
   return Math.max(0, at - Date.now())
 }
 

@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 /**
  * The first-party Goal executor protocol.
  *
@@ -76,11 +77,12 @@ export type GoalEvaluation = {
 export function parseGoalEvaluation(response: string, evaluator: string): GoalEvaluation {
   const object = response.match(/\{[\s\S]*\}/)?.[0]
   if (!object) throw new Error(`${evaluator} ${GOAL_PROMPT_TEXT.noJsonResult}`)
-  const parsed = JSON.parse(object) as { met?: unknown; reason?: unknown }
-  if (typeof parsed.met !== "boolean" || typeof parsed.reason !== "string") {
+  const parsed = asRecord(JSON.parse(object))
+  const { met, reason } = parsed ?? {}
+  if (typeof met !== "boolean" || typeof reason !== "string") {
     throw new Error(`${evaluator} ${GOAL_PROMPT_TEXT.invalidResult}`)
   }
-  return { met: parsed.met, reason: parsed.reason }
+  return { met, reason }
 }
 
 /**

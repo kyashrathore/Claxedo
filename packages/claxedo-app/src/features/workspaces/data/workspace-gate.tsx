@@ -67,9 +67,9 @@ export function WorkspaceOfflineView(props: {
   const copy = () => OFFLINE_COPY[props.reason] ?? OFFLINE_COPY.failed
   const extraError = () => {
     const err = props.err?.trim()
-    if (!err) return
-    if (err === copy().title || err === copy().detail) return
-    if (err.includes(copy().detail) || err.startsWith(`${copy().title}.`)) return
+    if (!err) return undefined
+    if (err === copy().title || err === copy().detail) return undefined
+    if (err.includes(copy().detail) || err.startsWith(`${copy().title}.`)) return undefined
     return err
   }
   // Same column as the connecting pipeline it replaces (WorkspaceStateShell), so

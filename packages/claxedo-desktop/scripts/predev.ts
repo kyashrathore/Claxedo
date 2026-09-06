@@ -10,6 +10,8 @@ import * as fs from "fs"
 import { createRequire } from "node:module"
 import * as path from "path"
 
+import { readString } from "../src/shared/json-read"
+
 import { bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import {
   buildClaxedoServerCompileCache,
@@ -75,7 +77,9 @@ console.log(`[predev] Host Connector child bundled (${hostConnector.manifest.sha
 
 async function patchDevBundleMetadata() {
   if (process.platform !== "darwin") return
-  const electronBin = require("electron") as unknown as string
+  // Named on the binding rather than asserted: `require` answers `any`, and
+  // the guard below is what actually establishes the type.
+  const electronBin: unknown = require("electron")
   if (typeof electronBin !== "string") return
   const marker = "/Contents/"
   const at = electronBin.indexOf(marker)
@@ -306,10 +310,8 @@ function electronCanLoadBetterSqlite() {
 }
 
 function readPackageVersion(packageName: string) {
-  const raw = JSON.parse(fs.readFileSync(resolvePackageFile(`${packageName}/package.json`), "utf8")) as {
-    version?: unknown
-  }
-  return typeof raw.version === "string" ? raw.version : undefined
+  const raw: unknown = JSON.parse(fs.readFileSync(resolvePackageFile(`${packageName}/package.json`), "utf8"))
+  return readString(raw, "version")
 }
 
 function optionalPackageDir(packageName: string) {

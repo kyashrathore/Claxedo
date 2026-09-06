@@ -1,13 +1,29 @@
 import { describe, expect, test, vi } from "vitest"
+import { z } from "zod"
 import { registerCloudWorkspaceTools } from "./cloud-workspace-tools"
+import type { McpToolResult } from "./mcp-tool"
+
+/** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
+function jsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error(`expected a JSON string request body, got ${typeof body}`)
+  return JSON.parse(body)
+}
 
 function tools(readOnly = false) {
-  const handlers = new Map<string, (args: any) => Promise<any>>()
+  // The handler signature is the registration port's, so a change to what a
+  // tool receives or answers with fails here rather than being absorbed.
+  const handlers = new Map<string, (args: Record<string, unknown>) => Promise<McpToolResult>>()
+  // Arguments go through the tool's own declared schema, the way the server
+  // does it — so a call in this suite that a real client could not make fails
+  // here instead of exercising a handler on input it would never receive.
   // Typed as the real seam so `mock.calls` carries the (path, init) tuple and
   // `mockResolvedValueOnce` accepts any response shape the routes can return.
   const request = vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(async () => ({ ok: true }))
   registerCloudWorkspaceTools(
-    (name, _config, handler) => handlers.set(name, handler),
+    (name, config, handler) => {
+      const schema = z.object(config.inputSchema)
+      handlers.set(name, (args) => handler(schema.parse(args), { requestId: 1 }))
+    },
     request,
     readOnly,
   )
@@ -30,7 +46,7 @@ describe("cloud workspace MCP tools", () => {
       "/api/workspace/ws_1/checkpoints",
       "/api/workspace/ws_1/lifecycle/stop",
     ])
-    expect(JSON.parse(String(fixture.request.mock.calls[1][1]?.body))).toEqual({ policy: "interrupt" })
+    expect(jsonBody(fixture.request.mock.calls[1][1]?.body)).toEqual({ policy: "interrupt" })
   })
 
   test("restore and destructive actions fail locally until explicitly approved", async () => {

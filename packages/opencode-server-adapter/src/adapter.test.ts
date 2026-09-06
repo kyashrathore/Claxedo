@@ -8,8 +8,8 @@ const SOURCE = "/local/repo"
 const TARGET = "/remote/repo"
 const servers: Bun.Server<unknown>[] = []
 
-afterEach(() => {
-  for (const server of servers.splice(0)) server.stop(true)
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.stop(true)))
 })
 
 function serve(handler: (request: Request) => Response | Promise<Response>) {

@@ -148,6 +148,10 @@ export function betterAuthD1AuthenticationEvidenceHooks(
   }
 }
 
+/** The single-factor methods a persisted evidence row may name. */
+const PERSISTED_EVIDENCE_METHODS = ["password", "oauth:google", "oauth:github"] as const satisfies
+  readonly AuthenticationEvidenceMethod[]
+
 function parsePersistedEvidence(row: EvidenceRow | null) {
   if (
     !row
@@ -165,20 +169,14 @@ function parsePersistedEvidence(row: EvidenceRow | null) {
   } catch {
     throw invalidCredentials()
   }
-  if (
-    !Array.isArray(methods)
-    || methods.length !== 1
-    || !["password", "oauth:google", "oauth:github"].includes(methods[0])
-    || row.assurance !== "single-factor"
-  ) throw invalidCredentials()
-
-  return {
-    sessionId: row.sessionId,
-    subject: row.subject,
-    authenticatedAt,
-    methods: methods as [AuthenticationEvidenceMethod],
-    assurance: row.assurance as AuthAssurance,
+  const method = PERSISTED_EVIDENCE_METHODS.find((candidate) => candidate === (Array.isArray(methods) ? methods[0] : undefined))
+  if (!Array.isArray(methods) || methods.length !== 1 || !method || row.assurance !== "single-factor") {
+    throw invalidCredentials()
   }
+
+  const methods_: [AuthenticationEvidenceMethod] = [method]
+  const assurance: AuthAssurance = "single-factor"
+  return { sessionId: row.sessionId, subject: row.subject, authenticatedAt, methods: methods_, assurance }
 }
 
 async function evidenceRow(database: D1Database, sessionId: string) {

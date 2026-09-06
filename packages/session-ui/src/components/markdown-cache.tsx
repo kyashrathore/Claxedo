@@ -220,9 +220,9 @@ export const mermaidSvgCacheLimits = {
 const mermaidCache = new Map<string, string>()
 let mermaidBytes = 0
 
-export function getCachedMermaidSvg(source: string) {
+export function getCachedMermaidSvg(source: string): string | undefined {
   const value = mermaidCache.get(source)
-  if (value === undefined) return
+  if (value === undefined) return undefined
   mermaidCache.delete(source)
   mermaidCache.set(source, value)
   return value

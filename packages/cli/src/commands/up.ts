@@ -46,6 +46,7 @@ async function waitForDetached(directory: string) {
     if (record) return record
     await sleep(500)
   }
+  return undefined
 }
 
 export async function up(args: string[], internalHost = false) {

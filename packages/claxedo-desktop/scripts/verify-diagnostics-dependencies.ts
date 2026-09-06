@@ -1,5 +1,7 @@
 import { resolve } from "node:path"
 
+import { readArray, readRecord, readString } from "../src/shared/json-read"
+
 export const acceptedDiagnosticsDependencies = {
   pidusage: {
     version: "4.0.1",
@@ -48,9 +50,7 @@ export async function verifyDiagnosticsDependencies(
 ) {
   const desktop = await Bun.file(resolve(root, "packages/claxedo-desktop/package.json")).json()
   const workspace = await Bun.file(resolve(root, "package.json")).json()
-  const lock = Bun.JSONC.parse(await Bun.file(resolve(root, "bun.lock")).text()) as {
-    packages?: Record<string, unknown>
-  }
+  const lockPackages = readRecord(Bun.JSONC.parse(await Bun.file(resolve(root, "bun.lock")).text()), "packages")
   const direct = new Set(Object.keys(acceptedDiagnosticsDependencies))
   const results = await Promise.all(
     Object.entries({
@@ -85,7 +85,7 @@ export async function verifyDiagnosticsDependencies(
         desktop.optionalDependencies?.[name] !== accepted.version
           ? `${name} is not exact-pinned in the desktop manifest`
           : undefined,
-        !Object.values(lock.packages ?? {}).some((entry) =>
+        !Object.values(lockPackages ?? {}).some((entry) =>
           Array.isArray(entry) &&
           entry[0] === `${name}@${accepted.version}` &&
           entry[3] === accepted.integrity)
@@ -127,9 +127,11 @@ async function queryAdvisories(name: string, version: string) {
     signal: AbortSignal.timeout(15_000),
   })
   if (!response.ok) throw new Error(`OSV advisory query failed for ${name}@${version}: ${String(response.status)}`)
-  const result = await response.json() as { vulns?: Array<{ id?: unknown }> }
-  return (result.vulns ?? []).flatMap((vulnerability) =>
-    typeof vulnerability.id === "string" ? [vulnerability.id] : [])
+  const vulns = readArray(await response.json(), "vulns") ?? []
+  return vulns.flatMap((vulnerability) => {
+    const id = readString(vulnerability, "id")
+    return id === undefined ? [] : [id]
+  })
 }
 
 if (import.meta.main) {

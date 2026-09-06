@@ -490,7 +490,7 @@ async function walk(root: string): Promise<string[]> {
 
 async function mapLimit<T, R>(items: readonly T[], concurrency: number, operation: (item: T) => Promise<R>) {
   let next = 0
-  const results = new Array<R>(items.length)
+  const results: R[] = Array.from({ length: items.length })
   await Promise.all(
     Array.from({ length: Math.min(concurrency, items.length) }, async () => {
       while (next < items.length) {

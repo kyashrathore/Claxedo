@@ -175,7 +175,7 @@ process.stdin.on("data", (chunk: string) => {
     try {
       handle(JSON.parse(trimmed) as JsonRpcMessage)
     } catch (err) {
-      process.stderr.write(`fake-acp: parse error: ${err}\n`)
+      process.stderr.write(`fake-acp: parse error: ${err instanceof Error ? err.message : JSON.stringify(err)}\n`)
     }
   }
 })

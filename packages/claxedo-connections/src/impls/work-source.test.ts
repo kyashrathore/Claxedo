@@ -3,6 +3,17 @@ import { githubIntegration } from "./github.js"
 import { atlassianIntegration } from "./atlassian.js"
 import { linearIntegration } from "./linear.js"
 
+/** The absolute URL a fetch call targeted, for whichever RequestInfo shape it used. */
+const requestUrl = (input: string | URL | Request): string => (input instanceof Request ? input.url : input.toString())
+
+/** The header names exactly as the impl set them — `Headers` would lower-case them. */
+const headerRecord = (init: HeadersInit | undefined): Record<string, string> => {
+  if (!init) return {}
+  if (init instanceof Headers) return Object.fromEntries(init.entries())
+  if (Array.isArray(init)) return Object.fromEntries(init.map(([name, value]) => [name ?? "", value ?? ""]))
+  return { ...init }
+}
+
 describe("first-party work-source integrations", () => {
   test("declare only their applicable capabilities", () => {
     expect(githubIntegration().decl.capabilities).toEqual(["code-host", "work-source"])
@@ -14,7 +25,7 @@ describe("first-party work-source integrations", () => {
     const seen: string[] = []
     const integration = linearIntegration({
       fetchImpl: (async (_url, init) => {
-        seen.push(String((init?.headers as Record<string, string>).authorization))
+        seen.push(new Headers(init?.headers).get("authorization") ?? "")
         return Response.json({ data: { viewer: { name: "Alice" } } })
       }),
     })
@@ -26,7 +37,7 @@ describe("first-party work-source integrations", () => {
     const calls: Array<{ url: string; headers: Record<string, string> }> = []
     const integration = githubIntegration({
       fetchImpl: (async (input, init) => {
-        calls.push({ url: String(input), headers: (init?.headers ?? {}) as Record<string, string> })
+        calls.push({ url: requestUrl(input), headers: headerRecord(init?.headers) })
         return Response.json({ login: "octocat" })
       }),
     })

@@ -118,7 +118,7 @@ function phaseOneFamilyForSetQueryData(call: SetQueryDataCall) {
   if (/promptSessionStatusMetaKey|["']status-meta["']/.test(call.body)) return "session.status-meta"
   if (/shellDataKeys\.sessionId\([\s\S]*["'](?:status|requests|todo|diff)["']/.test(call.body)) return "session/workspace query cache"
   if (/sessionModelSync(?:State|Request)Key|harness(?:PreparedSession(?:Seq)?|PreparingSession|Options(?:Seq|Tries)|Hydrate(?:Request|Seen)|ChangeRequest)Key/.test(call.body)) return "harness-config query cache"
-  return
+  return undefined
 }
 
 function matchingParen(text: string, open: number) {

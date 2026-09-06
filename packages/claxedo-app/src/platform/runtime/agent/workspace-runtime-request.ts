@@ -9,6 +9,7 @@ import {
   isLocalPersonalScope,
   isLoopbackHttpUrl,
 } from "@/platform/runtime/server-transport"
+import { errorMessage } from "@/lib/server-errors"
 
 export {
   centralTransportForServer,
@@ -115,7 +116,7 @@ function relayRuntimePath(path: string) {
 }
 
 function connectionFailureResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   const status = Number(/^Workspace connection failed: (\d+)$/.exec(message)?.[1])
   return new Response(message, {
     status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 502,
@@ -130,9 +131,9 @@ function controlPlaneHeaders(init?: RequestInit): HeadersInit | undefined {
 
 function workspaceRuntimeTarget(input: WorkspaceRuntimeSnapshotLike | undefined): WorkspaceRuntimeTarget | undefined {
   const kind = workspaceKind(input?.kind)
-  if (!kind) return
+  if (!kind) return undefined
   if (kind === "local") return { kind }
-  if (!input?.workspaceId) return
+  if (!input?.workspaceId) return undefined
   return { kind, workspaceId: input.workspaceId }
 }
 

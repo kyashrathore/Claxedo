@@ -24,7 +24,17 @@ import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
 import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "./provider-credential.sql"
 import { getBackend } from "./backend-registry"
-import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialWrite, CredentialStatus } from "./types"
+import { isOneOf, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import {
+  CREDENTIAL_CONSENT_SURFACES,
+  type CredentialConsent,
+  type CredentialHealth,
+  type CredentialKind,
+  type CredentialMetadata,
+  type CredentialScope,
+  type CredentialWrite,
+  type CredentialStatus,
+} from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { ensurePresetForProvider, removeAutoPresetForProvider } from "../sandbox/network/policy"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
@@ -100,7 +110,7 @@ export async function putCredential(
   // Exclusive-kind replacement DELETES rows. Unscoped, org A storing an
   // `openai` api_key would delete org B's `openai` oauth_token — cross-tenant
   // denial of service. Scoped to the writer's org it can only replace its own.
-  const replacing = exclusiveAuthKinds.includes(input.kind as (typeof exclusiveAuthKinds)[number])
+  const replacing = exclusiveAuthKinds.some((kind) => kind === input.kind)
     ? ClaxedoDB.use((db) =>
         db
           .select()
@@ -184,20 +194,16 @@ export async function putCredential(
 
 type CredentialRow = typeof ClaxedoProviderCredentialTable.$inferSelect
 
+/** The stored consent record, or nothing when the column is absent or unreadable. */
+function readConsent(raw: string | null): CredentialConsent | null {
+  if (!raw) return null
+  const value = parseJsonRecord(raw)
+  if (!value || typeof value.at !== "number") return null
+  return isOneOf(value.surface, CREDENTIAL_CONSENT_SURFACES) ? { at: value.at, surface: value.surface } : null
+}
+
 function toMetadata(row: CredentialRow): CredentialMetadata {
-  const consent = (() => {
-    if (!row.consent_json) return null
-    try {
-      return JSON.parse(row.consent_json) as CredentialMetadata["consent"]
-    } catch {
-      return null
-    }
-  })()
-  return {
-    ...row,
-    scope: row.scope as CredentialScope,
-    consent,
-  } as unknown as CredentialMetadata
+  return { ...row, consent: readConsent(row.consent_json) }
 }
 
 /** List credential metadata (no secrets) for one org. */
@@ -252,7 +258,7 @@ function listCredentialsByProviderPreference(org: CredentialOrgScope) {
  */
 export function getCredentialByProvider(
   providerId: string,
-  kind?: string,
+  kind?: CredentialKind,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata | undefined {
   const row = safeRead<CredentialRow | undefined>("credential lookup", undefined, () =>
@@ -312,7 +318,7 @@ export function getCredential(
 /** Resolve a credential's raw secret material — only call at trusted fanout points. */
 export async function resolveSecret(
   providerId: string,
-  kind?: string,
+  kind?: CredentialKind,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<string | null> {
   const cred = getCredentialByProvider(providerId, kind, org)
@@ -485,7 +491,7 @@ export async function deleteCredential(
  */
 export async function deleteCredentialsByProvider(
   providerId: string,
-  kind?: string,
+  kind?: CredentialKind,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<number> {
   const scope = kind

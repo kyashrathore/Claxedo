@@ -15,6 +15,7 @@ import type {
   WorkspaceSessionWorktree,
   WorkspaceStartupPort,
 } from "@/platform/runtime/workspace-startup-port"
+import { readField, readString } from "@/lib/record"
 
 /**
  * The hosted implementation of `WorkspaceStartupPort`.
@@ -84,8 +85,9 @@ function isHostOfflineBody(text: string) {
   if (!text) return false
   if (text.includes("user_hosted_app_offline")) return true
   try {
-    const body = JSON.parse(text) as { error?: { code?: string } | string; code?: string }
-    const code = typeof body.error === "object" ? body.error?.code : (body.code ?? (typeof body.error === "string" ? body.error : undefined))
+    const body: unknown = JSON.parse(text)
+    const error = readField(body, "error")
+    const code = typeof error === "string" ? error : readString(error, "code") ?? readString(body, "code")
     return code === "user_hosted_app_offline"
   } catch {
     return false
@@ -322,13 +324,15 @@ export async function prepareWorkspaceSessionWorktree(
     }),
   })
   if (!response.ok) throw new Error((await response.text()) || `Worktree admission failed: ${response.status}`)
-  const body = await response.json() as {
-    worktree?: { path?: string; branch?: string; baseCommit?: string }
-  }
-  if (!body.worktree?.path || !body.worktree.branch || !body.worktree.baseCommit) {
+  const body: unknown = await response.json()
+  const worktree = readField(body, "worktree")
+  const path = readString(worktree, "path")
+  const branch = readString(worktree, "branch")
+  const baseCommit = readString(worktree, "baseCommit")
+  if (!path || !branch || !baseCommit) {
     throw new Error("Worktree admission returned an invalid record")
   }
-  return body.worktree
+  return { path, branch, baseCommit }
 }
 
 /**

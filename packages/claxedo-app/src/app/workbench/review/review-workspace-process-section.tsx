@@ -20,7 +20,7 @@ export function ReviewWorkspaceProcessSection(props: {
   const openEditDialog = () => {
     const hit = config()
     if (!hit) return
-    dialog.show(() => (
+    void dialog.show(() => (
       <AddProcessDialog
         directory={props.directory}
         request={platform.fetch}

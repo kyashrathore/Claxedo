@@ -1,4 +1,5 @@
 import { IdleProcessFamilyTracker, parseIdleProcessTable, type IdleProcessRow } from "./idle-process-family";
+import { isRecord, numberField, textField } from "./json-fields";
 
 export type ProcessSnapshot = {
   pid: number;
@@ -20,6 +21,34 @@ export type ProcessSnapshot = {
    */
   physFootprintBytes?: number;
 };
+
+/**
+ * Read a process row that came back across the driver's JSON boundary.
+ *
+ * `fromIdleRow` below is what produces these rows; this names the same fields
+ * so a row that lost one fails here rather than summing as `NaN` bytes.
+ */
+export function readProcessSnapshot(value: unknown): ProcessSnapshot {
+  if (!isRecord(value)) throw new Error("process snapshot must be an object");
+  const pid = numberField(value, "pid");
+  const parentPid = numberField(value, "parentPid");
+  const startTimeMs = numberField(value, "startTimeMs");
+  const rssBytes = numberField(value, "rssBytes");
+  const cpuSeconds = numberField(value, "cpuSeconds");
+  const executable = textField(value, "executable");
+  const command = textField(value, "command");
+  const physFootprintBytes = numberField(value, "physFootprintBytes");
+  if (
+    pid === undefined || parentPid === undefined || startTimeMs === undefined || rssBytes === undefined ||
+    cpuSeconds === undefined || executable === undefined || command === undefined
+  ) {
+    throw new Error("process snapshot is missing a required field");
+  }
+  return {
+    pid, parentPid, startTimeMs, rssBytes, cpuSeconds, executable, command,
+    ...(physFootprintBytes === undefined ? {} : { physFootprintBytes }),
+  };
+}
 
 export async function readProcessTable(): Promise<ProcessSnapshot[]> {
   if (process.platform !== "darwin" && process.platform !== "linux") throw new Error(`process-family observation is unsupported on ${process.platform}`);

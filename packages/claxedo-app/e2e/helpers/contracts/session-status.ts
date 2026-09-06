@@ -144,7 +144,7 @@ export function sessionStatusResponseBody(entries: Record<string, StatusCompat>)
     if (!status || typeof status !== "object" || Array.isArray(status)) {
       throw new Error(`GET /session/status fixture: ${sessionId} status must be an object, got ${describe(status)}`)
     }
-    const type = (status as { type?: unknown }).type
+    const type = status.type
     if (typeof type !== "string" || !(type in SESSION_STATUS_TYPES)) {
       throw new Error(
         `GET /session/status fixture: ${sessionId} has unknown status type ${JSON.stringify(type)}; ` +
@@ -152,7 +152,7 @@ export function sessionStatusResponseBody(entries: Record<string, StatusCompat>)
       )
     }
     if (type === "retry") {
-      const retry = status as Extract<StatusCompat, { type: "retry" }>
+      const retry = status
       if (typeof retry.attempt !== "number" || typeof retry.message !== "string" || typeof retry.next !== "number") {
         throw new Error(
           `GET /session/status fixture: ${sessionId} retry status needs {attempt:number, message:string, next:number} ` +

@@ -28,9 +28,16 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // and mints the reply id through agent-event-runtime's convention.
       // Re-measured after the native-Pi cutover and the Tier B dead-code sweep:
       // exact line counts, no headroom, per the ratchet policy.
+      // Re-measured for `CodexHarnessAdapter.dispose()` awaiting real process
+      // exit: the driver now hands back a promise that resolves when every
+      // app-server it owns is gone, which is what its callers were already
+      // assuming. Four of the five extra lines are that await and the comments
+      // naming the teardowns nothing waits on; the fifth imports the shared
+      // `stringRecord` reader that replaced this file's config cast. Owner
+      // unchanged.
       "runtime.ts": 980,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 658,
+      "harnesses/codex/driver.ts": 663,
       "harnesses/shared/sdk-runtime-adapter.ts": 874,
       "harnesses/pi/index.ts": 12,
     }

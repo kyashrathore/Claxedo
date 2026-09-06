@@ -2,6 +2,7 @@ import { apiBearerToken, getClaxedoServerUrl, authFetch, normalizeUrl } from "@/
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { queryClient } from "@/platform/query/query-client"
+import { errorMessage } from "@/lib/server-errors"
 
 export type WorkspaceConnectionObserver = {
   onConnected: (info: WorkspaceConnectionInfo) => void
@@ -297,7 +298,7 @@ const TERMINAL_FAILURE_COOLDOWN_MS = 60_000
 const TRANSIENT_FAILURE_COOLDOWN_MS = 5_000
 
 function connectionFailureStatus(err: unknown) {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = errorMessage(err)
   return Number(
     /Workspace connection failed: (\d+)/.exec(message)?.[1]
       ?? /operation "workspace\.connection\.(?:mint|refresh)" failed: (\d+)/.exec(message)?.[1],

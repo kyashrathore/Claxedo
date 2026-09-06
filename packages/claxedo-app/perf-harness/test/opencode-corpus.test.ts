@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { mkdtemp, realpath, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { authorizeWorkspace, createOpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import { WorkspaceScope, createOpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import { OpenCodeCorpus } from "../src/opencode-corpus"
 
 function corpus(directory: string) {
@@ -35,7 +35,7 @@ test("the native SDK copy preserves transcript content and migrated snapshot met
     const restored = await value.persist(databasePath)
     const assistant = restored[0].messages.find((message) => message.type === "assistant")
     expect(assistant?.snapshot).toEqual({ start: "before", end: "after", files: ["src/example.ts"] })
-    const scope = authorizeWorkspace({ workspaceID: "fixture", directory })
+    const scope = WorkspaceScope.authorize({ workspaceID: "fixture", directory })
     const session = await runtime.sessions.get(scope, "ses_corpus")
     expect(session.title).toBe("Corpus")
     expect(session.createdAt).toBe(100)

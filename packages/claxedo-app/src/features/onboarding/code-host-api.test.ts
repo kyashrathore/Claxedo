@@ -125,7 +125,7 @@ describe("connecting a code host", () => {
       method: "key",
       secret: "github_pat_abc",
       request: async (path, init) => {
-        calls.push({ path, body: JSON.parse(String(init?.body)) })
+        calls.push({ path, body: requestJson(init) })
         return new Response(JSON.stringify({ ok: true }))
       },
     })
@@ -258,3 +258,8 @@ describe("failure copy", () => {
     expect(codeHostFailureCopy({ error: { code: "connection_exists" } }, 409)).toContain("already connected")
   })
 })
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

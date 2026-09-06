@@ -16,7 +16,6 @@ import { resolveActiveDirectory } from "../features/workspaces/lib/active-worksp
 import { openWorkspaceScopeIds } from "../features/workspaces/lib/workspace-scope-ids"
 import { opaqueWorkspaceRouteId, workspaceRouteIdentity, workspaceRouteId } from "@/platform/identity/workspace-route"
 import { useConfigOptional } from "./providers/config"
-import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
@@ -31,6 +30,7 @@ import { routeSessionWorkspaceBacking } from "./workbench/state/route-bridge-res
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { projectWorktreeForDirectory } from "./providers/global-sync/project-owner"
 import { surfaceWorkspaceRouteKey } from "./workbench/state/surface-route"
+import { asRecord } from "@/lib/record"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
@@ -50,11 +50,11 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const principal = usePrincipal()
   const canUseDocuments = () => documentsAccess({ principal: principal(), serverUrl: globalSDK.url })
   const sessionInventoryQuery = useQuery(() =>
-    sessionInventoryQueryOptions<SessionInventoryRow>({
+    sessionInventoryQueryOptions({
       baseUrl: globalSDK.url,
     }),
   )
-  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
+  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory())
   const notification = useNotification()
   const config = useConfigOptional()
   const globalChat = () => !!config?.globalChatEnabled
@@ -62,7 +62,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const flowLog = (...args: unknown[]) => {
     if (typeof args[0] === "string") {
       const eventName = args[0].replace(/\s+/g, "_")
-      const props = args[1] && typeof args[1] === "object" ? (args[1] as Record<string, unknown>) : undefined
+      const props = asRecord(args[1])
       // Flow properties carry workspace/route directories verbatim; the sink is
       // the only choke point every producer passes through.
       phCapture(eventName, {

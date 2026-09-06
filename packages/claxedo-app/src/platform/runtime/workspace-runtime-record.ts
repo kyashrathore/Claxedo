@@ -6,8 +6,10 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
+import { asRecord, readNullableString, readString } from "@/lib/record"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
+import { errorMessage } from "@/lib/server-errors"
 
 export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 
@@ -68,6 +70,56 @@ export function workspaceRuntimeBlocksBootstrap(input?: WorkspaceRuntimeSnapshot
   return pendingCloudRuntime(input)
 }
 
+const WORKSPACE_KINDS = ["local", "cloud", "user-hosted"] as const
+
+function workspaceKind(value: unknown): WorkspaceRuntimeSnapshot["kind"] {
+  const kind = readNullableString(value, "kind")
+  if (kind === null) return null
+  return WORKSPACE_KINDS.find((candidate) => candidate === kind)
+}
+
+/**
+ * The record as it arrives on the wire, or `undefined` when the body is not
+ * one.
+ *
+ * Both producers below — the app server's own resolve route over HTTP, and the
+ * hosted control plane through the desktop AccountPort — used to reach their
+ * callers as a bare assertion, so a body that had changed shape surfaced later
+ * as a workspace with nowhere to route. The record is small and fully
+ * enumerated by {@link WorkspaceRuntimeSnapshot}, so it is rebuilt from the
+ * fields that type declares rather than trusted: a body with no `workspaceId`
+ * is not a runtime record at all, which is exactly the "no workspace for this
+ * scope" answer both callers already handle.
+ *
+ * Lives here rather than beside the type because `workspace-runtime.ts` is a
+ * type-only module and every product's dependency closure is measured in
+ * modules that carry code.
+ */
+function workspaceRuntimeSnapshotFromWire(raw: unknown): WorkspaceRuntimeSnapshot | undefined {
+  const record = asRecord(raw)
+  const workspaceId = readString(record, "workspaceId")
+  if (!record || !workspaceId) return undefined
+  const git = asRecord(record.git)
+  return {
+    workspaceId,
+    projectId: readNullableString(record, "projectId"),
+    directory: readString(record, "directory"),
+    kind: workspaceKind(record),
+    provider: readNullableString(record, "provider"),
+    sandboxId: readNullableString(record, "sandboxId"),
+    status: readNullableString(record, "status"),
+    ...(git
+      ? {
+          git: {
+            repo: readNullableString(git, "repo"),
+            branch: readNullableString(git, "branch"),
+            remote: readNullableString(git, "remote"),
+          },
+        }
+      : {}),
+  }
+}
+
 export type WorkspaceRecordScope = {
   baseUrl?: string
   request?: typeof fetch
@@ -96,12 +148,12 @@ export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise
   const run = await signedAccountRun()
   if (!run) return null
   try {
-    return decodeHostedResult<WorkspaceRuntimeSnapshot | null>(
+    return workspaceRuntimeSnapshotFromWire(decodeHostedResult(
       "workspace.resolve",
       await run("workspace.resolve", { workspaceId, ...(input.create ? { create: true } : {}) }),
-    )
+    )) ?? null
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     if (/operation "workspace\.resolve" failed: 404\b/.test(message) || /\bfailed: 404\b/.test(message)) {
       return null
     }
@@ -119,11 +171,16 @@ async function fetchWorkspaceRecordHttp(input: WorkspaceRecordScope): Promise<Wo
   if (res.status === 404) return null
   if (!res.ok) throw new Error((await res.text()) || `Request failed: ${res.status}`)
   const text = await res.text()
+  let body: unknown
   try {
-    return JSON.parse(text) as WorkspaceRuntimeSnapshot
+    body = JSON.parse(text)
   } catch {
     throw new Error("Workspace runtime is unavailable.")
   }
+  // A 200 whose body is not a runtime record is the same answer as a 404: this
+  // scope has no workspace here. `fetchWorkspaceRecord` then falls through to
+  // the hosted control plane rather than handing callers a row with no id.
+  return workspaceRuntimeSnapshotFromWire(body) ?? null
 }
 
 /** The shared cache entry every record read goes through. */

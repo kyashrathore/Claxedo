@@ -1,5 +1,4 @@
 import { Hono, type Context } from "hono"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
@@ -8,6 +7,7 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 
 import { signedOrError } from "../../workspace/route-support"
+import { asRecord } from "../../platform/json/index"
 
 export type HostedAuthProfileRouteOptions = {
   authentication: RequestAuthenticationAdapter
@@ -40,10 +40,8 @@ function publicOrganizations(value: unknown): HostedAuthProfile["organizations"]
   if (!Array.isArray(value)) throw authorityUnavailable("Workspace authority returned an invalid organization list")
   const seen = new Set<string>()
   return value.map((entry) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      throw authorityUnavailable("Workspace authority returned an invalid organization")
-    }
-    const row = entry as Record<string, unknown>
+    const row = asRecord(entry)
+    if (!row) throw authorityUnavailable("Workspace authority returned an invalid organization")
     const id = requiredText(row.org_id, "organization id")
     if (seen.has(id)) throw authorityUnavailable("Workspace authority returned a duplicate organization id")
     seen.add(id)
@@ -72,7 +70,7 @@ export function HostedAuthProfileRoutes(options: HostedAuthProfileRouteOptions) 
       requireSigned: true,
     })
     if ("error" in authResult) {
-      return context.json(authResult.error, authResult.status as ContentfulStatusCode)
+      return context.json(authResult.error, authResult.status)
     }
     const auth = authResult.auth
     if (!auth?.principal) {

@@ -12,6 +12,17 @@ import {
   type WorkspaceRelayOptions,
 } from "./server"
 
+/**
+ * Thea `fetch` double was called with. `fetch` accepts a string, a `URL`
+ * or a `Request`, and only the string case survives `String()` — the other two
+ * stringify to `[object Object]`, which would make every URL assertion below
+ * pass or fail for the wrong reason.
+ */
+function fetchUrl(input: string | URL | Request) {
+  if (typeof input === "string") return input
+  return input instanceof URL ? input.href : input.url
+}
+
 function relayPair(input: { access?: "cloud" | "user-hosted"; backing?: "cloud-vm" | "local-worktree" }) {
   if (input.access === "user-hosted" || input.backing === "local-worktree") {
     return { access: "user-hosted", backing: "local-worktree" } as const
@@ -86,7 +97,7 @@ describe("workspace relay server", () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = ((url, init) => {
       const request = new Request(url, init)
-      relay.forwarded.push({ url: String(url), request })
+      relay.forwarded.push({ url: fetchUrl(url), request })
       return Promise.resolve(new Response("ok", {
         status: 201,
         headers: {
@@ -526,7 +537,7 @@ describe("workspace relay server", () => {
   test("enforces viewer relay access as read-only", async () => {
     const relay = await harness({
       fetch: ((url, init) => {
-        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("ok"))
       }) as typeof fetch,
     })
@@ -570,7 +581,7 @@ describe("workspace relay server", () => {
   test("denies viewer access to terminal routes including WebSocket upgrades", async () => {
     const relay = await harness({
       fetch: ((url, init) => {
-        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("unexpected"))
       }) as typeof fetch,
     })
@@ -609,7 +620,7 @@ describe("workspace relay server", () => {
   test("normalizes terminal paths before authorizing and forwarding", async () => {
     const relay = await harness({
       fetch: ((url, init) => {
-        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("ok"))
       }) as typeof fetch,
     })
@@ -644,7 +655,7 @@ describe("workspace relay server", () => {
   test("allows editor admin and owner relay write requests", async () => {
     const relay = await harness({
       fetch: ((url, init) => {
-        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("ok"))
       }) as typeof fetch,
     })
@@ -691,7 +702,7 @@ describe("workspace relay server", () => {
         reason: "Runtime Access Token has been revoked",
       }),
       fetch: ((url, init) => {
-        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("unexpected"))
       }) as typeof fetch,
     })
@@ -884,7 +895,7 @@ describe("workspace relay server", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const jwk = await exportJWK(relayHost.publicKey)
-      const kid = createHash("sha256").update(String(jwk.x ?? "")).digest("hex").slice(0, 16)
+      const kid = createHash("sha256").update(jwk.x ?? "").digest("hex").slice(0, 16)
 
       const app = createWorkspaceRelay({
         runtimeAccessKey: runtime.publicKey,
@@ -917,8 +928,8 @@ describe("workspace relay server", () => {
       const next = await generateKeyPair("EdDSA", { extractable: true })
       const currentJwk = await exportJWK(current.publicKey)
       const nextJwk = await exportJWK(next.publicKey)
-      const currentKid = createHash("sha256").update(String(currentJwk.x ?? "")).digest("hex").slice(0, 16)
-      const nextKid = createHash("sha256").update(String(nextJwk.x ?? "")).digest("hex").slice(0, 16)
+      const currentKid = createHash("sha256").update(currentJwk.x ?? "").digest("hex").slice(0, 16)
+      const nextKid = createHash("sha256").update(nextJwk.x ?? "").digest("hex").slice(0, 16)
 
       const app = createWorkspaceRelay({
         runtimeAccessKey: runtime.publicKey,
@@ -942,7 +953,7 @@ describe("workspace relay server", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const jwk = await exportJWK(relayHost.publicKey)
-      const kid = createHash("sha256").update(String(jwk.x ?? "")).digest("hex").slice(0, 16)
+      const kid = createHash("sha256").update(jwk.x ?? "").digest("hex").slice(0, 16)
 
       const app = createWorkspaceRelay({
         runtimeAccessKey: runtime.publicKey,
@@ -1229,7 +1240,7 @@ describe("workspace relay server", () => {
     test("forwarded HTTP request has dangerous headers stripped end-to-end", async () => {
       const relay = await harness({
         fetch: ((url, init) => {
-          relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+          relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
           return Promise.resolve(new Response("ok"))
         }) as typeof fetch,
       })

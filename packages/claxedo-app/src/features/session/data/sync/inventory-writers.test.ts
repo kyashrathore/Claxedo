@@ -16,6 +16,7 @@ import {
 } from "./inventory-writers"
 import { emptySessionInventory, sessionInventoryQueryOptions } from "./queries"
 import type { SessionInventoryRow } from "../query/types"
+import { sessionRow } from "../query/test-support/session-row"
 
 afterEach(() => {
   queryClient.clear()
@@ -26,7 +27,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [session("ses_old", 1), session("ses_new", 3), session("ses_mid", 2)],
         loaded: true,
       },
@@ -37,7 +38,7 @@ describe("session inventory writers", () => {
       "ses_mid",
       "ses_old",
     ])
-    expect(queryClient.getQueryData(sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }).queryKey)).toEqual({
+    expect(queryClient.getQueryData(sessionInventoryQueryOptions({ baseUrl: "http://test" }).queryKey)).toEqual({
       sessions: [
         session("ses_new", 3),
         session("ses_mid", 2),
@@ -58,7 +59,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [session("ses_1", 1, { title: "Old" })],
         loaded: true,
       },
@@ -81,7 +82,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [session("ses_1", 1, { workspaceId: "ws_1", workspaceName: "Workspace" })],
         workspaceMeta: {
           ws_1: {
@@ -119,7 +120,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [
           session("ses_shared", 5, { workspaceId: "ws_1", workspaceName: "One" }),
           session("ses_shared", 6, { directory: "/repo/b", projectID: "project_b", workspaceId: "ws_2", workspaceName: "Two" }),
@@ -141,7 +142,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [session("ses_1", 2), session("ses_2", 1)],
         loaded: true,
       },
@@ -162,7 +163,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [session("ses_only", 1)],
         loaded: true,
       },
@@ -354,7 +355,7 @@ describe("session inventory writers", () => {
     expect(inventory.byProject.project_b.map((item) => item.id)).toEqual(["ses_b"])
     expect(inventory.byWorkspace["/repo/b"].total).toBe(7)
     expect(inventory.byWorkspace["/repo/b"].nextCursor).toBe(3)
-    expect(queryClient.getQueryData(sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }).queryKey)).toMatchObject({
+    expect(queryClient.getQueryData(sessionInventoryQueryOptions({ baseUrl: "http://test" }).queryKey)).toMatchObject({
       sessions: [session("ses_b", 4, { directory: "/repo/b", projectID: "project_b" })],
       workspaceMeta: {
         "/repo/b": {
@@ -427,7 +428,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [
           session("ses_old", 1),
           session("ses_other", 3, { directory: "/repo/b", projectID: "project_b" }),
@@ -460,7 +461,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [session("ses_old", 1)],
         workspaceMeta: {
           "/repo/a": {
@@ -504,7 +505,7 @@ describe("session inventory writers", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
       value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
+        ...emptySessionInventory(),
         sessions: [
           session("ses_old", 1, { workspaceId: "ws_1", workspaceName: "Workspace" }),
           session("ses_other", 3, { workspaceId: "ws_2", directory: "/repo/b", projectID: "project_b" }),
@@ -538,7 +539,7 @@ describe("session inventory writers", () => {
     const notifications: string[][] = []
     const observer = new QueryObserver(
       queryClient,
-      sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }),
+      sessionInventoryQueryOptions({ baseUrl: "http://test" }),
     )
     const unsubscribe = observer.subscribe((result) => {
       if (result.data) notifications.push(result.data.sessionOrder)
@@ -548,7 +549,7 @@ describe("session inventory writers", () => {
       setSessionInventoryQueryData({
         baseUrl: "http://test",
         value: {
-          ...emptySessionInventory<SessionInventoryRow>(),
+          ...emptySessionInventory(),
           sessions: [session("ses_1", 1)],
           loaded: true,
         },
@@ -574,21 +575,19 @@ describe("session inventory writers", () => {
 
   test("read returns an empty compatible value before the query cache is populated", () => {
     expect(readSessionInventoryQueryData({ baseUrl: "http://test" })).toEqual(
-      emptySessionInventory<SessionInventoryRow>(),
+      emptySessionInventory(),
     )
   })
 })
 
 function session(id: string, updated: number, extra: Partial<SessionInventoryRow> = {}): SessionInventoryRow {
-  return {
+  return sessionRow({
     id,
-    title: id,
     directory: "/repo/a",
     projectID: "project_a",
-    attachments: [],
     time: { created: updated, updated },
     ...extra,
-  }
+  })
 }
 
 function workspaceGroup(

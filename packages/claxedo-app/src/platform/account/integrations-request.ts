@@ -10,6 +10,9 @@
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
+import { requestBodyText } from "@/lib/url"
+import { recordOrEmpty } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 
 /** Path is relative to the /api/claxedo/integrations mount ("" for the root list). */
 export type ConnectionsRequest = (path: string, init?: RequestInit) => Promise<Response>
@@ -25,7 +28,7 @@ function hostedErrorResponse(error: unknown): Response {
   const hosted = parseHostedHttpError(error)
   if (hosted) return jsonResponse(hosted.body ?? { message: hosted.detail }, hosted.status)
   return jsonResponse(
-    { message: error instanceof Error ? error.message : String(error) },
+    { message: errorMessage(error) },
     500,
   )
 }
@@ -54,7 +57,7 @@ export function createIntegrationsRequest(baseUrl: string = getClaxedoServerUrl(
 
       const connect = /^\/([^/]+)\/connect$/.exec(path)
       if (connect && method === "POST") {
-        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
+        const body = init?.body ? recordOrEmpty(JSON.parse(requestBodyText(init.body))) : {}
         return jsonResponse(await runOp("connections.connect", {
           id: decodeURIComponent(connect[1]),
           ...body,

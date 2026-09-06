@@ -7,6 +7,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
+import { asRecord } from "../platform/json/index"
 
 function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
@@ -20,10 +21,6 @@ export class HostedSessionPullError extends Error {
   ) {
     super(message)
   }
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined
 }
 
 function txt(input: unknown) {
@@ -44,7 +41,7 @@ function relayRole(value: unknown): RelayRole | undefined {
 }
 
 function sessionStamp(input: Record<string, unknown>) {
-  const time = rec(input.time)
+  const time = asRecord(input.time)
   const createdAt = num(time?.created) ?? num(input.created_at)
   const updatedAt = num(time?.updated) ?? num(input.updated_at) ?? createdAt
   return {
@@ -54,10 +51,10 @@ function sessionStamp(input: Record<string, unknown>) {
 }
 
 function sessionVisibility(input: unknown) {
-  const row = rec(input)
-  if (!row) return
+  const row = asRecord(input)
+  if (!row) return undefined
   const sessionId = txt(row.id)
-  if (!sessionId) return
+  if (!sessionId) return undefined
   const title = txt(row.title) ?? txt(row.slug)
   return {
     sessionId,
@@ -67,8 +64,8 @@ function sessionVisibility(input: unknown) {
 }
 
 function messagesPayload(input: unknown) {
-  const row = rec(input)
-  if (!row || !Array.isArray(row.messages) || !rec(row.session)) {
+  const row = asRecord(input)
+  if (!row || !Array.isArray(row.messages) || !asRecord(row.session)) {
     throw new HostedSessionPullError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -106,12 +103,12 @@ function messagesPayload(input: unknown) {
 }
 
 function sessionPayloadId(input: unknown) {
-  const row = rec(input)
+  const row = asRecord(input)
   return txt(row?.id) ?? txt(row?.sessionId) ?? txt(row?.sessionID)
 }
 
 function assertPulledSession(input: unknown, sessionId: string) {
-  if (sessionPayloadId(input) === sessionId) return
+  if (sessionPayloadId(input) === sessionId) return undefined
   throw new HostedSessionPullError(
     409,
     "workspace_runtime_session_mismatch",
@@ -120,10 +117,10 @@ function assertPulledSession(input: unknown, sessionId: string) {
 }
 
 function sessionIsIdle(input: unknown, sessionId: string) {
-  const statuses = rec(input)
+  const statuses = asRecord(input)
   if (!statuses) return false
   if (!(sessionId in statuses)) return true
-  return rec(statuses[sessionId])?.type === "idle"
+  return asRecord(statuses[sessionId])?.type === "idle"
 }
 
 function runtimePath(path: string, query?: Record<string, string | undefined>) {
@@ -142,9 +139,9 @@ async function hostedWorkspaceForPull(
   const signed = requireSignedAuth(auth)
   const authority = requireAuthority(services)
   const opened = await authority.openWorkspace(signed, { workspaceId })
-  const role = relayRole(rec(opened)?.role)
+  const role = relayRole(asRecord(opened)?.role)
   if (!role) throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace access is denied")
-  const workspace = rec(rec(opened)?.workspace)
+  const workspace = asRecord(asRecord(opened)?.workspace)
   const orgId =
     txt(workspace?.org_id) ??
     txt(workspace?.orgId) ??
@@ -214,7 +211,12 @@ async function runtimeFetch(
   )
 }
 
-async function runtimeJson<T>(
+/**
+ * The parsed body, as `unknown`. Every caller either wants a record (and reaches
+ * it through `asRecord`) or passes the value straight to a schema, so the
+ * caller-chosen `<T>` this used to carry only asserted a shape nobody checked.
+ */
+async function runtimeJson(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
   input: {
@@ -227,7 +229,7 @@ async function runtimeJson<T>(
   },
 ) {
   const res = await runtimeFetch(services, auth, input)
-  if (res.ok) return (await res.json()) as T
+  if (res.ok) return await res.json().catch(() => undefined)
   throw new HostedSessionPullError(
     res.status,
     "workspace_runtime_pull_failed",
@@ -235,7 +237,7 @@ async function runtimeJson<T>(
   )
 }
 
-async function verifiedRuntimeJson<T>(
+async function verifiedRuntimeJson(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
   input: {
@@ -247,18 +249,18 @@ async function verifiedRuntimeJson<T>(
     path: string
   },
 ) {
-  const health = await runtimeJson<Record<string, unknown>>(services, auth, {
+  const health = asRecord(await runtimeJson(services, auth, {
     ...input,
     path: WORKSPACE_RUNTIME_IDENTITY_PATH,
-  })
-  if (txt(health.workspaceId) !== input.workspaceId) {
+  }))
+  if (txt(health?.workspaceId) !== input.workspaceId) {
     throw new HostedSessionPullError(
       409,
       "workspace_runtime_mismatch",
       "Workspace runtime identity does not match requested workspace",
     )
   }
-  return await runtimeJson<T>(services, auth, input)
+  return await runtimeJson(services, auth, input)
 }
 
 export async function pullHostedControlSession(
@@ -276,7 +278,7 @@ export async function pullHostedControlSession(
     ...workspace,
     ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
   }
-  const session = await verifiedRuntimeJson<unknown>(services, signed, {
+  const session = await verifiedRuntimeJson(services, signed, {
     ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
@@ -307,14 +309,14 @@ export async function pullHostedControlSessionMessages(
     ...workspace,
     ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
   }
-  const pulled = await verifiedRuntimeJson<unknown>(services, signed, {
+  const pulled = await verifiedRuntimeJson(services, signed, {
     ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
   assertPulledSession(payload.session, input.sessionId)
   const syncAuthority = async (messages: unknown[], maxEventOrdinal: number, fencingToken?: number) => {
-    const intakeReady = await runtimeJson<unknown>(services, signed, {
+    const intakeReady = await runtimeJson(services, signed, {
       ...target,
       path: "/session/status",
     }).then(

@@ -68,8 +68,8 @@ function entryBytes(src: string, value: CodeHighlight) {
 export function getCachedCodeHighlight(src: string, language: string, theme: string) {
   const key = cacheKey(src, language, theme)
   const entry = cache.get(key)
-  if (!entry) return
-  if (entry.src !== src) return
+  if (!entry) return undefined
+  if (entry.src !== src) return undefined
   cache.delete(key)
   cache.set(key, entry)
   return entry.value

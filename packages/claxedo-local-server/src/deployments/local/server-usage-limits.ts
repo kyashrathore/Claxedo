@@ -36,7 +36,7 @@ function loadUsageLimits(): Promise<UsageLimitsModule> {
   process.env.TOKENTRACKER_NO_TELEMETRY ??= "1"
   // @ts-expect-error TokenTracker ships no declarations; UsageLimitsModule is
   // the audited boundary and its pinned runtime shape has a contract test.
-  return import("tokentracker-cli/src/lib/usage-limits.js") as Promise<UsageLimitsModule>
+  return import("tokentracker-cli/src/lib/usage-limits.js")
 }
 
 export async function getLocalUsageLimits(input: { refresh?: boolean } = {}) {

@@ -1,5 +1,6 @@
 import { onMount, type ComponentProps, splitProps } from "solid-js"
 import { ensureSvgSpriteHost } from "../../components/inline-svg-sprite"
+import { isKeyOf } from "../../utils/record"
 
 const icons = {
   edit: {
@@ -161,11 +162,13 @@ function ensureSprite() {
   const host = ensureSvgSpriteHost(spriteID)
   if (!host) return
   if (host.childElementCount === 0) {
-    host.innerHTML = Object.entries(icons)
-      .map(
-        ([name, icon]) =>
-          `<symbol id="${symbol(name as keyof typeof icons)}" viewBox="${icon.viewBox}">${icon.body}</symbol>`,
-      )
+    host.innerHTML = Object.keys(icons)
+      .map((name) => {
+        // `Object.keys` widens to `string`; every key here is by construction a real name.
+        if (!isKeyOf(icons, name)) return ""
+        const icon = icons[name]
+        return `<symbol id="${symbol(name)}" viewBox="${icon.viewBox}">${icon.body}</symbol>`
+      })
       .join("")
   }
   spriteInserted = true
@@ -179,7 +182,7 @@ export interface IconProps extends ComponentProps<"svg"> {
 
 export function Icon(props: IconProps) {
   const [split, rest] = splitProps(props, ["name", "size"])
-  const iconName = () => (icons[split.name as keyof typeof icons] ? (split.name as keyof typeof icons) : "plus")
+  const iconName = () => (isKeyOf(icons, split.name) ? split.name : "plus")
   const icon = () => icons[iconName()]
   const pixelSize = split.size === "small" ? 14 : split.size === "large" ? 20 : 16
   onMount(ensureSprite)

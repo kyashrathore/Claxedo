@@ -101,6 +101,7 @@ export function claxedoRuntimeHarnessFromEnv(env: NodeJS.ProcessEnv = process.en
     return { kind: "native", harnessId: nativeHarness }
   }
   if (connectionId) return { kind: "connection", connectionId }
+  return undefined
 }
 
 /**

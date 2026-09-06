@@ -66,7 +66,7 @@ describe("AccountPort", () => {
     // The confused-deputy shape. If `run` accepted a url/method/headers/path,
     // main would be executing renderer-chosen requests with main's credential,
     // and the closed operation set would be decoration.
-    const run = portSource.match(/run: <T[^\n]*\n?[^\n]*/)?.[0] ?? ""
+    const run = portSource.match(/run: \([^\n]*\n?[^\n]*/)?.[0] ?? ""
     expect(run).toContain("operation: HostedOperationName")
     for (const forbidden of ["url", "method", "headers", "path:"]) {
       expect(run, `run() must not accept ${forbidden}`).not.toContain(forbidden)

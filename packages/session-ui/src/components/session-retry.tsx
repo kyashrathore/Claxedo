@@ -8,7 +8,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean }) {
   const i18n = useI18n()
   const retry = createMemo(() => {
-    if (props.status.type !== "retry") return
+    if (props.status.type !== "retry") return undefined
     return props.status
   })
   const [seconds, setSeconds] = createSignal(0)

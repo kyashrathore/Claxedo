@@ -5,6 +5,7 @@ import { sessionResourceUrl } from "./harness-config-routes"
 import type { HarnessType } from "./profile"
 import type { HarnessStorePatch } from "./store-state"
 import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
+import { requestUrl } from "@/lib/url"
 
 const scope = "draft:/repo:route"
 
@@ -295,10 +296,10 @@ function switcherFor(input?: {
     runtime: {
       harnessSessionFetch: () => input?.sessionFetch ?? (async (url, init) => {
         posts.push({
-          url: String(url),
+          url: requestUrl(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
         })
-        const target = new URL(String(url))
+        const target = new URL(requestUrl(url))
         const native = target.searchParams.get("nativeHarness")
         const connection = target.searchParams.get("connectionId")
         return postResponse.status === 204

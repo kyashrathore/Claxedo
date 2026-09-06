@@ -52,7 +52,7 @@ export function createScopedCache<T>(createValue: (key: string) => T, options: S
 
   const remove = (key: string) => {
     const entry = store.get(key)
-    if (!entry) return
+    if (!entry) return undefined
     store.delete(key)
     dispose(key, entry)
     return entry.value
@@ -61,10 +61,11 @@ export function createScopedCache<T>(createValue: (key: string) => T, options: S
   const peek = (key: string) => {
     sweep()
     const entry = store.get(key)
-    if (!entry) return
+    if (!entry) return undefined
     if (!expired(entry)) return entry.value
     store.delete(key)
     dispose(key, entry)
+    return undefined
   }
 
   const get = (key: string) => {

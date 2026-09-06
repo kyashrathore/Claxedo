@@ -24,6 +24,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
+import { parseJsonObject, text } from "../json.ts"
 import { REPO_ROOT } from "./closure.ts"
 import { evaluate, isFailure, type Result } from "./policy.ts"
 import { policyById, PRODUCTS } from "./policies/index.ts"
@@ -38,7 +39,7 @@ function productFromCwd(): string {
       `no package.json in ${process.cwd()} — run verify:closure from a product package, or pass --product <name>`,
     )
   }
-  const name = (JSON.parse(fs.readFileSync(manifest, "utf8")) as { name?: string }).name
+  const name = text(parseJsonObject(fs.readFileSync(manifest, "utf8"), manifest).name)
   if (!name) throw new Error(`${manifest} declares no name`)
   return name
 }

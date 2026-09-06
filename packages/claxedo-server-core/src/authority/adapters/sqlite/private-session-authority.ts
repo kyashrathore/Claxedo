@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto"
+import { isOneOf, jsonRecord, jsonRecord as record } from "@claxedo/server-core/platform/runtime/lib/json"
+import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -54,11 +56,13 @@ type SessionRow = {
   snapshot_hash: string | null
   deleted_at: number | null
 }
+const AUTHOR_KINDS = ["human", "agent"] as const
+
 type MessageRow = {
   ordinal: number
   data: string
   author_actor_id: string | null
-  author_kind: "human" | "agent" | null
+  author_kind: (typeof AUTHOR_KINDS)[number] | null
 }
 
 export class SqlitePrivateSessionAuthorityError extends Error {
@@ -327,7 +331,7 @@ export function createSqlitePrivateSessionAuthority(input: {
         }
         const released = turnLease(db, owned.sessionId)
         return {
-          released: Boolean(matchesTurn(released, owned, actor.token_identifier) && released.released_at !== null),
+          released: matchesTurn(released, owned, actor.token_identifier) && released.released_at !== null,
           sessionId: owned.sessionId,
           turnId: owned.turnId,
           fencingToken: owned.fencingToken,
@@ -489,7 +493,21 @@ export function createSqlitePrivateSessionAuthority(input: {
         ? query.all(value.sessionId, value.workspaceId)
         : before === undefined
           ? query.all(value.sessionId, value.workspaceId, value.limit + 1)
-          : query.all(value.sessionId, value.workspaceId, before, value.limit + 1)) as MessageRow[]
+          : query.all(value.sessionId, value.workspaceId, before, value.limit + 1)
+      ).flatMap((row): MessageRow[] => {
+        const item = jsonRecord(row)
+        const ordinal = item && numberColumn(item, "ordinal")
+        const data = item && textColumn(item, "data")
+        if (item === undefined || ordinal === undefined || data === undefined) return []
+        return [
+          {
+            ordinal,
+            data,
+            author_actor_id: textColumn(item, "author_actor_id") ?? null,
+            author_kind: isOneOf(item.author_kind, AUTHOR_KINDS) ? item.author_kind : null,
+          },
+        ]
+      })
       if (value.limit === undefined) return { allowed: true, role, messages: rows.map(publicMessage) }
       const selected = rows.slice(0, value.limit).reverse()
       return {
@@ -806,12 +824,13 @@ function encodeCursor(sessionId: string, ordinal: number) {
 function decodeCursor(sessionId: string, value: string) {
   try {
     if (!value.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error()
-    const parsed = JSON.parse(Buffer.from(value.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")) as {
-      sessionId?: unknown
-      ordinal?: unknown
-    }
-    if (parsed.sessionId !== sessionId || !Number.isSafeInteger(parsed.ordinal) || Number(parsed.ordinal) < 0) throw new Error()
-    return Number(parsed.ordinal)
+    const parsed = jsonRecord(
+      JSON.parse(Buffer.from(value.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")),
+    )
+    const ordinal = parsed?.ordinal
+    if (parsed?.sessionId !== sessionId || typeof ordinal !== "number" || !Number.isSafeInteger(ordinal) || ordinal < 0)
+      throw new Error()
+    return ordinal
   } catch {
     throw new AgentMessagePageError(400, "Invalid message page cursor")
   }
@@ -825,10 +844,6 @@ function required(value: unknown, name: string) {
 
 function optional(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
 function json(value: unknown) {

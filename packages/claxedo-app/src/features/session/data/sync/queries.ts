@@ -10,6 +10,7 @@ import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys, type SessionScopedQueryKey, type WorkspaceScopedQueryKey } from "@/platform/sync/keys"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ClaxedoSession } from "../session-types"
+import type { SessionInventoryRow } from "../query/types"
 import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
 export type {
   AgentPermission as PermissionRequest,
@@ -68,7 +69,16 @@ export type DirectorySessionCacheValue = {
 
 type PageState = { hasMore: boolean; loading: boolean; cursor?: number }
 
-type SessionInventoryIdentity = {
+/**
+ * The fields an inventory operation needs to identify and order a session by.
+ *
+ * Narrower than `SessionInventoryRow` on purpose: removals and lookups are
+ * given a *target* — an event payload, a route ref — that carries an id and
+ * little else. Row-shaped values satisfy it, so this is what those entry points
+ * accept. `inventory-writers.ts` kept a byte-identical copy until it was
+ * consolidated here.
+ */
+export type SessionInventoryIdentity = {
   id: string
   directory?: string
   workspaceId?: string
@@ -78,27 +88,27 @@ type SessionInventoryIdentity = {
   time?: number | { updated?: number; created?: number }
 }
 
-export type SessionInventoryWorkspaceGroup<TSession> = {
+export type SessionInventoryWorkspaceGroup = {
   key?: string
   directory: string
   workspaceId?: string
   workspaceName?: string
   projectID: string
-  sessions: TSession[]
+  sessions: SessionInventoryRow[]
   hasMore: boolean
   total: number
   nextCursor?: number
 }
 
-export type SessionInventoryWorkspaceMeta = Omit<SessionInventoryWorkspaceGroup<never>, "sessions">
+export type SessionInventoryWorkspaceMeta = Omit<SessionInventoryWorkspaceGroup, "sessions">
 
 // Single source of truth for projecting a workspace group down to its stored
 // meta (every field except the session rows). Reused by the inventory
 // derivation below and by the query-cache writers in `inventory-writers.ts`, so
 // the meta shape lives in exactly one place instead of five inline copies.
-export function workspaceMetaFromGroup<TSession>(
+export function workspaceMetaFromGroup(
   key: string,
-  group: SessionInventoryWorkspaceGroup<TSession>,
+  group: SessionInventoryWorkspaceGroup,
 ): SessionInventoryWorkspaceMeta {
   return {
     key: group.key ?? key,
@@ -112,8 +122,8 @@ export function workspaceMetaFromGroup<TSession>(
   }
 }
 
-export type SessionInventoryStoredValue<TSession> = {
-  sessions: TSession[]
+export type SessionInventoryStoredValue = {
+  sessions: SessionInventoryRow[]
   globalState: PageState
   projectState: Record<string, PageState>
   workspaceMeta: Record<string, SessionInventoryWorkspaceMeta>
@@ -124,14 +134,14 @@ export type SessionInventoryStoredValue<TSession> = {
   initialCursor?: number
 }
 
-export type SessionInventoryValue<TSession> = {
-  sessions: TSession[]
+export type SessionInventoryValue = {
+  sessions: SessionInventoryRow[]
   sessionOrder: string[]
-  global: TSession[]
+  global: SessionInventoryRow[]
   globalState: PageState
-  byProject: Record<string, TSession[]>
+  byProject: Record<string, SessionInventoryRow[]>
   projectState: Record<string, PageState>
-  byWorkspace: Record<string, SessionInventoryWorkspaceGroup<TSession>>
+  byWorkspace: Record<string, SessionInventoryWorkspaceGroup>
   workspaceMeta?: Record<string, SessionInventoryWorkspaceMeta>
   workspaceState: Record<string, PageState>
   workspaceOrder: string[]
@@ -157,29 +167,29 @@ function sessionWorkspaceKey(input: SessionInventoryIdentity) {
   return input.workspaceId ?? input.directory
 }
 
-function sortSessions<TSession extends SessionInventoryIdentity>(sessions: readonly TSession[]) {
+function sortSessions(sessions: readonly SessionInventoryRow[]) {
   return [...sessions].sort((a, b) => sessionUpdatedAt(b) - sessionUpdatedAt(a))
 }
 
-function dedupeSessions<TSession extends SessionInventoryIdentity>(sessions: readonly TSession[]) {
-  const next: TSession[] = []
+function dedupeSessions(sessions: readonly SessionInventoryRow[]) {
+  const next: SessionInventoryRow[] = []
   for (const session of sortSessions(sessions)) {
     if (!next.some((item) => sameSessionIdentity(item, session))) next.push(session)
   }
   return next
 }
 
-export function deriveSessionInventoryIndexes<TSession extends SessionInventoryIdentity>(
-  input: Pick<SessionInventoryValue<TSession>, "sessions" | "workspaceState" | "workspaceOrder" | "projectState" | "globalState"> & {
-    byWorkspace?: Record<string, SessionInventoryWorkspaceGroup<TSession>>
+export function deriveSessionInventoryIndexes(
+  input: Pick<SessionInventoryValue, "sessions" | "workspaceState" | "workspaceOrder" | "projectState" | "globalState"> & {
+    byWorkspace?: Record<string, SessionInventoryWorkspaceGroup>
     workspaceMeta?: Record<string, SessionInventoryWorkspaceMeta>
   },
 ) {
   const sessions = dedupeSessions(input.sessions)
   const sessionById = new Map(sessions.map((session) => [session.id, session] as const))
   const global = sessions.filter(sessionShouldShowInGlobalChat)
-  const byProject: Record<string, TSession[]> = {}
-  const byWorkspace: Record<string, SessionInventoryWorkspaceGroup<TSession>> = {}
+  const byProject: Record<string, SessionInventoryRow[]> = {}
+  const byWorkspace: Record<string, SessionInventoryWorkspaceGroup> = {}
   const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...input.workspaceMeta }
   const workspaceOrder = [...input.workspaceOrder]
 
@@ -248,9 +258,9 @@ export function deriveSessionInventoryIndexes<TSession extends SessionInventoryI
   }
 }
 
-export function normalizeSessionInventory<TSession extends SessionInventoryIdentity>(
-  input: SessionInventoryStoredValue<TSession> | SessionInventoryValue<TSession>,
-): SessionInventoryValue<TSession> {
+export function normalizeSessionInventory(
+  input: SessionInventoryStoredValue | SessionInventoryValue,
+): SessionInventoryValue {
   const stored = toSessionInventoryStore(input)
   const derived = deriveSessionInventoryIndexes({
     sessions: stored.sessions,
@@ -267,21 +277,26 @@ export function normalizeSessionInventory<TSession extends SessionInventoryIdent
   }
 }
 
-const derivedSessionInventoryCache = new WeakMap<object, SessionInventoryValue<unknown>>()
+/**
+ * Memoizes the derivation per stored snapshot. Every read of the inventory
+ * derives its indexes, so without this the rail re-groups the whole session
+ * list on every render.
+ */
+const derivedSessionInventoryCache = new WeakMap<SessionInventoryStoredValue, SessionInventoryValue>()
 
-export function deriveSessionInventoryValue<TSession extends SessionInventoryIdentity>(
-  input: SessionInventoryStoredValue<TSession>,
-): SessionInventoryValue<TSession> {
+export function deriveSessionInventoryValue(
+  input: SessionInventoryStoredValue,
+): SessionInventoryValue {
   const cached = derivedSessionInventoryCache.get(input)
-  if (cached) return cached as SessionInventoryValue<TSession>
+  if (cached) return cached
   const value = normalizeSessionInventory(input)
-  derivedSessionInventoryCache.set(input, value as SessionInventoryValue<unknown>)
+  derivedSessionInventoryCache.set(input, value)
   return value
 }
 
-export function toSessionInventoryStore<TSession extends SessionInventoryIdentity>(
-  input: SessionInventoryStoredValue<TSession> | SessionInventoryValue<TSession>,
-): SessionInventoryStoredValue<TSession> {
+export function toSessionInventoryStore(
+  input: SessionInventoryStoredValue | SessionInventoryValue,
+): SessionInventoryStoredValue {
   const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...input.workspaceMeta }
   if ("byWorkspace" in input) {
     for (const [key, group] of Object.entries(input.byWorkspace)) {
@@ -300,9 +315,9 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
  * those indexes here resurrected the final archived/deleted session. The
  * canonical `sessions` array is authoritative at every boundary.
  */
-export function toCanonicalSessionInventoryStore<TSession extends SessionInventoryIdentity>(
-  input: SessionInventoryValue<TSession>,
-): SessionInventoryStoredValue<TSession> {
+export function toCanonicalSessionInventoryStore(
+  input: SessionInventoryValue,
+): SessionInventoryStoredValue {
   const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...input.workspaceMeta }
   for (const [key, group] of Object.entries(input.byWorkspace)) {
     if (workspaceMeta[key]) continue
@@ -311,11 +326,11 @@ export function toCanonicalSessionInventoryStore<TSession extends SessionInvento
   return sessionInventoryStore(input, input.sessions, workspaceMeta)
 }
 
-function sessionInventoryStore<TSession extends SessionInventoryIdentity>(
-  input: SessionInventoryStoredValue<TSession> | SessionInventoryValue<TSession>,
-  sessions: TSession[],
+function sessionInventoryStore(
+  input: SessionInventoryStoredValue | SessionInventoryValue,
+  sessions: SessionInventoryRow[],
   workspaceMeta: Record<string, SessionInventoryWorkspaceMeta>,
-): SessionInventoryStoredValue<TSession> {
+): SessionInventoryStoredValue {
   return {
     sessions: dedupeSessions(sessions),
     globalState: { ...input.globalState },
@@ -333,7 +348,7 @@ function sessionInventoryStore<TSession extends SessionInventoryIdentity>(
   }
 }
 
-export function emptySessionInventoryStore<TSession>(): SessionInventoryStoredValue<TSession> {
+export function emptySessionInventoryStore(): SessionInventoryStoredValue {
   return {
     sessions: [],
     globalState: { hasMore: false, loading: false },
@@ -346,14 +361,14 @@ export function emptySessionInventoryStore<TSession>(): SessionInventoryStoredVa
   }
 }
 
-export function emptySessionInventory<TSession>(): SessionInventoryValue<TSession> {
-  return normalizeSessionInventory(emptySessionInventoryStore<TSession>() as SessionInventoryStoredValue<TSession & SessionInventoryIdentity>)
+export function emptySessionInventory(): SessionInventoryValue {
+  return normalizeSessionInventory(emptySessionInventoryStore())
 }
 
-export function sessionInventoryQueryOptions<TSession = unknown>(input: {
+export function sessionInventoryQueryOptions(input: {
   baseUrl?: string
 }) {
-  return queryOptions<SessionInventoryStoredValue<TSession & SessionInventoryIdentity>, Error, SessionInventoryValue<TSession & SessionInventoryIdentity>>({
+  return queryOptions<SessionInventoryStoredValue, Error, SessionInventoryValue>({
     queryKey: queryKeys.shell.sessionInventory(input.baseUrl),
     queryFn: skipToken,
     select: deriveSessionInventoryValue,

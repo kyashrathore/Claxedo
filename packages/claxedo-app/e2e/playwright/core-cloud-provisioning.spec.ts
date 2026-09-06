@@ -140,6 +140,7 @@ import {
 } from "../helpers/turn-oracle"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
 import { stampTestAuth } from "../playwright-global-setup"
+import { eventStream, lastEventId } from "../helpers/sse-route"
 import {
   assertSessionConfigPatchResponse,
   parseSessionConfigPatch,
@@ -284,16 +285,6 @@ class Bus<T> {
     await this.waitForPending(idleTimeoutMs, cursor)
     return this.log.filter((entry) => entry.id > cursor)
   }
-}
-
-function lastEventId(route: Route) {
-  const value = Number(route.request().headers()["last-event-id"])
-  return Number.isFinite(value) && value > 0 ? value : 0
-}
-
-function eventStream<T>(events: Array<{ id: number; payload: T }>) {
-  if (events.length === 0) return ": heartbeat\n\n"
-  return events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event.payload)}\n\n`).join("")
 }
 
 async function seedCloudProject(page: Page, opts: { registerWorkspace: boolean }) {

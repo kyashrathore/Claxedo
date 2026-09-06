@@ -1,12 +1,11 @@
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export const MAIN_WORKTREE = "main"
 export const CREATE_WORKTREE = "create"
 
-export type NewSessionWorkspaceKind = "local" | "cloud" | "user-hosted"
-
 export type ProjectWorkspace = {
-  kind?: "local" | "cloud" | "user-hosted" | null
+  kind?: WorkspaceKind | null
   workspace_name?: string | null
   available?: boolean | null
   /** Git remote — the only project-scoped identity a hosted cloud row carries. */
@@ -107,13 +106,13 @@ export function findProjectForDirectory<T extends ProjectInventoryEntry>(
 export function createNewSessionWorkspaceState(input: {
   projectRoot: string
   selectedWorktree: string
-  workspaceKind: NewSessionWorkspaceKind
+  workspaceKind: WorkspaceKind
   sandboxes?: string[]
   workspaces?: Record<string, ProjectWorkspace>
 }) {
   const workspaces = input.workspaces ?? {}
   const directoryFor = (value: string) => value === MAIN_WORKTREE ? input.projectRoot : value
-  const kindFor = (value: string): NewSessionWorkspaceKind => {
+  const kindFor = (value: string): WorkspaceKind => {
     // user-hosted (self-hosted, relay-connected) is its OWN kind — never collapse
     // it into "cloud". Collapsing is what let a misresolved self-hosted workspace
     // fall into the "New cloud sandbox" create path (creatingWorkspace below only

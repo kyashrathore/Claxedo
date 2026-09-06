@@ -47,6 +47,50 @@ const round = (value: number) => Math.round(value * 100) / 100
 const ROUNDS = Number(process.env.PROBE_ROUNDS ?? 9)
 const SHOT_DIR = process.env.PROBE_SHOT_DIR ?? "/tmp/claxedo-selector-surgery"
 
+/**
+ * One rewritten stylesheet, plus the class each rewritten selector now needs on
+ * the elements that used to match by attribute.
+ */
+type SurgeryVariant = {
+  text: string
+  classes: Array<{ value: string; token: string }>
+}
+
+/** What one paired base-vs-variant measurement reports. */
+type SurgeryMeasurement = {
+  saved: number
+  low: number
+  high: number
+  base: number
+  variant: number
+  elements: number
+  classAdds: number
+}
+
+/**
+ * The in-page surgery kit this probe installs.
+ *
+ * Stated once so the five call sites below stop each re-declaring the single
+ * method they use, and so `build`'s stash and `measure`'s reader cannot drift
+ * apart.
+ */
+type SurgeryKit = {
+  /** Build the variant text once; returns its size and how many classes it needs. */
+  build: (name: string) => { bytes: number; classAdds: number }
+  measure: (name: string, rounds: number) => Promise<SurgeryMeasurement>
+  /** Install a variant persistently, for screenshots. */
+  install: (name: string) => void
+  uninstall: (name: string) => void
+  /** Every selector shape in the document's sheets, most frequent first. */
+  census: () => Array<[string, number]>
+}
+
+declare global {
+  interface Window {
+    __surgery?: SurgeryKit
+  }
+}
+
 const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))
 const browser = await chromium.launch({ headless: true, args: frameSamplingLaunchArgs, timeout: 30_000 })
@@ -65,7 +109,10 @@ await settleBeforeNextInteraction(page)
 // Install the surgery kit: CSSOM re-serialisation + the family transformations.
 // ---------------------------------------------------------------------------
 await page.evaluate(() => {
-  const w = window as unknown as Record<string, unknown>
+  // Built variants live in this closure, not under generated `window` keys.
+  // Every method below shares this scope, so the stash needs no global and no
+  // per-read reconstruction of its shape.
+  const builtVariants = new Map<string, SurgeryVariant>()
 
   const rightmostCut = (sel: string): number => {
     let depth = 0
@@ -251,40 +298,35 @@ await page.evaluate(() => {
   const serialize = (rules: CSSRuleList, transform: Transform, seen: Set<string>): string => {
     let out = ""
     for (const rule of Array.from(rules)) {
-      const kind = rule.constructor.name
-      const nested = (rule as unknown as { cssRules?: CSSRuleList }).cssRules
-      if (kind === "CSSStyleRule") {
-        const styleRule = rule as CSSStyleRule
+      const nested = rule instanceof CSSGroupingRule ? rule.cssRules : undefined
+      if (rule instanceof CSSStyleRule) {
         const kept: string[] = []
-        for (const one of splitList(styleRule.selectorText)) {
+        for (const one of splitList(rule.selectorText)) {
           const mapped = transform.selector(one, seen)
           if (mapped) kept.push(mapped)
         }
         if (kept.length === 0) continue
-        const decls = styleRule.style.cssText
+        const decls = rule.style.cssText
         const inner = nested && nested.length > 0 ? serialize(nested, transform, seen) : ""
         if (!decls && !inner) continue
         out += `${kept.join(",")}{${decls}${inner ? `;${inner}` : ""}}`
         continue
       }
-      if (kind === "CSSMediaRule" || kind === "CSSSupportsRule" || kind === "CSSContainerRule") {
-        const at = kind === "CSSMediaRule" ? "@media" : kind === "CSSSupportsRule" ? "@supports" : "@container"
-        const condition = (rule as unknown as { conditionText: string }).conditionText
+      if (rule instanceof CSSMediaRule || rule instanceof CSSSupportsRule || rule instanceof CSSContainerRule) {
+        const at = rule instanceof CSSMediaRule ? "@media" : rule instanceof CSSSupportsRule ? "@supports" : "@container"
         const inner = nested ? serialize(nested, transform, seen) : ""
-        if (inner) out += `${at} ${condition}{${inner}}`
+        if (inner) out += `${at} ${rule.conditionText}{${inner}}`
         continue
       }
-      if (kind === "CSSLayerBlockRule") {
-        const name = (rule as unknown as { name: string }).name
+      if (rule instanceof CSSLayerBlockRule) {
         const inner = nested ? serialize(nested, transform, seen) : ""
-        out += `@layer ${name}{${inner}}`
+        out += `@layer ${rule.name}{${inner}}`
         continue
       }
-      if (kind === "CSSScopeRule") {
+      if (rule instanceof CSSScopeRule) {
         const inner = nested ? serialize(nested, transform, seen) : ""
-        const prelude = (rule as unknown as { start?: string; end?: string })
-        const start = prelude.start ? `(${prelude.start})` : ""
-        const end = prelude.end ? ` to (${prelude.end})` : ""
+        const start = rule.start ? `(${rule.start})` : ""
+        const end = rule.end ? ` to (${rule.end})` : ""
         if (inner) out += `@scope ${start}${end}{${inner}}`
         continue
       }
@@ -304,16 +346,18 @@ await page.evaluate(() => {
       }
     })
 
-  w.__surgery = {
+  window.__surgery = {
     /** Build the variant text once; returns stats. */
     build: (name: string) => {
       const transform = transforms[name]
       const seen = new Set<string>()
       let text = ""
       for (const sheet of sheetNodes()) text += serialize(sheet.cssRules, transform, seen)
-      const classes = Array.from(seen).map((entry) => entry.split(" ") as [string, string])
-      const store = w as unknown as Record<string, unknown>
-      store[`__variant_${name}`] = { text, classes }
+      const classes = Array.from(seen).flatMap((entry) => {
+        const [value, token] = entry.split(" ")
+        return value !== undefined && token !== undefined ? [{ value, token }] : []
+      })
+      builtVariants.set(name, { text, classes })
       return { bytes: text.length, classAdds: classes.length }
     },
     /**
@@ -323,8 +367,8 @@ await page.evaluate(() => {
      * inside the paired region, so machine drift cancels.
      */
     measure: async (name: string, rounds: number) => {
-      const store = w as unknown as Record<string, unknown>
-      const variant = store[`__variant_${name}`] as { text: string; classes: Array<[string, string]> }
+      const variant = builtVariants.get(name)
+      if (!variant) throw new Error(`variant ${name} was never built`)
       const style = document.createElement("style")
       style.id = "claxedo-surgery"
       style.textContent = variant.text
@@ -333,7 +377,7 @@ await page.evaluate(() => {
 
       // Elements that must gain a class for the rewritten selectors to match.
       const adds: Array<{ node: Element; token: string }> = []
-      for (const [value, token] of variant.classes) {
+      for (const { value, token } of variant.classes) {
         for (const node of Array.from(document.querySelectorAll(`[data-slot="${CSS.escape(value)}"]`))) {
           if (token.startsWith("cxslot-")) adds.push({ node, token })
         }
@@ -397,14 +441,14 @@ await page.evaluate(() => {
     },
     /** Install a variant persistently (for screenshots). */
     install: (name: string) => {
-      const store = w as unknown as Record<string, unknown>
-      const variant = store[`__variant_${name}`] as { text: string; classes: Array<[string, string]> }
+      const variant = builtVariants.get(name)
+      if (!variant) throw new Error(`variant ${name} was never built`)
       const style = document.createElement("style")
       style.id = "claxedo-surgery-installed"
       style.textContent = variant.text
       document.head.append(style)
       for (const sheet of sheetNodes()) if (sheet.ownerNode !== style) sheet.disabled = true
-      for (const [value, token] of variant.classes) {
+      for (const { value, token } of variant.classes) {
         if (token.startsWith("cxslot-")) {
           for (const node of Array.from(document.querySelectorAll(`[data-slot="${CSS.escape(value)}"]`))) node.classList.add(token)
         } else {
@@ -413,9 +457,9 @@ await page.evaluate(() => {
       }
     },
     uninstall: (name: string) => {
-      const store = w as unknown as Record<string, unknown>
-      const variant = store[`__variant_${name}`] as { text: string; classes: Array<[string, string]> }
-      for (const [value, token] of variant.classes) {
+      const variant = builtVariants.get(name)
+      if (!variant) throw new Error(`variant ${name} was never built`)
+      for (const { value, token } of variant.classes) {
         if (token.startsWith("cxslot-")) {
           for (const node of Array.from(document.querySelectorAll(`[data-slot="${CSS.escape(value)}"]`))) node.classList.remove(token)
         } else {
@@ -429,14 +473,13 @@ await page.evaluate(() => {
       const buckets = new Map<string, number>()
       const walk = (rules: CSSRuleList) => {
         for (const rule of Array.from(rules)) {
-          const nested = (rule as unknown as { cssRules?: CSSRuleList }).cssRules
-          if (rule.constructor.name === "CSSStyleRule") {
-            for (const one of splitList((rule as CSSStyleRule).selectorText)) {
+          if (rule instanceof CSSStyleRule) {
+            for (const one of splitList(rule.selectorText)) {
               const shape = shapeOf(one)
               buckets.set(shape, (buckets.get(shape) ?? 0) + 1)
             }
           }
-          if (nested) walk(nested)
+          if (rule instanceof CSSGroupingRule) walk(rule.cssRules)
         }
       }
       for (const sheet of sheetNodes()) walk(sheet.cssRules)
@@ -446,9 +489,10 @@ await page.evaluate(() => {
 })
 
 const census = await page.evaluate(() => {
-  const w = window as unknown as { __surgery: { census: () => Array<[string, number]> } }
+  const surgery = window.__surgery
+  if (!surgery) throw new Error("the surgery kit is not installed on this page")
   return {
-    shapes: w.__surgery.census(),
+    shapes: surgery.census(),
     total: document.querySelectorAll("*").length,
     dataSlot: document.querySelectorAll("[data-slot]").length,
     dataComponent: document.querySelectorAll("[data-component]").length,
@@ -482,19 +526,15 @@ console.log(
 )
 for (const name of VARIANTS) {
   const built = await page.evaluate((variant) => {
-    const w = window as unknown as { __surgery: { build: (n: string) => { bytes: number; classAdds: number } } }
-    return w.__surgery.build(variant)
+    const surgery = window.__surgery
+    if (!surgery) throw new Error("the surgery kit is not installed on this page")
+    return surgery.build(variant)
   }, name)
   const measured = await page.evaluate(
     ({ variant, rounds }) => {
-      const w = window as unknown as {
-        __surgery: {
-          measure: (n: string, r: number) => Promise<{
-            saved: number; low: number; high: number; base: number; variant: number; elements: number; classAdds: number
-          }>
-        }
-      }
-      return w.__surgery.measure(variant, rounds)
+      const surgery = window.__surgery
+      if (!surgery) throw new Error("the surgery kit is not installed on this page")
+      return surgery.measure(variant, rounds)
     },
     { variant: name, rounds: ROUNDS },
   )
@@ -518,14 +558,16 @@ if (!VARIANTS.includes("slot-to-class")) {
 console.log("\n=== visual parity: slot-to-class ===")
 await page.screenshot({ path: `${SHOT_DIR}/before.png`, fullPage: false })
 await page.evaluate(() => {
-  const w = window as unknown as { __surgery: { install: (n: string) => void } }
-  w.__surgery.install("slot-to-class")
+  const surgery = window.__surgery
+  if (!surgery) throw new Error("the surgery kit is not installed on this page")
+  surgery.install("slot-to-class")
 })
 await page.waitForTimeout(250)
 await page.screenshot({ path: `${SHOT_DIR}/after-slot-to-class.png`, fullPage: false })
 await page.evaluate(() => {
-  const w = window as unknown as { __surgery: { uninstall: (n: string) => void } }
-  w.__surgery.uninstall("slot-to-class")
+  const surgery = window.__surgery
+  if (!surgery) throw new Error("the surgery kit is not installed on this page")
+  surgery.uninstall("slot-to-class")
 })
 console.log(`  ${SHOT_DIR}/before.png vs ${SHOT_DIR}/after-slot-to-class.png`)
 

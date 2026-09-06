@@ -206,7 +206,7 @@ describe("local managed document file semantics", () => {
     expect(first).toBe("project_1/document_a/cafe-notes.md")
     expect(second).toBe("project_1/document_b/cafe-notes.md")
     expect(first).not.toBe(second)
-    expect([...first, ...second].every((character) => character.charCodeAt(0) < 128)).toBe(true)
+    expect(/^[\u0000-\u007F]*$/.test(`${first}${second}`)).toBe(true)
   })
 
   test("EC-A12 rejects case-folding project and document identifiers", () => {

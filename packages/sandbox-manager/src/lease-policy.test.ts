@@ -132,21 +132,18 @@ describe("sandbox lease policy", () => {
   })
 
   test("health failure policy skips inapplicable states, backs off, and caps retries", () => {
-    expect(decideSandboxHealthFailure(lease({ status: "stopped" }), allPlacement, NOW)).toMatchObject({ action: "skip" })
+    expect(decideSandboxHealthFailure(lease({ status: "stopped" }), NOW)).toMatchObject({ action: "skip" })
     expect(decideSandboxHealthFailure(
       lease({ status: "ready", retry_count: 0 }),
-      allPlacement,
       NOW,
     )).toMatchObject({ action: "wait", until: NOW + 1000 })
     expect(decideSandboxHealthFailure(
       lease({ status: "ready", retry_count: 8 }),
-      allPlacement,
       NOW,
       { ...DEFAULT_WORKSPACE_HOST_DECISION_CONFIG, maxRetries: 8 },
     )).toMatchObject({ action: "mark_failed" })
     expect(decideSandboxHealthFailure(
       lease({ status: "unhealthy", retry_count: 2 }),
-      allPlacement,
       NOW,
     )).toMatchObject({ action: "wait" })
   })

@@ -256,7 +256,10 @@ describe("PortLease", () => {
 
 describe("resolvePort via start()", () => {
   let tmpDir: string
-  let ptyCreate: ReturnType<typeof spyOn> | undefined
+  // `ReturnType<typeof spyOn>` is `any`, which swallowed the `| undefined`
+  // this variable actually relies on between tests. Only the two members used
+  // here are declared, so the reset in `afterEach` is type-checked.
+  let ptyCreate: { mockRestore(): void; mock: { calls: unknown[] } } | undefined
   let ptySeq = 0
 
   beforeEach(async () => {
@@ -387,7 +390,7 @@ describe("resolvePort via start()", () => {
         kind: "failed",
         error: "workspace command path must be relative",
       })
-      expect(ptyCreate).not.toHaveBeenCalled()
+      expect(ptyCreate?.mock.calls.length ?? 0).toBe(0)
     } finally {
       await dispose(dir)
     }

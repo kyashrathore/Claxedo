@@ -74,7 +74,8 @@ describe("createSessionMountSettle", () => {
       const [pending, setPending] = createSignal<Promise<unknown> | undefined>(undefined)
       const settled = createSessionMountSettle({ active: () => true, pendingTranscript: pending })
       expect(settled()).toBe(true)
-      setPending(new Promise(() => {}))
+      // The setter returns the stored value, which is this never-settling probe.
+      void setPending(new Promise(() => {}))
       expect(settled()).toBe(true)
       dispose()
     })

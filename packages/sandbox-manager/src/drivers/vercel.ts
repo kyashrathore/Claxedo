@@ -11,6 +11,8 @@ import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { RUNTIME_DIR } from "../defaults"
 import { sandboxDriverCatalog } from "../driver-catalog"
+import { record } from "../json"
+import { isTransientDriverError } from "./transient-error"
 
 type VercelSnapshotLike = { snapshotId: string }
 type VercelCommandLike = {
@@ -112,16 +114,26 @@ const snapshotCacheState = new WeakMap<Map<string, string>, {
   builds: Map<string, Promise<string>>
 }>()
 
+/**
+ * `VercelSandboxFactoryLike` is this driver's port: it names `create`/`get` and
+ * describes their parameters in this driver's own terms, so the vendor's types
+ * never enter the build graph. That erasure is why the SDK's class cannot be
+ * assigned to it — so the surface the port promises is checked here instead.
+ */
+function isVercelSandboxFactory(value: unknown): value is VercelSandboxFactoryLike {
+  const row = record(value)
+  return typeof row?.create === "function" && typeof row.get === "function"
+}
+
 function nameFor(workspaceId: string) {
   return `claxedo-${workspaceId}`
 }
 
+/** Markers this driver's SDK has been seen to use for a retryable failure. */
+const TRANSIENT_MARKERS = ["timeout", "unavailable", "deadline", "pending"] as const
+
 function transientDriverError(err: unknown) {
-  const shaped = err as { response?: { status?: number }; status?: number; code?: string; name?: string; message?: string }
-  const status = shaped.response?.status ?? shaped.status
-  if (typeof status === "number" && status >= 500) return true
-  const text = `${shaped.code ?? ""} ${shaped.name ?? ""} ${shaped.message ?? ""}`.toLowerCase()
-  return text.includes("timeout") || text.includes("unavailable") || text.includes("deadline") || text.includes("pending")
+  return isTransientDriverError(err, TRANSIENT_MARKERS)
 }
 
 function network(input: SandboxDriverEnsureInput): NetworkPolicy | undefined {
@@ -202,7 +214,13 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
   let defaultFactory: Promise<VercelSandboxFactoryLike> | undefined
   function resolveFactory(): VercelSandboxFactoryLike | Promise<VercelSandboxFactoryLike> {
     if (options.sandbox) return options.sandbox
-    defaultFactory ??= import("@vercel/sandbox").then((sdk) => sdk.Sandbox as unknown as VercelSandboxFactoryLike)
+    defaultFactory ??= import("@vercel/sandbox").then((sdk) => {
+      const factory: unknown = sdk.Sandbox
+      if (!isVercelSandboxFactory(factory)) {
+        throw new Error("@vercel/sandbox does not expose the factory surface this driver uses")
+      }
+      return factory
+    })
     return defaultFactory
   }
   const runtime = options.runtime ?? DEFAULT_RUNTIME

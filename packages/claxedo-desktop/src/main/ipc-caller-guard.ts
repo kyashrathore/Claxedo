@@ -111,7 +111,7 @@ export type GuardableIpcMain = {
 export function installIpcCallerGuard(input: {
   ipcMain: GuardableIpcMain
   guard: IpcCallerGuard
-  readCaller: (event: unknown) => IpcCaller
+  readCaller: (event: IpcMainInvokeEvent | IpcMainEvent) => IpcCaller
   onRejected?: (channel: string, reason: string) => void
 }) {
   const { ipcMain, guard, readCaller, onRejected } = input
@@ -129,17 +129,17 @@ export function installIpcCallerGuard(input: {
 
   ipcMain.handle = (channel, listener) => {
     guarded++
-    return originalHandle(channel, ((event: unknown, ...args: never[]) => {
+    return originalHandle(channel, (event, ...args) => {
       const verdict = guard.check(readCaller(event))
       if (!verdict.allowed) throw reject(channel, verdict.reason)
-      return (listener as (event: unknown, ...args: never[]) => unknown)(event, ...args)
-    }) as never)
+      return listener(event, ...args)
+    })
   }
 
   ipcMain.on = (channel, listener) => {
     guarded++
     // Returned, not discarded: `ipcMain.on` is EventEmitter-chainable.
-    return originalOn(channel, ((event: unknown, ...args: never[]) => {
+    return originalOn(channel, (event, ...args) => {
       const verdict = guard.check(readCaller(event))
       if (!verdict.allowed) {
         onRejected?.(channel, verdict.reason)
@@ -147,8 +147,8 @@ export function installIpcCallerGuard(input: {
         // the only available answer; the report above is what makes it visible.
         return
       }
-      ;(listener as (event: unknown, ...args: never[]) => void)(event, ...args)
-    }) as never)
+      listener(event, ...args)
+    })
   }
 
   return { guardedCount: () => guarded }

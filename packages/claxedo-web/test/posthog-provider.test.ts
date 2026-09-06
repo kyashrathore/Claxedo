@@ -84,7 +84,7 @@ describe("sanitize_properties hook", () => {
 describe("init options", () => {
   test("no cookies", () => {
     expect(initOptions.persistence).toBe("sessionStorage")
-    expect(String(initOptions.persistence)).not.toContain("cookie")
+    expect(initOptions.persistence).not.toContain("cookie")
   })
 
   test("autocapture and session recording stay off", () => {

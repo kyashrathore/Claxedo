@@ -16,7 +16,7 @@ import { drainContent, drainSpots, reduceTool, viewToolWithDiagnostics, type Ses
 import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
-import { jsonText, object, text } from "../value"
+import { jsonText, object, text } from "../../value"
 
 export type { SessionUpdate }
 

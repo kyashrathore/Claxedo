@@ -1,7 +1,7 @@
 import { decodeDriverRequest, type AgentDriverRequest } from "./agent-driver-contract"
+import { isRecord } from "./json-fields"
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
-type JsonObject = { [key: string]: JsonValue }
 type DriverMethod = AgentDriverRequest["method"]
 
 export type AgentDriverResponse = {
@@ -114,8 +114,9 @@ function failure(correlationId: string, method: DriverMethod, code: string, erro
 
 function envelopeFromInvalidLine(line: string): { correlationId: string; method: DriverMethod } {
   try {
-    const value = JSON.parse(line) as JsonObject
-    const correlationId = typeof value?.correlationId === "string" && value.correlationId.length <= 256
+    const parsed: unknown = JSON.parse(line)
+    const value = isRecord(parsed) ? parsed : {}
+    const correlationId = typeof value.correlationId === "string" && value.correlationId.length <= 256
       ? value.correlationId
       : "invalid"
     const method = typeof value?.method === "string" && isMethod(value.method) ? value.method : "hello"

@@ -47,7 +47,7 @@ describe("cloudflare egress broker", () => {
   test("injects the brokered credential and never exposes it to the sandbox", async () => {
     const forwarded: Array<{ url: string; headers: Headers }> = []
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      forwarded.push({ url: String(url), headers: new Headers(init?.headers) })
+      forwarded.push({ url: url instanceof Request ? url.url : url.toString(), headers: new Headers(init?.headers) })
       return new Response("ok", { headers: { "x-echo": "1" } })
     }) as unknown as typeof fetch
 

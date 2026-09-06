@@ -1,13 +1,11 @@
 import { type SelectedLineRange } from "@pierre/diffs"
 import { diffLineIndex, diffRowIndex } from "./diff-selection"
 
-export type CommentSide = "additions" | "deletions"
-
-function annotationIndex(node: HTMLElement) {
+function annotationIndex(node: HTMLElement): number | undefined {
   const value = node.dataset.lineAnnotation?.split(",")[1]
-  if (!value) return
+  if (!value) return undefined
   const line = parseInt(value, 10)
-  if (Number.isNaN(line)) return
+  if (Number.isNaN(line)) return undefined
   return line
 }
 
@@ -36,13 +34,13 @@ export function markCommentedDiffLines(root: ShadowRoot, ranges: SelectedLineRan
   )
 
   for (const range of ranges) {
-    const start = diffRowIndex(root, split, range.start, range.side as CommentSide | undefined)
+    const start = diffRowIndex(root, split, range.start, range.side)
     if (start === undefined) continue
 
     const end = (() => {
       const same = range.end === range.start && (range.endSide == null || range.endSide === range.side)
       if (same) return start
-      return diffRowIndex(root, split, range.end, (range.endSide ?? range.side) as CommentSide | undefined)
+      return diffRowIndex(root, split, range.end, range.endSide ?? range.side)
     })()
     if (end === undefined) continue
 

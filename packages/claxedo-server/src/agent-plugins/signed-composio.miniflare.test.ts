@@ -37,6 +37,7 @@ import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
 import { mintMcpGatewayToken } from "./mcp/runtime-token"
+import { fetchBodyText } from "../test-support/fetch-calls"
 
 /**
  * Signed-in Composio Gmail loop against Miniflare R2 and the real hosted
@@ -634,7 +635,7 @@ function dynamicRegistrationAuthorizationServer() {
       })
     }
     if (url === DCR_REGISTRATION) {
-      registrations.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      registrations.push(JSON.parse(fetchBodyText(init?.body)) as Record<string, unknown>)
       return Response.json({
         client_id: "dyn-composio-client",
         client_id_issued_at: 1,
@@ -642,7 +643,7 @@ function dynamicRegistrationAuthorizationServer() {
       }, { status: 201 })
     }
     if (url === DCR_TOKEN) {
-      const body = new URLSearchParams(String(init?.body))
+      const body = new URLSearchParams(fetchBodyText(init?.body))
       tokenRequests.push(body)
       if (body.get("client_id") !== "dyn-composio-client") {
         return new Response(JSON.stringify({ error: "invalid_client" }), { status: 401 })
@@ -709,7 +710,7 @@ describe("Composio MCP through RFC 7591 dynamic client registration", () => {
         issuer: ownerIdentity.issuer,
       },
     }
-    const orgId = String((await authority.usersMe(owner) as { org_id: string }).org_id)
+    const orgId = (await authority.usersMe(owner) as { org_id: string }).org_id
 
     const server = dynamicRegistrationAuthorizationServer()
     const registry = createD1McpOAuthClientRegistry({ database })

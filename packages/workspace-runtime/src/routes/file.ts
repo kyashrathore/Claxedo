@@ -1,7 +1,6 @@
 import { Hono } from "hono"
-import { Readable } from "node:stream"
 import { assertTarget, WorkspaceTargetError } from "../target"
-import { errorBody } from "./http"
+import { errorBody, webStreamFrom } from "./http"
 import {
   listAllWorkspaceFiles,
   listWorkspaceDirectory,
@@ -28,7 +27,7 @@ async function root(c: FileRouteContext, options: Options) {
     if (options.resolveRoot) return await options.resolveRoot(c)
     return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
   } catch (err) {
-    if (err instanceof WorkspaceTargetError) return
+    if (err instanceof WorkspaceTargetError) return undefined
     throw err
   }
 }
@@ -45,7 +44,7 @@ async function routeFile(root: string, input?: string) {
   try {
     return await resolveWorkspaceFile(root, input)
   } catch (err) {
-    if (err instanceof WorkspaceTargetError) return
+    if (err instanceof WorkspaceTargetError) return undefined
     throw err
   }
 }
@@ -87,7 +86,7 @@ export function FileRoutes(options: Options = {}) {
       try {
         const raw = await workspaceRawFile(full)
         if (!raw) return c.json(errorBody("file_not_found", "File not found"), 404)
-        return new Response(Readable.toWeb(raw.stream) as unknown as ReadableStream<Uint8Array>, {
+        return new Response(webStreamFrom(raw.stream), {
           headers: {
             "content-length": String(raw.size),
             "content-type": "application/octet-stream",

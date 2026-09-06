@@ -295,83 +295,83 @@ export function createPromptInputV2Controller(input: {
     suggestions,
     dispatch,
     onKeyDown,
-    value() {
+    value: () => {
       return draft.state.prompt.map((part) => ("content" in part ? part.content : "")).join("")
     },
-    parts() {
+    parts: () => {
       return draft.state.prompt
     },
     addPart,
-    contextItem(id: string) {
+    contextItem: (id: string) => {
       return draft.state.context.items.find((item) => item.key === id)
     },
-    comments() {
+    comments: () => {
       return draft.state.context.items.filter((item) => !!item.comment?.trim())
     },
-    attachments(): PromptInputV2Attachment[] {
+    attachments: (): PromptInputV2Attachment[] => {
       return draft.state.prompt.filter((part): part is PromptInputV2Attachment => part.type === "image")
     },
-    toggleContext(id: string) {
+    toggleContext: (id: string) => {
       dispatch({ type: "context.active", id })
       input.openContext?.(id)
     },
-    removeContext(id: string) {
+    removeContext: (id: string) => {
       const item = draft.state.context.items.find((entry) => entry.key === id)
       if (item) input.onContextRemove?.(item)
       draft.removeContext(id)
       if (state.activeContextID === id) dispatch({ type: "context.active", id })
     },
-    openAttachment(attachment: PromptInputV2Attachment) {
+    openAttachment: (attachment: PromptInputV2Attachment) => {
       input.openAttachment?.(attachment)
     },
-    removeAttachment(id: string) {
+    removeAttachment: (id: string) => {
       draft.removeAttachment(id)
     },
-    canSubmit() {
+    canSubmit: () => {
       const persisted = draft.state
       if (persisted.prompt.some((part) => part.type === "image")) return true
       if (persisted.context.items.some((item) => !!item.comment?.trim())) return true
       return persisted.prompt.some((part) => "content" in part && !!part.content.trim())
     },
-    setEditor(element: HTMLElement) {
+    setEditor: (element: HTMLElement) => {
       editor = element
       input.onEditor?.(element)
     },
     restoreFocus,
-    onInput(value: string, prompt?: PromptInputV2PersistedState["prompt"], cursor?: number) {
+    onInput: (value: string, prompt?: PromptInputV2PersistedState["prompt"], cursor?: number) => {
       if (prompt) draft.setPrompt(prompt, cursor)
       dispatch({ type: "input.changed", value, persist: !prompt })
     },
-    onCursor(cursor: number) {
+    onCursor: (cursor: number) => {
       draft.setCursor(cursor)
     },
-    openCommands() {
+    openCommands: () => {
       dispatch({ type: "commands.open" })
     },
-    openContext() {
+    openContext: () => {
       dispatch({ type: "context.open" })
     },
-    openShell() {
+    openShell: () => {
       dispatch({ type: "mode.shell" })
     },
-    closeShell() {
+    closeShell: () => {
       dispatch({ type: "mode.normal" })
     },
-    submit() {
+    submit: () => {
       input.view.submit.onSubmit()
       dispatch({ type: "popover.close" })
     },
-    stop() {
+    stop: () => {
       input.view.submit.onStop()
     },
-    addHistory(prompt: PromptInputV2PersistedState["prompt"], mode: "normal" | "shell") {
+    addHistory: (prompt: PromptInputV2PersistedState["prompt"], mode: "normal" | "shell") => {
       input.history?.add(prompt, mode)
       setState({ historyIndex: -1, savedHistory: undefined })
     },
-    resetHistory() {
+    resetHistory: () => {
       setState({ historyIndex: -1, savedHistory: undefined })
     },
-    onPaste(event: ClipboardEvent) {
+    onPaste: (event: ClipboardEvent) => {
       const clipboard = event.clipboardData
       if (
         attachments &&
@@ -399,17 +399,17 @@ export function createPromptInputV2Controller(input: {
       selection.addRange(range)
       target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste", data: text }))
     },
-    onDragEnter(event: DragEvent) {
+    onDragEnter: (event: DragEvent) => {
       event.preventDefault()
       dispatch({ type: "drag.enter" })
     },
-    onDragOver(event: DragEvent) {
+    onDragOver: (event: DragEvent) => {
       event.preventDefault()
     },
-    onDragLeave() {
+    onDragLeave: () => {
       dispatch({ type: "drag.leave" })
     },
-    onDrop(event: DragEvent) {
+    onDrop: (event: DragEvent) => {
       event.preventDefault()
       dispatch({ type: "drag.leave" })
       if (attachments) {
@@ -420,13 +420,13 @@ export function createPromptInputV2Controller(input: {
       input.view.onDrop?.(event)
     },
     attach,
-    setFileInput(element: HTMLInputElement) {
+    setFileInput: (element: HTMLInputElement) => {
       fileInput = element
     },
-    addAttachments(files: File[]) {
+    addAttachments: (files: File[]) => {
       if (attachments) void attachments.addAttachments(files)
     },
-    setQuery(value: string) {
+    setQuery: (value: string) => {
       dispatch({ type: "popover.query", value })
     },
   }

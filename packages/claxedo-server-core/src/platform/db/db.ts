@@ -12,6 +12,7 @@ export { eq, and, desc, gt, inArray } from "drizzle-orm"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { lazy } from "@claxedo/server-core/platform/runtime/lib/lazy"
+import { isJsonRecord, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import path from "path"
 import { readFileSync, readdirSync, existsSync, mkdirSync } from "fs"
 import { createRequire } from "module"
@@ -43,11 +44,33 @@ export function configureClaxedoMigrations(dir: string) {
 const log = Log.create({ service: "claxedo-db" })
 const require = createRequire(import.meta.url)
 
+/**
+ * The two untyped modules the Bun path loads.
+ *
+ * `bun:sqlite` has no types under a Node typecheck, and drizzle's bun-sqlite
+ * entry point is only reachable at runtime under Bun. Both are therefore
+ * declared here as the contract this module requires and CHECKED at load
+ * (`isBunSqliteModule` / `isBunDrizzleModule`) rather than asserted: a Bun
+ * upgrade that moves either export fails at the boundary with a message that
+ * names it, not later inside a query.
+ *
+ * `drizzle` is declared as returning `ClaxedoDB.Client`: both driver entry
+ * points build the same query builder, and every caller here uses only that
+ * shared surface.
+ */
 type BunSqliteModule = {
   Database: new (file: string) => CompatibleSqlite
 }
 type BunDrizzleModule = {
-  drizzle: (config: { client: CompatibleSqlite }) => unknown
+  drizzle: (config: { client: CompatibleSqlite }) => ClaxedoDB.Client
+}
+
+function isBunSqliteModule(value: unknown): value is BunSqliteModule {
+  return isJsonRecord(value) && typeof value.Database === "function"
+}
+
+function isBunDrizzleModule(value: unknown): value is BunDrizzleModule {
+  return isJsonRecord(value) && typeof value.drizzle === "function"
 }
 type CompatibleSqlite = {
   exec(sql: string): unknown
@@ -56,7 +79,16 @@ type CompatibleSqlite = {
     all(...params: unknown[]): unknown[]
     run(...params: unknown[]): unknown
   }
-  transaction<T extends (...args: never[]) => unknown>(fn: T): T
+  /**
+   * Wrap `fn` so calling the result runs it inside a transaction.
+   *
+   * Deliberately not generic over the function type: better-sqlite3 returns a
+   * `Transaction<T>` (T plus `.deferred`/`.immediate`/`.exclusive`), which is
+   * assignable at the value level but not to a bare `T`. Naming only what every
+   * caller uses — a no-argument thunk — makes both drivers fit without an
+   * assertion.
+   */
+  transaction<Result>(fn: () => Result): () => Result
   close(): unknown
   pragma?(sql: string): unknown
 }
@@ -65,23 +97,46 @@ function bunRuntime() {
   return !!process.versions.bun
 }
 
+/** Rows of a raw query, each narrowed to a record. A non-record row is dropped. */
+export function queryRows(sqlite: CompatibleSqlite, sql: string, ...params: unknown[]): Record<string, unknown>[] {
+  return sqlite.prepare(sql).all(...params).filter(isJsonRecord)
+}
+
+/** The one row of a raw query, when it is a record. */
+export function queryRow(sqlite: CompatibleSqlite, sql: string, ...params: unknown[]): Record<string, unknown> | undefined {
+  return jsonRecord(sqlite.prepare(sql).get(...params))
+}
+
+/** A row's text column, when it holds a string. */
+export function textColumn(row: Record<string, unknown>, name: string): string | undefined {
+  const value = row[name]
+  return typeof value === "string" ? value : undefined
+}
+
+/** A row's numeric column, when it holds a finite number. */
+export function numberColumn(row: Record<string, unknown>, name: string): number | undefined {
+  const value = row[name]
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+/** One text column across every row, skipping rows where it is not a string. */
+export function textColumns(rows: Record<string, unknown>[], name: string): string[] {
+  return rows.map((row) => textColumn(row, name)).filter((value): value is string => value !== undefined)
+}
+
 function openDatabase(file: string) {
   if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true })
   if (bunRuntime()) {
-    const bun = require("bun:sqlite") as BunSqliteModule
-    const drizzle = (require("drizzle-orm/bun-sqlite") as BunDrizzleModule).drizzle
+    const bun: unknown = require("bun:sqlite")
+    const bunDrizzle: unknown = require("drizzle-orm/bun-sqlite")
+    if (!isBunSqliteModule(bun)) throw new Error("bun:sqlite does not export a Database constructor")
+    if (!isBunDrizzleModule(bunDrizzle)) throw new Error("drizzle-orm/bun-sqlite does not export drizzle")
     const sqlite = new bun.Database(file)
-    return {
-      sqlite: sqlite,
-      db: drizzle({ client: sqlite }) as ClaxedoDB.Client,
-    }
+    return { sqlite, db: bunDrizzle.drizzle({ client: sqlite }) }
   }
 
   const sqlite = new Database(file)
-  return {
-    sqlite: sqlite as CompatibleSqlite,
-    db: drizzleBetter({ client: sqlite }) as unknown as ClaxedoDB.Client,
-  }
+  return { sqlite, db: drizzleBetter({ client: sqlite }) }
 }
 
 function pragma(sqlite: CompatibleSqlite, sql: string) {
@@ -109,7 +164,7 @@ type MigrationEntry = { sql: () => string; timestamp: number; name: string }
 function applyMigrations(sqlite: CompatibleSqlite, entries: MigrationEntry[]) {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS __claxedo_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
   const applied = new Set(
-    (sqlite.prepare(`SELECT name FROM __claxedo_migrations`).all() as { name: string }[]).map((r) => r.name),
+    textColumns(queryRows(sqlite, `SELECT name FROM __claxedo_migrations`), "name"),
   )
   const ran: string[] = []
   for (const entry of entries) {
@@ -121,10 +176,9 @@ function applyMigrations(sqlite: CompatibleSqlite, entries: MigrationEntry[]) {
       } catch (error) {
         const repairedModelColumns =
           entry.name === "20260712000100_session_meta_model" &&
-          (sqlite.prepare("PRAGMA table_info(claxedo_session_meta)").all() as { name?: unknown }[])
-            .filter((item): item is { name: string } => typeof item.name === "string")
-            .map((item) => item.name)
-            .filter((name) => name === "model_provider_id" || name === "model_id").length === 2
+          textColumns(queryRows(sqlite, "PRAGMA table_info(claxedo_session_meta)"), "name").filter(
+            (name) => name === "model_provider_id" || name === "model_id",
+          ).length === 2
         if (!repairedModelColumns) throw error
       }
       sqlite.prepare(`INSERT INTO __claxedo_migrations (name, applied_at) VALUES (?, ?)`).run(entry.name, Date.now())
@@ -145,13 +199,10 @@ function applyMigrations(sqlite: CompatibleSqlite, entries: MigrationEntry[]) {
  */
 function schemaFingerprint(sqlite: CompatibleSqlite): string | undefined {
   try {
-    const rows = sqlite.prepare(`SELECT name, sql FROM sqlite_master ORDER BY name`).all() as {
-      name: string
-      sql: string | null
-    }[]
+    const rows = queryRows(sqlite, `SELECT name, sql FROM sqlite_master ORDER BY name`)
     const hash = createHash("sha256")
     hash.update(`repair-version:${REPAIR_VERSION}`)
-    for (const row of rows) hash.update(`\n${row.name}\n${row.sql ?? ""}`)
+    for (const row of rows) hash.update(`\n${textColumn(row, "name") ?? ""}\n${textColumn(row, "sql") ?? ""}`)
     return hash.digest("hex")
   } catch (error) {
     log.warn("failed to fingerprint claxedo schema", { error: String(error) })
@@ -169,9 +220,8 @@ function ensureMetaTable(sqlite: CompatibleSqlite) {
 function storedRepairFingerprint(sqlite: CompatibleSqlite): string | undefined {
   try {
     ensureMetaTable(sqlite)
-    const row = sqlite.prepare(`SELECT value FROM __claxedo_meta WHERE key = ?`).get(REPAIR_FINGERPRINT_KEY) as
-      { value?: unknown } | undefined
-    return typeof row?.value === "string" ? row.value : undefined
+    const row = queryRow(sqlite, `SELECT value FROM __claxedo_meta WHERE key = ?`, REPAIR_FINGERPRINT_KEY)
+    return row && textColumn(row, "value")
   } catch (error) {
     log.warn("failed to read claxedo repair fingerprint", { error: String(error) })
     return undefined
@@ -352,12 +402,21 @@ export namespace ClaxedoDB {
     return callback(Drizzle())
   }
 
-  export function transaction<T>(callback: (db: Client) => T): T {
-    const db = Drizzle()
-    // drizzle >=1.0 types sync-driver transaction callbacks as `T extends
-    // Promise<any> ? DrizzleTypeError : T`; the casts keep the generic
-    // signature callers rely on (callers here are synchronous).
-    const run = (tx: unknown) => callback(tx as Client)
-    return db.transaction(run as never) as T
+  /**
+   * Run `callback` inside a synchronous transaction.
+   *
+   * drizzle >=1.0 types a sync-driver transaction callback's return as
+   * `T extends Promise<any> ? DrizzleTypeError : T`, and through this generic
+   * seam it cannot prove `T` is not a Promise. Returning nothing from the inner
+   * callback resolves that conditional and carries the result out in a cell —
+   * which is also the honest shape, since a sync driver genuinely cannot await
+   * inside a transaction.
+   */
+  export function transaction<Result>(callback: (db: Client) => Result): Result {
+    const carried: Result[] = []
+    Drizzle().transaction((tx) => {
+      carried.push(callback(tx))
+    })
+    return carried[0]
   }
 }

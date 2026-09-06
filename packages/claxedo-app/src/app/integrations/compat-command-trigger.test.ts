@@ -21,7 +21,7 @@ describe("legacy command bus bridge", () => {
   test("maps slash triggers to peer slash command sources", async () => {
     const bus = createCommandBus()
     const seen: LegacyCommandTriggerCommand[] = []
-    bus.register<LegacyCommandTriggerCommand>(legacyCommandTriggerType, (command) => {
+    bus.register(legacyCommandTriggerType, (command) => {
       seen.push(command)
     })
 

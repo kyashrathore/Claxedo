@@ -196,6 +196,16 @@ export type MockMessageInfo = {
 
 export type MockPart = { id: string; sessionID: string; messageID: string; type: "text"; text: string }
 
+/** A `session.status` frame that actually carries a status object. */
+function isStatusFrame(value: unknown): value is LiveSessionStatus {
+  return typeof value === "object" && value !== null && "type" in value && typeof value.type === "string"
+}
+
+/** Read one dynamically-named field off a part without asserting its shape. */
+function partField(part: MockPart, field: string): unknown {
+  return Object.entries(part).find(([key]) => key === field)?.[1]
+}
+
 export type MockMessageRow = { info: MockMessageInfo; parts: MockPart[] }
 
 export type PromptBody = {
@@ -1181,19 +1191,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         properties?: { messageID?: string; partID?: string; field?: string; delta?: unknown }
       }).properties
       if (!properties?.messageID || !properties.partID || typeof properties.delta !== "string") return
+      // Bound to consts: narrowing of `properties.delta` does not survive into
+      // the nested map callbacks below, where it would read back as `unknown`.
+      const { messageID, partID } = properties
+      const delta = properties.delta
       const field = properties.field ?? "text"
       messages = messages.map((row) =>
-        row.info.id === properties.messageID
+        row.info.id === messageID
           ? {
               ...row,
-              parts: row.parts.map((item) =>
-                item.id === properties.partID
-                  ? {
-                      ...item,
-                      [field]: `${(item as unknown as Record<string, unknown>)[field] ?? ""}${properties.delta}`,
-                    }
-                  : item,
-              ),
+              parts: row.parts.map((item) => {
+                if (item.id !== partID) return item
+                const previous = partField(item, field)
+                return { ...item, [field]: `${typeof previous === "string" ? previous : ""}${delta}` }
+              }),
             }
           : row,
       )
@@ -1234,10 +1245,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       // busy bit on the next status poll, todoState returns "clear", and the
       // dock wipes itself to [].
       const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
-      const status = properties.status as LiveSessionStatus | undefined
-      if (sessionID && status && typeof status === "object" && typeof (status as { type?: unknown }).type === "string") {
-        setSessionStatus(sessionID, status)
-      }
+      const status: unknown = properties.status
+      if (sessionID && isStatusFrame(status)) setSessionStatus(sessionID, status)
     } else if (type === "session.idle") {
       const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
       if (sessionID) setSessionStatus(sessionID)

@@ -1,19 +1,39 @@
 type LogExtra = Record<string, unknown>
 
+/**
+ * One log field as text.
+ *
+ * A log line must never contain `[object Object]`, and it must never be the
+ * thing that throws: interpolating a symbol raises a TypeError, and a value
+ * with a cycle or a throwing getter defeats `JSON.stringify`. Every shape is
+ * given an explicit rendering here so neither can happen at a call site.
+ */
+function formatValue(value: unknown): string {
+  if (value instanceof Error) return value.message
+  if (typeof value === "string") return value
+  if (value === null || value === undefined) return String(value)
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value)
+  if (typeof value === "function") return "[function]"
+  if (typeof value === "symbol") return value.toString()
+  try {
+    return JSON.stringify(value) ?? "[undefined]"
+  } catch {
+    return "[unserializable]"
+  }
+}
+
 function formatMsg(level: string, tags: Record<string, unknown>, message: unknown, extra?: LogExtra): string {
   const now = new Date().toISOString().split(".")[0]
   const parts: string[] = []
-  for (const [k, v] of Object.entries(tags)) {
-    parts.push(`${k}=${typeof v === "object" ? JSON.stringify(v) : v}`)
-  }
+  for (const [k, v] of Object.entries(tags)) parts.push(`${k}=${formatValue(v)}`)
   if (extra) {
     for (const [k, v] of Object.entries(extra)) {
       if (v === undefined) continue
-      parts.push(`${k}=${v instanceof Error ? v.message : typeof v === "object" ? JSON.stringify(v) : v}`)
+      parts.push(`${k}=${formatValue(v)}`)
     }
   }
   const suffix = parts.length ? " " + parts.join(" ") : ""
-  return `${now} ${level} ${message}${suffix}\n`
+  return `${now} ${level} ${formatValue(message)}${suffix}\n`
 }
 
 function makeLogger(tags: Record<string, unknown>) {

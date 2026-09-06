@@ -159,9 +159,9 @@ function harness(options: {
 } = {}) {
   const recorded: Recorded[] = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input))
+    const url = new URL(requestUrl(input))
     const method = init?.method ?? "GET"
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    const body = requestJson(init)
     recorded.push({ url: url.pathname, method, ...(body !== undefined ? { body } : {}) })
     if (url.pathname === "/api/claxedo/plugins" || url.pathname === "/api/claxedo/plugins/refresh") {
       return Response.json(catalogBody(options.catalog))
@@ -723,3 +723,17 @@ describe("unknown connection status", () => {
     expect(screen.queryByRole("heading", { name: /Needs attention/ })).toBeNull()
   })
 })
+
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}

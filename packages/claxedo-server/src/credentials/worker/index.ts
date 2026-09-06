@@ -39,6 +39,7 @@ import {
   type CloudflareKvNamespaceBinding,
 } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
+import { asRecord, isRecord } from "../../platform/json/index"
 
 type WorkerCredentialEnv = Record<string, unknown> & {
   CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
@@ -292,12 +293,16 @@ export function hostedOrgCredentials(
   }
 }
 
-const CREDENTIAL_KINDS = new Set(["api_key", "oauth_token", "subscription_session", "sandbox_driver"])
-const CREDENTIAL_SOURCES = new Set(["managed", "local_only", "env", "upstream_sync"])
-const CREDENTIAL_SCOPES = new Set(["local", "shared"])
-const CREDENTIAL_STATUSES = new Set(["available", "expired", "revoked", "error"])
-const CREDENTIAL_HEALTH = new Set(["ok", "auth_failed", "no_billing", "rate_capped", "expired"])
-const CREDENTIAL_CONSENT_SURFACES = new Set(["desktop_discovery", "api_key", "scope_change", "cli", "migration"])
+// Literal tuples rather than `Set<string>`: `enumValue` is a type predicate, so
+// each check below narrows the field it validates and the metadata can be BUILT
+// from the narrowed values instead of the whole payload being asserted into
+// shape at the end.
+const CREDENTIAL_KINDS = ["api_key", "oauth_token", "subscription_session", "sandbox_driver"] as const
+const CREDENTIAL_SOURCES = ["managed", "local_only", "env", "upstream_sync"] as const
+const CREDENTIAL_SCOPES = ["local", "shared"] as const
+const CREDENTIAL_STATUSES = ["available", "expired", "revoked", "error"] as const
+const CREDENTIAL_HEALTH = ["ok", "auth_failed", "no_billing", "rate_capped", "expired"] as const
+const CREDENTIAL_CONSENT_SURFACES = ["desktop_discovery", "api_key", "scope_change", "cli", "migration"] as const
 
 function parseStoredCredential(
   raw: string,
@@ -353,38 +358,64 @@ function parseStoredCredential(
   ) {
     invalidStoredCredential(expected.providerId, "metadata timestamps must be finite numbers or null")
   }
+  const consentRecord = asRecord(meta.consent)
+  const consentAt = consentRecord?.at
+  const consentSurface = consentRecord?.surface
   if (meta.consent !== undefined && meta.consent !== null) {
     if (
-      !isRecord(meta.consent) ||
-      !finiteNumber(meta.consent.at) ||
-      !enumValue(meta.consent.surface, CREDENTIAL_CONSENT_SURFACES)
+      !consentRecord ||
+      !finiteNumber(consentAt) ||
+      !enumValue(consentSurface, CREDENTIAL_CONSENT_SURFACES)
     ) {
       invalidStoredCredential(expected.providerId, "meta.consent is invalid")
     }
   }
-  return value as StoredCredential
+  // Built from the fields that were just checked, one at a time; the previous
+  // `value as StoredCredential` asserted the whole payload into shape and
+  // carried any extra keys straight into the store's own record.
+  return {
+    secret: value.secret,
+    meta: {
+      id: expected.providerId,
+      provider_id: expected.providerId,
+      kind: meta.kind,
+      source: meta.source,
+      status: meta.status,
+      created_at: meta.created_at,
+      updated_at: meta.updated_at,
+      ...(meta.org_id === undefined ? {} : { org_id: meta.org_id }),
+      ...(meta.secure_ref === undefined ? {} : { secure_ref: meta.secure_ref }),
+      ...(meta.scope === undefined ? {} : { scope: meta.scope }),
+      ...(meta.label === undefined ? {} : { label: meta.label }),
+      ...(meta.account_id === undefined ? {} : { account_id: meta.account_id }),
+      ...(meta.last_error === undefined ? {} : { last_error: meta.last_error }),
+      ...(meta.health === undefined ? {} : { health: meta.health }),
+      ...(meta.expires_at === undefined ? {} : { expires_at: meta.expires_at }),
+      ...(meta.last_validated_at === undefined ? {} : { last_validated_at: meta.last_validated_at }),
+      ...(meta.last_used_at === undefined ? {} : { last_used_at: meta.last_used_at }),
+      ...(finiteNumber(consentAt) && enumValue(consentSurface, CREDENTIAL_CONSENT_SURFACES)
+        ? { consent: { at: consentAt, surface: consentSurface } }
+        : { consent: meta.consent === undefined ? undefined : null }),
+    },
+  }
 }
 
 function invalidStoredCredential(providerId: string, reason: string): never {
   throw new HostedCredentialRecordError(providerId, reason)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+function enumValue<T extends string>(value: unknown, values: readonly T[]): value is T {
+  return values.some((candidate) => candidate === value)
 }
 
-function enumValue(value: unknown, values: Set<string>) {
-  return typeof value === "string" && values.has(value)
-}
-
-function nullableString(value: unknown) {
+function nullableString(value: unknown): value is string | null | undefined {
   return value === undefined || value === null || typeof value === "string"
 }
 
-function finiteNumber(value: unknown) {
+function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value)
 }
 
-function nullableFiniteNumber(value: unknown) {
+function nullableFiniteNumber(value: unknown): value is number | null | undefined {
   return value === undefined || value === null || finiteNumber(value)
 }

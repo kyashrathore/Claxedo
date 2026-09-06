@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto"
 import { PostHog } from "posthog-node"
 import {
   createRemoteJWKSet,
-  exportJWK,
   exportPKCS8,
   generateKeyPair,
   importPKCS8,
@@ -19,13 +17,19 @@ import { startSyntheticProbe, type SyntheticProbe } from "./synthetic"
 import {
   createCachedRevocationClient,
   createCachedTargetClient,
+  parseRuntimeAccessTokenActiveResult,
+  parseWorkspaceRelayTarget,
   type RelayHostPublicKey,
   type RevocationLookup,
-  type RuntimeAccessTokenActiveResult,
   type TargetLookup,
   type WorkspaceRelayTarget,
 } from "./server"
-import type { RelayKey, RuntimeAccessTokenClaims } from "./auth"
+import {
+  deriveRelayHostKid,
+  deriveRelayHostPublicKey,
+  type RelayKey,
+  type RuntimeAccessTokenClaims,
+} from "./auth"
 
 export { createCachedRevocationClient, createCachedTargetClient } from "./server"
 
@@ -267,15 +271,6 @@ export type RelayHostKeyMaterial = {
   next?: RelayHostPublicKey
 }
 
-async function deriveKidFromPublicKey(publicKey: CryptoKey): Promise<string> {
-  const jwk = await exportJWK(publicKey)
-  const material = String(jwk.x ?? jwk.n ?? "")
-  if (!material) {
-    throw new Error("Cannot derive kid: public key has no public component")
-  }
-  return createHash("sha256").update(material).digest("hex").slice(0, 16)
-}
-
 export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv): Promise<RelayHostKeyMaterial> {
   const privatePem = pem(env.CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM)
   let privateKey: CryptoKey
@@ -309,14 +304,11 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
     // Derive public from private via JWK round-trip. importPKCS8 with
     // extractable: true gives us a key that can be exported as JWK; we then
     // re-import the public component as a pure public key.
-    const jwk = await exportJWK(privateKey)
-    const publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x }
-    const { importJWK } = await import("jose")
-    publicKey = (await importJWK(publicJwk as Parameters<typeof importJWK>[0], "EdDSA", { extractable: true })) as CryptoKey
+    publicKey = await deriveRelayHostPublicKey(privateKey)
   }
 
   const explicitCurrentKid = clean(env.CLAXEDO_RELAY_HOST_KID)
-  const currentKid = explicitCurrentKid ?? (await deriveKidFromPublicKey(publicKey))
+  const currentKid = explicitCurrentKid ?? (await deriveRelayHostKid(publicKey))
 
   const nextPem = pem(env.CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM)
   let next: RelayHostPublicKey | undefined
@@ -325,7 +317,7 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
     const explicitNextKid = clean(env.CLAXEDO_RELAY_HOST_NEXT_KID)
     next = {
       publicKey: nextPublicKey,
-      kid: explicitNextKid ?? (await deriveKidFromPublicKey(nextPublicKey)),
+      kid: explicitNextKid ?? (await deriveRelayHostKid(nextPublicKey)),
     }
   }
 
@@ -387,10 +379,6 @@ export function directHttpConcurrencyFromEnv(env: DirectHttpConcurrencyEnv): num
   return positiveInteger(env.CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY)
 }
 
-type ResolverTargetResponse = WorkspaceRelayTarget
-
-type ResolverRevocationResponse = RuntimeAccessTokenActiveResult
-
 export type ResolverClientCacheOptions = {
   targetCacheTtlMs?: number
   revocationCacheTtlMs?: number
@@ -423,7 +411,12 @@ export function createResolverClient(
     const res = await fetch(url, { headers })
     if (res.status === 404) return undefined
     if (!res.ok) throw new Error(`relay target resolver failed: ${res.status} ${await res.text()}`)
-    return (await res.json()) as ResolverTargetResponse
+    // Same boundary parse the Cloudflare worker applies (`worker.ts`): the
+    // resolver is a remote service, so its body is validated once here rather
+    // than trusted into `WorkspaceRelayTarget`.
+    const target = parseWorkspaceRelayTarget(await res.json())
+    if (!target) throw new Error("relay target resolver returned a malformed target")
+    return target
   }
   const revocationUncached: RevocationLookup = async (args) => {
     const url = new URL(`${root}/revocation`)
@@ -438,7 +431,9 @@ export function createResolverClient(
         reason: `revocation resolver returned ${res.status}`,
       }
     }
-    return (await res.json()) as ResolverRevocationResponse
+    const result = parseRuntimeAccessTokenActiveResult(await res.json())
+    if (!result) throw new Error("relay revocation resolver returned a malformed result")
+    return result
   }
   const target = createCachedTargetClient(targetUncached, {
     ttlMs: options.targetCacheTtlMs ?? BUN_TARGET_CACHE_TTL_MS_DEFAULT,
@@ -449,6 +444,51 @@ export function createResolverClient(
   return {
     target: (workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined> => target({ workspaceId, hostId }),
     revocation,
+  }
+}
+
+const STOP_SERVER_TIMEOUT_MS_DEFAULT = 5_000
+
+/**
+ * Run a teardown step, but never let it hold the process open.
+ *
+ * Both shutdown paths exist to exit *deterministically*: a SIGTERM drain has
+ * the platform's kill timeout behind it, and a fatal handler is already
+ * running on a process we have declared broken. `stopServer` is awaited on
+ * purpose (T9) so sockets are really closed before exit — but a socket that
+ * never finishes closing must not turn a graceful exit into a SIGKILL, which
+ * would skip `directory.dispose()` and the exit code entirely. Same bound, and
+ * the same reason, as `reportFatal`'s flush race above.
+ *
+ * A rejection that arrives *after* the bound expires is logged, not thrown:
+ * by then we have already moved on, and an unhandled rejection inside the
+ * fatal handler would be a second crash on top of the first.
+ */
+async function runBoundedTeardown(
+  step: (() => Promise<void> | void) | undefined,
+  label: string,
+  timeoutMs: number,
+  log: (message: string) => void,
+): Promise<void> {
+  if (!step) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const attempt = (async () => {
+    await step()
+  })().catch((err: unknown) => {
+    log(`[workspace-relay] ${label} failed: ${err instanceof Error ? err.message : String(err)}`)
+  })
+  try {
+    await Promise.race([
+      attempt,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          log(`[workspace-relay] ${label} did not finish within ${timeoutMs}ms; exiting anyway`)
+          resolve()
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -484,6 +524,12 @@ export type ShutdownDrainHandlerOptions = {
   signals?: NodeJS.Signals[]
   /** Defaults to a no-op (we let Bun.serve get GC'd as part of process exit). */
   stopServer?: () => Promise<void> | void
+  /**
+   * Upper bound on `stopServer`. A wedged socket close must not outlast the
+   * platform's kill timeout, or a graceful exit becomes a SIGKILL that skips
+   * `directory.dispose()`. Defaults to 5 s; tests override it to stay fast.
+   */
+  stopTimeoutMs?: number
 }
 
 export type ShutdownDrainHandle = {
@@ -514,11 +560,12 @@ export function installShutdownDrainHandler(options: ShutdownDrainHandlerOptions
           `[workspace-relay] drain timeout: ${result.remaining} pending request(s) remaining after ${options.drainTimeoutMs}ms; force-closing`,
         )
       }
-      try {
-        await options.stopServer?.()
-      } catch (err) {
-        log(`[workspace-relay] stopServer failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
+      await runBoundedTeardown(
+        options.stopServer,
+        "stopServer",
+        options.stopTimeoutMs ?? STOP_SERVER_TIMEOUT_MS_DEFAULT,
+        log,
+      )
       try {
         options.directory.dispose()
       } catch (err) {
@@ -556,6 +603,8 @@ export type FatalProcessHandlerOptions = {
    */
   report?: (error: unknown, source: "uncaughtException" | "unhandledRejection") => void | Promise<void>
   stopServer?: () => Promise<void> | void
+  /** Upper bound on `stopServer`; see `ShutdownDrainHandlerOptions.stopTimeoutMs`. */
+  stopTimeoutMs?: number
 }
 
 export type FatalProcessHandle = {
@@ -582,11 +631,12 @@ export function installFatalProcessHandlers(options: FatalProcessHandlerOptions)
         log(`[workspace-relay] fatal report failed: ${err instanceof Error ? err.message : String(err)}`)
       }
       options.drain.setDraining(true)
-      try {
-        await options.stopServer?.()
-      } catch (err) {
-        log(`[workspace-relay] fatal stopServer failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
+      await runBoundedTeardown(
+        options.stopServer,
+        "fatal stopServer",
+        options.stopTimeoutMs ?? STOP_SERVER_TIMEOUT_MS_DEFAULT,
+        log,
+      )
       try {
         options.directory.dispose()
       } catch (err) {
@@ -778,7 +828,10 @@ async function main() {
       // Force-close any sockets the drain wait could not finish; Bun's
       // `stop(true)` triggers `close` events on tunnels, which in turn rejects
       // any straggling `pending` HTTP responses.
-      server.stop(true)
+      // `stop()` is async in Bun: awaiting it means `stopServer` resolves only once
+      // the listener and its sockets are actually closed, which is what the drain
+      // and fatal handlers wait on before exiting.
+      await server.stop(true)
       syntheticProbe?.stop()
     },
   })
@@ -791,7 +844,10 @@ async function main() {
     // a log buffer — flush them to PostHog (no-op when no key) before exiting.
     report: (error) => reportFatal(error),
     stopServer: async () => {
-      server.stop(true)
+      // `stop()` is async in Bun: awaiting it means `stopServer` resolves only once
+      // the listener and its sockets are actually closed, which is what the drain
+      // and fatal handlers wait on before exiting.
+      await server.stop(true)
       syntheticProbe?.stop()
     },
   })

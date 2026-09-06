@@ -1,4 +1,4 @@
-import { isRecord, object } from "../value"
+import { isRecord, object } from "../../value"
 import type { ContentBlock, SessionUpdate, ToolCallContent } from "./types"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 

@@ -12,6 +12,7 @@ export {
   defaultSnapshotName,
 } from "./image-name"
 import { defaultSandboxImage, defaultSnapshotName, sandboxImageRepository } from "./image-name"
+import { record, text } from "./json"
 
 /**
  * Sink for snapshot-build progress. Every message here reports a long
@@ -51,6 +52,26 @@ function snapshotUsable(state: unknown) {
   return state === "ready" || state === "active"
 }
 
+/**
+ * What this module reads off a Daytona snapshot. The SDK's own snapshot type
+ * has drifted across releases (and does not declare `activate` at all), so the
+ * fields are read through here rather than asserted: an SDK that stops sending
+ * one shows up as `undefined` at the check, not as a crash three lines later.
+ */
+type SnapshotView = { id: string | undefined; state: string | undefined; errorReason: string | undefined }
+
+function snapshotView(input: unknown): SnapshotView {
+  const row = record(input) ?? {}
+  return { id: text(row.id), state: text(row.state), errorReason: text(row.errorReason) }
+}
+
+/** `activate` is absent from the SDK's published snapshot type but present at runtime. */
+async function activateSnapshot(snapshots: unknown, id: string): Promise<void> {
+  const activate = record(snapshots)?.activate
+  if (typeof activate !== "function") throw new Error("Daytona SDK does not support snapshot activation")
+  await activate.call(snapshots, { id })
+}
+
 async function createSnapshot(daytona: Daytona, log: SandboxImageLogSink): Promise<string> {
   log("Creating sandbox snapshot (this may take a few minutes)...", { name: SNAPSHOT_NAME })
   await daytona.snapshot.create(
@@ -66,14 +87,15 @@ async function createSnapshot(daytona: Daytona, log: SandboxImageLogSink): Promi
 export async function ensureSnapshot(daytona: Daytona, options: SandboxImageOptions = {}): Promise<string> {
   const log = options.log ?? defaultImageLogSink
   try {
-    const existing = await daytona.snapshot.get(SNAPSHOT_NAME) as any
+    const existing = snapshotView(await daytona.snapshot.get(SNAPSHOT_NAME))
     if (existing.state === "inactive") {
       log("Snapshot is inactive, reactivating...", { name: SNAPSHOT_NAME, id: existing.id })
-      await (daytona.snapshot as any).activate({ id: existing.id })
+      if (!existing.id) throw new Error("Daytona snapshot is inactive but reports no id to activate")
+      await activateSnapshot(daytona.snapshot, existing.id)
       for (let i = 0; i < 120; i++) {
-        const snap = await daytona.snapshot.get(SNAPSHOT_NAME) as any
+        const snap = snapshotView(await daytona.snapshot.get(SNAPSHOT_NAME))
         if (snapshotUsable(snap.state)) return SNAPSHOT_NAME
-        if (snap.state === "error") throw new Error(`Snapshot activation failed: ${snap.errorReason}`)
+        if (snap.state === "error") throw new Error(`Snapshot activation failed: ${snap.errorReason ?? "unknown"}`)
         await new Promise((resolve) => setTimeout(resolve, 2000))
       }
       throw new Error("Snapshot activation timed out")
@@ -81,9 +103,9 @@ export async function ensureSnapshot(daytona: Daytona, options: SandboxImageOpti
     if (existing.state === "building") {
       log("Snapshot is building, waiting (up to 10 min)...", { name: SNAPSHOT_NAME })
       for (let i = 0; i < 300; i++) {
-        const snap = await daytona.snapshot.get(SNAPSHOT_NAME) as any
+        const snap = snapshotView(await daytona.snapshot.get(SNAPSHOT_NAME))
         if (snapshotUsable(snap.state)) return SNAPSHOT_NAME
-        if (snap.state === "error") throw new Error(`Snapshot build failed: ${snap.errorReason}`)
+        if (snap.state === "error") throw new Error(`Snapshot build failed: ${snap.errorReason ?? "unknown"}`)
         if (i % 15 === 0) log("Still waiting for snapshot...", { state: snap.state, elapsed: `${i * 2}s` })
         await new Promise((resolve) => setTimeout(resolve, 2000))
       }

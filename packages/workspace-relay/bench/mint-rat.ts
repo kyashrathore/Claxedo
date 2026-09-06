@@ -37,6 +37,23 @@ function clean(input: string | undefined) {
   return value ? value : undefined
 }
 
+const RELAY_ROLES = ["viewer", "editor", "admin", "owner"] as const satisfies readonly RelayRole[]
+
+/**
+ * `--role` comes off the command line as free text. Validating it here means a
+ * typo fails loudly with the accepted values instead of minting a token whose
+ * role claim the relay will silently reject later.
+ */
+function relayRole(value: string | undefined): RelayRole | undefined {
+  if (value === undefined) return undefined
+  const match = RELAY_ROLES.find((role) => role === value)
+  if (!match) {
+    console.error(`[mint-rat] --role must be one of ${RELAY_ROLES.join(", ")} (got "${value}")`)
+    return process.exit(2)
+  }
+  return match
+}
+
 // A --private-key-pem value may be a file path or the PEM text itself.
 async function resolvePem(value: string): Promise<string> {
   if (value.includes("BEGIN")) return value.replaceAll("\\n", "\n")
@@ -44,7 +61,9 @@ async function resolvePem(value: string): Promise<string> {
     return await readFile(value, "utf8")
   } catch {
     console.error(`[mint-rat] could not read private key from "${value}" (not a PEM and not a readable file)`)
-    process.exit(2)
+    // `process.exit` is typed `never`; returning it keeps every path of this
+    // function a `return` rather than leaving an implicit fallthrough.
+    return process.exit(2)
   }
 }
 
@@ -75,12 +94,13 @@ async function main() {
     const privateKeyPem = await resolvePem(pemArg)
     const workspaceId = clean(arg("workspace")) ?? "ws_bench"
     const hostId = clean(arg("host")) ?? "host_bench"
+    const role = relayRole(clean(arg("role")))
     const identity = await benchIdentityFromPrivatePem(privateKeyPem, { workspaceId, hostId })
     const rat = await identity.mintRat({
       workspaceId,
       hostId,
       ...(clean(arg("org")) ? { orgId: clean(arg("org"))! } : {}),
-      ...(clean(arg("role")) ? { role: clean(arg("role"))! as RelayRole } : {}),
+      ...(role ? { role } : {}),
       ...(clean(arg("ttl")) ? { ttlSeconds: Number(clean(arg("ttl"))) } : {}),
     })
     // The token itself on stdout so it can be captured; nothing else.

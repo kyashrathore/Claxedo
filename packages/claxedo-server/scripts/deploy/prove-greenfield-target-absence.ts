@@ -11,6 +11,8 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
+import { asRecord, numberField, readJsonRecord, stringField } from "../../src/platform/json/index"
+import { d1Rows } from "./d1-json"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const SHA256 = /^sha256:[0-9a-f]{64}$/
@@ -100,6 +102,52 @@ type ActiveRelease = Readonly<{
   phaseRevision: number
 }>
 
+/**
+ * The operator status endpoint's release block. Every field is compared against
+ * the deployment manifest below, so a status that is missing one has to fail
+ * here rather than compare `undefined` to a real value and pass.
+ */
+const ACTIVE_RELEASE_STRINGS = [
+  "deploymentId",
+  "releaseId",
+  "workerBuildId",
+  "platformVersionId",
+  "browserBuildId",
+  "relayBuildId",
+  "authConfigurationId",
+  "adapterProfile",
+  "productPosture",
+  "sandboxPosture",
+  "serviceManifestId",
+  "phase",
+] as const
+
+function parseActiveRelease(value: unknown): ActiveRelease | undefined {
+  const record = asRecord(value)
+  const phaseRevision = numberField(record, "phaseRevision")
+  if (!record || phaseRevision === undefined) return undefined
+  const strings: Partial<Record<(typeof ACTIVE_RELEASE_STRINGS)[number], string>> = {}
+  for (const key of ACTIVE_RELEASE_STRINGS) {
+    const field = stringField(record, key)
+    if (field === undefined) return undefined
+    strings[key] = field
+  }
+  const {
+    deploymentId, releaseId, workerBuildId, platformVersionId, browserBuildId, relayBuildId,
+    authConfigurationId, adapterProfile, productPosture, sandboxPosture, serviceManifestId, phase,
+  } = strings
+  if (
+    deploymentId === undefined || releaseId === undefined || workerBuildId === undefined ||
+    platformVersionId === undefined || browserBuildId === undefined || relayBuildId === undefined ||
+    authConfigurationId === undefined || adapterProfile === undefined || productPosture === undefined ||
+    sandboxPosture === undefined || serviceManifestId === undefined || phase === undefined
+  ) return undefined
+  return Object.freeze({
+    deploymentId, releaseId, workerBuildId, platformVersionId, browserBuildId, relayBuildId,
+    authConfigurationId, adapterProfile, productPosture, sandboxPosture, serviceManifestId, phase, phaseRevision,
+  })
+}
+
 export type GreenfieldTargetAbsenceCommand = Readonly<{
   binding: GreenfieldBinding
   kind: "schema" | "counts"
@@ -166,19 +214,6 @@ export function greenfieldTargetAbsenceCommands(configPath: string): readonly Gr
   )
 }
 
-function d1Rows(output: string, label: string) {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(output)
-  } catch {
-    throw new Error(`${label} did not return JSON`)
-  }
-  if (!Array.isArray(parsed) || parsed.length !== 1) throw new Error(`${label} returned an unexpected result set`)
-  const result = parsed[0] as { success?: unknown; results?: unknown }
-  if (result.success !== true || !Array.isArray(result.results)) throw new Error(`${label} query failed`)
-  return result.results as Array<Record<string, unknown>>
-}
-
 function canonicalSchema(output: string, expected: ExpectedCounts, binding: GreenfieldBinding) {
   const rows = d1Rows(output, `${binding} schema`)
   const names = rows.map((row, index) => {
@@ -211,11 +246,11 @@ function canonicalCounts(
     throw new Error(`${binding} counts do not cover the exact certified schema`)
   }
   const rows = expectedNames.map((table) => {
-    const count = result[table]
-    if (!Number.isSafeInteger(count) || (count as number) < 0) {
+    const count = numberField(result, table)
+    if (count === undefined || !Number.isSafeInteger(count) || count < 0) {
       throw new Error(`${binding}.${table} count is malformed`)
     }
-    return Object.freeze({ table, count: count as number })
+    return Object.freeze({ table, count })
   })
   for (const row of rows) {
     const expectedCount = expected[row.table]
@@ -231,8 +266,9 @@ function digest(value: string | Uint8Array) {
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`)
-  return value as Record<string, unknown>
+  const record = asRecord(value)
+  if (!record) throw new Error(`${label} must be an object`)
+  return record
 }
 
 export function verifyGreenfieldDeploymentManifest(input: {
@@ -370,13 +406,16 @@ async function main() {
     headers: { authorization: `Bearer ${required(process.env, "CLAXEDO_RELEASE_OPERATOR_SECRET")}` },
     signal: AbortSignal.timeout(15_000),
   })
-  const status = (await statusResponse.json()) as { release?: ActiveRelease; error?: { code?: string } }
-  if (!statusResponse.ok || !status.release) {
-    throw new Error(`live release status is unavailable (${status.error?.code ?? statusResponse.status})`)
+  const status = await readJsonRecord(statusResponse)
+  const activeRelease = parseActiveRelease(status?.release)
+  if (!statusResponse.ok || !activeRelease) {
+    throw new Error(
+      `live release status is unavailable (${stringField(asRecord(status?.error), "code") ?? statusResponse.status})`,
+    )
   }
   verifyGreenfieldDeploymentManifest({
     manifest: parsedManifest,
-    activeRelease: status.release,
+    activeRelease,
     environment,
     apiOrigin: release.apiOrigin,
     appOrigin: release.authConfiguration.appOrigin,
@@ -390,7 +429,7 @@ async function main() {
   try {
     const configPath = path.join(temporary, "wrangler.toml")
     await writeFile(configPath, renderBetterAuthD1WranglerConfig({ staging: environment === "staging", ...release }))
-    const outputs = {} as Record<`${GreenfieldBinding}:${"schema" | "counts"}`, string>
+    const outputs: Partial<Record<`${GreenfieldBinding}:${"schema" | "counts"}`, string>> = {}
     for (const command of greenfieldTargetAbsenceCommands(configPath)) {
       outputs[`${command.binding}:${command.kind}`] = await run(command)
     }
@@ -402,7 +441,12 @@ async function main() {
       deploymentManifestSha256: digest(manifest),
       authDatabaseId: release.authDatabaseId,
       controlPlaneDatabaseId: release.controlPlaneDatabaseId,
-      outputs,
+      outputs: {
+        "AUTH_DB:schema": requiredOutput(outputs, "AUTH_DB:schema"),
+        "AUTH_DB:counts": requiredOutput(outputs, "AUTH_DB:counts"),
+        "CONTROL_PLANE_DB:schema": requiredOutput(outputs, "CONTROL_PLANE_DB:schema"),
+        "CONTROL_PLANE_DB:counts": requiredOutput(outputs, "CONTROL_PLANE_DB:counts"),
+      },
     })
     process.stdout.write(`${JSON.stringify(proof, null, 2)}\n`)
   } finally {
@@ -411,3 +455,13 @@ async function main() {
 }
 
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) await main()
+
+/** Every probe in `greenfieldTargetAbsenceCommands` must have produced output before the proof is assembled. */
+function requiredOutput(
+  outputs: Partial<Record<`${GreenfieldBinding}:${"schema" | "counts"}`, string>>,
+  key: `${GreenfieldBinding}:${"schema" | "counts"}`,
+) {
+  const value = outputs[key]
+  if (value === undefined) throw new Error(`${key} greenfield probe produced no output`)
+  return value
+}

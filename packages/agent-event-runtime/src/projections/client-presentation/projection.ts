@@ -1,4 +1,5 @@
 import type { AgentRuntimeEvent, ToolDisplay } from "../../contracts/agent-runtime-event"
+import { object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
 import type { RuntimeProjection } from "../../core/projection"
 import type { ProjectionSnapshot } from "../../core/state"
@@ -259,8 +260,8 @@ const PART_BEARING_COMPAT_EVENTS = new Set([
 /** The message a part-bearing compat event files against, if it is one. */
 function partBearingMessageId(event: CompatEnvelope): string | undefined {
   if (!PART_BEARING_COMPAT_EVENTS.has(event.payload.type)) return undefined
-  const properties = event.payload.properties as { messageID?: string; part?: { messageID?: string } }
-  return properties.part?.messageID ?? properties.messageID
+  const properties = object(event.payload.properties)
+  return text(object(properties?.part)?.messageID) ?? text(properties?.messageID)
 }
 
 /**
@@ -321,7 +322,7 @@ function sessionUsage(properties: EventSessionUsage["properties"]): EventSession
 
 function runtimeDiagnostic(properties: EventRuntimeDiagnostic["properties"]): EventRuntimeDiagnostic {
   return {
-    id: `runtime.diagnostic:${String(properties.sessionID)}:${String(properties.code)}`,
+    id: `runtime.diagnostic:${properties.sessionID}:${properties.code}`,
     type: "runtime.diagnostic",
     properties,
   }
@@ -410,18 +411,6 @@ function normalizeInputKeys(input: Record<string, unknown>): Record<string, unkn
     if (camel !== key) result[camel] = value
   }
   return result
-}
-
-function object(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-  return value as Record<string, unknown>
-}
-
-function text(value: unknown) {
-  if (typeof value !== "string") return undefined
-  if (!value) return undefined
-  return value
 }
 
 function scalar(value: unknown) {
@@ -595,14 +584,14 @@ function output(
   return stringifyProjectionValue(value)
 }
 
-function arrayContentText(value: unknown) {
-  if (!Array.isArray(value)) return
+function arrayContentText(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined
   const content = value.flatMap((item) => {
     if (typeof item === "string") return item
     const row = object(item)
     return text(row?.text) ?? text(row?.content) ?? []
   })
-  if (content.length !== value.length) return
+  if (content.length !== value.length) return undefined
   return content.join("\n")
 }
 

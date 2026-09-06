@@ -6,7 +6,6 @@ import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
 import {
   ensureSvgSpriteHost,
   OpenCodeIcon as UpstreamIcon,
-  type IconProps as UpstreamIconProps,
 } from "@opencode-ai/ui/icon"
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
 import { iconLibrary } from "@/ui/icons/config"
@@ -97,14 +96,14 @@ export interface ClaxedoIconProps extends Omit<ComponentProps<"svg">, "name"> {
 }
 
 const spriteID = "claxedo-icon-sprite"
-const symbol = (name: keyof typeof claxedoIcons) => `claxedo-icon-${name}`
+const symbol = (name: string) => `claxedo-icon-${name}`
 let spriteInserted = false
 
 function ensureSprite() {
   if (spriteInserted) return
   if (typeof document === "undefined") return
   const markup = Object.entries(claxedoIcons)
-    .map(([name, path]) => `<symbol id="${symbol(name as keyof typeof claxedoIcons)}" viewBox="0 0 20 20">${path}</symbol>`)
+    .map(([name, path]) => `<symbol id="${symbol(name)}" viewBox="0 0 20 20">${path}</symbol>`)
     .join("")
   const existing = document.getElementById(spriteID)
   if (existing) {
@@ -219,11 +218,18 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
   )
 }
 
+/** Everything but `name`, which the fallback resolves into the upstream set. */
+function upstreamProps(props: ClaxedoIconProps) {
+  const [, others] = splitProps(props, ["name"])
+  return others
+}
+
 export function ClaxedoIcon(props: ClaxedoIconProps) {
+  const upstream = () => upstreamProps(props)
   return (
     <Show
       when={iconLibrary() === "codex"}
-      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+      fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
     >
       <CodexGlyph {...props} />
     </Show>
@@ -231,10 +237,11 @@ export function ClaxedoIcon(props: ClaxedoIconProps) {
 }
 
 export function ClaxedoIconV2(props: ClaxedoIconProps) {
+  const upstream = () => upstreamProps(props)
   return (
     <Show
       when={iconLibrary() === "codex"}
-      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+      fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
     >
       <CodexGlyph {...props} bare />
     </Show>
@@ -242,11 +249,11 @@ export function ClaxedoIconV2(props: ClaxedoIconProps) {
 }
 
 function customGlyph(name: CodexGlyphName) {
-  if (name in customGlyphs) return customGlyphs[name as keyof typeof customGlyphs]
+  const glyphs: Partial<Record<CodexGlyphName, string>> = customGlyphs
+  return glyphs[name]
 }
 
 function codexTransform(name: AppIconName) {
-  if (name in CODEX_ICON_TRANSFORMS) {
-    return CODEX_ICON_TRANSFORMS[name as keyof typeof CODEX_ICON_TRANSFORMS]
-  }
+  const transforms: Partial<Record<AppIconName, string>> = CODEX_ICON_TRANSFORMS
+  return transforms[name]
 }

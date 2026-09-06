@@ -9,6 +9,7 @@ import { signedOrError } from "../route-support"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
+import { asRecord, readJsonRecord } from "../../platform/json/index"
 
 type CheckpointRouteOptions = {
   loopbackRelayUrl?: string
@@ -35,7 +36,7 @@ export function WorkspaceCheckpointRoutes(
     .post("/:id/checkpoints", async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
-      const body = await c.req.json().catch(() => ({})) as { policy?: unknown; retentionExpiresAt?: unknown }
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
       if (body.policy !== undefined && body.policy !== "drain" && body.policy !== "interrupt") {
         return c.json({ error: { code: "workspace_checkpoint_policy_invalid", message: "policy must be drain or interrupt" } }, 400)
       }
@@ -55,7 +56,7 @@ export function WorkspaceCheckpointRoutes(
     .post("/:id/checkpoints/:checkpointId/restore", async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
-      const body = await c.req.json().catch(() => ({})) as { approved?: unknown }
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
       if (body.approved !== true) {
         return c.json({
           error: {
@@ -76,7 +77,7 @@ export function WorkspaceCheckpointRoutes(
       const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const operation = c.req.param("operation")
-      const body = await c.req.json().catch(() => ({})) as { approved?: unknown; checkpointId?: unknown }
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
       if (!["stop", "replace", "cleanup", "destroy"].includes(operation)) {
         return c.json({ error: { code: "workspace_lifecycle_operation_invalid", message: "Unknown lifecycle operation" } }, 404)
       }
@@ -104,24 +105,20 @@ export function WorkspaceCheckpointRoutes(
 
 export function filterCheckpointSessions<T extends { worktrees?: unknown }>(input: T, visible: unknown): T {
   if (!Array.isArray(input.worktrees)) return input
+  const sessions = Array.isArray(visible) ? visible : asRecord(visible)?.sessions
   const sessionIds = new Set(
-    (Array.isArray(visible)
-      ? visible
-      : visible && typeof visible === "object" && Array.isArray((visible as { sessions?: unknown }).sessions)
-        ? (visible as { sessions: unknown[] }).sessions
-        : [])
-      .flatMap((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) return []
-        const row = item as Record<string, unknown>
-        const id = row.session_id ?? row.sessionId ?? row.id
-        return typeof id === "string" ? [id] : []
-      }),
+    (Array.isArray(sessions) ? sessions : []).flatMap((item) => {
+      const row = asRecord(item)
+      if (!row) return []
+      const id = row.session_id ?? row.sessionId ?? row.id
+      return typeof id === "string" ? [id] : []
+    }),
   )
   return {
     ...input,
     worktrees: input.worktrees.filter((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return false
-      const row = item as Record<string, unknown>
+      const row = asRecord(item)
+      if (!row) return false
       const sessionId = row.sessionId ?? row.session_id
       return typeof sessionId !== "string" || sessionIds.has(sessionId)
     }),

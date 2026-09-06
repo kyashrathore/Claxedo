@@ -38,6 +38,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
+import { parseJsonObject, record } from "../json"
 import {
   importSpecifiers,
   opaqueDynamicImports,
@@ -180,9 +181,9 @@ function exportTargets(node: ExportTarget): string[] {
 function exportsOf(dir: string): Map<string, string> {
   const manifestPath = path.join(REPO_ROOT, dir, "package.json")
   if (!fs.existsSync(manifestPath)) return new Map()
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { exports?: Record<string, ExportTarget> }
+  const manifest = parseJsonObject(fs.readFileSync(manifestPath, "utf8"), manifestPath)
   const map = new Map<string, string>()
-  for (const [subpath, node] of Object.entries(manifest.exports ?? {})) {
+  for (const [subpath, node] of Object.entries(record(manifest.exports) ?? {})) {
     const target = exportTargets(node)[0]
     if (target) map.set(subpath, target)
   }

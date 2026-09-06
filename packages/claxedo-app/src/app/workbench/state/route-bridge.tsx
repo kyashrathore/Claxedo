@@ -29,11 +29,10 @@ import {
   workspaceRoute,
 } from "@/platform/identity/route"
 import { opaqueWorkspaceRouteId, workspaceRouteId } from "@/platform/identity/workspace-route"
-import { hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { hasBacking, sessionRefForWorkspaceSession, type HarnessRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
 import { queryClient } from "@/platform/query/query-client"
-import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { ensureLocalProject } from "../../../features/workspaces/data/query/project-ensure"
 import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
@@ -48,7 +47,6 @@ import {
   sessionInventoryTarget,
 } from "./route-intent"
 import {
-  activeSurfaceIsDirectSessionChild,
   collectRouteResolutionDirectories,
   directSessionResolutionDependencies,
 } from "./route-bridge-reactivity"
@@ -75,6 +73,7 @@ import {
   newSessionDeepLinkRoute,
 } from "./route-deep-links"
 import type { ProjectItem } from "../rail/domain-types"
+import { onlyStrings, readField } from "@/lib/record"
 
 export function projectToProjectItem(project: LocalProject): ProjectItem {
   return {
@@ -84,7 +83,7 @@ export function projectToProjectItem(project: LocalProject): ProjectItem {
     icon: project.icon,
     expanded: project.expanded,
     sandboxes: project.sandboxes,
-    workspaces: (project as any).workspaces, // as-any: Claxedo project payload includes workspaces before upstream LocalProject exposes it.
+    workspaces: project.workspaces,
     commands: project.commands,
   }
 }
@@ -103,11 +102,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const platform = usePlatform()
   const server = useServer()
   const sessionInventoryQuery = useQuery(() =>
-    sessionInventoryQueryOptions<SessionInventoryRow>({
+    sessionInventoryQueryOptions({
       baseUrl: globalSDK.url,
     }),
   )
-  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
+  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory())
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -153,7 +152,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   createEffect(() => {
     const unsub = createBatchAutoTabListener({
-      listen: globalSDK.event.listen as any, // as-any: auto-tab listener consumes only the SDK event.listen subset.
+      listen: globalSDK.event.listen,
       adapters: {
         addSession: (dir, sid, title) => {
           const fastSwitch =
@@ -226,9 +225,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   createEffect(() => {
     if (typeof window === "undefined") return
+    // The event is dispatched by the desktop preload, so its `detail` is read
+    // rather than declared: a `CustomEvent<{urls}>` assertion claimed a payload
+    // shape from a different process that nothing on this side had checked.
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ urls: string[] }>).detail
-      const urls = detail?.urls ?? []
+      const urls = onlyStrings(readField(readField(event, "detail"), "urls"))
       if (urls.length === 0) return
       handleDeepLinks(urls)
     }

@@ -73,6 +73,8 @@ const heartbeatBody = z
   .strict()
 
 const pauseBody = z.object({ hostId: hostId.optional(), paused: z.boolean() }).strict()
+/** The GET route reads no body; `handle` still parses one so `run` has a typed input. */
+const noBody = z.object({}).strict()
 
 function missingBearer() {
   return { error: { code: "unauthorized", message: "Missing bearer token" } }
@@ -145,13 +147,17 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
    * the interesting part of each route below is two lines, and repeating the
    * auth dance around them is how one of them ends up missing a check.
    */
-  const handle = <Body>(
-    schema: { safeParse: (input: unknown) => unknown },
+  // Generic over the SCHEMA rather than over a caller-supplied body type: the
+  // body a route sees is now `z.infer` of the schema it was given, so the two
+  // cannot disagree. Each route used to name both (`handle(x, …)`)
+  // and the builder bridged them with `as never`.
+  const handle = <Schema extends z.ZodTypeAny>(
+    schema: Schema,
     run: (input: {
-      body: Body
+      body: z.infer<Schema>
       auth: SignedControlPlaneAuth
       authority: ReturnType<typeof requireAuthority>
-    }) => Promise<unknown>,
+    }) => Promise<Record<string, unknown>>,
     method: "GET" | "POST",
     budget: { limiter: ConnectionRateLimiter; key: string; action: string },
   ) =>
@@ -164,7 +170,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         { ...options, requireSigned: true as const },
         services,
       )
-      if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+      if ("error" in authResult) return c.json(authResult.error, authResult.status)
       const auth = authResult.auth
       // Type narrowing, not a second check: `requireSigned: true` above means
       // an unsigned request already returned 401 from `signedOrError`. Removing
@@ -186,13 +192,14 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       })
       if (limited) return c.json(limited.body, limited.status)
 
+      // A GET route takes no body; its schema is only there to give `run` a type.
       const parsed = method === "GET"
-        ? ({ ok: true, body: {} as Body } as const)
-        : parsedBody(schema as never, await c.req.json().catch(() => ({})))
+        ? parsedBody(schema, {})
+        : parsedBody(schema, await c.req.json().catch(() => ({})))
       if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
 
       try {
-        return c.json((await run({ body: parsed.body, auth, authority: requireAuthority(services) })) as never)
+        return c.json(await run({ body: parsed.body, auth, authority: requireAuthority(services) }))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) {
           return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -204,7 +211,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
   return app
     .post(
       "/requests",
-      handle<z.infer<typeof requestBody>>(requestBody, async ({ body, auth, authority }) => {
+      handle(requestBody, async ({ body, auth, authority }) => {
         await authority.usersMe(auth)
         return authority.createHostEnrollmentRequest(auth, { hostId: body.hostId })
       }, "POST", {
@@ -215,7 +222,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     )
     .post(
       "/",
-      handle<z.infer<typeof enrollBody>>(enrollBody, async ({ body, auth, authority }) => {
+      handle(enrollBody, async ({ body, auth, authority }) => {
         await authority.usersMe(auth)
         // The connector signed the nonce with its own private key. This server
         // only records the enrollment — it never holds the host key, and
@@ -238,7 +245,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     )
     .post(
       "/heartbeat",
-      handle<z.infer<typeof heartbeatBody>>(heartbeatBody, async ({ body, auth, authority }) => {
+      handle(heartbeatBody, async ({ body, auth, authority }) => {
         const result = await authority.heartbeatHostEnrollment(auth, {
           hostId: body.hostId,
           signature: body.signature,
@@ -279,7 +286,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     )
     .post(
       "/pause",
-      handle<z.infer<typeof pauseBody>>(pauseBody, async ({ body, auth, authority }) => {
+      handle(pauseBody, async ({ body, auth, authority }) => {
         const result = await authority.pauseHostEnrollment(auth, {
           ...(body.hostId ? { hostId: body.hostId } : {}),
           paused: body.paused,
@@ -297,7 +304,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     )
     .get(
       "/",
-      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => authority.activeHostEnrollment(auth), "GET", {
+      handle(noBody, async ({ auth, authority }) => ({ ...(await authority.activeHostEnrollment(auth)) }), "GET", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.active",
         action: "host_enrollment.active.denied",

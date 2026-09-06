@@ -6,6 +6,7 @@ import { verifyDocumentJobCapability } from "../document-job-capability"
 import { Hono } from "hono"
 import { z } from "zod"
 import { boundedJson, RequestBodyTooLargeError } from "./bounded-json"
+import { num, rec, str } from "../json-value"
 
 const Job = z
   .object({
@@ -18,6 +19,42 @@ const Job = z
   })
   .strict()
 
+/** The on-disk document manifest: this module writes it and reads it back. */
+const Manifest = z.object({
+  version: z.literal(1),
+  documents: z.array(z.record(z.string(), z.unknown())).default([]),
+})
+
+/** One manifest entry, as `recoverPersisted` requires it. */
+const ManifestEntry = z.object({
+  documentId: z.string(),
+  path: z.string(),
+  baseVersion: z.string(),
+  lastSyncedHash: z.string(),
+  state: z.enum(["pending", "active", "conflicted"]),
+})
+
+/** The control-plane write-back capability, as both routes accept it. */
+const Writeback = z
+  .object({
+    url: z.string().url(),
+    renewUrl: z.string().url(),
+    token: z.string().min(1),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict()
+
+/** A conflict resolution body: which side wins, plus refreshed capabilities. */
+const Resolution = z
+  .object({
+    strategy: z.string().optional(),
+    remoteMarkdown: z.string().optional(),
+    remoteVersion: z.string().optional(),
+    job: Job.optional(),
+    writeback: Writeback.optional(),
+  })
+  .passthrough()
+
 const Input = z
   .object({
     sessionId: z.string().regex(/^[A-Za-z0-9_-]+$/),
@@ -25,14 +62,7 @@ const Input = z
     displayName: z.string().min(1),
     markdown: z.string().refine((value) => new TextEncoder().encode(value).byteLength <= 2 * 1024 * 1024),
     baseVersion: z.string().min(1),
-    writeback: z
-      .object({
-        url: z.string().url(),
-        renewUrl: z.string().url(),
-        token: z.string().min(1),
-        expiresAt: z.number().int().positive(),
-      })
-      .strict(),
+    writeback: Writeback,
     job: Job,
   })
   .strict()
@@ -216,13 +246,8 @@ export function RuntimeDocumentHydrationRoutes(
     })
     .post("/api/wr/documents/:sessionId/:documentId/resolve", async (context) => {
       if (!options.trustedTransport) return context.notFound()
-      const body = (await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES)) as {
-        strategy?: unknown
-        remoteMarkdown?: unknown
-        remoteVersion?: unknown
-        job?: Record<string, unknown>
-        writeback?: Record<string, unknown>
-      }
+      const parsedBody = Resolution.safeParse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
+      const body = parsedBody.success ? parsedBody.data : undefined
       const sessionId = context.req.param("sessionId")
       const documentId = context.req.param("documentId")
       const key = `${sessionId}:${documentId}`
@@ -230,18 +255,8 @@ export function RuntimeDocumentHydrationRoutes(
         const document = documents.get(key)
         if (!document || document.state !== "conflicted")
           return context.json({ error: "document_conflict_not_found" }, 404)
-        const job = body.job
-        if (
-          !job ||
-          typeof job.token !== "string" ||
-          typeof job.userId !== "string" ||
-          typeof job.orgId !== "string" ||
-          typeof job.projectId !== "string" ||
-          typeof job.localWorkspaceId !== "string" ||
-          typeof job.cloudWorkspaceId !== "string"
-        ) {
-          return context.json({ error: "document_capability_required" }, 401)
-        }
+        const job = body?.job
+        if (!job) return context.json({ error: "document_capability_required" }, 401)
         const authorized = await (options.verifyJob ?? verifyDocumentJobCapability)(job.token, {
           userId: job.userId,
           orgId: job.orgId,
@@ -259,24 +274,21 @@ export function RuntimeDocumentHydrationRoutes(
         const writeback = body.writeback
         if (
           !writeback ||
-          typeof writeback.url !== "string" ||
-          typeof writeback.renewUrl !== "string" ||
-          typeof writeback.token !== "string" ||
-          typeof writeback.expiresAt !== "number" ||
           writeback.url !== document.writeback.url ||
           writeback.renewUrl !== document.writeback.renewUrl ||
           writeback.expiresAt <= Date.now()
         ) {
           return context.json({ error: "document_writeback_refresh_invalid" }, 400)
         }
-        if (typeof body.remoteVersion !== "string") return context.json({ error: "remote_version_required" }, 400)
-        if (body.strategy === "use-remote" && typeof body.remoteMarkdown === "string") {
+        const remoteVersion = body.remoteVersion
+        if (remoteVersion === undefined) return context.json({ error: "remote_version_required" }, 400)
+        if (body.strategy === "use-remote" && body.remoteMarkdown !== undefined) {
           const preserved = `${document.path}.conflict-${Date.now()}.md`
           await writeContained(document.root, preserved, await readContained(document.root, document.path))
           await writeContained(document.root, document.path, body.remoteMarkdown)
-          document.baseVersion = body.remoteVersion
+          document.baseVersion = remoteVersion
           document.lastMarkdown = body.remoteMarkdown
-          document.writeback = writeback as RuntimeDocument["writeback"]
+          document.writeback = writeback
           document.tail = Promise.resolve()
           document.state = "active"
           scheduleRenewal(document)
@@ -284,8 +296,8 @@ export function RuntimeDocumentHydrationRoutes(
           return context.json({ path: document.path, preserved })
         }
         if (body.strategy !== "keep-session") return context.json({ error: "resolution_invalid" }, 400)
-        document.baseVersion = body.remoteVersion
-        document.writeback = writeback as RuntimeDocument["writeback"]
+        document.baseVersion = remoteVersion
+        document.writeback = writeback
         document.tail = Promise.resolve()
         document.state = "active"
         scheduleRenewal(document)
@@ -384,13 +396,15 @@ async function renew(document: RuntimeDocument) {
   )
   if (!result.response.ok)
     throw new Error(`Runtime document capability renewal failed: ${result.response.status}`)
-  const value = result.value as { token?: unknown; expiresAt?: unknown }
-  if (typeof value.token !== "string" || typeof value.expiresAt !== "number") {
+  const value = rec(result.value)
+  const token = str(value?.token)
+  const expiresAt = num(value?.expiresAt)
+  if (token === undefined || expiresAt === undefined) {
     throw new Error("Runtime document capability renewal response is invalid")
   }
   if (!isCurrent(document)) return
-  document.writeback.token = value.token
-  document.writeback.expiresAt = value.expiresAt
+  document.writeback.token = token
+  document.writeback.expiresAt = expiresAt
   scheduleRenewal(document)
 }
 
@@ -446,9 +460,9 @@ async function syncAuthorized(document: RuntimeDocument) {
     throw new Error("Runtime document write-back conflicted")
   }
   if (!result.response.ok) throw new Error(`Runtime document write-back failed: ${result.response.status}`)
-  const value = result.value as { version?: unknown }
-  if (typeof value.version !== "string") throw new Error("Runtime document write-back response is invalid")
-  document.baseVersion = value.version
+  const version = str(rec(result.value)?.version)
+  if (version === undefined) throw new Error("Runtime document write-back response is invalid")
+  document.baseVersion = version
   document.lastMarkdown = markdown
   await persistFromPath(document)
 }
@@ -467,9 +481,9 @@ async function persist(sessionId: string, documentId: string, document: RuntimeD
   const run = previous.then(async () => {
     if (!isCurrent(document)) return
     const existing = await fs.readFile(manifestPath, "utf8").then(
-      (value) => JSON.parse(value) as { version: 1; documents: Array<Record<string, unknown>> },
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return { version: 1 as const, documents: [] }
+      (value) => Manifest.parse(JSON.parse(value)),
+      (error: unknown) => {
+        if (str(rec(error)?.code) === "ENOENT") return { version: 1 as const, documents: [] }
         throw error
       },
     )
@@ -754,22 +768,23 @@ async function secureDirectory(root: string, start: string, segments: readonly s
 }
 
 async function recoverPersisted(manifestPath: string, documentId: string) {
-  const raw = await fs.readFile(manifestPath, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
+  const raw = await fs.readFile(manifestPath, "utf8").catch((error: unknown) => {
+    if (str(rec(error)?.code) === "ENOENT") return undefined
     throw error
   })
   if (!raw) return undefined
-  const value = JSON.parse(raw) as { documents?: Array<Record<string, unknown>> }
-  const entry = value.documents?.find((candidate) => candidate.documentId === documentId)
-  if (
-    !entry ||
-    typeof entry.path !== "string" ||
-    typeof entry.baseVersion !== "string" ||
-    typeof entry.lastSyncedHash !== "string" ||
-    (entry.state !== "pending" && entry.state !== "active" && entry.state !== "conflicted")
-  )
-    throw new Error("Runtime document manifest is invalid")
-  return { path: entry.path, baseVersion: entry.baseVersion, lastSyncedHash: entry.lastSyncedHash, state: entry.state }
+  const manifest = Manifest.safeParse(JSON.parse(raw))
+  const found = manifest.success
+    ? manifest.data.documents.find((candidate) => candidate.documentId === documentId)
+    : undefined
+  const entry = ManifestEntry.safeParse(found)
+  if (!entry.success) throw new Error("Runtime document manifest is invalid")
+  return {
+    path: entry.data.path,
+    baseVersion: entry.data.baseVersion,
+    lastSyncedHash: entry.data.lastSyncedHash,
+    state: entry.data.state,
+  }
 }
 
 function hash(value: string) {

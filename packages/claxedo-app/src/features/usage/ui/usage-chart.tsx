@@ -155,7 +155,7 @@ export function UsageChart(props: {
   })
   const active = createMemo(() => {
     const index = activeIndex()
-    if (index === undefined) return
+    if (index === undefined) return undefined
     return {
       index,
       date: dates()[index],

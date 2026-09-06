@@ -161,7 +161,7 @@ async function main() {
     await sandbox.process.executeSessionCommand(echoSession, {
       command: `bash -lc 'nohup node /tmp/echo-${port}.cjs > /tmp/echo-${port}.log 2>&1 & echo started'`,
       runAsync: true,
-    } as any)
+    })
 
     // 2. Mint this tunnel's HTT and write it to a per-port file.
     const htt = await benchHostTunnelTokenFromPrivatePem(privateKeyPem, {
@@ -187,7 +187,7 @@ async function main() {
     await sandbox.process.executeSessionCommand(agentSession, {
       command: `bash -lc '${startCmd}'`,
       runAsync: true,
-    } as any)
+    })
 
     // 4. Preview URL for this echo (the DIRECT baseline the loadgen subtracts).
     const preview = await sandbox.getPreviewLink(port)
@@ -211,7 +211,7 @@ async function main() {
     for (let i = 0; i < count; i++) {
       if (manifest[i].registered) continue
       const tail = await sandbox.process.executeCommand(`bash -lc 'cat /tmp/dialin-${i}.log 2>/dev/null || true'`)
-      const log = String((tail as any).result ?? (tail as any).stdout ?? "")
+      const log = tail.result
       if (/"type":"open"/.test(log)) manifest[i].registered = true
     }
   }

@@ -1,5 +1,6 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { isRecordArray, parseJsonRecords, stringField } from "../../src/platform/json/index"
 
 export function forbiddenPackagePath(file: string) {
   const base = path.basename(file)
@@ -20,8 +21,14 @@ export function forbiddenPackagePath(file: string) {
 
 export async function packageFiles() {
   const output = await Bun.$`npm pack --dry-run --json`.quiet().text()
-  const packs = JSON.parse(output) as Array<{ files?: Array<{ path?: string }> }>
-  return packs.flatMap((pack) => pack.files ?? []).flatMap((file) => (file.path ? [file.path] : []))
+  const packs = parseJsonRecords(output)
+  if (!packs) throw new Error("npm pack --json did not return an array of records")
+  return packs
+    .flatMap((pack) => (isRecordArray(pack.files) ? pack.files : []))
+    .flatMap((file) => {
+      const filePath = stringField(file, "path")
+      return filePath ? [filePath] : []
+    })
 }
 
 async function main() {

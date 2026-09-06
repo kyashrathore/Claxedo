@@ -1,4 +1,4 @@
-import { SignJWT, errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
+import { SignJWT, errors, exportJWK, importJWK, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
 
 const algorithms = ["EdDSA", "ES256", "RS256"] as const
 
@@ -221,6 +221,40 @@ function checkTarget(payload: JWTPayload, expected: ExpectedTarget) {
 export type RelayKeyResolver = JWTVerifyGetKey
 
 export type RelayKey = CryptoKey | Uint8Array | RelayKeyResolver
+
+/**
+ * Re-imports the PUBLIC half of an EdDSA relay-host signing key.
+ *
+ * `importJWK` is declared `Promise<CryptoKey | Uint8Array>` because a symmetric
+ * (`oct`) JWK imports as raw bytes. An EdDSA public JWK never does, so the byte
+ * branch is a configuration error worth failing loudly on — the two callers
+ * (`main.ts` for Bun, `worker.ts` for Cloudflare) previously asserted it away
+ * with their own copies of this round-trip.
+ */
+export async function deriveRelayHostPublicKey(privateKey: CryptoKey): Promise<CryptoKey> {
+  const jwk = await exportJWK(privateKey)
+  const imported = await importJWK({ kty: jwk.kty, crv: jwk.crv, x: jwk.x }, "EdDSA", { extractable: true })
+  if (imported instanceof Uint8Array) {
+    throw new Error("Relay host public key imported as raw bytes; expected an EdDSA public key")
+  }
+  return imported
+}
+
+/**
+ * The relay-host key id, derived from the key's public component.
+ *
+ * ONE implementation on purpose: a Bun relay and a Cloudflare relay signing
+ * with the same key must publish the same `kid`, or a token minted by one fails
+ * key lookup at the other. It is written against WebCrypto rather than
+ * `node:crypto` so the workerd bundle can use it too.
+ */
+export async function deriveRelayHostKid(publicKey: CryptoKey): Promise<string> {
+  const jwk = await exportJWK(publicKey)
+  const material = jwk.x ?? jwk.n ?? ""
+  if (!material) throw new Error("Cannot derive kid: public key has no public component")
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 16)
+}
 
 async function verifyJwt(token: string, key: RelayKey, input: {
   issuer: string

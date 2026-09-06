@@ -40,7 +40,6 @@ import { createIntegrationsRequest } from "@/platform/account/integrations-reque
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
 import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
-import type { SessionInventoryRow } from "@/features/session/data/query/types"
 
 export function OnboardingEmptyState(props: {
   projectDirectory?: string
@@ -104,7 +103,7 @@ export function OnboardingEmptyState(props: {
     serverUrl: server.url,
   }))
   const sessionInventoryQuery = useQuery(() =>
-    sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: globalSDK.url }),
+    sessionInventoryQueryOptions({ baseUrl: globalSDK.url }),
   )
   // The provider catalog behind the inline key form. Unlike `sandboxQuery` this
   // lists providers that are NOT configured — that is the state the form exists

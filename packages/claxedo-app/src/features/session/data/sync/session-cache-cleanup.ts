@@ -1,7 +1,5 @@
-import type {
-  AgentPresentationSession as Session,
-  AgentRuntimeStatus as SessionStatus,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoSession as Session } from "../session-types"
 import { hasOpenSession } from "@/features/session/store/open-sessions"
 import { cachedConversationBytes } from "@/features/session/conversation/conversation-memory-accounting"
 import { queryClient } from "@/platform/query/query-client"
@@ -57,7 +55,7 @@ function removeSessionShellQueries(sessionID: string) {
   queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
 }
 
-const LIGHTWEIGHT_SESSION_METADATA = ["status", "requests"] as const
+const LIGHTWEIGHT_SESSION_METADATA: readonly string[] = ["status", "requests"]
 
 /**
  * A session surface is cache state materialised by opening/rendering a session.
@@ -68,7 +66,7 @@ const LIGHTWEIGHT_SESSION_METADATA = ["status", "requests"] as const
 export function isSessionSurfaceQueryKey(key: readonly unknown[]) {
   if (key[0] !== "shell" || key[1] !== "session") return false
   if (typeof key[2] !== "string" || !key[2] || key[2] === "new") return false
-  return typeof key[3] === "string" && !LIGHTWEIGHT_SESSION_METADATA.includes(key[3] as "status" | "requests")
+  return typeof key[3] === "string" && !LIGHTWEIGHT_SESSION_METADATA.includes(key[3])
 }
 
 /**

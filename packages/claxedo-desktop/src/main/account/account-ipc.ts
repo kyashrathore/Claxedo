@@ -14,8 +14,9 @@
 
 import { randomUUID } from "node:crypto"
 import type { IpcMainInvokeEvent } from "electron"
+import { asRecord, readRecord, readString } from "../../shared/json-read"
 import {
-  HOSTED_OPERATIONS,
+  HOSTED_OPERATION_NAMES,
   hostedOperationChannel,
   isStreamHostedOperation,
   type HostedOperationName,
@@ -135,8 +136,11 @@ export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
  * uses to stay testable.
  */
 export type AccountIpcTarget = {
-  handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): unknown
+  handle(channel: string, listener: AccountIpcListener): unknown
 }
+
+/** One listener shape for every account channel. Electron's own satisfies it. */
+export type AccountIpcListener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
 export type AccountIpcService = {
   state: () => AccountState
@@ -162,9 +166,9 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
   const { ipcMain, service } = input
   const channels: string[] = []
 
-  const handle = (channel: string, listener: (...args: never[]) => unknown) => {
+  const handle = (channel: string, listener: AccountIpcListener) => {
     channels.push(channel)
-    ipcMain.handle(channel, listener as never)
+    ipcMain.handle(channel, listener)
   }
 
   handle(ACCOUNT_STATE_CHANNEL, () => service.state())
@@ -203,7 +207,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     }
   }
 
-  for (const name of Object.keys(HOSTED_OPERATIONS) as HostedOperationName[]) {
+  for (const name of HOSTED_OPERATION_NAMES) {
     if (withheld.has(name)) {
       // Refused before `service.run`, so no request is made: no token is
       // minted, no nonce is burned, and no renderer-supplied public key
@@ -223,13 +227,13 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
       continue
     }
 
-    handle(hostedOperationChannel(name), async (_event: never, input?: Record<string, unknown>) => {
+    handle(hostedOperationChannel(name), async (_event, input) => {
       // The operation name is bound HERE, at registration, not taken from the
       // message. A renderer can choose which channel to call and cannot choose
       // what that channel does.
       const started = accountPerfNow()
       try {
-        return await service.run(name, input ?? {})
+        return await service.run(name, asRecord(input) ?? {})
       } finally {
         accountPerfMark("account.unary_ipc_handler_ms", {
           operation: name,
@@ -239,11 +243,10 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     })
   }
 
-  handle(ACCOUNT_STREAM_OPEN_CHANNEL, async (event: IpcMainInvokeEvent, payload?: {
-    operation?: string
-    input?: Record<string, unknown>
-  }) => {
-    const operation = payload?.operation
+  handle(ACCOUNT_STREAM_OPEN_CHANNEL, async (event, payload) => {
+    // Read, not declared: the payload is renderer input, so the operation name
+    // has to survive a check before it can pick a stream.
+    const operation = readString(payload, "operation")
     if (!operation || !isStreamHostedOperation(operation)) {
       throw new Error(`hosted stream operation "${String(operation)}" is not allowed`)
     }
@@ -255,7 +258,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     const sender = event.sender
     const stream: ActiveStream = {
       operation,
-      params: payload?.input ?? {},
+      params: readRecord(payload, "input") ?? {},
       sender,
       controller,
       state: "reserved",
@@ -274,12 +277,12 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
   // Opening only reserves the id. The renderer subscribes to all three push
   // channels before invoking start, so even a service that emits and settles
   // synchronously cannot outrun its listeners.
-  handle(ACCOUNT_STREAM_START_CHANNEL, async (event: IpcMainInvokeEvent, payload?: { streamId?: string }) => {
-    const streamId = payload?.streamId
-    if (!streamId) throw new Error(`unknown account stream "${String(streamId)}"`)
+  handle(ACCOUNT_STREAM_START_CHANNEL, async (event, payload) => {
+    const streamId = readString(payload, "streamId")
+    if (!streamId) throw new Error("unknown account stream")
     const stream = activeStreams.get(streamId)
     if (!stream || stream.sender !== event.sender) {
-      throw new Error(`unknown account stream "${String(streamId)}"`)
+      throw new Error(`unknown account stream "${streamId}"`)
     }
     if (stream.state === "started") {
       throw new Error(`account stream "${streamId}" already started`)
@@ -335,8 +338,8 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     })
   })
 
-  handle(ACCOUNT_STREAM_CLOSE_CHANNEL, async (event: IpcMainInvokeEvent, payload?: { streamId?: string }) => {
-    const streamId = payload?.streamId
+  handle(ACCOUNT_STREAM_CLOSE_CHANNEL, async (event, payload) => {
+    const streamId = readString(payload, "streamId")
     if (!streamId) return
     const stream = activeStreams.get(streamId)
     if (!stream || stream.sender !== event.sender) return

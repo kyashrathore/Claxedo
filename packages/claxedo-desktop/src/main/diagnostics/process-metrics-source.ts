@@ -66,6 +66,7 @@ export function createProcessMetricsSource(options: {
   memoryHelperPath?: string
   hostCollection?: "always" | "on-demand"
 }): ProcessMetricsSource {
+  const { wsl } = options
   const platform = options.platform ?? process.platform
   const createWorker =
     options.workerFactory ??
@@ -215,7 +216,9 @@ export function createProcessMetricsSource(options: {
         current.value === identity.creation.value
       )
     },
-    ...(options.wsl?.registerRoot ? { registerWslRoot: options.wsl.registerRoot } : {}),
+    // Wrapped, not passed: `registerRoot` is a method on the WSL source, so
+    // handing the reference over would detach it from its receiver.
+    ...(wsl ? { registerWslRoot: (root: Parameters<WslDiagnosticsSource["registerRoot"]>[0]) => wsl.registerRoot(root) } : {}),
     dispose() {
       if (disposed) return
       disposed = true
@@ -621,7 +624,7 @@ function createLazyWindowsWorker(): ProcessMetricsWorker {
       .then((addon) =>
         createWindowsProcessMetricsWorker({
           ...(addon === undefined ? {} : { addon }),
-          query: cim.query,
+          query: (rows, queryOptions) => cim.query(rows, queryOptions),
         }),
       ))
   return {

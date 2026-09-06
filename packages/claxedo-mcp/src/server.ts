@@ -22,10 +22,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import fsPromises from "node:fs/promises"
 import { z } from "zod"
 import { registerBrowserTools } from "./browser-tools"
-import { mcpHttpError } from "./http-error"
-import { handleProcess, type LaunchResult, type ListResponse, type ProcessClient } from "./process-handler"
-import { formatSessionMessages, resolveResponseText, type SessionMessage } from "./message-text"
-import { claxedoRequestScope } from "./request-scope"
+import { bool, num, oneOf, record, records, strings, text } from "./json"
+import { createControlPlaneClient } from "./control-plane-request"
+import { toCallToolResult, type McpToolConfig, type McpToolExtra, type McpToolResult, type McpToolShape } from "./mcp-tool"
+import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js"
+import { handleProcess, parseLaunchResult, parseListResponse, type ProcessClient } from "./process-handler"
+import { formatSessionMessages, parseSessionMessage, parseSessionMessages, resolveResponseText } from "./message-text"
 import { claxedoMcpReadOnly } from "./tool-policy"
 import { resolveTranscriptPath } from "./transcript-path"
 import { registerDocumentTools } from "./documents-tools"
@@ -38,7 +40,6 @@ const clean = (value: unknown) => {
 }
 
 const workspaceRef = (id: string) => `workspace:${id}`
-const workspaceIdFromDirectory = (directory: string) => /^workspace:([^/]+)$/.exec(directory)?.[1]
 const requestDirectory = (args: { directory?: string; workspace_id?: string }) =>
   clean(args.directory) || (clean(args.workspace_id) ? workspaceRef(clean(args.workspace_id)) : DEFAULT_DIR)
 
@@ -52,40 +53,17 @@ const READ_ONLY = claxedoMcpReadOnly()
 const PROCESS_PATH = "/api/wr/process"
 const PTY_PATH = "/api/wr/pty"
 
-const httpRequest = async <T>(
-  requestPath: string,
-  init?: RequestInit,
-  mode: "json" | "text" = "json",
-  directory?: string,
-  scope: "workspace" | "owner" = "workspace",
-): Promise<T> => {
-  const dir = directory || DEFAULT_DIR
-  const workspaceId = scope === "workspace" ? workspaceIdFromDirectory(dir) || DEFAULT_WORKSPACE_ID : ""
-  const target = claxedoRequestScope(ORIGIN, requestPath, scope === "owner"
-    ? { type: "owner" }
-    : { type: "workspace", directory: dir, ...(workspaceId ? { workspaceId } : {}) })
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...target.headers,
-    ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
-    ...(init?.headers as Record<string, string> | undefined),
-  }
-  const res = await fetch(target.url, { ...init, headers })
-  const text = await res.text()
-  if (!res.ok) {
-    const data = mode === "json" && text.trim() ? parseHttpErrorBody(text) : undefined
-    throw mcpHttpError(res.status, data)
-  }
-  return (mode === "text" ? text : text.trim() ? JSON.parse(text) : null) as T
+const controlPlane = {
+  origin: ORIGIN,
+  token: TOKEN || undefined,
+  defaultDirectory: DEFAULT_DIR,
+  defaultWorkspaceId: DEFAULT_WORKSPACE_ID || undefined,
 }
 
-function parseHttpErrorBody(value: string) {
-  try {
-    return JSON.parse(value) as unknown
-  } catch {
-    return undefined
-  }
-}
+/** Workspace-scoped: every call carries the directory the tool was asked about. */
+const control = createControlPlaneClient(controlPlane)
+/** Owner-scoped: addresses the signed-in user, so it carries no directory. */
+const ownerControl = createControlPlaneClient({ ...controlPlane, scope: "owner" })
 
 type TerminalSessionState = {
   terminalId: string
@@ -120,6 +98,67 @@ type PtyInfo = {
   pid: number
 }
 
+/** Only id, title and status are rendered; a row without them cannot be listed. */
+function parsePtyInfos(value: unknown): PtyInfo[] {
+  return records(value).flatMap((row) => {
+    const id = text(row.id)
+    if (!id) return []
+    return [{
+      id,
+      title: text(row.title) ?? id,
+      command: text(row.command) ?? "",
+      args: strings(row.args),
+      cwd: text(row.cwd) ?? "",
+      status: text(row.status) ?? "unknown",
+      pid: num(row.pid) ?? 0,
+    }]
+  })
+}
+
+/**
+ * `providerSessionId` and `sessionId` keep their null/undefined distinction:
+ * the caller tests `!== null` to tell "the harness has no session" from "the
+ * hook did not report one".
+ */
+function nullableText(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === "string" ? value : undefined
+}
+
+function parseTerminalSessionResponse(value: unknown): TerminalSessionResponse | undefined {
+  const row = record(value)
+  if (!row) return undefined
+  const session = record(row.session)
+  return {
+    success: bool(row.success) ?? false,
+    source: text(row.source),
+    terminalId: text(row.terminalId),
+    error: text(row.error),
+    ...(session ? {
+      session: {
+        terminalId: text(session.terminalId) ?? "",
+        tabId: text(session.tabId),
+        workspaceId: text(session.workspaceId),
+        provider: text(session.provider),
+        providerSessionId: nullableText(session.providerSessionId),
+        sessionId: nullableText(session.sessionId),
+        transcriptPath: nullableText(session.transcriptPath),
+        refName: text(session.refName),
+        prompt: text(session.prompt),
+        lastAssistantMessage: text(session.lastAssistantMessage),
+        eventType: oneOf(session.eventType, ["Busy", "Idle", "UserActionRequired", "Error"] as const),
+        updatedAt: num(session.updatedAt) ?? 0,
+      },
+    } : {}),
+  }
+}
+
+/** The wake routes answer `{ ok, text }`; anything else reads as a failure. */
+function parseWakeResult(value: unknown): { ok: boolean; text: string } {
+  const row = record(value)
+  return { ok: bool(row?.ok) ?? false, text: text(row?.text) ?? "" }
+}
+
 const launchFailure = (err: unknown) => ({
   kind: "failed" as const,
   error: err instanceof Error ? err.message : String(err),
@@ -127,23 +166,27 @@ const launchFailure = (err: unknown) => ({
 
 const proc = (directory?: string): ProcessClient => ({
   list: async (init?: RequestInit) =>
-    httpRequest<ListResponse>(PROCESS_PATH, { method: "GET", ...init }, "json", directory),
+    parseListResponse(await control.json(PROCESS_PATH, { method: "GET", ...init }, directory)),
   start: async (id: string) =>
-    httpRequest<LaunchResult>(`${PROCESS_PATH}/${encodeURIComponent(id)}/start`, { method: "POST" }, "json", directory).catch(launchFailure),
-  stop: async (id: string) =>
-    httpRequest(`${PROCESS_PATH}/${encodeURIComponent(id)}/stop`, { method: "POST" }, "json", directory)
-      .then((value) => value === undefined || value === true)
-      .catch(() => false),
+    control.json(`${PROCESS_PATH}/${encodeURIComponent(id)}/start`, { method: "POST" }, directory)
+      .then(parseLaunchResult)
+      .catch(launchFailure),
+  // The three void routes still swallow their errors: the handler has always
+  // reported the action as done. Surfacing the failure is a product change, not
+  // a parse change, so it stays as it was.
+  stop: async (id: string) => {
+    await control.json(`${PROCESS_PATH}/${encodeURIComponent(id)}/stop`, { method: "POST" }, directory).catch(() => {})
+  },
   restart: async (id: string) =>
-    httpRequest<LaunchResult>(`${PROCESS_PATH}/${encodeURIComponent(id)}/restart`, { method: "POST" }, "json", directory).catch(launchFailure),
-  startAll: async () =>
-    httpRequest(`${PROCESS_PATH}/start-all`, { method: "POST" }, "json", directory)
-      .then((value) => value === undefined || value === true)
-      .catch(() => false),
-  stopAll: async () =>
-    httpRequest(`${PROCESS_PATH}/stop-all`, { method: "POST" }, "json", directory)
-      .then((value) => value === undefined || value === true)
-      .catch(() => false),
+    control.json(`${PROCESS_PATH}/${encodeURIComponent(id)}/restart`, { method: "POST" }, directory)
+      .then(parseLaunchResult)
+      .catch(launchFailure),
+  startAll: async () => {
+    await control.json(`${PROCESS_PATH}/start-all`, { method: "POST" }, directory).catch(() => {})
+  },
+  stopAll: async () => {
+    await control.json(`${PROCESS_PATH}/stop-all`, { method: "POST" }, directory).catch(() => {})
+  },
 })
 
 const resolveLogQuery = (args: {
@@ -181,7 +224,7 @@ const fetchLogText = async (args: {
 }) => {
   const query = resolveLogQuery(args)
   if (!query) return undefined
-  return httpRequest<string>(`${PROCESS_PATH}/logs?${query.toString()}`, { method: "GET" }, "text", requestDirectory(args))
+  return control.text(`${PROCESS_PATH}/logs?${query.toString()}`, { method: "GET" }, requestDirectory(args))
 }
 
 const server = new McpServer({
@@ -189,18 +232,33 @@ const server = new McpServer({
   version: "1.0.0",
 })
 
-function registerTool<Shape extends Record<string, z.ZodTypeAny>>(
+/**
+ * Every tool in this package is declared through here.
+ *
+ * The SDK's `registerTool` is generic in both its input and output schema, so
+ * `Parameters<typeof server.registerTool>[2]` collapses to `never` — the cast
+ * that used to sit here asserted a handler into a type nothing can inhabit.
+ * Instantiating the SDK's generic with this tool's own `Shape` and converting
+ * the result at `toCallToolResult` says the same thing with a check behind it.
+ */
+function registerTool<Shape extends McpToolShape>(
   name: string,
-  config: {
-    description: string
-    inputSchema: Shape
-    _meta?: Record<string, unknown>
-  },
-  handler: (args: z.infer<z.ZodObject<Shape>>, extra: { requestId: string | number }) => Promise<unknown>,
+  config: McpToolConfig<Shape>,
+  handler: (args: z.infer<z.ZodObject<Shape>>, extra: McpToolExtra) => Promise<McpToolResult>,
 ) {
-  // The SDK types a handler's return as its full CallToolResult union, which our handlers
-  // satisfy structurally but do not declare; only the return position needs bridging.
-  server.registerTool(name, config, handler as Parameters<typeof server.registerTool>[2])
+  // The SDK's callback type is a conditional on its own `InputArgs`, so passing
+  // a type parameter leaves it unresolved and nothing can be written that
+  // satisfies it — which is why this line used to end in a cast that the
+  // checker reported as `never`. Instantiating the SDK generic at its
+  // constraint gives the callback a concrete argument type, and re-reading
+  // those arguments through the very schema we handed the SDK is what connects
+  // them back to `Shape`. It is the same check, done where it can be seen; the
+  // schemas here are plain field validators with no transforms, so reading them
+  // twice yields the same value.
+  const schema = z.object(config.inputSchema)
+  server.registerTool<ZodRawShapeCompat, ZodRawShapeCompat>(name, config, async (args, extra) =>
+    toCallToolResult(await handler(schema.parse(args), { requestId: extra.requestId })),
+  )
 }
 
 const toolConnectionId = crypto.randomUUID()
@@ -211,7 +269,7 @@ registerTool("schedule_followup", {
   inputSchema: { when: z.string(), intent: z.unknown().optional() },
 }, async (args, extra) => {
   if (!DEFAULT_SESSION_ID || !DEFAULT_DIR) return { isError: true, content: [{ type: "text" as const, text: "A machine session and workspace are required" }] }
-  const result = await httpRequest<{ ok: boolean; text: string }>(`/api/control/sessions/${encodeURIComponent(DEFAULT_SESSION_ID)}/wakes`, { method: "POST", body: JSON.stringify({ name: "schedule_followup", toolCallId: `${toolConnectionId}:${extra.requestId}`, input: args }) })
+  const result = parseWakeResult(await control.json(`/api/control/sessions/${encodeURIComponent(DEFAULT_SESSION_ID)}/wakes`, { method: "POST", body: JSON.stringify({ name: "schedule_followup", toolCallId: `${toolConnectionId}:${extra.requestId}`, input: args }) }))
   return { isError: !result.ok, content: [{ type: "text" as const, text: result.text }] }
 })
 registerTool("cancel_wake", {
@@ -219,20 +277,20 @@ registerTool("cancel_wake", {
   inputSchema: { wake_id: z.string() },
 }, async (args, extra) => {
   if (!DEFAULT_SESSION_ID || !DEFAULT_DIR) return { isError: true, content: [{ type: "text" as const, text: "A machine session and workspace are required" }] }
-  const result = await httpRequest<{ ok: boolean; text: string }>(`/api/control/sessions/${encodeURIComponent(DEFAULT_SESSION_ID)}/wakes`, { method: "POST", body: JSON.stringify({ name: "cancel_wake", toolCallId: `${toolConnectionId}:${extra.requestId}`, input: args }) })
+  const result = parseWakeResult(await control.json(`/api/control/sessions/${encodeURIComponent(DEFAULT_SESSION_ID)}/wakes`, { method: "POST", body: JSON.stringify({ name: "cancel_wake", toolCallId: `${toolConnectionId}:${extra.requestId}`, input: args }) }))
   return { isError: !result.ok, content: [{ type: "text" as const, text: result.text }] }
 })
 
 }
 
-registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), {
+registerDocumentTools(registerTool, control.json, {
   directory: DEFAULT_DIR,
   sessionId: DEFAULT_SESSION_ID,
 })
 
 registerCloudWorkspaceTools(
   registerTool,
-  (path, init) => httpRequest(path, init, "json", undefined, "owner"),
+  ownerControl.json,
   READ_ONLY,
 )
 
@@ -274,7 +332,7 @@ if (!READ_ONLY) {
         workspace_id: z.string().optional().describe("Workspace id for Docker/cloud workspace requests."),
       },
     },
-    async (args) => handleProcess(args, httpRequest, proc, DEFAULT_DIR),
+    async (args) => handleProcess(args, control.json, proc, DEFAULT_DIR),
   )
 }
 
@@ -301,8 +359,8 @@ registerTool(
       const data = await proc(directory).list().catch(
         () => ({ configs: [] as Array<{ id: string; name: string }>, processes: [] as Array<{ configId: string; status?: string; ptyId?: string }> }),
       )
-      const ptys = await httpRequest<PtyInfo[]>(PTY_PATH, { method: "GET" }, "json", directory).catch(
-        () => [] as PtyInfo[],
+      const ptys = await control.json(PTY_PATH, { method: "GET" }, directory).then(parsePtyInfos).catch(
+        (): PtyInfo[] => [],
       )
       const processLines = data.configs.map((config) => {
         const process = data.processes.find((item) => item.configId === config.id)
@@ -328,7 +386,7 @@ registerTool(
     }
 
     try {
-      const output = await httpRequest<string>(`${PROCESS_PATH}/logs?${query.toString()}`, { method: "GET" }, "text", directory)
+      const output = await control.text(`${PROCESS_PATH}/logs?${query.toString()}`, { method: "GET" }, directory)
       if (!output.trim()) return { content: [{ type: "text" as const, text: "Session found but no output captured yet." }] }
       return { content: [{ type: "text" as const, text: output }] }
     } catch (err) {
@@ -385,12 +443,10 @@ registerTool(
       const query = new URLSearchParams()
       if (terminalID) query.set("terminalId", terminalID)
       if (tabID) query.set("tabId", tabID)
-      const tracked = await httpRequest<TerminalSessionResponse>(
-        `/api/wr/hook/terminal-session?${query.toString()}`,
-        { method: "GET" },
-        "json",
-        directory,
-      ).catch(() => undefined)
+      const tracked = await control
+        .json(`/api/wr/hook/terminal-session?${query.toString()}`, { method: "GET" }, directory)
+        .then(parseTerminalSessionResponse)
+        .catch(() => undefined)
       if (!tracked?.success || !tracked.session) {
         return {
           content: [{ type: "text" as const, text: "No tracked session found for this terminal/tab yet." }],
@@ -407,12 +463,11 @@ registerTool(
 
     if (sessionID) {
       try {
-        const messages = await httpRequest<SessionMessage[]>(
+        const messages = parseSessionMessages(await control.json(
           `/session/${encodeURIComponent(sessionID)}/message?limit=${encodeURIComponent(String(limit))}`,
           { method: "GET" },
-          "json",
           directory,
-        )
+        ))
         if (format === "json") {
           return {
             content: [
@@ -539,7 +594,7 @@ if (!READ_ONLY) {
       const sessionTitle = clean(args.title) || "Background Session"
       const prompt = clean(args.prompt)
       try {
-        const created = await httpRequest<{ session?: { id?: string } }>(
+        const created = record(await control.json(
           "/api/control/sessions",
           {
             method: "POST",
@@ -549,19 +604,18 @@ if (!READ_ONLY) {
               workspaceId,
             }),
           },
-          "json",
           workspaceId ? workspaceRef(workspaceId) : undefined,
-        )
-        const sessionId = created.session?.id
+        ))
+        const sessionId = text(record(created?.session)?.id)
         if (!sessionId) {
           return { content: [{ type: "text" as const, text: "Session creation returned no id." }], isError: true }
         }
         let delivery: unknown
         if (prompt) {
-          delivery = await httpRequest(
+          delivery = await control.json(
             `/session/${encodeURIComponent(sessionId)}/prompt_async`,
             { method: "POST", body: JSON.stringify({ messageID: `mcp:${toolConnectionId}:${extra.requestId}`, parts: [{ type: "text", text: prompt }] }) },
-            "json", workspaceRef(workspaceId),
+            workspaceRef(workspaceId),
           )
         }
         return {
@@ -632,13 +686,12 @@ if (!READ_ONLY) {
       const truncated = logText.length > MAX_LOG_CHARS ? logText.slice(-MAX_LOG_CHARS) : logText
       let sessionID: string
       try {
-        const data = await httpRequest<{ id?: string; data?: { id?: string } }>(
+        const data = record(await control.json(
           "/session",
           { method: "POST", body: JSON.stringify({ title: "Log Summary" }) },
-          "json",
           directory,
-        )
-        sessionID = clean(data?.id || data?.data?.id)
+        ))
+        sessionID = text(data?.id) ?? text(record(data?.data)?.id) ?? ""
         if (!sessionID) throw new Error("No session id returned")
       } catch (err) {
         return {
@@ -648,7 +701,7 @@ if (!READ_ONLY) {
       }
 
       const deleteSession = () => {
-        httpRequest(`/session/${encodeURIComponent(sessionID)}`, { method: "DELETE" }, "json", directory).catch(() => {})
+        control.json(`/session/${encodeURIComponent(sessionID)}`, { method: "DELETE" }, directory).catch(() => {})
       }
 
       const system = [
@@ -659,7 +712,7 @@ if (!READ_ONLY) {
       ].join("\n")
 
       try {
-        const result = await httpRequest<SessionMessage>(
+        const result = parseSessionMessage(await control.json(
           `/session/${encodeURIComponent(sessionID)}/message`,
           {
             method: "POST",
@@ -668,15 +721,11 @@ if (!READ_ONLY) {
               parts: [{ type: "text", text: truncated }],
             }),
           },
-          "json",
           directory,
-        )
-        const responseText = await resolveResponseText(result, () =>
-          httpRequest<SessionMessage[]>(
-            `/session/${encodeURIComponent(sessionID)}/message`,
-            { method: "GET" },
-            "json",
-            directory,
+        ))
+        const responseText = await resolveResponseText(result, async () =>
+          parseSessionMessages(
+            await control.json(`/session/${encodeURIComponent(sessionID)}/message`, { method: "GET" }, directory),
           ),
         )
         if (!responseText) {
@@ -688,10 +737,9 @@ if (!READ_ONLY) {
         }
 
         try {
-          const parsed = JSON.parse(responseText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "")) as {
-            title?: string
-            summary?: string
-          }
+          const parsed = record(
+            JSON.parse(responseText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "")),
+          ) ?? {}
           return {
             content: [
               {
@@ -715,13 +763,13 @@ if (!READ_ONLY) {
   )
 }
 
-registerBrowserTools(server, { readOnly: READ_ONLY })
+registerBrowserTools(registerTool, { readOnly: READ_ONLY })
 
 const transport = new StdioServerTransport()
 if (process.argv[2] === "documents") {
   process.exitCode = await runDocumentsCli(
     process.argv.slice(3),
-    (path, init) => httpRequest(path, init, "json"),
+    control.json,
     { stdout: console.log, stderr: console.error },
     { directory: DEFAULT_DIR, sessionId: DEFAULT_SESSION_ID },
   )

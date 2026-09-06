@@ -10,6 +10,7 @@ import type {
   SessionShareFanoutTarget,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
+import { asRecord } from "../platform/json/index"
 
 /**
  * Injected sink for `session.share.changed` doorbells.
@@ -17,7 +18,7 @@ import type {
  * Composition roots inject local `claxedoBus.publish` or hosted
  * `nudgeLiveSyncRoom` — this module stays Worker-safe (no bus / DO imports).
  */
-export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unknown | Promise<unknown>
+export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unknown
 
 export type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/authority"
 
@@ -103,19 +104,19 @@ export function peopleErrorResponse(c: Context, error: unknown): Response {
  */
 export function subjectFromIdentity(value: string | undefined): string | undefined {
   const raw = value?.trim()
-  if (!raw) return
+  if (!raw) return undefined
   const pipe = raw.lastIndexOf("|")
   if (pipe >= 0 && pipe < raw.length - 1) return raw.slice(pipe + 1)
   if (raw.startsWith("user_")) return raw
-  return
+  return undefined
 }
 
 function memberSubjects(rows: unknown): string[] {
   if (!Array.isArray(rows)) return []
   const subjects: string[] = []
   for (const row of rows) {
-    if (!row || typeof row !== "object") continue
-    const record = row as Record<string, unknown>
+    const record = asRecord(row)
+    if (!record) continue
     const subject =
       subjectFromIdentity(typeof record.provider_subject === "string" ? record.provider_subject : undefined)
       ?? subjectFromIdentity(typeof record.token_identifier === "string" ? record.token_identifier : undefined)
@@ -129,8 +130,8 @@ function teamIds(rows: unknown): string[] {
   if (!Array.isArray(rows)) return []
   const ids: string[] = []
   for (const row of rows) {
-    if (!row || typeof row !== "object") continue
-    const record = row as Record<string, unknown>
+    const record = asRecord(row)
+    if (!record) continue
     const id = typeof record.team_id === "string"
       ? record.team_id
       : typeof record.public_id === "string"
@@ -197,7 +198,7 @@ export async function notifySessionShareChanged(input: {
   target: SessionShareFanoutTarget
   sink?: SessionShareChangedSink
 }): Promise<void> {
-  if (!input.sink) return
+  if (!input.sink) return undefined
   let orgId: string | undefined
   try {
     orgId = await input.authority.resolveOrgId(input.auth)
@@ -214,9 +215,9 @@ export async function notifySessionShareChanged(input: {
     })
   } catch (error) {
     console.error("[claxedo-server] WARN  session.share.changed recipient resolve failed:", error)
-    return
+    return undefined
   }
-  if (recipients.length === 0) return
+  if (recipients.length === 0) return undefined
   const ts = Date.now()
   for (const ownerUserId of recipients) {
     try {

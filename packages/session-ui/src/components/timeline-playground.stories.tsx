@@ -15,12 +15,25 @@ import type {
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { SessionTurn } from "./session-turn"
+import { isKeyOf } from "@opencode-ai/ui/utils/record"
 
 // ---------------------------------------------------------------------------
 // ID helpers
 // ---------------------------------------------------------------------------
 let seq = 0
 const uid = () => `pg-${++seq}-${Date.now().toString(36)}`
+
+/** `Object.keys` for a literal record, keeping the record's own key union. */
+const keysOf = <T extends object>(record: T) =>
+  Object.keys(record).filter((key): key is keyof T & string => isKeyOf(record, key))
+
+/**
+ * The ids `AgentPartBase` requires on every part.
+ *
+ * A fixture part is built before it is attached to a message, so `messageID` starts empty
+ * and `appendParts` stamps the owning message when it stores the part.
+ */
+const partIds = (id: string = uid()) => ({ id, sessionID: SESSION_ID, messageID: "" })
 
 // ---------------------------------------------------------------------------
 // Lorem ipsum content
@@ -66,7 +79,7 @@ Please also add appropriate CSS containment hints and make sure we don't break t
       const id = `static-file-${Date.now()}`
       return [
         {
-          id,
+          ...partIds(id),
           type: "file",
           mime: "text/plain",
           filename: "session-turn.tsx",
@@ -80,7 +93,7 @@ Please also add appropriate CSS containment hints and make sure we don't break t
               end: 38,
             },
           },
-        } as FilePart,
+        } satisfies FilePart,
       ]
     })(),
   },
@@ -90,11 +103,11 @@ Please also add appropriate CSS containment hints and make sure we don't break t
     parts: (() => {
       return [
         {
-          id: `static-agent-${Date.now()}`,
+          ...partIds(`static-agent-${Date.now()}`),
           type: "agent",
           name: "explore",
-          source: { start: 4, end: 12 },
-        } as AgentPart,
+          source: { value: "@explore", start: 4, end: 12 },
+        } satisfies AgentPart,
       ]
     })(),
   },
@@ -107,12 +120,12 @@ Please also add appropriate CSS containment hints and make sure we don't break t
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
       return [
         {
-          id: `static-img-${Date.now()}`,
+          ...partIds(`static-img-${Date.now()}`),
           type: "file",
           mime: "image/png",
           filename: "screenshot.png",
           url: pixel,
-        } as FilePart,
+        } satisfies FilePart,
       ]
     })(),
   },
@@ -122,12 +135,12 @@ Please also add appropriate CSS containment hints and make sure we don't break t
     parts: (() => {
       return [
         {
-          id: `static-attach-${Date.now()}`,
+          ...partIds(`static-attach-${Date.now()}`),
           type: "file",
           mime: "application/json",
           filename: "tsconfig.json",
           url: "data:application/json;base64,e30=",
-        } as FilePart,
+        } satisfies FilePart,
       ]
     })(),
   },
@@ -139,21 +152,21 @@ Please also add appropriate CSS containment hints and make sure we don't break t
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
       return [
         {
-          id: `static-multi-img-${Date.now()}`,
+          ...partIds(`static-multi-img-${Date.now()}`),
           type: "file",
           mime: "image/png",
           filename: "layout-bug.png",
           url: pixel,
-        } as FilePart,
+        } satisfies FilePart,
         {
-          id: `static-multi-file-${Date.now()}`,
+          ...partIds(`static-multi-file-${Date.now()}`),
           type: "file",
           mime: "text/css",
           filename: "session-turn.css",
           url: "data:text/css;base64,LyogZW1wdHkgKi8=",
-        } as FilePart,
+        } satisfies FilePart,
         {
-          id: `static-multi-ref-${Date.now()}`,
+          ...partIds(`static-multi-ref-${Date.now()}`),
           type: "file",
           mime: "text/plain",
           filename: "session-turn.tsx",
@@ -163,7 +176,7 @@ Please also add appropriate CSS containment hints and make sure we don't break t
             path: "src/components/session-turn.tsx",
             text: { value: "@src/components/session-turn.tsx", start: 0, end: 0 },
           },
-        } as FilePart,
+        } satisfies FilePart,
       ]
     })(),
   },
@@ -458,6 +471,52 @@ function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+/**
+ * Row guards for an imported `opencode export` file.
+ *
+ * They check the discriminant plus the ids every row carries — which is what the timeline
+ * needs to route a row to a renderer. Per-variant payloads are deliberately not re-validated
+ * here: the file comes from the exporter, and a malformed variant belongs to the renderer
+ * that reads it. `satisfies` keeps the name list from drifting away from the union.
+ */
+const PART_TYPE_NAMES = [
+  "text",
+  "reasoning",
+  "file",
+  "tool",
+  "subtask",
+  "step-start",
+  "step-finish",
+  "snapshot",
+  "patch",
+  "agent",
+  "retry",
+  "compaction",
+  "handoff",
+] as const satisfies readonly Part["type"][]
+
+const PART_TYPES: ReadonlySet<string> = new Set(PART_TYPE_NAMES)
+
+function isPart(value: unknown): value is Part {
+  return (
+    record(value) &&
+    typeof value.id === "string" &&
+    typeof value.sessionID === "string" &&
+    typeof value.messageID === "string" &&
+    typeof value.type === "string" &&
+    PART_TYPES.has(value.type)
+  )
+}
+
+function isMessage(value: unknown): value is Message {
+  return (
+    record(value) &&
+    typeof value.id === "string" &&
+    typeof value.sessionID === "string" &&
+    (value.role === "user" || value.role === "assistant")
+  )
+}
+
 function normalize(raw: unknown) {
   if (Array.isArray(raw)) {
     const info = raw.find((row) => record(row) && row.type === "session" && record(row.data))?.data
@@ -469,13 +528,14 @@ function normalize(raw: unknown) {
     const messages = raw.flatMap((row) => {
       if (!record(row) || !record(row.data)) return []
       if (row.type === "part" && typeof row.data.messageID === "string") {
+        if (!isPart(row.data)) return []
         const list = part.get(row.data.messageID) ?? []
-        list.push(row.data as Part)
+        list.push(row.data)
         part.set(row.data.messageID, list)
         return []
       }
-      if (row.type !== "message" || typeof row.data.id !== "string") return []
-      return [{ info: row.data as Message, parts: [] as Part[] }]
+      if (row.type !== "message" || !isMessage(row.data)) return []
+      return [{ info: row.data, parts: [] as Part[] }]
     })
 
     return {
@@ -494,8 +554,8 @@ function normalize(raw: unknown) {
   return {
     info: raw.info,
     messages: raw.messages.flatMap((row) => {
-      if (!record(row) || !record(row.info) || typeof row.info.id !== "string") return []
-      return [{ info: row.info as Message, parts: Array.isArray(row.parts) ? (row.parts as Part[]) : [] }]
+      if (!record(row) || !isMessage(row.info)) return []
+      return [{ info: row.info, parts: Array.isArray(row.parts) ? row.parts.filter(isPart) : [] }]
     }),
   }
 }
@@ -510,11 +570,11 @@ function mkUser(text: string, extra: Part[] = [], sessionID = SESSION_ID): { mes
       time: { created: Date.now() },
       agent: "code",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
-    } as UserMessage,
+    },
     parts: [
-      { id: uid(), type: "text", text, time: { created: Date.now() } } as TextPart,
+      { ...partIds(), sessionID, messageID: id, type: "text", text },
       // Clone extra parts with fresh ids so each user message owns unique part instances
-      ...extra.map((p) => ({ ...p, id: uid() })),
+      ...extra.map((p) => ({ ...p, id: uid(), sessionID, messageID: id })),
     ],
   }
 }
@@ -533,20 +593,20 @@ function mkAssistant(parentID: string, sessionID = SESSION_ID): AssistantMessage
     path: { cwd: "/project", root: "/project" },
     cost: 0.003,
     tokens: { input: 1200, output: 800, reasoning: 200, cache: { read: 0, write: 0 } },
-  } as AssistantMessage
+  }
 }
 
 function textPart(text: string): TextPart {
-  return { id: uid(), type: "text", text, time: { created: Date.now() } } as TextPart
+  return { ...partIds(), type: "text", text, time: { start: Date.now() } }
 }
 
 function reasoningPart(text: string): ReasoningPart {
-  return { id: uid(), type: "reasoning", text, time: { start: Date.now(), end: Date.now() + 500 } } as ReasoningPart
+  return { ...partIds(), type: "reasoning", text, time: { start: Date.now(), end: Date.now() + 500 } }
 }
 
 function toolPart(sample: (typeof TOOL_SAMPLES)[keyof typeof TOOL_SAMPLES], status = "completed"): ToolPart {
   const base = {
-    id: uid(),
+    ...partIds(),
     type: "tool" as const,
     callID: uid(),
     tool: sample.tool,
@@ -562,7 +622,7 @@ function toolPart(sample: (typeof TOOL_SAMPLES)[keyof typeof TOOL_SAMPLES], stat
         metadata: sample.metadata ?? {},
         time: { start: Date.now(), end: Date.now() + 1000 },
       },
-    } as ToolPart
+    }
   }
   if (status === "running") {
     return {
@@ -574,12 +634,12 @@ function toolPart(sample: (typeof TOOL_SAMPLES)[keyof typeof TOOL_SAMPLES], stat
         metadata: sample.metadata ?? {},
         time: { start: Date.now() },
       },
-    } as ToolPart
+    }
   }
   return {
     ...base,
     state: { status: "pending", input: sample.input, raw: "" },
-  } as ToolPart
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1171,8 +1231,8 @@ function Playground() {
   const [issue, setIssue] = createSignal("")
 
   // ---- CSS overrides ----
-  const [css, setCss] = createStore<Record<string, string>>({})
-  const [defaults, setDefaults] = createStore<Record<string, string>>({})
+  const [css, setCss] = createStore<Record<string, string | undefined>>({})
+  const [defaults, setDefaults] = createStore<Record<string, string | undefined>>({})
   let styleEl: HTMLStyleElement | undefined
   let previewRef: HTMLDivElement | undefined
   let pick: HTMLInputElement | undefined
@@ -1194,9 +1254,7 @@ function Playground() {
       const el = (root.querySelector(sample(ctrl)) ?? root.querySelector(ctrl.selector))
       if (!el) continue
       const styles = getComputedStyle(el)
-      const raw = ctrl.property.startsWith("--")
-        ? styles.getPropertyValue(ctrl.property).trim()
-        : ((styles as any)[ctrl.property] as string)
+      const raw = styles.getPropertyValue(ctrl.property).trim()
       if (!raw) continue
       // Shorthands may return "24px 0px" — take the first value
       const num = parseFloat(raw.split(" ")[0])
@@ -1233,7 +1291,7 @@ function Playground() {
   const resetCss = () => {
     batch(() => {
       for (const ctrl of CSS_CONTROLS) {
-        setCss(ctrl.key, undefined as any)
+        setCss(ctrl.key, undefined)
       }
     })
     if (styleEl) styleEl.textContent = ""
@@ -1302,7 +1360,10 @@ function Playground() {
     setState(
       produce((draft) => {
         const existing = draft.parts[id] ?? []
-        draft.parts[id] = [...existing, ...parts]
+        // The builders cannot know which message a part lands on; the store can, so it
+        // stamps the owning ids here rather than leaving the fixture's placeholders.
+        const owned = parts.map((part) => ({ ...part, sessionID: session().id, messageID: id }))
+        draft.parts[id] = [...existing, ...owned]
       }),
     )
   }
@@ -1471,7 +1532,8 @@ function Playground() {
   }
 
   const importFile = async (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement
+    const input = event.currentTarget
+    if (!(input instanceof HTMLInputElement)) return
     const file = input.files?.[0]
     if (!file) return
 
@@ -1532,7 +1594,14 @@ function Playground() {
   const [applying, setApplying] = createSignal(false)
   const [applyResult, setApplyResult] = createSignal("")
 
-  const changedControls = createMemo(() => CSS_CONTROLS.filter((ctrl) => css[ctrl.key] !== undefined && ctrl.source))
+  const changedControls = createMemo(() =>
+    CSS_CONTROLS.flatMap((ctrl) => {
+      const value = css[ctrl.key]
+      const source = ctrl.source
+      if (value === undefined || !source) return []
+      return [{ ctrl, source, value }]
+    }),
+  )
 
   const applyToSource = async () => {
     const controls = changedControls()
@@ -1541,10 +1610,12 @@ function Playground() {
     setApplying(true)
     setApplyResult("")
 
-    const edits = controls.map((ctrl) => {
-      const src = ctrl.source!
-      return { file: src.file, anchor: src.anchor, prop: src.prop, value: src.format(css[ctrl.key]) }
-    })
+    const edits = controls.map(({ source, value }) => ({
+      file: source.file,
+      anchor: source.anchor,
+      prop: source.prop,
+      value: source.format(value),
+    }))
 
     try {
       const resp = await fetch("/__playground/apply-css", {
@@ -1563,9 +1634,9 @@ function Playground() {
 
       if (ok === edits.length) {
         batch(() => {
-          for (const ctrl of controls) {
-            setDefaults(ctrl.key, css[ctrl.key])
-            setCss(ctrl.key, undefined as any)
+          for (const { ctrl, value } of controls) {
+            setDefaults(ctrl.key, value)
+            setCss(ctrl.key, undefined)
           }
         })
         updateStyle()
@@ -1573,7 +1644,7 @@ function Playground() {
         setTimeout(readDefaults, 500)
       }
     } catch (err) {
-      setApplyResult(`Error: ${err}`)
+      setApplyResult(`Error: ${err instanceof Error ? err.message : JSON.stringify(err)}`)
     } finally {
       setApplying(false)
     }
@@ -1702,7 +1773,7 @@ function Playground() {
                 Creates a new turn (user + empty assistant)
               </div>
               <div style={{ display: "flex", "flex-wrap": "wrap", gap: "4px" }}>
-                <For each={Object.keys(USER_VARIANTS) as (keyof typeof USER_VARIANTS)[]}>
+                <For each={keysOf(USER_VARIANTS)}>
                   {(key) => (
                     <button style={btnStyle} onClick={() => addUser(key)}>
                       {USER_VARIANTS[key].label}
@@ -1730,7 +1801,7 @@ function Playground() {
                 Appends to the last turn's assistant parts
               </div>
               <div style={{ display: "flex", "flex-wrap": "wrap", gap: "4px" }}>
-                <For each={Object.keys(MARKDOWN_SAMPLES) as (keyof typeof MARKDOWN_SAMPLES)[]}>
+                <For each={keysOf(MARKDOWN_SAMPLES)}>
                   {(key) => (
                     <button style={btnStyle} onClick={() => addText(key)}>
                       {key}
@@ -1748,7 +1819,7 @@ function Playground() {
                 Appends to the last turn's assistant parts
               </div>
               <div style={{ display: "flex", "flex-wrap": "wrap", gap: "4px" }}>
-                <For each={Object.keys(TOOL_SAMPLES) as (keyof typeof TOOL_SAMPLES)[]}>
+                <For each={keysOf(TOOL_SAMPLES)}>
                   {(key) => (
                     <button style={btnStyle} onClick={() => addTool(key)}>
                       {key}
@@ -1954,9 +2025,9 @@ function Playground() {
                   }}
                 >
                   <For each={changedControls()}>
-                    {(ctrl) => (
+                    {({ ctrl, source, value }) => (
                       <div>
-                        {ctrl.source!.file}: {ctrl.property} = {css[ctrl.key]}
+                        {source.file}: {ctrl.property} = {value}
                         {ctrl.unit}
                       </div>
                     )}

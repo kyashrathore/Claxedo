@@ -14,12 +14,17 @@
  * unit runners accept the syntax happily, so nothing before the e2e job catches
  * it — which is exactly how four of these reached `dev`.
  *
- * The fix is never to drop the narrowing: declare it by merging an interface of
- * the same name beside the class. That is purely type-level, produces identical
- * narrowing, and erases under any transform.
+ * The fix is never to drop the narrowing, and never to merge a same-named
+ * interface beside the class either — that is a declaration merge between a
+ * class and an interface, which `typescript/no-unsafe-declaration-merging`
+ * rejects because the interface can claim members no constructor ever assigns.
+ * Two forms narrow without either hazard and erase under any transform:
  *
- *   export interface FooError { readonly code: FooErrorCode }
- *   export class FooError extends ClaxedoError { ... }
+ *   // a type parameter on the base, for `code`
+ *   export class FooError extends ClaxedoError<FooErrorCode> { ... }
+ *
+ *   // an initialized field, for a fixed `status`
+ *   export class BarError extends ClaxedoError { readonly status = 503 }
  */
 
 import fs from "node:fs"

@@ -3,14 +3,11 @@
 import { execSync } from "child_process"
 import fs from "fs"
 import path from "path"
+import { readPackageJson } from "./manifest-files"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as {
-  dependencies?: Record<string, string>
-  optionalDependencies?: Record<string, string>
-  peerDependencies?: Record<string, string>
-}
+const packageJson = readPackageJson(ROOT)
 
 const ENTRIES = [
   "src/index.ts",

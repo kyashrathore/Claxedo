@@ -93,7 +93,7 @@ const MAX_CONNECTIONS_CEILING = 16_000
  */
 function maxConnections(env: LiveSyncRoomEnv): number {
   const raw = env.LIVE_SYNC_MAX_CONNECTIONS
-  const parsed = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10)
+  const parsed = typeof raw === "number" ? raw : Number.parseInt(raw ?? "", 10)
   if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_MAX_CONNECTIONS
   return Math.min(Math.floor(parsed), MAX_CONNECTIONS_CEILING)
 }
@@ -324,43 +324,86 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
 } as const
 
+const PROVISION_STEPS = [
+  "acquiring_sandbox",
+  "cloning",
+  "starting_runtime",
+  "waiting_health",
+  "ready",
+  "error",
+] as const
+
+/**
+ * The three event shapes this room admits onto a client stream, rebuilt field
+ * by field.
+ *
+ * Each branch already checked every field it needed and then returned the raw
+ * row `as ClaxedoEvent`, which also carried whatever ELSE the sender put in the
+ * object straight through to every subscriber. Constructing the event means the
+ * room forwards exactly the fields it verified.
+ */
 function liveSyncEvent(input: unknown): ClaxedoEvent | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  const row = input as Record<string, unknown>
-  if (typeof row.ts !== "number" || !Number.isFinite(row.ts)) return
+  const row = asRecord(input)
+  const ts = row?.ts
+  if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
+  const { ownerUserId, sessionId, workspaceId, phase, documentId, orgId, projectId, version, message, totalMs } = row
   if (
     row.type === "session.share.changed"
-    && typeof row.ownerUserId === "string" && row.ownerUserId
-    && typeof row.sessionId === "string"
-    && typeof row.workspaceId === "string"
-    && (row.phase === "granted" || row.phase === "revoked")
-  ) return row as ClaxedoEvent
+    && typeof ownerUserId === "string" && ownerUserId
+    && typeof sessionId === "string"
+    && typeof workspaceId === "string"
+    && (phase === "granted" || phase === "revoked")
+  ) {
+    return { type: "session.share.changed", ts, ownerUserId, sessionId, workspaceId, phase }
+  }
   if (
     row.type === "document.changed"
-    && typeof row.documentId === "string"
-    && typeof row.orgId === "string"
-    && typeof row.projectId === "string"
-    && (row.version === undefined || typeof row.version === "string")
-  ) return row as ClaxedoEvent
+    && typeof documentId === "string"
+    && typeof orgId === "string"
+    && typeof projectId === "string"
+    && (version === undefined || typeof version === "string")
+  ) {
+    return { type: "document.changed", ts, documentId, orgId, projectId, ...(version === undefined ? {} : { version }) }
+  }
+  const step = PROVISION_STEPS.find((candidate) => candidate === row.step)
   if (
     row.type === "provision"
-    && typeof row.workspaceId === "string"
-    && (row.orgId === undefined || typeof row.orgId === "string")
-    && ["acquiring_sandbox", "cloning", "starting_runtime", "waiting_health", "ready", "error"].includes(String(row.step))
-    && (row.message === undefined || typeof row.message === "string")
-    && (row.totalMs === undefined || typeof row.totalMs === "number")
-  ) return row as ClaxedoEvent
+    && typeof workspaceId === "string"
+    && (orgId === undefined || typeof orgId === "string")
+    && step !== undefined
+    && (message === undefined || typeof message === "string")
+    && (totalMs === undefined || typeof totalMs === "number")
+  ) {
+    return {
+      type: "provision",
+      ts,
+      workspaceId,
+      step,
+      ...(orgId === undefined ? {} : { orgId }),
+      ...(message === undefined ? {} : { message }),
+      ...(totalMs === undefined ? {} : { totalMs }),
+    }
+  }
+  return undefined
+}
+
+declare global {
+  /**
+   * Declared rather than asserted: `WebSocketPair` exists only inside a Worker
+   * isolate, and this module is also built and unit-tested outside one. The
+   * lookup below goes through `globalThis` so an absent global is `undefined`
+   * rather than a `ReferenceError`.
+   */
+  var WebSocketPair: (new () => Record<number, LiveSyncSocket>) | undefined
 }
 
 function defaultWebSocketPair() {
-  const Pair = (globalThis as unknown as {
-    WebSocketPair?: new () => Record<number, LiveSyncSocket>
-  }).WebSocketPair
-  if (!Pair) return
+  const Pair = globalThis.WebSocketPair
+  if (!Pair) return undefined
   const pair = new Pair()
   const client = pair[0]
   const server = pair[1]
-  if (!client || !server) return
+  if (!client || !server) return undefined
   return { client, server }
 }
 
@@ -649,7 +692,7 @@ export class LiveSyncRoom {
     }
     let delivered = 0
     const disconnected = new Map<string, EventScopePrincipal>()
-    for (const connection of [...this.connections.values()]) {
+    for (const connection of Array.from(this.connections.values())) {
       const delivery = deliveryFor(connection.principal)
       if (!delivery.visible) continue
       if (this.write(connection.controller, event, delivery.id)) {
@@ -702,9 +745,9 @@ export class LiveSyncRoom {
   }
 
   private ensureHeartbeat(): void {
-    if (this.heartbeat !== undefined) return
+    if (this.heartbeat !== undefined) return undefined
     this.heartbeat = setInterval(() => {
-      for (const connection of [...this.connections.values()]) {
+      for (const connection of Array.from(this.connections.values())) {
         if (!this.write(connection.controller, HEARTBEAT)) {
           // Prune connections whose controller has closed without a cancel.
           this.connections.delete(connection.id)
@@ -718,7 +761,7 @@ export class LiveSyncRoom {
   }
 
   private maybeStopHeartbeat(): void {
-    if (this.connections.size > 0 || this.heartbeat === undefined) return
+    if (this.connections.size > 0 || this.heartbeat === undefined) return undefined
     clearInterval(this.heartbeat)
     this.heartbeat = undefined
   }
@@ -834,9 +877,9 @@ export function connectLiveSyncRoom(
         } catch {
           return write(raw)
         }
-        if (parsed && typeof parsed === "object" && "frame" in parsed) {
-          const envelope = parsed as LiveSyncWireFrame
-          if (typeof envelope.id === "string") return write(envelope.frame, envelope.id)
+        const envelope = asRecord(parsed)
+        if (envelope && "frame" in envelope && typeof envelope.id === "string") {
+          return write(envelope.frame, envelope.id)
         }
         return write(raw)
       }
@@ -879,7 +922,7 @@ export function connectLiveSyncRoom(
         start(streamController) {
           controller = streamController
           socket.addEventListener("message", (event) => {
-            const data = (event as MessageEvent).data
+            const data = "data" in event ? event.data : undefined
             if (typeof data === "string") writeMessage(data)
             else if (data instanceof ArrayBuffer) writeMessage(new TextDecoder().decode(data))
           })
@@ -913,3 +956,4 @@ export {
   type LiveSyncRoomNamespace,
   type LiveSyncRoomStub,
 } from "../../platform/http/live-sync-publish"
+import { asRecord } from "../../platform/json/index"

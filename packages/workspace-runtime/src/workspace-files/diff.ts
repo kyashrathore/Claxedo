@@ -84,7 +84,7 @@ function parseNumstat(output: string) {
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  const results: R[] = Array.from({ length: items.length })
   let index = 0
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
@@ -548,11 +548,11 @@ export async function refsExist(runtime: DiffRuntime, directory: string, fromRef
   return fromExists && toExists
 }
 
-export function relativeDiffFile(input: string) {
-  if (input.includes("\0")) return
-  if (path.isAbsolute(input)) return
+export function relativeDiffFile(input: string): string | undefined {
+  if (input.includes("\0")) return undefined
+  if (path.isAbsolute(input)) return undefined
   const normalized = path.normalize(input)
-  if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) return
+  if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) return undefined
   return input
 }
 
@@ -572,7 +572,7 @@ export async function diffRefs(runtime: DiffRuntime, directory: string) {
     .split("\n")
     .map((line) => {
       const [refname, gitRef, symref] = line.split("\0")
-      if (!refname || !gitRef || symref) return
+      if (!refname || !gitRef || symref) return undefined
       return { refname, gitRef }
     })
     .filter((ref): ref is { refname: string; gitRef: string } => !!ref)

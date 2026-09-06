@@ -90,12 +90,12 @@ const encode = (reason: unknown) => {
   if (reason && typeof reason === "object") {
     try {
       const seen = new WeakSet<object>()
-      const json = JSON.stringify(reason, (_, v) => {
-        if (v && typeof v === "object") {
-          if (seen.has(v as object)) return "[Circular]"
-          seen.add(v as object)
+      const json = JSON.stringify(reason, (_key: string, value: unknown) => {
+        if (value && typeof value === "object") {
+          if (seen.has(value)) return "[Circular]"
+          seen.add(value)
         }
-        return v
+        return value
       })
       return { message: json && json !== "{}" ? json : Object.prototype.toString.call(reason), raw: reason }
     } catch {
@@ -113,11 +113,9 @@ const encode = (reason: unknown) => {
  * those two sinks and constantly covered the sidebar during development.
  */
 const recordFatal = (label: string, payload: unknown) => {
-  window.__CLAXEDO__ ??= {}
-  ;(window.__CLAXEDO__ as unknown as { lastError?: { label: string; payload: unknown } }).lastError = {
-    label,
-    payload,
-  }
+  // `lastError` is a desktop-only diagnostic, so it is attached rather than
+  // declared on the shared `__CLAXEDO__` type that `@claxedo/app` owns.
+  Object.assign((window.__CLAXEDO__ ??= {}), { lastError: { label, payload } })
   console.error(`[fatal] ${label}`, payload)
 }
 
@@ -228,21 +226,20 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
         .catch(() => undefined)
     }
 
-    const handleWslPicker = async <T extends string | string[]>(result: T | null): Promise<T | null> => {
+    const toLinuxPath = (path: string) =>
+      desktopApi()
+        .wslPath(path, "linux")
+        .catch(() => path)
+
+    // Overloaded rather than generic: a `T extends string | string[]` cannot be
+    // narrowed by `Array.isArray`, so the old version asserted the mapped value
+    // back into `T` on both branches.
+    function handleWslPicker(result: string | null): Promise<string | null>
+    function handleWslPicker(result: string[] | null): Promise<string[] | null>
+    function handleWslPicker(result: string | string[] | null): Promise<string | string[] | null>
+    async function handleWslPicker(result: string | string[] | null): Promise<string | string[] | null> {
       if (!result || !window.__CLAXEDO__?.wsl) return result
-      if (Array.isArray(result)) {
-        const next = await Promise.all(
-          result.map((path) =>
-            desktopApi()
-              .wslPath(path, "linux")
-              .catch(() => path),
-          ),
-        )
-        return next as T
-      }
-      return desktopApi()
-        .wslPath(result, "linux")
-        .catch(() => result) as Promise<T>
+      return Array.isArray(result) ? Promise.all(result.map(toLinuxPath)) : toLinuxPath(result)
     }
 
     const storage = (() => {
@@ -451,8 +448,10 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
     const platform = createPlatform()
 
     const handleClick = (event: MouseEvent) => {
-      const link = (event.target as HTMLElement).closest("a.external-link") as HTMLAnchorElement | null
-      if (!link?.href) return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const link = target.closest("a.external-link")
+      if (!(link instanceof HTMLAnchorElement) || !link.href) return
       event.preventDefault()
       platform.openLink(link.href)
     }

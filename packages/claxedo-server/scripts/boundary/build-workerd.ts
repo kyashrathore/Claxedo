@@ -18,6 +18,7 @@ import {
   WORKERD_BOUNDARY_TARGETS,
   type WorkerdBoundaryTarget,
 } from "./certified-workerd-boundary"
+import { asRecord, isRecord, parseJson } from "../../src/platform/json/index"
 
 /**
  * Placeholder Cloudflare resource identities.
@@ -73,8 +74,19 @@ function offlineWranglerEnvironment() {
   return env
 }
 
+/**
+ * The two maps `normalizeEsbuildBuildManifest` walks. Their entries are read
+ * defensively there (every nested field is optional), so the check that matters
+ * here is that the file is a metafile at all rather than, say, an error report
+ * esbuild wrote in its place.
+ */
+function isEsbuildMetafile(value: Record<string, unknown> | undefined): value is EsbuildMetafile {
+  return !!value && isRecord(value.inputs) && isRecord(value.outputs)
+}
+
 function buildManifest(target: WorkerdBoundaryTarget) {
-  const metafile = JSON.parse(fs.readFileSync(target.metafileFile, "utf8")) as EsbuildMetafile
+  const metafile = asRecord(parseJson(fs.readFileSync(target.metafileFile, "utf8")))
+  if (!isEsbuildMetafile(metafile)) throw new Error(`${target.metafileFile} is not an esbuild metafile`)
   return normalizeEsbuildBuildManifest({
     entry: path.join(SERVER_ROOT, target.entrypointFromPackageRoot),
     metafile,

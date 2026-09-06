@@ -154,11 +154,7 @@ export function createBetterAuthBrowserAdapter(
             password: options?.method === "email-password" ? options.password : "",
             callbackURL: redirect,
           })
-        : method === "google" || method === "github"
-          ? await requireClient().signIn.social({ provider: method, callbackURL: redirect })
-          : (() => {
-              throw new Error(`Better Auth cannot run ${method}`)
-            })()
+        : await requireClient().signIn.social({ provider: method, callbackURL: redirect })
     if (result.error) throw clientError("sign-in", result.error)
     if (method === "email-password") await hydrateSession()
   }

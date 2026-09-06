@@ -11,7 +11,7 @@ import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 export function sessionProjectionBacking(
   runtime: { workspaceId: string; kind: WorkspaceSessionBacking["kind"] } | undefined,
 ): WorkspaceSessionBacking | undefined {
-  if (!runtime || runtime.kind !== "cloud") return
+  if (!runtime || runtime.kind !== "cloud") return undefined
   return { workspaceId: runtime.workspaceId, kind: runtime.kind }
 }
 export function sessionProjectionWorkspaceBacking(input: {
@@ -19,7 +19,7 @@ export function sessionProjectionWorkspaceBacking(input: {
   workspaceId?: string
   workspaceKind?: WorkspaceSessionBacking["kind"]
 }): WorkspaceSessionBacking | undefined {
-  if (!input.signedControlPlane || !input.workspaceId || !input.workspaceKind) return
+  if (!input.signedControlPlane || !input.workspaceId || !input.workspaceKind) return undefined
   return sessionProjectionBacking({ workspaceId: input.workspaceId, kind: input.workspaceKind })
 }
 
@@ -131,7 +131,7 @@ async function post(input: ProjectionInput) {
 }
 
 export function scheduleSessionProjectionPull(input: ProjectionInput) {
-  if (!input.workspaceId || !input.sessionId) return
+  if (!input.workspaceId || !input.sessionId) return undefined
   const requestKey = key(input)
   const entry = projectionEntry(requestKey)
   if (entry.inFlight) return entry.inFlight

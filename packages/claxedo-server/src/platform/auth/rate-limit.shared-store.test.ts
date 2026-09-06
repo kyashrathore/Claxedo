@@ -188,14 +188,12 @@ describe("Node/self-host degradation", () => {
 
 describe("Cloudflare binding adapter", () => {
   test("maps the binding's success flag onto an allow/deny decision", async () => {
-    const binding: CloudflareRateLimitBinding = {
-      limit: vi.fn(async ({ key }) => ({ success: key === "good" })),
-    }
-    const store = cloudflareRateLimitStore(binding)
+    const limit = vi.fn(async ({ key }: { key: string }) => ({ success: key === "good" }))
+    const store = cloudflareRateLimitStore({ limit } satisfies CloudflareRateLimitBinding)
 
     await expect(store.check("good")).resolves.toEqual({ allowed: true })
     await expect(store.check("bad")).resolves.toEqual({ allowed: false })
-    expect(binding.limit).toHaveBeenCalledWith({ key: "bad" })
+    expect(limit).toHaveBeenCalledWith({ key: "bad" })
   })
 
   test("fails OPEN when the binding throws, leaving the local fuse in charge", async () => {

@@ -3,6 +3,12 @@ import { describe, expect, test, vi } from "vitest"
 import { resolveCollections } from "@claxedo/server-core/agent-plugins/catalog/resolve-collections"
 import { githubRepositoryCatalogSourceProvider, type AgentPluginSourceFetch } from "./github-public"
 
+/** The URL a fetch was called with. `RequestInfo` includes `Request`, whose default stringification is useless. */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+
 const sha = "a".repeat(40)
 
 async function archive(files: Record<string, string>) {
@@ -14,7 +20,7 @@ async function archive(files: Record<string, string>) {
 
 function provider(zip: Uint8Array, status = 200) {
   const fetcher = vi.fn<AgentPluginSourceFetch>(async (input, _init) => {
-    const url = String(input)
+    const url = requestUrl(input)
     return url.startsWith("https://api.github.com/")
       ? new Response(JSON.stringify({ sha }), { status: 200 })
       : new Response(zip.slice().buffer, { status })
@@ -88,7 +94,7 @@ describe("GitHub rate limits", () => {
     const zip = await archive({ "review/plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "review" }) })
     const urls: string[] = []
     const fetcher = vi.fn<AgentPluginSourceFetch>(async (input) => {
-      const url = String(input); urls.push(url)
+      const url = requestUrl(input); urls.push(url)
       if (url.startsWith("https://api.github.com/")) return new Response(JSON.stringify({ message: "API rate limit exceeded" }), { status: 403 })
       return new Response(zip.slice().buffer, { status: 200 })
     })
@@ -103,7 +109,7 @@ describe("GitHub rate limits", () => {
     const zip = await archive({ "review/plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "review" }) })
     const headers: Array<string | undefined> = []
     const fetcher = vi.fn<AgentPluginSourceFetch>(async (input, init) => {
-      const url = String(input); headers.push(new Headers(init?.headers).get("authorization") ?? undefined)
+      const url = requestUrl(input); headers.push(new Headers(init?.headers).get("authorization") ?? undefined)
       return url.startsWith("https://api.github.com/") ? new Response(JSON.stringify({ sha }), { status: 200 }) : new Response(zip.slice().buffer, { status: 200 })
     })
     await githubRepositoryCatalogSourceProvider({ id: "c", kind: "claxedo", label: "C", owner: "o", repository: "r", ref: "main", fetch: fetcher, token: "ghp_test" }).listAuthorizedSources()

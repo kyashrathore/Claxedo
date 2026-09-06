@@ -51,7 +51,7 @@ import type { PromptInputProps } from "./prompt-input-props"
 import { createPromptToolbarState } from "./toolbar-state"
 import { composerUsesSignedTransport, selectedNewSessionWorkspace, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
-import { harnessSelectionValue } from "@/platform/identity/harness-selection"
+import { harnessSelectionKey, harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
 import { createComposerPermissionSurface } from "./permission-mode-wiring"
@@ -161,7 +161,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
   const newSession = isNewSessionVariant
   const hydrateDirectoryCommands = createDeferredDirectoryResourceGate({
-    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:${currentHarnessType(scope())}:commands`,
+    // The gate is per harness: `harnessSelectionKey` is the canonical cache
+    // identity for a HarnessSelection. Interpolating the selection object itself
+    // yielded "[object Object]", so every harness shared one gate scope.
+    scope: () => {
+      const harness = currentHarnessType(scope())
+      const harnessKey = harness ? harnessSelectionKey(harness) : ""
+      return `${sdk.url ?? ""}:${commandDirectory()}:${harnessKey}:commands`
+    },
     active: () => sessionParams.active?.() ?? true,
   })
   const customCommandsQuery = useWorkspaceQuery(() => {
@@ -364,7 +371,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       commentCount: commentCount(),
       example: suggest() ? language.t(PROMPT_EXAMPLES[placeholderIndex()]) : "",
       suggest: suggest(),
-      t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
+      t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params),
     }),
   )
 
@@ -642,7 +649,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       slashActive={engine.popoverView.slashActive()}
       setSlashActive={engine.popoverView.setSlashActive}
       onSlashSelect={engine.popoverView.onSlashSelect}
-      commandKeybind={command.keybind}
+      commandKeybind={(id) => command.keybind(id)}
       contextItems={contextItems()}
       contextActive={(item) => {
         const active = comments.active()

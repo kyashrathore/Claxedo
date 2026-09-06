@@ -24,13 +24,14 @@ import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } fr
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
-import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { asRecord } from "../../platform/json/index"
 
 // `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
@@ -185,8 +186,8 @@ function regionalHostTunnel(
   source: unknown,
   hostTunnel: Awaited<ReturnType<typeof hostTunnelCredential>>,
 ) {
-  if (!hostTunnel) return
-  const row = rec(source)
+  if (!hostTunnel) return undefined
+  const row = asRecord(source)
   const homeRegion = normalizeClaxedoRegion(txt(row?.home_region) ?? txt(row?.homeRegion), options.defaultHomeRegion)
   const relayUrl = configuredRelayUrl(options, homeRegion)
   return {
@@ -223,7 +224,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
   const connectionResponse = async (c: Context, previousJti?: string) => {
     const workspaceId = c.req.param("id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
-    if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+    if ("error" in authResult) return c.json(authResult.error, authResult.status)
     const auth = authResult.auth
     if (!auth) return c.json(missingBearer(), 401)
     try {
@@ -243,7 +244,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
       const result = await hostedConnectionInfo(services, options, auth, workspaceId, previousJti)
       if ("error" in result)
-        return c.json({ error: result.error }, result.status as 400 | 401 | 402 | 403 | 409 | 503)
+        return c.json({ error: result.error }, result.status)
       if ("status" in result.connection && result.connection.status === "provisioning") {
         connectionRateLimiter.refund?.({ userId: auth.user.subject, workspaceId })
       }
@@ -273,7 +274,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           },
           services,
         )
-        if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
         if (authResult.auth && requireSigned) {
           const auth = authResult.auth
           try {
@@ -288,7 +289,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             return c.json({
               workspaces:
                 Array.isArray(workspaces) && access === "user-hosted"
-                  ? workspaces.filter((item) => rec(item)?.access === "user-hosted")
+                  ? workspaces.filter((item) => asRecord(item)?.access === "user-hosted")
                   : workspaces,
             })
           } catch (err) {
@@ -321,7 +322,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // `/:id/connection` polling, so this returns as soon as the doc exists.
       .post("/create", async (c) => {
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
 
@@ -404,7 +405,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // unreadable → 503; either way nothing is created.
         if (options.requireCloudWorkspaceEntitlement) {
           const denied = await options.requireCloudWorkspaceEntitlement(auth)
-          if (denied) return c.json(denied.body as never, denied.status)
+          if (denied) return c.json(denied.body, denied.status)
         }
 
         // Timestamp-prefixed + 80 bits of cryptographic randomness. The old
@@ -629,7 +630,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // machine can open its relay tunnel without waiting for a beat.
         const workspaceId = c.req.param("id")
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
         const parsed = parsedBody(assignBody, await c.req.json().catch(() => ({})))
@@ -682,7 +683,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       .delete("/:id/host-assignment", async (c) => {
         const workspaceId = c.req.param("id")
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
         try {

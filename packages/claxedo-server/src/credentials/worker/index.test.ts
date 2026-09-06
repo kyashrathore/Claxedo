@@ -7,6 +7,7 @@ import {
   workerCredentials,
 } from "./index"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
+import { fetchBodyText } from "../../test-support/fetch-calls"
 
 const KV_ENV = {
   CLAXEDO_CF_KV_URL: "https://kv.example.test/ns",
@@ -128,7 +129,7 @@ describe("createHostedOrgSecretBackend", () => {
       vi.fn(async (input: string | URL, init?: RequestInit) => {
         const key = decodeURIComponent(new URL(String(input)).pathname.split("/values/")[1] ?? "")
         if (init?.method === "PUT") {
-          kv.set(key, String(init.body))
+          kv.set(key, fetchBodyText(init.body))
           return new Response("ok", { status: 200 })
         }
         const value = kv.get(key)
@@ -172,7 +173,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD)", () => {
       vi.fn(async (input: string | URL, init?: RequestInit) => {
         const key = decodeURIComponent(new URL(String(input)).pathname.split("/values/")[1] ?? "")
         if (init?.method === "PUT") {
-          kv.set(key, String(init.body))
+          kv.set(key, fetchBodyText(init.body))
           return new Response("ok", { status: 200 })
         }
         if (init?.method === "DELETE") {

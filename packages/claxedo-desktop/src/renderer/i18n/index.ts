@@ -1,4 +1,5 @@
 import * as i18n from "@solid-primitives/i18n"
+import { isRecord } from "../../shared/json-read"
 import { desktopApi } from "../api"
 
 import { dict as desktopEn } from "./en"
@@ -89,16 +90,13 @@ function detectLocale(): Locale {
 }
 
 function parseLocale(value: unknown): Locale | null {
-  if (!value) return null
-  if (typeof value !== "string") return null
-  if ((LOCALES as readonly string[]).includes(value)) return value as Locale
-  return null
+  // Found in the closed list rather than checked-then-asserted: the element
+  // that comes back already IS a `Locale`.
+  return LOCALES.find((locale) => locale === value) ?? null
 }
 
 function parseRecord(value: unknown) {
-  if (!value || typeof value !== "object") return null
-  if (Array.isArray(value)) return null
-  return value as Record<string, unknown>
+  return isRecord(value) ? value : null
 }
 
 function parseStored(value: unknown) {

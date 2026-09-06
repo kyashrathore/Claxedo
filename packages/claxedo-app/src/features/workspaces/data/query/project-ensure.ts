@@ -19,13 +19,13 @@ export async function ensureLocalProject(input: {
     create: true,
   })
   if (!workspace) throw new Error("Failed to ensure workspace")
-  queryClient.invalidateQueries({
+  await queryClient.invalidateQueries({
     queryKey: queryKeys.runtime.workspace({
       baseUrl: input.baseUrl,
       directory,
     }),
   })
-  queryClient.invalidateQueries({ queryKey: input.projectsQuery.queryKey })
+  await queryClient.invalidateQueries({ queryKey: input.projectsQuery.queryKey })
   return queryClient.fetchQuery(input.projectsQuery)
 }
 
@@ -35,6 +35,6 @@ export async function ensureLocalProject(input: {
  * the fresh one.
  */
 export async function refreshProjectInventory(projectsQuery: FetchQueryInput) {
-  queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey })
+  await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey })
   return queryClient.fetchQuery(projectsQuery)
 }

@@ -4,6 +4,7 @@ import * as path from "node:path"
 
 import { resolveChannel, type Channel } from "./utils"
 import { MAIN_RENDERER_DOCUMENT } from "../src/main/navigation-guard"
+import { isRecord, readString } from "../src/shared/json-read"
 
 export type Spec = {
   file: string
@@ -21,6 +22,31 @@ type Manifest = {
   output: Record<string, string>
 }
 
+/**
+ * The one reader for a build contract on disk.
+ *
+ * `read` used to assert `JSON.parse` output into `Manifest`, which claims five
+ * fields and two string maps that nothing had checked. A contract that does not
+ * have them is a corrupt contract, and the caller says so.
+ */
+function parseManifest(value: unknown): Manifest | undefined {
+  const built_at = readString(value, "built_at")
+  const channel = readString(value, "channel")
+  const source_commit = readString(value, "source_commit")
+  const input = stringMap(value, "input")
+  const output = stringMap(value, "output")
+  if (built_at === undefined || source_commit === undefined || !input || !output) return undefined
+  if (channel !== "dev" && channel !== "beta" && channel !== "prod") return undefined
+  return { built_at, channel, source_commit, input, output }
+}
+
+function stringMap(source: unknown, key: string): Record<string, string> | undefined {
+  const value = isRecord(source) ? source[key] : undefined
+  if (!isRecord(value)) return undefined
+  const entries = Object.entries(value).flatMap(([name, item]) => (typeof item === "string" ? [[name, item] as const] : []))
+  return entries.length === Object.keys(value).length ? Object.fromEntries(entries) : undefined
+}
+
 const ROOT = path.resolve(import.meta.dir, "..")
 
 function rel(root: string, file: string) {
@@ -33,7 +59,7 @@ function hash(file: string) {
   return out.digest("hex")
 }
 
-function walk(root: string, entry: string) {
+function walk(root: string, entry: string): string[] {
   const file = path.resolve(root, entry)
   if (!fs.existsSync(file)) {
     throw new Error(`missing path: ${entry}`)
@@ -53,13 +79,18 @@ function walk(root: string, entry: string) {
       }
       return []
     })
-    .sort()
+    .sort(byPath)
+}
+
+/** Byte-order comparison, so the manifest is stable across locales. */
+function byPath(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function snapshot(root: string, list: string[]) {
   return list
     .flatMap((entry) => walk(root, entry))
-    .sort()
+    .sort(byPath)
     .reduce<Record<string, string>>((out, entry) => {
       out[entry] = hash(path.resolve(root, entry))
       return out
@@ -96,7 +127,10 @@ function read(spec: Spec) {
   if (!fs.existsSync(spec.file)) {
     throw new Error(`missing build contract: ${rel(spec.root, spec.file)}`)
   }
-  return JSON.parse(fs.readFileSync(spec.file, "utf8")) as Manifest
+  const parsed: unknown = JSON.parse(fs.readFileSync(spec.file, "utf8"))
+  const manifest = parseManifest(parsed)
+  if (!manifest) throw new Error(`build contract is not a manifest: ${rel(spec.root, spec.file)}`)
+  return manifest
 }
 
 export function spec(root = ROOT): Spec {

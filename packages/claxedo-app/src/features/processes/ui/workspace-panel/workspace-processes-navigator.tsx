@@ -106,7 +106,7 @@ export function WorkspaceProcessesNavigator(props: {
 
   const openAddDialog = () => {
     if (!canMutate()) return
-    dialog.show(() => (
+    void dialog.show(() => (
       <AddProcessDialog
         directory={props.directory}
         request={props.request}

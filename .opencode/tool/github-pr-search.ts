@@ -1,13 +1,16 @@
 /// <reference path="../env.d.ts" />
 import { tool } from "@opencode-ai/plugin"
-async function githubFetch(endpoint: string, options: RequestInit = {}) {
+async function githubFetch(endpoint: string, options: RequestInit = {}): Promise<unknown> {
   const response = await fetch(`https://api.github.com${endpoint}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json",
-      ...(options.headers instanceof Headers ? Object.fromEntries(options.headers.entries()) : options.headers),
+      // `HeadersInit` also covers `string[][]`, which spreads into an object as
+      // numeric indices. Normalizing through Headers keeps caller overrides
+      // winning (they come last) without depending on the input's shape.
+      ...Object.fromEntries(new Headers(options.headers).entries()),
     },
   })
   if (!response.ok) {
@@ -16,9 +19,23 @@ async function githubFetch(endpoint: string, options: RequestInit = {}) {
   return response.json()
 }
 
-interface PR {
+type PR = {
   title: string
   html_url: string
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return !!input && typeof input === "object" && !Array.isArray(input)
+}
+
+/** The search hits this tool renders; a row missing either field is dropped. */
+function pullRequests(input: unknown): PR[] {
+  if (!Array.isArray(input)) return []
+  return input.flatMap((item) => {
+    if (!isRecord(item)) return []
+    const { title, html_url } = item
+    return typeof title === "string" && typeof html_url === "string" ? [{ title, html_url }] : []
+  })
 }
 
 export default tool({
@@ -47,11 +64,13 @@ Use the query parameter to search for keywords that might appear in PR titles or
       `/search/issues?q=${searchQuery}&per_page=${args.limit}&page=${page}&sort=updated&order=desc`,
     )
 
-    if (result.total_count === 0) {
+    const search = isRecord(result) ? result : {}
+    const total = typeof search.total_count === "number" ? search.total_count : 0
+    if (total === 0) {
       return `No PRs found matching "${args.query}"`
     }
 
-    const prs = result.items as PR[]
+    const prs = pullRequests(search.items)
 
     if (prs.length === 0) {
       return `No other PRs found matching "${args.query}"`
@@ -59,6 +78,6 @@ Use the query parameter to search for keywords that might appear in PR titles or
 
     const formatted = prs.map((pr) => `${pr.title}\n${pr.html_url}`).join("\n\n")
 
-    return `Found ${result.total_count} PRs (showing ${prs.length}):\n\n${formatted}`
+    return `Found ${total} PRs (showing ${prs.length}):\n\n${formatted}`
   },
 })

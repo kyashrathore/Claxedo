@@ -7,6 +7,7 @@ import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
+import { asRecord } from "../../platform/json/index"
 
 
 function authorized(request: Request, expected: string | undefined) {
@@ -100,6 +101,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
       )
     }
     await next()
+    return undefined
   })
 
   app.get("/internal/relay/target", async (c) => {
@@ -159,7 +161,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
       if (result && typeof result === "object" && "active" in result) {
         if (
           result.active === false &&
-          rec(result).code === "runtime_access_token_workspace_not_found" &&
+          (asRecord(result) ?? {}).code === "runtime_access_token_workspace_not_found" &&
           !clean(options.resolverToken) &&
           isLoopbackLocalRequest(c.req.raw) &&
           options.localTargetExists &&
@@ -186,6 +188,3 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
   return app
 }
 
-function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : {}
-}

@@ -48,10 +48,25 @@ const CHAT_SDK_ADAPTERS = {
 
 const loadChatSdk = async () => await import("chat") as Record<string, unknown>
 
-function factory(module: Record<string, unknown>, name: string) {
+/**
+ * The `chat` module and its adapter packages are loaded dynamically and reach
+ * this file as `Record<string, unknown>` — deliberately, so tests can inject a
+ * fake module. These two guards are the seam where a dynamically loaded export
+ * is taken at its word; both check what JavaScript can check (callability) and
+ * name what the vendor documents the export to be.
+ */
+function isAdapterFactory(value: unknown): value is () => unknown {
+  return typeof value === "function"
+}
+
+function isChatConstructor(value: unknown): value is ChatConstructor {
+  return typeof value === "function"
+}
+
+function factory(module: Record<string, unknown>, name: string): () => unknown {
   const value = module[name]
-  if (typeof value !== "function") throw new Error(`Chat SDK factory ${name} is not available`)
-  return value as () => unknown
+  if (!isAdapterFactory(value)) throw new Error(`Chat SDK factory ${name} is not available`)
+  return value
 }
 
 export async function createChatSdkBot(input: {
@@ -63,7 +78,7 @@ export async function createChatSdkBot(input: {
 }) {
   const chatModule = await (input.importer ? input.importer("chat") : loadChatSdk())
   const Chat = chatModule.Chat
-  if (typeof Chat !== "function") throw new Error("Chat SDK Chat constructor is not available")
+  if (!isChatConstructor(Chat)) throw new Error("Chat SDK Chat constructor is not available")
   const entries = (await Promise.all(input.registrations.map(async (registration) => {
     if (!registration.enabled || registration.transport !== "chat-sdk" || registration.channel === "fake") return []
     try {
@@ -79,7 +94,7 @@ export async function createChatSdkBot(input: {
   // The Chat SDK requires a state adapter (its first webhook calls
   // state.connect()); default to a single-process in-memory one when the
   // caller doesn't inject a shared (Redis/SQLite) adapter.
-  return new (Chat as ChatConstructor)({
+  return new Chat({
     userName: input.userName,
     adapters,
     state: input.state ?? createMemoryStateAdapter(),

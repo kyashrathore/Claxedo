@@ -1,16 +1,17 @@
 import path from "node:path"
 import { z } from "zod"
+import { record } from "./json"
+import type { ControlPlaneRequest } from "./control-plane-request"
+import type { McpTextToolResult } from "./mcp-tool"
 
-type ToolResult = Readonly<{ content: readonly Readonly<{ type: "text"; text: string }>[]; isError?: boolean }>
 type Register = (
   name: string,
   config: Readonly<{ description: string; inputSchema: Record<string, z.ZodTypeAny>; _meta?: Record<string, unknown> }>,
-  handler: (input: Record<string, unknown>) => Promise<ToolResult>,
+  handler: (input: Record<string, unknown>) => Promise<McpTextToolResult>,
 ) => void
 // `Promise<unknown>` rather than `<Result>(…) => Promise<Result>`: the generic
 // form let a caller name any return type and receive it unchecked. Every
 // response below is narrowed explicitly before use.
-type Request = (requestPath: string, init?: RequestInit) => Promise<unknown>
 
 type ToolName = "documents_list" | "documents_open"
 
@@ -72,7 +73,7 @@ export const DOCUMENT_TOOL_SCHEMAS = {
 
 export function registerDocumentTools(
   register: Register,
-  request: Request,
+  request: ControlPlaneRequest,
   defaults?: { directory?: string; sessionId?: string },
 ) {
   register(
@@ -95,10 +96,10 @@ export function registerDocumentTools(
 }
 
 export async function callDocuments(
-  request: Request,
+  request: ControlPlaneRequest,
   tool: ToolName,
   input: Record<string, unknown>,
-): Promise<ToolResult> {
+): Promise<McpTextToolResult> {
   if (tool === "documents_list") {
     const parsed = z.strictObject(DOCUMENT_TOOL_SCHEMAS.documents_list).parse(input)
     validateScope(parsed)
@@ -171,10 +172,11 @@ function documentRows(value: unknown): DocumentRow[] {
 }
 
 function documentRow(value: unknown): DocumentRow {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const row = record(value)
+  if (!row) {
     throw new DocumentToolError(502, "document_metadata_invalid", "Document index returned a non-object entry")
   }
-  return value as DocumentRow
+  return row
 }
 
 function listPath(input: { project_id?: string; directory?: string }, archived: "active" | "all") {
@@ -216,6 +218,6 @@ function string(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
-function text(value: unknown): ToolResult {
+function text(value: unknown): McpTextToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] }
 }

@@ -37,11 +37,14 @@ const ws = path.join(root, "ws")
 fs.mkdirSync(ws)
 const oc = await OpenCode.create({ database: { path: path.join(root, "contract.db") } })
 
-for (const [label, run] of [
-  ["config.get      (backs GET /global/config)", () => oc.config.get({ location: { directory: ws } })],
-  ["provider.list   (backs the provider catalog)", () => oc.provider.list({ location: { directory: ws } })],
-  ["agent.list      (backs GET /agent)", () => oc.agent.list({ location: { directory: ws } })],
-  ["sessions.create (backs session start)", () => oc.sessions.create({ location: { directory: ws }, title: "x" })],
+for (const { label, run } of [
+  { label: "config.get      (backs GET /global/config)", run: () => oc.config.get({ location: { directory: ws } }) },
+  { label: "provider.list   (backs the provider catalog)", run: () => oc.provider.list({ location: { directory: ws } }) },
+  { label: "agent.list      (backs GET /agent)", run: () => oc.agent.list({ location: { directory: ws } }) },
+  {
+    label: "sessions.create (backs session start)",
+    run: () => oc.sessions.create({ location: { directory: ws }, title: "x" }),
+  },
 ]) {
   try {
     const value = await run()

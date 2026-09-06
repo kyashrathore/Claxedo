@@ -241,7 +241,7 @@ describe("the closed operation set", () => {
     const ipc = ipcMain()
     registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
 
-    expect(ipc.arities().toSorted()).toEqual([0, 0, 0, 0, 2, 2])
+    expect(ipc.arities().toSorted((a, b) => a - b)).toEqual([0, 0, 0, 0, 2, 2])
   })
 
   test("no operation acts on anything the message carries", async () => {
@@ -282,6 +282,10 @@ describe("the closed operation set", () => {
     // Malformed payloads never reach the connector.
     await expect(ipc.invoke(hostConnectorChannel("share"))).rejects.toThrow("workspaceId")
     await expect(ipc.invoke(hostConnectorChannel("share"), { workspaceId: 42 })).rejects.toThrow("workspaceId")
+    // A label of the wrong type rejects the share instead of being dropped.
+    await expect(
+      ipc.invoke(hostConnectorChannel("share"), { workspaceId: "ws_local_1", displayName: 42 }),
+    ).rejects.toThrow("workspaceId")
     expect(harness.operations.some((operation) => operation.name === "workspace.assignHost")).toBe(false)
 
     // A hostile payload is reduced to the two reviewed fields.
@@ -309,7 +313,9 @@ describe("the closed operation set", () => {
     // Positive control: the slice is real, and the only other member is the
     // read-only push subscription.
     expect(bridge).toContain("onStatus")
-    expect(bridge.match(/ipcRenderer\.invoke\(/g)?.length).toBe(HOST_CONNECTOR_OPERATIONS.length)
+    // One IPC call per operation and not one more. `invoke` is the preload's
+    // single typed `ipcRenderer.invoke` seam, so counting it counts them all.
+    expect(bridge.match(/\binvoke[(<]/g)?.length).toBe(HOST_CONNECTOR_OPERATIONS.length)
   })
 })
 

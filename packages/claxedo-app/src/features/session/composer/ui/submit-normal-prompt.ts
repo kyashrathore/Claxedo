@@ -1,3 +1,4 @@
+import { sessionStatus } from "@/features/session/store/session-status-dispatcher"
 import type { ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
 import { Identifier } from "@/lib/id"
 import type { useClaxedoState } from "@/features/session/app-ports"
@@ -177,10 +178,13 @@ export async function dispatchNormalPromptSubmit(input: {
           sessionID: input.session.id,
           messageID: promptRequest.messageID,
         })
-        if (fetchedStatus) {
+        // `statusClient` reports an untyped record, so the status goes through the
+        // dispatcher's parser — the one owner of the `AgentRuntimeStatus` union.
+        const status = sessionStatus(fetchedStatus)
+        if (status) {
           setPromptSessionStatus({
             sessionID: input.session.id,
-            status: fetchedStatus as never,
+            status,
             source: "server",
           })
         }

@@ -25,8 +25,9 @@ export type ApplyPatchFile = {
   view: ViewDiff
 }
 
-function kind(value: unknown) {
+function kind(value: unknown): Kind | undefined {
   if (value === "add" || value === "update" || value === "delete" || value === "move") return value
+  return undefined
 }
 
 function status(type: Kind): "added" | "deleted" | "modified" {
@@ -36,7 +37,7 @@ function status(type: Kind): "added" | "deleted" | "modified" {
 }
 
 export function patchFile(raw: unknown): ApplyPatchFile | undefined {
-  if (!raw || typeof raw !== "object") return
+  if (!raw || typeof raw !== "object") return undefined
 
   const value = raw as Raw
   const type = kind(value.type)
@@ -46,8 +47,8 @@ export function patchFile(raw: unknown): ApplyPatchFile | undefined {
   const before = typeof value.before === "string" ? value.before : undefined
   const after = typeof value.after === "string" ? value.after : undefined
 
-  if (!type || !filePath || !relativePath) return
-  if (!patch && before === undefined && after === undefined) return
+  if (!type || !filePath || !relativePath) return undefined
+  if (!patch && before === undefined && after === undefined) return undefined
 
   const additions = typeof value.additions === "number" ? value.additions : 0
   const deletions = typeof value.deletions === "number" ? value.deletions : 0

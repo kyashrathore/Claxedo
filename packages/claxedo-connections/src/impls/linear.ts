@@ -1,5 +1,6 @@
 import type { ConnectionFields, IntegrationDeclaration, IntegrationImpl, VerifyResult } from "../types.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
+import { record, text } from "../json.js"
 
 export function linearIntegration(options: IntegrationFetchOptions = {}): {
   decl: IntegrationDeclaration
@@ -25,10 +26,12 @@ export function linearIntegration(options: IntegrationFetchOptions = {}): {
           })
           if (response.status === 401 || response.status === 403) return { ok: false, reason: "unauthorized" }
           if (!response.ok) return { ok: false, reason: "network" }
-          const body = await response.json().catch(() => ({})) as { data?: { viewer?: { name?: unknown; email?: unknown } }; errors?: unknown[] }
-          if (body.errors?.length || !body.data?.viewer) return { ok: false, reason: "unauthorized" }
-          const label = typeof body.data.viewer.name === "string" ? body.data.viewer.name : body.data.viewer.email
-          return { ok: true, ...(typeof label === "string" ? { accountLabel: label } : {}) }
+          const body = record(await response.json().catch(() => ({}))) ?? {}
+          const viewer = record(record(body.data)?.viewer)
+          const errors = body.errors
+          if ((Array.isArray(errors) && errors.length > 0) || !viewer) return { ok: false, reason: "unauthorized" }
+          const label = text(viewer.name) ?? text(viewer.email)
+          return { ok: true, ...(label ? { accountLabel: label } : {}) }
         } catch {
           return { ok: false, reason: "network" }
         }

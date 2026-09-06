@@ -15,7 +15,6 @@ import {
   googleIntegration,
   notionIntegration,
   type CodeHostRepository,
-  type ConnectionsService,
   type RouteGate,
 } from "@claxedo/connections"
 import {

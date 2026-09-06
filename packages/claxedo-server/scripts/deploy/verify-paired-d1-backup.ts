@@ -12,6 +12,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
+import { asRecord, isRecordArray, numberField, stringField } from "../../src/platform/json/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const FORBIDDEN_EXPORT_SQL = /\b(?:attach|detach|load_extension)\b|\bvacuum\s+into\b|\bpragma\s+writable_schema\b/i
@@ -72,8 +73,10 @@ function restoreExport(input: {
     // order without changing the immutable backup artifact or its digest.
     database.pragma("foreign_keys = OFF")
     database.exec(dependencyOrderedExport(input.sql))
-    const foreignKeyFailures = database.pragma("foreign_key_check") as unknown[]
-    if (foreignKeyFailures.length !== 0) throw new Error(`${input.label} restored foreign-key check failed`)
+    const foreignKeyFailures = database.pragma("foreign_key_check")
+    if (!Array.isArray(foreignKeyFailures) || foreignKeyFailures.length !== 0) {
+      throw new Error(`${input.label} restored foreign-key check failed`)
+    }
     database.pragma("foreign_keys = ON")
     const integrity = database.pragma("integrity_check", { simple: true })
     if (integrity !== "ok") throw new Error(`${input.label} restored integrity check failed`)
@@ -84,9 +87,10 @@ function restoreExport(input: {
           and name not like '\\_cf\\_%' escape '\\'
           and name <> 'd1_migrations' order by name`,
       )
-      .all() as Array<{ name: string }>
+      .all()
+    if (!isRecordArray(schemaTables)) throw new Error(`${input.label} restored schema could not be read`)
     const expectedNames = Object.keys(input.expectedTables).sort()
-    const actualNames = schemaTables.map((row) => row.name)
+    const actualNames = schemaTables.map((row) => stringField(row, "name") ?? "")
     if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
       const missing = expectedNames.filter((name) => !actualNames.includes(name))
       const unexpected = actualNames.filter((name) => !expectedNames.includes(name))
@@ -101,17 +105,18 @@ function restoreExport(input: {
               `select "deploymentId" as deploymentId, "releaseId" as releaseId, "recoveryEpoch" as recoveryEpoch
                from "deploymentRecoveryEpoch" where "deploymentId" = ? and "releaseId" = ?`,
             )
-            .get(input.binding.deploymentId, input.binding.releaseId) as Binding | undefined)
+            .get(input.binding.deploymentId, input.binding.releaseId))
         : (database
             .prepare(
               `select deployment_id as deploymentId, release_id as releaseId, recovery_epoch as recoveryEpoch
                from control_plane_recovery_epochs where deployment_id = ? and release_id = ?`,
             )
-            .get(input.binding.deploymentId, input.binding.releaseId) as Binding | undefined)
+            .get(input.binding.deploymentId, input.binding.releaseId))
+    const recoveryRow = asRecord(recovery)
     if (
-      recovery?.deploymentId !== input.binding.deploymentId ||
-      recovery.releaseId !== input.binding.releaseId ||
-      recovery.recoveryEpoch !== input.binding.recoveryEpoch
+      stringField(recoveryRow, "deploymentId") !== input.binding.deploymentId ||
+      stringField(recoveryRow, "releaseId") !== input.binding.releaseId ||
+      stringField(recoveryRow, "recoveryEpoch") !== input.binding.recoveryEpoch
     ) {
       throw new Error(`${input.label} restored recovery epoch does not match the active pair`)
     }
@@ -124,14 +129,15 @@ function restoreExport(input: {
              on state."deploymentId" = active."deploymentId" and state."stateRevision" = active."stateRevision"
            where active.singleton = 1 and active."deploymentId" = ? and state."releaseId" = ?`,
         )
-        .get(input.binding.deploymentId, input.binding.releaseId) as
-        { phase?: unknown; phaseRevision?: unknown; firstTargetWriteAt?: unknown } | undefined
+        .get(input.binding.deploymentId, input.binding.releaseId)
+      const activeRow = asRecord(active)
+      const phaseRevision = numberField(activeRow, "phaseRevision")
       if (
-        active?.phase !== "provider_sync" ||
-        !Number.isSafeInteger(active.phaseRevision) ||
-        (active.phaseRevision as number) < 1 ||
-        typeof active.firstTargetWriteAt !== "string" ||
-        !active.firstTargetWriteAt
+        activeRow?.phase !== "provider_sync" ||
+        phaseRevision === undefined ||
+        !Number.isSafeInteger(phaseRevision) ||
+        phaseRevision < 1 ||
+        !stringField(activeRow, "firstTargetWriteAt")
       ) {
         throw new Error("AUTH_DB backup was not captured from the admitted provider_sync release")
       }
@@ -139,8 +145,9 @@ function restoreExport(input: {
     const tables = Object.freeze(
       expectedNames.map((table) => {
         const escaped = table.replaceAll('"', '""')
-        const row = database.prepare(`select count(*) as rows from "${escaped}"`).get() as { rows: number }
-        return Object.freeze({ table, rows: row.rows })
+        const rows = numberField(asRecord(database.prepare(`select count(*) as rows from "${escaped}"`).get()), "rows")
+        if (rows === undefined) throw new Error(`${input.label} restored table ${table} could not be counted`)
+        return Object.freeze({ table, rows })
       }),
     )
     return Object.freeze({ integrity: "ok" as const, tables })

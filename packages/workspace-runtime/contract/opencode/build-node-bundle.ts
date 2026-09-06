@@ -21,12 +21,14 @@
  */
 import { createRequire } from "node:module"
 
+import { runBunBuild } from "../../../../script/bun-build"
+
 const require_ = createRequire(import.meta.url)
 
 /** Native/binary modules that must resolve from node_modules at runtime. */
 const EXTERNAL = ["better-sqlite3", "@opencode-ai/pty", "ffi-rs"]
 
-const result = await Bun.build({
+const result = await runBunBuild("Node SDK bundle failed", {
   entrypoints: ["./sdk-entry.mjs"],
   outdir: "./dist-node",
   target: "node",
@@ -43,12 +45,6 @@ const result = await Bun.build({
     },
   ],
 })
-
-if (!result.success) {
-  console.error("BUILD FAILED")
-  for (const log of result.logs.slice(0, 15)) console.error(log.message ?? log)
-  process.exit(1)
-}
 
 for (const output of result.outputs) {
   console.log(`BUILD_OK ${output.path} (${(Bun.file(output.path).size / 1e6).toFixed(1)} MB)`)

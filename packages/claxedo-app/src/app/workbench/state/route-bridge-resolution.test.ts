@@ -14,6 +14,7 @@ import {
   settledWorkspaceSessionRedirect,
   routeSessionPaneTitle,
 } from "./route-bridge-resolution"
+import { requestUrl } from "@/lib/url"
 
 const SERVER = "http://localhost:3001"
 
@@ -222,7 +223,7 @@ describe("session probe single-flight", () => {
     let release!: () => void
     const released = new Promise<void>((resolve) => (release = resolve))
     const request: typeof fetch = async (resource) => {
-      calls.push(String(resource))
+      calls.push(requestUrl(resource))
       await released
       return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
     }

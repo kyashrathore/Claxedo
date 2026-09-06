@@ -78,7 +78,7 @@ export function createReviewTabActivationTransition<Activation extends { id: str
   return {
     /** Cancel a pending deferred activation without applying a new one. */
     cancel,
-    commit(activation: Activation, defer = false) {
+    commit: (activation: Activation, defer = false) => {
       cancel()
       if (!defer || typeof requestAnimationFrame !== "function") {
         input.commit(activation)

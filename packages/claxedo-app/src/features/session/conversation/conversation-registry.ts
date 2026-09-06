@@ -1,4 +1,5 @@
-import type { AgentPresentationEvent as Event } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@/lib/record"
+import type { ConversationEventFrame } from "./conversation-event"
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import {
   applyAgentConversationEvent,
@@ -101,7 +102,7 @@ export function registerSessionConversationChat(scope: ConversationScope, chat?:
   }
 }
 
-export function applyRegisteredConversationEvent(input: { directory: ConversationDirectory; event: Event }) {
+export function applyRegisteredConversationEvent(input: { directory: ConversationDirectory; event: ConversationEventFrame }) {
   const event = input.event
   const sessionID = sessionIdFromEvent(event)
   if (!sessionID) return false
@@ -332,25 +333,21 @@ function conversationMessages(directory: ConversationDirectory, sessionID: strin
   return entry.handle.messages()
 }
 
-function sessionIdFromEvent(event: Event) {
-  const props = record(event.properties)
+function sessionIdFromEvent(event: ConversationEventFrame) {
+  const props = asRecord(event.properties)
   return text(props?.sessionID) ??
     text(props?.sessionId) ??
-    text(record(props?.info)?.sessionID) ??
-    text(record(props?.part)?.sessionID)
+    text(asRecord(props?.info)?.sessionID) ??
+    text(asRecord(props?.part)?.sessionID)
 }
 
-function messageIdFromEvent(event: Event) {
-  const props = record(event.properties)
-  return text(props?.messageID) ?? text(record(props?.info)?.id)
+function messageIdFromEvent(event: ConversationEventFrame) {
+  const props = asRecord(event.properties)
+  return text(props?.messageID) ?? text(asRecord(props?.info)?.id)
 }
 
 function optimisticMessageKey(input: { directory: ConversationDirectory; sessionID: string; messageID: string }) {
   return `${conversationScopeKey(input)}\0${input.messageID}`
-}
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 function text(input: unknown) {

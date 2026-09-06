@@ -591,7 +591,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     if (!res.ok) {
       throw new Error(
         `GATING: failed to register workspace ${dir} via ${url} (${res.status}) — ` +
-          `${await res.text().catch(() => "<no body>")}`,
+          (await res.text().catch(() => "<no body>")),
       )
     }
     const json = (await res.json()) as { workspaceId: string }

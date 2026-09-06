@@ -69,9 +69,8 @@ describe("claxedoEventStreamTargets", () => {
   test("omits the hosted control-plane stream an unsigned page has no route to", () => {
     expect(claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
-      accountSigned: true,
-      directory: "/repo/local",
       accountSigned: false,
+      directory: "/repo/local",
       sessionAuthority: serves("local"),
       projects: [{
         workspaces: {

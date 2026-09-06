@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono"
+import { rec, str } from "./json-value"
 import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
 
 /** Hop-only header stamped by `@claxedo/local-server` `embedded()` after actor verification. */
@@ -148,8 +149,7 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
     if (exposure.kind === "embedded") {
       const stamped = parseEmbeddedRelayHostAuth(c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER))
       if (stamped) {
-        ;(c as unknown as { set(name: "relayHostAuth", value: RelayHostAuthContext["relayHostAuth"]): void })
-          .set("relayHostAuth", stamped)
+        c.set("relayHostAuth", stamped)
       }
     }
     if (exposure.kind === "private-network" && exposure.protection.kind === "host-guard") {
@@ -171,11 +171,10 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
 }
 
 function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthContext["relayHostAuth"] {
-  if (!value?.trim()) return
+  if (!value?.trim()) return undefined
   try {
-    const parsed = JSON.parse(value) as unknown
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return
-    const row = parsed as Record<string, unknown>
+    const row = rec(JSON.parse(value))
+    if (!row) return undefined
     const principal_kind = row.principal_kind === "user" || row.principal_kind === "service"
       ? row.principal_kind
       : undefined
@@ -199,7 +198,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       || !workspace_id
       || !org_id
       || !role
-    ) return
+    ) return undefined
     return {
       principal_kind,
       actor_id,
@@ -215,10 +214,10 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
     }
   } catch {
-    return
+    return undefined
   }
 }
 
 function stringValue(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
+  return str(input)?.trim() || undefined
 }

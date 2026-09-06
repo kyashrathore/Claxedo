@@ -8,21 +8,21 @@ describe("command bus and contribution registry", () => {
   test("dispatches the same typed command intent from peer sources", async () => {
     const bus = createCommandBus()
     const calls: SplitRightCommand[] = []
-    bus.register<SplitRightCommand>("layout.splitRight", (command) => {
+    bus.register("layout.splitRight", (command) => {
       calls.push(command)
     })
 
-    await bus.dispatch<SplitRightCommand>({
+    await bus.dispatch({
       type: "layout.splitRight",
       payload: { paneId: "pane_1" },
       source: { kind: "ui", surface: "toolbar" },
     })
-    await bus.dispatch<SplitRightCommand>({
+    await bus.dispatch({
       type: "layout.splitRight",
       payload: { paneId: "pane_1" },
       source: { kind: "voice-agent", agentId: "voice_1" },
     })
-    await bus.dispatch<SplitRightCommand>({
+    await bus.dispatch({
       type: "layout.splitRight",
       payload: { paneId: "pane_1" },
       source: { kind: "server", eventId: "evt_1" },

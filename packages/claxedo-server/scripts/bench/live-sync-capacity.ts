@@ -31,6 +31,7 @@
 
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+import { numberField, readJsonRecord } from "../../src/platform/json/index"
 
 const DEFAULT_STEPS = [256, 1_000, 2_000, 4_000]
 
@@ -158,11 +159,11 @@ async function open(miniflare: Miniflare, org: string, subject: string): Promise
   const bootstrap = new Promise<void>((resolve) => {
     bootstrapped = resolve
   })
-  let stopped = false
+  const state = { stopped: false }
 
   const pump = (async () => {
     let text = ""
-    while (!stopped) {
+    while (!state.stopped) {
       const next = await reader.read().catch(() => ({ done: true } as const))
       if (next.done) return
       text += decoder.decode(next.value, { stream: true })
@@ -201,7 +202,7 @@ async function open(miniflare: Miniflare, org: string, subject: string): Promise
       return new Promise<void>((resolve) => waiters.set(documentId, resolve))
     },
     async stop() {
-      stopped = true
+      state.stopped = true
       await reader.cancel().catch(() => {})
       await pump.catch(() => {})
       waiters.clear()
@@ -276,9 +277,13 @@ async function measureStep(miniflare: Miniflare, target: number, held: Held[], o
     }),
   )
   const started = performance.now()
-  const nudge = (await miniflare
+  const nudgeBody = await miniflare
     .dispatchFetch(`http://bench/nudge?org=${org}&doc=${documentId}`)
-    .then((response) => response.json())) as { delivered: number; held: number }
+    .then((response) => readJsonRecord(response))
+  const nudge = {
+    delivered: numberField(nudgeBody, "delivered") ?? 0,
+    held: numberField(nudgeBody, "held") ?? 0,
+  }
   await withTimeout(
     Promise.all(waits),
     FANOUT_TIMEOUT_MS,

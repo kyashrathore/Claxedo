@@ -121,11 +121,16 @@ const readScenario = async (id: string): Promise<Scenario> =>
   JSON.parse(await readFile(new URL(`registry/scenarios/${id}.json`, frameworkRoot), "utf8"))
 type DriverCase = Parameters<ReturnType<typeof createClaxedoPublicDriver>["execute"]>[0]["case"]
 const { expandCases, buildResourceSequence } = (await import(new URL("src/cases.mjs", frameworkRoot).href)) as {
-  expandCases(scenario: Scenario, profile: string): DriverCase[]
-  buildResourceSequence(scenario: Scenario): DriverCase[]
+  expandCases: (scenario: Scenario, profile: string) => DriverCase[]
+  buildResourceSequence: (scenario: Scenario) => DriverCase[]
 }
 const panelScenarioDefinition = await readScenario("workspace-panel-v1")
-const workspaceFixtureManifest = buildWorkspaceFixtureManifest(panelScenarioDefinition.cases.workspaceLoad, "test")
+// The panel scenario is the one that exercises a materialized workspace, so a
+// missing workspaceLoad means the registry changed under the test rather than
+// that this case is optional here.
+const panelWorkspaceLoad = panelScenarioDefinition.cases.workspaceLoad
+if (!panelWorkspaceLoad) throw new Error("workspace-panel-v1 must define cases.workspaceLoad")
+const workspaceFixtureManifest = buildWorkspaceFixtureManifest(panelWorkspaceLoad, "test")
 
 async function prepare(
   driver: ReturnType<typeof createClaxedoPublicDriver>,

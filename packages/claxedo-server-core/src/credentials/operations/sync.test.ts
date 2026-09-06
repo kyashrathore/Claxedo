@@ -379,7 +379,10 @@ describe("syncLocalCredentials", () => {
     const discovered = (await collectLocalCredentialItems())
       .filter((item) => item.provider_id === "codex-app-server")
 
-    expect(discovered.map((item) => item.account_id).sort()).toEqual(["other-account", "solo-account"])
+    expect(discovered.map((item) => item.account_id ?? "").toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "other-account",
+      "solo-account",
+    ])
   })
 
   test("discovers every local Codex account without exposing account names in origins", async () => {

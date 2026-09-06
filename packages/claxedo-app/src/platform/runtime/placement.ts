@@ -7,7 +7,7 @@ import {
   requiresSignedLegacyDirectory,
   workspaceIdFromRef,
 } from "@/platform/identity/legacy-resolver"
-import { centralTransportForServer, isLocalPersonalScope } from "@/platform/runtime/transport"
+import { isLocalPersonalScope } from "@/platform/runtime/transport"
 
 export type Placement = {
   workspaceId?: string

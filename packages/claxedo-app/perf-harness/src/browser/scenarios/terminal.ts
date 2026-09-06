@@ -38,19 +38,29 @@ export async function liveTerminalSwitch(page: Page, app: BrowserTarget, fixture
   }
 }
 
+declare global {
+  interface Window {
+    /**
+     * Page clock of the first `resize` event of the measured resize.
+     *
+     * Set in the page because the viewport change and the event that answers it
+     * are separated by the Playwright round trip this scenario is measuring
+     * around, not through.
+     */
+    __claxedoResizeStart?: number
+  }
+}
+
 async function measureInPageTerminalResize(page: Page, size: { width: number; height: number }): Promise<number> {
   await page.evaluate(() => {
-    ;(window as unknown as { __claxedoResizeStart?: number }).__claxedoResizeStart = undefined
-    const handler = () => {
-      const w = window as unknown as { __claxedoResizeStart?: number }
-      if (w.__claxedoResizeStart === undefined) w.__claxedoResizeStart = performance.now()
-    }
-    window.addEventListener("resize", handler, { once: true })
+    window.__claxedoResizeStart = undefined
+    window.addEventListener("resize", () => {
+      window.__claxedoResizeStart ??= performance.now()
+    }, { once: true })
   })
   await page.setViewportSize(size)
   return await page.evaluate(async () => {
-    const w = window as unknown as { __claxedoResizeStart?: number }
-    const start = w.__claxedoResizeStart ?? performance.now()
+    const start = window.__claxedoResizeStart ?? performance.now()
     const fits = (r: DOMRect) => r.width > 100 && r.height > 40
     return await new Promise<number>((resolve) => {
       let stableFrames = 0

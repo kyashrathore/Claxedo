@@ -52,7 +52,7 @@ export function createFirstTurnOnboarding(input: {
     const first = messages.find((message) => message.role === "user")
     if (events.length === 0 || !first || emitted.has(first.id)) return
     emitted.add(first.id)
-    events.forEach(funnel.emit)
+    for (const event of events) funnel.emit(event)
   }, { defer: true }))
 
   const recover = (kind: SessionErrorClass, failedPrompt?: Prompt) => {
@@ -98,7 +98,8 @@ export function createFirstTurnOnboarding(input: {
 
   return {
     recover,
-    registerRetry(next?: PromptRetryAction) {
+    // Arrow property: session-screen passes this straight through as a prop.
+    registerRetry: (next?: PromptRetryAction) => {
       retry = next
     },
   }

@@ -1,10 +1,5 @@
 import { createSignal, For, Show } from "solid-js"
-
-type ConsentResponse = {
-  redirect?: unknown
-  url?: unknown
-  error?: { message?: unknown }
-}
+import { readBoolean, readField, readString } from "@/lib/record"
 
 export type OAuthConsentSubmission = {
   accept: boolean
@@ -22,15 +17,15 @@ export async function submitOAuthConsent(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ accept: input.accept, oauth_query: input.oauthQuery }),
   })
-  const body = (await response.json().catch(() => undefined)) as ConsentResponse | undefined
+  const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const message = typeof body?.error?.message === "string" ? body.error.message : `Consent failed (${response.status})`
-    throw new Error(message)
+    throw new Error(readString(readField(body, "error"), "message") ?? `Consent failed (${response.status})`)
   }
-  if (body?.redirect !== true || typeof body.url !== "string") {
+  const url = readString(body, "url")
+  if (readBoolean(body, "redirect") !== true || url === undefined) {
     throw new Error("Authorization server did not return a consent redirect")
   }
-  const destination = new URL(body.url)
+  const destination = new URL(url)
   if ((destination.protocol !== "http:" && destination.protocol !== "https:") || destination.username || destination.password) {
     throw new Error("Authorization server returned an invalid consent redirect")
   }

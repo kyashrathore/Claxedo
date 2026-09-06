@@ -29,11 +29,11 @@ function pathSegments(pathname: string) {
 
 function decodedWorkspaceRoute(parts: string[]): ShellRoute | undefined {
   const marker = parts.findIndex((part) => part === "session" || part === "page" || part === "terminal")
-  if (marker <= 2) return
+  if (marker <= 2) return undefined
   const workspaceId = `/${parts.slice(1, marker).map(segment).join("/")}`
   const id = parts[marker + 1] ? segment(parts[marker + 1]) : undefined
   if (parts[marker] === "session") return { kind: "workspace-session", workspaceId, ...(id ? { sessionId: id } : {}) }
-  if (!id) return
+  if (!id) return undefined
   return parts[marker] === "page"
     ? { kind: "workspace-page", workspaceId, pageId: id }
     : { kind: "workspace-terminal", workspaceId, terminalId: id }
@@ -67,17 +67,18 @@ export function workspaceTerminalRoute(workspaceId: string, terminalId: string) 
   return `${workspaceRoute(workspaceId)}/terminal/${encodeURIComponent(terminalId)}`
 }
 
-export function workspaceRouteWithId(route: ShellRoute, workspaceId: string) {
+export function workspaceRouteWithId(route: ShellRoute, workspaceId: string): string | undefined {
   if (route.kind === "workspace") return workspaceRoute(workspaceId)
   if (route.kind === "workspace-session") return workspaceSessionRoute(workspaceId, route.sessionId)
   if (route.kind === "workspace-page") return workspacePageRoute(workspaceId, route.pageId)
   if (route.kind === "workspace-terminal") return workspaceTerminalRoute(workspaceId, route.terminalId)
+  return undefined
 }
 
 export function nonCanonicalWorkspaceRouteRedirect(pathname: string) {
   const route = parseShellRoute(pathname)
-  if (route.kind !== "workspace-session" || !route.sessionId || route.sessionId === "new") return
-  if (opaqueWorkspaceRouteId(route.workspaceId) === route.workspaceId) return
+  if (route.kind !== "workspace-session" || !route.sessionId || route.sessionId === "new") return undefined
+  if (opaqueWorkspaceRouteId(route.workspaceId) === route.workspaceId) return undefined
   return sessionRoute(route.sessionId)
 }
 
@@ -88,8 +89,8 @@ export function legacyDirectoryRouteKey(directory: string) {
 export function legacyDirectoryFromRouteKey(value: string): DirectoryRef | undefined {
   try {
     const directory = base64Decode(value)
-    if (!directory) return
-    if (legacyDirectoryRouteKey(directory) !== value) return
+    if (!directory) return undefined
+    if (legacyDirectoryRouteKey(directory) !== value) return undefined
     // route.ts is a sanctioned directory mint owner (see `brand.ts`).
     return asDirectoryRef(directory)
   } catch {
@@ -174,11 +175,11 @@ export async function resolveLegacyRedirect(
   resolveWorkspace: (input: { directory: DirectoryRef }) => Promise<{ workspaceId?: string | null } | null | undefined>,
 ) {
   const parsed = parseShellRoute(pathname)
-  if (parsed.kind !== "legacy-directory") return
-  if (parsed.sessionId) return
+  if (parsed.kind !== "legacy-directory") return undefined
+  if (parsed.sessionId) return undefined
 
   const resolved = await resolveWorkspace({ directory: parsed.directory }).catch(() => undefined)
-  if (!resolved?.workspaceId) return
+  if (!resolved?.workspaceId) return undefined
   if (parsed.pageId) return workspacePageRoute(resolved.workspaceId, parsed.pageId)
   if (parsed.terminalId) return workspaceTerminalRoute(resolved.workspaceId, parsed.terminalId)
   return workspaceRoute(resolved.workspaceId)

@@ -2,6 +2,16 @@
 
 export type Edge = "left" | "right" | "top" | "bottom"
 
+/**
+ * Where a `split.move` puts the content: an existing pane's id, or the
+ * sentinel `NEW_PANE` asking the reducer to create one.
+ *
+ * A pane id is a string, so `string | "new"` collapsed to `string` and only
+ * looked like a union. The sentinel is a named constant instead.
+ */
+export const NEW_PANE = "new"
+export type MovePaneTarget = string
+
 export type Pane = { id: string; contentId: string | null }
 
 export type SplitNode =

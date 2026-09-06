@@ -11,7 +11,7 @@ import { monitorPage } from "./page-validation"
 import { HEAVY_WORKSPACE_FILE_LINES, HEAVY_WORKSPACE_REOPEN_FILE_PATHS } from "./scenarios/heavy-workspace-reopen-contract"
 
 const servers: ReturnType<typeof startMockStreamServer>[] = []
-afterEach(() => { for (const server of servers.splice(0)) server.stop() })
+afterEach(async () => { for (const server of servers.splice(0)) await server.stop() })
 
 async function transport(scenario: ScenarioId) {
   let handle: (route: Route) => Promise<unknown>

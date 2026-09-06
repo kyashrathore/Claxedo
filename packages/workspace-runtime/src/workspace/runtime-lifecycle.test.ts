@@ -240,7 +240,7 @@ describe("workspace runtime public lifecycle", () => {
       const runner = { id, access: "native" as const }
       const entry = defaultWorkspaceHarnessRegistry().find((entry) => entry.match(runner))!
       const adapter = entry.create({ runner, options: { storeRoot: directory }, store })
-      adapter.dispose()
+      await adapter.dispose()
     }
     expect({ closed, recovered }).toEqual({ closed: 0, recovered: 0 })
     expect(store.listSessions(directory)).toEqual([])

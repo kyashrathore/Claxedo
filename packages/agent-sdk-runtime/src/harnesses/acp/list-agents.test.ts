@@ -13,10 +13,10 @@ function adapter(input?: {
 }) {
   const out = Object.create(AcpHarnessAdapter.prototype) as WithOverrides<AcpHarnessAdapter, {
     processes: Map<string, { directory: string; proc: { alive: boolean; getAgents: () => ProbedAgent[] }; init: null }>
-    probeConfigOptions: (directory: string) => Promise<{ options: SessionConfigOption[] }>
+    probeAcpConfigOptions: (directory: string) => Promise<{ options: SessionConfigOption[] }>
   }>
   out.processes = new Map()
-  out.probeConfigOptions = async (directory) => {
+  out.probeAcpConfigOptions = async (directory) => {
     expect(directory).toBe(path.resolve("/work"))
     return { options: input?.cfg ?? [] }
   }

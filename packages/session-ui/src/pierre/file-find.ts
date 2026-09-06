@@ -3,6 +3,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { assignFindRanges, fileFindMatches, fileFindMatchesByLine, type FileFindMatch } from "./file-find-content"
+import { scrollParent } from "./file-runtime"
 
 export type FindHost = {
   element: () => HTMLElement | undefined
@@ -31,12 +32,13 @@ function isEditable(node: unknown): boolean {
   return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(node.tagName)
 }
 
-function hostForNode(node: unknown) {
-  if (!(node instanceof Node)) return
+function hostForNode(node: unknown): FindHost | undefined {
+  if (!(node instanceof Node)) return undefined
   for (const host of hosts) {
     const el = host.element()
     if (el && el.isConnected && el.contains(node)) return host
   }
+  return undefined
 }
 
 function installShortcuts() {
@@ -84,25 +86,28 @@ function installShortcuts() {
   )
 }
 
+const FIND_HIGHLIGHT = "opencode-find"
+const FIND_HIGHLIGHT_CURRENT = "opencode-find-current"
+
+/**
+ * The CSS Custom Highlight registry, or `undefined` where the API is absent.
+ * `CSS.highlights` and `Highlight` are typed by lib.dom but only exist in recent
+ * browsers, so both are probed at runtime — once here, for every caller.
+ */
+function highlightRegistry(): HighlightRegistry | undefined {
+  if (typeof CSS === "undefined" || typeof Highlight !== "function") return undefined
+  return CSS.highlights
+}
+
 function clearHighlightFind() {
-  const api = (globalThis as { CSS?: { highlights?: { delete: (name: string) => void } } }).CSS?.highlights
+  const api = highlightRegistry()
   if (!api) return
-  api.delete("opencode-find")
-  api.delete("opencode-find-current")
+  api.delete(FIND_HIGHLIGHT)
+  api.delete(FIND_HIGHLIGHT_CURRENT)
 }
 
 function supportsHighlights() {
-  const g = globalThis as unknown as { CSS?: { highlights?: unknown }; Highlight?: unknown }
-  return typeof g.Highlight === "function" && g.CSS?.highlights != null
-}
-
-function scrollParent(el: HTMLElement): HTMLElement | undefined {
-  let parent = el.parentElement
-  while (parent) {
-    const style = getComputedStyle(parent)
-    if (style.overflowY === "auto" || style.overflowY === "scroll") return parent
-    parent = parent.parentElement
-  }
+  return highlightRegistry() !== undefined
 }
 
 type CreateFileFindOptions = {
@@ -346,18 +351,16 @@ export function createFileFind(opts: CreateFileFindOptions) {
   }
 
   const setHighlights = (ranges: Array<Range | undefined>, currentIndex: number) => {
-    const api = (globalThis as unknown as { CSS?: { highlights?: any }; Highlight?: any }).CSS?.highlights
-    const Highlight = (globalThis as unknown as { Highlight?: any }).Highlight
-    if (!api || typeof Highlight !== "function") return false
+    const api = highlightRegistry()
+    if (!api) return false
 
-    api.delete("opencode-find")
-    api.delete("opencode-find-current")
+    clearHighlightFind()
 
     const active = ranges[currentIndex]
-    if (active) api.set("opencode-find-current", new Highlight(active))
+    if (active) api.set(FIND_HIGHLIGHT_CURRENT, new Highlight(active))
 
     const rest = ranges.filter((range, i): range is Range => range !== undefined && i !== currentIndex)
-    if (rest.length > 0) api.set("opencode-find", new Highlight(...rest))
+    if (rest.length > 0) api.set(FIND_HIGHLIGHT, new Highlight(...rest))
     return true
   }
 

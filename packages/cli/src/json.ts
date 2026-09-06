@@ -1,8 +1,12 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return !!input && typeof input === "object" && !Array.isArray(input)
+}
+
 export function object(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
+  return isRecord(input) ? input : {}
 }
 
 export function text(input: unknown) {

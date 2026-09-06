@@ -16,6 +16,19 @@ import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
 import { testManagedSessionAuthority } from "../test-support/managed-session-authority"
 
+/**
+ * A Chat SDK thread accepts a string OR an `AsyncIterable<string>` of deltas,
+ * so a test that only stringifies gets `[object Object]` for the streaming
+ * path — which is exactly the path the reply renderer takes.
+ */
+async function postedText(text: string | AsyncIterable<string>) {
+  if (typeof text === "string") return text
+  let joined = ""
+  for await (const delta of text) joined += delta
+  return joined
+}
+
+
 // Ingress tests own channel policy and binding races. Machine HTTP admission is
 // exercised against the real dispatch implementation in machine-dispatch.test.ts.
 vi.mock("../session/machine-dispatch", () => ({
@@ -867,7 +880,7 @@ describe("channels ingress", () => {
       env: { CLAXEDO_CHANNEL_SLACK_ENABLED: "true" },
       chatBot: {
         webhooks: {},
-        thread: () => ({ post: async (text) => posts.push(String(text)) }),
+        thread: () => ({ post: async (text) => posts.push(await postedText(text)) }),
       },
     })
     await channels.bindings.put({
@@ -919,7 +932,7 @@ describe("channels ingress", () => {
       },
       chatBot: {
         webhooks: {},
-        thread: (threadKey) => ({ post: async (text) => posts.push({ threadKey, text: String(text) }) }),
+        thread: (threadKey) => ({ post: async (text) => posts.push({ threadKey, text: await postedText(text) }) }),
       },
     })
     await channels.bindings.put({

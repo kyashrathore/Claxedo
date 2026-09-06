@@ -1,4 +1,4 @@
-import { lazy, onMount, Suspense, type Component } from "solid-js"
+import { lazy, onMount, Suspense, type Component, type ComponentProps } from "solid-js"
 
 /**
  * `lazy()` for components mounted through `useDialog().show/push`.
@@ -12,15 +12,21 @@ import { lazy, onMount, Suspense, type Component } from "solid-js"
  * Wrapping the lazy component in its own local Suspense keeps the suspension
  * contained to the dialog overlay.
  */
-export function lazyDialog<T extends Component<any>>(load: () => Promise<{ default: T }>): T {
+export function lazyDialog<T extends Component<any>>(
+  load: () => Promise<{ default: T }>,
+): Component<ComponentProps<T>> {
   const Inner = lazy(load)
-  const Wrapped = (props: Parameters<T>[0]) => (
+  // Returning `Component<ComponentProps<T>>` rather than `T` is what removes
+  // the assertion this used to end on: the wrapper genuinely is a component
+  // over the same props, and it was only ever claimed to be the SAME component
+  // so that callers kept their prop types. They still do.
+  const Wrapped: Component<ComponentProps<T>> = (props) => (
     <Suspense fallback={null}>
       <Inner {...props} />
       <AriaHiddenPortalRepair />
     </Suspense>
   )
-  return Wrapped as T
+  return Wrapped
 }
 
 /**

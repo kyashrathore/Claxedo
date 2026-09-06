@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessConfigRuntime, type ProjectInventoryItem } from "./harness-config-runtime"
 import { connectionHarness } from "@/platform/identity/harness-selection"
+import { requestUrl } from "@/lib/url"
 
 const responseFetch = (label: string): typeof fetch =>
-  async (input) => Response.json({ label, url: String(input) })
+  async (input) => Response.json({ label, url: requestUrl(input) })
 
 function runtime(input?: {
   base?: string
@@ -98,7 +99,7 @@ describe("harness config runtime", () => {
     const urls: string[] = []
     const harnessRuntime = runtime({
       transportFetch: async (input) => {
-        urls.push(String(input))
+        urls.push(requestUrl(input))
         return Response.json({ ok: true })
       },
     })
@@ -114,7 +115,7 @@ describe("harness config runtime", () => {
     const urls: string[] = []
     const harnessRuntime = runtime({
       transportFetch: async (input) => {
-        urls.push(String(input))
+        urls.push(requestUrl(input))
         return Response.json({ ok: true })
       },
     })
@@ -131,7 +132,7 @@ describe("harness config runtime", () => {
     const urls: string[] = []
     const harnessRuntime = runtime({
       unsignedLocalFetch: async (input) => {
-        urls.push(String(input))
+        urls.push(requestUrl(input))
         return Response.json({ ok: true })
       },
     })

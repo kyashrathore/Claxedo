@@ -4,21 +4,11 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { createHash } from "node:crypto"
+import { readApiManifest, readPackageJson } from "./manifest-files"
 
 const root = path.resolve(import.meta.dirname, "..")
-const pkg = readJson(path.join(root, "package.json")) as {
-  name: string
-  version: string
-  files?: string[]
-  exports: Record<string, Record<string, string>>
-}
-const manifest = readJson(path.join(root, "docs/api-manifest.json")) as {
-  package: string
-  version: string
-  entrypoints: Record<string, unknown>
-  valueExports: Record<string, string[]>
-  declarationHashes: Record<string, string>
-}
+const pkg = readPackageJson(root)
+const manifest = readApiManifest(root)
 const failures: string[] = []
 
 if (manifest.package !== pkg.name) failures.push(`manifest package ${manifest.package} != ${pkg.name}`)
@@ -55,7 +45,7 @@ for (const [entrypoint, expected] of Object.entries(manifest.valueExports)) {
   const key = entrypoint === pkg.name ? "." : `.${entrypoint.slice(pkg.name.length)}`
   const target = pkg.exports[key]?.import
   if (!target) continue
-  const module = await import(pathToFileURL(path.join(root, target)).href) as Record<string, unknown>
+  const module: object = await import(pathToFileURL(path.join(root, target)).href)
   compareSet(`${entrypoint} built value exports`, Object.keys(module), expected)
 }
 
@@ -72,7 +62,6 @@ if (failures.length) {
 }
 console.log("Publish verification passed")
 
-function readJson(file: string) { return JSON.parse(fs.readFileSync(file, "utf8")) as unknown }
 function compareSet(label: string, actual: string[], expected: string[]) {
   const left = [...new Set(actual)].sort()
   const right = [...new Set(expected)].sort()
@@ -102,4 +91,5 @@ function resolveDeclaration(directory: string, specifier: string) {
   for (const candidate of [`${stem}.d.ts`, path.join(stem, "index.d.ts")]) {
     if (fs.existsSync(candidate)) return candidate
   }
+  return undefined
 }

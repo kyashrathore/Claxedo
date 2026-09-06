@@ -19,7 +19,13 @@ type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
   agentRuntimeClientOptions(input?: HarnessScopeInput): Parameters<typeof createAgentRuntimeClient>[0]
 }
 
-export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig; headers?: Record<string, string> }>(input: {
+/** The scope a prepared session creation carries: a harness scope plus the resolved config. */
+type PreparedHarnessScopeInput = HarnessScopeInput & {
+  sessionConfig: PreparedRuntimeSessionConfig
+  headers?: Record<string, string>
+}
+
+export function createHarnessRuntimeSessionActions(input: {
   base: string
   runtime: HarnessRuntimeSessionRuntime<HarnessScopeInput>
   createClient?: CreateHarnessRuntimeSessionClient
@@ -30,7 +36,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
     input.runtime.useLocalHarnessConfig(params) || !!input.runtime.workspaceRef(params)
 
   const create = async (params: {
-    input?: ScopeInput
+    input?: PreparedHarnessScopeInput
     directory: PreparedSessionDirectory
     harness: HarnessType
   }) => {

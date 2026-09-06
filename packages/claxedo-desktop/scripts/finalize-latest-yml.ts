@@ -40,7 +40,12 @@ function parse(content: string): LatestYml {
   let current: Partial<FileEntry> | undefined
 
   const flush = () => {
-    if (current?.url && current.sha512 && current.size) files.push(current as FileEntry)
+    // Rebuilt from the three fields the guard just proved, rather than
+    // asserting a `Partial` into a complete `FileEntry`.
+    const { url, sha512, size, blockMapSize } = current ?? {}
+    if (url && sha512 && size) {
+      files.push({ url, sha512, size, ...(blockMapSize === undefined ? {} : { blockMapSize }) })
+    }
     current = undefined
   }
 

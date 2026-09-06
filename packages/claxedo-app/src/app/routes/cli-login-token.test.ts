@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import {
   cliCallbackFields,
   cliToken,
@@ -146,10 +146,11 @@ describe("cliToken exchange", () => {
 describe("postToken (DOM form)", () => {
   test("builds a hidden POST form targeting the callback with all fields", () => {
     let submittedAction: string | undefined
-    const submit = HTMLFormElement.prototype.submit
-    HTMLFormElement.prototype.submit = function (this: HTMLFormElement) {
+    const submit = spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (
+      this: HTMLFormElement,
+    ) {
       submittedAction = this.action
-    }
+    })
     try {
       postToken({
         callback: "http://127.0.0.1:9000/cb",
@@ -173,7 +174,7 @@ describe("postToken (DOM form)", () => {
       expect(submittedAction).toContain("127.0.0.1:9000/cb")
       form!.remove()
     } finally {
-      HTMLFormElement.prototype.submit = submit
+      submit.mockRestore()
     }
   })
 })

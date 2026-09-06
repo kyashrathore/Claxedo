@@ -99,7 +99,11 @@ describe("refreshCredentialSecret", () => {
     expect((calls[0].init.headers as Record<string, string>)["Content-Type"]).toBe(
       "application/x-www-form-urlencoded",
     )
-    const body = new URLSearchParams(String(calls[0].init.body))
+    // The grant must go out already form-encoded: a non-string body would be
+    // serialized by fetch under a content type this request pins by hand.
+    const rawBody = calls[0].init.body
+    expect(typeof rawBody).toBe("string")
+    const body = new URLSearchParams(typeof rawBody === "string" ? rawBody : "")
     expect(body.get("grant_type")).toBe("refresh_token")
     expect(body.get("refresh_token")).toBe("refresh_old")
     expect(body.get("client_id")).toBe("app_EMoamEEZ73f0CkXaXp7hrann")

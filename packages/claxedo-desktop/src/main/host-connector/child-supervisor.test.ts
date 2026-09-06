@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test"
 import { runHostConnectorChild } from "../../../scripts/host-connector-entry"
 import type {
   HostConnectorBootstrapIdentity,
-  HostConnectorChildMessage,
   HostConnectorParentMessage,
   HostConnectorSharedWorkspace,
 } from "./child-protocol"
@@ -63,7 +62,7 @@ class FakeChild implements HostConnectorChildProcess {
     if (event === "exit") this.#exit = listener
   }
 
-  emit(message: HostConnectorChildMessage | unknown) {
+  emit(message: unknown) {
     for (const listener of this.#messages) listener(message)
   }
 

@@ -12,11 +12,11 @@ const responses: Response[] = []
 // leaked into query-key factories and failed directory.test.ts's key
 // assertions in full-suite runs. afterAll restores the real module.
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?documents-api-restore`)) }
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
 })
 
-mock.module("@/platform/api/api", () => ({
+await mock.module("@/platform/api/api", () => ({
   ...realApiModule,
   authFetch: async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
@@ -27,6 +27,47 @@ mock.module("@/platform/api/api", () => ({
 
 const { documentsApi } = await import("./documents-api")
 
+// The routes answer whole index rows — `claxedo-server/src/documents/index.sql.ts`
+// selects every column and sends explicit nulls for the empty ones, which its own
+// integration test asserts. These doubles say the same thing, so a test that cares
+// about two fields still exercises the same parse the browser performs.
+function summaryRow(fields: Record<string, unknown>) {
+  return {
+    id: "doc-1",
+    project_id: "p1",
+    display_name: "Plan",
+    origin_kind: "managed",
+    placement_kind: "local",
+    placement_id: "placement-1",
+    managed_relative_path: "plan.md",
+    repository_id: null,
+    workspace_id: null,
+    repository_relative_path: null,
+    branch: null,
+    status: "draft",
+    session_id: null,
+    archived_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    last_opened_at: null,
+    last_known_file_version: null,
+    ...fields,
+  }
+}
+
+function snapshotRow(fields: Record<string, unknown>) {
+  return {
+    id: "snapshot-1",
+    sha256: "0".repeat(64),
+    size: 12,
+    reason: "document.written",
+    actor: { type: "user", id: "user-1" },
+    createdAt: 1,
+    pins: [],
+    ...fields,
+  }
+}
+
 beforeEach(() => {
   calls.length = 0
   responses.length = 0
@@ -34,7 +75,7 @@ beforeEach(() => {
 
 describe("documentsApi", () => {
   test("list fetches metadata only from the index route", async () => {
-    responses.push(Response.json([{ id: "doc-1", display_name: "Plan", project_id: "p1" }]))
+    responses.push(Response.json([summaryRow({ id: "doc-1", display_name: "Plan", project_id: "p1" })]))
     await expect(documentsApi.list({ projectId: "p1" })).resolves.toEqual([
       expect.objectContaining({ id: "doc-1", display_name: "Plan" }),
     ])
@@ -43,7 +84,7 @@ describe("documentsApi", () => {
 
   test("open performs the two-step summary then content request", async () => {
     responses.push(
-      Response.json({ id: "doc-1", display_name: "Plan", project_id: "p1", archived_at: null }),
+      Response.json(summaryRow({ id: "doc-1", display_name: "Plan", project_id: "p1", archived_at: null })),
       Response.json({ markdown: "# Plan\n", version: "opaque-v1", modifiedAt: 1 }),
     )
     await expect(documentsApi.open("doc-1")).resolves.toMatchObject({
@@ -101,7 +142,7 @@ describe("documentsApi", () => {
   test("save maps 409 into a conflict containing current disk and metadata", async () => {
     responses.push(
       Response.json({ currentVersion: "opaque-v2" }, { status: 409 }),
-      Response.json({ id: "doc-1", display_name: "Other", project_id: "p1" }),
+      Response.json(summaryRow({ id: "doc-1", display_name: "Other", project_id: "p1" })),
       Response.json({ markdown: "disk", version: "opaque-v2", modifiedAt: 2 }),
     )
     await expect(
@@ -121,7 +162,7 @@ describe("documentsApi", () => {
 
   test("history lists snapshots and restores with the current opaque version", async () => {
     responses.push(
-      Response.json([{ id: "snapshot-1", reason: "document.written", pins: [] }]),
+      Response.json([snapshotRow({ id: "snapshot-1", reason: "document.written", pins: [] })]),
       Response.json({ markdown: "restored", version: "opaque-v3", modifiedAt: 3 }),
     )
     await expect(documentsApi.snapshots("doc-1")).resolves.toEqual([expect.objectContaining({ id: "snapshot-1" })])
@@ -135,7 +176,7 @@ describe("documentsApi", () => {
   })
 
   test("moves a managed document to a repository without changing its identity", async () => {
-    responses.push(Response.json({ id: "doc-1", origin_kind: "repository", workspace_id: "workspace-1" }))
+    responses.push(Response.json(summaryRow({ id: "doc-1", origin_kind: "repository", workspace_id: "workspace-1" })))
     await expect(
       documentsApi.moveToRepository("doc-1", {
         workspaceId: "workspace-1",
@@ -149,7 +190,7 @@ describe("documentsApi", () => {
 
   test("imports repository metadata without copying content and exports exact bytes", async () => {
     responses.push(
-      Response.json({ id: "doc-1", origin_kind: "repository", repository_relative_path: "docs/plan.md" }),
+      Response.json(summaryRow({ id: "doc-1", origin_kind: "repository", repository_relative_path: "docs/plan.md" })),
       new Response("\ufeff# Exact\r\nbody", { headers: { "content-type": "text/markdown" } }),
     )
     await documentsApi.createFromRepository({
@@ -188,7 +229,7 @@ describe("documentsApi", () => {
   })
 
   test("archived summary surfaces a typed recovery state and discards the concurrent content read", async () => {
-    responses.push(Response.json({ id: "doc-1", display_name: "Archived", project_id: "p1", archived_at: "now" }))
+    responses.push(Response.json(summaryRow({ id: "doc-1", display_name: "Archived", project_id: "p1", archived_at: "now" })))
     await expect(documentsApi.open("doc-1")).rejects.toMatchObject({ code: "document_archived", status: 410 })
     // `open()` deliberately fetches summary and content concurrently so a normal
     // open costs one trip through the fetch throttle instead of two. The archived

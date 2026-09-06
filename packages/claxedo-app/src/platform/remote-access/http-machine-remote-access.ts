@@ -3,6 +3,7 @@ import type {
   MachineRemoteAccessPort,
   MachineRemoteAccessStatus,
 } from "./machine-remote-access-port"
+import { asRecord, readString, recordOrEmpty } from "@/lib/record"
 
 /**
  * The port over `/api/claxedo/remote-access/*`.
@@ -42,10 +43,9 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
   const request = input.request ?? fetch
   const json = async (path: string, init?: RequestInit) => {
     const response = await request(path, init)
-    const body = await response.json() as Record<string, unknown>
+    const body = recordOrEmpty(await response.json())
     if (!response.ok) {
-      const error = body.error && typeof body.error === "object" ? body.error as Record<string, unknown> : undefined
-      throw new Error(typeof error?.message === "string" ? error.message : `Remote access request failed (${response.status})`)
+      throw new Error(readString(body.error, "message") ?? `Remote access request failed (${response.status})`)
     }
     return body
   }
@@ -77,8 +77,8 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
       const body = await json("/api/claxedo/remote-access/devices")
       if (!Array.isArray(body.devices)) return []
       return body.devices.flatMap((value) => {
-        if (!value || typeof value !== "object") return []
-        const device = value as Record<string, unknown>
+        const device = asRecord(value)
+        if (!device) return []
         if (typeof device.host_id !== "string" || typeof device.display_name !== "string" || typeof device.last_seen_at !== "number") return []
         return [{
           hostId: device.host_id,

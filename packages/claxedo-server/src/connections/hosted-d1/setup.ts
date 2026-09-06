@@ -32,7 +32,6 @@ import {
 } from "@claxedo/connections"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono, type Context } from "hono"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import {
   ControlPlaneAuthError,
   type SignedControlPlaneAuth,
@@ -47,6 +46,8 @@ import { githubIntegrationForEnv } from "../github-oauth"
 import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConnectionAttempts } from "./attempts"
 import { createD1ConnectionStore, HostedConnectionExistsError } from "./connection-store"
 import type { HostedDynamicConnectionIntegrations } from "./types"
+import { contentfulStatus } from "../../platform/http/status"
+import { asRecord, stringField } from "../../platform/json/index"
 
 /**
  * The request-authentication seam. Mirrors `signedOrError`: an absent `auth`
@@ -133,7 +134,7 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
 
     const authenticated = await input.authenticate(c.req.raw)
     if ("error" in authenticated) {
-      return c.json(authenticated.error as Record<string, unknown>, authenticated.status as ContentfulStatusCode)
+      return c.json(authenticated.error, contentfulStatus(authenticated.status))
     }
     const auth = authenticated.auth
     if (!auth) return c.json({ code: "connections_org_required" }, 403)
@@ -306,10 +307,8 @@ export function createHostedCapabilityTokenResolver(input: HostedD1ConnectionsSe
       const token = await connection.getToken()
       return { ok: true as const, connectionId: connection.id, ...token }
     } catch (cause) {
-      if (cause && typeof cause === "object" && "status" in cause && "code" in cause) {
-        const error = cause as { status: 403 | 404 | 409 | 503; code: string }
-        return { ok: false as const, status: error.status, code: error.code }
-      }
+      const failure = connectionFailure(cause)
+      if (failure) return { ok: false as const, ...failure }
       throw cause
     } finally {
       service.dispose()
@@ -371,8 +370,14 @@ function textValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+const CONNECTION_FAILURE_STATUSES = [403, 404, 409, 503] as const
+
+/** A capability-resolution failure the caller can be told about verbatim. */
+function connectionFailure(cause: unknown) {
+  const record = asRecord(cause)
+  const status = CONNECTION_FAILURE_STATUSES.find((candidate) => candidate === record?.status)
+  const code = stringField(record, "code")
+  return status !== undefined && code !== undefined ? { status, code } : undefined
 }
 
 /**
@@ -393,14 +398,14 @@ async function hostedMembership(
   const authority: WorkspaceAuthority | undefined = input.services.authority
   if (!authority) return undefined
   try {
-    const me = recordValue(await authority.usersMe(auth))
+    const me = asRecord(await authority.usersMe(auth))
     const userId = textValue(me?.user_id)
     if (!userId) return undefined
     const orgId = textValue(me?.org_id) ?? textValue(await authority.resolveOrgId(auth))
     if (!orgId) return undefined
     const orgs = await authority.listOrgs(auth)
     const membership = Array.isArray(orgs)
-      ? orgs.map(recordValue).find((row) => textValue(row?.org_id) === orgId)
+      ? orgs.map(asRecord).find((row) => textValue(row?.org_id) === orgId)
       : undefined
     return { userId, orgId, role: textValue(membership?.role) ?? "member" }
   } catch (cause) {

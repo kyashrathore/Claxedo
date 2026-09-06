@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import { createMemoryRuntimeStore } from "../../stores/memory"
-import { storeRows } from "../../test-utils/store-internals"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
 import { executionBinding } from "../../test-utils/execution-binding"
@@ -60,7 +59,7 @@ describe("SdkRuntimeAdapter provider-id reverse lookup", () => {
   test("a driver can resolve the session behind a thread it has no live turn for", async () => {
     let host: SdkRuntimeDriverHost | undefined
     const adapter = new SdkRuntimeAdapter({
-      store: storeRows(createMemoryRuntimeStore()),
+      store: createMemoryRuntimeStore(),
       driver: driverStub((created) => {
         host = created
       }),
@@ -72,6 +71,6 @@ describe("SdkRuntimeAdapter provider-id reverse lookup", () => {
 
     await adapter.deleteSession(executionBinding("session-1", "/work", "native:codex"))
     expect(host?.getSessionForAgentSession?.("thread-1")).toBeNull()
-    adapter.dispose()
+    await adapter.dispose()
   })
 })

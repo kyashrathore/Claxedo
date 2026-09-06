@@ -278,8 +278,11 @@ export function createProcessClient(input: Input) {
   }
 }
 
-function workspaceRuntimeSnapshot(input: WorkspaceRuntimeSnapshotLike | undefined) {
+function workspaceRuntimeSnapshot(
+  input: WorkspaceRuntimeSnapshotLike | undefined,
+): { workspaceId: string } | undefined {
   if (input?.kind && input.kind !== "local" && input.workspaceId) {
     return { workspaceId: input.workspaceId }
   }
+  return undefined
 }

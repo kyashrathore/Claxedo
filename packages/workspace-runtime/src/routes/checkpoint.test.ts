@@ -40,7 +40,7 @@ describe("workspace checkpoint routes", () => {
     const response = await app.request("/freeze", { method: "POST", body: "{}" })
     expect(response.status).toBe(403)
     expect(host.checkpoint.detail().state).toBe("active")
-    host.dispose()
+    await host.dispose()
   })
 
   test("freeze fences writes until resume", async () => {
@@ -63,7 +63,7 @@ describe("workspace checkpoint routes", () => {
       body: "{}",
     })).status).not.toBe(423)
 
-    runtime.dispose()
+    await runtime.dispose()
   })
 
   test("freeze waits for admitted writes and then reaches a stable frozen state", async () => {
@@ -82,7 +82,7 @@ describe("workspace checkpoint routes", () => {
     release()
     await expect(frozen).resolves.toMatchObject({ state: "frozen", activeWrites: 0 })
 
-    host.dispose()
+    await host.dispose()
   })
 
   test("flush and restore reconciliation require the checkpoint protocol", async () => {
@@ -95,6 +95,6 @@ describe("workspace checkpoint routes", () => {
       body: JSON.stringify({ epoch: 0, checkpointId: "" }),
     })).status).toBe(400)
 
-    runtime.dispose()
+    await runtime.dispose()
   })
 })

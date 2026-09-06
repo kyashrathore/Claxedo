@@ -1,5 +1,5 @@
 import { HTTPException } from "hono/http-exception"
-import { createSessionRoutes } from "./session-core"
+import { createSessionRoutes, type SessionRouteContext } from "./session-core"
 import {
   type AgentRuntime,
   type AgentMessage,
@@ -16,6 +16,8 @@ import {
   type AgentHarnessAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { workspaceRuntimeBus } from "../bus"
+import { errorMessage } from "../error-message"
+import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
@@ -53,8 +55,8 @@ function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]
     return
   }
 
-  const sessionID = (payload.properties?.sessionID ?? payload.properties?.sessionId) as string | undefined
-  const status = payload.properties?.status as { type?: unknown } | undefined
+  const sessionID = str(payload.properties?.sessionID) ?? str(payload.properties?.sessionId)
+  const status = rec(payload.properties?.status)
   const eventType = payload.type === "session.status" && status?.type === "busy"
     ? "Busy"
     : payload.type === "permission.asked" || payload.type === "question.asked"
@@ -84,7 +86,7 @@ function dir(c: {
     }
     return assertTarget(requested)
   } catch (err) {
-    throw new HTTPException(400, { message: (err as Error).message })
+    throw new HTTPException(400, { message: errorMessage(err), cause: err })
   }
 }
 
@@ -110,15 +112,12 @@ export function SessionRoutes(
       directory: string
       sessionId: string
     }) => AgentExecutionBinding | Promise<AgentExecutionBinding>
-    listPermissions?: (c: unknown, directory: string) => Promise<AgentPermission[]>
-    listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestion[]>
-    listSessions?: (c: unknown, directory: string) => Promise<AgentSession[]>
+    listPermissions?: (c: SessionRouteContext, directory: string) => Promise<AgentPermission[]>
+    listQuestions?: (c: SessionRouteContext, directory: string) => Promise<AgentQuestion[]>
+    listSessions?: (c: SessionRouteContext, directory: string) => Promise<AgentSession[]>
     /** Host-owned status transport. The session-core route remains the only
      * public handler so its private-session filter cannot be shadowed. */
-    getStatus?: (
-      c: unknown,
-      directory: string,
-    ) => Promise<Response | unknown> | Response | unknown
+    getStatus?: (c: SessionRouteContext, directory: string) => unknown
     /**
      * Own session creation instead of delegating straight to the adapter.
      *
@@ -129,7 +128,7 @@ export function SessionRoutes(
      * list-time adapter fan-out, which makes the store a cache the fan-out
      * happens to fill rather than the authority.
      */
-    createSession?: (c: unknown, directory: string, title?: string, id?: string) => Promise<{ id: string }>
+    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
     listSubagents?: (input: {
       directory: string
@@ -220,9 +219,9 @@ export function SessionRoutes(
     return requestedSessionHarness(c.req)
   }
   return createSessionRoutes({
-    requestedSessionHarness: (c) => requestedHarness(c as never),
+    requestedSessionHarness: (c) => requestedHarness(c),
     resolveAdapter: async (c, input) => {
-      const harness = requestedHarness(c as never)
+      const harness = requestedHarness(c)
       return await getAdapter({
         ...input,
         ...(harness ? { harness } : {}),
@@ -230,7 +229,7 @@ export function SessionRoutes(
     },
     resolveRuntime: options?.resolveRuntime
       ? async (c, input) => {
-          const harness = requestedHarness(c as never)
+          const harness = requestedHarness(c)
           return await options.resolveRuntime?.({
             ...input,
             ...(harness ? { harness } : {}),
@@ -244,7 +243,7 @@ export function SessionRoutes(
           sessionId,
         })
       : undefined,
-    resolveDirectory: (c, input) => dir(c as never, input),
+    resolveDirectory: (c, input) => dir(c, input),
     beforeSessionOperation: (_c, input) => options?.beforeSessionOperation?.(input),
     sessionAccessPolicy: options?.sessionAccessPolicy,
     listPermissions: options?.listPermissions
@@ -336,7 +335,7 @@ export function SessionRoutes(
     afterUpdateSession: options?.afterUpdateSession
       ? (_c, directory, session, updates) => options.afterUpdateSession!({
           directory: requiredDirectory(directory),
-          sessionId: String((session as { id?: unknown }).id ?? ""),
+          sessionId: session.id,
           updates,
         })
       : undefined,

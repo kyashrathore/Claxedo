@@ -2,6 +2,8 @@ import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
+import { runBunBuild } from "../../../script/bun-build"
+
 export const HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA = "claxedo.host-connector-child/v1"
 
 const PACKAGE_DIR = resolve(import.meta.dir, "..")
@@ -29,7 +31,7 @@ export async function bundleHostConnector(input: { entry?: string; outputDir?: s
   rmSync(outputDir, { recursive: true, force: true })
   mkdirSync(outputDir, { recursive: true })
 
-  const built = await Bun.build({
+  await runBunBuild("Host Connector child bundle failed", {
     entrypoints: [entry],
     outdir: outputDir,
     naming: "index.js",
@@ -41,9 +43,6 @@ export async function bundleHostConnector(input: { entry?: string; outputDir?: s
     // file, so it self-heals, and no test pins a literal digest.
     minify: true,
   })
-  if (!built.success) {
-    throw new AggregateError(built.logs, "Host Connector child bundle failed")
-  }
   if (!existsSync(output)) throw new Error(`Host Connector child bundle emitted no ${output}`)
 
   const manifest: HostConnectorChildManifest = {

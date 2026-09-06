@@ -6,6 +6,8 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { ClaxedoError, errorBody, statusOf } from "@claxedo/server-core/platform/errors/base"
 import type { ControlPlaneServices } from "../authority/services"
 import type { MachineSessionCaller, MachineSessionDispatch } from "./machine-dispatch"
+import { contentfulStatus } from "../platform/http/status"
+import { asRecord, readJsonRecord, stringField } from "../platform/json/index"
 
 /** A scheduler dispatches existing machine sessions; it never owns an agent loop. */
 export function createMachineWakes(input: {
@@ -63,8 +65,9 @@ export function createMachineWakes(input: {
       requests.delete(pending)
       complete()
     }
+    return undefined
   })
-  routes.onError((error, c) => c.json(errorBody(error), statusOf(error) as 400 | 401 | 403 | 404 | 500))
+  routes.onError((error, c) => c.json(errorBody(error), contentfulStatus(statusOf(error))))
   routes.post("/sessions/:id/wakes", async (c) => {
     const auth = await controlPlaneAuthContext(c.req.raw, {
       config: input.services.auth.config,
@@ -92,17 +95,15 @@ export function createMachineWakes(input: {
     }
     const sessionId = c.req.param("id")
     const binding = await input.runtime.authorize(sessionId, caller)
-    const body = (await c.req.json()) as Record<string, unknown>
+    const body = await readJsonRecord(c.req.raw)
+    const wakeName = body?.name
+    const wakeInput = asRecord(body?.input)
     if (
       !body ||
-      typeof body !== "object" ||
-      Array.isArray(body) ||
-      !["schedule_followup", "cancel_wake"].includes(String(body.name)) ||
+      (wakeName !== "schedule_followup" && wakeName !== "cancel_wake") ||
       typeof body.toolCallId !== "string" ||
       !body.toolCallId.trim() ||
-      !body.input ||
-      typeof body.input !== "object" ||
-      Array.isArray(body.input)
+      !wakeInput
     ) {
       throw new ClaxedoError({
         status: 400,
@@ -113,14 +114,17 @@ export function createMachineWakes(input: {
     // Read the authoritative last user turn; depth is not accepted from a tool.
     const historyResponse = await input.runtime.request(sessionId, "message", { method: "GET" }, caller)
     if (!historyResponse.ok) throw new Error("Cannot read the machine session for wake depth")
-    const history = (await historyResponse.json()) as Array<{ info?: { id?: string; role?: string } }>
+    const history = await historyResponse.json().catch(() => undefined)
     if (!Array.isArray(history)) throw new Error("Machine session returned invalid history")
-    const currentTurn = history.findLast((message) => message.info?.role === "user")?.info?.id
+    const currentTurn = stringField(
+      asRecord(history.findLast((message) => asRecord(asRecord(message)?.info)?.role === "user")?.info),
+      "id",
+    )
     const parent = currentTurn?.startsWith("wake:") ? await input.store.get(currentTurn.slice(5)) : undefined
     if (currentTurn?.startsWith("wake:") && !parent) throw new Error("Current wake turn has no canonical wake record")
     if (parent && (parent.sessionId !== sessionId || parent.workspaceId !== binding.workspaceId))
       throw new Error("Wake parent does not belong to this machine session")
-    const result = await handleWakeToolCall(String(body.name), body.input, {
+    const result = await handleWakeToolCall(wakeName, wakeInput, {
       wakes,
       sessionId,
       workspaceId: binding.workspaceId,

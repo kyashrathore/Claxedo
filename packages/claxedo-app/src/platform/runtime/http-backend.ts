@@ -16,6 +16,7 @@ import type { SessionTransportCapabilities } from "@/platform/runtime/capabiliti
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 import { fetchWorkspaceRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { readString, recordOrEmpty } from "@/lib/record"
 
 export type WorkspaceRuntimeBackend = {
   ensureWorkspace: (input: {
@@ -56,6 +57,66 @@ export const DEFAULT_SESSION_TRANSPORT_CAPABILITIES: SessionTransportCapabilitie
   configOptions: false,
 }
 
+/**
+ * The three status resources this backend reads off a workspace runtime,
+ * decoded from the wire.
+ *
+ * The relay path and the SDK-client path answer the SAME three shapes, and only
+ * the client path was typed by anything: the relay path used to name its DTO in
+ * a type argument, which claimed the shape without checking it. These decode
+ * what `claxedo-api-types` declares and drop rows that are not it, so a runtime
+ * on an older build degrades to "nothing to show" instead of a status pill
+ * bound to `undefined`.
+ */
+function vcsInfoFromWire(raw: unknown): VcsInfo {
+  return {
+    branch: readString(raw, "branch"),
+    default_branch: readString(raw, "default_branch"),
+  }
+}
+
+const LSP_STATUSES = ["connected", "error"] as const
+
+function lspStatusListFromWire(raw: unknown): LspStatus[] {
+  return (Array.isArray(raw) ? raw : []).flatMap((entry) => {
+    const id = readString(entry, "id")
+    const status = LSP_STATUSES.find((candidate) => candidate === readString(entry, "status"))
+    if (!id || !status) return []
+    const name = readString(entry, "name")
+    const root = readString(entry, "root")
+    return [{ id, status, ...(name === undefined ? {} : { name }), ...(root === undefined ? {} : { root }) }]
+  })
+}
+
+function mcpStatusFromWire(raw: unknown): McpStatus | undefined {
+  const error = readString(raw, "error")
+  switch (readString(raw, "status")) {
+    case "connected":
+      return { status: "connected" }
+    case "disabled":
+      return { status: "disabled" }
+    case "needs_auth":
+      return { status: "needs_auth" }
+    // Both failure states carry the reason the UI renders; without it there is
+    // nothing to tell the user, so the row is dropped rather than shown blank.
+    case "failed":
+      return error === undefined ? undefined : { status: "failed", error }
+    case "needs_client_registration":
+      return error === undefined ? undefined : { status: "needs_client_registration", error }
+    default:
+      return undefined
+  }
+}
+
+function mcpStatusMapFromWire(raw: unknown): Record<string, McpStatus> {
+  return Object.fromEntries(
+    Object.entries(recordOrEmpty(raw)).flatMap(([server, value]) => {
+      const status = mcpStatusFromWire(value)
+      return status ? [[server, status] as const] : []
+    }),
+  )
+}
+
 async function readWorkspaceRecord(input: { baseUrl: string; request: typeof fetch; directory?: string; workspaceId?: string }) {
   const workspace = await fetchWorkspaceRecord(input)
   if (!workspace) throw new Error("Workspace runtime is unavailable.")
@@ -74,11 +135,11 @@ export function createHttpWorkspaceRuntimeBackend(input: {
   const request = input.request ?? authFetch
   const strictSignedRuntime = input.signedControlPlane === true
 
-  async function runtimeJson<T>(
+  async function runtimeJson(
     directory: string | undefined,
     resource: WorkspaceRuntimeStatusResource,
     failure: string,
-  ): Promise<T | undefined> {
+  ): Promise<unknown> {
     if (!directory) return undefined
     const workspaceId = input.workspaceId ?? sessionWorkspaceRuntimeRef({ directory })?.workspaceId
     // The record read is owned by `workspace-runtime-record.ts` — one cache
@@ -110,7 +171,7 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       serverUrl: baseUrl,
       directory,
       request,
-    }).json<T>(`${runtimePath.pathname}${runtimePath.search}`)
+    }).json(`${runtimePath.pathname}${runtimePath.search}`)
   }
 
   return {
@@ -125,22 +186,22 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       return await readWorkspaceRecord(scope)
     },
     getVcs: async (params) => {
-      const runtime = await runtimeJson<VcsInfo>(params?.directory, "vcs", "signed workspace VCS relay connection unavailable")
-      if (runtime) return runtime
+      const runtime = await runtimeJson(params?.directory, "vcs", "signed workspace VCS relay connection unavailable")
+      if (runtime) return vcsInfoFromWire(runtime)
       const client = input.client?.vcs
       if (!client) throw new Error("workspace runtime backend requires client for vcs")
       return (await client.get()).data ?? {}
     },
     getMcpStatus: async (params) => {
-      const runtime = await runtimeJson<Record<string, McpStatus>>(params?.directory, "mcp", "signed workspace MCP relay connection unavailable")
-      if (runtime) return runtime
+      const runtime = await runtimeJson(params?.directory, "mcp", "signed workspace MCP relay connection unavailable")
+      if (runtime) return mcpStatusMapFromWire(runtime)
       const client = input.client?.mcp
       if (!client) throw new Error("workspace runtime backend requires client for mcp")
       return (await client.status()).data ?? {}
     },
     getLspStatus: async (params) => {
-      const runtime = await runtimeJson<LspStatus[]>(params?.directory, "lsp", "signed workspace LSP relay connection unavailable")
-      if (runtime) return runtime
+      const runtime = await runtimeJson(params?.directory, "lsp", "signed workspace LSP relay connection unavailable")
+      if (runtime) return lspStatusListFromWire(runtime)
       const client = input.client?.lsp
       if (!client) throw new Error("workspace runtime backend requires client for lsp")
       return (await client.status()).data ?? []

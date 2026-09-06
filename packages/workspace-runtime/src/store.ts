@@ -23,6 +23,8 @@ import {
 import type {
   AdmittedSubagentObservation,
   AgentMessage,
+  AgentPermission,
+  AgentQuestion,
   AgentTurnOutcome,
   PromptFormat,
   SessionConfig,
@@ -45,6 +47,7 @@ import {
   sessionStatus,
 } from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
+import { isRecord, num, rec, str } from "./json-value"
 
 type Model = {
   providerID: string
@@ -409,19 +412,6 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
   }
 }
 
-/** The one plain-object test in this store; every other check narrows through it. */
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return input !== null && typeof input === "object" && !Array.isArray(input)
-}
-
-function rec(input: unknown): Record<string, unknown> | null {
-  return isRecord(input) ? input : null
-}
-
-function str(input: unknown): string | undefined {
-  return typeof input === "string" ? input : undefined
-}
-
 /**
  * The read half of this store's JSON columns.
  *
@@ -452,6 +442,21 @@ const readColumn = {
   messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
   messagePart: (json: string): AgentMessage["parts"][number] => JSON.parse(json),
   partRecord: (json: string): Record<string, unknown> => JSON.parse(json),
+  /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.start'` row. */
+  turnStart: (json: string): Turn => JSON.parse(json),
+  /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.finish'` row. */
+  turnFinish: (json: string): TurnFinish => JSON.parse(json),
+  /** `runtime_journal.payload_json` on a `kind='event'` row: an engine envelope. */
+  eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
+  /** `pending_permission.patterns_json`. */
+  permissionPatterns: (json: string): string[] => JSON.parse(json),
+  /** `pending_permission.metadata_json`. */
+  permissionMetadata: (json: string): Record<string, unknown> => JSON.parse(json),
+  /**
+   * `pending_question.questions_json`, written by the `question.asked` handler
+   * straight from the event's own `properties.questions`.
+   */
+  questions: (json: string): AgentQuestion["questions"] => JSON.parse(json),
 }
 
 /** Keep host-stamped `claxedo.author` when an engine envelope omits it. */
@@ -460,9 +465,9 @@ function preserveClaxedoAuthor(
   next: Record<string, unknown>,
 ): Record<string, unknown> {
   if (str(next.role) !== "user") return next
-  const nextClaxedo = rec(next.claxedo) ?? undefined
+  const nextClaxedo = rec(next.claxedo)
   if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
-  const prevClaxedo = rec(previous?.claxedo) ?? undefined
+  const prevClaxedo = rec(previous?.claxedo)
   if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
   return {
     ...next,
@@ -487,10 +492,6 @@ function subagentCorrelationKeys(observation: SubagentObservation) {
 
 function terminalSubagentStatus(status: string | undefined) {
   return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
-}
-
-function num(input: unknown): number | undefined {
-  return typeof input === "number" ? input : undefined
 }
 
 function nullable(input: unknown): string | null | undefined {
@@ -1381,20 +1382,23 @@ export class RuntimeStore {
     }
   }
 
-  private terminalizedPart(part: Record<string, unknown>, ts: number, message?: string) {
+  /**
+   * Close a tool part that is still pending or running on a message the
+   * projection already considers terminal: it can never progress again, so it
+   * is reported as errored rather than left spinning in every transcript.
+   */
+  private terminalizedPart(part: AgentMessage["parts"][number], ts: number, message?: string) {
     if (part.type !== "tool") return part
-    const state = rec(part.state)
-    const status = str(state?.status)
-    if (status !== "pending" && status !== "running") return part
-    const time = rec(state?.time)
+    const state = part.state
+    if (state.status !== "pending" && state.status !== "running") return part
     return {
       ...part,
       state: {
         ...state,
-        status: "error",
+        status: "error" as const,
         error: this.staleToolError(message),
         time: {
-          start: num(time?.start) ?? ts,
+          start: state.status === "running" ? state.time.start : ts,
           end: ts,
         },
       },
@@ -2488,7 +2492,7 @@ export class RuntimeStore {
           .get(input.sessionId, input.assistantMessageId),
         "runtime_journal turn.start",
       )
-      const activeControl: Turn = JSON.parse(activeStart.payload_json)
+      const activeControl = readColumn.turnStart(activeStart.payload_json)
       if (input.fencingToken !== activeControl.fencingToken) throw new AgentRuntimeStaleTurnError(input.sessionId)
       return {
         sessionId: input.sessionId,
@@ -2670,8 +2674,8 @@ export class RuntimeStore {
     const events: CompatEvent[] = []
 
     if (input.outcome.status === "failed") {
-      const control = JSON.parse(active.payload_json) as Turn
-      const session = this.getSession(input.sessionId) as { directory?: string } | null
+      const control = readColumn.turnStart(active.payload_json)
+      const session = this.getSession(input.sessionId)
       events.push(this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
@@ -2816,7 +2820,7 @@ export class RuntimeStore {
     }
   }
 
-  private lastTurn(sessionId: string) {
+  private lastTurn(sessionId: string): AgentTurnOutcome | undefined {
     const row = this.db
       .prepare<{ seq: number; type: string; created_at: number; payload_json: string }>(
         `
@@ -2832,30 +2836,24 @@ export class RuntimeStore {
       `,
       )
       .get(sessionId)
-    if (!row) return
-    if (row.type === "turn.finish") {
-      const control = JSON.parse(row.payload_json) as TurnFinish
-      return control.outcome
-    }
-    const payload = JSON.parse(row.payload_json) as { properties?: Record<string, unknown> }
+    if (!row) return undefined
+    if (row.type === "turn.finish") return readColumn.turnFinish(row.payload_json).outcome
+    const properties = readColumn.eventPayload(row.payload_json).properties
     if (row.type === "message.completed") {
-      const assistantMessageId =
-        typeof payload.properties?.messageID === "string" ? payload.properties.messageID : undefined
-      if (!assistantMessageId) return
+      const assistantMessageId = str(properties?.messageID)
+      if (!assistantMessageId) return undefined
       return {
-        status: "completed" as const,
+        status: "completed",
         assistantMessageId,
         completedAt: row.created_at,
       }
     }
-    const error = payload.properties?.error
-    const message =
-      error && typeof error === "object" && "data" in error ? (error.data as { message?: unknown }).message : undefined
+    const message = str(rec(rec(properties?.error)?.data)?.message)
     return {
-      status: "failed" as const,
+      status: "failed",
       assistantMessageId: this.lastStartedAssistant(sessionId, row.seq),
       completedAt: row.created_at,
-      error: typeof message === "string" ? message : "session error",
+      error: message ?? "session error",
     }
   }
 
@@ -3127,11 +3125,27 @@ export class RuntimeStore {
     return row?.session_id ?? null
   }
 
-  listPermissions(directory: string) {
+  /**
+   * Pending permissions for a directory, as `AgentPermission`.
+   *
+   * The projection used to emit `{ id, sessionID, tool, paths }` — none of
+   * which are contract fields — and reach the declared `AgentPermission[]`
+   * through an `any`-typed row callback. It now returns what it promises:
+   * `always_json` and `metadata_json` were already written by the
+   * `permission.asked` handler and simply never read back.
+   */
+  listPermissions(directory: string): AgentPermission[] {
     return this.db
-      .prepare(
+      .prepare<{
+      id: string
+      session_id: string
+      tool: string
+      patterns_json: string
+      always_json: string
+      metadata_json: string
+    }>(
         `
-        SELECT p.id, p.session_id, p.tool, p.patterns_json
+        SELECT p.id, p.session_id, p.tool, p.patterns_json, p.always_json, p.metadata_json
         FROM pending_permission p
         JOIN session s ON s.id = p.session_id
         WHERE s.directory = ? AND p.status = 'pending'
@@ -3139,20 +3153,21 @@ export class RuntimeStore {
       `,
       )
       .all(directory)
-      .map((row: any) => {
-        const item = row as { id: string; session_id: string; tool: string; patterns_json: string }
-        return {
-          id: item.id,
-          sessionID: item.session_id,
-          tool: item.tool,
-          paths: JSON.parse(item.patterns_json) as string[],
-        }
-      })
+      .map((row) => ({
+        id: row.id,
+        sessionID: row.session_id,
+        // The `tool` COLUMN stores `properties.permission` (see the
+        // `permission.asked` writer above); the contract names it `permission`.
+        permission: row.tool,
+        patterns: readColumn.permissionPatterns(row.patterns_json),
+        always: readColumn.permissionPatterns(row.always_json),
+        metadata: readColumn.permissionMetadata(row.metadata_json),
+      }))
   }
 
-  listQuestions(directory: string) {
+  listQuestions(directory: string): AgentQuestion[] {
     return this.db
-      .prepare(
+      .prepare<{ id: string; session_id: string; questions_json: string }>(
         `
         SELECT q.id, q.session_id, q.questions_json
         FROM pending_question q
@@ -3162,14 +3177,11 @@ export class RuntimeStore {
       `,
       )
       .all(directory)
-      .map((row: any) => {
-        const item = row as { id: string; session_id: string; questions_json: string }
-        return {
-          id: item.id,
-          sessionID: item.session_id,
-          questions: JSON.parse(item.questions_json) as unknown[],
-        }
-      })
+      .map((row) => ({
+        id: row.id,
+        sessionID: row.session_id,
+        questions: readColumn.questions(row.questions_json),
+      }))
   }
 
   getTodos(sessionId: string) {
@@ -3214,7 +3226,7 @@ export class RuntimeStore {
       const messageParts = partsByMessage.get(msg.id) ?? []
       return {
         info,
-        parts: (terminal ? messageParts.map((part) => this.terminalizedPart(part, ts, message)) : messageParts) as AgentMessage["parts"],
+        parts: terminal ? messageParts.map((part) => this.terminalizedPart(part, ts, message)) : messageParts,
       }
     })
   }

@@ -1,4 +1,5 @@
 import type { SignedControlPlaneAuth } from "./auth"
+import { jsonRecord } from "../runtime/lib/json"
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "./private-session-authority"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 
@@ -245,11 +246,7 @@ export async function exercisePrivateSessionAuthorityConformance(
   }
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-}
+const record = jsonRecord
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []

@@ -1,4 +1,5 @@
 import { workspaceRuntimeBus as runtimeBus, type WorkspaceRuntimeEvent as RuntimeClaxedoEvent, type PtyInfo } from "@claxedo/workspace-runtime/host"
+import { jsonRecord } from "./json"
 
 type Subscriber<T> = (event: T) => unknown
 
@@ -7,7 +8,7 @@ type BusOptions<T> = {
 }
 
 function catches(value: unknown): value is Promise<unknown> {
-  return typeof (value as { catch?: unknown } | null)?.catch === "function"
+  return typeof jsonRecord(value)?.catch === "function"
 }
 
 export function createBus<T>(options: BusOptions<T> = {}) {

@@ -75,12 +75,23 @@ const decoder = new TextDecoder()
 
 type EnvLike = Record<string, string | undefined>
 
+/**
+ * Bytes this module owns.
+ *
+ * Web Crypto's `BufferSource` is an `ArrayBuffer`-backed view; a bare
+ * `Uint8Array` may be backed by a `SharedArrayBuffer` and is not assignable to
+ * it. Every buffer here is allocated locally (`new Uint8Array`, `subarray`,
+ * `TextEncoder.encode`), so saying so in the type is what removes the
+ * `as BufferSource` casts rather than papering over the difference.
+ */
+export type EnvelopeBytes = Uint8Array<ArrayBuffer>
+
 /** Supplies KEK material to the envelope wrapper. */
 export interface EnvelopeKeyProvider {
   /** The key new writes encrypt under. */
-  current(): Promise<{ keyId: string; kek: Uint8Array }>
+  current(): Promise<{ keyId: string; kek: EnvelopeBytes }>
   /** KEK bytes for a key-id found in stored ciphertext; undefined if unknown. */
-  lookup(keyId: string): Promise<Uint8Array | undefined>
+  lookup(keyId: string): Promise<EnvelopeBytes | undefined>
 }
 
 /** What a storage slot currently holds, established WITHOUT decrypting it. */
@@ -115,8 +126,26 @@ export interface EnvelopeAdmin {
 
 /** Narrows a `SecretBackend` to one that can be swept by a KEK rotation. */
 export function isEnvelopeBackend(backend: SecretBackend): backend is SecretBackend & EnvelopeAdmin {
-  const candidate = backend as Partial<EnvelopeAdmin>
-  return typeof candidate.currentKeyId === "function" && typeof candidate.inspect === "function"
+  return (
+    "currentKeyId" in backend &&
+    typeof backend.currentKeyId === "function" &&
+    "inspect" in backend &&
+    typeof backend.inspect === "function"
+  )
+}
+
+/**
+ * Take a private, `ArrayBuffer`-backed copy of caller key material.
+ *
+ * A caller's `Uint8Array` may be backed by a `SharedArrayBuffer`, which Web
+ * Crypto will not accept, and a caller that keeps its array can mutate bytes
+ * this module has already derived a key-id from. One 32-byte copy at the entry
+ * point settles both.
+ */
+function adoptBytes(bytes: Uint8Array): EnvelopeBytes {
+  const copy = new Uint8Array(bytes.length)
+  copy.set(bytes)
+  return copy
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -125,7 +154,7 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-function fromBase64(value: string): Uint8Array {
+function fromBase64(value: string): EnvelopeBytes {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4)
   const binary = atob(padded)
@@ -136,7 +165,7 @@ function fromBase64(value: string): Uint8Array {
 
 /** First 8 bytes of SHA-256(kek), lowercase hex — the envelope key-id. */
 export async function envelopeKeyId(kek: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", kek as BufferSource)
+  const digest = await crypto.subtle.digest("SHA-256", adoptBytes(kek))
   let hex = ""
   for (const byte of new Uint8Array(digest)) {
     hex += byte.toString(16).padStart(2, "0")
@@ -154,18 +183,22 @@ function assertKekBytes(kek: Uint8Array, label: string) {
  * Static key provider: one current write key plus optional additional keys
  * accepted for decryption (rotation drain).
  */
-export function createStaticKeyProvider(input: { current: Uint8Array; previous?: Uint8Array[] }): EnvelopeKeyProvider {
+export function createStaticKeyProvider(input: {
+  current: Uint8Array
+  previous?: Uint8Array[]
+}): EnvelopeKeyProvider {
   assertKekBytes(input.current, "envelope KEK (current)")
   for (const kek of input.previous ?? []) assertKekBytes(kek, "envelope KEK (previous)")
 
-  const all = [input.current, ...(input.previous ?? [])]
-  let table: Promise<Map<string, Uint8Array>> | undefined
+  const current = adoptBytes(input.current)
+  const all = [current, ...(input.previous ?? []).map(adoptBytes)]
+  let table: Promise<Map<string, EnvelopeBytes>> | undefined
   let currentId: Promise<string> | undefined
 
-  function ids(): Promise<Map<string, Uint8Array>> {
+  function ids(): Promise<Map<string, EnvelopeBytes>> {
     if (!table) {
       table = (async () => {
-        const map = new Map<string, Uint8Array>()
+        const map = new Map<string, EnvelopeBytes>()
         for (const kek of all) map.set(await envelopeKeyId(kek), kek)
         return map
       })()
@@ -175,8 +208,8 @@ export function createStaticKeyProvider(input: { current: Uint8Array; previous?:
 
   return {
     async current() {
-      if (!currentId) currentId = envelopeKeyId(input.current)
-      return { keyId: await currentId, kek: input.current }
+      if (!currentId) currentId = envelopeKeyId(current)
+      return { keyId: await currentId, kek: current }
     },
     async lookup(keyId) {
       return (await ids()).get(keyId)
@@ -184,10 +217,10 @@ export function createStaticKeyProvider(input: { current: Uint8Array; previous?:
   }
 }
 
-function decodeKekEnv(raw: string | undefined, name: string): Uint8Array | undefined {
+function decodeKekEnv(raw: string | undefined, name: string): EnvelopeBytes | undefined {
   const value = raw?.trim()
   if (!value) return undefined
-  let bytes: Uint8Array
+  let bytes: EnvelopeBytes
   try {
     bytes = fromBase64(value)
   } catch {
@@ -228,11 +261,11 @@ export function credentialIdFromRef(ref: string): string {
 }
 
 /** GCM AAD binding a ciphertext to its key-id + credential (storage) id. */
-function credentialAad(keyId: string, credentialId: string): Uint8Array {
+function credentialAad(keyId: string, credentialId: string): EnvelopeBytes {
   return encoder.encode(`${keyId}:${credentialId}`)
 }
 
-type ParsedEnvelope = { keyId: string; iv: Uint8Array; ciphertext: Uint8Array }
+type ParsedEnvelope = { keyId: string; iv: EnvelopeBytes; ciphertext: EnvelopeBytes }
 
 const ENVELOPE_RE = new RegExp(`^${FORMAT_TAG}:([0-9a-f]{${KEY_ID_HEX_LEN}}):([A-Za-z0-9+/=_-]+)$`)
 
@@ -243,7 +276,7 @@ function parseEnvelope(stored: string): ParsedEnvelope {
       "stored credential value is not a recognized encryption envelope — refusing to return it (plaintext or foreign-format values are never served)",
     )
   }
-  let packed: Uint8Array
+  let packed: EnvelopeBytes
   try {
     packed = fromBase64(match[2])
   } catch {
@@ -281,11 +314,11 @@ export function encryptedSecretBackend(
   // keyId -> derived per-org AES key (orgId is fixed per wrapper instance).
   const derived = new Map<string, Promise<CryptoKey>>()
 
-  function orgKey(keyId: string, kek: Uint8Array): Promise<CryptoKey> {
+  function orgKey(keyId: string, kek: EnvelopeBytes): Promise<CryptoKey> {
     const cached = derived.get(keyId)
     if (cached) return cached
     const pending = (async () => {
-      const ikm = await crypto.subtle.importKey("raw", kek as BufferSource, "HKDF", false, ["deriveKey"])
+      const ikm = await crypto.subtle.importKey("raw", kek, "HKDF", false, ["deriveKey"])
       return crypto.subtle.deriveKey(
         {
           name: "HKDF",
@@ -310,7 +343,7 @@ export function encryptedSecretBackend(
       const iv = crypto.getRandomValues(new Uint8Array(IV_LEN))
       const ciphertext = new Uint8Array(
         await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv, additionalData: credentialAad(keyId, id) as BufferSource },
+          { name: "AES-GCM", iv, additionalData: credentialAad(keyId, id) },
           key,
           encoder.encode(secret),
         ),
@@ -337,11 +370,11 @@ export function encryptedSecretBackend(
         plaintext = await crypto.subtle.decrypt(
           {
             name: "AES-GCM",
-            iv: parsed.iv as BufferSource,
-            additionalData: credentialAad(parsed.keyId, credentialIdFromRef(ref)) as BufferSource,
+            iv: parsed.iv,
+            additionalData: credentialAad(parsed.keyId, credentialIdFromRef(ref)),
           },
           key,
-          parsed.ciphertext as BufferSource,
+          parsed.ciphertext,
         )
       } catch {
         throw new Error(

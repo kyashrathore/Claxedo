@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeEventEnvelope } from "./contracts"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./subscription"
@@ -36,7 +37,7 @@ describe("createRuntimeSubscription with an eventDelivery policy", () => {
     const iterator = stream[Symbol.asyncIterator]()
     const first = await iterator.next()
     expect(first.done).toBe(false)
-    expect((first.value?.payload as { delta?: string }).delta).toBe("hello")
+    expect(asRecord(first.value?.payload)?.delta).toBe("hello")
     // Host-internal readers see everything the host owns; the per-event
     // delivery policy is for identified (remote) subscribers only.
     expect(policyCalls).toBe(0)

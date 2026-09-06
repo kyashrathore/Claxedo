@@ -23,18 +23,12 @@ import { fileURLToPath } from "node:url"
 import { createBenchIdentity, benchHostTunnelTokenFromPrivatePem } from "./lib/tokens"
 import { startBenchResolver } from "./lib/resolver"
 import { startEchoTarget } from "./lib/echo-target"
+import { freePort } from "./lib/ports"
 import { probeWebSocket } from "./lib/ws"
 import { startWorkspaceRelayHostTunnel } from "../../workspace-runtime/src/workspace-relay-host-tunnel"
 import { exportPKCS8 } from "jose"
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
-
-async function freePort(): Promise<number> {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response("ok") })
-  const port = probe.port ?? 0
-  probe.stop(true)
-  return port
-}
 
 async function waitForHealth(url: string, timeoutMs = 15_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
@@ -108,7 +102,12 @@ async function main() {
     // Dial the tunnel IN (in-process, using the global WebSocket the same way
     // the sandbox agent will). Forward every channel to the echo target.
     const htt = await benchHostTunnelTokenFromPrivatePem(privateKeyPem, { workspaceIds: [workspaceId], hostId })
-    let opened = false
+    // Resolved by the tunnel's `open` event rather than polled: the event is
+    // the signal, and racing it against a timer says exactly what timed out.
+    let markOpened: (() => void) | undefined
+    const opened = new Promise<void>((resolve) => {
+      markOpened = resolve
+    })
     tunnel = startWorkspaceRelayHostTunnel({
       relayUrl: relayHttp,
       hostId,
@@ -117,14 +116,16 @@ async function main() {
       resolveLocalUrl: ({ path }) => new URL(path.replace(/^\/+/, ""), `${echo.url.replace(/\/+$/, "")}/`),
       tokenProvider: () => Promise.resolve(htt),
       onEvent: (event) => {
-        if (event.type === "open") opened = true
+        if (event.type === "open") markOpened?.()
         console.error(`[local-dialin] tunnel ${JSON.stringify(event)}`)
       },
     })
 
-    const openDeadline = Date.now() + 10_000
-    while (!opened && Date.now() < openDeadline) await Bun.sleep(100)
-    if (!opened) throw new Error("tunnel did not register (open) with the relay")
+    const registered = await Promise.race([
+      opened.then(() => true),
+      Bun.sleep(10_000).then(() => false),
+    ])
+    if (!registered) throw new Error("tunnel did not register (open) with the relay")
     console.error("[local-dialin] tunnel registered")
 
     // Browser WS in through the relay → must land in the tunnel channel → echo.
@@ -156,4 +157,4 @@ async function main() {
   process.exit(exitCode)
 }
 
-main()
+await main()

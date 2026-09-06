@@ -90,12 +90,12 @@ export function NavigationRow(props: NavigationRowProps) {
       contentId: () => props.prepareContentId?.(),
       sourceKind: "navigation-row",
       label: () => props.dragRow.title,
-      onBegin: (event) => {
+      // The pointer engine (not native DnD) drives drags now, so the begin
+      // event is a PointerEvent. `NavigationDragStart` used to carry it as a
+      // `DragEvent`, which no consumer read and which only a double assertion
+      // could produce — the field is gone rather than restated as a lie.
+      onBegin: () => {
         props.onDragStart?.({
-          // The pointer engine (not native DnD) now drives drags, so this is a
-          // PointerEvent; consumers don't read `.event`, only payload + contentId.
-          // as-any: NavigationDragStart still types `event` as DragEvent for API stability.
-          event: event as unknown as DragEvent,
           row: props.dragRow,
           payload: navigationDragPayload(props.dragRow),
           setWorkbenchDragData: () => {},

@@ -77,9 +77,9 @@ class PiRpcDriver implements SdkRuntimeDriver {
               Array.isArray(message.content)
             ) {
               work = message.content
-                .flatMap((part) => (record(part)?.type === "text" ? [String(record(part)?.text ?? "")] : []))
+                .flatMap((part) => (record(part)?.type === "text" ? [text(record(part)?.text) ?? ""] : []))
                 .join("\n")
-              if (message.stopReason === "error") throw new Error(String(message.errorMessage ?? "Pi model failed"))
+              if (message.stopReason === "error") throw new Error(text(message.errorMessage) ?? "Pi model failed")
             }
             turn.ingest(raw, source, route)
           },
@@ -134,10 +134,10 @@ class PiRpcDriver implements SdkRuntimeDriver {
                     { dir: "in", method: "goal.evaluation", frame: event },
                   )
                   if (message.stopReason === "error")
-                    throw new Error(String(message.errorMessage ?? "Pi evaluator failed"))
+                    throw new Error(text(message.errorMessage) ?? "Pi evaluator failed")
                   if (Array.isArray(message.content))
                     answer = message.content
-                      .flatMap((part) => (record(part)?.type === "text" ? [String(record(part)?.text ?? "")] : []))
+                      .flatMap((part) => (record(part)?.type === "text" ? [text(record(part)?.text) ?? ""] : []))
                       .join("\n")
                 }
                 if (error) throw error
@@ -254,11 +254,11 @@ class PiRpcDriver implements SdkRuntimeDriver {
       if (!id) throw new Error("Pi did not return its native session id")
       this.remember(id, process, input.directory)
       const model = record(state?.model)
+      const provider = text(model?.provider)
+      const modelId = text(model?.id)
       return {
         id,
-        ...(text(model?.provider) && text(model?.id)
-          ? { model: { providerID: "pi", modelID: `${model!.provider}/${model!.id}` } }
-          : {}),
+        ...(provider && modelId ? { model: { providerID: "pi", modelID: `${provider}/${modelId}` } } : {}),
       }
     } catch (error) {
       process.dispose()
@@ -486,8 +486,10 @@ class PiRpcDriver implements SdkRuntimeDriver {
       if (!Array.isArray(result?.models)) throw new Error("Pi returned an invalid model catalog")
       this.models = result.models.map((value) => {
         const model = record(value)
-        if (!text(model?.provider) || !text(model?.id)) throw new Error("Pi model lacks provider/id")
-        return { id: `${model!.provider}/${model!.id}`, name: text(model!.name) ?? String(model!.id) }
+        const provider = text(model?.provider)
+        const modelId = text(model?.id)
+        if (!provider || !modelId) throw new Error("Pi model lacks provider/id")
+        return { id: `${provider}/${modelId}`, name: text(model?.name) ?? modelId }
       })
       if (currentModel.includes("/")) {
         const slash = currentModel.indexOf("/")
@@ -502,8 +504,9 @@ class PiRpcDriver implements SdkRuntimeDriver {
         : []
       const state = record(await probe.request("get_state"))
       this.selectedThinking = text(state?.thinkingLevel) ?? "off"
-      const selected = record(state?.model)
-      const selectedId = selected ? `${selected.provider}/${selected.id}` : undefined
+      const selectedProvider = text(record(state?.model)?.provider)
+      const selectedModelId = text(record(state?.model)?.id)
+      const selectedId = selectedProvider && selectedModelId ? `${selectedProvider}/${selectedModelId}` : undefined
       this.models = this.models.map((model) => ({ ...model, isDefault: model.id === selectedId }))
       return this.peekConfigOptions(currentModel)
     } finally {

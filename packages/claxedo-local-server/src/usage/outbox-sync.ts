@@ -6,6 +6,9 @@ type UsageOutboxTelemetry = {
   capture(distinctId: string, event: string, properties?: Record<string, unknown>): void
 }
 
+/** Exactly the ledger surface the outbox drains: read pending, claim, then settle. */
+type UsageOutboxStore = Pick<SqliteUsageLedger, "pendingOutbox" | "claimPending" | "markDelivered" | "markConflict">
+
 type UsageIdentity = { org_id: string; user_id: string }
 type UsageOutboxResult = {
   attempted: number
@@ -25,7 +28,7 @@ export type UsageOutboxSync = {
 }
 
 export function createUsageOutboxSync(input: {
-  local: SqliteUsageLedger
+  local: UsageOutboxStore
   central?: UsageLedger
   limit?: number
   retryBaseMs?: number

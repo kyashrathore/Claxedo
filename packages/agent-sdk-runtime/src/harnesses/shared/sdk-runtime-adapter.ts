@@ -106,7 +106,7 @@ export type {
   SdkRuntimeTranscriptRegistrar,
   SdkRuntimeTurnInput,
 } from "./sdk-runtime-driver"
-export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
+export { errorMessage, extractTextFromParts, record, stringRecord, text } from "./sdk-runtime-values"
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
@@ -227,7 +227,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   private nativeGoalResource(): AgentGoalResource | undefined {
     const native = this.driver.nativeGoal
-    if (!native) return
+    if (!native) return undefined
     return createNativeGoalResource({
       native,
       driverType: this.driver.type,
@@ -282,7 +282,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
     const { sessionId } = assertAgentExecutionBinding(binding)
-    return this.store.getSession(sessionId) as AgentSession | null
+    return this.store.getSession(sessionId) ?? null
   }
 
   async createSession(directory: string, title?: string, sessionId: string = randomUUID()): Promise<{ id: string }> {
@@ -375,7 +375,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const directory = requireWorkspaceDirectory(binding.directory)
     this.lifecycle().abort(id)
     for (const child of this.store.listSubagents?.(id) ?? []) {
-      const childSessionId = (child as { childSessionId?: string }).childSessionId
+      const childSessionId = text(record(child)?.childSessionId)
       if (!childSessionId) continue
       const agentSessionId = this.store.getAgentSessionId(childSessionId)
       if (agentSessionId) await this.driver.deleteAgentSession?.(childSessionId, agentSessionId, directory)
@@ -770,7 +770,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
     const { sessionId } = assertAgentExecutionBinding(binding)
-    return this.store.getMessages(sessionId) as AgentMessage[]
+    return this.store.getMessages(sessionId)
   }
 
   async abort(binding: AgentExecutionBinding): Promise<AbortResult> {

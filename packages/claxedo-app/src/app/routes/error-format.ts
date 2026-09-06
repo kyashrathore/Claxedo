@@ -1,3 +1,4 @@
+import { isRecord, readArray, readString } from "@/lib/record"
 // Pure error-chain formatting for the crash page. Extracted from `error.tsx`
 // so the 9 InitError variants, cycle-safe JSON, and cause-chain dedup can be
 // tested without mounting a component.
@@ -27,13 +28,7 @@ function isIssue(value: unknown): value is { message: string; path: string[] } {
 }
 
 export function isInitError(error: unknown): error is InitError {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    "data" in error &&
-    typeof (error as InitError).data === "object"
-  )
+  return isRecord(error) && "name" in error && typeof error.data === "object"
 }
 
 export function safeJson(value: unknown): string {
@@ -84,14 +79,12 @@ export function formatInitError(error: InitError, t: Translator): string {
       return lines.join("\n")
     }
     case "ProviderModelNotFoundError": {
-      const { providerID, modelID, suggestions } = data as {
-        providerID: string
-        modelID: string
-        suggestions?: string[]
-      }
+      const providerID = readString(data, "providerID") ?? ""
+      const modelID = readString(data, "modelID") ?? ""
+      const suggestions = readArray(data, "suggestions")?.filter((item) => typeof item === "string") ?? []
 
       const suggestionsLine =
-        Array.isArray(suggestions) && suggestions.length
+        suggestions.length
           ? [t("error.chain.didYouMean", { suggestions: suggestions.join(", ") })]
           : []
 

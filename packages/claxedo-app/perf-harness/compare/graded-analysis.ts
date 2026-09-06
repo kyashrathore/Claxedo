@@ -15,6 +15,8 @@
 // the cross-check: it must match the driver's own logs.
 import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
+// Dependency-free by design, so this stays a standalone `bun` run.
+import { isRecord, numberField, recordField, recordsField, textField } from "../src/json-fields";
 
 // Turn counts of graded-v1 in corpus/session order (geometric 12 -> 400).
 const TURNS = [12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 191, 230, 277, 333, 400];
@@ -76,8 +78,8 @@ const targets = TURNS.map((_, index) => ({ sessionId: `s${index.toString().padSt
 
 function walk(node: unknown, visit: (value: Record<string, unknown>) => void) {
   if (Array.isArray(node)) for (const item of node) walk(item, visit);
-  else if (node && typeof node === "object") {
-    visit(node as Record<string, unknown>);
+  else if (isRecord(node)) {
+    visit(node);
     for (const value of Object.values(node)) walk(value, visit);
   }
 }
@@ -108,11 +110,10 @@ const memStats = (values: number[]) =>
   const attempt = JSON.parse(readFileSync(`${argValue("--clx-workspace")}/attempt.json`, "utf8"));
   const durations: number[] = [];
   walk(attempt, (node) => {
-    if (node.metric === "work_item.warm_switch_p95_ms" && Array.isArray(node.evidence)) {
-      for (const entry of node.evidence as Array<Record<string, number | string>>) {
-        if (entry.name === "trusted-session-switch-to-stable-paint")
-          durations.push(Number(entry.endTimestamp) - Number(entry.startTimestamp));
-      }
+    if (node.metric !== "work_item.warm_switch_p95_ms") return;
+    for (const entry of recordsField(node, "evidence") ?? []) {
+      if (textField(entry, "name") !== "trusted-session-switch-to-stable-paint") continue;
+      durations.push((numberField(entry, "endTimestamp") ?? NaN) - (numberField(entry, "startTimestamp") ?? NaN));
     }
   });
   const plan = clxPlan(targets, clxSeedNumber("1"));
@@ -126,11 +127,14 @@ const memStats = (values: number[]) =>
   const attempt = JSON.parse(readFileSync(`${argValue("--t3-workspace")}/result.json`, "utf8"));
   const bySequence = new Map<number, number>();
   walk(attempt, (node) => {
-    if (node.metric === "work_item.warm_switch_p95_ms" && Array.isArray(node.evidence)) {
-      const entries = node.evidence as Array<Record<string, number>>;
-      if (entries.length >= 20 && bySequence.size === 0)
-        for (const entry of entries)
-          bySequence.set(Number(entry.sequence), Number(entry.endTimestamp) - Number(entry.startTimestamp));
+    if (node.metric !== "work_item.warm_switch_p95_ms") return;
+    const entries = recordsField(node, "evidence") ?? [];
+    if (entries.length < 20 || bySequence.size > 0) return;
+    for (const entry of entries) {
+      bySequence.set(
+        numberField(entry, "sequence") ?? NaN,
+        (numberField(entry, "endTimestamp") ?? NaN) - (numberField(entry, "startTimestamp") ?? NaN),
+      );
     }
   });
   const plan = t3Plan(targets, "1");
@@ -161,33 +165,37 @@ for (const dir of [argValue("--clx-workspace"), argValue("--clx-resource")]) {
   const result = JSON.parse(readFileSync(`${dir}/result.json`, "utf8"));
   const windows: Record<string, Array<[number, number]>> = {};
   walk(result, (node) => {
-    const metric = node.metric as string | undefined;
-    if (
-      (metric === "resource.peak_process_family_rss_mib" || metric === "resource.quiescent_cpu_p95_pct") &&
-      Array.isArray(node.evidence)
-    ) {
-      for (const entry of node.evidence as Array<Record<string, number>>) {
-        if (entry.startTimestamp !== undefined)
-          (windows[metric] ??= []).push([Number(entry.startTimestamp), Number(entry.endTimestamp)]);
-      }
+    const metric = textField(node, "metric");
+    if (metric !== "resource.peak_process_family_rss_mib" && metric !== "resource.quiescent_cpu_p95_pct") return;
+    for (const entry of recordsField(node, "evidence") ?? []) {
+      const start = numberField(entry, "startTimestamp");
+      if (start === undefined) continue;
+      (windows[metric] ??= []).push([start, numberField(entry, "endTimestamp") ?? NaN]);
     }
   });
   const ticks: Array<{ at: number; cpu: number; whole: number; app: number; harness: number }> = [];
   for (const line of readFileSync(`${dir}/resources.ndjson`, "utf8").trim().split("\n")) {
-    const sample = JSON.parse(line)?.sample;
-    const processes = sample?.snapshot?.processes as
-      | Array<{ residentBytes: number; cpuPercent?: number; command: string }>
-      | undefined;
-    if (!processes?.length) continue;
+    const parsed: unknown = JSON.parse(line);
+    const sample = isRecord(parsed) ? recordField(parsed, "sample") : undefined;
+    const snapshot = sample && recordField(sample, "snapshot");
+    const processes = snapshot && recordsField(snapshot, "processes");
+    if (!sample || !processes?.length) continue;
     let app = 0;
     let harness = 0;
     let cpu = 0;
     for (const proc of processes) {
-      cpu += proc.cpuPercent ?? 0;
-      if (proc.command.includes("/.electron-runtime/")) app += proc.residentBytes;
-      else harness += proc.residentBytes;
+      cpu += numberField(proc, "cpuPercent") ?? 0;
+      const resident = numberField(proc, "residentBytes") ?? 0;
+      if (textField(proc, "command")?.includes("/.electron-runtime/")) app += resident;
+      else harness += resident;
     }
-    ticks.push({ at: sample.monotonicTimeMs, cpu, whole: (app + harness) / 1048576, app: app / 1048576, harness: harness / 1048576 });
+    ticks.push({
+      at: numberField(sample, "monotonicTimeMs") ?? NaN,
+      cpu,
+      whole: (app + harness) / 1048576,
+      app: app / 1048576,
+      harness: harness / 1048576,
+    });
   }
   const inWindows = (metric: string) =>
     ticks.filter((tick) => (windows[metric] ?? []).some(([start, end]) => tick.at >= start && tick.at <= end));

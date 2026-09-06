@@ -8,6 +8,7 @@
 // This module splits that error in two, matching the §5 rule of the retired
 // error proposal: `summary` is a sentence a human reads,
 // `detail` is the provider's own bytes, verbatim, for the collapsed disclosure.
+import { asRecord } from "@/lib/record"
 import { harnessDisplayLabel } from "@/ui/harness-display"
 
 export type ProviderErrorDetail = {
@@ -109,7 +110,7 @@ export function providerUsageLimitDetail(
   error: unknown,
   context?: { providerID?: string; modelID?: string },
 ) {
-  const data = record(record(error)?.data)
+  const data = asRecord(asRecord(error)?.data)
   const raw = text(data?.message)
   if (!raw) return undefined
   const message = stripRelayPrefix(raw).message
@@ -147,13 +148,24 @@ const PROVIDER_NAMES: Record<string, string> = {
   cursor: "Cursor",
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  return value as Record<string, unknown>
-}
-
 function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+/**
+ * A non-string `message` still has to reach the user as something readable —
+ * `String(value)` would surface a bare "[object Object]" for the object bodies
+ * some providers send, so serialize it instead.
+ */
+function serialized(value: unknown) {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value)
+  try {
+    return JSON.stringify(value) ?? undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -165,10 +177,10 @@ export function providerErrorDetail(
   error: unknown,
   context?: { providerID?: string; modelID?: string },
 ): ProviderErrorDetail {
-  const data = record(record(error)?.data)
+  const data = asRecord(asRecord(error)?.data)
   if (!data) return {}
 
-  const rawMessage = text(data.message) ?? (data.message === undefined || data.message === null ? undefined : String(data.message))
+  const rawMessage = text(data.message) ?? serialized(data.message)
   const { message, relayLabel } = rawMessage ? stripRelayPrefix(rawMessage) : { message: undefined, relayLabel: undefined }
   const status = typeof data.statusCode === "number" ? data.statusCode : undefined
   const body = text(data.responseBody)

@@ -233,7 +233,7 @@ describe("conversation hydrator", () => {
       ...canonicalPage,
       rows: [{ info: settledMessage("msg_1"), parts: [{ ...part("prt_text", "msg_1"), text: "short" }] }],
     })
-    expect((registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.[0] as { text?: string }).text).toBe("short")
+    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.[0]).toMatchObject({ text: "short" })
 
     hydrateConversationPage({
       directory: "/repo",

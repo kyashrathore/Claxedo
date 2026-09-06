@@ -11,31 +11,25 @@
 // no ResizeObserver), so the workbench's own onMount measure reads the narrow
 // width and the `collapsed` memo latches on.
 
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup } from "@solidjs/testing-library"
 import { mountWorkbench } from "./dom-helpers"
 import { BP_MD } from "../collapse-projection"
 
-type RectFn = typeof Element.prototype.getBoundingClientRect
-
 function stubCanvasWidth(width: number): () => void {
-  const proto = Element.prototype
-  const original: RectFn = proto.getBoundingClientRect
-  proto.getBoundingClientRect = function stubbed(this: Element): DOMRect {
-    return {
-      width,
-      height: 800,
-      top: 0,
-      left: 0,
-      right: width,
-      bottom: 800,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect
-  }
+  const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    width,
+    height: 800,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: 800,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect)
   return () => {
-    proto.getBoundingClientRect = original
+    spy.mockRestore()
   }
 }
 

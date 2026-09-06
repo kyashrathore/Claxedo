@@ -1,5 +1,5 @@
 export async function mapBounded<T, R>(values: readonly T[], transform: (value: T) => Promise<R>) {
-  const result = new Array<R>(values.length)
+  const result: R[] = Array.from({ length: values.length })
   let next = 0
   await Promise.all(
     Array.from({ length: Math.min(8, values.length) }, async () => {

@@ -72,8 +72,8 @@ const shape = await page.evaluate(() => {
   const walk = (node: Element, depth: number) => {
     tree.push(
       `${"  ".repeat(depth)}${node.tagName.toLowerCase()}` +
-        `${node.getAttribute("data-component") ? `{${node.getAttribute("data-component")}}` : ""}` +
-        `${node.getAttribute("data-slot") ? `<${node.getAttribute("data-slot")}>` : ""}`,
+        (node.getAttribute("data-component") ? `{${node.getAttribute("data-component")}}` : "") +
+        (node.getAttribute("data-slot") ? `<${node.getAttribute("data-slot")}>` : ""),
     )
     for (const child of Array.from(node.children)) walk(child, depth + 1)
   }
@@ -119,7 +119,7 @@ if (!shape) {
 const rebuild = await page.evaluate(async () => {
   const scroller = document.querySelector<HTMLElement>("[data-review-rendered-files]")?.closest<HTMLElement>(
     "[data-slot='session-review-scroll'], .scroll-view__viewport",
-  ) ?? document.scrollingElement as HTMLElement
+  ) ?? (document.scrollingElement instanceof HTMLElement ? document.scrollingElement : document.body)
   const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   const rows = () => document.querySelectorAll("[data-review-rendered-files] [data-review-file]").length
   const samples: number[] = []

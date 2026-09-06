@@ -2,6 +2,7 @@ import { dehydrate, hydrate } from "@tanstack/solid-query"
 import { createStore, del, get, set } from "idb-keyval"
 import { queryClient } from "@/platform/query/query-client"
 import { compactProviderListForStorage } from "@/platform/query/provider-list"
+import { asRecord } from "@/lib/record"
 
 const day = 1000 * 60 * 60 * 24
 const buildHash = import.meta.env.VITE_BUILD_HASH ?? "dev"
@@ -35,7 +36,9 @@ type StorageLike = {
 }
 
 type PersistedQuery = {
-  queryKey?: unknown[]
+  // `readonly` so a dehydrated `DehydratedQuery` is assignable as-is. This type
+  // is the app's own view of a persisted row; nothing here mutates the key.
+  queryKey?: readonly unknown[]
   state?: {
     status?: string
     fetchStatus?: string
@@ -51,6 +54,46 @@ type PersistedClient = {
   clientState?: {
     queries?: PersistedQuery[]
   }
+}
+
+function isPersistedQuery(value: unknown): value is PersistedQuery {
+  const row = asRecord(value)
+  if (!row) return false
+  if (row.queryKey !== undefined && !Array.isArray(row.queryKey)) return false
+  if (row.state === undefined) return true
+  const state = asRecord(row.state)
+  if (!state) return false
+  return (state.status === undefined || typeof state.status === "string")
+    && (state.fetchStatus === undefined || typeof state.fetchStatus === "string")
+}
+
+/**
+ * Whether a restored snapshot is shaped like one this module wrote.
+ *
+ * Checked rather than asserted because the value comes back from durable
+ * storage under a key an older build, another tab, or a hand-edited IndexedDB
+ * row can also hold. `safePersistedClient` already treats individual query rows
+ * defensively; what it could not defend against was the envelope itself not
+ * being an object, in which case the scope/buster/timestamp comparisons below
+ * all read `undefined` and a snapshot that should have been dropped was instead
+ * handed to `hydrate`.
+ *
+ * A predicate rather than a rebuild: dehydrated rows carry `queryHash`,
+ * `dataUpdatedAt` and other fields `hydrate` needs and {@link PersistedQuery}
+ * deliberately does not name, so reconstructing the snapshot from the fields
+ * this module reads would silently drop them.
+ */
+function isPersistedClient(value: unknown): value is PersistedClient {
+  const row = asRecord(value)
+  if (!row) return false
+  if (row.buster !== undefined && typeof row.buster !== "string") return false
+  if (row.timestamp !== undefined && typeof row.timestamp !== "number") return false
+  if (row.scope !== undefined && typeof row.scope !== "string") return false
+  if (row.clientState === undefined) return true
+  const clientState = asRecord(row.clientState)
+  if (!clientState) return false
+  return clientState.queries === undefined
+    || (Array.isArray(clientState.queries) && clientState.queries.every(isPersistedQuery))
 }
 
 let uninstall: (() => void) | undefined
@@ -72,13 +115,15 @@ function mapReplacer(_key: string, value: unknown) {
 }
 
 function mapReviver(_key: string, value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return value
-  const record = value as Record<string, unknown>
-  const keys = Object.keys(record)
-  if (keys.length === 1 && keys[0] === MAP_TAG && Array.isArray(record[MAP_TAG])) {
-    return new Map(record[MAP_TAG] as [unknown, unknown][])
-  }
-  return value
+  const tagged = asRecord(value)
+  if (!tagged) return value
+  const keys = Object.keys(tagged)
+  if (keys.length !== 1 || keys[0] !== MAP_TAG) return value
+  const entries = tagged[MAP_TAG]
+  if (!Array.isArray(entries)) return value
+  // A tagged payload is written by `mapReplacer` from a real Map, so each
+  // entry is a [key, value] pair; anything else in that slot is not ours.
+  return new Map(entries.flatMap((entry) => (Array.isArray(entry) && entry.length === 2 ? [[entry[0], entry[1]] as const] : [])))
 }
 
 export const queryPersistencePolicies = [
@@ -143,14 +188,13 @@ export function shouldDehydrateQuery(input: { queryKey: readonly unknown[]; stat
   return shouldScheduleQueryPersistence(input.queryKey)
 }
 
-function safePersistedClient<T>(client: T): T {
-  const persisted = client as PersistedClient
-  if (!persisted.clientState?.queries) return client
+function safePersistedClient(client: PersistedClient): PersistedClient {
+  if (!client.clientState?.queries) return client
   return {
     ...client,
     clientState: {
-      ...persisted.clientState,
-      queries: persisted.clientState.queries.filter((query) => {
+      ...client.clientState,
+      queries: client.clientState.queries.filter((query) => {
         if (query.state?.status === "pending") return false
         if (query.state?.data === undefined) return false
         if (query.promise && typeof (query.promise as { then?: unknown }).then !== "function") return false
@@ -168,7 +212,7 @@ function safePersistedClient<T>(client: T): T {
 }
 
 function indexedDbStorage(): StorageLike | undefined {
-  if (typeof indexedDB === "undefined") return
+  if (typeof indexedDB === "undefined") return undefined
   const store = createStore("claxedo-query-cache", "queries")
   return {
     getItem: (key) => get<string>(key, store),
@@ -256,7 +300,9 @@ function createThrottledQueryPersistence(input: {
       timer = setTimeout(flushWhenInteractiveWorkIsQuiet, quietDelay)
       return
     }
-    flush()
+    // A timer callback has nobody to await it, and the write chain `flush()`
+    // returns already ends in `.catch(() => {})`.
+    void flush()
   }
 
   const schedule = () => {
@@ -268,7 +314,7 @@ function createThrottledQueryPersistence(input: {
 
   return {
     schedule,
-    async flushNow() {
+    flushNow: async () => {
       if (timer !== undefined) clearTimeout(timer)
       timer = undefined
       await flush()
@@ -286,19 +332,21 @@ function createThrottledQueryPersistence(input: {
       },
       async restoreClient() {
         const cached = await input.storage.getItem(queryPersisterKey)
-        if (!cached) return
-        const parsed = JSON.parse(cached, mapReviver) as PersistedClient
+        if (!cached) return undefined
+        const parsed: unknown = JSON.parse(cached, mapReviver)
         // Pre-scope snapshots and snapshots from another principal are not
-        // valid inputs. Remove them instead of briefly hydrating private rows
-        // and relying on a later account-switch cleanup to catch up.
+        // valid inputs, and neither is a payload this module did not write.
+        // Remove them instead of briefly hydrating private rows and relying on
+        // a later account-switch cleanup to catch up.
         if (
+          !isPersistedClient(parsed) ||
           parsed.scope !== input.scope() ||
           parsed.buster !== input.buster ||
           typeof parsed.timestamp !== "number" ||
           Date.now() - parsed.timestamp > day
         ) {
           await input.storage.removeItem(queryPersisterKey)
-          return
+          return undefined
         }
         return safePersistedClient(parsed)
       },
@@ -340,11 +388,11 @@ export function installQueryPersister(input: {
    */
   deferToIdle?: boolean
 } = {}) {
-  if (uninstall) return
+  if (uninstall) return undefined
   const storage = input.storage === undefined
     ? indexedDbStorage()
     : input.storage
-  if (!storage) return
+  if (!storage) return undefined
 
   const setup = () => {
     if (uninstall) return undefined
@@ -372,7 +420,7 @@ export function installQueryPersister(input: {
     let cancelled = false
     const restore = persistence.persister.restoreClient().then((client) => {
       if (client?.clientState && client.scope === (input.scope ?? (() => "anonymous"))() && !cancelled) {
-        hydrate(queryClient, client.clientState as never)
+        hydrate(queryClient, client.clientState)
       }
       if (cancelled) return
       const onQueryCacheEvent = (event: { type: string; query: { queryKey: readonly unknown[] } }) => {
@@ -413,7 +461,9 @@ export function installQueryPersister(input: {
         resolveRestore()
         return
       }
-      result[1].finally(() => resolveRestore())
+      // `restore` carries its own `.catch`, so this only forwards settlement
+      // to the deferred handle the caller already holds.
+      void result[1].finally(() => resolveRestore())
     })
     // Provide a stable unsubscribe handle so callers that capture it before
     // the deferred setup completes still see consistent teardown semantics.
@@ -425,7 +475,7 @@ export function installQueryPersister(input: {
   }
 
   const result = setup()
-  if (!result) return
+  if (!result) return undefined
   return {
     unsubscribe: uninstall!,
     restore: result[1],

@@ -21,6 +21,8 @@ export const errorText = (error: unknown) => {
   try {
     return JSON.stringify(error)
   } catch {
-    return String(error)
+    // Circular structures and BigInt reach here. `String(error)` would emit
+    // "[object Object]", which tells a reader strictly less than saying so.
+    return "unreadable error value"
   }
 }

@@ -1,8 +1,9 @@
-import { createStore, produce, type SetStoreFunction } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { isForbiddenConnectionError } from "@/features/workspaces/app-ports"
 import type { useClaxedoEventsOptional } from "../../../app/integrations/claxedo-events"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+import { asRecord } from "@/lib/record"
 // This module is hosted, so it imports the implementation directly rather
 // than through `workspaceStartup()`. Local surfaces must not copy this import.
 import {
@@ -683,11 +684,17 @@ export const __workspaceConnectionInternals = {
   wasRecentlyReady,
 }
 
-function readRecentReady() {
+function readRecentReady(): Record<string, number> {
   if (typeof localStorage === "undefined") return {}
   try {
-    const value = JSON.parse(localStorage.getItem(RECENT_READY_STORAGE_KEY) ?? "{}") as Record<string, number>
-    return value && typeof value === "object" ? value : {}
+    // Entries are timestamps compared against `Date.now()`, so a stored value
+    // that is not a number is dropped rather than trusted: this store survives
+    // reloads and older builds wrote other shapes into it.
+    const stored = asRecord(JSON.parse(localStorage.getItem(RECENT_READY_STORAGE_KEY) ?? "{}"))
+    if (!stored) return {}
+    return Object.fromEntries(
+      Object.entries(stored).filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+    )
   } catch {
     return {}
   }

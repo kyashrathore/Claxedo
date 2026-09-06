@@ -32,7 +32,7 @@ export function startEchoTarget(config: EchoTargetConfig = {}): EchoTarget {
       const url = new URL(request.url)
       if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
         if (delay > 0) await Bun.sleep(delay)
-        if (srv.upgrade(request, { data: { kind: "echo" } })) return
+        if (srv.upgrade(request, { data: { kind: "echo" } })) return undefined
         return new Response("upgrade failed", { status: 400 })
       }
       if (url.pathname === "/api/wr/health" || url.pathname === "/health") {

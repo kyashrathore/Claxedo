@@ -4,6 +4,7 @@ import { decodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artif
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { createHostedAgentPluginRuntimeProvisioner, type SignedAgentPluginRuntimeSnapshot } from "./provision"
+import { fetchBodyText } from "../../test-support/fetch-calls"
 
 async function artifact(name: string) {
   return inspectPluginTree(agentPluginTree([{ path: "plugin.json", kind: "file", executableMode: 0, bytes: new TextEncoder().encode(JSON.stringify({
@@ -38,7 +39,7 @@ describe("hosted Agent Plugins runtime provisioner", () => {
     const second = await artifact("review-org")
     let delivered: unknown
     const runtimeFetch = vi.fn(async (_workspaceId, _identity, _path, init: RequestInit) => {
-      delivered = JSON.parse(String(init.body))
+      delivered = JSON.parse(fetchBodyText(init.body))
       return Response.json({ ok: true, revision: 9, generationId: "generation_9", harnessLaunch: {} })
     })
     const provisioner = createHostedAgentPluginRuntimeProvisioner({

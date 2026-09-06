@@ -360,7 +360,10 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
                 current={CONFLICT_OPTIONS.find((o) => o.value === (store.portOnConflict ?? "ask"))}
                 value={(o) => o.value}
                 label={(o) => o.label}
-                onSelect={(o) => setStore("portOnConflict", o?.value === "ask" ? undefined : o?.value as Process.PortConflictStrategy)}
+                onSelect={(o) => {
+                  const strategy = o?.value
+                  setStore("portOnConflict", strategy === "ask" ? undefined : strategy)
+                }}
               />
             </div>
           </Show>

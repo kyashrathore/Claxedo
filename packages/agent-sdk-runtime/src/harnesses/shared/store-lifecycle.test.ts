@@ -44,7 +44,7 @@ describe("adapter store lifecycle", () => {
     expect(closed).toBe(0)
   })
 
-  test("CodexHarnessAdapter closes adapter-created stores once", () => {
+  test("CodexHarnessAdapter closes adapter-created stores once", async () => {
     let closed = 0
     const adapter = new CodexHarnessAdapter({
       createStore: () => sdkStore(() => {
@@ -52,13 +52,13 @@ describe("adapter store lifecycle", () => {
       }),
     })
 
-    adapter.dispose()
-    adapter.dispose()
+    await adapter.dispose()
+    await adapter.dispose()
 
     expect(closed).toBe(1)
   })
 
-  test("CodexHarnessAdapter leaves caller-owned stores open", () => {
+  test("CodexHarnessAdapter leaves caller-owned stores open", async () => {
     let closed = 0
     const adapter = new CodexHarnessAdapter({
       store: sdkStore(() => {
@@ -66,7 +66,7 @@ describe("adapter store lifecycle", () => {
       }),
     })
 
-    adapter.dispose()
+    await adapter.dispose()
 
     expect(closed).toBe(0)
   })

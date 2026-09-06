@@ -35,7 +35,9 @@ function DirectorySurface() {
   // always the local rail — in every mode.
   const localDirectory = directoryApi({ baseUrl: getDefaultBaseUrl(), request: unsignedLocalFetch })
   const browserSignedDirectory = directoryApi({ baseUrl, request: platform.fetch ?? authFetch })
-  const desktopSignedDirectory = accountDirectoryApi(account, localDirectory.machineInstalled)
+  // `machineInstalled` is declared as a method on `DirectoryApi`; call it
+  // through `localDirectory` instead of detaching it from its own object.
+  const desktopSignedDirectory = accountDirectoryApi(account, () => localDirectory.machineInstalled())
   const directory = () => {
     if (mode() !== "signed") return localDirectory
     return desktopSigned() ? desktopSignedDirectory : browserSignedDirectory

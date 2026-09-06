@@ -4,7 +4,8 @@ import {
   ClaxedoSessionMetaTable,
   ClaxedoSessionTagTable,
 } from "../meta.sql"
-import type { SessionAttachment, SessionMeta } from "./types"
+import { isOneOf } from "../../platform/runtime/lib/json"
+import { SESSION_ATTACHMENT_KINDS, type SessionMeta } from "./types"
 import { host, ids, root } from "./shape"
 
 type StoredSessionMeta = typeof ClaxedoSessionMetaTable.$inferSelect
@@ -128,10 +129,8 @@ function hydrateSessionRows(
   for (const item of attachments) {
     const row = byRef.get(item.session_ref)
     if (!row) continue
-    row.attachments.push({
-      kind: item.kind as SessionAttachment["kind"],
-      targetID: item.target_id,
-    })
+    if (!isOneOf(item.kind, SESSION_ATTACHMENT_KINDS)) continue
+    row.attachments.push({ kind: item.kind, targetID: item.target_id })
   }
   const links = new Map<string, { parentID?: string }>(
     [...by.values()].map((item) => [item.sessionID, (item.parentID ? { parentID: item.parentID } : {})]),

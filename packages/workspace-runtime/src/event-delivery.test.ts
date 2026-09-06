@@ -40,7 +40,7 @@ describe("createIdentityAwareEventSource", () => {
       active -= 1
       return "deliver" as const
     }
-    const source = createIdentityAwareEventSource({ subscribe: bus.subscribe, policy, sessionId: (event) => event.sessionId })
+    const source = createIdentityAwareEventSource<Event>({ subscribe: (fn) => bus.subscribe(fn), policy, sessionId: (event) => event.sessionId })
     for (let index = 0; index < 24; index += 1) {
       bus.publish({ sessionId: `ses_${index}`, value: `event_${index}` })
     }
@@ -55,7 +55,7 @@ describe("createIdentityAwareEventSource", () => {
   test("terminates an overflowed stream instead of growing an unbounded authority queue", async () => {
     const bus = createBus<Event>()
     const policy: EventDeliveryPolicy<Event> = () => new Promise(() => {})
-    const source = createIdentityAwareEventSource({ subscribe: bus.subscribe, policy, sessionId: (event) => event.sessionId })
+    const source = createIdentityAwareEventSource<Event>({ subscribe: (fn) => bus.subscribe(fn), policy, sessionId: (event) => event.sessionId })
     const opened = source.open(participant("slow_connection"))
     let terminated = false
     opened.subscribe(() => undefined, () => { terminated = true })
@@ -69,8 +69,8 @@ describe("createIdentityAwareEventSource", () => {
 
   test("bounds total replay startup time when authority never responds", async () => {
     const bus = createBus<Event>()
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy: () => new Promise(() => {}),
       sessionId: (event) => event.sessionId,
       replayStartupDeadlineMs: 20,
@@ -90,8 +90,8 @@ describe("createIdentityAwareEventSource", () => {
       principal.mode === "verified" && principal.actorId === "actor_participant" && event.sessionId === "ses_private"
         ? "deliver"
         : "omit"
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy,
       sessionId: (event) => event.sessionId,
     })
@@ -119,8 +119,8 @@ describe("createIdentityAwareEventSource", () => {
     const bus = createBus<Event>()
     const revoked = new Set<string>()
     const decisions: Array<{ actorId?: string; connectionId: string; value: string }> = []
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy: ({ principal, event }) => {
         decisions.push({
           actorId: principal.mode === "verified" ? principal.actorId : undefined,
@@ -153,8 +153,8 @@ describe("createIdentityAwareEventSource", () => {
   test("tears down already-open subscriptions when the policy returns terminate", async () => {
     const bus = createBus<Event>()
     let revoked = false
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy: () => revoked ? "terminate" : "deliver",
       sessionId: (event) => event.sessionId,
     })
@@ -183,8 +183,8 @@ describe("createIdentityAwareEventSource", () => {
   test("authorizes simultaneous connections for one actor with their own credentials", async () => {
     const bus = createBus<Event>()
     const revoked = new Set<string>()
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy: ({ principal }) => {
         if (principal.mode !== "verified" || !principal.credential) return "terminate"
         return revoked.has(principal.credential) ? "terminate" : "deliver"
@@ -220,8 +220,8 @@ describe("createIdentityAwareEventSource", () => {
   test("does not expose another credential's replay to a revoked connection for the same actor", async () => {
     const bus = createBus<Event>()
     const revoked = new Set(["Bearer revoked"])
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy: ({ principal }) => {
         if (principal.mode !== "verified" || !principal.credential) return "terminate"
         return revoked.has(principal.credential) ? "terminate" : "deliver"
@@ -245,8 +245,8 @@ describe("createIdentityAwareEventSource", () => {
   test("evicts disconnected scopes and reconstructs replay from bounded retention", async () => {
     const bus = createBus<Event>()
     const decisions: string[] = []
-    const source = createIdentityAwareEventSource({
-      subscribe: bus.subscribe,
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
       policy: ({ event }) => {
         decisions.push(event.value)
         return "deliver"

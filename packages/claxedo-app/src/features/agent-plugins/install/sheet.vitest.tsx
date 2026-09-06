@@ -82,11 +82,11 @@ function harness(input: {
   withConnections?: boolean
 } = {}) {
   const order: string[] = []
-  const activation = vi.fn(async (body: ActivationBody) => {
+  const activation = vi.fn(async (_body: ActivationBody) => {
     order.push("activation")
     return { revision: 8, reconciliation: input.reconciliation ?? { state: "applied" } }
   })
-  const organizationDefault = vi.fn(async (body: OrganizationBody) => {
+  const organizationDefault = vi.fn(async (_body: OrganizationBody) => {
     order.push("organizationDefault")
     return { revision: 9, reconciliation: { state: "applied" } }
   })

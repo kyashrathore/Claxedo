@@ -10,6 +10,7 @@ import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/plat
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
+import { fetchUrl, fetchBodyText } from "../../test-support/fetch-calls"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 
@@ -117,8 +118,8 @@ describe("hosted production Pi and connection discovery", () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       if (broken) return new Response("unavailable", { status: 503 })
-      const key = decodeURIComponent(new URL(String(input)).pathname.split("/values/")[1] ?? "")
-      if (init?.method === "PUT") { kv.set(key, String(init.body)); return new Response("ok") }
+      const key = decodeURIComponent(new URL(fetchUrl(input)).pathname.split("/values/")[1] ?? "")
+      if (init?.method === "PUT") { kv.set(key, fetchBodyText(init.body)); return new Response("ok") }
       if (init?.method === "DELETE") { kv.delete(key); return new Response("ok") }
       return kv.has(key) ? new Response(kv.get(key)) : new Response("missing", { status: 404 })
     }) as unknown as typeof fetch
@@ -626,7 +627,7 @@ describe("hosted-core session-list", () => {
     }
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = fetchUrl(input)
       if (url.endsWith("/workspaces/ws_1/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/workspaces/ws_1/api/wr/health?sessionId=ses_1")) {
         return Response.json({ ok: true, status: "ready", harness: { kind: "native", harnessId: "claude" }, activeHarness: { kind: "native", harnessId: "claude" }, harnessHealth: { status: "ok" } })

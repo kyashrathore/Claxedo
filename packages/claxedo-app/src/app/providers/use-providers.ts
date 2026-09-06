@@ -37,26 +37,19 @@ function mergeProviderQuery(input: {
   })
 }
 
-function providerFromUnknown(input: unknown): Provider | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined
-  const provider = input as Partial<Provider> & { id?: unknown; models?: unknown }
-  if (typeof provider.id !== "string") return undefined
-  return {
-    ...provider,
-    id: provider.id,
-    models: provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-      ? provider.models
-      : {},
-  } as Provider
-}
-
+/**
+ * A defensive copy of the catalog index.
+ *
+ * Every writer of this query produces a `Map` — `normalizeProviderList`,
+ * `compactProviderListForStorage`, and the persister's `mapReviver` all do —
+ * so this only has to guard the one shape that is NOT one: a blob persisted
+ * before the persister learned to tag Maps restores `all` as a plain object,
+ * and `new Map(thatObject)` throws. The rebuild-from-an-array branch that used
+ * to sit here had no producer, and rebuilding a row meant asserting an
+ * `id`-and-`models` object into the control plane's whole `ClaxedoProvider`.
+ */
 function providerMap(input: unknown): ProviderMap {
-  if (input instanceof Map) return input as ProviderMap
-  if (!Array.isArray(input)) return new Map()
-  return new Map(input.flatMap((item) => {
-    const provider = providerFromUnknown(item)
-    return provider ? [[provider.id, provider] as const] : []
-  }))
+  return input instanceof Map ? new Map(input) : new Map()
 }
 
 function connectedIds(input: unknown) {

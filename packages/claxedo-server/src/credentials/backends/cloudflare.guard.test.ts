@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as cloudflare from "@claxedo/server-core/credentials/backends/cloudflare"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
+import { fetchBodyText } from "../../test-support/fetch-calls"
 
 /**
  * The Cloudflare KV backend must be impossible to use unwrapped.
@@ -90,7 +91,7 @@ describe("cloudflare KV backend guard", () => {
         const url = new URL(String(input))
         const key = decodeURIComponent(url.pathname.split("/values/")[1] ?? "")
         if (init?.method === "PUT") {
-          const body = String(init.body)
+          const body = fetchBodyText(init.body)
           putBodies.push(body)
           kv.set(key, body)
           return new Response("ok", { status: 200 })

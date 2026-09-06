@@ -10,11 +10,13 @@ import {
   type RuntimeHarnessSelection,
   type RuntimeNativeHarnessId,
 } from "@claxedo/workspace-runtime/config"
+import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 
 export type {
   HarnessConnectionDescriptor,
   HarnessConnectionRef,
 } from "@claxedo/agent-sdk-runtime"
+
 
 export type HarnessConnectionProblem = {
   connectionId: string
@@ -156,13 +158,19 @@ function providerProblem(error: unknown) {
   return error instanceof Error ? error.message : "connection descriptor is invalid"
 }
 
+/** A shallow copy of a JSON object, so a caller can keep it without aliasing the parsed value. */
 function objectRecord(input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return Object.fromEntries(Object.entries(input))
+  const row = jsonRecord(input)
+  return row && { ...row }
 }
 
 function stringRecord(input: unknown): Record<string, string> | undefined {
-  const row = objectRecord(input)
-  if (!row || !Object.values(row).every((value) => typeof value === "string")) return
-  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value)]))
+  const row = jsonRecord(input)
+  if (!row) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (typeof value !== "string") return undefined
+    out[key] = value
+  }
+  return out
 }

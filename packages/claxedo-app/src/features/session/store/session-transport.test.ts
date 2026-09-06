@@ -1,14 +1,18 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { createMockApi } from "@/architecture/test-support/mock-api"
 
 const calls: Array<{ url: string; method?: string }> = []
-const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?session-transport-restore`)) }
 
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
-})
-
-mock.module("@/platform/api/api", () => ({
-  ...realApiModule,
+// `mock.module` replaces `@/platform/api/api` PROCESS-WIDE and permanently, so
+// a hand-listed factory silently deletes every export it forgets — that is what
+// leaves later files reading `undefined` for exports they never mocked. This
+// file used to spread a cache-busting real import and then blank `api` to an
+// empty object, which is the same hazard wearing a cast. `createMockApi` owns
+// the module's whole surface once: the pure mirrors are inherited so they
+// cannot drift, and `api` is a real client routed through the `authFetch`
+// override below rather than a stub that throws on first use.
+const apiFixture = createMockApi({
+  baseUrl: "http://test.local",
   authFetch: async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(String(input), init)
     calls.push({
@@ -97,22 +101,18 @@ mock.module("@/platform/api/api", () => ({
       },
     })
   },
-  getClaxedoServerUrl: () => "http://test.local",
-  getDefaultBaseUrl: () => "http://test.local",
-  apiBearerToken: async () => null,
-  // Ensure all api.ts named exports are stubbed so other tests that
-  // transitively import this module don't crash with
-  // "Export named 'api' not found" — bun:test mock.module shims leak
-  // across files in the same suite run.
-  api: {} as Record<string, unknown>,
-  isDemoMode: () => false,
-  isDemoPath: () => false,
-  isEmbedMode: () => false,
   fixDir: (input: string | undefined) => input,
-  configureApiRuntime: () => undefined,
-  resetApiRuntime: () => undefined,
-  normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
-}))
+})
+
+// Captured before the mock is installed, and re-registered afterwards, because
+// the replacement outlives this file otherwise.
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?session-transport-restore`)) }
+
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
+})
+
+await mock.module("@/platform/api/api", () => apiFixture.module)
 
 const {
   createSessionInfoHydrationGetter,

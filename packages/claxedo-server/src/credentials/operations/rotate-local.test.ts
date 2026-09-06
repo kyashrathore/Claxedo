@@ -141,7 +141,8 @@ describe("local credential store KEK rotation", () => {
       orgId: PARTITION,
     })
     const refs = listCredentials().map((credential) => credential.secure_ref!)
-    expect((await Promise.all(refs.map((ref) => newKeyOnly.get(ref)))).sort()).toEqual([
+    expect((await Promise.all(refs.map((ref) => newKeyOnly.get(ref))))
+      .sort((left, right) => String(left).localeCompare(String(right)))).toEqual([
       "sk-anthropic",
       "sk-openai",
     ])

@@ -289,7 +289,7 @@ describe("session Goal routes", () => {
     let runtimeResolutions = 0
     const app = SessionRoutes(() => adapter({}), {
       beforeSessionOperation({ operation }) {
-        if (operation === "goal_start") return new Response("blocked", { status: 403 })
+        return operation === "goal_start" ? new Response("blocked", { status: 403 }) : undefined
       },
       resolveRuntime: () => {
         runtimeResolutions++
@@ -426,7 +426,7 @@ describe("session Goal routes", () => {
     let runtimeResolutions = 0
     const blocked = SessionRoutes(() => adapter({}), {
       beforeSessionOperation({ operation }) {
-        if (operation === "goal_state") return new Response("blocked", { status: 403 })
+        return operation === "goal_state" ? new Response("blocked", { status: 403 }) : undefined
       },
       resolveRuntime: () => {
         runtimeResolutions++

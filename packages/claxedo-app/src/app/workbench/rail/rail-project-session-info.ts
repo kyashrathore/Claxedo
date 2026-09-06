@@ -14,7 +14,6 @@ import {
   type DirectorySessionCacheValue,
 } from "../../../features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
-import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import type { ProjectItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { parseOwnerRepo } from "./rail-git-remote"
 
@@ -65,7 +64,7 @@ export function railProjectDirectoryRefs(project: ProjectItem) {
   for (const sandbox of project.sandboxes ?? []) refs.add(sandbox)
   for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
     refs.add(key)
-    refs.add(workspace.id)
+    if (workspace.id) refs.add(workspace.id)
     if (workspace.workspaceId) refs.add(workspace.workspaceId)
     if (workspace.directory) refs.add(workspace.directory)
   }
@@ -78,7 +77,7 @@ export function useRailProjectSessionInfo(input: {
   projects: Accessor<ProjectItem[]>
 }) {
   const sessionInventoryQuery = useQuery(() =>
-    sessionInventoryQueryOptions<SessionInventoryRow>({
+    sessionInventoryQueryOptions({
       baseUrl: input.baseUrl(),
     }),
   )
@@ -86,7 +85,7 @@ export function useRailProjectSessionInfo(input: {
     mainIsCloud: input.mainIsCloud,
     projects: input.projects,
     sessionInventory: createMemo(() =>
-      sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
+      sessionInventoryQuery.data ?? emptySessionInventory(),
     ),
   })
 }

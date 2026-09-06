@@ -3,7 +3,8 @@ import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/ru
 import type { ControlPlaneServices } from "../../../authority/services"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { DocumentVersionConflictError } from "../../errors"
-import type { DocumentVersion } from "../../port"
+import { toDocumentVersion } from "../../port"
+import { asRecord } from "../../../platform/json/index"
 import { fetchRelayResponse, parseRelayJson, relayResponseText, type RelayHttpOptions } from "../../relay-http"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
@@ -93,14 +94,11 @@ export function createHostedLocalDocumentRelay(
         options,
       )
       if (result.response.status === 409) {
-        const value = parseRelayJson(result.body, "Local document conflict")
-        if (!value || typeof value !== "object" || Array.isArray(value)) {
-          throw new Error("Local document conflict response is invalid")
-        }
+        const value = asRecord(parseRelayJson(result.body, "Local document conflict"))
+        if (!value) throw new Error("Local document conflict response is invalid")
+        const currentVersion = value.currentVersion
         throw new DocumentVersionConflictError(
-          typeof (value as Record<string, unknown>).currentVersion === "string"
-            ? (value as Record<string, unknown>).currentVersion as DocumentVersion
-            : null,
+          typeof currentVersion === "string" ? toDocumentVersion(currentVersion) : null,
         )
       }
       if (!result.response.ok) {

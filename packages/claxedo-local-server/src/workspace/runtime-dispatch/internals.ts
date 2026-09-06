@@ -78,8 +78,8 @@ export async function resolveWorkspaceHit(
   ws: Awaited<ReturnType<typeof resolveWorkspace>>,
   options: RuntimeProxyOptions = {},
 ): Promise<Hit | undefined> {
-  if (!ws) return
-  if (ws.kind !== "cloud") return
+  if (!ws) return undefined
+  if (ws.kind !== "cloud") return undefined
   const pending = ensureCloudRuntime(ws, options)
   const runtime = await Promise.race([
     pending,
@@ -431,8 +431,8 @@ async function resolveEmbeddedRelayHostAuth(
   // Attribution stamps must come from a verified control-plane/relay actor.
   // Never decode an unsigned Bearer payload here — that skipped requireRelayActor
   // and allowed author misattribution on any caller that can reach embedded().
-  if (!options?.resolveRelayActor) return
+  if (!options?.resolveRelayActor) return undefined
   const actor = await options.resolveRelayActor(request, workspaceId)
-  if (!actor) return
+  if (!actor) return undefined
   return embeddedRelayHostAuthFromActor(actor, workspaceId)
 }

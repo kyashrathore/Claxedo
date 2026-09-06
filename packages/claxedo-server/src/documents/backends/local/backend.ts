@@ -29,7 +29,7 @@ import {
   type LocalManagedOptions,
 } from "./managed"
 import { createMoveToRepository } from "../../repository/move-to"
-import type { DocumentEntry, DocumentVersion } from "../../port"
+import { toDocumentVersion, type DocumentEntry } from "../../port"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
@@ -396,7 +396,7 @@ export function createLocalDocumentsBackend(
               input.documentId,
               `${createHash("sha256").update(expectedVersion).digest("hex")}.md`,
             ),
-            expectedVersion: expectedVersion as DocumentVersion,
+            expectedVersion: toDocumentVersion(expectedVersion),
           })
         },
         restoreManagedIndex: async (input) => {
@@ -511,7 +511,7 @@ export function createLocalDocumentsBackend(
           sync: async (markdown, expectedVersion) => {
             const written = await workspace.write(handle, {
               markdown,
-              expectedVersion: expectedVersion as DocumentVersion,
+              expectedVersion: toDocumentVersion(expectedVersion),
               actor: { type: "agent", id: sessionId },
               sessionId,
             })

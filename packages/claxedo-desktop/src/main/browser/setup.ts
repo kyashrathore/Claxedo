@@ -23,7 +23,7 @@ import path from "node:path"
 
 import { isBrowserTabEnabled } from "./flag"
 import { startDesktopHttpBridge, type BridgeHandle } from "./http-bridge"
-import { readString } from "./json-read"
+import { readString } from "../../shared/json-read"
 import { configureAgentBrowserPartition, installAgentBrowserNavigationGuards } from "./partition"
 import { BrowserRegistry } from "./registry"
 import { ensureDesktopToken } from "./token"

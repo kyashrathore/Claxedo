@@ -163,8 +163,7 @@ export function selectMockMessagePage(input: {
  * `projectLatestSurfaceMessages` in agent-sdk-runtime/src/message-page.ts.
  */
 export function projectMockSurfacePage<
-  TPart extends { type?: unknown; text?: unknown },
-  TRow extends { info: Record<string, unknown>; parts: TPart[] },
+  TRow extends { info: Record<string, unknown>; parts: Array<{ type?: unknown; text?: unknown }> },
 >(rows: readonly TRow[]): TRow[] {
   type Candidate = { messageIndex: number; partIndex: number; textBytes: number; partBytes: number }
   const candidates: Candidate[] = []

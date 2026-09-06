@@ -122,7 +122,7 @@ export async function findForbiddenDiagnosticsFields(
   return findings
 }
 
-function declarationName(ts: TsModule, node: TS.Node) {
+function declarationName(ts: TsModule, node: TS.Node): string | undefined {
   if (
     ts.isVariableDeclaration(node) ||
     ts.isTypeAliasDeclaration(node) ||
@@ -131,16 +131,21 @@ function declarationName(ts: TsModule, node: TS.Node) {
   ) {
     return propertyName(ts, node.name)
   }
+  return undefined
 }
 
-function propertyName(ts: TsModule, name: TS.PropertyName | TS.BindingName | TS.ModuleName | undefined) {
-  if (!name) return
+function propertyName(
+  ts: TsModule,
+  name: TS.PropertyName | TS.BindingName | TS.ModuleName | undefined,
+): string | undefined {
+  if (!name) return undefined
   if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
     return name.text
   }
   if (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(name.expression)) {
     return name.expression.text
   }
+  return undefined
 }
 
 if (import.meta.main) {

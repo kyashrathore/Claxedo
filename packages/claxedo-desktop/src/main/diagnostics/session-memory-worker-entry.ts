@@ -1,5 +1,7 @@
 import { createInterface } from "node:readline"
 import { createRequire } from "node:module"
+
+import { readArray, readString, readUnknown } from "../../shared/json-read"
 import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { lowerDiagnosticsWorkerPriority } from "./process-metrics-worker"
 import {
@@ -8,10 +10,10 @@ import {
   type SessionMemoryScanPaths,
 } from "./session-memory-scan"
 
-const Database = createRequire(import.meta.url)("better-sqlite3") as new (
-  path: string,
-  options: { readonly: boolean; fileMustExist: boolean },
-) => SessionMemoryDatabase
+// Named on the binding rather than asserted: `require` answers `any`, so the
+// declaration IS the contract for the slice of better-sqlite3 this worker uses.
+const Database: new (path: string, options: { readonly: boolean; fileMustExist: boolean }) => SessionMemoryDatabase =
+  createRequire(import.meta.url)("better-sqlite3")
 
 lowerDiagnosticsWorkerPriority()
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
@@ -22,9 +24,9 @@ lines.once("line", (line) => {
 
 async function run(line: string) {
   try {
-    const request = JSON.parse(line) as { paths?: unknown; warmSessions?: unknown }
-    const warmSessions = LocalDiagnostics.WarmSessionMemory.array().max(512).parse(request.warmSessions)
-    const paths = pathsInput(request.paths)
+    const request: unknown = JSON.parse(line)
+    const warmSessions = LocalDiagnostics.WarmSessionMemory.array().max(512).parse(readUnknown(request, "warmSessions"))
+    const paths = pathsInput(readUnknown(request, "paths"))
     const result = await scanSessionMemoryStores({
       paths,
       warmSessions,
@@ -37,13 +39,13 @@ async function run(line: string) {
 }
 
 function pathsInput(value: unknown): SessionMemoryScanPaths {
-  if (!value || typeof value !== "object") throw new Error("invalid scan paths")
-  const input = value as Partial<SessionMemoryScanPaths>
-  if (!Array.isArray(input.databases)) {
-    throw new Error("invalid scan paths")
-  }
+  const databases = readArray(value, "databases")
+  if (!databases) throw new Error("invalid scan paths")
   return {
-    databases: input.databases.flatMap((item) =>
-      item && typeof item.path === "string" && typeof item.profile === "string" ? [item] : []),
+    databases: databases.flatMap((item) => {
+      const path = readString(item, "path")
+      const profile = readString(item, "profile")
+      return path !== undefined && profile !== undefined ? [{ path, profile }] : []
+    }),
   }
 }

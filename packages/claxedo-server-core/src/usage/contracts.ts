@@ -1,18 +1,65 @@
 import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
+import { isJsonRecord, isOneOf } from "../platform/runtime/lib/json"
 
-export type TurnUsageSettlement = "provisional" | "final" | "partial" | "unavailable" | "recovered"
+// The runtime lists are the single source for these unions: the SQLite schema
+// declares its columns from them, and boundary parsers narrow against them.
+export const TURN_USAGE_SETTLEMENTS = ["provisional", "final", "partial", "unavailable", "recovered"] as const
+export const TURN_USAGE_STATUSES = [
+  "running",
+  "completed",
+  "error",
+  "stopped",
+  "interrupted_by_steer",
+  "process_lost",
+] as const
+export const TURN_USAGE_LOCATIONS = ["local", "cloud-workspace", "user-hosted"] as const
 
-export type TurnUsageStatus = "running" | "completed" | "error" | "stopped" | "interrupted_by_steer" | "process_lost"
+export type TurnUsageSettlement = (typeof TURN_USAGE_SETTLEMENTS)[number]
 
-export type TurnUsageLocation = "local" | "cloud-workspace" | "user-hosted"
+export type TurnUsageStatus = (typeof TURN_USAGE_STATUSES)[number]
+
+export type TurnUsageLocation = (typeof TURN_USAGE_LOCATIONS)[number]
+
+export const TURN_USAGE_QUALITY_SOURCES = ["provider", "provider-message", "lifecycle"] as const
+export const TURN_USAGE_OBSERVATION_KINDS = ["cumulative", "delta"] as const
+export const TURN_USAGE_TOKEN_CATEGORIES = ["input", "output", "reasoning", "cache_read", "cache_write"] as const
 
 export type TurnUsageQuality = {
-  source: "provider" | "provider-message" | "lifecycle"
-  observationKind?: "cumulative" | "delta"
+  source: (typeof TURN_USAGE_QUALITY_SOURCES)[number]
+  observationKind?: (typeof TURN_USAGE_OBSERVATION_KINDS)[number]
   providerObservationId?: string
   /** Stable local replay identity for the exact provider observation. */
   providerObservationKey?: string
-  knownCategories: Array<"input" | "output" | "reasoning" | "cache_read" | "cache_write">
+  knownCategories: Array<(typeof TURN_USAGE_TOKEN_CATEGORIES)[number]>
+}
+
+/**
+ * Read a persisted `quality` blob.
+ *
+ * A blob this package wrote round-trips exactly. Anything else — a hand-edited
+ * row, a blob from a future schema — degrades to the fields it can prove rather
+ * than failing the whole read, because provenance detail is not worth losing a
+ * usage revision over.
+ */
+export function readTurnUsageQuality(value: unknown): TurnUsageQuality {
+  if (!isJsonRecord(value)) return { source: "provider", knownCategories: [] }
+  const declared = value.knownCategories
+  const knownCategories = Array.isArray(declared)
+    ? TURN_USAGE_TOKEN_CATEGORIES.filter((category) => declared.includes(category))
+    : []
+  return {
+    source: isOneOf(value.source, TURN_USAGE_QUALITY_SOURCES) ? value.source : "provider",
+    ...(isOneOf(value.observationKind, TURN_USAGE_OBSERVATION_KINDS)
+      ? { observationKind: value.observationKind }
+      : {}),
+    ...(typeof value.providerObservationId === "string"
+      ? { providerObservationId: value.providerObservationId }
+      : {}),
+    ...(typeof value.providerObservationKey === "string"
+      ? { providerObservationKey: value.providerObservationKey }
+      : {}),
+    knownCategories: [...knownCategories],
+  }
 }
 
 /** The minimal privacy-bounded fact shared by local persistence and central ingest. */

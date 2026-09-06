@@ -39,12 +39,12 @@ function sessionRequired() {
   return errorBody("pty_session_id_required", "Managed PTY creation requires a sessionId")
 }
 
-function requestPort(url: string) {
+function requestPort(url: string): string | undefined {
   try {
     const parsed = new URL(url)
     return parsed.port || (parsed.protocol === "https:" ? "443" : parsed.protocol === "http:" ? "80" : undefined)
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -58,8 +58,8 @@ export function PtyRoutes(
     info: Pty.Info,
     operation: Extract<SessionAccessOperation, "pty_read" | "pty_write">,
   ) => {
-    const access = sessionAccessContext(c as never)
-    if (!access.authority) return
+    const access = sessionAccessContext(c)
+    if (!access.authority) return undefined
     if (!info.sessionId) return c.json(notFound(), 404)
     const decision = await policy.authorize({
       ...access,
@@ -69,6 +69,7 @@ export function PtyRoutes(
       path: c.req.path,
     })
     if (!decision.allowed) return sessionAccessDenied(decision)
+    return undefined
   }
 
   return new Hono<{ Variables: RelayHostAuthContext }>()
@@ -80,7 +81,7 @@ export function PtyRoutes(
     .use("*", denyWorkspaceViewers("Workspace role does not allow terminal access"))
     .get("/", async (c) => {
       const rows = Pty.list()
-      const access = sessionAccessContext(c as never)
+      const access = sessionAccessContext(c)
       if (!access.authority) return c.json(rows)
       const scoped = rows.filter((row) => row.sessionId)
       const allowed = new Set(await policy.filterSessions({
@@ -93,12 +94,12 @@ export function PtyRoutes(
       return c.json(scoped.filter((row) => allowed.has(row.sessionId!)))
     })
     .post("/", async (c) => {
-      const body = await boundedJsonBody<unknown | null>(c, null)
+      const body = await boundedJsonBody(c)
       const parsed = Pty.CreateInput.safeParse(body)
       if (!parsed.success) {
         return c.json(invalidInput(parsed.error.flatten()), 400)
       }
-      const access = sessionAccessContext(c as never)
+      const access = sessionAccessContext(c)
       if (access.authority && !parsed.data.sessionId) return c.json(sessionRequired(), 400)
       if (access.authority) {
         const decision = await policy.authorize({
@@ -222,7 +223,7 @@ export function PtyRoutes(
     })
     .put("/:ptyID", async (c) => {
       const id = c.req.param("ptyID")
-      const body = await boundedJsonBody<unknown | null>(c, null)
+      const body = await boundedJsonBody(c)
       const parsed = Pty.UpdateInput.safeParse(body)
       if (!parsed.success) {
         return c.json(invalidInput(parsed.error.flatten()), 400)
@@ -257,10 +258,9 @@ export function PtyRoutes(
         const id = c.req.param("ptyID")
         const cursor = (() => {
           const value = c.req.query("cursor")
-          if (!value) return
+          if (!value) return undefined
           const parsed = Number(value)
-          if (!Number.isSafeInteger(parsed) || parsed < -1) return
-          return parsed
+          return Number.isSafeInteger(parsed) && parsed >= -1 ? parsed : undefined
         })()
         let handler: ReturnType<typeof Pty.connect>
         let messages = Promise.resolve()
@@ -272,7 +272,7 @@ export function PtyRoutes(
         let readLease: string | undefined
         let writeLease: string | undefined
         let writeAuthorizationExpiresAt = 0
-        const streamAccess = sessionAccessContext(c as never)
+        const streamAccess = sessionAccessContext(c)
 
         const authorizeStream = async (
           info: Pty.Info,

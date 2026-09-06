@@ -83,11 +83,9 @@ const parity = await page.evaluate((selftest) => {
   const tokens = new Set<string>()
   const walk = (rules: CSSRuleList) => {
     for (const rule of Array.from(rules)) {
-      const grouped = (rule as CSSGroupingRule).cssRules
-      if (grouped) walk(grouped)
-      const selector = (rule as CSSStyleRule).selectorText
-      if (!selector) continue
-      for (const match of selector.matchAll(/\.(ui-[\w-]+)/g)) tokens.add(match[1])
+      if (rule instanceof CSSGroupingRule) walk(rule.cssRules)
+      if (!(rule instanceof CSSStyleRule)) continue
+      for (const match of rule.selectorText.matchAll(/\.(ui-[\w-]+)/g)) tokens.add(match[1])
     }
   }
   for (const sheet of Array.from(document.styleSheets)) {

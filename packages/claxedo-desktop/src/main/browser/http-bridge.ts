@@ -46,7 +46,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AgentAuditLog } from "./agent-audit-log"
 import { agentAuditLog as defaultAgentAuditLog } from "./agent-audit-log"
 import type { BrowserHandle, ScreenshotClip } from "./handle"
-import { readNumber, readRecord, readString } from "./json-read"
+import { readNumber, readRecord, readString } from "../../shared/json-read"
 import type { BrowserRegistry } from "./registry"
 import { DESKTOP_MCP_ORIGIN, DESKTOP_TOKEN_HEADER, ensureDesktopToken, setDesktopUrl } from "./token"
 

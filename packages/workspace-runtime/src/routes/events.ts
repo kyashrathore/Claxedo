@@ -44,7 +44,7 @@ export function runtimeEventsHandler(
   options: RuntimeEventOptions = {},
 ) {
   const source = createIdentityAwareEventSource({
-    subscribe: eventHub.subscribeRuntime,
+    subscribe: (fn) => eventHub.subscribeRuntime(fn),
     policy: options.policy ?? defaultEventDeliveryPolicy,
     sessionId: (event) => event.sessionId,
     isTerminal: isTerminalRuntimeEvent,

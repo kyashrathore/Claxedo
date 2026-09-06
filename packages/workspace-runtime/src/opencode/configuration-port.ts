@@ -1,4 +1,5 @@
 import type { OpenCodeHost } from "./host"
+import { arr, rec, str } from "../json-value"
 
 export type IntegrationConnection = Readonly<{ type: "credential" | "env"; id: string; label?: string }>
 export type IntegrationEntry = Readonly<{
@@ -15,10 +16,8 @@ export type OpenCodeConfigurationPort = Readonly<{
 }>
 
 function data(response: unknown): unknown {
-  if (response && typeof response === "object" && "data" in response) {
-    return (response as { data?: unknown }).data
-  }
-  return response
+  const row = rec(response)
+  return row && "data" in row ? row.data : response
 }
 
 export function createConfigurationPort(host: OpenCodeHost): OpenCodeConfigurationPort {
@@ -27,21 +26,24 @@ export function createConfigurationPort(host: OpenCodeHost): OpenCodeConfigurati
       const value = data(await (await host.client()).integration.list())
       if (!Array.isArray(value)) throw new Error("OpenCode returned an invalid integration list")
       return value.map((item) => {
-        const row = item as Record<string, unknown>
-        const connections = Array.isArray(row.connections) ? row.connections : []
+        const row = rec(item) ?? {}
         const projected: IntegrationConnection[] = []
-        for (const item of connections) {
-          const connection = item as Record<string, unknown>
-          if (connection.type === "credential" && typeof connection.id === "string") {
-            projected.push({ type: "credential", id: connection.id, ...(typeof connection.label === "string" ? { label: connection.label } : {}) })
-          } else if (connection.type === "env" && typeof connection.name === "string") {
-            projected.push({ type: "env", id: connection.name })
+        for (const entry of arr(row.connections) ?? []) {
+          const connection = rec(entry)
+          if (!connection) continue
+          const id = str(connection.id)
+          const name = str(connection.name)
+          const label = str(connection.label)
+          if (connection.type === "credential" && id !== undefined) {
+            projected.push({ type: "credential", id, ...(label === undefined ? {} : { label }) })
+          } else if (connection.type === "env" && name !== undefined) {
+            projected.push({ type: "env", id: name })
           }
         }
         return {
-          id: String(row.id),
-          name: String(row.name),
-          methods: Array.isArray(row.methods) ? row.methods : [],
+          id: str(row.id) ?? "",
+          name: str(row.name) ?? "",
+          methods: arr(row.methods) ?? [],
           connections: projected,
         }
       })

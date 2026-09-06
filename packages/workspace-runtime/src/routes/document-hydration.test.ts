@@ -1,7 +1,8 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fetchDouble } from "../test-support/fetch-double"
+import { fetchBodyJson, fetchDouble, fetchUrl } from "../test-support/fetch-double"
+import { rec, str } from "../json-value"
 import { Hono } from "hono"
 import { afterEach, describe, expect, test, mock, spyOn } from "bun:test"
 import {
@@ -763,7 +764,7 @@ describe("runtime document hydration", () => {
     const authorizations: string[] = []
     globalThis.fetch = fetchDouble(mock(async (input: string | URL | Request, init?: RequestInit) => {
       authorizations.push(new Headers(init?.headers).get("authorization") ?? "")
-      if (String(input).endsWith("/renew")) {
+      if (fetchUrl(input).endsWith("/renew")) {
         return Response.json({ token: "rotated-token", expiresAt: timer.now() + 300_000 })
       }
       return Response.json({ version: "v2" })
@@ -1169,7 +1170,7 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-restart-"))
     let canonical = "before"
     const fetcher = mock(async (_url: string | URL | Request, init?: RequestInit) => {
-      canonical = (JSON.parse(String(init?.body)) as { markdown: string }).markdown
+      canonical = str(rec(fetchBodyJson(init?.body))?.markdown) ?? ""
       return Response.json({ version: "v2" })
     })
     globalThis.fetch = fetchDouble(fetcher)

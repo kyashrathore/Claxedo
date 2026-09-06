@@ -26,6 +26,7 @@ import {
   betterAuthNativeResource,
   verifyBetterAuthDatabaseSchemaInspection,
 } from "../../src/platform/auth/better-auth-native-clients"
+import { d1Row } from "./d1-json"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 
@@ -391,14 +392,7 @@ export async function betterAuthD1PreparationCommands(input: {
 }
 
 function verificationRow(output: string, label: string) {
-  const parsed = JSON.parse(output) as unknown
-  if (!Array.isArray(parsed) || parsed.length !== 1) throw new Error(`D1 ${label} verification returned no result`)
-  const result = parsed[0] as { success?: boolean; results?: Array<Record<string, unknown>> }
-  const row = result.results?.[0]
-  if (!result.success || result.results?.length !== 1 || !row) {
-    throw new Error(`D1 ${label} verification did not return exactly one row`)
-  }
-  return row
+  return d1Row(output, `D1 ${label} verification`)
 }
 
 export function verifyBetterAuthD1PreparationPrecondition(output: string) {

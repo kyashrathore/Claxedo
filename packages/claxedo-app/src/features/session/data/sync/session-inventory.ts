@@ -45,7 +45,7 @@ export function inventorySessionGit(input: unknown) {
 
 type SessionInventoryCompatSource = {
   inventoryActions?: {
-    load?: () => Promise<unknown> | unknown
+    load?: () => unknown
   }
 }
 

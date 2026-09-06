@@ -34,6 +34,11 @@ export const CLAUDE_SDK_PERMISSION_MODES = [
 
 export type ClaudeSdkPermissionModeMirror = (typeof CLAUDE_SDK_PERMISSION_MODES)[number]
 
+/** Sound because the mirror above is asserted equal to the SDK union below. */
+export function isClaudeSdkPermissionMode(value: string | undefined): value is ClaudeSdkPermissionModeMirror {
+  return !!value && (CLAUDE_SDK_PERMISSION_MODES as readonly string[]).includes(value)
+}
+
 /** `never` unless the mirror covers every SDK mode. */
 type MirrorCoversSdk = Exclude<PermissionMode, ClaudeSdkPermissionModeMirror> extends never ? true : false
 /** `never` unless every mirrored mode is a real SDK mode. */
@@ -44,7 +49,11 @@ type SdkCoversMirror = Exclude<ClaudeSdkPermissionModeMirror, PermissionMode> ex
  * initialiser is a type error. Exported so the value is used and cannot be
  * dropped as dead code.
  */
-export const CLAUDE_SDK_PERMISSION_MODE_PARITY: MirrorCoversSdk   = true
+export const CLAUDE_SDK_PERMISSION_MODE_PARITY: MirrorCoversSdk = true
+/** Fails to compile if the mirror ever names a mode the SDK dropped. */
+type _SdkCoversMirrorParity = SdkCoversMirror extends true ? true : never
+const _sdkCoversMirror: _SdkCoversMirrorParity = true
+void _sdkCoversMirror
 
 /**
  * Guards against the degenerate case where `PermissionMode` resolves to `any`

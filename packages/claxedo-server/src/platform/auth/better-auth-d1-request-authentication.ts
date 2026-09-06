@@ -9,6 +9,7 @@ import {
   type RequestIdentityVerificationAdapter,
   type VerifiedAuthSession,
 } from "@claxedo/server-core/platform/auth/authentication"
+import { asRecord } from "../json/index"
 
 type BetterAuthApiSurface = {
   getSession(input: {
@@ -82,8 +83,9 @@ function present(value: unknown): value is string {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw invalidCredentials()
-  return value as Record<string, unknown>
+  const asObject = asRecord(value)
+  if (!asObject) throw invalidCredentials()
+  return asObject
 }
 
 function exactCookiePresent(request: Request, name: string): boolean {

@@ -68,7 +68,7 @@ export function remoteAccessAvailability(input: RemoteAccessCapability): RemoteA
  * blank page there — the workspace does not exist on that control plane.
  */
 export function remoteAccessAppOrigin(): string {
-  const baked = (import.meta.env?.VITE_CLAXEDO_APP_ORIGIN as string | undefined)?.trim()
+  const baked = readString(import.meta.env, "VITE_CLAXEDO_APP_ORIGIN")?.trim()
   if (baked) return baked
   if (
     typeof window !== "undefined" &&
@@ -203,3 +203,4 @@ export function remoteAccessClientId(storage: Pick<Storage, "getItem" | "setItem
   return id
 }
 import { workspaceRoute } from "@/platform/identity/route"
+import { readString } from "@/lib/record"

@@ -1,6 +1,5 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
-import type { AgentRuntimeEvent as ProjectionRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import { AgentRuntimeContractError, assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type {
@@ -20,6 +19,7 @@ import {
   type CompatEnvelope,
   type CompatEvent,
 } from "../compat-events"
+import { arr, bool, rec, str } from "../json-value"
 
 export type RuntimeSessionBusEvent =
   | { type: "process.status"; directory: string; configId: string; status: string }
@@ -58,6 +58,63 @@ export type SessionPromptBody = {
    * The PUT route remains, for changing the mode MID-conversation.
    */
   permissionMode?: string
+}
+
+/**
+ * Recognise one prompt part on the wire.
+ *
+ * A predicate rather than an assertion: the caller keeps the client's own
+ * object — extra fields a harness understands still travel — while the part
+ * type and the fields the turn machinery dereferences are actually checked.
+ */
+function isPromptPart(input: unknown): input is PromptInput["parts"][number] {
+  const part = rec(input)
+  if (!part) return false
+  if (part.type === "text") return str(part.text) !== undefined
+  if (part.type === "file") return str(part.mime) !== undefined && str(part.url) !== undefined
+  if (part.type === "agent") return str(part.name) !== undefined
+  return false
+}
+
+/** The `Record<string, boolean>` subset of a wire `tools` map. */
+function promptTools(input: unknown): SessionPromptBody["tools"] {
+  const source = rec(input)
+  if (!source) return undefined
+  const tools: Record<string, boolean> = {}
+  for (const [name, value] of Object.entries(source)) {
+    const enabled = bool(value)
+    if (enabled !== undefined) tools[name] = enabled
+  }
+  return tools
+}
+
+/**
+ * The one place a request payload becomes a `SessionPromptBody`.
+ *
+ * Every prompt route used to assert the shape of `c.req.json()` — an `any` the
+ * routes then handed to the harness unexamined, so a `text` part carrying a
+ * number reached the adapter believing it held a string. This narrows each
+ * field instead: what does not match the contract is dropped here, at the
+ * boundary, rather than several layers deeper.
+ */
+export function parseSessionPromptBody(input: unknown): SessionPromptBody {
+  const body = rec(input)
+  if (!body) return {}
+  const parts = arr(body.parts)?.filter(isPromptPart)
+  const model = rec(body.model)
+  const format = rec(body.format)
+  const formatType = str(format?.type)
+  return {
+    parts,
+    messageID: str(body.messageID),
+    agent: str(body.agent),
+    model: model && { providerID: str(model.providerID), modelID: str(model.modelID) },
+    tools: promptTools(body.tools),
+    format: format && formatType !== undefined ? { ...format, type: formatType } : undefined,
+    system: str(body.system),
+    variant: str(body.variant),
+    permissionMode: str(body.permissionMode),
+  }
 }
 
 export type SessionPromptTurnResult = {
@@ -208,21 +265,16 @@ async function promptForSession(
 }
 
 function isMessage(input: unknown): input is AgentMessage {
-  if (!input || typeof input !== "object") return false
-  const info = (input as { info?: unknown }).info
-  return !!info && typeof info === "object" && typeof (info as { id?: unknown }).id === "string"
-    && typeof (info as { role?: unknown }).role === "string"
-    && typeof (info as { sessionID?: unknown }).sessionID === "string"
-    && Array.isArray((input as { parts?: unknown }).parts)
+  const info = rec(rec(input)?.info)
+  return !!info
+    && str(info.id) !== undefined
+    && str(info.role) !== undefined
+    && str(info.sessionID) !== undefined
+    && arr(rec(input)?.parts) !== undefined
 }
 
 function failure(input: unknown): string {
-  if (!input || typeof input !== "object") return "session error"
-  const data = (input as { data?: unknown }).data
-  if (!data || typeof data !== "object") return "session error"
-  return typeof (data as { message?: unknown }).message === "string"
-    ? (data as { message: string }).message
-    : "session error"
+  return str(rec(rec(input)?.data)?.message) ?? "session error"
 }
 
 function isCompatEvent(event: AgentRuntimeStreamEvent): event is CompatEvent {
@@ -247,7 +299,7 @@ function createPromptEventProjection(input: {
     events(event: AgentRuntimeStreamEvent): CompatEvent[] {
       if (isCompatEvent(event)) return [event]
       if (event.type === "step-start") assistantId = event.newMessageId
-      return projection.ingest(event as unknown as ProjectionRuntimeEvent).map((item) => item.payload)
+      return projection.ingest(event).map((item) => item.payload)
     },
   }
 }

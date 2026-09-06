@@ -8,6 +8,8 @@
  * cannot import that feature, so the two share the wire format rather than code.
  */
 
+import { asRecord, readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
+
 /** Path is relative to the `/api/claxedo/integrations` mount ("" is the root list). */
 export type CodeHostRequest = (path: string, init?: RequestInit) => Promise<Response>
 
@@ -19,12 +21,15 @@ export type CodeHostConnection = {
   status: "connected" | "degraded" | "broken"
 }
 
+/** One field the connect form asks for before a key-based host can be connected. */
+export type CodeHostPrompt = { id: string; label: string; placeholder?: string; secret: boolean }
+
 export type CodeHostIntegration = {
   id: string
   name: string
   /** How this host can be connected. GitHub is key-only today. */
   methods: readonly ("key" | "oauth")[]
-  prompts: readonly { id: string; label: string; placeholder?: string; secret: boolean }[]
+  prompts: readonly CodeHostPrompt[]
 }
 
 export type CodeHostStatus = {
@@ -44,14 +49,14 @@ const CODE_HOST_CAPABILITY = "code-host"
 export async function readCodeHostStatus(request: CodeHostRequest): Promise<CodeHostStatus> {
   const response = await request("")
   if (!response.ok) return { integrations: [], connections: [] }
-  const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+  const body = asRecord(await response.json().catch(() => undefined))
   if (!body) return { integrations: [], connections: [] }
 
-  const integrations = asArray(body.integrations).flatMap(parseIntegration)
+  const integrations = (readArray(body, "integrations") ?? []).flatMap(parseIntegration)
   const hostIds = new Set(integrations.map((integration) => integration.id))
   return {
     integrations,
-    connections: asArray(body.connections)
+    connections: (readArray(body, "connections") ?? [])
       .flatMap(parseConnection)
       .filter((connection) => hostIds.has(connection.integrationId)),
   }
@@ -71,46 +76,44 @@ export function hasConnectedCodeHost(status: CodeHostStatus) {
 }
 
 function parseIntegration(value: unknown): CodeHostIntegration[] {
-  if (!value || typeof value !== "object") return []
-  const integration = value as Record<string, unknown>
-  if (typeof integration.id !== "string") return []
-  const capabilities = asArray(integration.capabilities).filter((item): item is string => typeof item === "string")
+  const id = readString(value, "id")
+  if (id === undefined) return []
+  const capabilities = (readArray(value, "capabilities") ?? []).filter((item): item is string => typeof item === "string")
   if (!capabilities.includes(CODE_HOST_CAPABILITY)) return []
-  const methods = asArray(integration.methods)
+  const methods = (readArray(value, "methods") ?? [])
     .filter((item): item is "key" | "oauth" => item === "key" || item === "oauth")
   return [{
-    id: integration.id,
-    name: typeof integration.name === "string" ? integration.name : integration.id,
+    id,
+    name: readString(value, "name") ?? id,
     methods,
-    prompts: asArray(integration.prompts).flatMap((item) => {
-      if (!item || typeof item !== "object") return []
-      const prompt = item as Record<string, unknown>
-      if (typeof prompt.id !== "string") return []
-      return [{
-        id: prompt.id,
-        label: typeof prompt.label === "string" ? prompt.label : prompt.id,
-        ...(typeof prompt.placeholder === "string" ? { placeholder: prompt.placeholder } : {}),
-        secret: prompt.secret === true,
-      }]
-    }),
+    prompts: (readArray(value, "prompts") ?? []).flatMap(parsePrompt),
+  }]
+}
+
+function parsePrompt(value: unknown): CodeHostPrompt[] {
+  const id = readString(value, "id")
+  if (id === undefined) return []
+  const placeholder = readString(value, "placeholder")
+  return [{
+    id,
+    label: readString(value, "label") ?? id,
+    ...(placeholder === undefined ? {} : { placeholder }),
+    secret: readBoolean(value, "secret") === true,
   }]
 }
 
 function parseConnection(value: unknown): CodeHostConnection[] {
-  if (!value || typeof value !== "object") return []
-  const connection = value as Record<string, unknown>
-  if (typeof connection.id !== "string" || typeof connection.integrationId !== "string") return []
-  const status = connection.status
+  const id = readString(value, "id")
+  const integrationId = readString(value, "integrationId")
+  if (id === undefined || integrationId === undefined) return []
+  const accountLabel = readString(value, "accountLabel")
+  const status = readString(value, "status")
   return [{
-    id: connection.id,
-    integrationId: connection.integrationId,
-    ...(typeof connection.accountLabel === "string" ? { accountLabel: connection.accountLabel } : {}),
+    id,
+    integrationId,
+    ...(accountLabel === undefined ? {} : { accountLabel }),
     status: status === "connected" || status === "degraded" || status === "broken" ? status : "broken",
   }]
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
 }
 
 export type CodeHostConnectOutcome =
@@ -139,16 +142,20 @@ export async function connectCodeHost(input: {
         ? { method: "oauth" }
         : { fields: input.fields ?? {}, secret: input.secret ?? "" }),
     })
-    const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+    const body = asRecord(await response.json().catch(() => undefined))
     if (!response.ok) return { ok: false, reason: codeHostFailureCopy(body, response.status) }
-    if (input.method === "oauth" && typeof body?.url === "string" && typeof body.attemptId === "string") {
+    const url = readString(body, "url")
+    const attemptId = readString(body, "attemptId")
+    if (input.method === "oauth" && url !== undefined && attemptId !== undefined) {
+      const userCode = readString(body, "userCode")
+      const intervalMs = readFiniteNumber(body, "intervalMs")
       return {
         ok: true,
         oauth: {
-          url: body.url,
-          attemptId: body.attemptId,
-          ...(typeof body.userCode === "string" ? { userCode: body.userCode } : {}),
-          ...(typeof body.intervalMs === "number" ? { intervalMs: body.intervalMs } : {}),
+          url,
+          attemptId,
+          ...(userCode === undefined ? {} : { userCode }),
+          ...(intervalMs === undefined ? {} : { intervalMs }),
         },
       }
     }
@@ -188,10 +195,10 @@ export async function readCodeHostAttempt(
   if (!response.ok) {
     return { state: "failed", reason: "That sign-in attempt is no longer available. Start it again." }
   }
-  const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
-  if (body?.status === "pending") return { state: "pending" }
-  if (body?.status === "complete") return { state: "complete" }
-  if (body?.status === "expired") {
+  const status = readString(await response.json().catch(() => undefined), "status")
+  if (status === "pending") return { state: "pending" }
+  if (status === "complete") return { state: "complete" }
+  if (status === "expired") {
     return { state: "failed", reason: "That sign-in expired before it was approved. Start it again." }
   }
   return { state: "failed", reason: "That sign-in wasn't approved. Try again." }
@@ -199,11 +206,7 @@ export async function readCodeHostAttempt(
 
 /** Never surface a raw server code — say what happened and what repairs it. */
 export function codeHostFailureCopy(body: Record<string, unknown> | undefined, status: number) {
-  const code = typeof body?.code === "string"
-    ? body.code
-    : typeof (body?.error as Record<string, unknown> | undefined)?.code === "string"
-      ? (body!.error as Record<string, string>).code
-      : ""
+  const code = readString(body, "code") ?? readString(readField(body, "error"), "code") ?? ""
   if (code === "connection_exists") return "This account is already connected."
   if (code === "verify_failed" || status === 401 || status === 403) {
     return "That token was rejected. Check it was copied whole and still has repository access, then try again."

@@ -278,7 +278,7 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
     lease_id: `lease-${workspaceId}`,
     epoch: 1,
     status: "pending",
-    driver: driverId as SandboxLeaseRow["driver"],
+    driver: driverId,
     driver_resource_id: null,
     driver_snapshot_id: null,
     sandbox_id: null,
@@ -350,14 +350,14 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
   })
   const updateSupervisorSandboxLease = (workspaceId: string, patch: Partial<SandboxLeaseRow>) => {
     const prev = leases.get(workspaceId)
-    if (!prev) return
+    if (!prev) return undefined
     const next = { ...prev, ...patch, updated_at: Date.now() }
     leases.set(workspaceId, next)
     return next
   }
   const recordSupervisorSandboxLeaseFailure = (workspaceId: string, error: string, nextRetryAt: number | null) => {
     const prev = leases.get(workspaceId)
-    if (!prev) return
+    if (!prev) return undefined
     return updateSupervisorSandboxLease(workspaceId, {
       status: nextRetryAt ? ("backoff" as const) : ("failed" as const),
       retry_count: prev.retry_count + 1,
@@ -375,7 +375,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
     sandboxTargetFromLease: (input: SandboxLeaseRow | undefined) => {
       const sandboxId = input?.sandbox_id ?? input?.driver_resource_id
       const hostId = input?.lease_id || sandboxId
-      if (!input?.url || !sandboxId || !hostId) return
+      if (!input?.url || !sandboxId || !hostId) return undefined
       return {
         workspaceId: input.workspace_id,
         sandboxId,
@@ -397,7 +397,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
     releaseSupervisorSandboxLease: (workspaceId: string) => {
       const had = leases.has(workspaceId)
       leases.delete(workspaceId)
-      for (const hold of [...holds.values()]) {
+      for (const hold of Array.from(holds.values())) {
         if (hold.workspace_id !== workspaceId) continue
         holds.delete(hold.hold_id)
       }
@@ -504,7 +504,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
       },
       async update(workspaceId: string, expectedEpoch: number, patch: any) {
         const current = leases.get(workspaceId)
-        if (!current || current.epoch !== expectedEpoch) return
+        if (!current || current.epoch !== expectedEpoch) return undefined
         const next = {
           ...current,
           ...(patch.status === "ready" ? { status: "ready" as const } : {}),
@@ -533,7 +533,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
       },
       async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
         const current = leases.get(workspaceId)
-        if (!current || current.epoch !== expectedEpoch) return
+        if (!current || current.epoch !== expectedEpoch) return undefined
         const next = recordSupervisorSandboxLeaseFailure(workspaceId, error, nextRetryAt ?? null)
         return next ? toSandboxLease(next) : undefined
       },
@@ -665,6 +665,7 @@ describe("workspace-supervisor", () => {
       if (id === "vercel") return { access_token: "vercel-default", team_id: "team_1", project_id: "project_1" }
       if (id === "docker") return { image: "claxedo-sandbox:test" }
       if (id === "box") return { api_key: "bx-default" }
+      return undefined
     })
     mockDaytonaLaunch.mockClear()
     mockCloudflareLaunch.mockClear()
@@ -1650,6 +1651,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
     // of the previous describe installed; restore the defaults this block needs.
     mockSandboxDriverAuthAsync.mockImplementation(async (_cfg: unknown, id: string) => {
       if (id === "daytona") return { api_key: "dtn-default" }
+      return undefined
     })
     supervisor.configureWorkspaceSupervisor({
       server_url: "http://localhost:3000",

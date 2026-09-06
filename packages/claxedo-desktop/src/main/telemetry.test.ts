@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-// Type-only: the real SDK is imported dynamically inside the two tests that
-// construct a client, so the un-opted-in majority of this suite runs without
-// posthog-node (and axios) ever loading — the same property telemetry.ts
-// itself now guarantees.
-import type { PostHog } from "posthog-node"
+// The real SDK is imported dynamically inside the two tests that construct a
+// client, so the un-opted-in majority of this suite runs without posthog-node
+// (and axios) ever loading — the same property telemetry.ts itself now
+// guarantees. Nothing here needs the `PostHog` type: `TelemetryFatalSink`
+// names the two members under test.
 import {
   captureFatal,
   createTelemetryClient,
@@ -11,6 +11,7 @@ import {
   resolveBaseProperties,
   resolveHost,
   resolveKey,
+  type TelemetryFatalSink,
 } from "./telemetry"
 
 /** Both opt-ins, spread into the env a test wants to reach the network. */
@@ -164,11 +165,18 @@ const baseProperties = { unit: "desktop-main", deployment_mode: "desktop-local" 
 
 /** Minimal fake matching only the two methods captureFatal calls — a real
  *  PostHog client would attempt actual network I/O on flush(). */
+/**
+ * The two members `captureFatal` touches, plus the mocks themselves.
+ *
+ * Handing the mocks back separately is what lets an assertion read them
+ * directly: pulling `client.captureException` off the returned client reads
+ * a method away from its receiver.
+ */
 function fakeClient(overrides: { captureException?: () => void; flush?: () => Promise<void> } = {}) {
-  return {
-    captureException: mock(overrides.captureException ?? (() => {})),
-    flush: mock(overrides.flush ?? (() => Promise.resolve())),
-  } as unknown as PostHog
+  const captureException = mock(overrides.captureException ?? (() => {}))
+  const flush = mock(overrides.flush ?? (() => Promise.resolve()))
+  const client: TelemetryFatalSink = { captureException, flush }
+  return { client, captureException, flush }
 }
 
 describe("captureFatal", () => {
@@ -177,15 +185,15 @@ describe("captureFatal", () => {
   })
 
   test("captures with the system distinct id and the base properties, then flushes", async () => {
-    const client = fakeClient()
+    const { client, captureException, flush } = fakeClient()
     const error = new Error("boom")
     await captureFatal(client, baseProperties, error)
-    expect(client.captureException).toHaveBeenCalledWith(error, "system", baseProperties)
-    expect(client.flush).toHaveBeenCalledTimes(1)
+    expect(captureException).toHaveBeenCalledWith(error, "system", baseProperties)
+    expect(flush).toHaveBeenCalledTimes(1)
   })
 
   test("a throwing captureException never propagates", async () => {
-    const client = fakeClient({
+    const { client } = fakeClient({
       captureException: () => {
         throw new Error("sink exploded")
       },
@@ -194,12 +202,12 @@ describe("captureFatal", () => {
   })
 
   test("a rejecting flush never propagates", async () => {
-    const client = fakeClient({ flush: () => Promise.reject(new Error("network down")) })
+    const { client } = fakeClient({ flush: () => Promise.reject(new Error("network down")) })
     await expect(captureFatal(client, baseProperties, new Error("boom"))).resolves.toBeUndefined()
   })
 
   test("a flush that never resolves is bounded by the timeout, not left hanging", async () => {
-    const client = fakeClient({ flush: () => new Promise(() => {}) })
+    const { client } = fakeClient({ flush: () => new Promise(() => {}) })
     // A short bound keeps this test fast; production uses the 2s default.
     await expect(captureFatal(client, baseProperties, new Error("boom"), 10)).resolves.toBeUndefined()
   })

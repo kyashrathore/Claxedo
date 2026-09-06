@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import {
@@ -122,22 +123,18 @@ export function createTurnEventProjector(options: {
 
 export type TurnEventProjector = ReturnType<typeof createTurnEventProjector>
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
-
 function terminalizedToolRuntimeEvent(payload: CompatEvent, message: string): AgentRuntimeEvent | undefined {
-  if (payload.type !== "message.part.updated") return
-  const part = record(payload.properties.part)
-  if (part?.type !== "tool") return
-  const state = record(part.state)
-  if (state?.status !== "error") return
+  if (payload.type !== "message.part.updated") return undefined
+  const part = asRecord(payload.properties.part)
+  if (part?.type !== "tool") return undefined
+  const state = asRecord(part.state)
+  if (state?.status !== "error") return undefined
   const toolCallId = typeof part.callID === "string"
     ? part.callID
     : typeof part.id === "string"
       ? part.id
       : undefined
-  if (!toolCallId) return
+  if (!toolCallId) return undefined
   return {
     type: "tool-error",
     toolCallId,

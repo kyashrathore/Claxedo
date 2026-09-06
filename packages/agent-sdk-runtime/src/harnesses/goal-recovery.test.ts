@@ -1,7 +1,7 @@
+import type { AgentRuntimeStoreWithRecovery } from "./shared/runtime-store"
 import { describe, expect, test } from "bun:test"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createMemoryRuntimeStore } from "../stores/memory"
-import { storeRows } from "../test-utils/store-internals"
 import { ClaudeHarnessAdapter } from "./claude"
 import { CursorHarnessAdapter } from "./cursor"
 
@@ -10,16 +10,16 @@ describe("native Goal recovery matrix", () => {
     {
       id: "claude" as const,
       available: true,
-      create: (store: ReturnType<typeof storeRows>) => new ClaudeHarnessAdapter({ store }),
+      create: (store: AgentRuntimeStoreWithRecovery) => new ClaudeHarnessAdapter({ store }),
     },
     {
       id: "cursor" as const,
       available: false,
-      create: (store: ReturnType<typeof storeRows>) => new CursorHarnessAdapter({ store }),
+      create: (store: AgentRuntimeStoreWithRecovery) => new CursorHarnessAdapter({ store }),
     },
   ]) {
     test(`${entry.id} exposes persisted provider-loss as blocked instead of complete`, async () => {
-      const store = storeRows(createMemoryRuntimeStore())
+      const store = createMemoryRuntimeStore()
       const sessionId = `${entry.id}-session`
       const directory = "/repo"
       store.bindSession({ sessionId, directory, agentSessionId: `${entry.id}-provider-session` })
@@ -36,7 +36,7 @@ describe("native Goal recovery matrix", () => {
         createdAt: 10,
         updatedAt: 20,
       }
-      expect(store.setGoal).toBeFunction()
+      expect(typeof store.setGoal).toBe("function")
       store.setGoal?.(sessionId, persisted)
 
       const adapter = entry.create(store)
@@ -55,7 +55,7 @@ describe("native Goal recovery matrix", () => {
         updatedAt: expect.any(Number),
       })
       expect((await adapter.goals!.read(sessionId, directory))?.status).not.toBe("complete")
-      adapter.dispose()
+      await adapter.dispose()
     })
   }
 })

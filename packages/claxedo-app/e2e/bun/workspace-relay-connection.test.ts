@@ -4,13 +4,14 @@ import {
   createWorkspaceRelayBun,
   mintRuntimeAccessToken,
 } from "../../../workspace-relay/src"
+import { requestBodyText, requestUrl } from "../../src/lib/url"
 import {
   createWorkspaceRelayConnection,
   runtimeAccessTokenJti,
   type WorkspaceConnectionInfo,
 } from "../../src/platform/runtime/agent/workspace-relay-connection"
 
-GlobalRegistrator.unregister()
+await GlobalRegistrator.unregister()
 
 async function generateEdDsaKeyPair() {
   return await crypto.subtle.generateKey({
@@ -105,9 +106,9 @@ describe("workspace relay connection E2E", () => {
       }), {
         serverUrl: "http://server.test",
         request: (async (url, init) => {
-          const text = String(url)
+          const text = requestUrl(url)
           if (text === "http://server.test/api/workspace/ws_1/connection/refresh") {
-            refreshBodies.push(String(init?.body ?? ""))
+            refreshBodies.push(requestBodyText(init?.body))
             return Response.json(connection({
               relayUrl,
               runtimeAccessToken: refreshed,
@@ -132,8 +133,8 @@ describe("workspace relay connection E2E", () => {
       expect(hostAuthorizations).toHaveLength(1)
       expect(hostAuthorizations[0]?.startsWith("Bearer ")).toBe(true)
     } finally {
-      relay.stop(true)
-      host.stop(true)
+      await relay.stop(true)
+      await host.stop(true)
     }
   })
 })

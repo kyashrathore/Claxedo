@@ -1,4 +1,4 @@
-import type { Accessor, Resource } from "solid-js"
+import type { Accessor } from "solid-js"
 
 /**
  * Read a possibly-resource accessor WITHOUT re-arming the enclosing `<Suspense>`.
@@ -30,7 +30,10 @@ import type { Accessor, Resource } from "solid-js"
  * which would only move the stall.
  */
 export function readWithoutSuspending<T>(source: Accessor<T | undefined>): T | undefined {
-  const state = (source as Partial<Resource<T>>).state
+  // Solid stamps `state` onto the resource accessor itself, so it is read off
+  // the function with an `in` check rather than asserted into a Resource shape
+  // the caller may not have handed us.
+  const state = "state" in source ? source.state : undefined
   if (state !== undefined && state !== "ready" && state !== "refreshing") return undefined
   return source()
 }

@@ -306,34 +306,34 @@ export function createLayoutProjectsApi<List extends Accessor<unknown>>(deps: {
   return {
     list: deps.list,
     createRequests,
-    requestCreate() {
+    requestCreate: () => {
       setCreateRequests((count) => count + 1)
     },
-    open(directory: string) {
+    open: (directory: string) => {
       const root = deps.rootFor(directory)
       if (!deps.validProjectRef(root)) return
       deps.ensureDirectorySessionCache(root)
       if (!shouldStoreOpenedProject({ root, sidebar: deps.sidebarProjects(), isLocal: server.isLocal(), valid: deps.validProjectRef })) return
       server.projects.open(root)
     },
-    close(directory: string) {
+    close: (directory: string) => {
       if (!server.isLocal()) return
       server.projects.close(directory)
     },
-    isClosed(directory: string) {
+    isClosed: (directory: string) => {
       if (!server.isLocal()) return false
       return server.projects.isClosed(directory)
     },
-    remove(directory: string) {
+    remove: (directory: string) => {
       server.projects.remove(directory)
     },
-    expand(directory: string) {
+    expand: (directory: string) => {
       server.projects.expand(directory)
     },
-    collapse(directory: string) {
+    collapse: (directory: string) => {
       server.projects.collapse(directory)
     },
-    toggle(directory: string) {
+    toggle: (directory: string) => {
       const project = deps.sidebarProjects().find((item) => item.worktree === directory)
       if (!project) return
       if (project.expanded) server.projects.collapse(directory)

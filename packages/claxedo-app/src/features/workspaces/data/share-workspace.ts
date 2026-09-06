@@ -37,11 +37,11 @@ export function localWorkspaceShareTarget(input: {
     rows.find((item) => item.id === input.directory || item.workspace_id === input.directory)
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
-  if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return
+  if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return undefined
   // Anything the engine marks non-local (cloud OR user-hosted) is a remote
   // representation — including the control plane's echo of this machine's own
   // registration — never a directory this machine can publish.
-  if (row?.kind && row.kind !== "local") return
+  if (row?.kind && row.kind !== "local") return undefined
   return { workspaceId, directory }
 }
 
@@ -83,7 +83,7 @@ export async function registerUserHostedWorkspace(input: {
   displayName?: string
   serverUrl?: string
   request?: typeof fetch
-}) {
+}): Promise<void> {
   // The desktop: the Host Connector owns the machine key, so the port is the
   // only path that can produce the signed challenge. The self-hosted server:
   // no port is bound, and its own local route below performs the same flow
@@ -108,7 +108,6 @@ export async function registerUserHostedWorkspace(input: {
     body: JSON.stringify((input.displayName ? { displayName: input.displayName } : {})),
   })
   if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
-  return await responseJson(response)
 }
 
 /** Withdraw one workspace this machine publishes. Mirrors the register above. */
@@ -116,7 +115,7 @@ export async function unregisterUserHostedWorkspace(input: {
   workspaceId: string
   serverUrl?: string
   request?: typeof fetch
-}) {
+}): Promise<void> {
   const port = input.request ? undefined : machineRemoteAccess()
   if (port?.unshareWorkspace) {
     await port.unshareWorkspace(input.workspaceId)
@@ -130,5 +129,4 @@ export async function unregisterUserHostedWorkspace(input: {
     headers: { Accept: "application/json" },
   })
   if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Unshare workspace failed: ${response.status}`))
-  return await responseJson(response)
 }

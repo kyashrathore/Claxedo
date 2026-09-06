@@ -1,6 +1,5 @@
 import { errorBody as dispatchErrorBody, statusOf } from "@claxedo/server-core/platform/errors/base"
 import { Hono, type Context } from "hono"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { AGENT_HARNESS_IDS } from "@claxedo/agent-sdk-runtime"
 import type { MachineSessionCreate } from "../machine-dispatch"
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
@@ -27,6 +26,9 @@ import {
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
+import { readJsonRecord } from "../../platform/json/index"
+import { contentfulStatus } from "../../platform/http/status"
+import { asRecord } from "../../platform/json/index"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -51,11 +53,9 @@ function hasBearerToken(req: Request) {
 }
 
 function authorityMessages(body: unknown) {
-  return Array.isArray(body)
-    ? body
-    : body && typeof body === "object" && Array.isArray((body as { messages?: unknown }).messages)
-      ? (body as { messages: unknown[] }).messages
-      : []
+  if (Array.isArray(body)) return body
+  const messages = asRecord(body)?.messages
+  return Array.isArray(messages) ? messages : []
 }
 
 function authorityReadAllowed(body: unknown) {
@@ -154,15 +154,15 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .post("/sessions", async (c) => {
       try {
         const auth = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw) ? undefined : await signedAuth(c.req.raw, options)
-        const body = await c.req.json().catch(() => undefined) as Record<string, unknown> | undefined
+        const body = await readJsonRecord(c.req.raw)
         if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(key => !["workspaceId", "title", "harness", "model"].includes(key))) throw new ControlPlaneAuthError(400, "invalid_session_request", "Use workspaceId, title, harness and model for machine sessions")
         if (typeof body.workspaceId !== "string" || !body.workspaceId.trim()) throw new ControlPlaneAuthError(400, "workspace_required", "Select a machine workspace first")
-        if (typeof body.harness !== "string" || !AGENT_HARNESS_IDS.includes(body.harness as never)) throw new ControlPlaneAuthError(400, "harness_required", "Select a supported native harness")
+        if (typeof body.harness !== "string" || !AGENT_HARNESS_IDS.some((id) => id === body.harness)) throw new ControlPlaneAuthError(400, "harness_required", "Select a supported native harness")
         if (body.title !== undefined && typeof body.title !== "string") throw new ControlPlaneAuthError(400, "invalid_session_request", "title must be a string")
         let model: MachineSessionCreate["model"]
         if (body.model !== undefined) {
-          const value = body.model as Record<string, unknown> | null
-          if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !["providerID", "modelID"].includes(key)) || typeof value.providerID !== "string" || !value.providerID.trim() || typeof value.modelID !== "string" || !value.modelID.trim()) throw new ControlPlaneAuthError(400, "invalid_session_request", "model requires providerID and modelID")
+          const value = asRecord(body.model)
+          if (!value || Object.keys(value).some(key => !["providerID", "modelID"].includes(key)) || typeof value.providerID !== "string" || !value.providerID.trim() || typeof value.modelID !== "string" || !value.modelID.trim()) throw new ControlPlaneAuthError(400, "invalid_session_request", "model requires providerID and modelID")
           model = { providerID: value.providerID, modelID: value.modelID }
         }
         if (!options.createMachineSession) throw new ControlPlaneAuthError(503, "machine_dispatch_unavailable", "Create this session through its workspace runtime")
@@ -171,7 +171,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         return c.json({ session }, 201)
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-        if (statusOf(error) !== 500) return c.json(dispatchErrorBody(error), statusOf(error) as ContentfulStatusCode)
+        if (statusOf(error) !== 500) return c.json(dispatchErrorBody(error), contentfulStatus(statusOf(error)))
         throw error
       }
     })
@@ -238,7 +238,6 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           })
         }
         const auth = await signedAuth(c.req.raw, options)
-        const meta = await services.projectionStore.session_meta(sessionId)
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
         const body = await requireAuthority(services).readSessionMessages(auth, {
           sessionId,
@@ -259,8 +258,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         if (err instanceof AgentMessagePageError) {
-          const status = err.status >= 400 && err.status <= 599 ? err.status : 500
-          return c.json({ error: { code: "message_page_error", message: err.message } }, status as ContentfulStatusCode)
+          return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
         }
         throw err
       }

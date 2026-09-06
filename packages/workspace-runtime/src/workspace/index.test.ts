@@ -85,7 +85,7 @@ describe("workspace module wiring", () => {
       reader.read().then((result) => result.done),
       new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
     ])
-    host.dispose()
+    await host.dispose()
 
     expect(connected.done).toBe(false)
     expect(new TextDecoder().decode(connected.value)).toContain("server.connected")
@@ -136,7 +136,7 @@ describe("workspace module wiring", () => {
     })
     const sessionText = await readUntil(session, "allowed-a")
     eventAbort.abort()
-    host.dispose()
+    await host.dispose()
 
     expect(globalText).toContain('"sessionID":"session-a"')
     expect(globalText).not.toContain('"sessionID":"session-b"')

@@ -1,9 +1,9 @@
-import type { ThemeRegistrationResolved } from "shiki"
+import type { ThemeRegistration } from "shiki"
 
 export type MarkdownToken = [content: string, style: string]
 
 export type MarkdownWorkerRequest =
-  | { type: "init"; theme: ThemeRegistrationResolved }
+  | { type: "init"; theme: ThemeRegistration }
   | { type: "highlight"; id: number; key: string; text: string; language: string; complete?: boolean }
   | { type: "dispose"; key: string }
 

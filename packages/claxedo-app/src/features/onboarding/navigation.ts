@@ -54,10 +54,10 @@ export function visibleSteps(steps: readonly SetupStepView[]): readonly SetupSte
 
 /** 1-based position for "Step N of M". Undefined on the recap screen. */
 export function stepPosition(steps: readonly SetupStepView[], location: SetupLocation) {
-  if (location.kind === "done") return
+  if (location.kind === "done") return undefined
   const rail = railSteps(steps)
   const index = rail.findIndex((step) => step.id === location.step)
-  if (index === -1) return
+  if (index === -1) return undefined
   return { index: index + 1, total: rail.length }
 }
 
@@ -108,7 +108,7 @@ export function backLocation(
     return last ? setupStepLocation(last.id) : undefined
   }
   const index = order.findIndex((step) => step.id === from.step)
-  if (index <= 0) return
+  if (index <= 0) return undefined
   const previous = order[index - 1]
   return previous ? setupStepLocation(previous.id) : undefined
 }

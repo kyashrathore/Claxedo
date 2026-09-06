@@ -104,12 +104,12 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
 
   const sessionInventory = () => readSessionInventoryQueryData({ baseUrl: globalSDK.url })
   const publishSessionTitles = () => sessionTitles.replaceInventory(sessionInventory().sessions)
-  const setSessionInventory = (value: SessionInventoryStoredValue<SessionInventoryRow> | SessionInventoryValue<SessionInventoryRow>) => {
+  const setSessionInventory = (value: SessionInventoryStoredValue | SessionInventoryValue) => {
     setSessionInventoryQueryData({ baseUrl: globalSDK.url, value })
     publishSessionTitles()
   }
   const updateSessionInventory = (
-    mutate: (draft: SessionInventoryValue<SessionInventoryRow>) => void,
+    mutate: (draft: SessionInventoryValue) => void,
   ) => {
     updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
     publishSessionTitles()
@@ -124,9 +124,12 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     request: platform.fetch,
     signedAccess: hasSignedAccess(),
   })
-  const setGlobalState = (patch: Partial<GlobalBootstrapState>) => {
+  // `error` rides on the patch but is not part of `GlobalBootstrapState` (it is
+  // provider-local signal state), so the parameter names it rather than the
+  // read asserting it.
+  const setGlobalState = (patch: Partial<GlobalBootstrapState> & { error?: InitError }) => {
     if ("ready" in patch) setReady(!!patch.ready)
-    if ("error" in patch) setError(patch.error as InitError | undefined)
+    if ("error" in patch) setError(patch.error)
     if (patch.path) queryClient.setQueryData(queryKeys.directory.path(globalSDK.url, ""), patch.path)
     if ("reload" in patch) setReload(patch.reload)
   }
@@ -457,8 +460,12 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     sessionInventoryLoaded: () => sessionInventory().loaded,
     applySessionEvent: applySessionEventToGlobal,
     sessionTitles: {
-      publishCanonical: sessionTitles.publishCanonical,
-      remove: sessionTitles.remove,
+      // Called through the projection rather than handed over unbound: the
+      // members are declared as METHODS on `SessionTitleProjectionApi`, so
+      // detaching them here would silently drop the receiver if the projection
+      // ever stops being a closure-backed object literal.
+      publishCanonical: (target) => sessionTitles.publishCanonical(target),
+      remove: (target) => sessionTitles.remove(target),
     },
     draftWasRolledBack: wasRolledBackDraft,
     cacheSessions,

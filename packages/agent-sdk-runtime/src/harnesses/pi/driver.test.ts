@@ -3,7 +3,6 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { PiHarnessAdapter } from "./index"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
-import { storeRows } from "../../test-utils/store-internals"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "../../index"
@@ -13,9 +12,21 @@ test.each(["resolve", "reject"] as const)(
   "an idle RPC check cannot dispose a new turn after a stale %s",
   async (outcome) => {
     const f = await installFakePiRpc()
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const adapter = new PiHarnessAdapter({ binary: f.binary, agentDir: f.agentDir, store, idleMs: 10 })
-    const original = PiRpcProcess.prototype.request
+    // The call-through target has to be captured before `spyOn` overwrites
+    // `request`, and eagerly: every shape that reads the prototype at call time
+    // (`.call`/`.apply` on the member expression, a `super` call, an arrow that
+    // re-looks-up) reaches the spy and recurses. `.bind` cannot help either —
+    // the receiver is the spy's own `this`, one per call.
+    //
+    // So snapshot the prototype's own descriptors. The method stays reachable
+    // as a property of an object rather than as a detached function, and the
+    // one call below names its receiver.
+    const unspied: Pick<PiRpcProcess, "request"> = Object.create(
+      null,
+      Object.getOwnPropertyDescriptors(PiRpcProcess.prototype),
+    )
     let armed = false
     const gate = Promise.withResolvers<void>()
     const idle = Promise.withResolvers<void>()
@@ -38,7 +49,7 @@ test.each(["resolve", "reject"] as const)(
       body,
       timeout,
     ) {
-      const result = await original.call(this, type, body, timeout)
+      const result = await unspied.request.call(this, type, body, timeout)
       if (type === "get_state" && armed) {
         armed = false
         idle.resolve()
@@ -92,7 +103,7 @@ const prompt = (text: string): PromptInput => ({
 })
 async function fixture() {
   const fake = await installFakePiRpc()
-  const store = storeRows(createMemoryRuntimeStore())
+  const store = createMemoryRuntimeStore()
   const options = { binary: fake.binary, agentDir: fake.agentDir, store }
   const adapter = new PiHarnessAdapter(options)
   const session = await adapter.createSession(fake.directory)

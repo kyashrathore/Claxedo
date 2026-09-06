@@ -38,12 +38,13 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { RouteGuardExemption } from "../platform/auth/request-guard"
-import { durableIdempotencyStore, type DurableIdempotencyStore } from "../authority/http/idempotency"
+import { durableIdempotency, durableIdempotencyStore, type DurableIdempotencyStore } from "../authority/http/idempotency"
 import { polarWebhookCacheKey } from "./polar-webhook-dedup"
 import { reportPaymentError } from "../platform/telemetry/errors/report"
 import type { BillingStore, CheckoutContext } from "./store-contract"
 import { webhookEventToApplyArgs, isBillingRelevantEventType, type PolarProductConfig } from "./apply-polar-state"
 import { verifyStandardWebhook, WebhookSignatureError } from "./standard-webhooks"
+import { asRecord, isStringArray } from "../platform/json/index"
 
 export type BillingEnv = Record<string, string | undefined>
 
@@ -158,7 +159,7 @@ export function polarClientFromEnv(env: BillingEnv): PolarClientLike | undefined
     accessToken,
     // Polar test mode rides the sandbox server.
     ...(clean(env.CLAXEDO_POLAR_SERVER) === "sandbox" ? { server: "sandbox" as const } : {}),
-  }) as unknown as PolarClientLike
+  })
 }
 
 export type BillingRouteOptions = {
@@ -331,10 +332,11 @@ export function BillingRoutes(options: BillingRouteOptions) {
   /**
    * Run `apply` at most once per Polar delivery id.
    *
-   * Rides the SAME durable store as control-route idempotency
-   * (`the idempotency authority`) under a `polar-webhook:` key prefix, rather than a
-   * second near-copy of that table: one TTL story, one sweep, one place where
-   * lease-expiry-and-takeover is reasoned about.
+   * Rides the SAME durable store AND the same claim sequence as control-route
+   * idempotency (`durableIdempotency`) under a `polar-webhook:` key prefix,
+   * rather than a second near-copy of either: one TTL story, one sweep, one
+   * place where lease-expiry-and-takeover is reasoned about, and one
+   * begin/replay/release/complete order.
    *
    * `webhookId` is always present by the time this runs: `verifyStandardWebhook`
    * signs over `id.timestamp.payload` and rejects a missing `webhook-id` with a
@@ -350,43 +352,24 @@ export function BillingRoutes(options: BillingRouteOptions) {
    * is no client-chosen key to bind a payload to, and the signature already ties
    * this id to these exact bytes.
    */
-  const dedupedWebhook = async <T>(webhookId: string | undefined, apply: () => Promise<T>) => {
+  const dedupedWebhook = (webhookId: string | undefined, apply: () => Promise<unknown>) => {
     const store = options.idempotencyStore ?? durableIdempotencyStore()
     if (!webhookId || !store) return apply()
-    const cacheKey = polarWebhookCacheKey(webhookId)
-    const claim = await store.begin({ cacheKey, fingerprint: webhookId })
-    if (claim.state === "completed") {
-      // Already applied. Replay the recorded response so Polar sees the same ack
-      // it would have seen the first time.
-      return (claim.resultJson === undefined ? undefined : JSON.parse(claim.resultJson)) as T
-    }
-    if (claim.state === "in_flight") {
-      // A concurrent delivery of the SAME event is mid-apply in another isolate.
-      // Throwing here surfaces as the route's 500, which makes Polar retry — the
-      // right answer, since the first attempt may yet fail.
-      throw new PolarWebhookInFlightError()
-    }
-    let value: T
-    try {
-      value = await apply()
-    } catch (error) {
-      // Release so Polar's retry can apply it, rather than being deduped
-      // against a delivery that never succeeded.
-      await store.release({ cacheKey, fingerprint: webhookId }).catch(() => {})
-      throw error
-    }
-    await store.complete({
-      cacheKey,
+    return durableIdempotency(store, {
+      cacheKey: polarWebhookCacheKey(webhookId),
       fingerprint: webhookId,
-      ...(value === undefined ? {} : { resultJson: JSON.stringify(value) }),
-    })
-    return value
+      run: apply,
+      // A concurrent delivery of the SAME event is mid-apply in another isolate.
+      // This surfaces as the route's 500, which makes Polar retry — the right
+      // answer, since the first attempt may yet fail.
+      inFlightError: () => new PolarWebhookInFlightError(),
+    })()
   }
 
   /** Signed auth or a ready error response. Billing has no unsigned surface. */
   const signedAuth = async (c: { req: { raw: Request } }): Promise<
     | { auth: SignedControlPlaneAuth }
-    | { error: { status: 401 | 403 | 503; body: unknown } }
+    | { error: { status: ControlPlaneAuthError["status"]; body: ReturnType<typeof controlPlaneAuthErrorBody> } }
   > => {
     try {
       const context = await controlPlaneAuthContext(c.req.raw, {
@@ -407,7 +390,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
       return { auth: context }
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) {
-        return { error: { status: err.status as 401 | 403 | 503, body: controlPlaneAuthErrorBody(err) } }
+        return { error: { status: err.status, body: controlPlaneAuthErrorBody(err) } }
       }
       throw err
     }
@@ -416,7 +399,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
   /** Resolve the caller's org context and require an admin/owner role. */
   const adminContext = async (auth: SignedControlPlaneAuth): Promise<
     | { context: CheckoutContext }
-    | { error: { status: 403 | 503; body: unknown } }
+    | { error: { status: 403 | 503; body: { error: { code: string; message: string } } } }
   > => {
     if (!auth.token) {
       return { error: { status: 503, body: unavailable("The selected billing adapter does not accept browser-session identity") } }
@@ -523,7 +506,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         } catch {
           return c.json({ error: { code: "invalid_webhook_payload", message: "Body is not JSON" } }, 400)
         }
-        const typedEvent = event as { type?: unknown; data?: unknown }
+        const typedEvent = asRecord(event) ?? {}
         const applyArgs = webhookEventToApplyArgs(typedEvent, products)
         if (!applyArgs) {
           // A billing-relevant event we could not translate to an org (missing
@@ -552,13 +535,18 @@ export function BillingRoutes(options: BillingRouteOptions) {
           // Both layers stay. `source_ts` is the ordering invariant; this is the
           // delivery-identity one, and it composes with the body cap and IP
           // limiter above rather than replacing either.
-          const result = await dedupedWebhook(webhookId, () => store().applyPolarState(applyArgs))
-          if (result.unresolved.length > 0) {
+          // A fresh apply hands back `applyPolarState`'s own result; a deduped
+          // redelivery hands back the JSON recorded for the first one. Reading
+          // the fields rather than naming a type is what keeps the two paths
+          // honest about each other.
+          const result = asRecord(await dedupedWebhook(webhookId, () => store().applyPolarState(applyArgs))) ?? {}
+          const unresolved = isStringArray(result.unresolved) ? result.unresolved : []
+          if (unresolved.length > 0) {
             // metadata.org_id pointed at nothing we know — a retry cannot fix
             // it, so ack + page rather than burn Polar's 10-delivery budget.
             reportPaymentError(new Error("Polar webhook referenced unknown org ids"), {
               tags: { source: "billing_webhook", reason: "unresolved_org" },
-              extra: { unresolved: result.unresolved },
+              extra: { unresolved },
             })
           }
           return c.json({ received: true, ...result })
@@ -573,7 +561,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
       // ── Checkout session (lazy customer creation, ADR 014 addendum) ───────
       .post("/checkout", async (c) => {
         const authResult = await signedAuth(c)
-        if ("error" in authResult) return c.json(authResult.error.body as never, authResult.error.status)
+        if ("error" in authResult) return c.json(authResult.error.body, authResult.error.status)
         const auth = authResult.auth
         const limit = rateLimiter.check({ userId: auth.user.subject, workspaceId: "billing" })
         if (!limit.allowed) {
@@ -595,7 +583,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         }
 
         const admin = await adminContext(auth)
-        if ("error" in admin) return c.json(admin.error.body as never, admin.error.status)
+        if ("error" in admin) return c.json(admin.error.body, admin.error.status)
         const context = admin.context
 
         // Refuse a SECOND checkout when the org already holds a live Polar
@@ -668,7 +656,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
       // ── Customer portal session ────────────────────────────────────────────
       .post("/portal", async (c) => {
         const authResult = await signedAuth(c)
-        if ("error" in authResult) return c.json(authResult.error.body as never, authResult.error.status)
+        if ("error" in authResult) return c.json(authResult.error.body, authResult.error.status)
         const auth = authResult.auth
         const limit = rateLimiter.check({ userId: auth.user.subject, workspaceId: "billing" })
         if (!limit.allowed) {
@@ -682,7 +670,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           return c.json(unavailable("Billing is not configured on this control plane"), 503)
         }
         const admin = await adminContext(auth)
-        if ("error" in admin) return c.json(admin.error.body as never, admin.error.status)
+        if ("error" in admin) return c.json(admin.error.body, admin.error.status)
 
         try {
           // resolve the portal from the ORG-scoped customer, so a

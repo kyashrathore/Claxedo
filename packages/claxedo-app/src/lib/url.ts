@@ -12,6 +12,21 @@ export function requestUrl(input: RequestInfo | URL): string {
   return input.url
 }
 
+/**
+ * The text a `fetch` body carries.
+ *
+ * `BodyInit` also covers `Blob`, `BufferSource`, `FormData`, `URLSearchParams`
+ * and `ReadableStream`, none of which `String()` renders usefully, so a
+ * non-text body reads as empty rather than as `"[object Object]"` — a caller
+ * that parses the result then fails on the empty string instead of silently
+ * parsing a placeholder.
+ */
+export function requestBodyText(body: BodyInit | null | undefined): string {
+  if (typeof body === "string") return body
+  if (body instanceof URLSearchParams) return body.toString()
+  return ""
+}
+
 /** Normalize a URL: map 127.0.0.1 → localhost, strip trailing slashes. */
 export function scopeUrl(url: string) {
   try {

@@ -1,5 +1,7 @@
 import path from "node:path"
 
+import { isRecord } from "../json"
+
 export type RollupChunkMetadata = {
   type: "chunk"
   fileName: string
@@ -61,6 +63,26 @@ function withoutQuery(value: string) {
  * machine. The final `node_modules/` segment is the runtime package identity;
  * repository sources are relative to the supplied workspace root.
  */
+/**
+ * Read a build's `.js.map` as source-map metadata.
+ *
+ * `JSON.parse` answers `any`, so every build script that read one either
+ * asserted the shape or annotated the binding and hoped. The scanner's whole
+ * job is the `sources` list, so it is checked here once: a map file without it
+ * is a build that changed shape, and that should fail at the read.
+ */
+export function readSourceMapMetadata(source: string, file: string): SourceMapMetadata {
+  const parsed: unknown = JSON.parse(source)
+  if (!isRecord(parsed)) throw new Error(`${file} is not a JSON object`)
+  const value = parsed
+  if (!Array.isArray(value.sources) || value.sources.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${file} has no source-map "sources" list`)
+  }
+  const sources = value.sources.filter((entry): entry is string => typeof entry === "string")
+  const sourceRoot = typeof value.sourceRoot === "string" ? value.sourceRoot : undefined
+  return { sources, ...(sourceRoot === undefined ? {} : { sourceRoot }) }
+}
+
 export function normalizeModuleId(raw: string, workspaceRoot: string): string {
   const value = slash(withoutQuery(raw))
   if (value.startsWith("\0")) return `virtual:${value.slice(1)}`

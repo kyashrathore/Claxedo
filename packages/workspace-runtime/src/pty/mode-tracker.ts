@@ -36,6 +36,7 @@
 // interop shims, which is why the bundled sidecar worked and hid the break.
 // The default binding is `module.exports`, which every loader agrees on.
 import xtermHeadless from "@xterm/headless"
+import { rec } from "../json-value"
 
 const HeadlessTerminal = xtermHeadless.Terminal
 
@@ -66,6 +67,12 @@ type HeadlessInternals = {
   }
 }
 
+function hasHeadlessInternals(term: object): term is HeadlessInternals {
+  const core = rec(rec(term)?._core)
+  return typeof rec(core?._writeBuffer)?.writeSync === "function"
+    && rec(rec(core?.optionsService)?.rawOptions) !== undefined
+}
+
 export function createModeTracker(cols: number, rows: number): ModeTracker {
   const term = new HeadlessTerminal({
     cols: Math.max(2, cols),
@@ -75,18 +82,21 @@ export function createModeTracker(cols: number, rows: number): ModeTracker {
     scrollback: 0,
     allowProposedApi: true,
   })
-  const internals = term as unknown as HeadlessInternals
-
-  // Validate the private surface once, at construction, so an @xterm/headless
-  // upgrade that renames internals fails loudly here instead of throwing inside
-  // every PTY-output callback for every session.
-  const rawOptions = internals._core?.optionsService?.rawOptions
-  const writeBuffer = internals._core?._writeBuffer
-  if (!rawOptions || typeof writeBuffer?.writeSync !== "function") {
+  // The private surface is CHECKED once, at construction, and the check is what
+  // produces the type — so an @xterm/headless upgrade that renames internals
+  // fails loudly here instead of inside every PTY-output callback, and nothing
+  // claims the shape before it has been looked at.
+  if (!hasHeadlessInternals(term)) {
     throw new Error(
       "@xterm/headless internals not found (optionsService.rawOptions, _writeBuffer.writeSync). " +
         "Likely a version-pin regression — check the pinned version still exposes these.",
     )
+  }
+  const internals: HeadlessInternals = term
+  const rawOptions = internals._core?.optionsService?.rawOptions
+  const writeBuffer = internals._core?._writeBuffer
+  if (!rawOptions || !writeBuffer) {
+    throw new Error("@xterm/headless internals not found (optionsService.rawOptions, _writeBuffer).")
   }
 
   // `vtExtensions.kittyKeyboard` is in the public typings but the headless

@@ -278,6 +278,10 @@ describe("session controller helpers", () => {
         role: "assistant",
         parentID: "msg_user",
         time: { created: 1, completed: 2 },
+        // Both `AgentPresentationMessage` arms require `agent`, so a row without
+        // it is one the runtime could never have sent. The cast let the fixture
+        // claim otherwise.
+        agent: "build",
         error: { name: "UnknownError", data: { message: "provider failed" } },
       } as Message],
       parts: { msg_assistant: [] },
@@ -653,14 +657,16 @@ describe("session controller helpers", () => {
       return token
     }
     const runTimers = () => {
-      for (const [token, timer] of [...timers]) {
+      // Snapshot: the loop deletes from `timers` as it goes.
+      for (const [token, timer] of Array.from(timers)) {
         if (timer.at > now) continue
         timers.delete(token)
         timer.callback()
       }
     }
     const runQueue = (queue: Map<number, () => void>) => {
-      for (const [token, callback] of [...queue]) {
+      // Snapshot: the loop deletes from `queue` as it goes.
+      for (const [token, callback] of Array.from(queue)) {
         queue.delete(token)
         callback()
       }

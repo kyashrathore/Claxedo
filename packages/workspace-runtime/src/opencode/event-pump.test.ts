@@ -4,7 +4,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { createEventPump, type ProjectedEvent } from "./event-pump"
 import { createOpenCodeHost, type OpenCodeHost } from "./host"
-import { authorizeWorkspace } from "./scope"
+import { WorkspaceScope } from "./scope"
 import { createSessionPort } from "./session-port"
 
 const hosts: OpenCodeHost[] = []
@@ -40,7 +40,7 @@ test("projects real SDK events and marks durability correctly", async () => {
   const root = tempRoot()
   const workspace = path.join(root, "ws")
   fs.mkdirSync(workspace)
-  const scope = authorizeWorkspace({ workspaceID: "w", directory: workspace })
+  const scope = WorkspaceScope.authorize({ workspaceID: "w", directory: workspace })
   const host = hostAt(root)
 
   const seen: ProjectedEvent[] = []
@@ -71,7 +71,7 @@ test("records a monotonic checkpoint per aggregate", async () => {
   const root = tempRoot()
   const workspace = path.join(root, "ws")
   fs.mkdirSync(workspace)
-  const scope = authorizeWorkspace({ workspaceID: "w", directory: workspace })
+  const scope = WorkspaceScope.authorize({ workspaceID: "w", directory: workspace })
   const host = hostAt(root)
 
   const seen: ProjectedEvent[] = []
@@ -91,7 +91,7 @@ test("a throwing consumer degrades health but does not kill the pump", async () 
   const root = tempRoot()
   const workspace = path.join(root, "ws")
   fs.mkdirSync(workspace)
-  const scope = authorizeWorkspace({ workspaceID: "w", directory: workspace })
+  const scope = WorkspaceScope.authorize({ workspaceID: "w", directory: workspace })
   const host = hostAt(root)
 
   let delivered = 0

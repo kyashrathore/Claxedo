@@ -1,9 +1,10 @@
 import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
 import type { HarnessEventAdapter } from "../../core/adapter"
+import { object, text } from "../../value"
 
-type RecordValue = Record<string, unknown>
-const row = (value: unknown): RecordValue => (value && typeof value === "object" ? (value as RecordValue) : {})
-const string = (value: unknown) => (typeof value === "string" ? value : "")
+/** Pi payload readers: absent or non-object fields read as empty rather than throwing. */
+const row = (value: unknown): Record<string, unknown> => object(value) ?? {}
+const string = (value: unknown) => text(value) ?? ""
 type State = { blocks: Record<number, string>; finished: boolean }
 
 /** The only Pi RPC → product event translation. No upstream model library enters the host. */
@@ -108,7 +109,8 @@ export function piRpcAdapter(): HarnessEventAdapter<State> {
             },
           ]
         case "tool_execution_update": {
-          if (typeof message.toolCallId !== "string") throw new Error("Pi tool update lacks identity")
+          const toolCallId = message.toolCallId
+          if (typeof toolCallId !== "string") throw new Error("Pi tool update lacks identity")
           const partial = row(message.partialResult)
           const content = Array.isArray(partial.content) ? partial.content : []
           return content.flatMap((item) => {
@@ -117,7 +119,7 @@ export function piRpcAdapter(): HarnessEventAdapter<State> {
               ? [
                   {
                     type: "tool-content" as const,
-                    toolCallId: message.toolCallId as string,
+                    toolCallId,
                     content: { type: "content" as const, content: { type: "text" as const, text: block.text } },
                   },
                 ]

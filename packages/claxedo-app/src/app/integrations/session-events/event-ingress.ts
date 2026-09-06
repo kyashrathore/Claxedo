@@ -7,7 +7,6 @@ import {
   upsertCreatedSessionListRow,
 } from "@/features/session/data/query/session-list"
 import { removeSessionInventoryQueryData } from "@/features/session/data/sync/session-inventory"
-import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
@@ -29,6 +28,8 @@ import type {
 } from "@/features/session/store/session-title-projection"
 import { prepareRegisteredSessionRevocation } from "@/features/session/conversation/conversation-registry"
 import { allowPersistedSessionConversations } from "@/features/session/conversation/conversation-persistence"
+import { asRecord, readField, readString } from "@/lib/record"
+import { sessionEventRow } from "@/features/session/data/sync/session-event-info"
 
 export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
 
@@ -39,10 +40,10 @@ export type SessionAccessRevocationSource = {
 export function createSessionAccessRevocationChannel() {
   const listeners = new Set<(event: SessionAccessRevokedEvent) => void>()
   return {
-    publish(event: SessionAccessRevokedEvent) {
+    publish: (event: SessionAccessRevokedEvent) => {
       for (const listener of listeners) listener(event)
     },
-    subscribe(listener: (event: SessionAccessRevokedEvent) => void) {
+    subscribe: (listener: (event: SessionAccessRevokedEvent) => void) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
@@ -52,11 +53,11 @@ export function createSessionAccessRevocationChannel() {
 export function createSessionAuthorityRevision() {
   let revision = 0
   return {
-    capture(scopeIsCurrent: () => boolean) {
+    capture: (scopeIsCurrent: () => boolean) => {
       const captured = revision
       return () => scopeIsCurrent() && captured === revision
     },
-    invalidate() {
+    invalidate: () => {
       revision++
     },
   }
@@ -100,6 +101,18 @@ type DirectoryChildren = {
   sessionCache: (directory: DirectoryRef) => DirectorySessionCacheValue
 }
 
+/**
+ * The `session.*` row `session-event-info` produces once it has READ the frame.
+ *
+ * Named off that reader rather than restated here: it is the module that owns
+ * the difference between the producers' `info` shapes, and three sites in this
+ * file used to assert `event.properties as { info?: LifecycleSession }` instead
+ * of reading through it — a claim that was false for every `session.deleted`
+ * frame (identity only) and for the auto-title `session.updated` frames, which
+ * name no `slug`, `version` or `projectID` at all.
+ */
+type SessionEventRow = NonNullable<ReturnType<typeof sessionEventRow>>
+
 type SessionEventType = "created" | "updated" | "deleted"
 type SessionTitleWriter = Pick<SessionTitleProjectionApi, "publishCanonical" | "remove">
 type EventIngressInput = {
@@ -112,7 +125,7 @@ type EventIngressInput = {
   refresh: () => void
   setGlobalProject: Parameters<typeof applyGlobalProjectEvent>[0]["setGlobalProject"]
   sessionInventoryLoaded: () => boolean
-  applySessionEvent: (info: LifecycleSession, type: SessionEventType) => void
+  applySessionEvent: (info: SessionEventRow, type: SessionEventType) => void
   sessionTitles: SessionTitleWriter
   draftWasRolledBack: (draftId: string) => boolean
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
@@ -202,18 +215,26 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     }
 
     const sessionEventType = globalSessionEventType(event)
-    const raw = sessionEventType
-      ? (event.properties as { info?: LifecycleSession } | undefined)?.info
-      : undefined
-    if (sessionEventType && raw) {
+    if (sessionEventType) {
+      // A frame that names ordering timestamps is a row; one that does not (a
+      // `session.deleted`, which carries identity only) still addresses a row.
+      // Both readings come from `session-event-info`, so the two kinds of frame
+      // are distinguished once here rather than asserted into one shape.
+      const row = sessionEventRow(event.properties)
       // The workspace's own stream is the authority for its list, so the frame
       // is APPLIED rather than used as a doorbell for a refetch: a created row
       // appears with no list request at all, and an updated title or timestamp
       // reorders in place.
-      applySessionEventToSessionList({ info: raw, type: sessionEventType, directory, projects: input.projects() })
+      applySessionEventToSessionList({
+        properties: event.properties,
+        row,
+        type: sessionEventType,
+        directory,
+        projects: input.projects(),
+      })
       projectCanonicalSessionTitle({
         writer: input.sessionTitles,
-        info: raw,
+        info: readField(event.properties, "info"),
         type: sessionEventType,
         directory,
       })
@@ -223,8 +244,8 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       // control-plane inventory remains authoritative; inserting this frame
       // into workspace inventory invents a workspace keyed by the session id
       // and can replace the already-open central surface on a cold route.
-      if (input.sessionInventoryLoaded() && !isCentralLifecycleSession(raw)) {
-        const info = { ...raw }
+      if (row && input.sessionInventoryLoaded() && !isCentralSessionRow(row)) {
+        const info = { ...row }
         if (!info.projectID && info.directory) {
           const project = input.projectFor(info.directory)
           if (project?.id) info.projectID = project.id
@@ -356,7 +377,7 @@ async function handleSessionShareRevoked(
     if (!isActive()) return
 
     removeSessionListQueryData(event)
-    removeSessionInventoryQueryData<SessionInventoryRow>({
+    removeSessionInventoryQueryData({
       session: { id: event.sessionId, workspaceId: event.workspaceId },
     })
     // First prove the shared query persister is writable. A storage outage can
@@ -436,7 +457,7 @@ function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extra
   const directory = event.directory
   if (!directory) return
   if (event.type === "session.updated") {
-    const info = (event.properties as { info?: LifecycleSession } | undefined)?.info
+    const info = readField(event.properties, "info")
     if (info) {
       projectCanonicalSessionTitle({
         writer: input.sessionTitles,
@@ -513,7 +534,8 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   if (!next) return
   input.children.mark(event.directory)
   if (event.phase !== "created" || !event.info) return
-  const eventInfo = event.info as LifecycleSession
+  const eventInfo = readLifecycleSessionInfo(event.info, event.directory)
+  if (!eventInfo) return
   const inventoryProjectID = input.projectFor(eventInfo.directory)?.id
   const info: LifecycleSession = inventoryProjectID
     ? { ...eventInfo, projectID: inventoryProjectID }
@@ -577,21 +599,27 @@ function addressedWorkspaceId(value: string | undefined, projects: GlobalProject
  * control plane's, and a user-hosted workspace's runtime over the relay.
  */
 function applySessionEventToSessionList(input: {
-  info: LifecycleSession
+  properties: unknown
+  row: SessionEventRow | undefined
   type: SessionEventType
   directory: DirectoryRef
   projects: GlobalProject[]
 }) {
+  // Identity is read off the frame rather than the row: a `session.deleted`
+  // names only `{ id, parentID?, directory? }` and still has to remove its row.
+  const info = asRecord(readField(input.properties, "info"))
+  const sessionId = txt(info?.id)
+  if (!sessionId) return
   const workspaceId = addressedWorkspaceId(
-    txt(input.info.workspaceID) ?? txt(input.info.workspaceId),
+    txt(info?.workspaceID) ?? txt(info?.workspaceId),
     input.projects,
   )
   const directory = sessionRowDirectory({
     workspaceId,
-    hostDirectory: input.info.directory || input.directory,
+    hostDirectory: txt(info?.directory) || input.directory,
   })
   const identity = {
-    sessionId: input.info.id,
+    sessionId,
     directory,
     ...(workspaceId ? { workspaceId } : {}),
   }
@@ -599,23 +627,27 @@ function applySessionEventToSessionList(input: {
     removeSessionListQueryData(identity)
     return
   }
+  // Placing or re-sorting a row needs its ordering timestamps, which is exactly
+  // what makes a frame a row.
+  const row = input.row
+  if (!row) return
   if (input.type === "updated") {
     reconcileUpdatedSessionListQueryData({
       ...identity,
-      title: input.info.title,
-      updatedAt: input.info.time.updated,
+      title: row.title,
+      updatedAt: row.time.updated,
     })
     return
   }
   upsertCreatedSessionListRow({
     row: {
-      sessionId: input.info.id,
-      title: input.info.title,
+      sessionId,
+      title: row.title,
       directory,
-      projectId: input.info.projectID,
+      projectId: row.projectID,
       ...(workspaceId ? { workspaceId } : {}),
-      createdAt: input.info.time.created,
-      updatedAt: input.info.time.updated,
+      createdAt: row.time.created,
+      updatedAt: row.time.updated,
     },
   })
 }
@@ -627,7 +659,7 @@ function projectCanonicalSessionTitle(input: {
   directory: DirectoryRef
   workspaceId?: string
 }) {
-  const info = rec(input.info)
+  const info = asRecord(input.info)
   const sessionId = txt(info?.id) ?? txt(info?.sessionID)
   if (!sessionId) return
   const workspaceId = txt(info?.workspaceID) ?? txt(info?.workspaceId) ?? input.workspaceId
@@ -642,7 +674,7 @@ function projectCanonicalSessionTitle(input: {
   }
   const title = txt(info?.title)
   if (!title) return
-  const time = rec(info?.time)
+  const time = asRecord(info?.time)
   const updatedAt = num(time?.updated) ?? num(info?.updatedAt)
   input.writer.publishCanonical({
     ...target,
@@ -652,23 +684,37 @@ function projectCanonicalSessionTitle(input: {
 }
 
 function readLifecycleSessionInfo(input: unknown, directory: DirectoryRef): LifecycleSession | undefined {
-  const value = input && typeof input === "object" ? input as Partial<LifecycleSession> : undefined
+  const value = asRecord(input)
   if (!value) return undefined
-  if (typeof value.id !== "string") return undefined
-  if (typeof value.slug !== "string") return undefined
-  if (typeof value.projectID !== "string") return undefined
-  const sessionDirectory = typeof value.directory === "string" && value.directory ? value.directory : directory
-  if (typeof value.title !== "string") return undefined
-  if (typeof value.version !== "string") return undefined
-  if (!value.time || typeof value.time.created !== "number" || typeof value.time.updated !== "number") return undefined
-  return { ...value, directory: sessionDirectory } as LifecycleSession
+  const id = txt(value.id)
+  const slug = txt(value.slug)
+  const projectID = txt(value.projectID)
+  const title = txt(value.title)
+  const version = txt(value.version)
+  const time = asRecord(value.time)
+  const created = num(time?.created)
+  const updated = num(time?.updated)
+  const archived = num(time?.archived)
+  if (id === undefined || slug === undefined || projectID === undefined) return undefined
+  if (title === undefined || version === undefined) return undefined
+  if (created === undefined || updated === undefined) return undefined
+  return {
+    ...value,
+    id,
+    slug,
+    projectID,
+    directory: txt(value.directory) || directory,
+    title,
+    version,
+    time: { created, updated, ...(archived === undefined ? {} : { archived }) },
+  }
 }
 
 function sessionProjectionEvent(input: unknown) {
-  const event = rec(input)
-  const properties = rec(event?.properties)
-  const info = rec(properties?.info)
-  const part = rec(properties?.part)
+  const event = asRecord(input)
+  const properties = asRecord(event?.properties)
+  const info = asRecord(properties?.info)
+  const part = asRecord(properties?.part)
   const type = txt(event?.type)
   const sessionId = txt(properties?.sessionID) ?? txt(properties?.sessionId) ?? txt(info?.sessionID) ?? txt(part?.sessionID)
   if (!type || !sessionId) return undefined
@@ -703,12 +749,8 @@ function globalSessionEventType(event: RoutableEvent): SessionEventType | undefi
   return undefined
 }
 
-function isCentralLifecycleSession(input: LifecycleSession) {
-  return (typeof input.sessionRef === "string" && input.sessionRef.startsWith("central:"))
-}
-
-function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+function isCentralSessionRow(input: SessionEventRow) {
+  return readString(input, "sessionRef")?.startsWith("central:") ?? false
 }
 
 function txt(input: unknown) {

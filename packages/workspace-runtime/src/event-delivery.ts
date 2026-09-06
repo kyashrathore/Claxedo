@@ -2,7 +2,6 @@ import { createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-
 import { createHash, randomUUID } from "node:crypto"
 import type { Context } from "hono"
 import type { SessionAccessPolicy } from "./session-access-policy"
-import type { RelayHostAuthContext } from "./workspace-host-service-auth"
 
 export type WorkspaceRole = "viewer" | "editor" | "admin" | "owner"
 
@@ -81,7 +80,7 @@ export type EventDeliveryOptions<T> = {
 
 export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal {
   const connectionId = randomUUID()
-  const claims = (context as unknown as { get(name: string): unknown }).get("relayHostAuth") as RelayHostAuthContext["relayHostAuth"]
+  const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
   if (claims.actor_id && claims.actor_kind) {
     return {
@@ -105,11 +104,11 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
   }
 }
 
-export function defaultEventDeliveryPolicy<T>({
+export function defaultEventDeliveryPolicy({
   principal,
   sessionId,
   sensitive,
-}: Parameters<EventDeliveryPolicy<T>>[0]): EventDeliveryDecision {
+}: Parameters<EventDeliveryPolicy<unknown>>[0]): EventDeliveryDecision {
   if (principal.mode === "unmanaged-local") return "deliver"
   if (!sessionId && !sensitive) return "deliver"
   return principal.mode === "signed-unattributed" ? "terminate" : "omit"
@@ -322,7 +321,11 @@ export function createIdentityAwareEventSource<T>(input: {
     evict(scope)
   }
 
-  const evaluate = (scope: Scope<T>, event: T) => {
+  /**
+   * Decide one event for a scope. Returns `undefined` when every decision was
+   * synchronous (already applied), or the promise the caller must serialize on.
+   */
+  const evaluate = (scope: Scope<T>, event: T): Promise<void> | undefined => {
     const pending = [...scope.connections].map((connection) => {
       try {
         return { connection, next: decision(connection.principal, event) }
@@ -331,16 +334,24 @@ export function createIdentityAwareEventSource<T>(input: {
       }
     })
     const replayNext = (() => {
-      if (!scope.replayPrincipal) return
+      if (!scope.replayPrincipal) return undefined
       try {
         return decision(scope.replayPrincipal, event)
       } catch {
         return "terminate" as const
       }
     })()
-    if (!pending.some((item) => item.next instanceof Promise) && !(replayNext instanceof Promise)) {
-      apply(scope, event, pending as Array<{ connection: Connection<T>; next: EventDeliveryDecision }>, replayNext)
-      return
+    // Collected element by element rather than asserted in bulk: the
+    // `instanceof` check narrows each `next`, so the settled array's type comes
+    // from the check instead of from a claim about the whole array.
+    const settled: Array<{ connection: Connection<T>; next: EventDeliveryDecision }> = []
+    for (const item of pending) {
+      if (item.next instanceof Promise) break
+      settled.push({ connection: item.connection, next: item.next })
+    }
+    if (settled.length === pending.length && !(replayNext instanceof Promise)) {
+      apply(scope, event, settled, replayNext)
+      return undefined
     }
     return Promise.all(pending.map(async (item) => ({
       connection: item.connection,
@@ -353,7 +364,7 @@ export function createIdentityAwareEventSource<T>(input: {
     })
   }
 
-  const enqueue = (scope: Scope<T>, event: T) => {
+  const enqueue = (scope: Scope<T>, event: T): void => {
     if (!scope.pending) {
       const result = evaluate(scope, event)
       if (!result) return

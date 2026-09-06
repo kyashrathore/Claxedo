@@ -29,6 +29,7 @@ import {
   type OnboardingDestination,
 } from "./ai-connect-state"
 import type { OnboardingFunnelEvent } from "./funnel"
+import { errorText } from "./error-text"
 
 /** How a Claude subscription or account reaches a cloud sandbox. */
 export type ClaudeCloudMethod = "api-key" | "setup-token"
@@ -187,7 +188,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
             .map((harness) => harness.id),
         )
       })
-      .catch((error: unknown) => transition({ type: "failed", message: errorMessage(error) }))
+      .catch((error: unknown) => transition({ type: "failed", message: errorText(error) }))
   }
 
   /**
@@ -215,7 +216,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
       request: props.request,
     })
       .then(complete)
-      .catch((error: unknown) => transition({ type: "failed", message: errorMessage(error) }))
+      .catch((error: unknown) => transition({ type: "failed", message: errorText(error) }))
   }
 
   /**
@@ -602,13 +603,9 @@ export async function invalidateAIConnectQueries() {
   })
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /** Narrows a probe to its reason, so the row renders copy rather than a state. */
 function probeReason(probe: AIDiscoveryProbe | undefined, state: "broken" | "unknown") {
-  if (probe?.state !== state) return
+  if (probe?.state !== state) return undefined
   return probe.reason || (state === "broken" ? "Won't work" : "Couldn't check")
 }
 

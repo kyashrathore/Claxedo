@@ -7,6 +7,7 @@ import { useServer } from "@/app/connection/server"
 import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { same } from "@/lib/same"
+import { isRecord } from "@/lib/record"
 import { createScrollPersistence, type SessionScroll } from "@/app/providers/layout-scroll"
 import { validProjectRef } from "@/platform/sync/worktree"
 import {
@@ -33,7 +34,7 @@ export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "true"
 
 export function getAvatarColors(key?: string) {
-  if (key && AVATAR_COLOR_KEYS.includes(key as AvatarColorKey)) {
+  if (key && (AVATAR_COLOR_KEYS as readonly string[]).includes(key)) {
     return {
       background: `var(--avatar-background-${key})`,
       foreground: `var(--avatar-text-${key})`,
@@ -87,9 +88,6 @@ function createLayoutContextValue() {
         directory,
       })
     }
-
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      typeof value === "object" && value !== null && !Array.isArray(value)
 
     const migrate = (value: unknown) => {
       if (!isRecord(value)) return value

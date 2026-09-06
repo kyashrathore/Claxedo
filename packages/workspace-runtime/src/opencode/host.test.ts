@@ -8,7 +8,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { createOpenCodeHost, OpenCodeUnavailableError, type OpenCodeHost } from "./host"
-import { authorizeWorkspace, WorkspaceScopeError } from "./scope"
+import { WorkspaceScope, WorkspaceScopeError } from "./scope"
 import { createSessionPort } from "./session-port"
 
 const hosts: OpenCodeHost[] = []
@@ -102,7 +102,7 @@ test("sessions persist across a fresh owner on the same database", async () => {
   const root = tempRoot()
   const workspace = path.join(root, "ws")
   fs.mkdirSync(workspace)
-  const scope = authorizeWorkspace({ workspaceID: "ws-1", directory: workspace })
+  const scope = WorkspaceScope.authorize({ workspaceID: "ws-1", directory: workspace })
 
   const first = hostAt(root)
   const created = await createSessionPort(first).create(scope, { title: "persisted" })
@@ -121,8 +121,8 @@ test("a cross-workspace session id fails closed", async () => {
   const b = path.join(root, "ws-b")
   fs.mkdirSync(a)
   fs.mkdirSync(b)
-  const scopeA = authorizeWorkspace({ workspaceID: "ws-a", directory: a })
-  const scopeB = authorizeWorkspace({ workspaceID: "ws-b", directory: b })
+  const scopeA = WorkspaceScope.authorize({ workspaceID: "ws-a", directory: a })
+  const scopeB = WorkspaceScope.authorize({ workspaceID: "ws-b", directory: b })
 
   const port = createSessionPort(hostAt(root))
   const inB = await port.create(scopeB, { title: "belongs to b" })
@@ -138,8 +138,8 @@ test("listing is scoped to the authorized workspace", async () => {
   const b = path.join(root, "ws-b")
   fs.mkdirSync(a)
   fs.mkdirSync(b)
-  const scopeA = authorizeWorkspace({ workspaceID: "ws-a", directory: a })
-  const scopeB = authorizeWorkspace({ workspaceID: "ws-b", directory: b })
+  const scopeA = WorkspaceScope.authorize({ workspaceID: "ws-a", directory: a })
+  const scopeB = WorkspaceScope.authorize({ workspaceID: "ws-b", directory: b })
 
   const port = createSessionPort(hostAt(root))
   const inA = await port.create(scopeA, { title: "a" })
@@ -157,8 +157,8 @@ test("remove proves ownership before destroying", async () => {
   const b = path.join(root, "ws-b")
   fs.mkdirSync(a)
   fs.mkdirSync(b)
-  const scopeA = authorizeWorkspace({ workspaceID: "ws-a", directory: a })
-  const scopeB = authorizeWorkspace({ workspaceID: "ws-b", directory: b })
+  const scopeA = WorkspaceScope.authorize({ workspaceID: "ws-a", directory: a })
+  const scopeB = WorkspaceScope.authorize({ workspaceID: "ws-b", directory: b })
 
   const port = createSessionPort(hostAt(root))
   const inB = await port.create(scopeB, { title: "b" })

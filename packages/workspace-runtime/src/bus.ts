@@ -1,4 +1,5 @@
 import type { SessionLifecycleEvent } from "./routes/session-core"
+import { rec } from "./json-value"
 
 type Subscriber<T> = (event: T) => unknown
 
@@ -7,7 +8,7 @@ type BusOptions<T> = {
 }
 
 function catches(value: unknown): value is Promise<unknown> {
-  return typeof (value as { catch?: unknown } | null)?.catch === "function"
+  return typeof rec(value)?.catch === "function"
 }
 
 export function createBus<T>(options: BusOptions<T> = {}) {
@@ -116,9 +117,21 @@ type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>
 // globalThis so publishers in one bundle reach subscribers in another.
 const globalBusKey = Symbol.for("claxedo.workspace-runtime.bus")
 const globalBusStore = globalThis as Record<PropertyKey, unknown>
-export const workspaceRuntimeBus: RuntimeBus =
-  (globalBusStore[globalBusKey] as RuntimeBus | undefined) ??
-  (globalBusStore[globalBusKey] = createBus<WorkspaceRuntimeEvent>())
+
+/**
+ * Recognise a bus already pinned on `globalThis`. Checked rather than assumed:
+ * the value may have been written by a DIFFERENT bundle of this module, which
+ * is the whole reason the pin exists.
+ */
+function isRuntimeBus(value: unknown): value is RuntimeBus {
+  const bus = rec(value)
+  return typeof bus?.publish === "function" && typeof bus.subscribe === "function"
+}
+
+const pinnedBus = globalBusStore[globalBusKey]
+export const workspaceRuntimeBus: RuntimeBus = isRuntimeBus(pinnedBus)
+  ? pinnedBus
+  : (globalBusStore[globalBusKey] = createBus<WorkspaceRuntimeEvent>())
 
 /** @deprecated Use {@link WorkspaceRuntimeEvent}; product-branded alias kept for compatibility. */
 export type ClaxedoEvent = WorkspaceRuntimeEvent

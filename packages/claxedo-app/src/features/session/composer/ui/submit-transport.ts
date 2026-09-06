@@ -179,8 +179,11 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     }
     return {
       ...runtimePromptClient,
-      getGoalCapabilities: runtimeClient.getGoalCapabilities,
-      startGoal: runtimeClient.startGoal,
+      // Wrapped rather than passed bare: both are methods on the agent runtime
+      // client, so detaching them from their receiver is unsound.
+      getGoalCapabilities: (goalInput: Parameters<typeof runtimeClient.getGoalCapabilities>[0]) =>
+        runtimeClient.getGoalCapabilities(goalInput),
+      startGoal: (goalInput: Parameters<typeof runtimeClient.startGoal>[0]) => runtimeClient.startGoal(goalInput),
     }
   }
 

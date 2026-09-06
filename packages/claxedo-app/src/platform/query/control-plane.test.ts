@@ -9,6 +9,7 @@ import {
   providerListQuery,
 } from "./control-plane"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "./provider-list"
+import { requestUrl } from "@/lib/url"
 
 /**
  * A REAL `Provider`, not a type assertion.
@@ -249,7 +250,7 @@ describe("control-plane query helpers", () => {
       directory: "workspace:ws_1",
       harnessType: "pi",
       request: async (url) => {
-        calls.push(String(url))
+        calls.push(requestUrl(url))
         return Response.json({ all: [], connected: [], default: {} })
       },
     })

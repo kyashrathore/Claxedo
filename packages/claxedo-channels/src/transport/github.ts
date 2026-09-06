@@ -1,6 +1,7 @@
 import { parseChannelCommand } from "../core/channel-command"
 import type { InboundEnvelope } from "../envelope"
 import { createHmac, timingSafeEqual } from "node:crypto"
+import { filled as str, num, record } from "../json"
 
 type GitHubWebhookInput = {
   event: string
@@ -10,24 +11,12 @@ type GitHubWebhookInput = {
   receivedAt?: number
 }
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
-function str(input: unknown) {
-  return typeof input === "string" && input.trim() ? input : undefined
-}
-
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
-function repo(input: Record<string, unknown>) {
+function repo(input: Record<string, unknown>): { owner: string; name: string } | undefined {
   const repository = record(input.repository)
   const owner = record(repository?.owner)
   const name = str(repository?.name)
   const ownerName = str(owner?.login) ?? str(repository?.owner)
-  if (!name || !ownerName) return
+  if (!name || !ownerName) return undefined
   return { owner: ownerName, name }
 }
 
@@ -74,14 +63,14 @@ function supportedEvent(input: string) {
 
 export function githubWebhookEnvelope(input: GitHubWebhookInput): InboundEnvelope | undefined {
   const payload = record(input.payload)
-  if (!payload || !input.delivery.trim() || !supportedEvent(input.event)) return
+  if (!payload || !input.delivery.trim() || !supportedEvent(input.event)) return undefined
   const body = text({ event: input.event, payload })
   const botMentions = mentions(body, input.botName ?? "claxedo")
-  if (botMentions.length === 0) return
+  if (botMentions.length === 0) return undefined
   const repository = repo(payload)
   const number = issueNumber(payload)
   const user = sender(payload)
-  if (!repository || !number || !user) return
+  if (!repository || !number || !user) return undefined
   return {
     channel: "github",
     externalUserId: user,

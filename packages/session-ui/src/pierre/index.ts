@@ -1,4 +1,10 @@
-import { DiffLineAnnotation, FileContents, FileDiffOptions, type SelectedLineRange } from "@pierre/diffs"
+import {
+  type BaseDiffOptions,
+  DiffLineAnnotation,
+  FileContents,
+  FileDiffOptions,
+  type SelectedLineRange,
+} from "@pierre/diffs"
 import { ComponentProps } from "solid-js"
 import { lineCommentStyles } from "../components/line-comment-styles"
 
@@ -154,7 +160,9 @@ ${lineCommentStyles}
 
 `
 
-export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) {
+// `diffStyle` is declared on the non-generic `BaseDiffOptions`, so these defaults do not
+// vary with a diff's annotation type.
+export function createDefaultOptions(style: BaseDiffOptions["diffStyle"]) {
   return {
     theme: "OpenCode",
     themeType: "system",

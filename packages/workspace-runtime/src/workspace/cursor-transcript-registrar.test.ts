@@ -70,5 +70,5 @@ test("Cursor native receives the parent/workspace-bound opaque transcript regist
   })
   expect(unauthorized).toMatchObject({ state: "unavailable", reason: "unauthorized" })
   expect(JSON.stringify(unauthorized)).not.toContain(providerRoot)
-  adapter.dispose()
+  await adapter.dispose()
 })

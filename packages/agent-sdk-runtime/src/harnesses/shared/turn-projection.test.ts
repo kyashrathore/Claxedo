@@ -190,9 +190,9 @@ describe("createTurnEventProjector", () => {
     const runtime: AgentRuntimeEvent[] = []
     const item = projector({
       appendEvent(event) {
-        if (event.type !== "message.part.updated") return
+        if (event.type !== "message.part.updated") return undefined
         const part = event.properties.part as Record<string, unknown>
-        if (part.type !== "tool") return
+        if (part.type !== "tool") return undefined
         return {
           payload: {
             ...event,

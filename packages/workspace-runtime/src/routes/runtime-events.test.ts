@@ -5,6 +5,8 @@ import { runtimeBusEventsHandler } from "./runtime-events"
 import { sessionEventDeliveryPolicy, type EventDeliveryPrincipal } from "../event-delivery"
 import { remoteWorkspaceSessionAccessPolicy } from "../remote-session-authority"
 import type { SessionAccessPolicy } from "../session-access-policy"
+import { fetchBodyJson } from "../test-support/fetch-double"
+import { rec, str } from "../json-value"
 
 function mount(
   bus: ReturnType<typeof createBus<WorkspaceRuntimeEvent>>,
@@ -314,8 +316,8 @@ describe("runtimeBusEventsHandler — /api/wr/events replay", () => {
       fetch: async (_input, init) => {
         const authorization = new Headers(init?.headers).get("authorization") ?? ""
         const actorId = authorization.replace(/^Bearer rht-/, "")
-        const body = JSON.parse(String(init?.body)) as { action: string; stream?: boolean }
-        authorityCalls.push({ actorId, authorization, action: body.action })
+        const body = rec(fetchBodyJson(init?.body)) ?? {}
+        authorityCalls.push({ actorId, authorization, action: str(body.action) ?? "" })
         if (expiredProofs.has(actorId)) {
           return Response.json({ error: { code: "relay_host_token_invalid" } }, { status: 401 })
         }

@@ -81,8 +81,13 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
   const edgeTypeOffset = edge_fields.indexOf("type")
   const edgeNameOffset = edge_fields.indexOf("name_or_index")
   const edgeToOffset = edge_fields.indexOf("to_node")
-  const nodeTypeNames = (node_types[0] ?? []) as string[]
-  const edgeTypeNames = (edge_types[0] ?? []) as string[]
+  // The first entry of each type table is the name list; the rest are scalars.
+  const typeNames = (table: (string | string[])[]) => {
+    const names = table[0]
+    return Array.isArray(names) ? names : []
+  }
+  const nodeTypeNames = typeNames(node_types)
+  const edgeTypeNames = typeNames(edge_types)
 
   const nodeCount = raw.snapshot.node_count
   const nodeName = (index: number) => raw.strings[raw.nodes[index * nodeFieldCount + nameOffset]] ?? "?"

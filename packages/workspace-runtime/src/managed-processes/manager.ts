@@ -19,6 +19,8 @@ import { buildSafeEnv } from "../pty/env"
 import { runGit } from "../git"
 import * as PortLease from "./port-lease"
 import { Process } from "./schema"
+import { errorMessage } from "../error-message"
+import { rec, str } from "../json-value"
 import { findFreePort, findPidOnPort, tryPort } from "./port-picker"
 import type { ProcessObserver } from "./process-observer"
 import { resolveWorkspaceCommandPaths, resolveWorkspacePath } from "../target"
@@ -37,15 +39,9 @@ interface PortRegistryEntry {
 const globalPortRegistry = new Map<number, PortRegistryEntry>()
 const globalPortReservations = new Map<number, string>()
 
-function obj(input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as Record<string, unknown>
-}
-
-function code(err: unknown) {
-  if (!err || typeof err !== "object") return
-  const row = err as { code?: unknown }
-  return typeof row.code === "string" ? row.code : undefined
+/** The `code` an errno-style rejection carries, when it carries one. */
+function code(err: unknown): string | undefined {
+  return str(rec(err)?.code)
 }
 
 function registerPort(port: number, entry: PortRegistryEntry): void {
@@ -275,12 +271,12 @@ async function getPortOccupier(directory: string, port: number): Promise<Process
   return info
 }
 
-function addr(text: string) {
+function addr(text: string): number | undefined {
   if (
     !text.includes("EADDRINUSE") &&
     !/address already in use/i.test(text) &&
     !/port\s+\d{2,5}\s+is\s+already\s+in\s+use/i.test(text)
-  ) return
+  ) return undefined
   const hit =
     text.match(/listen\s+eaddrinuse:.*?:(\d{2,5})/i) ??
     text.match(/:(\d{2,5}):\s+bind:\s+address already in use/i) ??
@@ -289,19 +285,18 @@ function addr(text: string) {
     text.match(/port\s+(\d{2,5})\s+is\s+already\s+in\s+use/i) ??
     text.match(/\bport\s+(\d{2,5})\b/i)
   const raw = hit?.[1]
-  if (!raw) return
+  if (!raw) return undefined
   const port = Number(raw)
-  if (!Number.isInteger(port) || port <= 0) return
-  return port
+  return Number.isInteger(port) && port > 0 ? port : undefined
 }
 
 async function conflict(directory: string, text: string | undefined, ptyId?: string, known?: number) {
   const port = addr(text ?? "")
   if (port) return await getPortOccupier(directory, port)
-  if (!ptyId || !Pty.hasAddrInUse(ptyId)) return
+  if (!ptyId || !Pty.hasAddrInUse(ptyId)) return undefined
   if (known !== undefined) return await getPortOccupier(directory, known)
   const hit = addr(Pty.snapshot(ptyId, 16_384))
-  if (!hit) return
+  if (!hit) return undefined
   return await getPortOccupier(directory, hit)
 }
 
@@ -481,19 +476,19 @@ const SCHEMA_FILE = ".workspace-runtime/processes.schema.json"
 async function writeSchema(directory: string): Promise<void> {
   try {
     const raw = zodToJsonSchema(Process.ProcessConfigFile)
-    const root = obj(raw)
-    const props = obj(root?.properties)
-    const procs = obj(props?.processes)
-    const items = obj(procs?.items)
-    const itemProps = obj(items?.properties)
-    const id = obj(itemProps?.id)
+    const root = rec(raw)
+    const props = rec(root?.properties)
+    const procs = rec(props?.processes)
+    const items = rec(procs?.items)
+    const itemProps = rec(items?.properties)
+    const id = rec(itemProps?.id)
     if (id && "default" in id) {
       delete id.default
     }
     if (Array.isArray(items?.required) && itemProps) {
       items.required = items.required.filter((field): field is string => {
         if (typeof field !== "string") return false
-        const item = obj(itemProps[field])
+        const item = rec(itemProps[field])
         return !("default" in (item ?? {}))
       })
     }
@@ -606,7 +601,9 @@ export function watchConfig(directory: string): void {
       if (s.debounceTimer) clearTimeout(s.debounceTimer)
       s.debounceTimer = setTimeout(() => {
         s.debounceTimer = undefined
-        reconcileFromDisk(directory)
+        // Debounced disk reconcile: it logs its own failures and nothing waits
+        // on it, so the timer callback stays synchronous.
+        void reconcileFromDisk(directory)
       }, 100)
     })
 
@@ -920,7 +917,11 @@ export async function start(
 }
 
 /** Dependencies must become ready before this process reserves its port or PTY. */
-async function startDependencies(directory: string, configId: string, s: State) {
+async function startDependencies(
+  directory: string,
+  configId: string,
+  s: State,
+): Promise<Process.LaunchResult | undefined> {
   try {
     const depOrder = resolveDependencyOrder(directory, configId)
     for (const depId of depOrder) {
@@ -944,9 +945,10 @@ async function startDependencies(directory: string, configId: string, s: State) 
       }
     }
   } catch (err) {
-    log.error("dependency resolution failed", { configId, err: String(err) })
-    return fail(`Dependency resolution failed: ${String(err)}`)
+    log.error("dependency resolution failed", { configId, err: errorMessage(err) })
+    return fail(`Dependency resolution failed: ${errorMessage(err)}`)
   }
+  return undefined
 }
 
 function processEnvironment(config: Process.ProcessConfig, ports: Record<string, number>, workspaceId: string, configId: string) {
@@ -1003,7 +1005,7 @@ async function startOnce(
     ([cwd]) => ({ ok: true as const, cwd }),
     (error) => ({ ok: false as const, error }),
   )
-  if (!target.ok) return fail(target.error instanceof Error ? target.error.message : String(target.error))
+  if (!target.ok) return fail(errorMessage(target.error))
   const cwd = target.cwd
 
   const existing = s.processes.get(configId)
@@ -1418,7 +1420,9 @@ function applyRestartPolicy(
         await Pty.remove(ptyId)
       } catch {}
     }
-    start(directory, configId, { portConflict: "pick-new" })
+    // The restart timer fires and forgets: `start` reports through the process
+    // record and the log, and there is no caller left to await it.
+    void start(directory, configId, { portConflict: "pick-new" })
   }, delay)
   s.restartTimers.set(configId, timer)
 }

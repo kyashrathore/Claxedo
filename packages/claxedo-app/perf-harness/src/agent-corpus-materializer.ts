@@ -61,7 +61,7 @@ export type MaterializedCorpusPart = {
 }
 
 export async function readCanonicalCorpusDigest(corpusPath: string) {
-  const corpus = parseCorpus(JSON.parse(await readFile(corpusPath, "utf8")))
+  const corpus = await readCorpus(corpusPath)
   const digest = corpusDigest(corpus)
   if (digest !== corpus.manifest.hashes.corpusSha256) {
     throw new Error("corpus manifest digest does not match the canonical v1 payload")
@@ -76,7 +76,7 @@ export async function materializeClaxedoCorpus(input: {
   workspaceDirectory: string
   profiles: AgentAppProfile[]
 }) {
-  const corpus = parseCorpus(JSON.parse(await readFile(input.corpusPath, "utf8")))
+  const corpus = await readCorpus(input.corpusPath)
   const computedDigest = corpusDigest(corpus)
   if (computedDigest !== input.corpusDigestSha256 || computedDigest !== corpus.manifest.hashes.corpusSha256) {
     throw new Error("corpus digest does not match the canonical v1 payload")
@@ -102,7 +102,7 @@ export async function materializeClaxedoCorpus(input: {
     })
     workspaces.set(workspaceId, { directory, projectId })
   }
-  const { createId } = await createOpenCodeFixtureIds()
+  const ids = await createOpenCodeFixtureIds()
 
   const database = new OpenCodeCorpus()
   const materializedSessions = new Map<string, string>()
@@ -119,7 +119,7 @@ export async function materializeClaxedoCorpus(input: {
 
   for (const session of corpus.sessions.toSorted((a, b) => a.order - b.order)) {
     const sessionTime = baseTime + session.order * 1_000_000
-    const sessionId = createId("ses", sessionTime)
+    const sessionId = ids.createId("ses", sessionTime)
     materializedSessions.set(session.id, sessionId)
     const home = workspaces.get(session.workspaceId ?? "")
     if (!home) throw new Error(`corpus session ${session.id} names an unmaterialized workspace`)
@@ -145,7 +145,7 @@ export async function materializeClaxedoCorpus(input: {
       for (const message of turn.messages.toSorted((a, b) => a.order - b.order)) {
         if (message.role === "system") continue
         const at = sessionTime + turn.index * 10_000 + message.order * 1_000
-        const messageId = createId("msg", at)
+        const messageId = ids.createId("msg", at)
         const data =
           message.role === "user"
             ? {
@@ -176,7 +176,7 @@ export async function materializeClaxedoCorpus(input: {
         database.addMessage(messageId, sessionId, data)
         if (message.role === "user") parentId = messageId
         for (const part of message.parts.toSorted((a, b) => a.order - b.order)) {
-          const partId = createId("prt", at + part.order)
+          const partId = ids.createId("prt", at + part.order)
           if (materializedParts.has(part.id)) throw new Error(`duplicate corpus part id: ${part.id}`)
           const payload = toOpenCodePart(part, at)
           if (
@@ -298,17 +298,55 @@ function profileCoverageFailures(corpus: AgentAppCorpus, profile: AgentAppProfil
   return failures
 }
 
+/**
+ * Read one field of a corpus part as text.
+ *
+ * A part is an open bag of JSON the corpus generator wrote, so every field is
+ * `unknown` until it is checked. `String(field)` would turn a malformed field
+ * into the literal `"[object Object]"` and bury it in a transcript; an
+ * unreadable field is empty instead, which the caller's own shape checks see.
+ */
+function partText(part: CorpusPart, key: string): string {
+  const value = part[key]
+  return typeof value === "string" ? value : typeof value === "number" || typeof value === "boolean" ? String(value) : ""
+}
+
+/** Read one field of a corpus part as a row of cells, dropping unreadable cells. */
+function partRow(part: CorpusPart, key: string): string[] {
+  const value = part[key]
+  return Array.isArray(value) ? value.filter((cell): cell is string => typeof cell === "string") : []
+}
+
+/** Read one field of a corpus part as a table body, dropping unreadable rows. */
+function partRows(part: CorpusPart, key: string): string[][] {
+  const value = part[key]
+  if (!Array.isArray(value)) return []
+  return value.map((row) => (Array.isArray(row) ? row.filter((cell): cell is string => typeof cell === "string") : []))
+}
+
+/**
+ * Decode a tool call's recorded input JSON.
+ *
+ * `JSON.parse` returns `any`, so without this every caller would assert the
+ * result. A tool input is a JSON object or it is not usable as one.
+ */
+function parseToolInput(inputJson: string): Record<string, unknown> {
+  const decoded: unknown = JSON.parse(inputJson || "{}")
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return {}
+  return Object.fromEntries(Object.entries(decoded))
+}
+
 function toOpenCodePart(part: CorpusPart, at: number): Record<string, unknown> {
-  if (part.type === "text") return { type: "text", text: String(part.text ?? "") }
-  if (part.type === "markdown") return { type: "text", text: String(part.markdown ?? "") }
+  if (part.type === "text") return { type: "text", text: partText(part, "text") }
+  if (part.type === "markdown") return { type: "text", text: partText(part, "markdown") }
   if (part.type === "code")
     return {
       type: "text",
-      text: `\`\`\`${String(part.language)}\n${String(part.code)}\n\`\`\``,
+      text: `\`\`\`${partText(part, "language")}\n${partText(part, "code")}\n\`\`\``,
     }
   if (part.type === "table") {
-    const headers = part.headers as string[]
-    const rows = part.rows as string[][]
+    const headers = partRow(part, "headers")
+    const rows = partRows(part, "rows")
     return {
       type: "text",
       text: [
@@ -321,32 +359,32 @@ function toOpenCodePart(part: CorpusPart, at: number): Record<string, unknown> {
   if (part.type === "diff")
     return {
       type: "text",
-      text: `### ${String(part.path)}\n\n\`\`\`diff\n${String(part.patch)}\n\`\`\``,
+      text: `### ${partText(part, "path")}\n\n\`\`\`diff\n${partText(part, "patch")}\n\`\`\``,
     }
   if (part.type === "reasoning")
     return {
       type: "reasoning",
-      text: String(part.text ?? ""),
+      text: partText(part, "text"),
       time: { start: at, end: at + 999 },
     }
   if (part.type === "attachment") {
     return {
       type: "file",
-      mime: String(part.mediaType),
-      filename: String(part.name),
+      mime: partText(part, "mediaType"),
+      filename: partText(part, "name"),
       url: TRANSPARENT_PNG,
     }
   }
   if (part.type === "tool") {
-    const input = JSON.parse(String(part.inputJson || "{}")) as Record<string, unknown>
-    const status = String(part.state)
+    const input = parseToolInput(partText(part, "inputJson"))
+    const status = partText(part, "state")
     const state =
       status === "completed"
         ? {
             status,
             input,
-            output: String(part.outputText ?? ""),
-            title: String(part.toolName),
+            output: partText(part, "outputText"),
+            title: partText(part, "toolName"),
             metadata: {},
             time: { start: at, end: at + 999 },
           }
@@ -354,29 +392,47 @@ function toOpenCodePart(part: CorpusPart, at: number): Record<string, unknown> {
           ? {
               status,
               input,
-              error: String(part.outputText ?? "error"),
+              error: partText(part, "outputText") || "error",
               time: { start: at, end: at + 999 },
             }
           : status === "running"
             ? { status, input, time: { start: at } }
-            : { status: "pending", input, raw: String(part.inputJson ?? "{}") }
+            : { status: "pending", input, raw: partText(part, "inputJson") || "{}" }
     return {
       type: "tool",
-      callID: String(part.callId),
-      tool: String(part.toolName),
+      callID: partText(part, "callId"),
+      tool: partText(part, "toolName"),
       state,
     }
   }
   throw new Error(`unsupported corpus part: ${part.type}`)
 }
 
+function isAgentAppCorpus(value: object): value is AgentAppCorpus {
+  return (
+    "schemaVersion" in value &&
+    value.schemaVersion === 1 &&
+    "kind" in value &&
+    value.kind === "agent-app-corpus" &&
+    "sessions" in value &&
+    Array.isArray(value.sessions)
+  )
+}
+
 function parseCorpus(value: unknown): AgentAppCorpus {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("corpus must be an object")
-  const corpus = value as AgentAppCorpus
-  if (corpus.schemaVersion !== 1 || corpus.kind !== "agent-app-corpus" || !Array.isArray(corpus.sessions)) {
-    throw new Error("unsupported agent-app corpus")
-  }
-  return corpus
+  if (!isAgentAppCorpus(value)) throw new Error("unsupported agent-app corpus")
+  return value
+}
+
+/**
+ * The one place a corpus file becomes an {@link AgentAppCorpus}.
+ *
+ * Callers that used to `JSON.parse` a corpus themselves re-declared its shape
+ * by hand and skipped the schema check; this reads and validates it once.
+ */
+export async function readCorpus(corpusPath: string): Promise<AgentAppCorpus> {
+  return parseCorpus(JSON.parse(await readFile(corpusPath, "utf8")))
 }
 
 function corpusDigest(corpus: AgentAppCorpus) {

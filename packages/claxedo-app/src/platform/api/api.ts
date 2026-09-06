@@ -572,9 +572,10 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
   // and explicit bypass-marked requests skip the cap — see
   // `./fetch-throttle.ts` for the policy.
   const first = await buildRequest(false)
-  const firstResponse = first.request instanceof Request
-    ? await throttledFetch(() => fetch(first.request as Request), throttleInit(undefined, first.request), first.request)
-    : await throttledFetch(() => fetch(first.request as string | URL, first.init), throttleInit(first.init, first.request), first.request)
+  const firstRequest = first.request
+  const firstResponse = firstRequest instanceof Request
+    ? await throttledFetch(() => fetch(firstRequest), throttleInit(undefined, firstRequest), firstRequest)
+    : await throttledFetch(() => fetch(firstRequest, first.init), throttleInit(first.init, firstRequest), firstRequest)
   apiFetchDebug("first-response", firstResponse)
 
   if (firstResponse.status === 403 && first.token) {
@@ -597,9 +598,10 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
 
   // Step 2: force-refresh the bearer token and retry.
   const retried = await buildRequest(true)
-  const retriedResponse = retried.request instanceof Request
-    ? await throttledFetch(() => fetch(retried.request as Request), throttleInit(undefined, retried.request), retried.request)
-    : await throttledFetch(() => fetch(retried.request as string | URL, retried.init), throttleInit(retried.init, retried.request), retried.request)
+  const retriedRequest = retried.request
+  const retriedResponse = retriedRequest instanceof Request
+    ? await throttledFetch(() => fetch(retriedRequest), throttleInit(undefined, retriedRequest), retriedRequest)
+    : await throttledFetch(() => fetch(retriedRequest, retried.init), throttleInit(retried.init, retriedRequest), retriedRequest)
   apiFetchDebug("retried-response", retriedResponse)
 
   // If the force-refreshed token is STILL rejected (the auth

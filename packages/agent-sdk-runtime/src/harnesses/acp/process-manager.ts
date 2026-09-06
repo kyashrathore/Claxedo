@@ -124,14 +124,8 @@ export abstract class AcpProcessManager {
     return this.sessionProcesses
   }
 
-  protected legacySessions() {
-    return (this as unknown as { sessions?: Map<string, { proc?: ACPProcess | null; directory?: string; init?: unknown }> }).sessions
-  }
-
   protected processEntries(): Iterable<{ proc?: ACPProcess | null }> {
-    const processes = this.processMap()
-    if (processes.size > 0) return processes.values()
-    return this.legacySessions()?.values() ?? []
+    return this.processMap().values()
   }
 
   protected supportsForkCapability(sessionId?: string) {
@@ -424,7 +418,7 @@ export abstract class AcpProcessManager {
 
   protected entryForSession(id: string) {
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
-    return key ? this.processMap().get(key) : this.legacySessions()?.get(id)
+    return this.processMap().get(key ?? id)
   }
 
   protected async getOrSpawnProbe(directory: string): Promise<ACPProcess> {

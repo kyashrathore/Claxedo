@@ -12,6 +12,7 @@
  * allow author misattribution.
  */
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { record } from "../../platform/json"
 
 export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
 
@@ -58,11 +59,10 @@ export function embeddedRelayHostAuthFromActor(
 }
 
 export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): EmbeddedRelayHostAuth | undefined {
-  if (!value?.trim()) return
+  if (!value?.trim()) return undefined
   try {
-    const parsed = JSON.parse(value) as unknown
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return
-    const row = parsed as Record<string, unknown>
+    const row = record(JSON.parse(value))
+    if (!row) return undefined
     const principal_kind = row.principal_kind === "user" || row.principal_kind === "service"
       ? row.principal_kind
       : undefined
@@ -84,7 +84,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
       || !workspace_id
       || !org_id
       || !role
-    ) return
+    ) return undefined
     return {
       principal_kind,
       actor_id,
@@ -98,7 +98,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
       ...(stringClaim(row, "host_id") ? { host_id: stringClaim(row, "host_id") } : {}),
     }
   } catch {
-    return
+    return undefined
   }
 }
 

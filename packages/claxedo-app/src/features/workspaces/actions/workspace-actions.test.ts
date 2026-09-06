@@ -22,7 +22,7 @@ function project(input: Pick<ProjectItem, "id" | "worktree"> & Partial<ProjectIt
 }
 
 beforeAll(async () => {
-  mock.module("../../../app/dialogs/index", () => ({
+  await mock.module("../../../app/dialogs/index", () => ({
     DialogDeleteSession: () => null,
     DialogDeleteWorkspace: () => null,
     DialogEditProject: () => null,

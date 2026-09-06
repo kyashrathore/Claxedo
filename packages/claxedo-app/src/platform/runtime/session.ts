@@ -8,9 +8,18 @@ import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runti
 
 export type { AgentTurnOutcome as SessionTurnOutcome } from "@claxedo/agent-runtime-contract"
 
-export type RuntimeSession = Session & {
-  recovery_error?: string | null
-}
+/**
+ * A session row as this app holds one.
+ *
+ * `slug` and `version` are required on the presentation contract but absent from
+ * every inventory-sourced row, and nothing in this package reads either — so the
+ * app's row type admits their absence instead of each producer asserting it
+ * away. Rows that do carry them still satisfy this.
+ */
+export type RuntimeSession =
+  & Omit<Session, "slug" | "version">
+  & Partial<Pick<Session, "slug" | "version">>
+  & { recovery_error?: string | null }
 
 export type SessionMessageRow = {
   info: Message

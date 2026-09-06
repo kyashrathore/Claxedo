@@ -1,5 +1,6 @@
 import { api } from "@/platform/api/api"
 import { workspaceSandboxDriversUrl } from "./app-ports"
+import { readBoolean, readString } from "@/lib/record"
 
 /**
  * Whether cloud workspaces can actually be created right now.
@@ -35,13 +36,12 @@ export async function readSandboxProviderStatus(input: {
   const drivers = Array.isArray(data.drivers) ? data.drivers : []
   const defaultDriver = typeof data.default_driver === "string" ? data.default_driver : undefined
   const configured = drivers.flatMap((value) => {
-    if (!value || typeof value !== "object") return []
-    const driver = value as Record<string, unknown>
-    if (typeof driver.id !== "string" || driver.configured !== true) return []
+    const id = readString(value, "id")
+    if (id === undefined || readBoolean(value, "configured") !== true) return []
     return [{
-      id: driver.id,
-      label: typeof driver.label === "string" ? driver.label : driver.id,
-      isDefault: defaultDriver ? driver.id === defaultDriver : driver.default === true,
+      id,
+      label: readString(value, "label") ?? id,
+      isDefault: defaultDriver ? id === defaultDriver : readBoolean(value, "default") === true,
     }]
   })
 

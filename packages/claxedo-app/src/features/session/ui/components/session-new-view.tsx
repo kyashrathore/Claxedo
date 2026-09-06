@@ -1,4 +1,5 @@
 // Claxedo keeps the upstream empty-session summary while resolving project display across cloud workspace refs.
+import { readField, readString } from "@/lib/record"
 import { Show, createMemo, createResource, type JSX } from "solid-js"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useSDK } from "@/features/session/app-ports"
@@ -16,23 +17,6 @@ import { directorySessionCacheQueryOptions } from "../../data/sync/queries"
 const MAIN_WORKTREE = "main"
 const CREATE_WORKTREE = "create"
 const ROOT_CLASS = "size-full flex flex-col"
-
-type ProjectInventoryItem = {
-  id: string
-  worktree: string
-  time: {
-    created: number
-    updated?: number
-  }
-  sandboxes?: string[]
-  workspaces?: Record<string, unknown>
-}
-
-type SessionGitMetadata = {
-  git?: {
-    remote?: string
-  }
-}
 
 function parseOwnerRepo(remote: string | undefined): string | undefined {
   if (!remote) return undefined
@@ -71,7 +55,7 @@ export function NewSessionView(props: NewSessionViewProps) {
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
 
-  const inventoryProjects = createMemo(() => (projectsQuery.data ?? []) as ProjectInventoryItem[])
+  const inventoryProjects = createMemo(() => projectsQuery.data ?? [])
   const activeProject = createMemo(() => {
     const selection = props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
     return inventoryProjects().find((project) =>
@@ -110,7 +94,7 @@ export function NewSessionView(props: NewSessionViewProps) {
   )
   const projectDisplayName = createMemo(() => {
     const remote = directorySessionCacheQuery.data?.session
-      .map((session) => (session as SessionGitMetadata).git?.remote)
+      .map((session) => readString(readField(session, "git"), "remote"))
       .find((item) => !!item)
     const ownerRepo = parseOwnerRepo(remote)
     if (ownerRepo) return ownerRepo
@@ -120,6 +104,17 @@ export function NewSessionView(props: NewSessionViewProps) {
     const project = activeProject()
     if (!project) return false
     return sdk.directory !== project.worktree
+  })
+  /**
+   * When the active project was last touched, or `undefined` when the row
+   * carries no timestamps at all. `ClaxedoProject.time` is optional because the
+   * embedded OpenCode engine's `project.updated` payload is `{ id, worktree,
+   * vcs }` and `mergeProjectTime` keeps that absence, so the "last modified"
+   * line is conditional on the time rather than on the project.
+   */
+  const projectModifiedAt = createMemo(() => {
+    const time = activeProject()?.time
+    return time?.updated ?? time?.created
   })
 
   const label = (value: string) => {
@@ -189,13 +184,13 @@ export function NewSessionView(props: NewSessionViewProps) {
                 {label(current())}
               </div>
             </div>
-            <Show when={activeProject()}>
-              {(project) => (
+            <Show when={projectModifiedAt()}>
+              {(modifiedAt) => (
                 <div class="flex items-start justify-center gap-3 min-h-5">
                   <div class="text-12-medium text-text-weak leading-5 min-w-0 max-w-160 break-words text-center">
                     {language.t("session.new.lastModified")}&nbsp;
                     <span class="text-text-strong">
-                      {formatRelativeTime(project().time.updated ?? project().time.created, language.intl())}
+                      {formatRelativeTime(modifiedAt(), language.intl())}
                     </span>
                   </div>
                 </div>

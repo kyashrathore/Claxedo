@@ -78,21 +78,42 @@ import { mkdir, rm, writeFile, readFile, readdir } from "node:fs/promises"
 import { createServer } from "node:http"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+import { asRecord, numberField, stringField } from "../../src/platform/json/index"
 
 // playwright-core is installed for `claxedo-app`, not this package, and adding a
 // dependency here would put a browser driver in the server package's tree for
 // the sake of one drill. Resolve it from the package that legitimately owns it.
 const appRequire = createRequire(new URL("../../../claxedo-app/package.json", import.meta.url))
 // playwright-core has no type declarations visible from this package (it is a
-// claxedo-app dependency); the drill treats it as a minimally-typed surface.
-const { chromium } = appRequire("playwright-core") as {
-  chromium: {
-    launch(options?: { headless?: boolean }): Promise<{
-      newContext(options?: Record<string, unknown>): Promise<any>
-      close(): Promise<void>
-    }>
-  }
+// claxedo-app dependency), so the module arrives untyped and the drill checks
+// the one entry point it uses rather than asserting the whole surface.
+type ChromiumLauncher = {
+  launch(options?: { headless?: boolean }): Promise<{
+    newContext(options?: Record<string, unknown>): Promise<any>
+    close(): Promise<void>
+  }>
 }
+
+/**
+ * Everything about the launcher that is observable at runtime: the export
+ * exists and its one entry point is callable. `launch`'s parameter and return
+ * types are not observable, so `ChromiumLauncher` names only the two calls the
+ * drill makes. Give this package a `playwright-core` devDependency and the
+ * predicate can be replaced by the real `BrowserType`.
+ */
+function isChromiumLauncher(value: unknown): value is ChromiumLauncher {
+  return typeof asRecord(value)?.launch === "function"
+}
+
+function chromiumLauncher(playwright: unknown): ChromiumLauncher {
+  const candidate = asRecord(playwright)?.chromium
+  if (!isChromiumLauncher(candidate)) {
+    throw new Error("playwright-core did not export a chromium launcher")
+  }
+  return candidate
+}
+
+const chromium = chromiumLauncher(appRequire("playwright-core"))
 
 const HEADED = process.argv.includes("--headed")
 const OUT_DIR = new URL("../../.artifacts/drill/live-sync-two-browser/", import.meta.url).pathname
@@ -244,8 +265,8 @@ async function bundleWorker() {
 /** One browser page holding a live subscription, plus its recorded video. */
 type Viewer = {
   label: string
-  frames(): Promise<Array<{ type: string; id?: string; payload: unknown }>>
-  status(): Promise<string>
+  frames(): Promise<DrillFrame[]>
+  status(): Promise<string | undefined>
   cursor(): Promise<string | undefined>
   connects(): Promise<number>
   /** Drops the TCP stream, as a closed laptop lid or a dropped network would. */
@@ -293,8 +314,17 @@ async function main() {
         if (key.toLowerCase() !== "content-encoding") out[key] = value
       })
       res.writeHead(response.status, out)
-      if (!response.body) return res.end()
-      const reader = (response.body as unknown as ReadableStream<Uint8Array>).getReader()
+      if (!response.body) {
+        res.end()
+        return
+      }
+      // Miniflare's `Response` carries its own `ReadableStream`; the reader
+      // protocol is all this proxy uses, so it is read through that shape
+      // rather than asserted into the Node one.
+      // Miniflare's `Response` carries its own `ReadableStream`; only the
+      // reader protocol is used here, so it is read through that shape rather
+      // than asserted into the Node one.
+      const reader = response.body.getReader()
       const pump = async () => {
         while (true) {
           const next = await reader.read()
@@ -311,7 +341,11 @@ async function main() {
     }
   })
   const port = await new Promise<number>((resolve) => {
-    proxy.listen(0, "127.0.0.1", () => resolve((proxy.address() as { port: number }).port))
+    proxy.listen(0, "127.0.0.1", () => {
+      const address = proxy.address()
+      if (typeof address !== "object" || address === null) throw new Error("drill proxy did not bind a port")
+      resolve(address.port)
+    })
   })
   const origin = `http://127.0.0.1:${port}`
   console.log(`  workerd (miniflare) fronted at ${origin}\n`)
@@ -327,26 +361,28 @@ async function main() {
     await page.goto(
       `${origin}/__drill/viewer?as=${encodeURIComponent(token)}&label=${encodeURIComponent(label)}`,
     )
-    await page.waitForFunction(() => (window as any).__drill?.state?.status === "open", null, {
+    await page.waitForFunction(() => window.__drill?.state.status === "open", null, {
       timeout: 15_000,
     })
-    const read = <T>(fn: string) => page.evaluate(fn) as Promise<T>
+    // The page's state crosses back as JSON, so it arrives `unknown` and is
+    // narrowed here. `read<T>` used to assert whatever the caller asked for.
+    const read = async (fn: string): Promise<unknown> => await page.evaluate(fn)
     return {
       label,
-      frames: () =>
-        read("window.__drill.state.frames.map(f => ({ type: f.type, id: f.id, payload: f.payload }))"),
-      status: () => read("window.__drill.state.status"),
-      cursor: () => read("window.__drill.state.lastEventId"),
-      connects: () => read("window.__drill.state.connects"),
+      frames: async () =>
+        drillFrames(await read("window.__drill.state.frames.map(f => ({ type: f.type, id: f.id, payload: f.payload }))")),
+      status: async () => textOf(await read("window.__drill.state.status")),
+      cursor: async () => textOf(await read("window.__drill.state.lastEventId")),
+      connects: async () => countValue(await read("window.__drill.state.connects")),
       async drop() {
         await page.evaluate("window.__drill.stop()")
-        await page.waitForFunction(() => (window as any).__drill.state.status === "closed", null, {
+        await page.waitForFunction(() => window.__drill?.state.status === "closed", null, {
           timeout: 10_000,
         })
       },
       async reconnect() {
         await page.evaluate("window.__drill.start()")
-        await page.waitForFunction(() => (window as any).__drill.state.status === "open", null, {
+        await page.waitForFunction(() => window.__drill?.state.status === "open", null, {
           timeout: 15_000,
         })
       },
@@ -356,7 +392,7 @@ async function main() {
         return await page
           .waitForFunction(
             (wanted: string) =>
-              (window as any).__drill.state.frames.some((f: { type: string }) => f.type === wanted),
+              window.__drill?.state.frames.some((f: { type: string }) => f.type === wanted),
             type,
             { timeout: timeoutMs },
           )
@@ -375,7 +411,12 @@ async function main() {
   const publish = async (query: string) => {
     const response = await fetch(`${origin}/__drill/publish?${query}`)
     if (!response.ok) throw new Error(`publish failed: ${response.status} ${await response.text()}`)
-    return (await response.json()) as { published: number; last: { delivered: number; held: number } }
+    const body = asRecord(await response.json())
+    const last = asRecord(body?.last)
+    return {
+      published: numberField(body, "published") ?? 0,
+      last: { delivered: numberField(last, "delivered") ?? 0, held: numberField(last, "held") ?? 0 },
+    }
   }
 
   const countOf = (frames: Array<{ type: string }>, type: string) =>
@@ -446,16 +487,16 @@ async function main() {
     // include it. Verified by running this drill against a reverted
     // `live-sync-room.cf.ts:773`.
     const liveSeenBefore = (await bob.frames()).filter(
-      (f) => (f.payload as { documentId?: string })?.documentId === "doc_live",
+      (f) => asRecord(f.payload)?.documentId === "doc_live",
     ).length
     await bob.reconnect()
     const recovered = await bob.waitForType("document.changed")
     const afterFrames = await bob.frames()
     const gotMissed = afterFrames.some(
-      (f) => (f.payload as { documentId?: string })?.documentId === "doc_missed_while_offline",
+      (f) => asRecord(f.payload)?.documentId === "doc_missed_while_offline",
     )
     const liveSeenAfter = afterFrames.filter(
-      (f) => (f.payload as { documentId?: string })?.documentId === "doc_live",
+      (f) => asRecord(f.payload)?.documentId === "doc_live",
     ).length
     const precise = liveSeenAfter === liveSeenBefore
     record(
@@ -478,14 +519,12 @@ async function main() {
     await bob.reconnect()
     const sawGap = await bob.waitForType("stream.replay-gap")
     const gapFrame = (await bob.frames()).find((f) => f.type === "stream.replay-gap")
-    const gapPayload = gapFrame?.payload as
-      | { code?: string; lastEventId?: string; throughId?: string }
-      | undefined
+    const gapPayload = asRecord(gapFrame?.payload)
     record(
       "replay-gap event (evicted cursor yields an explicit notice, not a silent hole)",
-      sawGap && gapPayload?.code === "claxedo.sse_replay_gap",
+      sawGap && stringField(gapPayload, "code") === "claxedo.sse_replay_gap",
       sawGap
-        ? `B reconnected at cursor ${gapCursor} after ${RING_OVERRUN_FRAMES} frames and received stream.replay-gap code=${gapPayload?.code} lastEventId=${gapPayload?.lastEventId} throughId=${gapPayload?.throughId}`
+        ? `B reconnected at cursor ${gapCursor} after ${RING_OVERRUN_FRAMES} frames and received stream.replay-gap code=${stringField(gapPayload, "code") ?? ""} lastEventId=${stringField(gapPayload, "lastEventId") ?? ""} throughId=${stringField(gapPayload, "throughId") ?? ""}`
         : "no gap event; B would have silently stitched a hole-ridden log",
     )
 
@@ -501,7 +540,7 @@ async function main() {
     const controlFrames = await bob.frames()
     const controlAfter = countOf(controlFrames, "document.changed")
     const leaked = controlFrames.some(
-      (f) => (f.payload as { documentId?: string })?.documentId === "doc_should_never_arrive",
+      (f) => asRecord(f.payload)?.documentId === "doc_should_never_arrive",
     )
     record(
       "positive control (wrong-room publish reaches nobody)",
@@ -515,7 +554,7 @@ async function main() {
     const recheck = await publish(`kind=document.changed&tag=doc_after_control`)
     const backAlive = await bob.waitForType("document.changed", 10_000)
     const gotRecheck = (await bob.frames()).some(
-      (f) => (f.payload as { documentId?: string })?.documentId === "doc_after_control",
+      (f) => asRecord(f.payload)?.documentId === "doc_after_control",
     )
     record(
       "positive control is a real negative (same path still delivers)",
@@ -554,3 +593,37 @@ async function main() {
 }
 
 await main()
+
+
+// ── Drill page state ─────────────────────────────────────────────────────────
+
+type DrillFrame = { type: string; id?: string; payload?: unknown }
+
+declare global {
+  interface Window {
+    /** Installed by the drill's viewer page; absent until it boots. */
+    __drill?: {
+      state: { status: string; frames: DrillFrame[]; lastEventId?: string; connects: number }
+      start(): void
+      stop(): void
+    }
+  }
+}
+
+function drillFrames(value: unknown): DrillFrame[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const record = asRecord(entry)
+    const type = stringField(record, "type")
+    if (!record || type === undefined) return []
+    return [{ type, ...(stringField(record, "id") === undefined ? {} : { id: stringField(record, "id") }), payload: record.payload }]
+  })
+}
+
+function textOf(value: unknown) {
+  return typeof value === "string" ? value : undefined
+}
+
+function countValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
+}

@@ -8,7 +8,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
-import { number, object, optionLabels, pathFields, text } from "../value"
+import { number, object, optionLabels, pathFields, text } from "../../value"
 
 type ClaudeBlockState = {
   type: "text" | "thinking" | "tool"
@@ -417,6 +417,7 @@ function taskObservation(
 
 function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
   if (value === "pending" || value === "running" || value === "completed" || value === "failed" || value === "killed" || value === "paused") return value
+  return undefined
 }
 
 function slashCommandEvents(message: Record<string, unknown>) {
@@ -433,10 +434,10 @@ function slashCommandEvents(message: Record<string, unknown>) {
 
 function requestUsage(message: Record<string, unknown>): { requestId: string; tokens: ClaudeRequestUsage; requestTotal: number } | undefined {
   const row = object(message.message)
-  if (!row) return
+  if (!row) return undefined
   const requestId = text(row.id)
   const usage = object(row.usage)
-  if (!requestId || !usage) return
+  if (!requestId || !usage) return undefined
   const tokens: ClaudeRequestUsage = {
     input: number(usage.input_tokens) ?? null,
     output: number(usage.output_tokens) ?? null,
@@ -444,7 +445,7 @@ function requestUsage(message: Record<string, unknown>): { requestId: string; to
     cacheRead: number(usage.cache_read_input_tokens) ?? null,
     cacheWrite: number(usage.cache_creation_input_tokens) ?? null,
   }
-  if (![tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite].some((value) => value !== null && value > 0)) return
+  if (![tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite].some((value) => value !== null && value > 0)) return undefined
   return {
     requestId,
     tokens,

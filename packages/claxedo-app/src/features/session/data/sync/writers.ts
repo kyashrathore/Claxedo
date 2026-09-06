@@ -59,23 +59,23 @@ export function setSessionRequestsQueryData(input: {
     resource: "requests",
     value: (previous) => {
       const next = typeof input.requests === "function" ? input.requests(previous) : input.requests
-      return sameSessionRequests(previous, next) ? previous as SessionRequestsQueryData : next
+      return previous !== undefined && sameSessionRequests(previous, next) ? previous : next
     },
   })
 }
 
-export function setSessionCapabilitiesQueryData<T>(input: {
+export function setSessionCapabilitiesQueryData(input: {
   queryClient: ShellQueryDataWriter
   queryKey: readonly unknown[]
-  capabilities: T
+  capabilities: unknown
 }) {
   setShellQueryData({ ...input, value: input.capabilities })
 }
 
-export function setDirectorySessionMetaQueryData<T>(input: {
+export function setDirectorySessionMetaQueryData(input: {
   queryClient: ShellQueryDataWriter
   queryKey: readonly unknown[]
-  value: T
+  value: unknown
 }) {
   setShellQueryData(input)
 }

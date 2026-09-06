@@ -13,7 +13,7 @@ import { cachedFileReadRequest } from "@/platform/files/file-request-cache"
 
 type Kind = "add" | "del" | "mix"
 
-function kindForStatus(status: StatusFile["status"] | string): Kind {
+function kindForStatus(status: StatusFile["status"]): Kind {
   if (status === "added") return "add"
   if (status === "deleted") return "del"
   return "mix"

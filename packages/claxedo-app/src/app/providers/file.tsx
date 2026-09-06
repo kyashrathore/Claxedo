@@ -36,6 +36,8 @@ import {
   type FileViewState,
   type SelectedLineRange,
 } from "@/platform/files/types"
+import { errorMessage } from "@/lib/server-errors"
+import { isCancelledError } from "@/lib/abort-error"
 
 export type { FileSelection, SelectedLineRange, FileViewState, FileState }
 export { selectionFromLines }
@@ -49,16 +51,6 @@ export {
   touchFileContent,
 }
 
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "string" && error) return error
-  return fallback
-}
-
-function isCancelledError(error: unknown) {
-  if (!(error instanceof Error)) return false
-  return error.name === "CancelledError" || error.name === "AbortError" || error.message === "CancelledError"
-}
 
 const fileContextInput = {
   name: "File",

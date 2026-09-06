@@ -5,8 +5,13 @@
 // private half. This is the same trust shape the real system uses, just with
 // the bench standing in as issuer — no relay code path is bypassed.
 
-import { exportJWK, exportPKCS8, exportSPKI, generateKeyPair, importJWK, importPKCS8 } from "jose"
-import { mintHostTunnelToken, mintRuntimeAccessToken, type RelayRole } from "../../src/auth"
+import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8 } from "jose"
+import {
+  deriveRelayHostPublicKey,
+  mintHostTunnelToken,
+  mintRuntimeAccessToken,
+  type RelayRole,
+} from "../../src/auth"
 
 export type BenchIdentity = {
   privateKey: CryptoKey
@@ -127,10 +132,8 @@ export async function benchIdentityFromPrivatePem(
   privateKeyPem: string,
   overrides: Partial<MintRatInput> = {},
 ): Promise<BenchIdentity> {
-  const privateKey = (await importPKCS8(privateKeyPem, "EdDSA", { extractable: true }))
-  const jwk = await exportJWK(privateKey)
-  const publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x }
-  const publicKey = (await importJWK(publicJwk as Parameters<typeof importJWK>[0], "EdDSA", { extractable: true })) as CryptoKey
+  const privateKey = await importPKCS8(privateKeyPem, "EdDSA", { extractable: true })
+  const publicKey = await deriveRelayHostPublicKey(privateKey)
   const publicKeyPem = await exportSPKI(publicKey)
   return identityFromKeys(privateKey, publicKey, publicKeyPem, overrides)
 }

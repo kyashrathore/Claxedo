@@ -96,9 +96,26 @@ const DEFAULT_CONFIG: Omit<LoadgenConfig, "rowId" | "shape" | "relayWsUrl" | "re
   relayOrigin: "http://localhost:5173",
 }
 
+const RAT_STYLES = ["subprotocol", "header"] as const satisfies readonly LoadgenConfig["ratStyle"][]
+
+/**
+ * `--rat-style` comes off the command line as free text. Validating it here
+ * means a typo fails loudly instead of quietly falling through to the
+ * subprotocol branch and reporting numbers for the wrong auth style.
+ */
+function ratStyle(value: string): LoadgenConfig["ratStyle"] {
+  const match = RAT_STYLES.find((style) => style === value)
+  if (!match) {
+    console.error(`loadgen: --rat-style must be one of ${RAT_STYLES.join(", ")} (got "${value}")`)
+    return process.exit(2)
+  }
+  return match
+}
+
 /** Run an async task factory over `total` items with a bounded worker pool. */
 async function pooled<T>(total: number, limit: number, task: (index: number) => Promise<T>): Promise<T[]> {
-  const results: T[] = new Array(total)
+  // Filled by index below, so it grows to `total` entries without pre-sizing.
+  const results: T[] = []
   let next = 0
   const worker = async () => {
     for (;;) {
@@ -324,7 +341,7 @@ function parseArgs(argv: string[]): { config: LoadgenConfig; outDir?: string } {
     requestTrace: flags.has("trace") || map.get("trace") === "1",
     openTimeoutMs: num("open-timeout-ms", DEFAULT_CONFIG.openTimeoutMs),
     messageTimeoutMs: num("message-timeout-ms", DEFAULT_CONFIG.messageTimeoutMs),
-    ratStyle: (str("rat-style", DEFAULT_CONFIG.ratStyle) as LoadgenConfig["ratStyle"]),
+    ratStyle: ratStyle(str("rat-style", DEFAULT_CONFIG.ratStyle)),
     relayOrigin: str("relay-origin", DEFAULT_CONFIG.relayOrigin),
     ...(map.has("rat-private-key-pem") ? { ratPrivateKeyPem: map.get("rat-private-key-pem")! } : {}),
   }

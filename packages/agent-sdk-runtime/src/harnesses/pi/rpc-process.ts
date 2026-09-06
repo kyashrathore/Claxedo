@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserverHandle } from "../../process-observer"
@@ -19,10 +20,8 @@ export class PiJsonLines {
       this.buffer = this.buffer.slice(end + 1)
       if (!line) continue
       const message: unknown = JSON.parse(line)
-      if (!message || typeof message !== "object" || typeof (message as PiRpcMessage).type !== "string") {
-        throw new Error("Invalid Pi RPC record")
-      }
-      messages.push(message as PiRpcMessage)
+      if (!isPiRpcMessage(message)) throw new Error("Invalid Pi RPC record")
+      messages.push(message)
     }
     if (this.buffer.length > 16 * 1024 * 1024) throw new Error("Pi RPC record exceeds 16 MiB")
     return messages
@@ -155,4 +154,9 @@ export class PiRpcProcess {
     this.killTimer ??= setTimeout(() => killHarnessProcess(this.child, "SIGKILL"), 2_000)
     this.killTimer.unref()
   }
+}
+
+/** A Pi RPC frame always names its type; anything else is a protocol violation. */
+function isPiRpcMessage(value: unknown): value is PiRpcMessage {
+  return isRecord(value) && typeof value.type === "string"
 }

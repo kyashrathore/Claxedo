@@ -1,4 +1,5 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { asRecord, readField, readString } from "@/lib/record"
 
 export type PrivateSessionReservation = {
   operationId: string
@@ -42,10 +43,10 @@ export async function reservePrivateSession(input: {
     },
   )
   if (!response.ok) {
-    const body = await response.json().catch(() => undefined) as { error?: { message?: unknown } } | undefined
-    throw new Error(typeof body?.error?.message === "string" ? body.error.message : `Session reservation failed (${response.status})`)
+    const failure: unknown = await response.json().catch(() => undefined)
+    throw new Error(readString(readField(failure, "error"), "message") ?? `Session reservation failed (${response.status})`)
   }
-  const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+  const body = asRecord(await response.json().catch(() => undefined))
   if (
     body?.operationId !== operationId
     || body.sessionId !== sessionId

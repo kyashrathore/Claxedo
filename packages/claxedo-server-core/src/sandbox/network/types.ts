@@ -1,5 +1,6 @@
-/** Network policy entry kind. */
-export type PolicyKind = "host" | "domain" | "group"
+/** Network policy entry kind. The runtime list is what the SQLite column is declared from. */
+export const POLICY_KINDS = ["host", "domain", "group"] as const
+export type PolicyKind = (typeof POLICY_KINDS)[number]
 
 /** A single network policy entry. */
 export interface NetworkPolicyEntry {
@@ -20,6 +21,14 @@ export interface PolicyConstraints {
   enabled?: boolean
   /** True if this entry was auto-created by the credential system. */
   auto?: boolean
+  /**
+   * What auto-created this entry (e.g. `credential:<providerId>`).
+   *
+   * Written by `upsertAutoPolicy` and read back when the same source is
+   * withdrawn; it was already persisted before being declared here, which is
+   * why the readers had to reach past this type to see it.
+   */
+  source?: string
 }
 
 /** Input for creating a policy entry. */

@@ -6,6 +6,7 @@ import { createEffect, createSignal, onMount, Show, splitProps, type ComponentPr
 import { codexIconSprite } from "./codex-icons"
 import { UI_CODEX_ICON_ALIASES, UI_CODEX_ICON_TRANSFORMS } from "./codex-icon-map"
 import { ensureSvgSpriteHost } from "./inline-svg-sprite"
+import { isKeyOf } from "../utils/record"
 
 // Re-exported so app-side sprites build their host the same way: the package's
 // subpath export map only publishes `./src/components/*.tsx`.
@@ -161,10 +162,11 @@ function ensureSprite() {
   }
   const svg = ensureSvgSpriteHost(spriteID)
   if (!svg) return
-  svg.innerHTML = Object.entries(icons)
-    .map(([name, path]) => {
-      const key = name as keyof typeof icons
-      return `<symbol id="${symbol(key)}" viewBox="${viewBox(key)}">${path}</symbol>`
+  svg.innerHTML = Object.keys(icons)
+    .map((name) => {
+      // `Object.keys` widens to `string`; every key here is by construction a real name.
+      if (!isKeyOf(icons, name)) return ""
+      return `<symbol id="${symbol(name)}" viewBox="${viewBox(name)}">${icons[name]}</symbol>`
     })
     .join("")
   spriteInserted = true
@@ -262,7 +264,7 @@ function codexGlyphFor(name: IconProps["name"]) {
   const aliases = UI_CODEX_ICON_ALIASES as Record<string, string | undefined>
   const glyph = aliases[name]
   if (!glyph) return undefined
-  return { glyph, custom: CODEX_CUSTOM_GLYPHS[glyph as keyof typeof CODEX_CUSTOM_GLYPHS] }
+  return { glyph, custom: isKeyOf(CODEX_CUSTOM_GLYPHS, glyph) ? CODEX_CUSTOM_GLYPHS[glyph] : undefined }
 }
 
 export function Icon(props: IconProps) {
@@ -301,7 +303,12 @@ export function Icon(props: IconProps) {
           {...others}
         >
           <use
-            href={codex().custom ? `#${symbol(codex().custom)}` : codexIconSprite.href(codex().glyph)}
+            href={(() => {
+              // Read the accessor once: a `codex()` per branch loses the narrowing that
+              // tells us `custom` is a real local-sprite name rather than undefined.
+              const value = codex()
+              return value.custom ? `#${symbol(value.custom)}` : codexIconSprite.href(value.glyph)
+            })()}
             transform={codexTransform(local.name)}
           />
         </svg>
@@ -336,8 +343,7 @@ const CODEX_CUSTOM_GLYPHS = {
   "codex-custom-stop": "stop",
 } as const satisfies Record<string, keyof typeof icons>
 
-function codexTransform(name: IconProps["name"]) {
-  if (name in UI_CODEX_ICON_TRANSFORMS) {
-    return UI_CODEX_ICON_TRANSFORMS[name as keyof typeof UI_CODEX_ICON_TRANSFORMS]
-  }
+function codexTransform(name: IconProps["name"]): string | undefined {
+  if (isKeyOf(UI_CODEX_ICON_TRANSFORMS, name)) return UI_CODEX_ICON_TRANSFORMS[name]
+  return undefined
 }

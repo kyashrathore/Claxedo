@@ -906,7 +906,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       "Unset -> loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
   )
 
-  test.beforeAll(async ({}, testInfo) => {
+  test.beforeAll(async (_fixtures, testInfo) => {
     if (!TIER_REAL) return
     // waitForHealth owns a 90-second clean-runner boot budget. Keep the hook's
     // outer deadline longer so a real health failure reports its server-log
@@ -920,13 +920,13 @@ test.describe("real harness journeys @core @tier-real", () => {
     await stopServer()
   })
 
-  test.beforeEach(async ({}, testInfo) => {
+  test.beforeEach(async (_fixtures, testInfo) => {
     // The scripted endpoint answers instantly, but subprocess spawn plus the
     // ACP handshake still costs real seconds on each scenario's first turn.
     testInfo.setTimeout(240_000)
   })
 
-  test.afterEach(async ({}, testInfo) => {
+  test.afterEach(async (_fixtures, testInfo) => {
     // The server's stdout/stderr is buffered into `serverLog` and otherwise
     // surfaced only on GATING boot failures. On a FAILED test it is the only
     // record of what the engine actually did (or refused to do) on a CI

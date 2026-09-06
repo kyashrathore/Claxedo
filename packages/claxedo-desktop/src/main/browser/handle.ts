@@ -45,7 +45,7 @@ import {
   type ConsoleQuery,
   type ConsoleStackFrame,
 } from "./console-buffer"
-import { isRecord, readArray, readNumber, readRecord, readString, readUnknown } from "./json-read"
+import { isRecord, readArray, readNumber, readRecord, readString, readUnknown } from "../../shared/json-read"
 
 export type BrowserHandleState = "detached" | "attaching" | "attached" | "reattaching"
 
@@ -750,7 +750,7 @@ export class BrowserHandle {
 
 // ─── CDP payload parsers ────────────────────────────────────────────────────
 //
-// Every CDP payload arrives untyped (see `./json-read`); these functions turn
+// Every CDP payload arrives untyped (see `../../shared/json-read`); these functions turn
 // the handful of shapes this class cares about into the console buffer's
 // vocabulary. Each call site used to declare its own hand-written copy of the
 // CDP shape and cast the payload to it instead.

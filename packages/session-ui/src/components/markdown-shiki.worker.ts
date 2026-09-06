@@ -1,14 +1,8 @@
 /// <reference lib="webworker" />
 
 import { ShikiStreamTokenizer } from "@shikijs/stream"
-import {
-  bundledLanguages,
-  createHighlighter,
-  getTokenStyleObject,
-  stringifyTokenStyle,
-  type BundledLanguage,
-  type ThemedToken,
-} from "shiki"
+import { createHighlighter, getTokenStyleObject, stringifyTokenStyle, type ThemedToken } from "shiki"
+import { highlightGrammar, resolveHighlightLanguage } from "./markdown-shiki-language"
 import type { MarkdownToken, MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol"
 import { createLatestWorkerQueue } from "./markdown-worker-queue"
 
@@ -43,12 +37,14 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: "highli
   try {
     const instance = await highlighter
     if (!instance) throw new Error("Shiki worker is not initialized")
-    const language = request.language in bundledLanguages ? request.language : "text"
-    if (!instance.getLoadedLanguages().includes(language))
-      await instance.loadLanguage(bundledLanguages[language as BundledLanguage])
+    const language = resolveHighlightLanguage(request.language)
+    const grammar = highlightGrammar(language)
+    if (grammar && !instance.getLoadedLanguages().includes(language)) {
+      await instance.loadLanguage(grammar)
+    }
 
     if (request.complete) {
-      const result = instance.codeToTokens(request.text, { lang: language as BundledLanguage, theme: "OpenCode" })
+      const result = instance.codeToTokens(request.text, { lang: language, theme: "OpenCode" })
       streams.delete(request.key)
       post({
         type: "highlight",

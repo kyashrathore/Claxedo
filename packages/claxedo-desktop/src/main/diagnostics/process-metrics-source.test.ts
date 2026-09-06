@@ -37,22 +37,22 @@ describe("process metrics source", () => {
     })
     source.registerRoot(root(50))
 
-    source.collect(0)
+    await source.collect(0)
     await Bun.sleep(0)
     expect({ workers, samples, disposals }).toEqual({ workers: 0, samples: 0, disposals: 0 })
 
     source.setDemanded?.(true)
-    source.collect(500)
+    await source.collect(500)
     await Bun.sleep(0)
     expect({ workers, samples, disposals }).toEqual({ workers: 1, samples: 1, disposals: 0 })
 
     source.setDemanded?.(false)
-    source.collect(1_000)
+    await source.collect(1_000)
     await Bun.sleep(0)
     expect({ workers, samples, disposals }).toEqual({ workers: 1, samples: 1, disposals: 1 })
 
     source.setDemanded?.(true)
-    source.collect(1_500)
+    await source.collect(1_500)
     await Bun.sleep(0)
     expect({ workers, samples, disposals }).toEqual({ workers: 2, samples: 2, disposals: 1 })
     source.dispose?.()
@@ -74,9 +74,9 @@ describe("process metrics source", () => {
       },
     })
     source.registerRoot(root(50))
-    source.collect(0)
-    source.collect(500)
-    source.collect(1_000)
+    await source.collect(0)
+    await source.collect(500)
+    await source.collect(1_000)
     expect(electronCallsForProof).toBe(3)
     expect(source.collect(1_500)).toHaveLength(1)
     expect(electronCallsForProof).toBe(4)
@@ -104,7 +104,7 @@ describe("process metrics source", () => {
       },
     })
     source.registerRoot(root(50))
-    source.collect(0)
+    await source.collect(0)
     await Bun.sleep(0)
     expect(source.statuses?.()).toEqual([
       expect.objectContaining({ source: "linux-proc", state: "degraded", reason: "source-failed" }),
@@ -146,15 +146,18 @@ describe("process metrics source", () => {
     // passes hostRetryAt, so a fixed cadence that never advances would spin
     // here without ever retrying.
     let at = 0
-    for (let step = 0; step < 40 && failures < 4; step++) {
+    for (let step = 0; step < 40; step++) {
+      // `failures` is bumped from inside the fake source's `collect`, so the
+      // exit is checked in the body where that write is visible.
+      if (failures >= 4) break
       at += 2_000
-      source.collect(at)
+      await source.collect(at)
       await Bun.sleep(0)
     }
     expect(failures).toBeGreaterThanOrEqual(4)
 
     at += 2_000
-    source.collect(at)
+    await source.collect(at)
     await Bun.sleep(0)
     expect(source.statuses?.()).toEqual([
       expect.objectContaining({ source: "linux-proc", state: "healthy" }),
@@ -198,7 +201,7 @@ describe("process metrics source", () => {
         dispose() {},
       },
     })
-    source.collect(0)
+    await source.collect(0)
     await Bun.sleep(0)
     expect(source.collect(500)[0]?.point.rssBytes).toEqual({ state: "available", value: 8_192 })
     creation = "electron-new"
@@ -236,17 +239,17 @@ describe("process metrics source", () => {
       },
     })
 
-    source.collect(0)
+    await source.collect(0)
     await Bun.sleep(0)
     expect(source.collect(500)[0]?.point).toMatchObject({
       cpuMachinePercent: { state: "available", value: 1 },
       rssBytes: { state: "available", value: 1_000 },
       memoryImpact: { kind: "pss", bytes: { state: "available", value: 800 } },
     })
-    source.collect(5_000)
+    await source.collect(5_000)
     await Bun.sleep(0)
     expect(samples).toBe(1)
-    source.collect(10_000)
+    await source.collect(10_000)
     await Bun.sleep(0)
     expect(samples).toBe(2)
   })
@@ -281,11 +284,11 @@ describe("process metrics source", () => {
       },
     })
     source.registerRoot(root(50))
-    source.collect(0)
+    await source.collect(0)
     source.registerRoot({ ...root(60), launchId: "launch-60" })
     resolveTree?.({ entries: [{ pid: 50, ppid: 1, rootPid: 50 }], truncated: false })
     await Bun.sleep(0)
-    source.collect(500)
+    await source.collect(500)
     await Bun.sleep(0)
 
     expect(reconciliations).toEqual([[50], [50, 60]])
@@ -325,7 +328,7 @@ describe("process metrics source", () => {
       },
     })
     source.registerRoot(root(50))
-    source.collect(0)
+    await source.collect(0)
     await Bun.sleep(0)
     const observations = source.collect(500)
     const rootProcess = observations.find((item) => item.process.identity.pid === 50)

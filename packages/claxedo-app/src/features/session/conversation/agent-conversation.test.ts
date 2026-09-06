@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
-import type { MessagePart, UIMessage } from "@tanstack/ai"
+import type { UIMessage } from "@tanstack/ai"
 import {
   applyAgentConversationEvent,
   mergeConversationSnapshot,
@@ -148,9 +148,11 @@ describe("agent conversation chat adapter", () => {
     })
 
     // Part -> UIMessage keeps the agent mention (previously dropped: no
-    // `type: "agent"` case existed in either projection direction).
+    // `type: "agent"` case existed in either projection direction). TanStack's
+    // union has no "agent" arm, so it rides an empty text part with the kind
+    // named in `metadata.carried` — the same carriage "handoff" uses.
     expect(snapshot[0]?.parts).toMatchObject([
-      { type: "agent", name: "reviewer", source: { value: "@reviewer", start: 0, end: 9 } },
+      { type: "text", content: "", metadata: { carried: { type: "agent", name: "reviewer", source: { value: "@reviewer", start: 0, end: 9 } } } },
       { type: "text", content: "@reviewer take a look" },
     ])
 
@@ -165,18 +167,20 @@ describe("agent conversation chat adapter", () => {
 
   test("reconstructs an AgentPart from carried name/source when no agentPart is stored", () => {
     // The path a freshly-composed optimistic user message takes before the
-    // server echoes it: the agent part carries name/source but has no
-    // metadata.agentPart, so the projection rebuilds the AgentPart from
-    // the carried fields (branch at agent-conversation.ts:~387).
+    // server echoes it: the carriage keeps name/source but there is no
+    // metadata.agentPart, so the projection rebuilds the AgentPart from the
+    // carried fields rather than from a stored original.
     const optimistic: UIMessage = {
       id: "msg_optimistic",
       role: "user",
       parts: [
         {
-          type: "agent",
-          name: "reviewer",
-          source: { value: "@reviewer", start: 0, end: 9 },
-        } as MessagePart,
+          type: "text",
+          content: "",
+          metadata: {
+            carried: { type: "agent", name: "reviewer", source: { value: "@reviewer", start: 0, end: 9 } },
+          },
+        },
       ],
     }
 
@@ -204,7 +208,7 @@ describe("agent conversation chat adapter", () => {
     }))).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([
       { type: "text", content: "hey" },
-      { type: "agent", name: "planner" },
+      { type: "text", content: "", metadata: { carried: { type: "agent", name: "planner" } } },
     ])
   })
 

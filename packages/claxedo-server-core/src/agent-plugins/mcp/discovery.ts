@@ -1,3 +1,5 @@
+import { isJsonRecord, isNonEmptyString } from "../../platform/runtime/lib/json"
+
 export type McpOAuthClientRegistration =
   | { kind: "pre-registered"; clientId: string; clientSecret?: string }
   | { kind: "client-id-metadata-document"; clientId: string }
@@ -110,10 +112,6 @@ async function boundedJson(response: Response) {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
 async function safeFetch(fetcher: Fetch, input: URL, init?: RequestInit) {
   let url = input
   for (let redirects = 0; redirects <= 3; redirects++) {
@@ -164,7 +162,7 @@ async function firstMetadata(
     if (response.status === 404) continue
     if (!response.ok) throw new Error(`metadata request failed with ${response.status}`)
     const raw = await boundedJson(response)
-    if (!record(raw)) throw new Error("metadata response is not an object")
+    if (!isJsonRecord(raw)) throw new Error("metadata response is not an object")
     return { url: candidate.toString(), raw }
   }
   return undefined
@@ -215,7 +213,7 @@ async function dynamicRegistration(input: {
   // RFC 7591 §3.2.1 answers 201; a 200 is common in the wild and equally usable.
   if (!response.ok) throw new Error(`dynamic client registration failed with ${response.status}`)
   const raw = await boundedJson(response)
-  if (!record(raw) || typeof raw.client_id !== "string" || !raw.client_id.trim()) {
+  if (!isJsonRecord(raw) || !isNonEmptyString(raw.client_id)) {
     throw new Error("dynamic client registration response carries no client_id")
   }
   // The registry, not this function, decides which client wins a race and

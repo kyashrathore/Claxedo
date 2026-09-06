@@ -15,14 +15,10 @@ export type DocumentErrorCode =
   | "document_too_large"
   | "document_version_conflict"
 
-// Narrows `code` to this class's union. Merged rather than written as a
-// `declare` class field: Playwright's babel transform rejects those unless
+// The base's `Code` parameter narrows `code` to this class's union without a
+// `declare` class field, which Playwright's babel transform rejects unless
 // @babel/plugin-transform-typescript is configured, and it loads this file.
-export interface DocumentWorkspaceError {
-  readonly code: DocumentErrorCode
-}
-
-export class DocumentWorkspaceError extends ClaxedoError {
+export class DocumentWorkspaceError extends ClaxedoError<DocumentErrorCode> {
   constructor(code: DocumentErrorCode, message: string, options?: ErrorOptions) {
     super({
       code,

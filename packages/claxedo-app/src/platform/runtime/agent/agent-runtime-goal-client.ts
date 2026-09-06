@@ -1,6 +1,7 @@
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { readRuntimeJson } from "./agent-runtime-json"
 import type { AgentRuntimeDirectory } from "./agent-runtime-urls"
+import { asRecord } from "@/lib/record"
 
 export type AgentRuntimeGoalAction = "pause" | "resume" | "delete"
 export type AgentRuntimeGoalOptionalField = "tokenBudget" | "tokensUsed" | "timeUsedSeconds" | "iteration" | "lastReason"
@@ -72,11 +73,11 @@ function carriesGoalMutationFailure(status: number) {
 }
 
 function goalMutationFailure(body: unknown): AgentRuntimeGoalMutationFailure | undefined {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return
-  const row = body as Record<string, unknown>
-  if (row.ok !== false) return
+  const row = asRecord(body)
+  if (!row) return undefined
+  if (row.ok !== false) return undefined
   const status = row.status
-  if (typeof status !== "string" || !isGoalMutationFailureStatus(status)) return
+  if (typeof status !== "string" || !isGoalMutationFailureStatus(status)) return undefined
   return {
     ok: false,
     status,

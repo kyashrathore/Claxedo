@@ -8,12 +8,8 @@
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
 import { eq } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db"
-import type {
-  SandboxCheckpointReference,
-  SandboxPersistenceCapabilities,
-  SandboxRestoreStatus,
-} from "@claxedo/sandbox-manager"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
+import { holdOwnerType, toSandboxLeaseRow } from "./lease-row"
 
 // ── Drizzle table definitions ──────────────────────────────────────────
 
@@ -82,37 +78,19 @@ export function leaseTransaction<T>(fn: () => T): T {
   return ClaxedoDB.transaction(() => fn())
 }
 
+/**
+ * The drizzle schema types every column as `string | number | null` because
+ * SQLite has nothing narrower to offer, so the narrowing is `./lease-row`'s
+ * job; all this does is map this table's column names onto the shared one.
+ */
 function rowToLease(row: typeof ClaxedoWorkspaceLeaseTable.$inferSelect): SandboxLeaseRow {
-  return {
-    workspace_id: row.workspace_id,
-    lease_id: row.lease_id,
-    home_region: row.home_region,
-    epoch: row.epoch,
-    status: row.status as SandboxLeaseRow["status"],
-    driver: row.driver as SandboxLeaseRow["driver"],
-    driver_resource_id: row.driver_resource_id,
-    driver_snapshot_id: row.driver_snapshot_id,
-    sandbox_id: row.sandbox_id,
+  return toSandboxLeaseRow({
+    ...row,
     url: row.runtime_url,
-    retry_count: row.retry_count,
-    next_retry_at: row.next_retry_at,
-    last_heartbeat_at: row.last_heartbeat_at,
-    last_activity_at: row.last_activity_at,
-    last_health_failure_at: row.last_health_failure_at,
-    last_error: row.last_error,
-    compute_class: row.compute_class as SandboxLeaseRow["compute_class"],
-    accel_base_image_id: row.accel_base_image_id,
-    accel_prepared_image_id: row.accel_prepared_image_id,
     accel_snapshot_id: row.accel_runtime_snapshot_id,
-    labels: row.labels ? JSON.parse(row.labels) as Record<string, string> : null,
-    checkpoint: row.checkpoint ? JSON.parse(row.checkpoint) as SandboxCheckpointReference : null,
-    persistence: row.persistence_capabilities
-      ? JSON.parse(row.persistence_capabilities) as SandboxPersistenceCapabilities
-      : null,
-    restore: row.restore_status ? JSON.parse(row.restore_status) as SandboxRestoreStatus : null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }
+    persistence: row.persistence_capabilities,
+    restore: row.restore_status,
+  })
 }
 
 export function getLease(workspaceId: string): SandboxLeaseRow | undefined {
@@ -210,7 +188,7 @@ function rowToHold(row: typeof ClaxedoWorkspaceHoldTable.$inferSelect): SandboxH
   return {
     hold_id: row.hold_id,
     workspace_id: row.workspace_id,
-    owner_type: row.owner_type as SandboxHoldRow["owner_type"],
+    owner_type: holdOwnerType(row.owner_type),
     owner_id: row.owner_id,
     reason: row.reason,
     expires_at: row.expires_at,

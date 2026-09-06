@@ -5,7 +5,6 @@ import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createMemoryRuntimeStore } from "../../stores/memory"
-import { storeRows } from "../../test-utils/store-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "../shared/sdk-runtime-adapter"
 import { ingestCursorSdkMessage } from "./driver"
 
@@ -125,7 +124,7 @@ function cursorDriver(transcriptRegistrar?: Parameters<typeof ingestCursorSdkMes
 
 describe("Cursor native subagent routing", () => {
   test("admits stable lifecycle identities with conditional opaque file transcripts", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
     const runtimeEvents: RuntimeEventEnvelope[] = []
     const transcriptRegistrations: unknown[] = []
@@ -207,11 +206,11 @@ describe("Cursor native subagent routing", () => {
     expect(JSON.stringify({ runtimeEvents, messages: store.getMessages(parent.id) })).not.toContain("/provider/private")
     expect(JSON.stringify({ runtimeEvents, messages: store.getMessages(parent.id) })).not.toContain("private child transcript")
     expect(JSON.stringify(runtimeEvents)).not.toContain("must-not-adopt")
-    adapter.dispose()
+    await adapter.dispose()
   })
 
   test("fails closed when a registered file transcript cannot be opened", async () => {
-    const store = storeRows(createMemoryRuntimeStore())
+    const store = createMemoryRuntimeStore()
     const runtimeEvents: RuntimeEventEnvelope[] = []
     const eventHub = createRuntimeEventHub()
     eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
@@ -240,6 +239,6 @@ describe("Cursor native subagent routing", () => {
     expect(taskA.at(-1)).toMatchObject({ transcript: { kind: "none" } })
     expect(taskA.at(-1)).not.toHaveProperty("childSessionId")
     expect(store.listSessions(path.resolve("/repo"))).toHaveLength(1)
-    adapter.dispose()
+    await adapter.dispose()
   })
 })

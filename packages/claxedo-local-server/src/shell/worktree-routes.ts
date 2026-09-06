@@ -8,6 +8,7 @@ import { containsCanonical, defaultBranch, gitRun, locate, shell, trees } from "
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./worktree"
 import { provisionRegisteredWorktree, WorktreeProvisionError } from "../workspace/worktree"
+import { raw, record, trimmed } from "../platform/json"
 
 type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
 
@@ -53,8 +54,8 @@ export async function createWorktree(c: Context) {
   }
   const root = await getProjectWorkspace(ws.project_id ?? ws.id)
   if (!root) return c.json(errorBody("claxedo_project_workspace_not_found", "Project workspace not found"), 404)
-  const body = await c.req.json().catch(() => ({})) as { name?: string; startCommand?: string }
-  const info = await nextWorktreeInfo(root.directory, root.project_id ?? root.id, body.name)
+  const body = record(await c.req.json().catch(() => ({}))) ?? {}
+  const info = await nextWorktreeInfo(root.directory, root.project_id ?? root.id, trimmed(body.name))
   if (!info) return c.json(errorBody("claxedo_worktree_name_failed", "Failed to generate a unique worktree name"), 400)
   try {
     const workspace = await provisionRegisteredWorktree({
@@ -64,7 +65,7 @@ export async function createWorktree(c: Context) {
       checkout: { kind: "branch", branch: info.branch, noCheckout: true },
     })
     const registeredInfo = { ...info, directory: workspace.directory }
-    scheduleWorktreeReadyCheck(registeredInfo, body.startCommand)
+    scheduleWorktreeReadyCheck(registeredInfo, raw(body.startCommand))
     return c.json(registeredInfo)
   } catch (error) {
     const message = error instanceof WorktreeProvisionError ? error.detail : error instanceof Error ? error.message : String(error)
@@ -187,10 +188,10 @@ function scheduleWorktreeReadyCheck(info: WorktreeInfo, startCommand?: string) {
 }
 
 async function requestedTarget(c: Context, directory?: string) {
-  const body = await c.req.json().catch(() => ({})) as { directory?: string }
+  const body = record(await c.req.json().catch(() => ({}))) ?? {}
   // The frontend (and every other handler here) passes the target via the
   // `directory` query param; only fall back to the JSON body for callers
   // that send it there. Reading the body alone returned 400 for the
   // standard query-param request.
-  return (directory ?? body.directory)?.trim()
+  return (directory ?? raw(body.directory))?.trim()
 }

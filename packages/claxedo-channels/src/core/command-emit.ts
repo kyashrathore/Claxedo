@@ -19,9 +19,15 @@ export type ChannelSessionSummary = {
   updatedAt?: number
 }
 
+/**
+ * Property syntax, not methods: neither implementation uses `this`, and every
+ * caller passes these around as plain functions (transports hand them to SDK
+ * handlers, tests assert on the mock). Declaring them as methods made every
+ * such reference an unbound-method hazard for no gain.
+ */
 export type ChannelCore = {
-  handleInbound(input: InboundEnvelope, handlers: { reply: ChannelSink<[OutboundChunk]> }): Promise<void>
-  onApproval(input: ApprovalDecision): Promise<{ ok: true } | { ok: false; message: string }>
+  handleInbound: (input: InboundEnvelope, handlers: { reply: ChannelSink<[OutboundChunk]> }) => Promise<void>
+  onApproval: (input: ApprovalDecision) => Promise<{ ok: true } | { ok: false; message: string }>
 }
 
 /**

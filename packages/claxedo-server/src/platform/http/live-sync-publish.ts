@@ -1,4 +1,5 @@
 import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { numberField, readJsonRecord } from "../json/index"
 
 /**
  * The PUBLISHER half of live-sync: naming a room and nudging it.
@@ -75,5 +76,6 @@ export async function nudgeLiveSyncRoom(
   if (!response.ok) {
     throw new Error(`live-sync-room nudge failed: ${response.status} ${await response.text()}`.trim())
   }
-  return (await response.json()) as { delivered: number; held: number }
+  const body = await readJsonRecord(response)
+  return { delivered: numberField(body, "delivered") ?? 0, held: numberField(body, "held") ?? 0 }
 }

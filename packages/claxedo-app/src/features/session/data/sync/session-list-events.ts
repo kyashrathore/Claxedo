@@ -1,8 +1,6 @@
 import { Binary } from "@opencode-ai/ui/utils/binary"
-import type {
-  AgentPermission as PermissionRequest,
-  AgentPresentationSession as Session,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoSession as Session } from "../session-types"
 import { trimSessions } from "../../../../platform/sync/global-sync/session-trim"
 import type { SessionLifecycleEvent } from "../session-lifecycle"
 import { queryClient } from "@/platform/query/query-client"
@@ -11,6 +9,7 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import { cleanupDroppedSessionCaches, cleanupSessionCaches } from "./session-cache-cleanup"
 import type { DirectorySessionCacheValue } from "./queries"
 import { isConcreteSessionTitle } from "../../lib/session-title-sync"
+import { sessionEventRow, sessionEventSummary, sessionRow } from "./session-event-info"
 
 // Canonical envelope lives in `shared/data/session-lifecycle` (rubric D4). This module
 // re-exports under the historical alias so existing imports keep working while
@@ -69,7 +68,8 @@ export function applySessionListEvent(input: {
 }): DirectorySessionCacheValue | undefined {
   switch (input.event.type) {
     case "session.created": {
-      const info = (input.event.properties as { info: Session }).info
+      const info = sessionEventRow(input.event.properties)
+      if (!info) return undefined
       const idx = Binary.search(input.cache.session, info.id, (item) => item.id)
       if (idx.found) {
         const session = input.cache.session.slice()
@@ -84,7 +84,8 @@ export function applySessionListEvent(input: {
       }
     }
     case "session.updated": {
-      const info = (input.event.properties as { info: Session }).info
+      const info = sessionEventRow(input.event.properties)
+      if (!info) return undefined
       const idx = Binary.search(input.cache.session, info.id, (item) => item.id)
       if (info.time.archived) {
         if (idx.found && info.time.updated < input.cache.session[idx.index].time.updated) return input.cache
@@ -109,7 +110,8 @@ export function applySessionListEvent(input: {
       return { ...input.cache, session: list }
     }
     case "session.deleted": {
-      const info = (input.event.properties as { info: Session }).info
+      const info = sessionEventSummary(input.event.properties)
+      if (!info) return undefined
       const idx = Binary.search(input.cache.session, info.id, (item) => item.id)
       const session = input.cache.session.slice()
       if (idx.found) {
@@ -186,8 +188,10 @@ export function applyClaxedoSessionLifecycleEvent(input: {
   // Canonical event type carries `info?: unknown` so cross-package consumers
   // (server bus + frontend events provider) share one envelope. Narrow to the
   // upstream `Session` shape at the projection site, the one place it reads `.id`.
+  const info = sessionRow(input.event.info)
+  if (!info) return undefined
   return applySessionListEvent({
     ...input,
-    event: { type: "session.created", properties: { info: input.event.info as Session } },
+    event: { type: "session.created", properties: { info } },
   })
 }

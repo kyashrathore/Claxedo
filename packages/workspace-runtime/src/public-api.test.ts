@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import { fetchDouble } from "./test-support/fetch-double"
+import { fetchDouble, fetchUrl } from "./test-support/fetch-double"
 import * as rootApi from "./index"
 import { createWorkspaceRuntimeClient } from "./client"
 import { WorkspaceRuntimeRouteManifest, WorkspaceRuntimeRoutes } from "./routes/manifest"
@@ -31,7 +31,7 @@ describe("workspace-runtime public API manifest", () => {
   })
 
   test("route manifest exposes only the runtime's own capability routes", () => {
-    expect(WorkspaceRuntimeRouteManifest.map((item) => String(item.path)).sort()).toEqual(
+    expect(WorkspaceRuntimeRouteManifest.map((item): string => item.path).sort()).toEqual(
       manifest.routePrefixes.sort(),
     )
     expect(Object.values(WorkspaceRuntimeRoutes).map(String).sort()).toEqual(manifest.routePrefixes.sort())
@@ -70,7 +70,7 @@ describe("workspace-runtime public API manifest", () => {
     const client = createWorkspaceRuntimeClient({
       baseUrl: "http://runtime.local",
       fetch: fetchDouble((input) => {
-        seen.push(input.toString())
+        seen.push(fetchUrl(input))
         return Promise.resolve(new Response("{}", { status: 200 }))
       }),
     })

@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { SubagentRegistry } from "./subagent-registry"
-import { asRecord } from "@/lib/record"
+import { sessionEventInfoId, sessionEventSummary } from "../data/sync/session-event-info"
 
 type SessionLifecycleEvent = { type: string; properties: unknown }
 
@@ -18,15 +18,14 @@ export function applySubagentCompatLifecycleEvent(
   registry: SubagentRegistry,
 ) {
   if (payload.type === "session.deleted") {
-    const sessionId = objectId((payload.properties as { info?: unknown }).info)
+    const sessionId = sessionEventInfoId(payload.properties)
     if (sessionId) registry.deleteParent(sessionId)
     return !!sessionId
   }
   if (payload.type !== "session.updated") return false
-  const info = asRecord((payload.properties as { info?: unknown }).info)
-  const sessionId = objectId(info)
-  if (!sessionId || typeof asRecord(info?.time)?.archived !== "number") return false
-  registry.archiveParent(sessionId)
+  const info = sessionEventSummary(payload.properties)
+  if (!info || info.archived === undefined) return false
+  registry.archiveParent(info.id)
   return true
 }
 
@@ -36,8 +35,4 @@ export function abortSubagentsForParent(parentSessionId: string, registry: Subag
   )
 }
 
-function objectId(input: unknown) {
-  const value = asRecord(input)?.id
-  return typeof value === "string" ? value : undefined
-}
 

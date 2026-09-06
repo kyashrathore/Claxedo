@@ -1,3 +1,4 @@
+import { readString } from "../../shared/json-read"
 import {
   assertDesktopCredentialBinding,
   DesktopAuthDescriptorError,
@@ -59,10 +60,8 @@ export async function revocationFailureSummary(response: Response) {
     .clone()
     .json()
     .catch(() => undefined)
-  if (!body || typeof body !== "object") return ""
-  const record = body as { error?: unknown; error_description?: unknown }
-  const code = typeof record.error === "string" ? record.error : undefined
-  const description = typeof record.error_description === "string" ? record.error_description.slice(0, 80) : undefined
+  const code = readString(body, "error")
+  const description = readString(body, "error_description")?.slice(0, 80)
   if (!code && !description) return ""
   return ` (${[code, description].filter(Boolean).join(": ")})`
 }
@@ -73,10 +72,8 @@ export async function revocationRejectedTheToken(response: Response) {
     .clone()
     .json()
     .catch(() => undefined)
-  if (!body || typeof body !== "object") return false
-  const record = body as { error?: unknown; error_description?: unknown }
-  const code = typeof record.error === "string" ? record.error : ""
-  const description = typeof record.error_description === "string" ? record.error_description : ""
+  const code = readString(body, "error") ?? ""
+  const description = readString(body, "error_description") ?? ""
   if (code === "invalid_token" || code === "invalid_grant") return true
   // Better Auth reports an unrecognized credential two ways, seen live on the
   // same deployment: `invalid_token` / "refresh token not found" and

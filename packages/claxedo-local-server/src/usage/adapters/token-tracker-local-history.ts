@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { createHash } from "node:crypto"
 import type { UsageProvenance } from "@claxedo/server-core/usage/provenance"
+import { record } from "../../platform/json"
 
 export type ExternalUsageBucket = {
   app: string
@@ -82,13 +83,27 @@ function scanKey(input: {
   })).digest("hex")
 }
 
-async function readCached(stateDir: string, key: string) {
+/**
+ * `version` is the shape witness: this module writes the file and bumps
+ * CACHE_VERSION whenever the snapshot shape changes, so a matching version and
+ * key is what makes the stored snapshot readable as one.
+ */
+function isCachedLocalHistory(value: unknown, key: string): value is CachedLocalHistory {
+  const row = record(value)
+  return row?.version === CACHE_VERSION
+    && row.key === key
+    && typeof row.createdAt === "number"
+    && record(row.snapshot) !== undefined
+}
+
+async function readCached(stateDir: string, key: string): Promise<LocalHistorySnapshot | undefined> {
   try {
-    const cached = JSON.parse(await fs.readFile(path.join(stateDir, CACHE_FILE), "utf8")) as CachedLocalHistory
-    if (cached.version !== CACHE_VERSION || cached.key !== key || Date.now() - cached.createdAt > CACHE_TTL_MS) return
+    const cached: unknown = JSON.parse(await fs.readFile(path.join(stateDir, CACHE_FILE), "utf8"))
+    if (!isCachedLocalHistory(cached, key)) return undefined
+    if (Date.now() - cached.createdAt > CACHE_TTL_MS) return undefined
     return cached.snapshot
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -121,7 +136,7 @@ export async function scanTokenTrackerLocalHistory(input: {
     }
     // @ts-expect-error TokenTracker ships no declarations; the exact embedded
     // scanner contract is defined above and verified against the pinned patch.
-    const scanner = await import("tokentracker-cli/src/lib/rollout.js") as TokenTrackerHistoryModule
+    const scanner: TokenTrackerHistoryModule = await import("tokentracker-cli/src/lib/rollout.js")
     const result = await scanner.scanLocalHistory({
       sourceHome: input.sourceHome,
       stateDir: input.stateDir,

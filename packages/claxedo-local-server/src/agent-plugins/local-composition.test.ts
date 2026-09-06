@@ -117,7 +117,9 @@ describe("local Agent Plugins composition", () => {
     })
     await restarted.ready
     const relaunch = await restarted.harnessLaunch()
-    const reprojected = (relaunch.opencode?.config as { skills: string[] }).skills[0]
+    const relaunchSkills = (relaunch.opencode?.config as { skills: string[] } | undefined)?.skills
+    const reprojected = relaunchSkills?.[0]
+    if (!reprojected) throw new Error("relaunch projected no skill root")
     expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
     await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")
@@ -228,7 +230,8 @@ describe("local Agent Plugins composition", () => {
       body: JSON.stringify({ ...signedWorld, secrets: [{ name: "CLAXEDO_MCP_ABC", value: "Bearer rotated-token" }] }),
     })
     expect(refreshed.status).toBe(200)
-    const rotatedRoot = ((await composition.harnessLaunch()).claude?.pluginRoots as string[])[0]
+    const rotatedRoot = ((await composition.harnessLaunch()).claude?.pluginRoots as string[] | undefined)?.[0]
+    if (!rotatedRoot) throw new Error("relaunch projected no plugin root")
     const rotated = JSON.parse(await fs.readFile(path.join(rotatedRoot, ".mcp.json"), "utf8")) as {
       mcpServers: { context7: { headers?: { Authorization?: string } } }
     }

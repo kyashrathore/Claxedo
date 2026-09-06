@@ -1,6 +1,5 @@
 import type {
   AgentPermission as PermissionRequest,
-  AgentPresentationSession as Session,
   AgentQuestion as QuestionRequest,
   AgentSnapshotFileDiff as SnapshotFileDiff,
   AgentTodo as Todo,
@@ -15,6 +14,8 @@ import {
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionDiffQueryData } from "./queries"
 import { reconcileUpdatedSessionListQueryData } from "../query/session-list"
+import { sessionEventInfoId, sessionEventSummary, sessionEventWorkspaceId } from "./session-event-info"
+import { isRecord, readField, readString } from "@/lib/record"
 
 type DirectoryEvent = {
   type: string
@@ -22,6 +23,43 @@ type DirectoryEvent = {
 }
 
 type WorkspaceDirectory = string
+
+/**
+ * Payload guards for the directory event bus.
+ *
+ * Events arrive as `{ type: string; properties?: unknown }` frames, so every
+ * branch below has to establish its own payload. Each guard checks the fields
+ * the branch actually consumes; a frame that fails one is dropped rather than
+ * projected as a half-built row.
+ */
+function isFileDiffList(value: unknown): value is SnapshotFileDiff[] {
+  return Array.isArray(value) && value.every((item) =>
+    isRecord(item) && typeof item.additions === "number" && typeof item.deletions === "number")
+}
+
+// `priority` is declared on the contract but producers omit it, so the guard
+// checks only the two fields the todo panel renders.
+function isTodoList(value: unknown): value is Todo[] {
+  return Array.isArray(value) && value.every((item) =>
+    isRecord(item) && typeof item.content === "string" && typeof item.status === "string")
+}
+
+function isPermissionRequest(value: unknown): value is PermissionRequest {
+  return isRecord(value) && typeof value.id === "string" && typeof value.sessionID === "string"
+    && typeof value.permission === "string"
+}
+
+function isQuestionRequest(value: unknown): value is QuestionRequest {
+  return isRecord(value) && typeof value.id === "string" && typeof value.sessionID === "string"
+    && Array.isArray(value.questions)
+}
+
+/** The `{ sessionID, requestID }` pair every permission/question reply frame carries. */
+function requestReply(properties: unknown): { sessionID: string; requestID: string } | undefined {
+  const sessionID = readString(properties, "sessionID")
+  const requestID = readString(properties, "requestID")
+  return sessionID && requestID ? { sessionID, requestID } : undefined
+}
 
 function removeSessionShellQueries(sessionID: string) {
   queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
@@ -63,38 +101,27 @@ function updateSessionRequests(
   })
 }
 
+function nonEmpty(value: string | undefined) {
+  return value && value.length > 0 ? value : undefined
+}
+
+/**
+ * The session a directory event concerns, wherever the producer put it: the
+ * lifecycle envelope's `info.id`, a conversation event's `part.sessionID`, or a
+ * flat `sessionID`/`sessionId`.
+ */
 function sessionIdFromDirectoryEvent(properties: unknown): string | undefined {
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return undefined
-  const record = properties as Record<string, unknown>
-  const info = record.info
-  if (info && typeof info === "object" && !Array.isArray(info)) {
-    const id = (info as Record<string, unknown>).id
-    if (typeof id === "string" && id.length > 0) return id
-  }
-  const part = record.part
-  if (part && typeof part === "object" && !Array.isArray(part)) {
-    const sessionID = (part as Record<string, unknown>).sessionID
-    if (typeof sessionID === "string" && sessionID.length > 0) return sessionID
-  }
-  const sessionID = record.sessionID ?? record.sessionId
-  return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : undefined
+  return sessionEventInfoId(properties)
+    ?? nonEmpty(readString(readField(properties, "part"), "sessionID"))
+    ?? nonEmpty(readString(properties, "sessionID"))
+    ?? nonEmpty(readString(properties, "sessionId"))
 }
 
 function bumpSessionListActivity(input: { event: DirectoryEvent; directory: WorkspaceDirectory; workspaceId?: string }) {
   const sessionId = sessionIdFromDirectoryEvent(input.event.properties)
   if (!sessionId) return
-  const eventWorkspaceId = input.workspaceId
-    ?? (() => {
-      const record = input.event.properties as Record<string, unknown>
-      const info = record.info && typeof record.info === "object" && !Array.isArray(record.info)
-        ? record.info as Record<string, unknown>
-        : undefined
-      const fromInfo = info?.workspaceID ?? info?.workspaceId
-      return typeof fromInfo === "string" && fromInfo.length > 0 ? fromInfo : undefined
-    })()
-  const signedWorkspaceId = typeof eventWorkspaceId === "string" && eventWorkspaceId.startsWith('ws_')
-    ? eventWorkspaceId
-    : undefined
+  const eventWorkspaceId = input.workspaceId ?? sessionEventWorkspaceId(input.event.properties)
+  const signedWorkspaceId = eventWorkspaceId?.startsWith("ws_") ? eventWorkspaceId : undefined
   reconcileUpdatedSessionListQueryData({
     sessionId,
     directory: input.directory,
@@ -109,14 +136,15 @@ export function applyDirectoryEventToShellQueries(input: {
 }) {
   switch (input.event.type) {
     case "session.updated": {
-      const info = (input.event.properties as { info: Session }).info
+      const info = sessionEventSummary(input.event.properties)
+      if (!info) break
       reconcileUpdatedSessionListQueryData({
         sessionId: info.id,
         directory: input.directory,
         title: info.title,
-        updatedAt: info.time?.updated,
+        updatedAt: info.updated,
       })
-      if (info.time?.archived) {
+      if (info.archived) {
         removeSessionShellQueries(info.id)
       }
       break
@@ -127,24 +155,29 @@ export function applyDirectoryEventToShellQueries(input: {
       break
     }
     case "session.deleted": {
-      const info = (input.event.properties as { info: Session }).info
-      removeSessionShellQueries(info.id)
+      const sessionId = sessionEventInfoId(input.event.properties)
+      if (sessionId) removeSessionShellQueries(sessionId)
       break
     }
     case "session.diff": {
-      const props = input.event.properties as { sessionID: string; diff: SnapshotFileDiff[] }
-      setSessionDiffQueryData({ queryClient, sessionId: props.sessionID, diff: list(props.diff) })
+      const sessionId = readString(input.event.properties, "sessionID")
+      const diff = readField(input.event.properties, "diff")
+      if (!sessionId || !isFileDiffList(diff)) break
+      setSessionDiffQueryData({ queryClient, sessionId, diff: list(diff) })
       break
     }
     case "todo.updated": {
-      const props = input.event.properties as { sessionID: string; todos: Todo[] }
+      const sessionID = readString(input.event.properties, "sessionID")
+      const todos = readField(input.event.properties, "todos")
+      if (!sessionID || !isTodoList(todos)) break
       dispatchSessionTodoEvent({
-        event: { type: "session.todo", source: "server", sessionID: props.sessionID, todos: props.todos },
+        event: { type: "session.todo", source: "server", sessionID, todos },
       })
       break
     }
     case "permission.asked": {
-      const permission = input.event.properties as PermissionRequest
+      const permission = input.event.properties
+      if (!isPermissionRequest(permission)) break
       updateSessionRequests(permission.sessionID, (cache) => ({
         ...cache,
         permissions: upsertById(cache.permissions, permission),
@@ -152,15 +185,17 @@ export function applyDirectoryEventToShellQueries(input: {
       break
     }
     case "permission.replied": {
-      const props = input.event.properties as { sessionID: string; requestID: string }
-      updateSessionRequests(props.sessionID, (cache) => ({
+      const reply = requestReply(input.event.properties)
+      if (!reply) break
+      updateSessionRequests(reply.sessionID, (cache) => ({
         ...cache,
-        permissions: removeById(cache.permissions, props.requestID),
+        permissions: removeById(cache.permissions, reply.requestID),
       }))
       break
     }
     case "question.asked": {
-      const question = input.event.properties as QuestionRequest
+      const question = input.event.properties
+      if (!isQuestionRequest(question)) break
       updateSessionRequests(question.sessionID, (cache) => ({
         ...cache,
         questions: upsertById(cache.questions, question),
@@ -169,10 +204,11 @@ export function applyDirectoryEventToShellQueries(input: {
     }
     case "question.replied":
     case "question.rejected": {
-      const props = input.event.properties as { sessionID: string; requestID: string }
-      updateSessionRequests(props.sessionID, (cache) => ({
+      const reply = requestReply(input.event.properties)
+      if (!reply) break
+      updateSessionRequests(reply.sessionID, (cache) => ({
         ...cache,
-        questions: removeById(cache.questions, props.requestID),
+        questions: removeById(cache.questions, reply.requestID),
       }))
       break
     }

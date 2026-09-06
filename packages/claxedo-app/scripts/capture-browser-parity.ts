@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import path from "node:path"
 import { createHash } from "node:crypto"
 import "./capture-harness-window"
+import { asRecord, readArray } from "../src/lib/record"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(Bun.env.CLAXEDO_BROWSER_PARITY_DIR ?? path.join(PACKAGE_DIR, "test-results/browser-parity"))
@@ -99,7 +100,17 @@ if (updateBaseline) {
 const browser = await chromium.launch({ headless: true })
 const failures: string[] = []
 const expectedBaselines = await readBaselineManifest()
-const artifact: Record<string, unknown> = {
+type CapturedViewport = {
+  name: string
+  width: number
+  height: number
+  screenshot?: string
+  comparisonBytes: number
+  comparisonSha256: string
+  [key: string]: unknown
+}
+
+const artifact: Record<string, unknown> & { viewports: CapturedViewport[] } = {
   baseURL,
   baselineDir: BASELINE_DIR,
   baselineManifest: BASELINE_MANIFEST,
@@ -160,7 +171,7 @@ for (const viewport of viewports) {
       comparisonDigest,
       expectedBaselines.get(viewport.name),
     )
-    ;(artifact.viewports as unknown[]).push({
+    artifact.viewports.push({
       ...viewport,
       screenshot,
       comparisonScreenshot,
@@ -217,21 +228,13 @@ for (const viewport of viewports) {
 
 await browser.close()
 if (updateBaseline) {
-  await writeBaselineManifest(
-    artifact.viewports as Array<{
-      name: string
-      width: number
-      height: number
-      comparisonBytes: number
-      comparisonSha256: string
-    }>,
-  )
+  await writeBaselineManifest(artifact.viewports)
 }
 
 const manifest = path.join(RESULT_DIR, "manifest.json")
 await Bun.write(manifest, JSON.stringify({ ...artifact, failures }, null, 2))
 console.log(`browser parity manifest: ${manifest}`)
-for (const viewport of artifact.viewports as Array<{ screenshot?: string }>) {
+for (const viewport of artifact.viewports) {
   if (viewport.screenshot) console.log(`browser parity screenshot: ${viewport.screenshot}`)
 }
 
@@ -311,11 +314,13 @@ async function compareBaseline(
 
 async function readBaselineManifest() {
   if (!(await Bun.file(BASELINE_MANIFEST).exists())) return new Map<string, ScreenshotDigest>()
-  const manifest = await Bun.file(BASELINE_MANIFEST).json() as {
-    viewports?: Array<{ name?: string; bytes?: number; sha256?: string }>
-  }
+  const manifest: unknown = await Bun.file(BASELINE_MANIFEST).json()
   return new Map(
-    (manifest.viewports ?? [])
+    (readArray(manifest, "viewports") ?? [])
+      .flatMap((entry) => {
+        const row = asRecord(entry)
+        return row ? [{ name: row.name, bytes: row.bytes, sha256: row.sha256 }] : []
+      })
       .filter((item): item is { name: string; bytes: number; sha256: string } =>
         typeof item.name === "string" &&
         typeof item.bytes === "number" &&

@@ -19,6 +19,7 @@
 
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+import { asRecord, parseJson, stringField } from "../../src/platform/json/index"
 
 const IDLE_MS = Number(process.argv[2] ?? "12000")
 const ORG = "org_probe"
@@ -82,7 +83,8 @@ await miniflare.ready
 
 const observed: Array<{ id?: string; type: string; doc?: string }> = []
 const response = await miniflare.dispatchFetch("http://probe.local/connect")
-const reader = (response.body as unknown as ReadableStream<Uint8Array>).getReader()
+if (!response.body) throw new Error("probe stream did not open")
+const reader = response.body.getReader()
 const decoder = new TextDecoder()
 let buffer = ""
 void (async () => {
@@ -97,8 +99,11 @@ void (async () => {
       const id = lines.find((l) => l.startsWith("id:"))?.slice(3).trim()
       const data = lines.find((l) => l.startsWith("data:"))?.slice(5).trim()
       if (!data) continue
-      const payload = JSON.parse(data) as { type: string; documentId?: string }
-      observed.push({ ...(id ? { id } : {}), type: payload.type, ...(payload.documentId ? { doc: payload.documentId } : {}) })
+      const payload = asRecord(parseJson(data))
+      const type = stringField(payload, "type")
+      if (type === undefined) continue
+      const doc = stringField(payload, "documentId")
+      observed.push({ ...(id ? { id } : {}), type, ...(doc ? { doc } : {}) })
     }
   }
 })()

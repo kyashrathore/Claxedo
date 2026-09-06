@@ -29,37 +29,38 @@ export type UserHostedBacking = {
 
 export type WorkspaceBacking = LocalWorktreeBacking | CloudVmBacking | UserHostedBacking
 
-function omitUndefined<T extends Record<string, unknown>>(input: T): T {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as T
-}
-
-/** Derives the public backing model from the persisted workspace record. */
+/**
+ * Derives the public backing model from the persisted workspace record.
+ *
+ * Each optional field is spread in only when present. An explicit
+ * `undefined`-valued key is not the same as an absent one once the record is
+ * serialized, and these values reach clients as JSON.
+ */
 export function workspaceBacking(workspace: Workspace): WorkspaceBacking {
+  const shared = {
+    ...(workspace.repo_url !== undefined ? { repoUrl: workspace.repo_url } : {}),
+    ...(workspace.repo_name !== undefined ? { repoName: workspace.repo_name } : {}),
+    ...(workspace.git_branch !== undefined ? { branch: workspace.git_branch } : {}),
+  }
+  const named = {
+    ...(workspace.workspace_name !== undefined ? { workspaceName: workspace.workspace_name } : {}),
+    ...(workspace.project_name !== undefined ? { projectName: workspace.project_name } : {}),
+  }
   if (workspace.kind === "cloud") {
     if (!workspace.driver) {
-      return omitUndefined({
+      return {
         kind: "user-hosted",
-        workspaceName: workspace.workspace_name,
-        projectName: workspace.project_name,
-        branch: workspace.git_branch,
-      })
+        ...named,
+        ...(workspace.git_branch !== undefined ? { branch: workspace.git_branch } : {}),
+      }
     }
-    return omitUndefined({
+    return {
       kind: "cloud-vm",
       driver: workspace.driver,
-      projectName: workspace.project_name,
-      workspaceName: workspace.workspace_name,
-      repoUrl: workspace.repo_url,
-      repoName: workspace.repo_name,
-      branch: workspace.git_branch,
-      remoteDirectory: workspace.remote_directory,
-    })
+      ...named,
+      ...shared,
+      ...(workspace.remote_directory !== undefined ? { remoteDirectory: workspace.remote_directory } : {}),
+    }
   }
-  return omitUndefined({
-    kind: "local-worktree",
-    directory: workspace.directory,
-    repoUrl: workspace.repo_url,
-    repoName: workspace.repo_name,
-    branch: workspace.git_branch,
-  })
+  return { kind: "local-worktree", directory: workspace.directory, ...shared }
 }

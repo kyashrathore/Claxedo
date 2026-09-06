@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { createIdentityResolver, identityFromUserInfo, userInfoUrlFromTokenUrl } from "./identity"
 
+/** The URL of a `fetch` double's argument, whichever of the three forms it takes. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
 describe("userInfoUrlFromTokenUrl", () => {
   test("maps an OAuth token endpoint to userinfo", () => {
     expect(userInfoUrlFromTokenUrl("https://suitable-elf-22.issuer.example.com/oauth/token")).toBe(
@@ -53,7 +58,7 @@ describe("createIdentityResolver", () => {
       userInfoUrl: "https://id.test/oauth/userinfo",
       fetch: async (url, init) => {
         calls.push({
-          url: String(url),
+          url: requestUrl(url),
           authorization: new Headers(init?.headers).get("authorization"),
         })
         return new Response(JSON.stringify({ sub: "user_1", name: "Ada", email: "ada@example.com" }), {

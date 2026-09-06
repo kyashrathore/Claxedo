@@ -130,17 +130,18 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   // view positions (pane rects, content slots, resize emits) reads displayRects.
   const rectMemo = createMemo(() => computePaneRects(ctx.getState().split.root))
   const displayRects = createMemo(() => (collapsed() ? collapsePaneRects(ctx.getState()) : rectMemo()))
-  let pendingFrame: number | null = null
+  // Read only as "is a frame already scheduled" — nothing cancels it — so it
+  // holds whichever handle the scheduler below returned.
+  let pendingFrame: ReturnType<typeof requestAnimationFrame> | ReturnType<typeof setTimeout> | null = null
   let lastEmittedRects: Map<string, PaneRect> = new Map()
   const scheduleResizeEmit = () => {
     if (pendingFrame != null) return
-    const raf =
+    // `pendingFrame` only ever round-trips this handle back to `cancel`, so the
+    // fallback's timer handle is as good as a frame id and needs no cast.
+    const raf: (cb: FrameRequestCallback) => ReturnType<typeof requestAnimationFrame> | ReturnType<typeof setTimeout> =
       typeof requestAnimationFrame !== "undefined"
         ? requestAnimationFrame
-        : (cb: FrameRequestCallback) => {
-            // as-any: fallback timer handle is used only where RAF returns a numeric frame id.
-            return setTimeout(() => cb(performance?.now?.() ?? Date.now()), 16) as unknown as number
-          }
+        : (cb) => setTimeout(() => cb(performance?.now?.() ?? Date.now()), 16)
     pendingFrame = raf(() => {
       pendingFrame = null
       const rects = displayRects()

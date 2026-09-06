@@ -10,6 +10,7 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 
 import { Binary } from "@opencode-ai/ui/utils/binary"
 import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
+import { readableText } from "@opencode-ai/ui/utils/text"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -98,19 +99,21 @@ function summaryDiff(value: AgentSnapshotFileDiff): value is SummaryDiff {
 
 const hidden = new Set(["todowrite"])
 
-function partState(part: AgentContentPart, showReasoningSummaries: boolean) {
+function partState(part: AgentContentPart, showReasoningSummaries: boolean): "visible" | undefined {
   if (part.type === "tool") {
-    if (hidden.has(part.tool)) return
-    if (part.tool === "question" && (part.state.status === "pending" || part.state.status === "running")) return
-    return "visible" as const
+    if (hidden.has(part.tool)) return undefined
+    if (part.tool === "question" && (part.state.status === "pending" || part.state.status === "running")) {
+      return undefined
+    }
+    return "visible"
   }
-  if (part.type === "text") return part.text?.trim() ? ("visible" as const) : undefined
+  if (part.type === "text") return part.text?.trim() ? "visible" : undefined
   if (part.type === "reasoning") {
-    if (showReasoningSummaries && part.text?.trim()) return "visible" as const
-    return
+    if (showReasoningSummaries && part.text?.trim()) return "visible"
+    return undefined
   }
-  if (PART_MAPPING[part.type]) return "visible" as const
-  return
+  if (PART_MAPPING[part.type]) return "visible"
+  return undefined
 }
 
 function clean(value: string) {
@@ -121,7 +124,7 @@ function clean(value: string) {
     .trim()
 }
 
-function heading(text: string) {
+function heading(text: string): string | undefined {
   const markdown = text.replace(/\r\n?/g, "\n")
 
   const html = markdown.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)
@@ -147,6 +150,7 @@ function heading(text: string) {
     const value = clean(strong[1])
     if (value) return value
   }
+  return undefined
 }
 
 export function SessionTurn(
@@ -205,7 +209,7 @@ export function SessionTurn(
   })
 
   const pending = createMemo(() => {
-    if (typeof props.active === "boolean") return
+    if (typeof props.active === "boolean") return undefined
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
       (item): item is AgentAssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
@@ -214,11 +218,11 @@ export function SessionTurn(
 
   const pendingUser = createMemo(() => {
     const item = pending()
-    if (!item?.parentID) return
+    if (!item?.parentID) return undefined
     const messages = allMessages() ?? emptyMessages
     const result = Binary.search(messages, item.parentID, (m) => m.id)
     const msg = result.found ? messages[result.index] : messages.find((m) => m.id === item.parentID)
-    if (!msg || msg.role !== "user") return
+    if (!msg || msg.role !== "user") return undefined
     return msg
   })
 
@@ -315,11 +319,10 @@ export function SessionTurn(
     return undefined
   })
   const errorText = createMemo(() => {
-    const msg = error()?.data?.message
-    if (typeof msg === "string") return unwrap(msg)
-    if (msg === undefined || msg === null) return ""
-    // oxlint-disable-next-line no-base-to-string -- msg is unknown from error data, coercion is intentional
-    return unwrap(String(msg))
+    // `data.message` is whatever the provider put there. Rendering a structured
+    // one as `[object Object]` used to defeat `unwrap`, which is built to read
+    // exactly that shape; serializing first lets it find the real message.
+    return unwrap(readableText(error()?.data?.message))
   })
 
   const status = createMemo(() => {

@@ -1,6 +1,5 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { Hono } from "hono"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
@@ -64,6 +63,8 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
+import { contentfulStatus } from "../../platform/http/status"
+import { asRecord, stringField } from "../../platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
@@ -75,7 +76,7 @@ export type HostedCoreAppOptions = {
   relayTargetLookup?: RelayTargetLookup
   liveSyncRoom: LiveSyncRoomNamespace
   sharedRateLimitStore: SharedRateLimitStore
-  serviceCatalog(auth: SignedControlPlaneAuth): Promise<FirstPartyServiceCatalog>
+  serviceCatalog: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
   cloudWorkspaceAdmission: NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>
   product: StaticProductDescriptor
   requestGuardExemptions: readonly RouteGuardExemption[]
@@ -415,7 +416,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)
   mountControlPlaneRouteContributions({
     contributions: options.routeContributions ?? [],
-    mount: (contribution) => mountOwnedRoute(app, ownership, `contribution:${contribution.id}`, contribution.path, contribution.routes as never),
+    mount: (contribution) => mountOwnedRoute(app, ownership, `contribution:${contribution.id}`, contribution.path, contribution.routes),
   })
   // An API worker's unrouted paths must not render as a PAGE.
   //
@@ -463,7 +464,7 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       },
       services,
     )
-    if ("error" in authResult) return context.json(authResult.error, authResult.status as 401 | 403 | 503)
+    if ("error" in authResult) return context.json(authResult.error, authResult.status)
     if (!authResult.auth) return context.json(sessionInventoryResponse([]))
     return context.json(
       sessionInventoryResponse(await services.authority.listSessions(authResult.auth, { workspaceId })),
@@ -480,7 +481,7 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       },
       services,
     )
-    if ("error" in authResult) return context.json(authResult.error, authResult.status as 401 | 403 | 503)
+    if ("error" in authResult) return context.json(authResult.error, authResult.status)
     if (!authResult.auth) {
       return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
     }
@@ -501,19 +502,20 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       },
       services,
     )
-    if ("error" in authResult) return context.json(authResult.error, authResult.status as 401 | 403 | 503)
+    if ("error" in authResult) return context.json(authResult.error, authResult.status)
     if (!authResult.auth || !services.authority?.resolveSession) {
       return context.json({ error: { code: "SESSION_NOT_FOUND", message: "Session not found" } }, 404)
     }
-    const resolved = (await services.authority.resolveSession(authResult.auth, {
+    const resolved = asRecord(await services.authority.resolveSession(authResult.auth, {
       sessionId: context.req.param("sessionId"),
-    })) as { workspace_id?: string } | null
-    if (!resolved?.workspace_id) {
+    }))
+    const resolvedWorkspaceId = stringField(resolved, "workspace_id")
+    if (!resolvedWorkspaceId) {
       return context.json({ error: { code: "SESSION_NOT_FOUND", message: "Session not found" } }, 404)
     }
     return context.json({
       gatewayUrl: null,
-      workspaceId: resolved.workspace_id,
+      workspaceId: resolvedWorkspaceId,
       directory: null,
       harnessHost: "workspace",
     })
@@ -531,7 +533,7 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       },
       services,
     )
-    if ("error" in authResult) return context.json(authResult.error, authResult.status as 401 | 403 | 503)
+    if ("error" in authResult) return context.json(authResult.error, authResult.status)
     if (!authResult.auth) {
       return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
     }
@@ -553,10 +555,9 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       })
     } catch (error) {
       if (error instanceof AgentMessagePageError) {
-        const status = error.status >= 400 && error.status <= 599 ? error.status : 500
         return context.json(
           { error: { code: "message_page_error", message: error.message } },
-          status as ContentfulStatusCode,
+          contentfulStatus(error.status),
         )
       }
       throw error
@@ -566,10 +567,10 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       context.header("Access-Control-Expose-Headers", "X-Next-Cursor")
       context.header("X-Next-Cursor", cursor)
     }
-    const messages =
-      body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).messages : undefined
+    const record = asRecord(body)
+    const messages = record?.messages
     return context.json({
-      ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
+      ...record,
       messages: Array.isArray(messages) ? messages : [],
       maxEventOrdinal: 0,
     })

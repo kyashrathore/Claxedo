@@ -31,6 +31,8 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { readString } from "../src/shared/json-read"
+
 import { claxedoServerExecArgv } from "../src/main/server-runtime-policy"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import {
@@ -156,7 +158,9 @@ export async function buildCompileCache(input: {
     const execArgv = claxedoServerExecArgv()
     log(`generating with ${execArgv.join(" ")}`)
     const env: Record<string, string> = {
-      ...(process.env as Record<string, string>),
+      // `process.env` declares every value optional; the entries this build
+      // forwards are the ones that are actually set.
+      ...Object.fromEntries(Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, value]]))),
       ELECTRON_RUN_AS_NODE: "1",
       // The runtime's own account of what it cached, which is the only
       // authority on the entry names this build must reproduce.
@@ -177,10 +181,9 @@ export async function buildCompileCache(input: {
         `compile cache generation failed (status ${run.status}, signal ${run.signal})\n${run.stderr?.slice(-4000) ?? ""}`,
       )
     }
-    const { directory, refused } = JSON.parse(fs.readFileSync(report, "utf8")) as {
-      directory?: string
-      refused?: string
-    }
+    const generated: unknown = JSON.parse(fs.readFileSync(report, "utf8"))
+    const directory = readString(generated, "directory")
+    const refused = readString(generated, "refused")
     if (!directory) throw new Error("compile cache generation reported no cache directory")
     assertEvaluation({ entryPath, refused, expectRefusal: input.expectRefusal, log })
 
@@ -313,7 +316,9 @@ function safeFileURLToPath(source: string): string | undefined {
 
 export function resolveElectronBinary(fromDir: string): string {
   const require = createRequire(path.join(fromDir, "package.json"))
-  return require("electron") as string
+  // Named on the binding rather than asserted: `require` answers `any`.
+  const electronPath: string = require("electron")
+  return electronPath
 }
 
 /**

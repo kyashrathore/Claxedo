@@ -14,7 +14,3 @@ export function parkedPaneQueryOptions<T>(resource: string, reason: ParkedPaneQu
     enabled: false,
   })
 }
-
-export function paneQueryOptions<T>(options: unknown): PaneQueryOptions<T> {
-  return options as PaneQueryOptions<T>
-}

@@ -16,6 +16,7 @@ import {
 } from "@claxedo/server-core/usage/projection"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
+import { asRecord, numberField, readJsonRecord } from "../../src/platform/json/index"
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 7, 9, 12)
@@ -113,7 +114,7 @@ async function assertOfflineConvergence(revision: TurnUsageRevision) {
     recordTurnUsageBatch: async ({ revisions }: { revisions: TurnUsageRevision[] }) =>
       revisions.map(() => ({ status: "accepted" as const, activated: false })),
   }
-  const sync = createUsageOutboxSync({ local: local as never, central, limit: 100 })
+  const sync = createUsageOutboxSync({ local, central, limit: 100 })
   const offline = await sync.clearIdentity()
   invariant(offline.pending === 1 && offline.delivered === 0, "offline fact did not remain pending")
   const online = await sync.flush({ org_id: "org-1", user_id: "user-1" })
@@ -202,7 +203,7 @@ export async function runUsageMeteringSmoke() {
     local: {
       current: async () => rows,
       pendingOutbox: async () => rows,
-    } as never,
+    },
     identity: async () => undefined,
     outbox: {
       flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -213,8 +214,9 @@ export async function runUsageMeteringSmoke() {
   const routeResponse = await route.request(`/?since=${NOW - 90 * DAY}&until=${NOW}&timezone=UTC&view=claxedo&group=provider`)
   const routeElapsed = performance.now() - routeStarted
   invariant(routeResponse.ok, `production route returned ${routeResponse.status}`)
-  const routeBody = await routeResponse.json() as { claxedo?: { totals?: { turnCount?: number } } }
-  invariant(routeBody.claxedo?.totals?.turnCount === rows.length, "production route lost benchmark facts")
+  const routeBody = await readJsonRecord(routeResponse)
+  const turnCount = numberField(asRecord(asRecord(routeBody?.claxedo)?.totals), "turnCount")
+  invariant(turnCount === rows.length, "production route lost benchmark facts")
   invariant(routeElapsed <= ROUTE_BUDGET_MS, `production route ${routeElapsed.toFixed(1)}ms exceeded ${ROUTE_BUDGET_MS}ms`)
 
   return {

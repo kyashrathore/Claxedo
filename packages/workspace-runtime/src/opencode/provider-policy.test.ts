@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createOpenCodeRuntime } from "./runtime"
-import { authorizeWorkspace } from "./scope"
+import { WorkspaceScope } from "./scope"
 
 test("provider policy updates the real SDK catalog, is workspace-scoped, and survives reopening", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-provider-policy-"))
@@ -19,8 +19,8 @@ test("provider policy updates the real SDK catalog, is workspace-scoped, and sur
   const b = path.join(root, "b")
   fs.mkdirSync(a)
   fs.mkdirSync(b)
-  const scopeA = authorizeWorkspace({ workspaceID: "a", directory: a })
-  const scopeB = authorizeWorkspace({ workspaceID: "b", directory: b })
+  const scopeA = WorkspaceScope.authorize({ workspaceID: "a", directory: a })
+  const scopeB = WorkspaceScope.authorize({ workspaceID: "b", directory: b })
   let runtime = createOpenCodeRuntime(options)
   const ids = async (scope: typeof scopeA) => (await runtime.catalog.models(scope)).map((model) => model.providerID)
   try {

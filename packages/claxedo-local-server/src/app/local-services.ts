@@ -36,6 +36,7 @@ import {
   persistMessageEvent,
   readSessionMessages,
   readSessionMaxEventOrdinal,
+  subscribeMessageReplay,
 } from "@claxedo/server-core/session/message-replay"
 import { syncCloudMessages } from "@claxedo/server-core/session/sync"
 
@@ -44,7 +45,11 @@ export function localSessionProjectionStore(): SessionProjectionStore {
   return {
     sync_session_meta: syncSessionMeta,
     sync_session_metas: syncSessionMetas,
-    sync_session_messages: syncCloudMessages,
+    // The port allows a workspace-less projection; `syncCloudMessages` reads
+    // `ws.kind` and crashed on one. No workspace stores nothing, which is the
+    // same answer it already gives for a non-cloud workspace.
+    sync_session_messages: async (ws, sessionID, messages, options) =>
+      ws ? await syncCloudMessages(ws, sessionID, messages, options) : false,
     put_session_meta: putSessionMeta,
     delete_session_meta: deleteSessionMeta,
     session_meta: sessionMeta,
@@ -55,16 +60,19 @@ export function localSessionProjectionStore(): SessionProjectionStore {
     source_channel_session_counts_by_week: sourceChannelSessionCountsByWeek,
     read_session_messages: readSessionMessages,
     read_session_max_event_ordinal: readSessionMaxEventOrdinal,
-  } as SessionProjectionStore
+  }
 }
 
 export function localDurableSessionLog(): DurableSessionLog {
+  // The backend is the port: `persist_message_event` + `subscribe_message_replay`.
+  // The object here previously listed four differently-named projection-store
+  // functions and was silenced with `as never`, so both port members resolved
+  // to `undefined` and this log was inert. Same wiring as the SQLite central
+  // store's `durableSessionLog`.
   return createDurableSessionLog({
-    persistMessageEvent,
-    readSessionMessages,
-    readSessionMaxEventOrdinal,
-    mode: getSessionWriteMode,
-  } as never)
+    persist_message_event: persistMessageEvent,
+    subscribe_message_replay: subscribeMessageReplay,
+  })
 }
 
 export type LocalControlPlaneServicesOptions = {

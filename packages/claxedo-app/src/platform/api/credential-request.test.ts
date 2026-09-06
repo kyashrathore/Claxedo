@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 
 import { claxedoCredentialRequest } from "./credential-request"
+import { requestUrl } from "@/lib/url"
 
 const originalFetch = globalThis.fetch
 const calls: Array<{ url: string; init?: RequestInit }> = []
@@ -8,7 +9,7 @@ const calls: Array<{ url: string; init?: RequestInit }> = []
 beforeEach(() => {
   calls.length = 0
   globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    calls.push({ url: String(input), init })
+    calls.push({ url: requestUrl(input), init })
     return Response.json({})
   }) as typeof fetch
 })

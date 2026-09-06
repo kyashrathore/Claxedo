@@ -11,6 +11,7 @@ import type {
 } from "../types.js"
 import { DefinitiveRefreshError } from "../tokens.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
+import { record, text } from "../json.js"
 
 const DEVICE_CODE_URL = "https://github.com/login/device/code"
 const TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -67,16 +68,21 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
       body: new URLSearchParams(params).toString(),
     })
 
-  const toTokens = (body: Record<string, unknown>): OAuthTokens => ({
-    accessToken: body.access_token as string,
-    ...(typeof body.refresh_token === "string" ? { refreshToken: body.refresh_token } : {}),
-    ...(typeof body.expires_in === "number" ? { expiresAt: now() + body.expires_in * 1000 } : {}),
-  })
+  /** Undefined when the body carries no usable access token — the one field callers must have. */
+  const toTokens = (body: Record<string, unknown>): OAuthTokens | undefined => {
+    const accessToken = text(body.access_token)
+    if (!accessToken) return undefined
+    return {
+      accessToken,
+      ...(typeof body.refresh_token === "string" ? { refreshToken: body.refresh_token } : {}),
+      ...(typeof body.expires_in === "number" ? { expiresAt: now() + body.expires_in * 1000 } : {}),
+    }
+  }
 
   const device: DeviceAuth = {
     async start(): Promise<DeviceGrant> {
       const res = await form(DEVICE_CODE_URL, { client_id: clientId! })
-      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
+      const body = record(await res.json().catch(() => ({}))) ?? {}
       if (!res.ok || typeof body.device_code !== "string" || typeof body.user_code !== "string") {
         throw new Error("github_device_start_failed")
       }
@@ -99,8 +105,9 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
       // Unreachable or broken upstream says nothing about the user's choice,
       // so the grant stays alive and the next poll asks again.
       if (!res || res.status >= 500) return { status: "pending" }
-      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
-      if (typeof body.access_token === "string") return { status: "complete", tokens: toTokens(body) }
+      const body = record(await res.json().catch(() => ({}))) ?? {}
+      const tokens = toTokens(body)
+      if (tokens) return { status: "complete", tokens }
       const error = typeof body.error === "string" ? body.error : ""
       if (RESTARTABLE_POLL_ERRORS.has(error)) return { status: "expired" }
       if (TERMINAL_POLL_ERRORS.has(error)) return { status: "denied" }
@@ -133,8 +140,9 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
                 grant_type: "refresh_token",
                 refresh_token: refreshToken,
               })
-              const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
-              if (typeof body.access_token === "string") return toTokens(body)
+              const body = record(await res.json().catch(() => ({}))) ?? {}
+              const refreshed = toTokens(body)
+              if (refreshed) return refreshed
               // A spent or rejected refresh token can only be repaired by
               // reconnecting, so it must not read as a retryable blip.
               if (typeof body.error === "string") throw new DefinitiveRefreshError(body.error)
@@ -154,8 +162,8 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
           })
           if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
           if (!res.ok) return { ok: false, reason: "network" }
-          const body = (await res.json().catch(() => ({}))) as { login?: unknown }
-          return { ok: true, ...(typeof body.login === "string" ? { accountLabel: body.login } : {}) }
+          const login = text(record(await res.json().catch(() => ({})))?.login)
+          return { ok: true, ...(login ? { accountLabel: login } : {}) }
         } catch {
           return { ok: false, reason: "network" }
         }
@@ -186,8 +194,8 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
 }
 
 function repositoryFromGitHub(value: unknown): CodeHostRepository[] {
-  if (!value || typeof value !== "object") return []
-  const row = value as Record<string, unknown>
+  const row = record(value)
+  if (!row) return []
   if (
     (typeof row.id !== "number" && typeof row.id !== "string") ||
     typeof row.name !== "string" ||
@@ -195,9 +203,7 @@ function repositoryFromGitHub(value: unknown): CodeHostRepository[] {
     typeof row.clone_url !== "string" ||
     typeof row.private !== "boolean"
   ) return []
-  const permissions = row.permissions && typeof row.permissions === "object"
-    ? row.permissions as Record<string, unknown>
-    : {}
+  const permissions = record(row.permissions) ?? {}
   return [{
     id: String(row.id),
     name: row.name,

@@ -237,7 +237,7 @@ describe("the two groups are mutually exclusive", () => {
       expect(Array.isArray(result.modes)).toBe(true)
       if (result.modes.length === 0) expect(result.unavailable, harness).toBeTruthy()
     }
-    expect(Object.keys(PERMISSION_MECHANISMS).sort()).toEqual([...HARNESS_IDS].sort())
+    expect(Object.keys(PERMISSION_MECHANISMS).sort((a, b) => a.localeCompare(b))).toEqual([...HARNESS_IDS].sort((a, b) => a.localeCompare(b)))
   })
 })
 

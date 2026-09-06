@@ -17,7 +17,7 @@ type BaseInternals = {
   }
   currentModel: string
   dirs: Set<string>
-  sessions: Map<string, unknown>
+  processes: Map<string, unknown>
   busySessions: Set<string>
   shared: {
     proc: { alive: boolean } | null
@@ -39,7 +39,7 @@ function adapter<Extra extends object = Record<never, never>>() {
     options: { connection: { kind: "process", command: "fake-acp" } },
     currentModel: "",
     dirs: new Set(),
-    sessions: new Map(),
+    processes: new Map(),
     busySessions: new Set(),
     shared: {
       proc: null,

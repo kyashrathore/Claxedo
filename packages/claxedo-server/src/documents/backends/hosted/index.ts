@@ -15,6 +15,7 @@ import {
   type DocumentIndexScope,
 } from "../../index-contract"
 import { mapBounded } from "../../map-bounded"
+import { asRecord, parseJson } from "../../../platform/json/index"
 
 type Locator = Readonly<{
   version: 1
@@ -412,7 +413,7 @@ function digest(value: string) {
 
 function parseRepositoryPointer(body: Uint8Array) {
   try {
-    const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as Record<string, unknown>
+    const value = asRecord(parseJson(new TextDecoder("utf-8", { fatal: true }).decode(body)))
     return value?.version === 1 && typeof value.documentId === "string" && /^[A-Za-z0-9_-]+$/.test(value.documentId)
       ? value.documentId
       : undefined
@@ -453,15 +454,15 @@ function parse(body: Uint8Array, expected: Readonly<{ orgId: string; projectId: 
 }
 
 function parseLocator(body: Uint8Array, orgId: string, documentId: string): Locator {
-  const value = JSON.parse(new TextDecoder().decode(body)) as unknown
-  if (!value || typeof value !== "object") throw corruptLocator()
-  const locator = value as Record<string, unknown>
+  const locator = asRecord(parseJson(new TextDecoder().decode(body)))
+  if (!locator) throw corruptLocator()
+  const state = locator.state
   if (
     Object.keys(locator).some(
       (field) => !["version", "state", "orgId", "projectId", "documentId", "objectKey"].includes(field),
     ) ||
     locator.version !== 1 ||
-    !["active", "deleting", "deleted"].includes(locator.state as string) ||
+    (state !== "active" && state !== "deleting" && state !== "deleted") ||
     locator.orgId !== orgId ||
     locator.documentId !== documentId ||
     typeof locator.projectId !== "string" ||
@@ -476,7 +477,15 @@ function parseLocator(body: Uint8Array, orgId: string, documentId: string): Loca
   ) {
     throw corruptLocator()
   }
-  return locator as Locator
+  // Every field the type promises has just been checked one line at a time.
+  return {
+    version: 1,
+    state,
+    orgId,
+    projectId: locator.projectId,
+    documentId,
+    objectKey: locator.objectKey,
+  }
 }
 
 function documentIdFromKey(objectKey: string, scope: DocumentIndexScope) {

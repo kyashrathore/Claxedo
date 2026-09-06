@@ -12,6 +12,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authentication"
 
 import { signedOrError } from "../workspace/route-support"
+import { readJsonRecord } from "../platform/json/index"
 
 const BODY_LIMIT_BYTES = 16 * 1024
 const MAX_SUBJECT_LENGTH = 512
@@ -43,7 +44,7 @@ export function UserDeployedIdentityAdmissionRoutes(options: {
       requireSigned: true,
     })
     if ("error" in authenticated) {
-      return context.json(authenticated.error, authenticated.status as 401 | 403 | 503)
+      return context.json(authenticated.error, authenticated.status)
     }
     if (!authenticated.auth) {
       return context.json({
@@ -51,7 +52,7 @@ export function UserDeployedIdentityAdmissionRoutes(options: {
       }, 401)
     }
 
-    const body = await context.req.json().catch(() => undefined) as Record<string, unknown> | undefined
+    const body = await readJsonRecord(context.req.raw)
     const subject = typeof body?.subject === "string" ? body.subject.trim() : ""
     const role = body?.role
     if (!subject || subject.length > MAX_SUBJECT_LENGTH || (role !== "member" && role !== "admin")) {
@@ -78,7 +79,7 @@ export function UserDeployedIdentityAdmissionRoutes(options: {
       return context.json({ admitted: true, role, user: { id: admitted.userId } })
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
-        return context.json(controlPlaneAuthErrorBody(error), error.status as 401 | 403 | 503)
+        return context.json(controlPlaneAuthErrorBody(error), error.status)
       }
       const code = authorityErrorCode(error)
       if (code) {
@@ -93,7 +94,7 @@ export function UserDeployedIdentityAdmissionRoutes(options: {
 }
 
 function authorityErrorCode(error: unknown) {
-  if (!error || typeof error !== "object") return
+  if (!error || typeof error !== "object") return undefined
   const code = (error as { code?: unknown }).code
   return code === "invalid_input"
     || code === "identity_conflict"

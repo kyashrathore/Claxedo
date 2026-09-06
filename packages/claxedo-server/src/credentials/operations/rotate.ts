@@ -179,7 +179,7 @@ export async function rotateEnvelopeKeys(input: {
     }
   }
 
-  for await (const item of input.items as AsyncIterable<EnvelopeRotationItem>) {
+  for await (const item of input.items) {
     const orgId = item.orgId?.trim()
     if (!orgId) {
       record({

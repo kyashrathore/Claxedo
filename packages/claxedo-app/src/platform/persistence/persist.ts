@@ -1,9 +1,11 @@
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import { scopeUrl } from "@/lib/url"
+import { isRecord } from "@/lib/record"
 import { createSignal, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 import { isDemoMode } from "@/lib/runtime-mode"
+import { eraseStoreTuple, restoreStoreTuple } from "@/platform/persistence/solid-store-erasure"
 
 type InitType = Promise<string> | string | null
 type PersistedWithReady<T> = [Store<T>, SetStoreFunction<T>, InitType, Accessor<boolean>]
@@ -71,7 +73,7 @@ function cacheSet(key: string, value: string) {
 
 function cacheGet(key: string) {
   const entry = cache.get(key)
-  if (!entry) return
+  if (!entry) return undefined
   cache.delete(key)
   cache.set(key, entry)
   return entry.value
@@ -160,10 +162,6 @@ function write(storage: Storage, key: string, value: string) {
 
 function snapshot(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as unknown
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function merge(defaults: unknown, value: unknown): unknown {
@@ -423,6 +421,16 @@ export function removePersisted(target: { storage?: string; key: string }) {
   webStorage(target.storage).removeItem(target.key)
 }
 
+/**
+ * The key-value surface both storage shapes share. `await` on a synchronous
+ * return is a no-op, so a caller that awaits every call works against either.
+ */
+type AwaitableStore = {
+  getItem: (key: string) => Promise<string | null> | string | null
+  setItem: (key: string, value: string) => unknown
+  removeItem: (key: string) => unknown
+}
+
 export function persisted<T>(
   target: string | PersistTarget,
   store: [Store<T>, SetStoreFunction<T>],
@@ -435,21 +443,12 @@ export function persisted<T>(
 
   const isDesktop = platform.platform === "desktop" && !!platform.storage
 
-  const currentStorage = (() => {
-    if (isDesktop) return platform.storage?.(config.storage)
-    return webStorage(config.storage)
-  })()
-
-  const legacyStorage = (() => {
-    if (!isDesktop) return webLegacy()
-    if (!config.storage) return platform.storage?.()
-    return platform.storage?.(LEGACY_STORAGE)
-  })()
-
   const storage = (() => {
     if (!isDesktop) {
-      const current = currentStorage as SyncStorage
-      const legacyStore = legacyStorage as SyncStorage
+      // The web path is `webStorage`/`webLegacy` by construction; both are
+      // synchronous, so this branch never had to claim it.
+      const current = webStorage(config.storage)
+      const legacyStore = webLegacy()
 
       // Pre-scan the current key once so corrupted JSON does not get "stuck"
       // behind a lazy init. This makes the self-heal deterministic and keeps
@@ -527,8 +526,12 @@ export function persisted<T>(
       return api
     }
 
-    const current = currentStorage as AsyncStorage
-    const legacyStore = legacyStorage as AsyncStorage | undefined
+    // The desktop `storage` port may hand back either shape. Every use below
+    // awaits, which is correct for both, so the branch declares what it needs
+    // rather than asserting the port returned the async one.
+    const current: AwaitableStore = platform.storage?.(config.storage) ?? memoryDirect()
+    const legacyStore: AwaitableStore | undefined =
+      config.storage ? platform.storage?.(LEGACY_STORAGE) : platform.storage?.()
 
     // Mirror the sync-path pre-scan: on desktop we can persist via async storage,
     // and a corrupted JSON payload (truncated write) should not get "stuck"
@@ -611,9 +614,9 @@ export function persisted<T>(
     return api
   })()
 
-  // as-any: makePersisted requires an erased Solid store tuple before restoring the caller's generic type.
-  const input = store as unknown as [Store<unknown>, SetStoreFunction<unknown>]
-  const [state, setState, init] = makePersisted(input, { name: config.key, storage })
+  // `makePersisted` takes an erased tuple; `@/platform/persistence/solid-store-erasure`
+  // owns both halves of that round trip and says why neither is expressible.
+  const [state, setState, init] = makePersisted(eraseStoreTuple(store), { name: config.key, storage })
 
   const isAsync = init instanceof Promise
   const [ready, setReady] = createSignal(!isAsync)
@@ -623,5 +626,6 @@ export function persisted<T>(
     })
   }
 
-  return [state as Store<T>, setState as SetStoreFunction<T>, init, ready]
+  const [typedState, typedSetState] = restoreStoreTuple<T>(state, setState)
+  return [typedState, typedSetState, init, ready]
 }

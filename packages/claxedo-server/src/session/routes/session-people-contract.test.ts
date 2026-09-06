@@ -1,9 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import type {
-  OrgId,
-  WorkspaceAuthority,
-} from "@claxedo/server-core/platform/auth/authority"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServices } from "../../authority/services"
 import { ControlPlaneSessionRoutes } from "./control-plane-session"
 import { SessionPeopleControlRoutes } from "./session-people-routes"

@@ -17,12 +17,16 @@ function stubRect(el: Element, width: number, height: number) {
 /** Route hit-testing (`document.elementFromPoint`) to a chosen element; jsdom's
  *  own implementation always returns null. */
 function withElementFromPoint<T>(el: Element, run: () => T): T {
-  const original = document.elementFromPoint
-  document.elementFromPoint = () => el
+  // jsdom does not implement `elementFromPoint`, so this INSTALLS one rather
+  // than replacing one (`vi.spyOn` needs an existing member). Saving and
+  // restoring the property descriptor also means no unbound method is held.
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint")
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, writable: true, value: () => el })
   try {
     return run()
   } finally {
-    document.elementFromPoint = original
+    if (original) Object.defineProperty(document, "elementFromPoint", original)
+    else Reflect.deleteProperty(document, "elementFromPoint")
   }
 }
 

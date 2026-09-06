@@ -1,11 +1,8 @@
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
+import { isRecord, readString } from "@/lib/record"
 
 export type ShellBootstrap = {
   path: GlobalBootstrapState["path"]
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
 }
 
 export function shellBootstrapUrl(baseUrl: string) {
@@ -15,8 +12,22 @@ export function shellBootstrapUrl(baseUrl: string) {
 }
 
 function parseShellBootstrap(body: unknown): ShellBootstrap | undefined {
-  if (!isRecord(body) || body.healthy !== true || !isRecord(body.path)) return undefined
-  return { path: body.path as GlobalBootstrapState["path"] }
+  if (!isRecord(body) || body.healthy !== true) return undefined
+  const path = body.path
+  if (!isRecord(path)) return undefined
+  // `ClaxedoPath` is five directory strings. Reading them by name is what the
+  // assertion used to claim without checking; a field the server omits reads
+  // as empty rather than as an `undefined` the declared type forbids.
+  const directory = (key: string) => readString(path, key) ?? ""
+  return {
+    path: {
+      home: directory("home"),
+      state: directory("state"),
+      config: directory("config"),
+      worktree: directory("worktree"),
+      directory: directory("directory"),
+    },
+  }
 }
 
 export async function fetchShellBootstrap(input: {

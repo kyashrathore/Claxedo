@@ -64,8 +64,11 @@ export function DialogEditProject(props: { project: LocalProject }) {
   function handleFileSelect(file: File) {
     if (!file.type.startsWith("image/")) return
     const reader = new FileReader()
-    reader.onload = (e) => {
-      setStore("iconUrl", e.target?.result as string)
+    reader.onload = () => {
+      // `readAsDataURL` always yields a string; anything else means the read
+      // did not produce a data URL and there is no icon to set.
+      if (typeof reader.result !== "string") return
+      setStore("iconUrl", reader.result)
       setStore("iconHover", false)
     }
     reader.readAsDataURL(file)
@@ -88,7 +91,8 @@ export function DialogEditProject(props: { project: LocalProject }) {
   }
 
   function handleInputChange(e: Event) {
-    const input = e.target as HTMLInputElement
+    const input = e.target
+    if (!(input instanceof HTMLInputElement)) return
     const file = input.files?.[0]
     if (file) handleFileSelect(file)
   }

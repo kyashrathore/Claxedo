@@ -36,6 +36,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { spawnSync } from "node:child_process"
 
+import { readRecord } from "../src/shared/json-read"
+
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
 import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-resources"
@@ -126,13 +128,13 @@ function asarHeaderFiles(archive: string): string[] {
     const jsonLen = head.readUInt32LE(12)
     const jsonBuf = Buffer.alloc(jsonLen)
     fs.readSync(fd, jsonBuf, 0, jsonLen, 16)
-    const header = JSON.parse(jsonBuf.toString())
+    const header: unknown = JSON.parse(jsonBuf.toString())
     const files: string[] = []
-    const walk = (node: { files?: Record<string, unknown> }, prefix: string) => {
-      for (const [name, child] of Object.entries(node.files ?? {})) {
+    const walk = (node: unknown, prefix: string) => {
+      for (const [name, child] of Object.entries(readRecord(node, "files") ?? {})) {
         const p = prefix ? `${prefix}/${name}` : name
-        if (child && typeof child === "object" && "files" in child) {
-          walk(child as { files?: Record<string, unknown> }, p)
+        if (readRecord(child, "files")) {
+          walk(child, p)
           continue
         }
         // File entries carry content (size/offset); directory entries do not.

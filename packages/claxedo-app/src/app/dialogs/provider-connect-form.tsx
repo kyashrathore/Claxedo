@@ -24,6 +24,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
+import { errorMessage } from "@/lib/server-errors"
 
 export type ProviderConnectFormProps = {
   provider: string
@@ -106,7 +107,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const fail = (err: unknown) => {
     setStore("state", "error")
     setStore("saving", false)
-    setStore("error", err instanceof Error ? err.message : String(err))
+    setStore("error", errorMessage(err))
   }
 
   async function finishOAuth(code?: string) {
@@ -178,7 +179,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
       })
       await complete()
     } catch (err) {
-      setStore("error", err instanceof Error ? err.message : String(err))
+      setStore("error", errorMessage(err))
     } finally {
       setStore("saving", false)
     }
@@ -323,7 +324,9 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
           </div>
           <List
             items={form.methods}
-            key={(item) => item?.label}
+            // A method the catalog did not name still needs a key, and the two
+            // kinds are never listed twice.
+            key={(item) => item?.label ?? item?.type ?? ""}
             onSelect={(item, index) => {
               if (!item) return
               if (item.type === "oauth") {

@@ -1,13 +1,16 @@
 /// <reference path="../env.d.ts" />
 import { tool } from "@opencode-ai/plugin"
 
+/** Declared as a tuple so the tool's argument enum is derived, not asserted. */
+const TEAM_NAMES = ["tui", "desktop_web", "core", "inference", "windows"] as const
+
 const TEAM = {
   tui: ["kommander", "simonklee"],
   desktop_web: ["Hona", "Brendonovich"],
   core: ["jlongster", "rekram1-node", "nexxeln", "kitlangton", "starptech"],
   inference: ["fwang", "MrMushrooooom", "starptech"],
   windows: ["Hona"],
-} as const
+} as const satisfies Record<(typeof TEAM_NAMES)[number], readonly string[]>
 
 function pick<T>(items: readonly T[]) {
   return items[Math.floor(Math.random() * items.length)]
@@ -19,14 +22,17 @@ function getIssueNumber(): number {
   return issue
 }
 
-async function githubFetch(endpoint: string, options: RequestInit = {}) {
+async function githubFetch(endpoint: string, options: RequestInit = {}): Promise<unknown> {
   const response = await fetch(`https://api.github.com${endpoint}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json",
-      ...(options.headers instanceof Headers ? Object.fromEntries(options.headers.entries()) : options.headers),
+      // `HeadersInit` also covers `string[][]`, which spreads into an object as
+      // numeric indices. Normalizing through Headers keeps caller overrides
+      // winning (they come last) without depending on the input's shape.
+      ...Object.fromEntries(new Headers(options.headers).entries()),
     },
   })
   if (!response.ok) {
@@ -40,9 +46,7 @@ export default tool({
 
 Provide the team that should own the issue. This tool picks a random assignee from that team and does not apply labels.`,
   args: {
-    team: tool.schema
-      .enum(Object.keys(TEAM) as [keyof typeof TEAM, ...(keyof typeof TEAM)[]])
-      .describe("The owning team"),
+    team: tool.schema.enum(TEAM_NAMES).describe("The owning team"),
   },
   async execute(args) {
     const issue = getIssueNumber()

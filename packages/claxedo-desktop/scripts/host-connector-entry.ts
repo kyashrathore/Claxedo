@@ -1,6 +1,8 @@
 import { createHostConnector, type ConnectorTransport } from "@claxedo/host-connector/connector"
 import { createHostKeyPair, hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
 
+import { readArray, readRecord, readUnknown } from "../src/shared/json-read"
+
 import {
   HOST_ENROLLMENT_OPERATIONS,
   parseHostConnectorParentMessage,
@@ -92,36 +94,29 @@ export function runHostConnectorChild(port: ChildPort) {
   const transport: ConnectorTransport = {
     createRequest: async ({ hostId }) => {
       const name = HOST_ENROLLMENT_OPERATIONS.createRequest
-      const value = (await requestAccountOperation(name, { hostId })) as Record<string, unknown> | undefined
+      const value = await requestAccountOperation(name, { hostId })
       return {
-        request_id: requireString(value?.request_id, "request_id", name),
-        nonce: requireString(value?.nonce, "nonce", name),
-        expires_at: requireNumber(value?.expires_at, "expires_at", name),
+        request_id: requireString(readUnknown(value, "request_id"), "request_id", name),
+        nonce: requireString(readUnknown(value, "nonce"), "nonce", name),
+        expires_at: requireNumber(readUnknown(value, "expires_at"), "expires_at", name),
       }
     },
     enroll: async (input) => {
       const name = HOST_ENROLLMENT_OPERATIONS.enroll
-      const value = (await requestAccountOperation(name, { ...input })) as
-        | { enrollment?: Record<string, unknown> }
-        | undefined
-      const enrollment = value?.enrollment
+      const enrollment = readRecord(await requestAccountOperation(name, { ...input }), "enrollment")
       return {
-        enrollment_id: requireString(enrollment?.enrollment_id, "enrollment_id", name),
-        host_id: requireString(enrollment?.host_id, "host_id", name),
-        expires_at: requireNumber(enrollment?.expires_at, "expires_at", name),
+        enrollment_id: requireString(readUnknown(enrollment, "enrollment_id"), "enrollment_id", name),
+        host_id: requireString(readUnknown(enrollment, "host_id"), "host_id", name),
+        expires_at: requireNumber(readUnknown(enrollment, "expires_at"), "expires_at", name),
       }
     },
     heartbeat: async (input) => {
       const name = HOST_ENROLLMENT_OPERATIONS.heartbeat
-      const value = (await requestAccountOperation(name, { ...input })) as Record<string, unknown> | undefined
-      const assigned = Array.isArray(value?.assigned_workspace_ids)
-        ? (value.assigned_workspace_ids as unknown[]).filter((id): id is string => typeof id === "string")
-        : undefined
-      const tunnel = value?.hostTunnel && typeof value.hostTunnel === "object" && !Array.isArray(value.hostTunnel)
-        ? (value.hostTunnel as Record<string, unknown>)
-        : undefined
+      const value = await requestAccountOperation(name, { ...input })
+      const assigned = readArray(value, "assigned_workspace_ids")?.filter((id): id is string => typeof id === "string")
+      const tunnel = readRecord(value, "hostTunnel")
       return {
-        expires_at: requireNumber(value?.expires_at, "expires_at", name),
+        expires_at: requireNumber(readUnknown(value, "expires_at"), "expires_at", name),
         ...(assigned ? { assigned_workspace_ids: assigned } : {}),
         ...(tunnel ? { hostTunnel: tunnel } : {}),
       }

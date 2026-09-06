@@ -1,5 +1,5 @@
 import { isAbortError } from "@/lib/abort-error"
-import { record, reportRuntimeContractMismatch, runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
+import { reportRuntimeContractMismatch, runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, createEffect, on, onCleanup, onMount } from "solid-js"
@@ -10,7 +10,6 @@ import { centralTransportForServer, createTransport } from "@/platform/runtime/t
 import { useServer } from "@/app/connection/server"
 import { authFetch } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
-import { useAccountPort } from "@/platform/account/account-provider"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
@@ -111,7 +110,6 @@ const globalSDKContextInput = {
     const server = useServer()
     const platform = usePlatform()
     const principal = usePrincipal()
-    const account = useAccountPort()
     const abort = new AbortController()
 
     let liveSession: LiveSession | undefined
@@ -178,11 +176,8 @@ const globalSDKContextInput = {
         coalesceKey: key,
         supersededDelta: (directory, payload) => {
           if (!partUpdateSupersedesDeltas(payload)) return undefined
-          const part = record((payload.properties as { part?: unknown }).part)
-          if (typeof part?.messageID === "string" && typeof part.id === "string") {
-            return deltaKey(directory, part.messageID, part.id)
-          }
-          return undefined
+          const part = payload.properties.part
+          return deltaKey(directory, part.messageID, part.id)
         },
         deltaIdentity: (directory, payload) => {
           if (payload.type !== "message.part.delta") return undefined
@@ -208,6 +203,10 @@ const globalSDKContextInput = {
     const projections: RuntimeProjectionCache = new Map()
     let run: Promise<void> | undefined
     let started = false
+    // Both halves are load-bearing for every stream loop below: `stop()`
+    // clears `started` without aborting `abort` (a later `start()` reuses the
+    // same scope), and scope teardown aborts without going through `stop()`.
+    const streaming = () => started && !abort.signal.aborted
     let lastGlobalEventId: string | undefined
     let lastRuntimeEventId: string | undefined
     let liveSessionRestartTimer: ReturnType<typeof setTimeout> | undefined
@@ -269,7 +268,7 @@ const globalSDKContextInput = {
       const releaseLane = registerSessionEventStreamLane("runtime-events")
       runtimeRun = (async () => {
         let failures = 0
-        while (!abort.signal.aborted && started) {
+        while (streaming()) {
           const quietDelay = fastSessionSwitchAnyQuietDelay()
           if (quietDelay > 0) {
             await wait(quietDelay)
@@ -334,7 +333,7 @@ const globalSDKContextInput = {
                 reportedContractVersion = reportRuntimeContractMismatch({
                   frame: item, reported: reportedContractVersion, serverUrl: currentServer.http.url,
                   live: eventLiveSession(),
-                  publish: (directory, event) => { enqueue(directory, event as Event); flush() },
+                  publish: (directory, event) => { enqueue(directory, event); flush() },
                 })
                 continue
               }
@@ -425,7 +424,7 @@ const globalSDKContextInput = {
             reportSessionEventStreamClosed("runtime-events")
           }
 
-          if (abort.signal.aborted || !started) return
+          if (!streaming()) return
           failures = becameReady ? 0 : failures + 1
           await wait(reconnectBackoffMs(failures))
         }
@@ -443,8 +442,7 @@ const globalSDKContextInput = {
       run = (async () => {
         void startRuntimeEvents()
         let failures = 0
-        // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
-        while (!abort.signal.aborted && started) {
+        while (streaming()) {
           const quietDelay = fastSessionSwitchAnyQuietDelay()
           if (quietDelay > 0) {
             await wait(quietDelay)
@@ -499,7 +497,7 @@ const globalSDKContextInput = {
             heartbeat.clear()
           }
 
-          if (abort.signal.aborted || !started) return
+          if (!streaming()) return
           // Reset backoff once the stream actually delivered data; otherwise grow
           // it so a persistent 401/network failure stops hammering the server.
           failures = becameReady ? 0 : failures + 1
@@ -530,7 +528,11 @@ const globalSDKContextInput = {
      * not coming up; the wait is dropped rather than left behind.
      */
     const ready = async (timeoutMs = 8_000) => {
-      start()
+      // `start()` resolves only when the stream loops end (at `stop()`), so
+      // awaiting it here would hold the caller for the life of the session.
+      // The loops handle their own failures; `ready` waits on the streams
+      // being OPEN, which is what the race below does.
+      void start()
       const give = new AbortController()
       await Promise.race([
         whenSessionEventStreamsOpen(sessionEventScopeId(), { signal: give.signal }),

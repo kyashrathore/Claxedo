@@ -170,6 +170,11 @@ const observeWorkspacePanelInteraction = async (params: {
       case "close-tab":
         return tabsSnapshot().openTabIds.length < mode.openTabsBefore
     }
+    // The switch covers every `mode.kind`, so this is unreachable. Stating it
+    // gives the function one return contract, and a new mode fails to compile
+    // here rather than silently reading as "not yet".
+    const unhandled: never = mode
+    throw new Error(`workspace-interactions mode is not implemented: ${JSON.stringify(unhandled)}`)
   }
   const ready = (): boolean => {
     switch (mode.kind) {
@@ -214,6 +219,11 @@ const observeWorkspacePanelInteraction = async (params: {
         return tabs.activeTabId !== undefined && !loadingVisible()
       }
     }
+    // The switch covers every `mode.kind`, so this is unreachable. Stating it
+    // gives the function one return contract, and a new mode fails to compile
+    // here rather than silently reading as "not yet".
+    const unhandled: never = mode
+    throw new Error(`workspace-interactions mode is not implemented: ${JSON.stringify(unhandled)}`)
   }
   let acknowledgedMs: number | undefined
   let stableFrames = 0

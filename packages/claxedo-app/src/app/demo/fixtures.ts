@@ -1,3 +1,5 @@
+import { isRecord } from "@/lib/record"
+
 type Model = {
   id: string
   name: string
@@ -248,10 +250,6 @@ let cache: Promise<DemoFixtures> | undefined
 
 function clone<T>(value: T): T {
   return structuredClone(value)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object"
 }
 
 function isDemoFixtures(value: unknown): value is DemoFixtures {

@@ -300,7 +300,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       return
     }
     let agentSessionId = current
-    const session = this.store.getSession(id) as { title?: string | null } | null
+    const session = this.store.getSession(id)
     let created = Date.now()
     log.info("sendMessage: found session in store", { id, agentSessionId })
     if (input.model?.modelID) {
@@ -316,7 +316,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       fresh = result.isNew
     } catch (err) {
       log.error("sendMessage: failed to get/spawn ACP process", { err, directory })
-      yield sessionError(`Failed to start ACP process: ${err}`, id)
+      yield sessionError(`Failed to start ACP process: ${errorMessage(err)}`, id)
       return
     }
     const processKey = this.sessionProcessMap().get(id) ?? this.keyForSession(id, directory)

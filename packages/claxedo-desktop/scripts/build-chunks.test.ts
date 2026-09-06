@@ -1,8 +1,7 @@
-import assert from "node:assert/strict"
+import { expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import test from "node:test"
 
 const dir = path.resolve(import.meta.dir, "../out/renderer/assets")
 
@@ -38,9 +37,8 @@ test("no duplicate chunk", () => {
     .filter((list) => list.length > 1)
     .sort((a, b) => a[0].localeCompare(b[0]))
 
-  assert.equal(
+  expect(
     dups.length,
-    0,
     `duplicate JS chunks found:\n${dups.map((list) => `  ${list.join(", ")}`).join("\n")}`,
-  )
+  ).toBe(0)
 })

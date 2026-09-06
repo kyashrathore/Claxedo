@@ -22,6 +22,8 @@ import {
   type SessionTurnAuthority,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { readJsonRecord } from "../platform/json/index"
+import { asRecord } from "../platform/json/index"
 
 const bodyLimitBytes = 16 * 1024
 const streamLeaseIssuer = "claxedo-control-plane"
@@ -124,13 +126,13 @@ async function runtimeAccessTokenDenial(
   authority: Pick<RuntimeSessionAuthorityPort, "runtimeAccessTokenActive">,
   claims: SessionStreamLeaseClaims,
 ) {
-  if (claims.transport !== "relay-host") return
+  if (claims.transport !== "relay-host") return undefined
   const active = asRecord(await authority.runtimeAccessTokenActive({
     jti: claims.parentRuntimeAccessTokenJti,
     workspaceId: claims.workspaceId,
     hostId: claims.hostId,
   }))
-  if (active?.active === true) return
+  if (active?.active === true) return undefined
   return {
     code: text(active?.code) ?? "runtime_access_token_inactive",
     message: text(active?.reason) ?? "Runtime Access Token is inactive",
@@ -383,7 +385,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   }
 
   return new Hono().post("/session-authorize", limitedBody, async (context) => {
-    const body = (await context.req.json().catch(() => undefined)) as Record<string, unknown> | undefined
+    const body = await readJsonRecord(context.req.raw)
     if (isHostAuthorityAction(body?.action)) return authorizeHost(context, body.action, body)
     const request = parseSessionAuthorityRequest(body)
     if (!request) {
@@ -471,7 +473,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         )
       }
       if (error instanceof ControlPlaneAuthError) {
-        return context.json(controlPlaneAuthErrorBody(error), error.status as 401 | 403 | 503)
+        return context.json(controlPlaneAuthErrorBody(error), error.status)
       }
       return context.json(
         {
@@ -494,7 +496,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
   const turnId = text(body?.turnId)
   const turnLeaseId = text(body?.leaseId)
   const fencingToken = positiveInteger(body?.fencingToken)
-  if (!sessionId || !isAuthorityAction(action)) return
+  if (!sessionId || !isAuthorityAction(action)) return undefined
   if (
     (body?.title !== undefined && title === undefined)
     || (body?.reason !== undefined && reason === undefined)
@@ -502,23 +504,23 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
     || (body?.lease !== undefined && !lease)
     || (!!lease && !stream)
     || (stream && action !== "read" && action !== "write")
-  ) return
+  ) return undefined
   const fields = { sessionId, operationId, reason, title, stream, lease, turnId, turnLeaseId, fencingToken }
   switch (action) {
     case "register":
-      if (!operationId) return
+      if (!operationId) return undefined
       return { ...fields, action, operationId }
     case "registration_ambiguous":
     case "compensation_begin":
     case "compensation_complete":
-      if (!operationId || !reason) return
+      if (!operationId || !reason) return undefined
       return { ...fields, action, operationId, reason }
     case "turn_acquire":
-      if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return
+      if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return undefined
       return { ...fields, action, turnId }
     case "turn_renew":
     case "turn_release":
-      if (!turnId || !turnLeaseId || !fencingToken) return
+      if (!turnId || !turnLeaseId || !fencingToken) return undefined
       return { ...fields, action, turnId, turnLeaseId, fencingToken }
     default:
       return { ...fields, action }
@@ -740,31 +742,39 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
     const role = payload.role
     const access = payload.access
     const backing = payload.backing
-    const claims = {
-      principal_kind: principalKind,
-      actor_id: text(payload.actor_id),
-      actor_kind: actorKind,
-      org_id: text(payload.org_id),
-      workspace_id: text(payload.workspace_id),
-      host_id: text(payload.host_id),
-      jti: text(payload.jti),
-      parent_jti: text(payload.parent_jti),
-      role,
-    }
+    const actorId = text(payload.actor_id)
+    const orgId = text(payload.org_id)
+    const workspaceId = text(payload.workspace_id)
+    const hostId = text(payload.host_id)
+    const jti = text(payload.jti)
+    const parentJti = text(payload.parent_jti)
     if (
       (principalKind !== "user" && principalKind !== "service")
       || (actorKind !== "human" && actorKind !== "agent")
-      || !claims.actor_id
-      || !claims.org_id
-      || !claims.workspace_id
-      || !claims.host_id
-      || !claims.jti
-      || !claims.parent_jti
+      || !actorId
+      || !orgId
+      || !workspaceId
+      || !hostId
+      || !jti
+      || !parentJti
       || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
       || !((access === "cloud" && backing === "cloud-vm")
         || (access === "user-hosted" && backing === "local-worktree"))
     ) throw new Error("Relay proof claims are invalid")
-    return claims as RelayHostPrivateSessionClaims
+    // Assembled AFTER the checks so the claims object is the narrowed values,
+    // not the raw payload asserted into their type.
+    const claims: RelayHostPrivateSessionClaims = {
+      principal_kind: principalKind,
+      actor_id: actorId,
+      actor_kind: actorKind,
+      org_id: orgId,
+      workspace_id: workspaceId,
+      host_id: hostId,
+      jti,
+      parent_jti: parentJti,
+      role,
+    }
+    return claims
   }
 }
 
@@ -811,8 +821,4 @@ function keyPem(value: string | undefined) {
   return text(value)?.replaceAll("\\n", "\n")
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
+

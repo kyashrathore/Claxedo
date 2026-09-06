@@ -56,7 +56,8 @@ function requireExactRow(row: RecoveryRow | null, binding: PairedD1RecoveryBindi
   ) {
     throw new Error(`${database} recovery epoch does not match the active release`)
   }
-  return row as { deploymentId: string; releaseId: string; recoveryEpoch: string }
+  // Every field was just compared to the binding's, so the binding IS the row.
+  return { deploymentId: binding.deploymentId, releaseId: binding.releaseId, recoveryEpoch: binding.recoveryEpoch }
 }
 
 export async function requirePairedD1RecoveryEpoch(

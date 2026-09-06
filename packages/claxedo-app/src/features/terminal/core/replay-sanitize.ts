@@ -120,7 +120,6 @@ function scanCsi(data: string, start: number): Scanned {
   }
   const end = i + 1
 
-  const isPrivate = prefix !== 0
   const q = prefix === 0x3f // '?'
   const gt = prefix === 0x3e // '>'
   const lt = prefix === 0x3c // '<'
@@ -152,7 +151,6 @@ function scanCsi(data: string, start: number): Scanned {
     if (sawDigit && isPreambleOwnedMode(first)) return { end, drop: true }
   }
 
-  void isPrivate
   return { end, drop: false }
 }
 
@@ -258,6 +256,5 @@ export function sanitizeReplay(data: string): string {
 
   if (!kept) return data
   if (copiedTo < data.length) kept.push(data.slice(copiedTo))
-  void search
   return kept.join("")
 }

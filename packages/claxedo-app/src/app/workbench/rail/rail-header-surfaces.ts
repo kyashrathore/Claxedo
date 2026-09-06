@@ -124,7 +124,9 @@ export function useRailHeaderSurfaces(input: {
       const workspaceDir = base()?.workspaceDir
       return workspaceDir ? input.worktreeInfo(workspaceDir) : undefined
     })
-    const item = {} as SwitcherItem
+    // Every member is a getter, so the object is defined rather than built:
+    // `Object.create` types as `any`, and the shape is restored by ASSIGNMENT.
+    const item: SwitcherItem = Object.create(null)
     Object.defineProperties(item, {
       contentId: { enumerable: true, get: () => contentId },
       kind: { enumerable: true, get: () => base().kind },

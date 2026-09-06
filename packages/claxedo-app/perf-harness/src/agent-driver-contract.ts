@@ -1,5 +1,6 @@
 import path from "node:path"
 import { PRIMARY_AGENT_APP_METRICS } from "./agent-metrics"
+import { isRecord } from "./json-fields"
 
 export const AGENT_APP_DRIVER_PROTOCOL_VERSION = 1 as const
 
@@ -159,8 +160,8 @@ export function decodeDriverRequest(line: string): AgentDriverRequest {
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`)
-  return value as Record<string, unknown>
+  if (!isRecord(value)) throw new Error(`${name} must be an object`)
+  return value
 }
 
 function exactKeys(input: Record<string, unknown>, allowed: string[]) {
@@ -193,9 +194,11 @@ function sha256(value: unknown, name: string) {
   return value
 }
 
-function stringArray(value: unknown, name: string) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error(`${name} must be a string array`)
-  return value as string[]
+function stringArray(value: unknown, name: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${name} must be a string array`)
+  const strings = value.filter((item) => typeof item === "string")
+  if (strings.length !== value.length) throw new Error(`${name} must be a string array`)
+  return strings
 }
 
 function includes<const T extends readonly string[]>(values: T, value: string): value is T[number] {

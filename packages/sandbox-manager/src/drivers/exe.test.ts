@@ -7,7 +7,7 @@ function fakeExe() {
   const vms = new Map<string, Record<string, unknown>>()
   const calls: Array<{ command: string; authorization: string | null }> = []
   const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
-    const command = String(init?.body ?? "")
+    const command = typeof init?.body === "string" ? init.body : ""
     const authorization = new Headers(init?.headers).get("authorization")
     calls.push({ command, authorization })
     if (command.startsWith("ls ")) {

@@ -3,17 +3,18 @@ import type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime
 import { queryClient } from "@/platform/query/query-client"
 import { getSessionPrefetch, getSessionPrefetchPromise } from "@/platform/sync/session-prefetch"
 import { markFastSessionSwitch } from "@/platform/runtime/session-switch"
+import { requestUrl } from "@/lib/url"
 
 let requestHandler: typeof fetch = async () => {
   throw new Error("request handler is not configured")
 }
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?rail-prefetch-restore`)) }
 
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
 })
 
-mock.module("@/platform/api/api", () => ({
+await mock.module("@/platform/api/api", () => ({
   ...realApiModule,
   authFetch: (input: string | URL | Request, init?: RequestInit) => requestHandler(input, init),
   apiBearerToken: async () => null,
@@ -69,7 +70,7 @@ describe("rail session message prefetch ownership", () => {
     let aSignal: AbortSignal | undefined
     let aNormalizations = 0
     requestHandler = async (input, init) => {
-      if (String(input).includes("/session/ses_a/")) {
+      if (requestUrl(input).includes("/session/ses_a/")) {
         aSignal = init?.signal ?? undefined
         return await a.promise
       }

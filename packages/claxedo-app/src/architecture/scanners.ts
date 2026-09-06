@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import productionSetIntervalAllowlist from "./production-set-interval-allowlist.json"
+import { totalRecord } from "@/lib/total-record"
 
 export type SourceFile = {
   path: string
@@ -55,7 +56,8 @@ export function walkProdSources(appRoot: string) {
 
 export function walkTestSources(appRoot: string) {
   return walk(path.join(appRoot, "src"))
-    .filter((file) => /\.(test|vitest|spec)\.(ts|tsx)$/.test(file))
+    .filter((file) => /\.(test|vitest|spec)\.(ts|tsx)$/.test(file) || isTestSupport(appRoot, file))
+    .filter((file) => /\.(ts|tsx)$/.test(file))
     .filter((file) => !path.relative(path.join(appRoot, "src"), file).startsWith(`architecture${path.sep}`))
     .map((file) => ({
       path: path.relative(path.join(appRoot, "src"), file).split(path.sep).join("/"),
@@ -63,11 +65,27 @@ export function walkTestSources(appRoot: string) {
     }))
 }
 
+/**
+ * Whether `file` is test infrastructure: a fixture, mock, or helper that only
+ * test suites import.
+ *
+ * A `.test.` infix would say the same thing, but a test runner would then try to
+ * collect the file and report it as a suite with no tests, so the convention is
+ * a `test-support/` directory instead. `architecture/test-support/mock-api.ts`
+ * is the oldest one; a suite anywhere may put its own fixtures beside itself
+ * under the same name.
+ */
+export function isTestSupport(appRoot: string, file: string) {
+  const rel = path.relative(path.join(appRoot, "src"), file).split(path.sep)
+  return rel.slice(0, -1).includes("test-support")
+}
+
 export function prodSourcePaths(appRoot: string) {
   return walk(path.join(appRoot, "src"))
     .filter((file) => /\.(ts|tsx)$/.test(file))
     .filter((file) => !/\.(test|vitest)\./.test(file))
     .filter((file) => !file.endsWith(".d.ts"))
+    .filter((file) => !isTestSupport(appRoot, file))
     .filter((file) => !path.relative(path.join(appRoot, "src"), file).startsWith(`architecture${path.sep}`))
 }
 
@@ -90,11 +108,11 @@ export function walk(dir: string): string[] {
   })
 }
 
-export function metricCounts(files: SourceFile[]) {
-  return Object.fromEntries(metrics.map((metric) => [metric.name, metric.scan(files).length])) as Record<
-    MetricName,
-    number
-  >
+export function metricCounts(files: SourceFile[]): Record<MetricName, number> {
+  // Total by construction: `metrics` is the registry `MetricName` enumerates,
+  // and `metric-registry.test.ts` pins that the two stay in step. `totalRecord`
+  // owns the one assertion that claim needs; see `@/lib/total-record`.
+  return totalRecord(metrics, (metric) => metric.name, (metric) => metric.scan(files).length)
 }
 
 export const metrics: readonly Metric[] = [
@@ -120,7 +138,7 @@ export const metrics: readonly Metric[] = [
   regexMetric("legacyDirectoryRouteKeyRefs", "`legacyDirectoryRouteKey` references", /legacyDirectoryRouteKey/g),
   isSignedInGateMetric(),
   timerDrivenDataPollMetric(),
-  regexMetric("asAnyCasts", "`as any` and `as unknown as` casts", /as any|as unknown as/g),
+  { name: "asAnyCasts", description: "`as any` and `as unknown as` casts", scan: asAnyCastFindings },
   regexMetric("setQueryDataCalls", "`setQueryData` calls", /setQueryData/g),
   fileMetric("setQueryDataFiles", "files containing `setQueryData`", /setQueryData/),
   deepSessionUiImportMetric(),
@@ -402,6 +420,69 @@ function moduleScopeMutableStateMetric(): Metric {
         }),
       ),
   }
+}
+
+const AS_ANY_CAST = /as any|as unknown as/g
+
+/**
+ * The `as any` / `as unknown as` casts in `files`, prose excluded.
+ *
+ * Counting the raw text would count a docblock that explains why a cast was
+ * removed exactly like the cast it replaced, so writing the explanation this
+ * repository asks for would raise the debt it records. `debt-ratchet.test.ts`
+ * reads the same findings, so the two cannot drift apart.
+ */
+export function asAnyCastFindings(files: SourceFile[]): Finding[] {
+  return files.flatMap((file) => findMatches({ path: file.path, text: codeOnly(file.text) }, AS_ANY_CAST))
+}
+
+/**
+ * `text` with every comment blanked out, byte offsets and line breaks intact.
+ *
+ * Quoted spans are copied through, so a `//` inside a URL does not read as the
+ * start of a comment. A regex literal containing `/*` would, but no scanner
+ * here looks for anything a regex literal can hold.
+ */
+export function codeOnly(text: string): string {
+  let out = ""
+  let index = 0
+  while (index < text.length) {
+    const char = text[index]
+    const pair = text.slice(index, index + 2)
+    if (pair === "//") {
+      while (index < text.length && text[index] !== "\n") {
+        out += " "
+        index += 1
+      }
+      continue
+    }
+    if (pair === "/*") {
+      const close = text.indexOf("*/", index + 2)
+      const end = close < 0 ? text.length : close + 2
+      out += text.slice(index, end).replace(/[^\n]/g, " ")
+      index = end
+      continue
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      out += char
+      index += 1
+      while (index < text.length && text[index] !== char) {
+        if (text[index] === "\\") {
+          out += text.slice(index, index + 2)
+          index += 2
+          continue
+        }
+        out += text[index]
+        index += 1
+      }
+      out += text[index] ?? ""
+      index += 1
+      continue
+    }
+    out += char
+    index += 1
+  }
+  return out
 }
 
 function findMatches(file: SourceFile, pattern: RegExp) {

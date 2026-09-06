@@ -77,7 +77,9 @@ function resolveDaytonaSnapshot(): string {
   console.error(
     "[provision] no snapshot: set CLAXEDO_DAYTONA_SNAPSHOT (or rebuild via the claxedo-sandbox-image CI workflow / ensureSnapshot)",
   )
-  process.exit(2)
+  // `process.exit` is typed `never`; returning it keeps every path of this
+  // function a `return` rather than leaving an implicit fallthrough.
+  return process.exit(2)
 }
 
 function daytonaDriver(baseSnapshot: string): SandboxDriver {

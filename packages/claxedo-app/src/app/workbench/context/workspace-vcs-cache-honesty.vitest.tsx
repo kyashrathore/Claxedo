@@ -27,7 +27,8 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
 }))
 
 const emit = (details: { type: string; properties?: unknown }) => {
-  for (const handler of [...listeners]) handler({ details })
+  // Snapshot: a handler may unsubscribe itself, which splices `listeners`.
+  for (const handler of listeners.slice()) handler({ details })
 }
 
 const vcsKey = queryKeys.runtime.vcs("http://test.local", "/repo", "ws_a")

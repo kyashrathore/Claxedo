@@ -219,11 +219,16 @@ describe("@claxedo/local-server closure", () => {
     // plugin data, and the harness projections — reaching this package through
     // the composition's route contributions and the agent-config launch
     // projection. They use packages already present in this closure. The
-    // numbers below are the last MEASURED values (79 modules after the
-    // generic-harness + Agent Plugins merge) and must be re-run, never summed
+    // `platform/json.ts` is the 80th module: one dependency-free leaf owned by
+    // this package that every module reading untrusted JSON narrows through
+    // instead of writing its own `record`/`text` pair. It adds no package edge,
+    // and importing it from more modules cannot grow this set — it is already
+    // in it. The numbers below are
+    // the last MEASURED values (80 modules after the generic-harness + Agent
+    // Plugins merge and that consolidation) and must be re-run, never summed
     // from increments.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(79)
+    expect(modules.size).toBeLessThanOrEqual(80)
     expect(packages.size).toBeLessThanOrEqual(22)
   })
 })

@@ -10,6 +10,7 @@ import {
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
+import { isRecord } from "../../platform/json"
 
 /** The SQLite operations this feature owns; both Node and bundled Bun drivers implement it. */
 export type AgentPluginSqliteDatabase = {
@@ -63,17 +64,13 @@ function harness(value: string): AgentPluginHarnessId {
   return value
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
 function artifactDigest(value: unknown): value is ArtifactDigest {
   return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value)
 }
 
 function enabledRow(value: unknown): { enabled: 0 | 1 } | undefined {
   if (value == null) return undefined
-  if (!record(value) || (value.enabled !== 0 && value.enabled !== 1)) {
+  if (!isRecord(value) || (value.enabled !== 0 && value.enabled !== 1)) {
     throw new Error("SQLite returned an invalid Agent Plugins activation row")
   }
   return { enabled: value.enabled }
@@ -81,7 +78,7 @@ function enabledRow(value: unknown): { enabled: 0 | 1 } | undefined {
 
 function digestRow(value: unknown): { artifactDigest: ArtifactDigest } | undefined {
   if (value == null) return undefined
-  if (!record(value) || !artifactDigest(value.artifact_digest)) {
+  if (!isRecord(value) || !artifactDigest(value.artifact_digest)) {
     throw new Error("SQLite returned an invalid Agent Plugins artifact row")
   }
   return { artifactDigest: value.artifact_digest }
@@ -102,7 +99,7 @@ export class SqliteUnsignedAgentPluginActivationStore implements UnsignedAgentPl
 
   revision(): number {
     const row = this.db.prepare("SELECT revision FROM agent_plugin_activation_meta WHERE singleton = 1").get()
-    if (!record(row) || typeof row.revision !== "number" || !Number.isSafeInteger(row.revision) || row.revision < 0) {
+    if (!isRecord(row) || typeof row.revision !== "number" || !Number.isSafeInteger(row.revision) || row.revision < 0) {
       throw new Error("SQLite returned an invalid Agent Plugins revision")
     }
     return row.revision
@@ -121,7 +118,7 @@ export class SqliteUnsignedAgentPluginActivationStore implements UnsignedAgentPl
       ORDER BY ids.plugin_instance_id
     `).all()
     return rows.map((row) => {
-      if (!record(row)
+      if (!isRecord(row)
         || typeof row.plugin_instance_id !== "string"
         || (row.artifact_digest !== null && !artifactDigest(row.artifact_digest))
         || (row.source_id !== null && typeof row.source_id !== "string")

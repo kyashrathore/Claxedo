@@ -31,6 +31,7 @@ import { waitForTranscript } from "../src/browser/actions/session"
 import { environmentProfile } from "../src/environment-profile"
 import { settleBeforeNextInteraction } from "../src/isolated-interaction"
 import { seedForScenario } from "../src/seed"
+import { numberField, recordField, recordsField, textField } from "../src/json-fields"
 
 const SCENARIO = "workspace-interactions" as const
 const round = (value: number) => Math.round(value * 100) / 100
@@ -103,11 +104,11 @@ console.log(
 // --- parse SelectorStats -----------------------------------------------------
 const names = new Map<string, number>()
 for (const event of events) {
-  const name = String(event.name ?? "")
+  const name = textField(event, "name") ?? ""
   names.set(name, (names.get(name) ?? 0) + 1)
 }
 console.log(`\ntrace events: ${events.length}`)
-const selectorEvents = events.filter((event) => String(event.name ?? "").includes("SelectorStats"))
+const selectorEvents = events.filter((event) => textField(event, "name")?.includes("SelectorStats"))
 console.log(`SelectorStats events: ${selectorEvents.length}`)
 if (selectorEvents.length === 0) {
   console.log("top trace event names seen:")
@@ -125,11 +126,12 @@ const scopes: number[] = []
 let totalElapsed = 0
 
 const timingsOf = (event: Record<string, unknown>): Array<Record<string, unknown>> | undefined => {
-  const args = event.args as Record<string, unknown> | undefined
-  const stats = (args?.selector_stats ?? args?.selectorStats) as Record<string, unknown> | undefined
-  return (stats?.selector_timings ?? stats?.selectorTimings) as Array<Record<string, unknown>> | undefined
+  const args = recordField(event, "args")
+  const stats = args && (recordField(args, "selector_stats") ?? recordField(args, "selectorStats"))
+  if (!stats) return undefined
+  return recordsField(stats, "selector_timings") ?? recordsField(stats, "selectorTimings")
 }
-const attemptsOf = (entry: Record<string, unknown>) => Number(entry.match_attempts ?? entry["match_attempts"] ?? 0)
+const attemptsOf = (entry: Record<string, unknown>) => numberField(entry, "match_attempts") ?? 0
 // Within one recalc event the ceiling of match_attempts IS that recalc's scope:
 // a universal-bucket rule is tried against every element the pass visited. But
 // the trace also catches small incidental recalcs, whose tiny ceiling any narrow
@@ -150,12 +152,13 @@ for (const event of selectorEvents) {
   const wholeDocument = eventScope >= widestScope * 0.9
   if (wholeDocument) scopes.push(eventScope)
   for (const entry of list) {
-    const selector = String(entry.selector ?? entry["selector_text"] ?? "?")
-    const elapsed = Number(entry["elapsed (us)"] ?? entry.elapsed_us ?? entry.elapsed ?? 0)
-    const attempts = Number(entry.match_attempts ?? entry["match_attempts"] ?? 0)
-    const fastReject = Number(entry.fast_reject_count ?? 0)
-    const matches = Number(entry.match_count ?? 0)
-    const sheet = String(entry.style_sheet_id ?? "")
+    const selector = textField(entry, "selector") ?? textField(entry, "selector_text") ?? "?"
+    const elapsed =
+      numberField(entry, "elapsed (us)") ?? numberField(entry, "elapsed_us") ?? numberField(entry, "elapsed") ?? 0
+    const attempts = attemptsOf(entry)
+    const fastReject = numberField(entry, "fast_reject_count") ?? 0
+    const matches = numberField(entry, "match_count") ?? 0
+    const sheet = textField(entry, "style_sheet_id") ?? ""
     let row = rows.get(selector)
     if (!row) {
       row = { elapsed: 0, attempts: 0, fastReject: 0, matches: 0, entries: 0, universalHits: 0, sheets: new Set() }

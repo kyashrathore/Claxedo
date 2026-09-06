@@ -293,7 +293,7 @@ async function request(app: ReturnType<typeof HostedAgentPluginRoutes>, pathName
     headers: {
       authorization: `Bearer ${token}`,
       ...(init?.body ? { "content-type": "application/json" } : {}),
-      ...init?.headers,
+      ...Object.fromEntries(new Headers(init?.headers)),
     },
   })
 }

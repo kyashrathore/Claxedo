@@ -9,8 +9,12 @@ export type ClaxedoProject = {
   name?: string
   icon?: { url?: string; override?: string; color?: string }
   commands?: { start?: string }
-  time: { created: number; updated: number; initialized?: number }
-  sandboxes: string[]
+  // Optional because the embedded OpenCode engine's `project.updated` payload
+  // carries neither: it sends `{ id, worktree, vcs }`. Readers already wrote
+  // `project.sandboxes ?? []` and `project.time?.created` against that reality
+  // while the DTO claimed both were guaranteed.
+  time?: { created: number; updated: number; initialized?: number }
+  sandboxes?: string[]
   git?: { remote?: string | null }
   workspaces?: Record<string, ClaxedoWorkspaceInventoryEntry>
 }
@@ -73,8 +77,11 @@ export type ClaxedoAgentProfile = {
 
 export type ClaxedoLspStatus = {
   id: string
-  name: string
-  root: string
+  // A status row identifies a server and says whether it came up; the display
+  // name and project root are what the runtime knows about it, and an older
+  // runtime answers `{ id, status }` alone.
+  name?: string
+  root?: string
   status: "connected" | "error"
 }
 
@@ -132,7 +139,10 @@ export type ClaxedoProviderList = {
 
 export type ClaxedoProviderAuthMethod = {
   type: "oauth" | "api"
-  label: string
+  // Optional because the auth catalog does not always name a method, and the
+  // connect form already renders `label ?? ""` — the DTO was the only place
+  // claiming it was guaranteed.
+  label?: string
   prompts?: Array<
     | { type: "text"; key: string; message: string; placeholder?: string; when?: { key: string; op: "eq" | "neq"; value: string } }
     | { type: "select"; key: string; message: string; options: Array<{ label: string; value: string; hint?: string }>; when?: { key: string; op: "eq" | "neq"; value: string } }

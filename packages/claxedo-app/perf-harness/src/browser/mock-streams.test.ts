@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { MOCK_STREAM_FIXTURE_HEADER, mockStreamKind, startMockStreamServer } from "./mock-streams"
 
 const servers: ReturnType<typeof startMockStreamServer>[] = []
-afterEach(() => { for (const server of servers.splice(0)) server.stop() })
+afterEach(async () => { for (const server of servers.splice(0)) await server.stop() })
 
 function server() {
   const value = startMockStreamServer({ port: 0 })
@@ -113,8 +113,8 @@ test("page leases isolate scopes, reject unknown clients, and release streams in
   expect((await fetch(url, { headers: first.headers })).status).toBe(403)
   abort.abort()
   await until(() => target.activeConnections === 0)
-  target.stop()
-  target.stop()
+  await target.stop()
+  await target.stop()
   expect(() => fixture(target, "late")).toThrow("stopped")
 })
 
@@ -125,7 +125,7 @@ test("server stop closes active streams and releases its listening port", async 
   const reader = response.body!.getReader()
   await reader.read()
   expect(target.activeConnections).toBe(1)
-  target.stop()
+  await target.stop()
   expect(target.activeConnections).toBe(0)
   await reader.read().catch(() => undefined)
   const replacement = startMockStreamServer({ port: target.port })

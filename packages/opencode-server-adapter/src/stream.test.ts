@@ -5,7 +5,9 @@ import { createOpenCodeServerConnectionProvider } from "./index"
 import { OpenCodeServerAdapter } from "./adapter"
 
 const servers: Bun.Server<unknown>[] = []
-afterEach(() => { for (const server of servers.splice(0)) server.stop(true) })
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.stop(true)))
+})
 const binding: AgentExecutionBinding = { workspaceId: "ws", directory: "/local", sessionId: "local-session", connectionId: "connection:remote", upstreamSessionId: "ses_remote" }
 const prompt: PromptInput = { userMessageId: "msg_local_not_sortable", assistantMessageId: "local-reply", agent: "build", model: { providerID: "default", modelID: "default" }, parts: [{ type: "text", text: "hello" }] }
 

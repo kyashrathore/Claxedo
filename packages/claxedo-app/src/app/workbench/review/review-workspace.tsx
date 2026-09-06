@@ -69,6 +69,8 @@ import {
 } from "./review-workspace-working-set"
 import { ReviewWorkspaceProcessSection } from "./review-workspace-process-section"
 import type { ReviewMode } from "@/features/review/review-intent"
+import { readField, readString } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 
 export type ReviewWorkspaceProps = {
   sessionId: string
@@ -262,10 +264,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       const project = projects.data?.find((item) =>
         item.worktree === props.directory || item.sandboxes?.includes(props.directory),
       )
-      const workspace = (project as typeof project & {
-        workspaces?: Record<string, { id?: string; workspaceId?: string }>
-      })?.workspaces?.[props.directory]
-      const workspaceId = workspace?.workspaceId ?? workspace?.id ?? project?.id
+      const workspace = readField(readField(project, "workspaces"), props.directory)
+      const workspaceId = readString(workspace, "workspaceId") ?? readString(workspace, "id") ?? project?.id
       if (!workspaceId) throw new Error("The workspace identity is unavailable.")
       const document = await documentsApi.createFromRepository({
         displayName: getFilename(path) || "Untitled",
@@ -282,7 +282,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     } catch (err) {
       showToast({
         title: "Failed to open document collaboration",
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
         variant: "error",
       })
     }

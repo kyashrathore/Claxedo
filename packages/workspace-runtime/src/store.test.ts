@@ -1,3 +1,6 @@
+// `node:test`'s `describe`/`test` return a promise the runner already owns: it
+// settles when the suite finishes and reports failures through the runner
+// rather than rejecting, so every registration below is deliberately `void`ed.
 import { afterEach, describe, it } from "node:test"
 import assert from "node:assert/strict"
 import fs from "fs"
@@ -106,8 +109,8 @@ afterEach(() => {
   }
 })
 
-describe("RuntimeStore", () => {
-  it("turn leases survive runtime-store reconstruction", () => {
+void describe("RuntimeStore", () => {
+  void it("turn leases survive runtime-store reconstruction", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     const reconstructed = new RuntimeStore(root)
@@ -127,7 +130,7 @@ describe("RuntimeStore", () => {
     assert.equal(typeof reconstructed.acquireTurnLease("ses_durable_turn"), "string")
   })
 
-  it("creates new session storage with harness columns instead of runner columns", () => {
+  void it("creates new session storage with harness columns instead of runner columns", () => {
     const store = new RuntimeStore(tmp())
     const columns = sessionColumns(store)
     assert(columns.includes("harness_id"))
@@ -136,7 +139,7 @@ describe("RuntimeStore", () => {
     assert(!columns.some((name) => name.startsWith("runner_")))
   })
 
-  it("persists explicit child Session ownership across updates and reopen", () => {
+  void it("persists explicit child Session ownership across updates and reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
@@ -163,7 +166,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("durably admits revisioned subagents and rehydrates correlation after reopen", async () => {
+  void it("durably admits revisioned subagents and rehydrates correlation after reopen", async () => {
     const root = tmp()
     const published: Array<{ parentSessionId: string; revision: number }> = []
     const store = new RuntimeStore(root)
@@ -233,7 +236,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("routes an observation carrying an already-owned child session to the owning row (claude dual-channel split)", () => {
+  void it("routes an observation carrying an already-owned child session to the owning row (claude dual-channel split)", () => {
     // Repro of the live crash "UNIQUE constraint failed:
     // session_subagent.child_session_id": the claude harness reports one Task
     // through two channels — an `agent-tool` observation keyed by toolCallId
@@ -309,7 +312,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("gives an admitted delegation's child session the parent it belongs to", () => {
+  void it("gives an admitted delegation's child session the parent it belongs to", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
@@ -343,7 +346,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("binds a child session admission names before this store has any row for it", () => {
+  void it("binds a child session admission names before this store has any row for it", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
@@ -371,7 +374,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("serializes key and revision admission across concurrently open stores", () => {
+  void it("serializes key and revision admission across concurrently open stores", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     const second = new RuntimeStore(root)
@@ -400,7 +403,7 @@ describe("RuntimeStore", () => {
     second.close()
   })
 
-  it("preserves terminal subagent status after a late active observation and reopen", () => {
+  void it("preserves terminal subagent status after a late active observation and reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     const spawn = store.admit({
@@ -438,7 +441,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("interrupts active children on archive while preserving durable history", () => {
+  void it("interrupts active children on archive while preserving durable history", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
@@ -481,7 +484,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("reconciles disconnected foreground children and deletes child ownership atomically", () => {
+  void it("reconciles disconnected foreground children and deletes child ownership atomically", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
@@ -523,7 +526,7 @@ describe("RuntimeStore", () => {
   })
 
 
-  it("journals before projecting so replay recovers when projection fails", () => {
+  void it("journals before projecting so replay recovers when projection fails", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     const db = (
@@ -561,7 +564,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("rolls back failed projection transactions and replays the journaled row later", () => {
+  void it("rolls back failed projection transactions and replays the journaled row later", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -602,7 +605,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("returns committed append output after projection commits", () => {
+  void it("returns committed append output after projection commits", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -638,7 +641,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("returns committed turn-start output after projection commits", () => {
+  void it("returns committed turn-start output after projection commits", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -686,7 +689,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("pages projected messages backward with an opaque cursor and bounded hydration", () => {
+  void it("pages projected messages backward with an opaque cursor and bounded hydration", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (let index = 1; index <= 6; index++) {
@@ -745,7 +748,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("returns the chronological latest turn and continues before its user boundary", () => {
+  void it("returns the chronological latest turn and continues before its user boundary", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const append = (info: Record<string, unknown>) =>
@@ -777,7 +780,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("returns only the owning user and final message for the latest surface without losing intermediates", () => {
+  void it("returns only the owning user and final message for the latest surface without losing intermediates", () => {
     const store = new RuntimeStore(tmp())
     const omittedDecodeMarker = "LATEST_SURFACE_OMITTED_PAYLOAD_MUST_NOT_BE_PARSED"
     const omittedPayload = `${omittedDecodeMarker}:${"x".repeat(256 * 1024)}`
@@ -866,7 +869,9 @@ describe("RuntimeStore", () => {
 
     const complete = store.getMessagePage("s1", { view: "latest-turn" })
     assert.ok(complete)
-    assert.deepEqual((complete.messages[0]?.info as Record<string, unknown>).summary, {
+    const completeFirst = complete.messages[0]
+    assert.ok(completeFirst)
+    assert.deepEqual(completeFirst.info.summary, {
       body: "deferred summary",
       diffs: [{ patch: "large diff" }],
     })
@@ -884,7 +889,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("bounds oversized user/assistant text, assistant errors, and many small parts while latest-turn stays complete", () => {
+  void it("bounds oversized user/assistant text, assistant errors, and many small parts while latest-turn stays complete", () => {
     const store = new RuntimeStore(tmp())
     const oversizedUser = "u".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
     const oversizedAssistant = "a".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
@@ -921,23 +926,29 @@ describe("RuntimeStore", () => {
 
     const surface = store.getMessagePage("s1", { view: "latest-surface" })
     assert.ok(surface)
+    const surfaceAssistant = surface.messages[1]
+    assert.ok(surfaceAssistant)
     assert.deepEqual(surface.messages[0]?.parts, [])
-    assert.equal((surface.messages[1]?.info as Record<string, unknown>).error, undefined)
+    assert.equal(surfaceAssistant.info.error, undefined)
     assert.deepEqual(
-      surface.messages[1]?.parts.map((part: any) => part.id),
+      surfaceAssistant.parts.map((part) => part.id),
       Array.from({ length: LATEST_SURFACE_MAX_TEXT_PARTS }, (_, index) => `assistant-small-${index + 4}`),
     )
 
     const complete = store.getMessagePage("s1", { view: "latest-turn" })
     assert.ok(complete)
-    assert.equal((complete.messages[0]?.parts[0] as any).text, oversizedUser)
-    assert.equal((complete.messages[1]?.parts[0] as any).text, oversizedAssistant)
-    assert.deepEqual((complete.messages[1]?.info as Record<string, unknown>).error, error)
-    assert.equal(complete.messages[1]?.parts.length, 21)
+    const completeUser = complete.messages[0]
+    const completeAssistant = complete.messages[1]
+    assert.ok(completeUser)
+    assert.ok(completeAssistant)
+    assert.equal((completeUser.parts[0] as any).text, oversizedUser)
+    assert.equal((completeAssistant.parts[0] as any).text, oversizedAssistant)
+    assert.deepEqual(completeAssistant.info.error, error)
+    assert.equal(completeAssistant.parts.length, 21)
     store.close()
   })
 
-  it("does not invent a surface cursor for an adjacent user and final assistant", () => {
+  void it("does not invent a surface cursor for an adjacent user and final assistant", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [
@@ -961,7 +972,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("rejects a latest surface whose assistant is not owned by its user boundary", () => {
+  void it("rejects a latest surface whose assistant is not owned by its user boundary", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [
@@ -982,7 +993,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("returns a user-only live turn without inventing an older-history cursor", () => {
+  void it("returns a user-only live turn without inventing an older-history cursor", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.appendEvent({
@@ -1006,7 +1017,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("rejects invalid, cross-session, and missing-session message page cursors", () => {
+  void it("rejects invalid, cross-session, and missing-session message page cursors", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 2 })
@@ -1064,7 +1075,7 @@ describe("RuntimeStore", () => {
     store.close()
   })
 
-  it("journals every public durable runtime mutation before projection state", () => {
+  void it("journals every public durable runtime mutation before projection state", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1150,7 +1161,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("closes idempotently and allows the store root to reopen", () => {
+  void it("closes idempotently and allows the store root to reopen", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1168,7 +1179,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("reopens checkpointed projections without resetting or replaying durable history", () => {
+  void it("reopens checkpointed projections without resetting or replaying durable history", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1191,7 +1202,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("exports JSONL debug output from the SQLite runtime journal", () => {
+  void it("exports JSONL debug output from the SQLite runtime journal", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1214,7 +1225,7 @@ describe("RuntimeStore", () => {
     assert.equal(rows[0]?.agentSessionId, "a1")
   })
 
-  it("replays journaled messages and todos", () => {
+  void it("replays journaled messages and todos", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1271,7 +1282,7 @@ describe("RuntimeStore", () => {
     assert.deepEqual(next.getTodos("s1"), [{ content: "Ship", status: "pending", priority: "high" }])
   })
 
-  it("retains only the latest full snapshot for each message part", () => {
+  void it("retains only the latest full snapshot for each message part", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1325,7 +1336,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("rolls back failed session deletes and successful deletes survive replay", () => {
+  void it("rolls back failed session deletes and successful deletes survive replay", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1379,7 +1390,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("rejects late event appends after session delete and does not resurrect on replay", () => {
+  void it("rejects late event appends after session delete and does not resurrect on replay", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1411,7 +1422,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("preserves agent_session_id through status updates", () => {
+  void it("preserves agent_session_id through status updates", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1449,7 +1460,7 @@ describe("RuntimeStore", () => {
     assert.equal(next.getAgentSessionId("s1"), "agent-abc")
   })
 
-  it("preserves an active turn status through session metadata updates", () => {
+  void it("preserves an active turn status through session metadata updates", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1486,7 +1497,7 @@ describe("RuntimeStore", () => {
     assert.equal((replay.getSession("s1") as { status?: string } | null)?.status, "busy")
   })
 
-  it("marks pending interactives stale after interruption", () => {
+  void it("marks pending interactives stale after interruption", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1535,7 +1546,7 @@ describe("RuntimeStore", () => {
     assert.equal(afterAck.consumeRecoveryError("s1"), null)
   })
 
-  it("lists replayed pending questions from the durable projection", () => {
+  void it("lists replayed pending questions from the durable projection", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1570,7 +1581,7 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
-  it("marks only matching owner-key sessions stale after interruption", () => {
+  void it("marks only matching owner-key sessions stale after interruption", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1624,7 +1635,7 @@ describe("RuntimeStore", () => {
     assert.equal((next.getSession("s2") as { status?: string } | null)?.status, undefined)
   })
 
-  it("terminalizes running tool parts after interruption", () => {
+  void it("terminalizes running tool parts after interruption", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1683,7 +1694,7 @@ describe("RuntimeStore", () => {
     assert.equal((next.getSession("s1") as any)?.status, "recovering")
   })
 
-  it("renders stale running tools in completed error messages as interrupted", () => {
+  void it("renders stale running tools in completed error messages as interrupted", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1742,7 +1753,7 @@ describe("RuntimeStore", () => {
     assert.equal(toolPart?.state?.error, "Tool execution interrupted")
   })
 
-  it("marks busy sessions recovering through explicit runtime recovery", () => {
+  void it("marks busy sessions recovering through explicit runtime recovery", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1794,7 +1805,7 @@ describe("RuntimeStore", () => {
     assert.equal(toolPart?.state?.error, "Tool execution interrupted by ACP restart")
   })
 
-  it("recoverBusySessions is a no-op when no sessions are busy", () => {
+  void it("recoverBusySessions is a no-op when no sessions are busy", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -1816,7 +1827,7 @@ describe("RuntimeStore", () => {
     assert.equal(after?.recovery_error ?? null, null)
   })
 
-  it("finishTurn clears a busy turn through replayable terminal events", () => {
+  void it("finishTurn clears a busy turn through replayable terminal events", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -1860,7 +1871,7 @@ describe("RuntimeStore", () => {
     )
   })
 
-  it("persists the durable generation and rejects every stale producer write after takeover", () => {
+  void it("persists the durable generation and rejects every stale producer write after takeover", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -1907,7 +1918,7 @@ describe("RuntimeStore", () => {
     })
   })
 
-  it("commits exact usage before terminal lifecycle records", () => {
+  void it("commits exact usage before terminal lifecycle records", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -1961,7 +1972,7 @@ describe("RuntimeStore", () => {
     })
   })
 
-  it("finishTurn does not duplicate terminal events already committed by an adapter", () => {
+  void it("finishTurn does not duplicate terminal events already committed by an adapter", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -2005,7 +2016,7 @@ describe("RuntimeStore", () => {
     )
   })
 
-  it("finishTurn durably preserves a cancelled outcome", () => {
+  void it("finishTurn durably preserves a cancelled outcome", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -2058,7 +2069,7 @@ describe("RuntimeStore", () => {
     })
   })
 
-  it("finishTurn records failed turns on the assistant message", () => {
+  void it("finishTurn records failed turns on the assistant message", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -2108,7 +2119,7 @@ describe("RuntimeStore", () => {
     assert.equal(replayedAssistant.error?.data?.firstTurnErrorClass, "unknown")
   })
 
-  it("recoverBusySessions is idempotent once a session is recovering", () => {
+  void it("recoverBusySessions is idempotent once a session is recovering", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -2142,7 +2153,7 @@ describe("RuntimeStore", () => {
     assert.equal(session()?.recovery_error, firstError)
   })
 
-  it("returns normalized session objects from the store", () => {
+  void it("returns normalized session objects from the store", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -2176,7 +2187,7 @@ describe("RuntimeStore", () => {
     assert.equal((next.getSession("s1") as any)?.time?.archived, 0)
   })
 
-  it("persists session config across replay", () => {
+  void it("persists session config across replay", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -2216,7 +2227,7 @@ describe("RuntimeStore", () => {
     assert.deepEqual(next.getSessionConfig("s1"), expectedConfig)
   })
 
-  it("persists and clears a pending cross-harness handoff", () => {
+  void it("persists and clears a pending cross-harness handoff", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -2243,8 +2254,8 @@ describe("RuntimeStore", () => {
 
 })
 
-describe("RuntimeStore session projection cost", () => {
-  it("resolves lastTurn through the terminal-row partial index instead of walking the journal", () => {
+void describe("RuntimeStore session projection cost", () => {
+  void it("resolves lastTurn through the terminal-row partial index instead of walking the journal", () => {
     const root = tmp()
     const store = new RuntimeStoreImpl(root)
     const db = (store as unknown as { db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } } }).db
@@ -2271,8 +2282,8 @@ describe("RuntimeStore session projection cost", () => {
   })
 })
 
-describe("canonical execution binding", () => {
-  it("persists the complete binding and never derives it from provider inventory", () => {
+void describe("canonical execution binding", () => {
+  void it("persists the complete binding and never derives it from provider inventory", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -2298,7 +2309,7 @@ describe("canonical execution binding", () => {
   })
 })
 
-describe("provisional user parts", () => {
+void describe("provisional user parts", () => {
   /**
    * Three layers each record the user's prompt, each minting its own id:
    *   `${messageId}-part-N`       — this store's `inputParts` (via startTurn)
@@ -2340,7 +2351,7 @@ describe("provisional user parts", () => {
       )?.parts ?? []
     ).map((part) => part.id)
 
-  it("keeps provisional parts while NO canonical part exists — nothing is dropped without a replacement", () => {
+  void it("keeps provisional parts while NO canonical part exists — nothing is dropped without a replacement", () => {
     // The durability case these writers exist for: the engine never responds.
     const store = seeded(tmp())
 
@@ -2350,7 +2361,7 @@ describe("provisional user parts", () => {
     store.close()
   })
 
-  it("keeps a multi-part prompt whole while the engine has persisted only some of it", () => {
+  void it("keeps a multi-part prompt whole while the engine has persisted only some of it", () => {
     // The engine mints its own ids (`prt_…`), so there is NO id correspondence
     // between a canonical part and the provisional it replaces. Retiring every
     // provisional the moment ONE canonical part landed therefore erased the
@@ -2387,7 +2398,7 @@ describe("provisional user parts", () => {
     store.close()
   })
 
-  it("a canonical part on ONE user message leaves another's provisionals alone", () => {
+  void it("a canonical part on ONE user message leaves another's provisionals alone", () => {
     // The mutation this exists to catch: a predicate matching id SHAPE alone
     // (any `*-part-N`) rather than THIS message's id would retire
     // a second turn's provisionals the moment the first turn's engine part
@@ -2414,7 +2425,7 @@ describe("provisional user parts", () => {
     store.close()
   })
 
-  it("does not retire another message's provisional parts", () => {
+  void it("does not retire another message's provisional parts", () => {
     const store = seeded(tmp())
     // A canonical part on the ASSISTANT message must not touch the user's.
     store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("m1", "OK") })

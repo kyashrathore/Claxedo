@@ -356,7 +356,7 @@ describe("bound desktop account lifecycle", () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),
       fetch: async (url, init) => {
-        const token = String((init?.headers)?.authorization ?? "")
+        const token = init?.headers?.authorization ?? ""
         seenTokens.push(token)
         if (token.includes("at_1")) {
           return Response.json({ error: { code: "invalid_credentials" } }, { status: 401 })
@@ -608,7 +608,7 @@ describe("bound desktop account lifecycle", () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),
       fetch: async (url, init) => {
-        const token = String((init?.headers)?.authorization ?? "")
+        const token = init?.headers?.authorization ?? ""
         seen.push(token)
         if (token.includes("at_1")) {
           return Response.json(

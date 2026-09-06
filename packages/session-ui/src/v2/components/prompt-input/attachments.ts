@@ -91,7 +91,7 @@ export function createPromptInputV2Attachments(
   const capture = () => {
     const prompt = input.capture()
     const editor = input.editor()
-    if (!editor) return
+    if (!editor) return undefined
     return { prompt, cursor: prompt.cursor() ?? cursorPosition(editor) }
   }
   const add = async (file: File, toast = true, target = capture()) => {
@@ -243,9 +243,9 @@ async function attachmentMime(file: File) {
     return "text/plain"
   }
   const bytes = new Uint8Array(await file.slice(0, 4096).arrayBuffer())
-  if (bytes.some((byte) => byte === 0)) return
+  if (bytes.some((byte) => byte === 0)) return undefined
   const control = bytes.filter((byte) => byte < 9 || (byte > 13 && byte < 32)).length
-  if (bytes.length > 0 && control / bytes.length > 0.3) return
+  if (bytes.length > 0 && control / bytes.length > 0.3) return undefined
   return "text/plain"
 }
 

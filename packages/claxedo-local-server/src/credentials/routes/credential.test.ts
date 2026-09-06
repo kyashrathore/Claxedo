@@ -6,6 +6,17 @@ import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/opera
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 
+/** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
+function jsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error(`expected a JSON string request body, got ${typeof body}`)
+  return JSON.parse(body)
+}
+
+/** The absolute URL a fetch call targeted, for whichever RequestInfo shape it used. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : input.toString()
+}
+
 function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())
 }
@@ -192,7 +203,7 @@ describe("credential routes", () => {
     await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42 })
     expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
     expect(request).toHaveBeenCalledOnce()
-    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ max_output_tokens: 1 })
+    expect(jsonBody(request.mock.calls[0]?.[1]?.body)).toMatchObject({ max_output_tokens: 1 })
     expect(request.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
 
     const list = await app.request("http://localhost/")
@@ -361,9 +372,9 @@ describe("credential routes", () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ result: "ok", health: "ok" })
     const [url, init] = request.mock.calls[0]
-    expect(String(url)).toBe("https://api.anthropic.com/v1/messages")
+    expect(requestUrl(url)).toBe("https://api.anthropic.com/v1/messages")
     expect(new Headers(init?.headers).get("x-api-key")).toBe("sk-ant-route-secret")
-    expect(JSON.parse(String(init?.body))).toMatchObject({ max_tokens: 1 })
+    expect(jsonBody(init?.body)).toMatchObject({ max_tokens: 1 })
   })
 
   test("verifies Codex subscription credentials through the ChatGPT responses endpoint", async () => {
@@ -389,16 +400,17 @@ describe("credential routes", () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ result: "ok", health: "ok" })
     const [url, init] = request.mock.calls[0]
-    expect(String(url)).toBe("https://chatgpt.com/backend-api/codex/responses")
+    expect(requestUrl(url)).toBe("https://chatgpt.com/backend-api/codex/responses")
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer codex-access-secret")
     expect(new Headers(init?.headers).get("chatgpt-account-id")).toBe("account_1")
     // This previously asserted `max_output_tokens: 1`, which the ChatGPT-backed
     // Codex endpoint rejects outright ("Unsupported parameter"), along with a
     // string `input`, `store: true`, and `stream: false`. The assertion pinned a
     // request no live subscription could ever answer with 200.
-    expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true, store: false })
-    expect(Array.isArray(JSON.parse(String(init?.body)).input)).toBe(true)
-    expect(JSON.parse(String(init?.body))).not.toHaveProperty("max_output_tokens")
+    const codexBody = jsonBody(init?.body)
+    expect(codexBody).toMatchObject({ stream: true, store: false })
+    expect(codexBody).toHaveProperty("input", expect.any(Array))
+    expect(codexBody).not.toHaveProperty("max_output_tokens")
   })
 
   test("redacts credential and provider secrets from every verification response", async () => {

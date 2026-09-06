@@ -2,6 +2,16 @@ import { describe, expect, mock, test } from "bun:test"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
+/** The URL of a `fetch` double's argument, whichever of the three forms it takes. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+/** A `fetch` double's body. Everything under test sends a string. */
+function requestBody(body: BodyInit | null | undefined): string {
+  return typeof body === "string" ? body : ""
+}
+
 const discovery: ClaxedoDaemonDiscovery = {
   service: "claxedo-local-daemon",
   protocol: 1,
@@ -17,7 +27,7 @@ describe("Claxedo daemon client lease", () => {
     const calls: Array<{ url: string; method: string; authorization: string | null }> = []
     const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
       calls.push({
-        url: String(input),
+        url: requestUrl(input),
         method: init?.method ?? "GET",
         authorization: new Headers(init?.headers).get("authorization"),
       })
@@ -61,11 +71,11 @@ describe("Claxedo daemon client lease", () => {
     const calls: Array<{ pathname: string; method: string; body: unknown }> = []
     const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
       calls.push({
-        pathname: new URL(String(input)).pathname,
+        pathname: new URL(requestUrl(input)).pathname,
         method: init?.method ?? "GET",
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        body: init?.body ? JSON.parse(requestBody(init.body)) : undefined,
       })
-      if (init?.method === "POST" && new URL(String(input)).pathname.endsWith("/leases")) {
+      if (init?.method === "POST" && new URL(requestUrl(input)).pathname.endsWith("/leases")) {
         return Response.json({ id: "lease-1", expiresAt: Date.now() + 15_000 }, { status: 201 })
       }
       return Response.json({ shutdownRequested: true, released: true })
@@ -87,7 +97,7 @@ describe("Claxedo daemon client lease", () => {
   test("reports a rejected shutdown request while leaving lease expiry as the crash fallback", async () => {
     const onError = mock(() => {})
     const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
-      if (init?.method === "POST" && new URL(String(input)).pathname.endsWith("/leases")) {
+      if (init?.method === "POST" && new URL(requestUrl(input)).pathname.endsWith("/leases")) {
         return Response.json({ id: "lease-1", expiresAt: Date.now() + 15_000 }, { status: 201 })
       }
       return Response.json({}, { status: 503 })

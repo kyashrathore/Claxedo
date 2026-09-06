@@ -35,6 +35,30 @@ function tr(translator: Translator | undefined, key: string, text: string, vars?
   return out
 }
 
+/**
+ * The message text of an unknown thrown value.
+ *
+ * `error instanceof Error ? error.message : String(error)` appears at ninety-two
+ * places in this package, plus five private `errorMessage` helpers that each
+ * disagree slightly. It is also wrong in the same way every time: `String()` on
+ * a thrown object renders `"[object Object]"`, and that placeholder is what the
+ * user is then shown. This reads the message where one actually exists —
+ * including the `{ message }` envelope the control plane throws — and answers
+ * `fallback` rather than a placeholder when none does.
+ *
+ * For a SERVER error envelope (`ConfigInvalidError` and friends) use
+ * `formatServerError`, which understands their payloads; this is the plain
+ * "what went wrong" string for everything else.
+ */
+export function errorMessage(error: unknown, fallback = "Unknown error"): string {
+  if (typeof error === "string") return error.trim() || fallback
+  if (error instanceof Error) return error.message.trim() || fallback
+  const message = readString(error, "message")?.trim()
+  if (message) return message
+  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error)
+  return fallback
+}
+
 export function formatServerError(error: unknown, translate?: Translator, fallback?: string) {
   const unwrapped = unwrapNamedError(error)
   if (isConfigInvalidErrorLike(unwrapped)) return parseReadableConfigInvalidError(unwrapped, translate)
@@ -42,10 +66,7 @@ export function formatServerError(error: unknown, translate?: Translator, fallba
   if (isProviderAuthErrorLike(unwrapped)) return parseReadableProviderAuthError(unwrapped, translate)
   const dataMessage = readableDataMessage(unwrapped)
   if (dataMessage) return dataMessage
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "string" && error) return error
-  if (fallback) return fallback
-  return tr(translate, "error.chain.unknown", "Unknown error")
+  return errorMessage(error, fallback || tr(translate, "error.chain.unknown", "Unknown error"))
 }
 
 function unwrapNamedError(error: unknown): unknown {

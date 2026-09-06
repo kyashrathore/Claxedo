@@ -8,12 +8,8 @@ import {
   createAgentRuntime,
   createConnectionProviderRegistry,
   type AgentRuntime,
-  type AgentHarnessFactory,
-  type AgentRuntimeStore,
   type AgentSession,
   type AgentMessage,
-  type AgentPermission,
-  type AgentQuestion,
   type SessionConfig,
   type SessionConfigUpdate,
   type SessionHarness,
@@ -34,9 +30,8 @@ import {
   type AgentMessagePage,
   type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
-  type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { OpenCodeSdkHarnessAdapter, authorizeWorkspace, type OpenCodeRuntime } from "../opencode/index"
+import { OpenCodeSdkHarnessAdapter, WorkspaceScope, type OpenCodeRuntime } from "../opencode/index"
 import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
@@ -49,7 +44,8 @@ import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hu
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore } from "../store"
 import { assertTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
-import { normalizeRuntimeSnapshot, requestedSessionHarness, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeNativeHarnessId, type RuntimeSnapshot } from "../routes/config"
+import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
+import { num, parseRecord, rec, str } from "../json-value"
 import { AgentRuntimeContractError, assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
@@ -80,6 +76,7 @@ import {
   scopedReplay,
   watchSessionEventLease,
 } from "../routes/session-event-privacy"
+import { SessionRollbackError } from "../session-rollback-error"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -97,10 +94,11 @@ import {
  */
 
 export type WorkspaceRuntimeStore =
-  & Omit<AgentRuntimeStoreWithRecovery, "getSession" | "getMessages" | "bindSession" | "updateSessionConfig">
+  & Omit<AgentRuntimeStoreWithRecovery, "getSession" | "getMessages" | "listSessions" | "bindSession" | "updateSessionConfig">
   & {
     getSession(id: string): AgentSession | null
     getMessages(id: string): AgentMessage[]
+    listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
     getSessionFencingToken?: (sessionId: string) => number | undefined
@@ -225,29 +223,17 @@ function nativeSdk(harness: RuntimeRunner): harness is RuntimeRunner & { id: key
 }
 
 function sessionRowConfigPatch(session: unknown) {
-  const row = session && typeof session === "object" && !Array.isArray(session)
-    ? session as { agent?: unknown; model?: unknown }
-    : undefined
-  const modelInput = row?.model
-  const model = modelInput && typeof modelInput === "object" && !Array.isArray(modelInput)
-    ? {
-        providerID: typeof (modelInput as { providerID?: unknown }).providerID === "string"
-          ? (modelInput as { providerID: string }).providerID
-          : undefined,
-        modelID: typeof (modelInput as { modelID?: unknown }).modelID === "string"
-          ? (modelInput as { modelID: string }).modelID
-          : typeof (modelInput as { id?: unknown }).id === "string"
-            ? (modelInput as { id: string }).id
-            : undefined,
-        variant: typeof (modelInput as { variant?: unknown }).variant === "string"
-          ? (modelInput as { variant: string }).variant
-          : undefined,
-      }
-    : undefined
+  const row = rec(session)
+  const modelInput = rec(row?.model)
+  const model = modelInput && {
+    providerID: str(modelInput.providerID),
+    modelID: str(modelInput.modelID) ?? str(modelInput.id),
+    variant: str(modelInput.variant),
+  }
   return {
     ...(model?.providerID && model.modelID ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
     ...(model?.variant ? { variant: model.variant } : {}),
-    ...(typeof row?.agent === "string" && row.agent ? { agent: row.agent } : {}),
+    ...(str(row?.agent) ? { agent: str(row?.agent) } : {}),
   } satisfies Partial<SessionConfig>
 }
 
@@ -274,9 +260,12 @@ function runnerForSelection(selection: RuntimeHarnessSelection): RuntimeRunner {
 }
 
 function selectionForRunner(runner: RuntimeRunner): RuntimeHarnessSelection {
-  if (runner.access === "native" && ["claude", "codex", "cursor", "pi"].includes(runner.id)) {
-    return { kind: "native", harnessId: runner.id as RuntimeNativeHarnessId }
-  }
+  // `find` over the canonical id list produces the literal type; a membership
+  // test would leave `runner.id` a bare `string` and force an assertion.
+  const harnessId = runner.access === "native"
+    ? RUNTIME_NATIVE_HARNESS_IDS.find((id) => id === runner.id)
+    : undefined
+  if (harnessId) return { kind: "native", harnessId }
   if (runner.access === "connection") return { kind: "connection", connectionId: runner.id }
   throw new WorkspaceHarnessUnavailableError(runner)
 }
@@ -316,29 +305,17 @@ function runtimeAuthForAdapter(nextAuth: RuntimeAuth) {
   }
 }
 
-function json(input: string | undefined) {
-  if (!input) return
-  try {
-    const value = JSON.parse(input) as Record<string, unknown>
-    return value && typeof value === "object" ? value : undefined
-  } catch {}
-}
-
 function errorMessage(input: unknown) {
   if (input instanceof Error) return input.message
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    const row = input as Record<string, unknown>
-    const data = row.data
-    if (data && typeof data === "object" && !Array.isArray(data)) {
-      const dataMessage = (data as Record<string, unknown>).message
-      if (typeof dataMessage === "string") return dataMessage
-    }
-    if (typeof row.message === "string") return row.message
-    try {
-      return JSON.stringify(input)
-    } catch {}
+  const row = rec(input)
+  if (!row) return String(input)
+  const message = str(rec(row.data)?.message) ?? str(row.message)
+  if (message) return message
+  try {
+    return JSON.stringify(input)
+  } catch {
+    return String(input)
   }
-  return String(input)
 }
 
 function harnessConfigOptionsErrorMessage(input: {
@@ -423,23 +400,22 @@ function codexAuthInput(auth: Record<string, string>) {
   return auth["codex-app-server"] ?? auth["openai"]
 }
 
-function codexAuthValue(input: string | undefined) {
-  const value = json(input)
-  if (!value) return
-  const tokens = value.tokens && typeof value.tokens === "object" ? value.tokens as Record<string, unknown> : undefined
+function codexAuthValue(input: string | undefined): Record<string, unknown> | undefined {
+  const value = parseRecord(input)
+  if (!value) return undefined
   if (value.type === "codex_auth") return value
-  if (
-    typeof value.auth_mode === "string"
-    && typeof tokens?.access_token === "string"
-    && typeof tokens?.refresh_token === "string"
-    && typeof tokens?.account_id === "string"
-  ) return { ...value, type: "codex_auth" as const }
+  const tokens = rec(value.tokens)
+  const complete = str(value.auth_mode) !== undefined
+    && str(tokens?.access_token) !== undefined
+    && str(tokens?.refresh_token) !== undefined
+    && str(tokens?.account_id) !== undefined
+  return complete ? { ...value, type: "codex_auth" } : undefined
 }
 
 export function runtimeAuthKey(input: string | undefined) {
   const value = codexAuthValue(input)
   if (!value) return input || undefined
-  return typeof value.OPENAI_API_KEY === "string" ? value.OPENAI_API_KEY : undefined
+  return str(value.OPENAI_API_KEY)
 }
 
 const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
@@ -510,9 +486,16 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
     {
       match: (runner) => nativeSdk(runner),
       create: ({ runner, options, store }) => {
-        const Adapter = NATIVE_HARNESS_ADAPTERS[runner.id as keyof typeof NATIVE_HARNESS_ADAPTERS]
+        // `match` narrowed this runner, but the registry hands `create` the
+        // unnarrowed entry, so the guard is re-applied here rather than
+        // asserting the key and letting an unknown id fail as "not a constructor".
+        if (!nativeSdk(runner)) throw new WorkspaceHarnessUnavailableError(runner)
+        const Adapter = NATIVE_HARNESS_ADAPTERS[runner.id]
         const transcripts = options.transcripts
-        const registerTranscript = transcripts?.resolver.register
+        // `register` is optional on the resolver, so it is bound (not detached)
+        // and its presence is what gates the registrar below.
+        const resolver = transcripts?.resolver
+        const registerTranscript = resolver?.register?.bind(resolver)
         return new Adapter({
           store,
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
@@ -673,9 +656,10 @@ function sameRuntimeMcp(a: Record<string, unknown>, b: Record<string, unknown>) 
  */
 function canonicalJson(input: unknown): unknown {
   if (Array.isArray(input)) return input.map(canonicalJson)
-  if (input && typeof input === "object") {
+  const row = rec(input)
+  if (row) {
     return Object.fromEntries(
-      Object.entries(input as Record<string, unknown>)
+      Object.entries(row)
         .filter(([, value]) => value !== undefined)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, value]) => [key, canonicalJson(value)]),
@@ -695,7 +679,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     ? eventHub.subscribeGlobal(options.onCompatEvent)
     : () => undefined
   const globalEvents = createIdentityAwareEventSource<CompatEnvelope>({
-    subscribe: eventHub.subscribeGlobal,
+    subscribe: (fn) => eventHub.subscribeGlobal(fn),
     policy: sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()),
     sessionId: (event) => eventSessionId(event.payload),
     isTerminal: (event) => isTerminalCompatEvent(event.payload),
@@ -914,11 +898,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }
 
   function sessionConfigFor(input?: { sessionId?: string; directory?: string }) {
-    if (!input?.sessionId) return
+    if (!input?.sessionId) return undefined
     const config = store().getSessionConfig(input.sessionId)
     if (!config || !input.directory) return config
-    const session = store().getSession(input.sessionId) as { directory?: string } | null
-    if (session?.directory && session.directory !== input.directory) return
+    const session = store().getSession(input.sessionId)
+    if (session?.directory && session.directory !== input.directory) return undefined
     return config
   }
 
@@ -986,13 +970,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const existing = sessionRuntimes.get(key)
     if (existing) return existing
     const runtime = createAgentRuntime({
-      store: store() as unknown as AgentRuntimeStore,
+      store: store(),
       adapterOwnership: "caller",
+      // This session's adapter is already built, so the factory hands the same
+      // one back and ignores the creation context the contract offers.
       harnesses: [{
         id: nextRunner.id,
         access: nextRunner.access,
         create: () => nextAdapter,
-      } as unknown as AgentHarnessFactory],
+      }],
       resolveHarness: (target) => ensureSessionAdapter(target, directory),
       ...(hostOptions.sessionAccessPolicy
         ? { eventDelivery: agentRuntimeEventDeliveryPolicy(hostOptions.sessionAccessPolicy) }
@@ -1038,12 +1024,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (nextRunner.access !== "connection") return
     for (const [key, target] of sessionAdapters) {
       if (key === keepKey || sessionAdapterRunners.get(key)?.id !== nextRunner.id || adapterDirectories.get(target) !== directory) continue
-      retireAdapter(key, target)
+      // Retirement is detached on purpose: the caller must not wait on a
+      // superseded adapter draining. `retireAdapter` logs its own failures.
+      void retireAdapter(key, target)
     }
   }
 
   function listSessions(directory: string) {
-    return mergeSessionRows(store().listSessions(directory) as AgentSession[])
+    return mergeSessionRows(store().listSessions(directory))
   }
 
   function mergeSessionRows(rows: AgentSession[]) {
@@ -1056,18 +1044,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }
 
   function sessionTime(input: unknown, key: "created" | "updated") {
-    const rec = input && typeof input === "object" ? input as Record<string, unknown> : {}
-    const time = rec.time && typeof rec.time === "object" ? rec.time as Record<string, unknown> : {}
-    const camel = time[key]
-    if (typeof camel === "number") return camel
-    const snake = rec[`${key}_at`]
-    return typeof snake === "number" ? snake : 0
+    const row = rec(input)
+    return num(rec(row?.time)?.[key]) ?? num(row?.[`${key}_at`]) ?? 0
   }
 
-  async function listPermissions(input: {
-    req: { query: (k: string) => string | undefined }
-  }, directory: string) {
-    const sessionId = input.req.query("sessionId")
+  async function listPermissions(sessionId: string | undefined, directory: string) {
     if (sessionId) return await (await adapterForSession({ sessionId, directory })).listPermissions?.(directory) ?? []
     const seen = new Set<AgentHarnessAdapter>()
     return (await Promise.all(
@@ -1082,10 +1063,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     )).flat()
   }
 
-  async function listQuestions(input: {
-    req: { query: (k: string) => string | undefined }
-  }, directory: string) {
-    const sessionId = input.req.query("sessionId")
+  async function listQuestions(sessionId: string | undefined, directory: string) {
     if (sessionId) return await (await adapterForSession({ sessionId, directory })).listQuestions?.(directory) ?? []
     const seen = new Set<AgentHarnessAdapter>()
     return (await Promise.all(
@@ -1187,14 +1165,21 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     }
   }
 
+  /** No checkpoint write and no turn is in flight. */
+  function checkpointIdle() {
+    return activeCheckpointWrites === 0 && activeTurnCount() === 0
+  }
+
   async function waitForCheckpointIdle() {
-    while (activeCheckpointWrites > 0 || activeTurnCount() > 0) {
+    // `checkpointIdle()` is re-read after every wake: both counters are moved by
+    // other callers, and `notifyCheckpointWaiters` only wakes us once they are 0.
+    while (!checkpointIdle()) {
       await new Promise<void>((resolve) => checkpointWriteWaiters.add(resolve))
     }
   }
 
   function notifyCheckpointWaiters() {
-    if (activeCheckpointWrites > 0 || activeTurnCount() > 0) return
+    if (!checkpointIdle()) return
     for (const resolve of checkpointWriteWaiters) resolve()
     checkpointWriteWaiters.clear()
   }
@@ -1325,7 +1310,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
       for (const [key, target] of sessionAdapters) {
         const selection = sessionAdapterRunners.get(key)!
-        if (selection.access === "connection" && !nextConnections.get(selection.id)?.enabled) retireAdapter(key, target)
+        if (selection.access === "connection" && !nextConnections.get(selection.id)?.enabled) void retireAdapter(key, target)
       }
 
       currentMcp = next.mcp
@@ -1423,6 +1408,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         const request = new Promise<void>((resolve) => { finish = resolve })
         pendingRequests.add(request)
         try { await next() } finally { pendingRequests.delete(request); finish() }
+        return undefined
       })
       assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
       const sessionAccessPolicy = hostOptions.sessionAccessPolicy
@@ -1586,8 +1572,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // own `resolveAdapter` would. Resolving the ACTIVE runner instead
           // silently creates the session on the wrong adapter — and when the
           // active runner is ACP, spawns a process the caller never asked for.
-          const query = (c as { req: { query: (k: string) => string | undefined } }).req
-          const requested = requestedSessionHarness(query)
+          const requested = requestedSessionHarness(c.req)
           const adapter = await adapterForSession({
             ...(id ? { sessionId: id } : {}),
             directory,
@@ -1642,10 +1627,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               await adapter.deleteSession(binding)
               if (store().getSession(session.id)) store().deleteSession(session.id)
             } catch (cleanupError) {
-              throw new AggregateError(
-                [cause, cleanupError],
-                "Session creation failed and provider rollback also failed", { cause: cleanupError },
-              )
+              throw new SessionRollbackError("provider", cause, cleanupError)
             }
             throw cause
           }
@@ -1654,8 +1636,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         listSessions: async (_c, directory) => listSessions(directory),
         getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
-        listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
-        listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),
+        listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
+        listQuestions: (c, directory) => listQuestions(c.req.query("sessionId"), directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
         transformPromptBody: ({ sessionId, body }) => {
           const registration = sessionToolPrompts.get(sessionId)
@@ -1690,9 +1672,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           }
         },
         getSession: async ({ directory, sessionId }) => {
-          const stored = store().getSession(sessionId) as { directory?: string } | null
-          if (stored) return (stored.directory ?? "") === (directory ?? "") ? stored as AgentSession : null
-          return null
+          const stored = store().getSession(sessionId)
+          if (!stored) return null
+          return (stored.directory ?? "") === (directory ?? "") ? stored : null
         },
         getTodos: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined
@@ -1781,7 +1763,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         sessionToolPrompts.delete(input.sessionId)
         const directory = options.target?.directory ?? workspaceDir()
         await hostOptions.opencodeRuntime.tools.registerSession({
-          scope: authorizeWorkspace({ workspaceID: options.target?.workspaceId ?? "workspace-runtime", directory }),
+          scope: WorkspaceScope.authorize({ workspaceID: options.target?.workspaceId ?? "workspace-runtime", directory }),
           sessionID: input.sessionId,
           callbackUrl: input.callbackUrl,
           tools: input.tools,
@@ -1797,8 +1779,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     checkpoint: {
       detail: checkpointDetail,
-      beginWrite() {
-        if (checkpointState !== "active") return
+      beginWrite(): (() => void) | undefined {
+        if (checkpointState !== "active") return undefined
         activeCheckpointWrites++
         let finished = false
         return () => {

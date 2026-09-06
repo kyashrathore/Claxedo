@@ -13,6 +13,12 @@ type Entry = {
   refs: number
 }
 
+/** A ref-counted lease on a shared virtualizer. `release` is idempotent. */
+export type VirtualizerLease = {
+  virtualizer: Virtualizer
+  release: () => void
+}
+
 const cache = new WeakMap<Document | HTMLElement, Map<Target["variant"], Entry>>()
 
 export const virtualMetrics: Partial<VirtualFileMetrics> = {
@@ -37,17 +43,18 @@ function scrollable(value: string) {
   return value === "auto" || value === "scroll" || value === "overlay"
 }
 
-function scrollRoot(container: HTMLElement) {
+function scrollRoot(container: HTMLElement): HTMLElement | undefined {
   let node = container.parentElement
   while (node) {
     const style = getComputedStyle(node)
     if (scrollable(style.overflowY)) return node
     node = node.parentElement
   }
+  return undefined
 }
 
 function target(container: HTMLElement): Target | undefined {
-  if (typeof document === "undefined") return
+  if (typeof document === "undefined") return undefined
 
   const review = container.closest("[data-component='session-review']")
   if (review instanceof HTMLElement) {
@@ -83,9 +90,9 @@ function target(container: HTMLElement): Target | undefined {
   }
 }
 
-export function acquireVirtualizer(container: HTMLElement) {
+export function acquireVirtualizer(container: HTMLElement): VirtualizerLease | undefined {
   const resolved = target(container)
-  if (!resolved) return
+  if (!resolved) return undefined
 
   let entries = cache.get(resolved.owner)
   if (!entries) {
@@ -113,15 +120,16 @@ export function acquireVirtualizer(container: HTMLElement) {
       done = true
 
       const ownerEntries = cache.get(resolved.owner)
-      const current = ownerEntries?.get(resolved.variant)
+      if (!ownerEntries) return
+      const current = ownerEntries.get(resolved.variant)
       if (!current) return
 
       current.refs -= 1
       if (current.refs > 0) return
 
       current.virtualizer.cleanUp()
-      ownerEntries!.delete(resolved.variant)
-      if (ownerEntries!.size === 0) cache.delete(resolved.owner)
+      ownerEntries.delete(resolved.variant)
+      if (ownerEntries.size === 0) cache.delete(resolved.owner)
     },
   }
 }

@@ -7,10 +7,11 @@
  * `retryable` defaults to FALSE: an unclassifiable error treated as transient
  * is how a non-idempotent write gets replayed. Opting in has to be deliberate.
  */
+import { jsonRecord } from "../runtime/lib/json"
 
-export type ClaxedoErrorInit = {
+export type ClaxedoErrorInit<Code extends string = string> = {
   /** Stable identifier a client may branch on. Snake case by convention. */
-  code: string
+  code: Code
   message: string
   /** HTTP status this failure should surface as. Defaults to 500. */
   status?: number
@@ -19,12 +20,19 @@ export type ClaxedoErrorInit = {
   cause?: unknown
 }
 
-export class ClaxedoError extends Error {
-  readonly code: string
+/**
+ * `Code` lets a subclass narrow `code` to its own union — `class FooError
+ * extends ClaxedoError<FooErrorCode>` — without a `declare` class field
+ * (a parse error under Playwright's babel transform, see
+ * claxedo-server's no-declare-class-fields governance test) and without
+ * merging a same-named interface beside the class.
+ */
+export class ClaxedoError<Code extends string = string> extends Error {
+  readonly code: Code
   readonly status: number
   readonly retryable: boolean
 
-  constructor(init: ClaxedoErrorInit) {
+  constructor(init: ClaxedoErrorInit<Code>) {
     super(init.message, ...(init.cause !== undefined ? [{ cause: init.cause }] : []))
     // `new.target` is the most-derived constructor, so a subclass reports its
     // own name without restating it. Omitting this reports "Error" in logs.
@@ -48,12 +56,12 @@ export function isClaxedoError(error: unknown): error is ClaxedoError {
  * fields are still there.
  */
 export function statusOf(error: unknown, fallback = 500) {
-  const status = (error as { status?: unknown } | null)?.status
+  const status = jsonRecord(error)?.status
   return typeof status === "number" && status >= 100 && status <= 599 ? status : fallback
 }
 
 export function codeOf(error: unknown, fallback = "internal_error") {
-  const code = (error as { code?: unknown } | null)?.code
+  const code = jsonRecord(error)?.code
   return typeof code === "string" && code ? code : fallback
 }
 
@@ -62,7 +70,7 @@ export function codeOf(error: unknown, fallback = "internal_error") {
  * see the note on `retryable` above.
  */
 export function isRetryable(error: unknown) {
-  return (error as { retryable?: unknown } | null)?.retryable === true
+  return jsonRecord(error)?.retryable === true
 }
 
 /**

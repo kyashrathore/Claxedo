@@ -1,3 +1,4 @@
+import { readField, readString } from "@/lib/record"
 export class AgentRuntimeRequestError extends Error {
   constructor(
     message: string,
@@ -11,16 +12,16 @@ export class AgentRuntimeRequestError extends Error {
 
 export async function runtimeRequestError(res: Response) {
   const text = await res.text()
-  const body = (() => {
+  const error = ((): unknown => {
     try {
-      return JSON.parse(text) as { error?: { code?: unknown; message?: unknown } }
+      return readField(JSON.parse(text), "error")
     } catch {
       return undefined
     }
   })()
   return new AgentRuntimeRequestError(
-    typeof body?.error?.message === "string" ? body.error.message : text || `Request failed: ${res.status}`,
+    readString(error, "message") ?? (text || `Request failed: ${res.status}`),
     res.status,
-    typeof body?.error?.code === "string" ? body.error.code : undefined,
+    readString(error, "code"),
   )
 }

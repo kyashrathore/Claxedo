@@ -227,9 +227,9 @@ async function composedSessionListPage(input: {
 /** The per-member cursors a composed page handed out, or nothing on page one. */
 function composedCursors(cursor: string | undefined): Record<string, string> | undefined {
   if (cursor === undefined) return undefined
-  const parsed = parseJson(cursor)
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
-  return Object.fromEntries(Object.entries(parsed as Record<string, unknown>)
+  const parsed = asRecord(parseJson(cursor))
+  if (!parsed) return {}
+  return Object.fromEntries(Object.entries(parsed)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }
 
@@ -272,7 +272,7 @@ async function userHostedSessionRows(input: {
         ...(input.request ? { request: input.request, relayRequest: input.request } : {}),
       })
       const list = agentRuntimeSessionListUrl({ serverUrl, roots: true })
-      const rows = await runtime.json<unknown>(`${list.pathname}${list.search}`)
+      const rows = await runtime.json(`${list.pathname}${list.search}`)
       return (Array.isArray(rows) ? rows : []).flatMap((row) => {
         const item = userHostedNavigationRow(row, input.source)
         return item ? [item] : []

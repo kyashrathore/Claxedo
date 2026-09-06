@@ -1,3 +1,5 @@
+import { isJsonRecord } from "../../platform/runtime/lib/json"
+
 /** The exact-pinned tokentracker-cli version this adapter prices against. */
 export const TOKEN_TRACKER_VERSION = "0.91.0"
 
@@ -20,15 +22,33 @@ type TokenTrackerPricingModule = {
 
 const tokenTrackerPricingModule = "tokentracker-cli/src/lib/pricing/index.js"
 
+/** tokentracker-cli ships no types, so its pricing entry point is checked once, here. */
+function isPricingModule(value: unknown): value is TokenTrackerPricingModule {
+  if (!isJsonRecord(value)) return false
+  return typeof value.ensurePricingLoaded === "function" && typeof value.getModelPricing === "function"
+}
+
+async function loadPricingModule(): Promise<TokenTrackerPricingModule> {
+  const loaded: unknown = await import(tokenTrackerPricingModule)
+  if (!isPricingModule(loaded)) {
+    throw new Error(`${tokenTrackerPricingModule} does not export the tokentracker-cli pricing API`)
+  }
+  return loaded
+}
+
 export async function projectTokenTrackerCost(input: {
   source: string
   model: string
   tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
 }): Promise<PricedUsage> {
-  const pricing = await import(tokenTrackerPricingModule) as TokenTrackerPricingModule
+  const pricing = await loadPricingModule()
   const catalog = await pricing.ensurePricingLoaded()
   const rates = pricing.getModelPricing(input.model, { source: input.source })
-  const total = Object.values(input.tokens).reduce<number>((sum, value) => sum + (value ?? 0), 0)
+  // Resolve the unknown categories to zero before summing: reducing over
+  // `(number | null)[]` selects the same-type overload and infers `number | null`.
+  const total = Object.values(input.tokens)
+    .map((value) => value ?? 0)
+    .reduce((sum, value) => sum + value, 0)
   const known = [rates.input, rates.output, rates.cache_read, rates.cache_write]
     .some((rate) => typeof rate === "number" && rate > 0)
   const source = catalog.source ?? "bundled-seed"

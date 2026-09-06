@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { resolveLocalServerMigrationJournal } from "./local-server"
 import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 import { resolveTargetOsArch } from "./target-platform"
+import { runBunBuild } from "../../../script/bun-build"
 
 // Native modules cannot be bundled — they ship as node_modules content, and the
 // public OpenCode SDK's asset-relative graph is staged separately under
@@ -17,7 +18,7 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   const pending = `${destination}.pending-${process.pid}`
   fs.rmSync(pending, { recursive: true, force: true })
 
-  const result = await Bun.build({
+  const result = await runBunBuild("Failed to bundle claxedo-server", {
     entrypoints: [source],
     outdir: pending,
     target: "node",
@@ -58,12 +59,12 @@ export async function bundleClaxedoServer(source: string, destination: string) {
         },
       },
     ],
+  }, {
+    // The staging directory is created before the build and only promoted to
+    // `dist` on success, so a failed build must remove it or it is orphaned
+    // under a pid-suffixed name that nothing ever collects.
+    onFailure: () => fs.rmSync(pending, { recursive: true, force: true }),
   })
-
-  if (!result.success) {
-    fs.rmSync(pending, { recursive: true, force: true })
-    throw new AggregateError(result.logs, "Failed to bundle claxedo-server")
-  }
 
   const outputBytes = result.outputs.reduce((total, output) => total + fs.statSync(output.path).size, 0)
 

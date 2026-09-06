@@ -4,60 +4,40 @@ import {
   removeSessionInventorySession,
 } from "./session-inventory"
 import { emptySessionInventoryStore, normalizeSessionInventory, type SessionInventoryValue } from "./queries"
+import { sessionRow } from "../query/test-support/session-row"
 import { mergeWorkspaceGroups, shouldUseSignedSessionInventory, workspaceGroupKey } from "./inventory-source"
 import type { WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 
-type TestSession = {
-  id: string
-  directory: string
-  projectID?: string
-  title?: string
-  time?: { updated?: number; created?: number }
-}
+const globalChat = sessionRow({ id: "ses-global", directory: "global", title: "Global" })
+const globalKeep = sessionRow({ id: "ses-global-keep", directory: "global", title: "Keep" })
+const archived = sessionRow({ id: "ses-archive", directory: "/repo/a", projectID: "project_a" })
+const kept = sessionRow({ id: "ses-keep", directory: "/repo/a", projectID: "project_a" })
+const other = sessionRow({ id: "ses-other", directory: "/repo/b", projectID: "project_b" })
 
-function inventory(): SessionInventoryValue<TestSession> {
-  const sessions = [
-    { id: "ses-global", directory: "global", title: "Global" },
-    { id: "ses-global-keep", directory: "global", title: "Keep" },
-    { id: "ses-archive", directory: "/repo/a", projectID: "project_a" },
-    { id: "ses-keep", directory: "/repo/a", projectID: "project_a" },
-    { id: "ses-other", directory: "/repo/b", projectID: "project_b" },
-  ]
+function inventory(): SessionInventoryValue {
+  const sessions = [globalChat, globalKeep, archived, kept, other]
   return normalizeSessionInventory({
     sessions,
     sessionOrder: sessions.map((session) => session.id),
-    global: [
-      { id: "ses-global", directory: "global", title: "Global" },
-      { id: "ses-global-keep", directory: "global", title: "Keep" },
-    ],
+    global: [globalChat, globalKeep],
     globalState: { hasMore: false, loading: false },
     byProject: {
-      project_a: [
-        { id: "ses-archive", directory: "/repo/a", projectID: "project_a" },
-        { id: "ses-keep", directory: "/repo/a", projectID: "project_a" },
-      ],
-      project_b: [
-        { id: "ses-other", directory: "/repo/b", projectID: "project_b" },
-      ],
+      project_a: [archived, kept],
+      project_b: [other],
     },
     projectState: {},
     byWorkspace: {
       "/repo/a": {
         directory: "/repo/a",
         projectID: "project_a",
-        sessions: [
-          { id: "ses-archive", directory: "/repo/a", projectID: "project_a" },
-          { id: "ses-keep", directory: "/repo/a", projectID: "project_a" },
-        ],
+        sessions: [archived, kept],
         hasMore: false,
         total: 2,
       },
       "/repo/b": {
         directory: "/repo/b",
-          projectID: "project_b",
-          sessions: [
-          { id: "ses-other", directory: "/repo/b", projectID: "project_b" },
-        ],
+        projectID: "project_b",
+        sessions: [other],
         hasMore: false,
         total: 1,
       },
@@ -71,11 +51,11 @@ function inventory(): SessionInventoryValue<TestSession> {
 
 describe("session inventory query helpers", () => {
   test("preserves a paged workspace group when canonical sessions has more rows", () => {
-    const sessions = Array.from({ length: 8 }, (_, index) => ({
+    const sessions = Array.from({ length: 8 }, (_, index) => sessionRow({
       id: `ses-${8 - index}`,
       directory: "/repo/a",
       projectID: "project_a",
-      time: { updated: 8 - index },
+      time: { created: 8 - index, updated: 8 - index },
     }))
     const next = normalizeSessionInventory({
       sessions,
@@ -188,12 +168,11 @@ describe("session inventory query helpers", () => {
     // session (no workspaceId — keyed by its directory) and a signed-workspace
     // session (keyed by its workspaceId) are present keeps both. A signed
     // workspace never evicts local control sessions from the grouped output.
-    type Row = { id: string; directory: string; workspaceId?: string; projectID?: string; time?: { updated?: number } }
-    const derived = normalizeSessionInventory<Row>({
-      ...emptySessionInventoryStore<Row>(),
+    const derived = normalizeSessionInventory({
+      ...emptySessionInventoryStore(),
       sessions: [
-        { id: "ses-local", directory: "/repo/local", projectID: "local_proj", time: { updated: 3 } },
-        { id: "ses-signed", directory: "/repo/signed", workspaceId: "ws_signed", projectID: "signed_proj", time: { updated: 2 } },
+        sessionRow({ id: "ses-local", directory: "/repo/local", projectID: "local_proj", time: { created: 3, updated: 3 } }),
+        sessionRow({ id: "ses-signed", directory: "/repo/signed", workspaceId: "ws_signed", projectID: "signed_proj", time: { created: 2, updated: 2 } }),
       ],
       loaded: true,
     })

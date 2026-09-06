@@ -6,6 +6,8 @@ import { Persist, persisted } from "@/platform/persistence/persist"
 import { dict as en } from "@/platform/i18n/en"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
 import { LOCALE_ENTRIES, type LocaleCode } from "@/platform/i18n/locales"
+import { readString } from "@/lib/record"
+import { totalRecord } from "@/lib/total-record"
 
 export type Locale = LocaleCode
 
@@ -20,13 +22,17 @@ const ENTRY_BY_CODE = new Map(LOCALE_ENTRIES.map((entry) => [entry.code, entry])
 
 const LOCALES: readonly Locale[] = LOCALE_ENTRIES.map((entry) => entry.code)
 
-const INTL: Record<Locale, string> = Object.fromEntries(
-  LOCALE_ENTRIES.map((entry) => [entry.code, entry.intlTag]),
-) as Record<Locale, string>
+// Totality holds because LOCALE_ENTRIES is the manifest `Locale` is derived
+// from: every locale has a row because every row comes from a locale. The one
+// assertion that claim needs lives in `@/lib/total-record`, shared with the
+// architecture metric registry, which builds a total record the same way.
+function byLocale<T>(read: (entry: (typeof LOCALE_ENTRIES)[number]) => T): Record<Locale, T> {
+  return totalRecord(LOCALE_ENTRIES, (entry) => entry.code, read)
+}
 
-const LABEL_KEY: Record<Locale, keyof Dictionary> = Object.fromEntries(
-  LOCALE_ENTRIES.map((entry) => [entry.code, entry.labelKey]),
-) as Record<Locale, keyof Dictionary>
+const INTL = byLocale((entry) => entry.intlTag)
+
+const LABEL_KEY = byLocale((entry): keyof Dictionary => entry.labelKey)
 
 const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = LOCALE_ENTRIES.map(
   (entry) => ({ locale: entry.code, match: entry.matches }),
@@ -56,8 +62,12 @@ function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
 
+function isLocale(value: string): value is Locale {
+  return (LOCALES as readonly string[]).includes(value)
+}
+
 export function normalizeLocale(value: string): Locale {
-  return LOCALES.includes(value as Locale) ? (value as Locale) : "en"
+  return isLocale(value) ? value : "en"
 }
 
 function detectLocale(): Locale {
@@ -75,15 +85,15 @@ function detectLocale(): Locale {
 }
 
 function readStoredLocale() {
-  if (typeof localStorage !== "object") return
+  if (typeof localStorage !== "object") return undefined
   try {
     const raw = localStorage.getItem("claxedo.global.dat:language")
-    if (!raw) return
-    const next = JSON.parse(raw) as { locale?: string }
-    if (typeof next?.locale !== "string") return
-    return normalizeLocale(next.locale)
+    if (!raw) return undefined
+    const locale = readString(JSON.parse(raw), "locale")
+    if (locale === undefined) return undefined
+    return normalizeLocale(locale)
   } catch {
-    return
+    return undefined
   }
 }
 

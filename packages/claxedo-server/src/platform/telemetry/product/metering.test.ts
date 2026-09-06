@@ -9,20 +9,12 @@
  * emit function was reached.
  */
 
-import { describe, expect, test, vi } from "vitest"
-import {
-  buildAssistantMessage,
-  messageCompleted,
-  messageUpdated,
-  sessionUsage,
-} from "@claxedo/agent-sdk-runtime/compat-events"
-import type { ControlPlaneServices } from "../../../authority/services"
-import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { describe, expect, test } from "vitest"
+import { buildAssistantMessage, messageUpdated } from "@claxedo/agent-sdk-runtime/compat-events"
 import {
   LLM_TURN_COMPLETED,
   SANDBOX_LEASE_CLOSED,
   SANDBOX_LEASE_OPENED,
-  SESSION_STARTED,
   USER_ACTIVATED,
   emitLlmTurnCompleted,
   emitSandboxLeaseClosed,
@@ -33,7 +25,6 @@ import {
   type UsageLedger,
 } from "./metering"
 import type { ProductIdentity } from "./product"
-import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 
 /**
  * The fake provider's usage object as the agent runtime hands it over —
@@ -74,65 +65,49 @@ function captureSink() {
   }
 }
 
-function services(telemetry: { capture: (id: string, event: string, props?: Record<string, unknown>) => void }): ControlPlaneServices {
-  return {
-    projectionStore: {
-      sync_session_meta: vi.fn(async () => {}),
-      sync_session_metas: vi.fn(async () => {}),
-      sync_session_messages: vi.fn(async () => {}),
-      put_session_meta: vi.fn(async () => {}),
-      delete_session_meta: vi.fn(async () => {}),
-      session_meta: vi.fn(async () => undefined),
-      session_metas: vi.fn(async () => new Map()),
-      list_session_metas: vi.fn(async () => []),
-      tagged_session_metas: vi.fn(async () => []),
-      read_session_messages: vi.fn(() => []),
-      read_session_max_event_ordinal: vi.fn(() => 0),
-    },
-    durableSessionLog: {
-      persist_message_event: vi.fn(),
-      subscribe_message_replay: vi.fn(() => () => {}),
-    },
-    auth: localOnlyAuthAdapter(),
-    credentials: {} as never,
-    relay: {},
-    sandbox: {},
-    telemetry,
-    localExecution: { enabled: true },
-  } as unknown as ControlPlaneServices
-}
-
-/** A completed assistant message exactly as the harness would produce one. */
-function completedTurn(input: {
-  sessionId: string
-  usage?: typeof FAKE_PROVIDER_USAGE
-  error?: boolean
-  created?: number
-  completed?: number
-}) {
-  const info = buildAssistantMessage({
-    id: `msg_${input.sessionId}`,
-    sessionID: input.sessionId,
-    parentID: "msg_user",
-    agent: "build",
-    model: { providerID: "anthropic", modelID: "claude-sonnet-5" },
-    directory: "/w",
-    created: input.created ?? 1_000,
-    completed: input.completed ?? 3_500,
-    ...(input.error ? { error: { name: "UnknownError", data: { message: "boom" } } } : { finish: "stop" }),
-  })
-  return {
-    scope: { directory: "/w", sessionId: input.sessionId },
-    payload: messageUpdated({ ...info, tokens: input.usage ?? FAKE_PROVIDER_USAGE }),
-  }
-}
-
 // ---------------------------------------------------------------------------
 
 describe("llm_turn_completed carries the provider's usage object verbatim", () => {
+  test("the emitted token fields equal the provider's usage object, not a re-derivation", async () => {
+    const message = buildAssistantMessage({
+      id: "msg_verbatim",
+      sessionID: "s_verbatim",
+      parentID: "msg_user",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-5" },
+      directory: "/w",
+      created: 1_000,
+      completed: 3_500,
+      finish: "stop",
+    })
+    const record = llmTurnRecord({
+      message: messageUpdated({ ...message, tokens: FAKE_PROVIDER_USAGE }).properties.info,
+      harness: "pi",
+    })
+    expect(record).toMatchObject({
+      message_id: "msg_verbatim",
+      session_id: "s_verbatim",
+      harness: "pi",
+      provider_id: "anthropic",
+      model_id: "claude-sonnet-5",
+      turn_status: "ok",
+      latency_ms: 2_500,
+      input_tokens: FAKE_PROVIDER_USAGE.input,
+      output_tokens: FAKE_PROVIDER_USAGE.output,
+      reasoning_tokens: FAKE_PROVIDER_USAGE.reasoning,
+      cache_read_tokens: FAKE_PROVIDER_USAGE.cache.read,
+      cache_write_tokens: FAKE_PROVIDER_USAGE.cache.write,
+    })
 
-
-
+    const captured = captureSink()
+    await emitLlmTurnCompleted({ identity: IDENTITY, sink: captured.sink, ledger: undefined, record: record! })
+    expect(captured.only(LLM_TURN_COMPLETED)[0].properties).toMatchObject({
+      input_tokens: FAKE_PROVIDER_USAGE.input,
+      output_tokens: FAKE_PROVIDER_USAGE.output,
+      cache_read_tokens: FAKE_PROVIDER_USAGE.cache.read,
+      cache_write_tokens: FAKE_PROVIDER_USAGE.cache.write,
+    })
+  })
 
   test("an in-flight assistant message and a user message are not turns", () => {
     expect(llmTurnRecord({ message: { role: "user", sessionID: "s", time: { completed: 1 } }, harness: "pi" }))

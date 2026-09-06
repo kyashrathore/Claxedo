@@ -16,6 +16,7 @@ import {
 import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { raw as txt, record as rec } from "../../platform/json"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -24,13 +25,7 @@ type Options = {
   env?: Record<string, string | undefined>
 }
 
-function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
 
-function txt(input: unknown) {
-  return typeof input === "string" ? input : undefined
-}
 
 function bootPath(directory?: string) {
   const dir = directory?.trim() ?? ""

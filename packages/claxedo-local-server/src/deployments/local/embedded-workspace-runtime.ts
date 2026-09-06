@@ -356,9 +356,9 @@ export async function connectEmbeddedWorkspacePty(
   const info = Pty.get(ptyId)
   if (!info || !await ownsPath(ws, info.cwd)) {
     socket.close(1008, "Session not found")
-    return
+    return undefined
   }
-  return Pty.connect(ptyId, socket as never, cursor)
+  return Pty.connect(ptyId, socket, cursor)
 }
 
 export async function syncEmbeddedWorkspaceRuntimes() {
@@ -367,8 +367,11 @@ export async function syncEmbeddedWorkspaceRuntimes() {
 
 export function shutdownEmbeddedWorkspaceRuntimes(): Promise<void> {
   shutdownGeneration++
-  for (const runtime of hosts.values()) disposeRuntime(runtime)
-  const done = Promise.all(retiring.values()).then(() => {})
+  // `disposeRuntime` registers each disposal in `retiring`, so the loop's
+  // promises were already awaited below — through the map rather than visibly.
+  // Collecting them keeps every promise owned by the caller of this function.
+  const disposals = Array.from(hosts.values(), (runtime) => disposeRuntime(runtime))
+  const done = Promise.all(disposals.concat(Array.from(retiring.values()))).then(() => {})
   void done.catch(() => {})
   return done
 }

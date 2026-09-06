@@ -62,7 +62,7 @@ export function DiagnosticsTimeline(props: {
      measurement rather than an interpolated point on the trend line. */
   const hovered = createMemo(() => {
     const at = hoveredAt()
-    if (at === undefined) return
+    if (at === undefined) return undefined
     return props.points.reduce<DiagnosticsSeriesPoint | undefined>(
       (best, point) => (best === undefined || Math.abs(point.at - at) < Math.abs(best.at - at) ? point : best),
       undefined,

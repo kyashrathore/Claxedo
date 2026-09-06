@@ -3,7 +3,7 @@ import { workspaceBacking } from "./backing"
 
 /** Product-neutral JSON projection returned by workspace resolve routes. */
 export function workspaceResponse(ws: Workspace | undefined, statusOverride?: string) {
-  if (!ws) return
+  if (!ws) return undefined
   const backing = workspaceBacking(ws)
   const access = backing.kind === "cloud-vm" ? "cloud" : backing.kind === "user-hosted" ? "user-hosted" : "local"
   return {

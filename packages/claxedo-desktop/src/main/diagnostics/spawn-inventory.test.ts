@@ -49,7 +49,8 @@ describe("local production spawn inventory", () => {
       })
     }
     specialSeams(classified).forEach(([key, calls]) => discovered.set(key, calls))
-    expect([...discovered.entries()].sort()).toEqual([...classified.entries()].sort())
+    const byKey = (a: [string, number], b: [string, number]) => a[0].localeCompare(b[0])
+    expect([...discovered.entries()].sort(byKey)).toEqual([...classified.entries()].sort(byKey))
   }, 30_000)
 
   test("derives native, ACP, probe, and MCP scenarios from every harness definition", () => {

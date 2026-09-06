@@ -1,4 +1,6 @@
-import type { Page, Response } from "playwright"
+import type { Page, Response } from "playwright-core"
+
+import { isRecord, recordField, textField } from "./json-fields"
 
 export type MessageResponseObservation = {
   observed: boolean
@@ -50,10 +52,10 @@ export function armMessageResponseObservation(page: Page, sessionId: string) {
         }
       }
       if (!response) return { observed: false }
-      const [body, timing] = await Promise.all([
-        response.body(),
-        response.request().timing(),
-      ])
+      const body = await response.body()
+      // `Request.timing()` is synchronous; it was previously awaited inside a
+      // `Promise.all`, which said the two reads overlapped when they did not.
+      const timing = response.request().timing()
       const headers = await response.allHeaders()
       const contentLength = Number(headers["content-length"])
       return {
@@ -128,33 +130,43 @@ export function armEventualLatestTurnResponseObservation(
   }
 }
 
+/**
+ * Read a message-list response body.
+ *
+ * The surface answers with either a bare array or a `{ data: [...] }`
+ * envelope, and both readers below used to re-implement that choice with their
+ * own assertions. Entries are returned as they arrived: a malformed one still
+ * gets a row in the structure report rather than disappearing from the count.
+ */
+function messageList(body: Buffer): unknown[] {
+  const payload: unknown = JSON.parse(body.toString("utf8"))
+  if (Array.isArray(payload)) return payload
+  if (!isRecord(payload)) return []
+  const data = payload.data
+  return Array.isArray(data) ? data : []
+}
+
 export function responseSurfaceStructure(body: Buffer) {
   try {
-    const payload = JSON.parse(body.toString("utf8")) as unknown
-    const messages = Array.isArray(payload)
-      ? payload
-      : payload && typeof payload === "object" && Array.isArray((payload as { data?: unknown }).data)
-        ? (payload as { data: unknown[] }).data
-        : []
-    return messages.map((message) => {
-      const record = message && typeof message === "object" ? message as Record<string, unknown> : {}
-      const info = record.info && typeof record.info === "object" ? record.info as Record<string, unknown> : record
+    return messageList(body).map((message) => {
+      const record = isRecord(message) ? message : {}
+      const info = recordField(record, "info") ?? record
       const parts = Array.isArray(record.parts) ? record.parts : []
       return {
-        role: typeof info.role === "string" ? info.role : "unknown",
+        role: textField(info, "role") ?? "unknown",
         serializedBytes: Buffer.byteLength(JSON.stringify(message)),
         fields: Object.entries(info)
           .filter(([name]) => !["id", "sessionID", "path"].includes(name))
           .map(([name, value]) => ({ name, serializedBytes: Buffer.byteLength(JSON.stringify(value)) }))
           .toSorted((left, right) => right.serializedBytes - left.serializedBytes || left.name.localeCompare(right.name)),
         parts: parts.map((part) => {
-          const value = part && typeof part === "object" ? part as Record<string, unknown> : {}
-          const state = value.state && typeof value.state === "object" ? value.state as Record<string, unknown> : {}
+          const value = isRecord(part) ? part : {}
+          const state = recordField(value, "state") ?? {}
           return {
-            type: typeof value.type === "string" ? value.type : "unknown",
+            type: textField(value, "type") ?? "unknown",
             serializedBytes: Buffer.byteLength(JSON.stringify(part)),
-            textBytes: typeof value.text === "string" ? Buffer.byteLength(value.text) : 0,
-            outputBytes: typeof state.output === "string" ? Buffer.byteLength(state.output) : 0,
+            textBytes: Buffer.byteLength(textField(value, "text") ?? ""),
+            outputBytes: Buffer.byteLength(textField(state, "output") ?? ""),
           }
         }),
       }
@@ -167,21 +179,13 @@ export function responseSurfaceStructure(body: Buffer) {
 export function fullHydrationPartCoverage(body: Buffer, expectedPartIds: readonly string[]) {
   const observed = new Set<string>()
   try {
-    const payload = JSON.parse(body.toString("utf8")) as unknown
-    const messages = Array.isArray(payload)
-      ? payload
-      : payload && typeof payload === "object" && Array.isArray((payload as { data?: unknown }).data)
-        ? (payload as { data: unknown[] }).data
-        : []
-    for (const message of messages) {
-      if (!message || typeof message !== "object") continue
-      const parts = Array.isArray((message as { parts?: unknown }).parts)
-        ? (message as { parts: unknown[] }).parts
-        : []
+    for (const message of messageList(body)) {
+      if (!isRecord(message)) continue
+      const parts = Array.isArray(message.parts) ? message.parts : []
       for (const part of parts) {
-        if (!part || typeof part !== "object") continue
-        const id = (part as { id?: unknown }).id
-        if (typeof id === "string") observed.add(id)
+        if (!isRecord(part)) continue
+        const id = textField(part, "id")
+        if (id !== undefined) observed.add(id)
       }
     }
   } catch {}

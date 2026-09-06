@@ -2,6 +2,7 @@ import { chromium, type Page, type Route } from "playwright-core"
 import path from "node:path"
 import { closeContextAndSaveVideo } from "./capture-video"
 import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
+import { readString } from "../src/lib/record"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(
@@ -519,9 +520,13 @@ async function mockWorkspaceShell(page: Page) {
       return
     }
     if (url.pathname === "/api/claxedo/pty") {
-      const body = route.request().postDataJSON() as { title?: string; cwd?: string } | undefined
+      const body: unknown = route.request().postDataJSON()
       const id = `pty-${pty++}`
-      await json(route, { id, title: body?.title ?? `Terminal ${pty}`, cwd: body?.cwd ?? WORKSPACE_ID })
+      await json(route, {
+        id,
+        title: readString(body, "title") ?? `Terminal ${pty}`,
+        cwd: readString(body, "cwd") ?? WORKSPACE_ID,
+      })
       return
     }
     if (url.pathname.startsWith("/api/claxedo/pty/")) {
@@ -562,11 +567,16 @@ async function waitForReviewSettled(page: Page) {
   }).catch(() => {})
 }
 
+/** Installed on the page by the init script above. */
+declare global {
+  interface Window {
+    __CLAXEDO_RECONNECT_MOTION_SNAPSHOT__: (name: string, startAt: number) => Snapshot
+  }
+}
+
 async function snapshot(page: Page, name: string, startAt: number) {
-  return await page.evaluate(({ name, startAt }) =>
-    (window as typeof window & {
-      __CLAXEDO_RECONNECT_MOTION_SNAPSHOT__: (name: string, startAt: number) => Snapshot
-    }).__CLAXEDO_RECONNECT_MOTION_SNAPSHOT__(name, startAt),
+  return await page.evaluate(
+    ({ name, startAt }) => window.__CLAXEDO_RECONNECT_MOTION_SNAPSHOT__(name, startAt),
     { name, startAt },
   )
 }

@@ -329,16 +329,21 @@ export async function executeBrowserScenario(
       // body.innerText excludes, so read it explicitly.
       const boundaryError = await readBoundaryError(page)
       const state = await page.evaluate(() => {
+        // Persisted state is whatever the last build wrote; this debug dump
+        // reports the three fields it can find and stays silent about the rest.
+        const isRecord = (value: unknown): value is Record<string, unknown> =>
+          typeof value === "object" && value !== null && !Array.isArray(value)
         const raw = localStorage.getItem("claxedo.state.v5")
-        const parsed = raw ? JSON.parse(raw) as {
-          workbench?: { contentIds?: unknown }
-          meta?: Record<string, unknown>
-          terminal?: { owner?: Record<string, unknown> }
-        } : undefined
+        const decoded: unknown = raw ? JSON.parse(raw) : undefined
+        const parsed = isRecord(decoded) ? decoded : {}
+        const workbench = isRecord(parsed.workbench) ? parsed.workbench : undefined
+        const meta = isRecord(parsed.meta) ? parsed.meta : {}
+        const terminal = isRecord(parsed.terminal) ? parsed.terminal : undefined
+        const owner = terminal && isRecord(terminal.owner) ? terminal.owner : {}
         return {
-          contentIds: parsed?.workbench?.contentIds,
-          metaIds: Object.keys(parsed?.meta ?? {}),
-          terminalIds: Object.keys(parsed?.terminal?.owner ?? {}),
+          contentIds: workbench?.contentIds,
+          metaIds: Object.keys(meta),
+          terminalIds: Object.keys(owner),
           terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row']").length,
         }
       }).catch(() => undefined)

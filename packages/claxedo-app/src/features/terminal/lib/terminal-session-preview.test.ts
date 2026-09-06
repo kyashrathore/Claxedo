@@ -10,6 +10,15 @@ afterEach(() => {
   queryClient.clear()
 })
 
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
 describe("terminal session preview aliases", () => {
   test("loadTerminalSessionPreview coalesces duplicate terminal preview requests", async () => {
     let calls = 0
@@ -76,7 +85,7 @@ describe("terminal session preview aliases", () => {
       "http://localhost:3001",
       "pty-old",
       (input) => {
-        seen = String(input)
+        seen = requestUrl(input)
         return Promise.resolve(
           new Response(JSON.stringify({
             success: true,
@@ -143,7 +152,7 @@ describe("terminal session preview aliases", () => {
     const out = await loadTerminalSessionPreview("http://server.test", "pty-local", {
       directory: "/Users/example/project",
       request: ((input) => {
-        seen = String(input)
+        seen = requestUrl(input)
         return Promise.resolve(Response.json({
           success: true,
           source: "none",
@@ -163,7 +172,7 @@ describe("terminal session preview aliases", () => {
   test("loadTerminalSessionPreview routes cloud workspace previews through Workspace Relay", async () => {
     const seen: Array<{ url: string; method: string; authorization: string | null }> = []
     const request = (async (input, init) => {
-      const req = new Request(String(input), init)
+      const req = new Request(input, init)
       seen.push({
         url: req.url,
         method: req.method,
@@ -220,7 +229,7 @@ describe("terminal session preview aliases", () => {
     const out = await loadTerminalSessionPreview("http://127.0.0.1:3001", "pty-cloud-local", {
       directory: "/workspace",
       request: ((input, init) => {
-        const req = new Request(String(input), init)
+        const req = new Request(input, init)
         seen.push(`${req.method} ${req.url} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
         if (req.url === "http://127.0.0.1:3001/workspaces/ws_local/api/wr/hook/terminal-session?terminalId=pty-cloud-local") {
           return Promise.resolve(Response.json({

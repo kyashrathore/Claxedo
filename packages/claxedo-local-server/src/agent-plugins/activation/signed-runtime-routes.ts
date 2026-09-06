@@ -1,19 +1,16 @@
 import { Hono } from "hono"
 import { parseAgentPluginRuntimeApplyRequest } from "../runtime/runtime-contribution"
 import type { LocalAgentPluginsComposition, SignedAgentPluginRuntime } from "../local-composition"
+import { isRecord } from "../../platform/json"
 
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/
 const MAX_SECRETS = 256
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
 
 function secrets(value: unknown): SignedAgentPluginRuntime["secrets"] | undefined {
   if (!Array.isArray(value) || value.length > MAX_SECRETS) return undefined
   const result: Array<{ name: string; value: string }> = []
   for (const entry of value) {
-    if (!record(entry)
+    if (!isRecord(entry)
       || typeof entry.name !== "string"
       || !SECRET_NAME.test(entry.name)
       || typeof entry.value !== "string"
@@ -42,7 +39,7 @@ export function SignedAgentPluginRuntimeRoutes(signed: LocalAgentPluginsComposit
       const raw: unknown = await c.req.json().catch(() => undefined)
       if (raw === null) return c.json(await signed.clear())
       const request = parseAgentPluginRuntimeApplyRequest(raw)
-      const carried = record(raw) ? secrets(raw.secrets) : undefined
+      const carried = isRecord(raw) ? secrets(raw.secrets) : undefined
       if (!request || !carried) {
         return c.json({ error: { code: "agent_plugins_signed_runtime_invalid", message: "signed runtime failed validation" } }, 400)
       }

@@ -10,6 +10,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelEvent } from "./workspace-relay-host-tunnel"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
+import { fetchUrl } from "./test-support/fetch-double"
 
 type DirectoryObserver = {
   waitForPresence(): Promise<NonNullable<ReturnType<WorkspaceRelayDirectory["activeHost"]>>>
@@ -63,7 +64,7 @@ function fakeTimers() {
   return {
     timers,
     setTimeout: (fn: () => void, delayMs?: number) => {
-      timers.push({ fn, delayMs: Number(delayMs ?? 0), cleared: false, fired: false })
+      timers.push({ fn, delayMs: delayMs ?? 0, cleared: false, fired: false })
       return timers.length as unknown as ReturnType<typeof globalThis.setTimeout>
     },
     clearTimeout: ((handle?: number | string | NodeJS.Timeout) => {
@@ -264,7 +265,7 @@ describe("workspace relay host tunnel client", () => {
         ? new URL(`/workspaces/${workspaceId}${path}`, "http://runtime.invalid")
         : undefined,
       request: async (target) => {
-        requests.push(String(target))
+        requests.push(fetchUrl(target))
         return new Response("ok")
       },
       webSocket: class extends FakeWebSocket {
@@ -1249,7 +1250,10 @@ describe("workspace relay host tunnel client", () => {
     }))
 
     const deadline = Date.now() + 1_000
-    while (!cancelled) {
+    // Re-read through a call: `cancelled` is set by the abort handler on
+    // another task, which a bare variable in the condition cannot express.
+    const stillRunning = () => !cancelled
+    while (stillRunning()) {
       if (Date.now() > deadline) throw new Error("Timed out waiting for the upstream reader to be aborted")
       await new Promise((resolve) => setTimeout(resolve, 1))
     }
@@ -1309,8 +1313,8 @@ describe("workspace relay host tunnel client", () => {
       expect(hostWorkspaces[0]).toBe("ws_1")
     } finally {
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1386,8 +1390,8 @@ describe("workspace relay host tunnel client", () => {
     } finally {
       releaseRest()
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1404,7 +1408,7 @@ describe("workspace relay host tunnel client", () => {
       },
       websocket: {
         message(ws, message) {
-          ws.send(`host:${message}`)
+          ws.send(`host:${typeof message === "string" ? message : Buffer.from(message).toString()}`)
         },
       },
     })
@@ -1446,8 +1450,8 @@ describe("workspace relay host tunnel client", () => {
     } finally {
       client?.close()
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1490,8 +1494,8 @@ describe("workspace relay host tunnel client", () => {
       })
     } finally {
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 
@@ -1522,7 +1526,7 @@ describe("workspace relay host tunnel client", () => {
     try {
       await relay.observer.waitForPresence()
       const port = Number(new URL(String(relay.relay.url)).port)
-      relay.relay.stop(true)
+      await relay.relay.stop(true)
       await relay.observer.waitForNoPresence()
       relay.relay = relay.startRelay(port)
 
@@ -1537,8 +1541,8 @@ describe("workspace relay host tunnel client", () => {
       await expect(res.text()).resolves.toBe("host-ok")
     } finally {
       tunnel.close()
-      host.stop(true)
-      relay.relay.stop(true)
+      await host.stop(true)
+      await relay.relay.stop(true)
     }
   })
 })

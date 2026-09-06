@@ -4,7 +4,6 @@ import { queryClient } from "@/platform/query/query-client"
 import {
   appendSessionListPageQueryData,
   type SessionListQuery,
-  type SessionListResponse,
 } from "@/features/session/data/query/session-list"
 import {
   sessionSourceQueryOptions,

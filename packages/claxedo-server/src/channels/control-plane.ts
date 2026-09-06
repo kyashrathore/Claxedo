@@ -26,6 +26,7 @@ import {
   type InboundEnvelope,
 } from "@claxedo/channels"
 import { createSqliteChannelAccessStore, createSqliteChannelIdentityBindingStore } from "./access-store"
+import { channelFromThreadKey, channelId } from "./channel-id"
 import type { Hono as HonoType } from "hono"
 import type { MachineSessionDispatch } from "../session/machine-dispatch"
 import { createProjectionDedupStore } from "./dedup"
@@ -35,7 +36,8 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { signedOrError } from "../workspace/route-support"
+import { signedOrError, txt } from "../workspace/route-support"
+import { readJsonRecord } from "../platform/json/index"
 import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
 
@@ -48,17 +50,8 @@ function channelDataMinimization(env: Record<string, string | undefined>): Chann
 
 function repoTarget(input: string | undefined) {
   const match = input?.match(/^([^/]+)\/([^/]+)$/)
-  if (!match?.[1] || !match[2]) return
+  if (!match?.[1] || !match[2]) return undefined
   return { owner: match[1], name: match[2] }
-}
-
-function channelId(input: unknown): ChannelId | undefined {
-  const value = typeof input === "string" ? input : undefined
-  if (value === "github" || value === "slack" || value === "telegram" || value === "discord" || value === "whatsapp") return value
-}
-
-function channelFromThreadKey(input: string | undefined): ChannelId | undefined {
-  return channelId(input?.split(":")[0])
 }
 
 async function channelWorkspace(input: { workspaceId?: string }) {
@@ -231,11 +224,11 @@ export function createControlPlaneChannels(input: {
     async abortSession(request: { sessionId: string } & ChannelMachineIdentity) {
       const res = await input.runtime.request(request.sessionId, "abort", { method: "POST" }, caller(request))
       if (!res.ok) return { ok: false, status: "failed", message: "Session cancel failed" }
-      const body = await res.json().catch(() => undefined) as { ok?: boolean; status?: string; message?: string } | undefined
+      const body = await readJsonRecord(res)
       return {
         ok: body?.ok === true,
-        status: body?.status ?? "failed",
-        ...(body?.message ? { message: body.message } : {}),
+        status: typeof body?.status === "string" ? body.status : "failed",
+        ...(typeof body?.message === "string" && body.message ? { message: body.message } : {}),
       }
     },
   }
@@ -327,15 +320,18 @@ export function createControlPlaneChannels(input: {
       const existing = sessionsByThread.get(threadKey)
       if (existing) return existing
       const readBinding = input.services.projectionStore.channel_thread_session
-      if (!readBinding || !input.services.projectionStore.clear_channel_thread_session) return
+      if (!readBinding || !input.services.projectionStore.clear_channel_thread_session) return undefined
       const sessionId = await readBinding({ threadKey })
-      if (!sessionId) return
+      if (!sessionId) return undefined
       const hit = await input.services.projectionStore.channel_run_audit?.({ sessionId })
-      if (!hit) return
+      const channel = channelId(hit?.channel)
+      // A stored audit row naming a channel this build no longer supports is
+      // not a session this resolver can route a reply to.
+      if (!hit || !channel) return undefined
       return {
         sessionId: hit.sessionId,
         threadKey: hit.threadKey,
-        channel: hit.channel as ChannelId,
+        channel,
         ...(hit.workspaceId ? { workspaceId: hit.workspaceId } : {}),
         appUrl: `/s/${encodeURIComponent(hit.sessionId)}`,
       }
@@ -542,7 +538,7 @@ export function createControlPlaneChannels(input: {
         externalUserId: recipient.externalUserId,
       }) ?? Promise.resolve([]))))
       .flat()
-      .filter((audit) => enabled.has(audit.channel as ChannelId))
+      .filter((audit) => { const channel = channelId(audit.channel); return channel !== undefined && enabled.has(channel) })
       .sort((left, right) => right.createdAt - left.createdAt)
     const at = request.now ?? Date.now()
     let failure: unknown
@@ -645,13 +641,12 @@ export function mountControlPlaneChannels(app: HonoType, input: {
   }
   app.get("/api/channels/pairing", async (c) => {
     if (!(await adminGate(c))) return c.json(errorBody("channels_pairing_unauthorized", "Pairing admin requires a bearer token"), 401)
-    const channel = c.req.query("channel") as ChannelId | undefined
+    const channel = channelId(c.req.query("channel"))
     return c.json({ pending: await channels.access.listPending(channel) })
   })
   app.post("/api/channels/pairing/approve", async (c) => {
     if (!(await adminGate(c))) return c.json(errorBody("channels_pairing_unauthorized", "Pairing admin requires a bearer token"), 401)
-    const body = await c.req.json().catch(() => ({})) as { code?: unknown }
-    const code = typeof body.code === "string" ? body.code : undefined
+    const code = txt((await readJsonRecord(c.req.raw))?.code)
     if (!code) return c.json(errorBody("channels_pairing_invalid", "Missing pairing code"), 400)
     const result = await channels.access.approve(code, "admin:route")
     if (!result.ok) return c.json(errorBody("channels_pairing_failed", result.message), 400)
@@ -669,10 +664,9 @@ export function mountControlPlaneChannels(app: HonoType, input: {
           }),
       requireSigned: true,
     }, input.services)
-    if ("error" in authResult) return c.json(authResult.error, authResult.status as 400 | 401 | 403 | 503)
+    if ("error" in authResult) return c.json(authResult.error, authResult.status)
     if (!authResult.auth) return c.json(errorBody("channels_pairing_unauthorized", "Signed account authentication is required"), 401)
-    const body = await c.req.json().catch(() => ({})) as { code?: unknown }
-    const code = typeof body.code === "string" ? body.code.trim() : ""
+    const code = txt((await readJsonRecord(c.req.raw))?.code)?.trim()
     if (!code) return c.json(errorBody("channels_pairing_invalid", "Missing pairing code"), 400)
     try {
       const result = await channels.access.approve(code, "authenticated-claim", async (identity) => {
@@ -700,9 +694,9 @@ export function mountControlPlaneChannels(app: HonoType, input: {
           }),
       requireSigned: true,
     }, input.services)
-    if ("error" in authResult) return c.json(authResult.error, authResult.status as 400 | 401 | 403 | 503)
+    if ("error" in authResult) return c.json(authResult.error, authResult.status)
     if (!authResult.auth) return c.json(errorBody("channels_identity_unauthorized", "Signed account authentication is required"), 401)
-    const body = await c.req.json().catch(() => ({})) as { channel?: unknown; externalUserId?: unknown }
+    const body = (await readJsonRecord(c.req.raw)) ?? {}
     const channel = channelId(body.channel)
     if (!channel || typeof body.externalUserId !== "string") {
       return c.json(errorBody("channels_identity_invalid", "A supported channel and externalUserId are required"), 400)

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createProcessClient } from "./client"
+import { fetchUrl } from "../test-support/fetch-double"
 
 describe("process client", () => {
   test("start without options omits json content-type for an empty body", async () => {
@@ -21,7 +22,7 @@ describe("process client", () => {
           body: init?.body,
           type: headers.get("Content-Type"),
           dir: headers.get("x-claxedo-directory"),
-          url: String(input),
+          url: fetchUrl(input),
         }
         return new Response(
           JSON.stringify({
@@ -144,7 +145,7 @@ describe("process client", () => {
         const headers = new Headers(init?.headers)
         seen = {
           workspaceId: headers.get("x-workspace-id"),
-          url: String(input),
+          url: fetchUrl(input),
         }
         return new Response(JSON.stringify({ configs: [], processes: [] }), {
           status: 200,

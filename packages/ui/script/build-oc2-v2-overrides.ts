@@ -4,7 +4,9 @@ import { V2_PRIMITIVES_DEFAULT } from "../src/theme/v2/default-primitives"
 import type { DesktopTheme } from "../src/theme/types"
 
 const themePath = import.meta.dir + "/../src/theme/themes/oc-2.json"
-const theme = (await Bun.file(themePath).json()) as DesktopTheme
+const parsed: unknown = await Bun.file(themePath).json()
+if (!isDesktopTheme(parsed)) throw new Error(`${themePath} is not a desktop theme`)
+const theme = parsed
 const css = await Bun.file(import.meta.dir + "/../src/v2/styles/theme.css").text()
 
 const light = { ...V2_PRIMITIVES_DEFAULT, ...readTokens("light") }
@@ -18,6 +20,24 @@ const next: DesktopTheme = {
 
 await Bun.write(themePath, JSON.stringify(next, null, 2) + "\n")
 console.log("Updated oc-2.json v2Overrides", Object.keys(light).length, "tokens per mode")
+
+/** The theme file this script rewrites is checked in, so a shape mismatch is a build error. */
+function isDesktopTheme(value: unknown): value is DesktopTheme {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "light" in value &&
+    typeof value.light === "object" &&
+    value.light !== null &&
+    "dark" in value &&
+    typeof value.dark === "object" &&
+    value.dark !== null
+  )
+}
 
 function readTokens(mode: "light" | "dark") {
   const selector = mode === "light" ? ":root" : `\\[data-color-scheme="${mode}"\\]`

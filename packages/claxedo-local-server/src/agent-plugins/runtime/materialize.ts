@@ -21,6 +21,7 @@ import type {
   HarnessPluginProjection,
   RuntimeMcpServerProjection,
 } from "./adapters/types"
+import { isRecord } from "../../platform/json"
 
 export type AgentPluginRuntimeIdentity =
   | { mode: "unsigned"; machineId: string }
@@ -38,10 +39,6 @@ export type MaterializedAgentPluginGeneration = {
   root: string
   projections: Partial<Record<AgentPluginHarnessId, HarnessPluginProjection>>
   cleanupWarning?: string
-}
-
-function record(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function contained(root: string, relative: string): string | undefined {
@@ -67,7 +64,7 @@ export async function readMaterializedAgentPluginGeneration(
       `Active Agent Plugins generation manifest is unreadable: ${String(error)}`,
     )
   }
-  if (!record(raw)) {
+  if (!isRecord(raw)) {
     throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation manifest is invalid")
   }
   const manifest = raw
@@ -75,12 +72,12 @@ export async function readMaterializedAgentPluginGeneration(
     throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation manifest disagrees with its pointer")
   }
   const rows = manifest.projections
-  if (!record(rows)) {
+  if (!isRecord(rows)) {
     throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation has no projections")
   }
   const projections: Partial<Record<AgentPluginHarnessId, HarnessPluginProjection>> = {}
   for (const [harnessId, value] of Object.entries(rows)) {
-    if (!isAgentPluginHarnessId(harnessId) || !record(value)) {
+    if (!isAgentPluginHarnessId(harnessId) || !isRecord(value)) {
       throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins projection metadata is invalid")
     }
     const row = value
@@ -88,7 +85,7 @@ export async function readMaterializedAgentPluginGeneration(
       throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection has invalid roots`)
     }
     const pluginRoots = row.pluginRoots.map((item) => {
-      if (!record(item)) {
+      if (!isRecord(item)) {
         throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection root is invalid`)
       }
       const entry = item

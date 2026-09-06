@@ -168,7 +168,9 @@ function buildService(fetchImpl: typeof fetch) {
     store: memoryStore(TOKENS),
     serverOrigin: "https://control.test",
     now: () => Date.now(),
-    fetch: fetchImpl as never,
+    // Adapted rather than asserted: the account service calls with a URL
+    // string and a fixed init, which `fetch` accepts as-is.
+    fetch: (url, init) => fetchImpl(url, init),
     refresh: async (): Promise<RefreshOutcome> => ({ ok: true, tokens: TOKENS }),
   })
 }
@@ -250,7 +252,7 @@ async function runLiveArm(scenario: LiveScenario, arm: "direct" | "accountPort")
     )
   } else {
     const pacedFetch: typeof fetch = async (url) => {
-      const href = String(url)
+      const href = url instanceof Request ? url.url : String(url)
       if (href.includes("/api/wr/events") || href.includes("/runtime-events")) {
         return makePacedSseResponse(messages, scenario.bytes, interval, performance.now())
       }
@@ -260,7 +262,7 @@ async function runLiveArm(scenario: LiveScenario, arm: "direct" | "accountPort")
       })
     }
     const service = buildService(pacedFetch)
-    service.restore()
+    await service.restore()
 
     await Promise.all(
       Array.from({ length: scenario.sessions }, async (_s, sessionIdx) => {

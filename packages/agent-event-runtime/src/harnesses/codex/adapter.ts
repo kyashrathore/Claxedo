@@ -6,7 +6,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
-import { number, object, optionLabels, pathFields, text } from "../value"
+import { number, object, optionLabels, pathFields, text } from "../../value"
 import type { ServerNotification, ServerRequest } from "./protocol"
 
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
@@ -85,11 +85,11 @@ export type CodexCollabAgentCall = {
 
 export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | undefined {
   const row = object(value)
-  if (row?.type !== "collabAgentToolCall") return
+  if (row?.type !== "collabAgentToolCall") return undefined
   const id = text(row.id)
   const tool = text(row.tool)
   const senderThreadId = text(row.senderThreadId)
-  if (!id || !tool || !senderThreadId || !Array.isArray(row.receiverThreadIds)) return
+  if (!id || !tool || !senderThreadId || !Array.isArray(row.receiverThreadIds)) return undefined
   const receiverThreadIds = row.receiverThreadIds.filter((value): value is string => typeof value === "string" && value.length > 0)
   const agentsStates = object(row.agentsStates) ?? {}
   return {
@@ -115,13 +115,14 @@ export function codexCollabAgentStatus(value: unknown): SubagentStatus | undefin
   if (status === "completed") return "completed"
   if (status === "errored" || status === "notFound") return "failed"
   if (status === "shutdown") return "killed"
+  return undefined
 }
 
 export function codexStartedSubagent(value: unknown) {
   const thread = object(object(value)?.thread)
   const id = text(thread?.id)
   const parentThreadId = text(thread?.parentThreadId)
-  if (!id || !parentThreadId) return
+  if (!id || !parentThreadId) return undefined
   const status = text(object(thread?.status)?.type)
   return {
     id,
@@ -243,7 +244,8 @@ function todosFromPlan(row: Record<string, unknown>) {
   })
 }
 
-const CODEX_USAGE_FIELDS = ["inputTokens", "cachedInputTokens", "outputTokens", "reasoningOutputTokens"] as const
+/** The turn accumulator names the raw Codex token fields; it is the only list of them. */
+type CodexUsageField = keyof CodexTurnUsageState["accumulated"]
 
 function addNullable(previous: number | null, delta: number | undefined) {
   if (delta === undefined) return previous
@@ -281,19 +283,19 @@ function usage(
   // Within a turn, prefer the difference of session totals so a missed
   // emission is recovered; the turn's first request falls back to `last`.
   const previousTotals = turnUsage?.previousTotals
-  const delta = Object.fromEntries(CODEX_USAGE_FIELDS.map((field) => {
+  const delta = (field: CodexUsageField) => {
     if (total && previousTotals) {
       const current = number(total[field])
       const previous = number(previousTotals[field])
-      if (current !== undefined && previous !== undefined) return [field, Math.max(0, current - previous)]
+      if (current !== undefined && previous !== undefined) return Math.max(0, current - previous)
     }
-    return [field, number(last[field])]
-  })) as Record<(typeof CODEX_USAGE_FIELDS)[number], number | undefined>
+    return number(last[field])
+  }
   const accumulated = {
-    inputTokens: addNullable(turnUsage?.accumulated.inputTokens ?? null, delta.inputTokens),
-    cachedInputTokens: addNullable(turnUsage?.accumulated.cachedInputTokens ?? null, delta.cachedInputTokens),
-    outputTokens: addNullable(turnUsage?.accumulated.outputTokens ?? null, delta.outputTokens),
-    reasoningOutputTokens: addNullable(turnUsage?.accumulated.reasoningOutputTokens ?? null, delta.reasoningOutputTokens),
+    inputTokens: addNullable(turnUsage?.accumulated.inputTokens ?? null, delta("inputTokens")),
+    cachedInputTokens: addNullable(turnUsage?.accumulated.cachedInputTokens ?? null, delta("cachedInputTokens")),
+    outputTokens: addNullable(turnUsage?.accumulated.outputTokens ?? null, delta("outputTokens")),
+    reasoningOutputTokens: addNullable(turnUsage?.accumulated.reasoningOutputTokens ?? null, delta("reasoningOutputTokens")),
   }
   return {
     event: usageEvent({
@@ -392,7 +394,7 @@ function harnessNotice(input: {
   } satisfies AgentRuntimeEvent
 }
 
-function base64Text(value: unknown) {
+function base64Text(value: unknown): string | undefined {
   const raw = text(value)
   if (!raw) return undefined
   try {
@@ -403,6 +405,7 @@ function base64Text(value: unknown) {
   } catch {
     return undefined
   }
+  return undefined
 }
 
 function textContent(value: string) {
@@ -583,7 +586,7 @@ function codexErrorInfoMessage(info: unknown) {
   }
   if (info === "contextWindowExceeded") return "This turn exceeded the Codex context window."
   if (info === "cyberPolicy") return "Codex refused this request due to a safety policy."
-  return
+  return undefined
 }
 
 function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimitedRateLimitMessage?: string) {

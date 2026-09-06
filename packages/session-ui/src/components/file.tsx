@@ -1,4 +1,5 @@
 import { sampledChecksum } from "@opencode-ai/ui/utils/encode"
+import { readableText } from "@opencode-ai/ui/utils/text"
 import {
   areFilesEqual,
   areOptionsEqual,
@@ -23,7 +24,12 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
-import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
+import {
+  diffSideFromLineType,
+  findDiffSide,
+  fixDiffSelection,
+  type DiffSelectionSide,
+} from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
 import { fileFindLines } from "../pierre/file-find-content"
 import {
@@ -34,6 +40,7 @@ import {
   getViewerRoot,
   notifyShadowReady,
   observeViewerScheme,
+  scrollParent,
 } from "../pierre/file-runtime"
 import {
   findCodeSelectionSide,
@@ -578,15 +585,6 @@ function preserve(viewer: Viewer) {
   }
 }
 
-function scrollParent(el: HTMLElement): HTMLElement | undefined {
-  let parent = el.parentElement
-  while (parent) {
-    const style = getComputedStyle(parent)
-    if (style.overflowY === "auto" || style.overflowY === "scroll") return parent
-    parent = parent.parentElement
-  }
-}
-
 function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): VirtualStrategy {
   let virtualizer: Virtualizer | undefined
   let root: Document | HTMLElement | undefined
@@ -599,10 +597,10 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): Vir
 
   return {
     get: () => {
-      if (typeof document === "undefined") return
+      if (typeof document === "undefined") return undefined
 
       const wrapper = host()
-      if (!wrapper) return
+      if (!wrapper) return undefined
 
       const next = scrollParent(wrapper) ?? document
       if (virtualizer && root === next) return virtualizer
@@ -634,15 +632,15 @@ function createSharedVirtualStrategy(host: () => HTMLDivElement | undefined, ena
     get: () => {
       if (!enabled()) {
         release()
-        return
+        return undefined
       }
       if (shared) return shared.virtualizer
 
       const container = host()
-      if (!container) return
+      if (!container) return undefined
 
       const result = acquireVirtualizer(container)
-      if (!result) return
+      if (!result) return undefined
       shared = result
       return result.virtualizer
     },
@@ -650,10 +648,10 @@ function createSharedVirtualStrategy(host: () => HTMLDivElement | undefined, ena
   }
 }
 
-function parseLine(node: HTMLElement) {
-  if (!node.dataset.line) return
+function parseLine(node: HTMLElement): number | undefined {
+  if (!node.dataset.line) return undefined
   const value = parseInt(node.dataset.line, 10)
-  if (Number.isNaN(value)) return
+  if (Number.isNaN(value)) return undefined
   return value
 }
 
@@ -684,17 +682,16 @@ function mouseHit(
   }
 }
 
-function diffMouseSide(node: HTMLElement) {
-  const type = node.dataset.lineType
-  if (type === "change-deletion") return "deletions" satisfies DiffSelectionSide
-  if (type === "change-addition" || type === "change-additions") return "additions" satisfies DiffSelectionSide
-  if (node.dataset.code == null) return
+function diffMouseSide(node: HTMLElement): DiffSelectionSide | undefined {
+  const byLineType = diffSideFromLineType(node.dataset.lineType)
+  if (byLineType) return byLineType
+  if (node.dataset.code == null) return undefined
   return node.hasAttribute("data-deletions") ? "deletions" : "additions"
 }
 
-function diffSelectionSide(node: Node | null) {
+function diffSelectionSide(node: Node | null): DiffSelectionSide | undefined {
   const el = findElement(node)
-  if (!el) return
+  if (!el) return undefined
   return findDiffSide(el)
 }
 
@@ -755,12 +752,15 @@ function TextViewer<T>(props: TextFileProps<T>) {
   const [local, others] = splitProps(props, textKeys)
 
   const text = () => {
-    const value = local.file.contents as unknown
+    // `FileContents.contents` is declared `string`, but the value reaching a
+    // viewer comes from a tool payload that can carry anything. A malformed one
+    // must render as something the reader can act on: an empty pane hides that
+    // the payload was wrong, and `[object Object]` says nothing about what it
+    // held. `readableText` serializes it instead.
+    const value: unknown = local.file.contents
     if (typeof value === "string") return value
     if (Array.isArray(value)) return value.join("\n")
-    if (value == null) return ""
-    // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
-    return String(value)
+    return readableText(value)
   }
 
   const lineCount = () => {
@@ -851,11 +851,11 @@ function TextViewer<T>(props: TextFileProps<T>) {
       restoreShadowTextSelection(root, selected.text)
     },
     buildDragSelection: () => {
-      if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return
+      if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return undefined
       return { start: Math.min(viewer.dragStart, viewer.dragEnd), end: Math.max(viewer.dragStart, viewer.dragEnd) }
     },
     buildClickSelection: () => {
-      if (viewer.dragStart === undefined) return
+      if (viewer.dragStart === undefined) return undefined
       return { start: viewer.dragStart, end: viewer.dragStart }
     },
     onDragStart: () => {},
@@ -887,7 +887,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   })
 
   const options = createMemo(() => ({
-    ...createDefaultOptions<T>("unified"),
+    ...createDefaultOptions("unified"),
     ...others,
     ...lineCallbacks,
   }))
@@ -1052,14 +1052,14 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       setSelectedLines(selected.range)
     },
     buildDragSelection: () => {
-      if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return
+      if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return undefined
       const selected: SelectedLineRange = { start: viewer.dragStart, end: viewer.dragEnd }
       if (dragSide) selected.side = dragSide
       if (dragEndSide && dragSide && dragEndSide !== dragSide) selected.endSide = dragEndSide
       return selected
     },
     buildClickSelection: () => {
-      if (viewer.dragStart === undefined) return
+      if (viewer.dragStart === undefined) return undefined
       const selected: SelectedLineRange = { start: viewer.dragStart, end: viewer.dragStart }
       if (dragSide) selected.side = dragSide
       return selected

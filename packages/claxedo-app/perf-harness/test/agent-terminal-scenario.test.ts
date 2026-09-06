@@ -108,7 +108,7 @@ describe("Claxedo terminal workload", () => {
       // guessed duration races cold process startup on contended Linux hosts
       // and can send the probe before the child is ready to accept it.
       await readUntil("⟦input-ready:probe-1⟧")
-      child.stdin.write("probe-1\n")
+      await child.stdin.write("probe-1\n")
       await child.stdin.flush()
       await readUntil("⟦t3-benchmark-complete⟧")
       await Bun.sleep(20)
@@ -116,9 +116,9 @@ describe("Claxedo terminal workload", () => {
       expect(output).toContain("⟦t3-benchmark-complete⟧")
       expect(exited).toBe(false)
 
-      child.stdin.write("T3_TERMINAL_SHUTDOWN\n")
+      await child.stdin.write("T3_TERMINAL_SHUTDOWN\n")
       await child.stdin.flush()
-      child.stdin.end()
+      await child.stdin.end()
       expect(await child.exited).toBe(0)
       reader.releaseLock()
     } finally {

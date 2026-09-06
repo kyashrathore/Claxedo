@@ -60,15 +60,16 @@ export type TimelineRowMap = {
 
 type TaggedRow<Tag extends string, Fields extends object> = Readonly<Fields> & { readonly _tag: Tag }
 
+/**
+ * A constructor for one tagged row.
+ *
+ * Rows are plain frozen-shape records rather than class instances: nothing ever
+ * asks `instanceof`, and the class form could only be typed by asserting through
+ * `unknown`, because `Object.assign(this, fields)` is opaque to TypeScript.
+ * A factory states the same contract with no assertion.
+ */
 function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
-  return class {
-    readonly _tag = tag
-
-    constructor(fields: Fields) {
-      Object.assign(this, fields)
-    }
-    // as-any: Object.assign applies the field set, so TS cannot verify the shape.
-  } as unknown as new (fields: Fields) => TaggedRow<Tag, Fields>
+  return (fields: Fields): TaggedRow<Tag, Fields> => ({ ...fields, _tag: tag })
 }
 
 function samePartRef(a: { messageID: string; partID: string }, b: { messageID: string; partID: string }) {
@@ -91,39 +92,47 @@ function samePartGroup(a: PartGroup, b: PartGroup) {
   return "refs" in b && samePartRefs(a.refs, b.refs)
 }
 
+/**
+ * `SummaryDiff` is `AgentSnapshotFileDiff & { file: string }`, a closed contract
+ * shape — comparing its fields by name states that, where the previous
+ * `Object.keys` walk had to assert the key type and silently agreed whenever two
+ * diffs happened to carry the same NUMBER of keys.
+ */
+function sameSummaryDiff(a: SummaryDiff, b: SummaryDiff) {
+  return a.file === b.file && a.patch === b.patch && a.additions === b.additions &&
+    a.deletions === b.deletions && a.status === b.status
+}
+
 function sameSummaryDiffs(a: SummaryDiff[], b: SummaryDiff[]) {
   if (a === b) return true
   if (a.length !== b.length) return false
   return a.every((diff, index) => {
     const other = b[index]
-    if (!other) return false
-    const keys = Object.keys(diff) as Array<keyof SummaryDiff>
-    const otherKeys = Object.keys(other)
-    return keys.length === otherKeys.length && keys.every((key) => Object.is(diff[key], other[key]))
+    return !!other && sameSummaryDiff(diff, other)
   })
 }
 
 export namespace TimelineRow {
   export const TurnGap = taggedRow<"TurnGap", TimelineRowMap["TurnGap"]>("TurnGap")
-  export type TurnGap = InstanceType<typeof TurnGap>
+  export type TurnGap = ReturnType<typeof TurnGap>
   export const CommentStrip = taggedRow<"CommentStrip", TimelineRowMap["CommentStrip"]>("CommentStrip")
-  export type CommentStrip = InstanceType<typeof CommentStrip>
+  export type CommentStrip = ReturnType<typeof CommentStrip>
   export const UserMessage = taggedRow<"UserMessage", TimelineRowMap["UserMessage"]>("UserMessage")
-  export type UserMessage = InstanceType<typeof UserMessage>
+  export type UserMessage = ReturnType<typeof UserMessage>
   export const TurnDivider = taggedRow<"TurnDivider", TimelineRowMap["TurnDivider"]>("TurnDivider")
-  export type TurnDivider = InstanceType<typeof TurnDivider>
+  export type TurnDivider = ReturnType<typeof TurnDivider>
   export const AssistantPart = taggedRow<"AssistantPart", TimelineRowMap["AssistantPart"]>("AssistantPart")
-  export type AssistantPart = InstanceType<typeof AssistantPart>
+  export type AssistantPart = ReturnType<typeof AssistantPart>
   export const Thinking = taggedRow<"Thinking", TimelineRowMap["Thinking"]>("Thinking")
-  export type Thinking = InstanceType<typeof Thinking>
+  export type Thinking = ReturnType<typeof Thinking>
   export const DiffSummary = taggedRow<"DiffSummary", TimelineRowMap["DiffSummary"]>("DiffSummary")
-  export type DiffSummary = InstanceType<typeof DiffSummary>
+  export type DiffSummary = ReturnType<typeof DiffSummary>
   export const Error = taggedRow<"Error", TimelineRowMap["Error"]>("Error")
-  export type Error = InstanceType<typeof Error>
+  export type Error = ReturnType<typeof Error>
   export const Retry = taggedRow<"Retry", TimelineRowMap["Retry"]>("Retry")
-  export type Retry = InstanceType<typeof Retry>
+  export type Retry = ReturnType<typeof Retry>
   export const TurnFold = taggedRow<"TurnFold", TimelineRowMap["TurnFold"]>("TurnFold")
-  export type TurnFold = InstanceType<typeof TurnFold>
+  export type TurnFold = ReturnType<typeof TurnFold>
 
   export type TimelineRow =
     | TurnGap

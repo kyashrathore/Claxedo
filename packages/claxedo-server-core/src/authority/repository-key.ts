@@ -2,9 +2,9 @@
 export function canonicalRepositoryUrl(value: string) {
   const trimmed = value.trim().replace(/\/+$/, "").replace(/\.git$/i, "")
   const scp = trimmed.match(/^[^@/\s]+@([^:/\s]+):(.+)$/)
-  if (scp) return `${String(scp[1]).toLowerCase()}/${scp[2]}`
+  if (scp) return `${scp[1].toLowerCase()}/${scp[2]}`
   const parsed = trimmed.match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/(.+)$/i)
-  if (parsed) return `${String(parsed[1]).toLowerCase()}/${parsed[2]}`
+  if (parsed) return `${parsed[1].toLowerCase()}/${parsed[2]}`
   return trimmed
 }
 

@@ -97,7 +97,8 @@ export default defineConfig(({ mode }) => {
           },
           output: {
             manualChunks(id) {
-              if (id.endsWith("/src/main/account/index.ts")) return "desktop-account"
+              // `undefined` leaves the chunk to Rollup's own splitting.
+              return id.endsWith("/src/main/account/index.ts") ? "desktop-account" : undefined
             },
           },
         },

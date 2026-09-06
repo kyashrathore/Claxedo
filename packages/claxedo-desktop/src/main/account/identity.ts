@@ -32,9 +32,12 @@ export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
  * Unknown shapes still produce a usable `{ userId }` so sign-in is not blocked
  * by a profile that is merely incomplete.
  */
+
+import { asRecord } from "../../shared/json-read"
+
 export function identityFromUserInfo(body: unknown): AccountIdentity {
-  if (!body || typeof body !== "object") return { userId: "" }
-  const record = body as Record<string, unknown>
+  const record = asRecord(body)
+  if (!record) return { userId: "" }
   const userId = stringClaim(record.sub) ?? stringClaim(record.user_id) ?? ""
   const fromParts = [stringClaim(record.given_name), stringClaim(record.family_name)]
     .filter((part): part is string => !!part)

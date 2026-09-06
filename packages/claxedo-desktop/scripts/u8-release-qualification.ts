@@ -4,6 +4,8 @@ import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
+import { isRecord } from "../src/shared/json-read"
+
 export const U8_RELEASE_BASELINE_SCHEMA = "claxedo-u8-release-baseline/v1" as const
 export const U8_RELEASE_EVIDENCE_SCHEMA = "claxedo-u8-release-evidence/v1" as const
 export const U8_RELEASE_GATE_SCHEMA = "claxedo-u8-release-gate/v1" as const
@@ -202,8 +204,8 @@ function readJson(file: string): unknown {
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
-  invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} must be an object`)
-  return value as Record<string, unknown>
+  invariant(isRecord(value), `${label} must be an object`)
+  return value
 }
 
 function requireMetadata(value: unknown, label: string) {
@@ -226,7 +228,48 @@ function exactKeys(value: Record<string, unknown>, expected: readonly string[], 
   invariant(missing.length === 0 && extra.length === 0, `${label} keys differ (missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"})`)
 }
 
-function validateBaseline(value: unknown): U8ReleaseBaseline {
+/** The frozen per-harness metric set, named once and used by both readers. */
+const HARNESS_CEILING_METRICS = [
+  "activePhysicalFootprintMiB",
+  "coldLatencyMs",
+  "warmLatencyMs",
+  "eventLoopDelayMs",
+  "cpuMs",
+  "gcPauseMs",
+] as const
+
+/**
+ * Names, as a checked postcondition, what the qualification run established.
+ *
+ * Every field `U8ReleaseEvidence` declares is validated in depth on the way
+ * through `qualifyU8Release`, but across a hundred lines of a function that
+ * also hashes files and cross-checks the artifact — so TypeScript cannot carry
+ * that forward on the `Record<string, unknown>` view. Re-stating the top-level
+ * shape here is what turns the old `evidenceValue as U8ReleaseEvidence` into a
+ * claim this file actually makes.
+ */
+function assertReleaseEvidence(value: unknown): asserts value is U8ReleaseEvidence {
+  const evidence = record(value, "evidence")
+  invariant(evidence.schema === U8_RELEASE_EVIDENCE_SCHEMA, "evidence.schema is not the release-evidence schema")
+  invariant(typeof evidence.releaseSha === "string", "evidence.releaseSha must be a string")
+  invariant(typeof evidence.baselineSha256 === "string", "evidence.baselineSha256 must be a string")
+  invariant(Array.isArray(evidence.boundaryManifests), "evidence.boundaryManifests must be an array")
+  for (const key of [
+    "artifact",
+    "metadata",
+    "memory",
+    "harnesses",
+    "browser",
+    "desktopLifecycle",
+    "nativeArtifacts",
+    "nativeCredentials",
+    "releaseGates",
+  ] as const) {
+    invariant(isRecord(evidence[key]), `evidence.${key} must be an object`)
+  }
+}
+
+function validateBaseline(value: unknown): asserts value is U8ReleaseBaseline {
   const baseline = record(value, "baseline")
   invariant(baseline.schema === U8_RELEASE_BASELINE_SCHEMA, `baseline schema must be ${U8_RELEASE_BASELINE_SCHEMA}`)
   invariant(baseline.immutable === true, "baseline must declare immutable=true")
@@ -242,7 +285,7 @@ function validateBaseline(value: unknown): U8ReleaseBaseline {
   exactKeys(harnesses, REQUIRED_HARNESSES, "baseline harnesses")
   for (const name of REQUIRED_HARNESSES) {
     const ceiling = record(harnesses[name], `baseline harness ${name}`)
-    exactKeys(ceiling, ["activePhysicalFootprintMiB", "coldLatencyMs", "warmLatencyMs", "eventLoopDelayMs", "cpuMs", "gcPauseMs"], `baseline harness ${name}`)
+    exactKeys(ceiling, HARNESS_CEILING_METRICS, `baseline harness ${name}`)
     for (const [metric, limit] of Object.entries(ceiling)) finite(limit, `baseline harness ${name}.${metric}`)
   }
   const browser = record(thresholds.browser, "baseline.thresholds.browser")
@@ -251,9 +294,11 @@ function validateBaseline(value: unknown): U8ReleaseBaseline {
     const limits = record(browser[flow], `baseline browser ${flow}`)
     exactKeys(limits, ["worstIntervalMs", "baselineCompletionMs", "completionMultiplier"], `baseline browser ${flow}`)
     for (const [metric, limit] of Object.entries(limits)) finite(limit, `baseline browser ${flow}.${metric}`)
-    invariant((limits.completionMultiplier as number) > 0, `baseline browser ${flow}.completionMultiplier must be positive`)
+    // Re-read on the property itself: the loop above narrows nothing a later
+    // expression can see, because `limits[metric]` is not a stable reference.
+    finite(limits.completionMultiplier, `baseline browser ${flow}.completionMultiplier`)
+    invariant(limits.completionMultiplier > 0, `baseline browser ${flow}.completionMultiplier must be positive`)
   }
-  return value as U8ReleaseBaseline
 }
 
 function median(values: number[]) {
@@ -263,6 +308,7 @@ function median(values: number[]) {
 
 function validateMemory(samples: unknown, label: string, profileIds: Set<string>) {
   invariant(Array.isArray(samples) && samples.length === FIXED.cohortSamples, `${label} must contain exactly ${String(FIXED.cohortSamples)} samples`)
+  const footprints: number[] = []
   for (const [index, raw] of samples.entries()) {
     const sample = record(raw, `${label}[${String(index)}]`)
     invariant(typeof sample.profileId === "string" && sample.profileId.trim().length > 0, `${label}[${String(index)}].profileId is missing`)
@@ -271,7 +317,10 @@ function validateMemory(samples: unknown, label: string, profileIds: Set<string>
     invariant(sample.temporaryProfile === true, `${label}[${String(index)}] did not use a temporary profile`)
     invariant(sample.freshProfile === true, `${label}[${String(index)}] profile was not fresh`)
     invariant(sample.settleMs === FIXED.settleMs, `${label}[${String(index)}] did not settle for ${String(FIXED.settleMs)} ms`)
-    for (const metric of ["physicalFootprintMiB", "iosurfaceMiB", "summedRssMiB"] as const) finite(sample[metric], `${label}[${String(index)}].${metric}`)
+    for (const metric of ["iosurfaceMiB", "summedRssMiB"] as const) finite(sample[metric], `${label}[${String(index)}].${metric}`)
+    const physicalFootprintMiB = sample.physicalFootprintMiB
+    finite(physicalFootprintMiB, `${label}[${String(index)}].physicalFootprintMiB`)
+    footprints.push(physicalFootprintMiB)
     const roles = record(sample.processRoleFootprintMiB, `${label}[${String(index)}].processRoleFootprintMiB`)
     invariant(Object.keys(roles).length > 0, `${label}[${String(index)}] has no process-role footprint`)
     Object.entries(roles).forEach(([role, amount]) => finite(amount, `${label}[${String(index)}].processRoleFootprintMiB.${role}`))
@@ -279,9 +328,9 @@ function validateMemory(samples: unknown, label: string, profileIds: Set<string>
       invariant(sample[gate] === true, `${label}[${String(index)}].${gate} did not pass`)
     }
     invariant(sample.harnessProcesses === 0, `${label}[${String(index)}] contains harness processes`)
-    invariant((sample.physicalFootprintMiB as number) <= FIXED.maximumPhysicalFootprintMiB, `${label}[${String(index)}] physical footprint exceeds ${String(FIXED.maximumPhysicalFootprintMiB)} MiB`)
+    invariant(physicalFootprintMiB <= FIXED.maximumPhysicalFootprintMiB, `${label}[${String(index)}] physical footprint exceeds ${String(FIXED.maximumPhysicalFootprintMiB)} MiB`)
   }
-  invariant(median(samples.map((sample) => (sample as MemorySample).physicalFootprintMiB)) <= FIXED.medianPhysicalFootprintMiB, `${label} median physical footprint exceeds ${String(FIXED.medianPhysicalFootprintMiB)} MiB`)
+  invariant(median(footprints) <= FIXED.medianPhysicalFootprintMiB, `${label} median physical footprint exceeds ${String(FIXED.medianPhysicalFootprintMiB)} MiB`)
 }
 
 function validateHarnesses(value: unknown, baseline: U8ReleaseBaseline) {
@@ -293,9 +342,10 @@ function validateHarnesses(value: unknown, baseline: U8ReleaseBaseline) {
     const limits = baseline.thresholds.harnesses[name]
     for (const [index, raw] of samples.entries()) {
       const sample = record(raw, `harness ${name}[${String(index)}]`)
-      for (const metric of Object.keys(limits) as Array<keyof HarnessCeiling>) {
-        finite(sample[metric], `harness ${name}[${String(index)}].${metric}`)
-        invariant((sample[metric]) <= limits[metric], `harness ${name}[${String(index)}].${metric} exceeds frozen ceiling`)
+      for (const metric of HARNESS_CEILING_METRICS) {
+        const measured = sample[metric]
+        finite(measured, `harness ${name}[${String(index)}].${metric}`)
+        invariant(measured <= limits[metric], `harness ${name}[${String(index)}].${metric} exceeds frozen ceiling`)
       }
       for (const gate of ["mutationSafe", "streamPassed", "idleExitPassed", "parentLossPassed"] as const) {
         invariant(sample[gate] === true, `harness ${name}[${String(index)}].${gate} did not pass`)
@@ -323,10 +373,14 @@ function validateBrowser(value: unknown, baseline: U8ReleaseBaseline) {
         invariant(typeof sample.contextId === "string" && sample.contextId.trim().length > 0, `browser ${flow} sample contextId is missing`)
         invariant(!contextIds.has(sample.contextId), `browser ${flow} reused context ${sample.contextId}`)
         contextIds.add(sample.contextId)
-        for (const metric of ["worstIntervalMs", "completionMs", "applicationIntervalsOver16_67Ms", "frameDrops"] as const) finite(sample[metric], `browser ${flow}.${metric}`)
+        for (const metric of ["applicationIntervalsOver16_67Ms", "frameDrops"] as const) finite(sample[metric], `browser ${flow}.${metric}`)
+        const worstIntervalMs = sample.worstIntervalMs
+        const completionMs = sample.completionMs
+        finite(worstIntervalMs, `browser ${flow}.worstIntervalMs`)
+        finite(completionMs, `browser ${flow}.completionMs`)
         if (position.label === "candidate") {
-          invariant((sample.worstIntervalMs as number) <= baseline.thresholds.browser[flow].worstIntervalMs, `browser ${flow} exceeds frozen worst-interval budget`)
-          invariant((sample.completionMs as number) <= baseline.thresholds.browser[flow].baselineCompletionMs * baseline.thresholds.browser[flow].completionMultiplier, `browser ${flow} exceeds frozen completion ceiling`)
+          invariant(worstIntervalMs <= baseline.thresholds.browser[flow].worstIntervalMs, `browser ${flow} exceeds frozen worst-interval budget`)
+          invariant(completionMs <= baseline.thresholds.browser[flow].baselineCompletionMs * baseline.thresholds.browser[flow].completionMultiplier, `browser ${flow} exceeds frozen completion ceiling`)
           if (flow !== "launch-project") invariant(sample.applicationIntervalsOver16_67Ms === 0, `browser ${flow} contains application-attributed intervals over 16.67ms`)
         }
       }
@@ -358,7 +412,10 @@ const RELEASE_GATE_RESULT_FIELDS = {
 } as const
 
 function validateReleaseGateResults(gateKey: string, results: Record<string, unknown>, gateName: string) {
-  const fields = RELEASE_GATE_RESULT_FIELDS[gateKey as keyof typeof RELEASE_GATE_RESULT_FIELDS]
+  // Looked up through a widened view rather than by asserting the key: the
+  // gate name comes from the evidence file, so it is not known to be one.
+  const contracts: Record<string, readonly string[] | undefined> = RELEASE_GATE_RESULT_FIELDS
+  const fields = contracts[gateKey]
   invariant(fields !== undefined, `${gateName} has no semantic result contract`)
   exactKeys(results, fields, `${gateName}.results`)
   for (const field of fields) invariant(results[field] === true, `${gateName}.results.${field} did not pass`)
@@ -436,7 +493,9 @@ export function qualifyU8Release(input: {
   invariant(fs.existsSync(evidenceFile) && fs.statSync(evidenceFile).isFile(), `missing candidate evidence ${evidenceFile}`)
   const artifactSha = sha256(artifact)
   const baselineSha = sha256(baselineFile)
-  const baseline = validateBaseline(readJson(baselineFile))
+  const baselineValue = readJson(baselineFile)
+  validateBaseline(baselineValue)
+  const baseline = baselineValue
   const evidenceValue = readJson(evidenceFile)
   const evidence = record(evidenceValue, "evidence")
   invariant(evidence.schema === U8_RELEASE_EVIDENCE_SCHEMA, `evidence schema must be ${U8_RELEASE_EVIDENCE_SCHEMA}`)
@@ -470,17 +529,21 @@ export function qualifyU8Release(input: {
   invariant(manifestRecords.length === REQUIRED_BOUNDARY_MANIFESTS.length, "boundary manifest set contains duplicate or missing records")
   exactKeys(Object.fromEntries(manifestRecords.map((item) => [String(item.name), item])), REQUIRED_BOUNDARY_MANIFESTS, "boundary manifests")
   for (const manifest of manifestRecords) {
-    invariant(typeof manifest.name === "string" && REQUIRED_BOUNDARY_MANIFESTS.includes(manifest.name as (typeof REQUIRED_BOUNDARY_MANIFESTS)[number]), `boundary manifest has an invalid name ${String(manifest.name)}`)
-    invariant(typeof manifest.file === "string", `boundary manifest ${manifest.name} has no file`)
+    const name = manifest.name
+    invariant(
+      typeof name === "string" && REQUIRED_BOUNDARY_MANIFESTS.some((required) => required === name),
+      `boundary manifest has an invalid name ${String(name)}`,
+    )
+    invariant(typeof manifest.file === "string", `boundary manifest ${name} has no file`)
     const file = resolveReferencedFile(evidenceFile, manifest.file)
-    invariant(fs.existsSync(file) && fs.statSync(file).isFile(), `boundary manifest ${manifest.name} is missing at ${file}`)
-    invariant(manifest.sha256 === sha256(file), `boundary manifest ${manifest.name} hash changed`)
-    const normalized = record(readJson(file), `boundary manifest ${manifest.name}`)
-    invariant(typeof normalized.entry === "string" && normalized.entry.length > 0, `boundary manifest ${manifest.name} has no entry`)
-    invariant(Array.isArray(normalized.modules) && normalized.modules.length > 0, `boundary manifest ${manifest.name} has no modules`)
-    invariant(Array.isArray(normalized.chunks) && normalized.chunks.length > 0, `boundary manifest ${manifest.name} has no chunks`)
-    const edges = record(normalized.edges, `boundary manifest ${manifest.name}.edges`)
-    invariant(Array.isArray(edges.static) && Array.isArray(edges.dynamic), `boundary manifest ${manifest.name} has invalid edges`)
+    invariant(fs.existsSync(file) && fs.statSync(file).isFile(), `boundary manifest ${name} is missing at ${file}`)
+    invariant(manifest.sha256 === sha256(file), `boundary manifest ${name} hash changed`)
+    const normalized = record(readJson(file), `boundary manifest ${name}`)
+    invariant(typeof normalized.entry === "string" && normalized.entry.length > 0, `boundary manifest ${name} has no entry`)
+    invariant(Array.isArray(normalized.modules) && normalized.modules.length > 0, `boundary manifest ${name} has no modules`)
+    invariant(Array.isArray(normalized.chunks) && normalized.chunks.length > 0, `boundary manifest ${name} has no chunks`)
+    const edges = record(normalized.edges, `boundary manifest ${name}.edges`)
+    invariant(Array.isArray(edges.static) && Array.isArray(edges.dynamic), `boundary manifest ${name} has invalid edges`)
   }
   for (const name of ["desktop-main", "desktop-account", "desktop-renderer-local", "desktop-renderer-hosted-contributions"] as const) {
     const manifest = manifestRecords.find((item) => item.name === name)!
@@ -524,12 +587,13 @@ export function qualifyU8Release(input: {
 
   const nativeArtifacts = record(evidence.nativeArtifacts, "evidence.nativeArtifacts")
   exactKeys(nativeArtifacts, ["macos", "windows", "linuxProtected"], "native artifacts")
-  const nativeArtifactHashes = Object.fromEntries(
-    (["macos", "windows", "linuxProtected"] as const).map((platform) => [
-      platform,
-      validateFileReference(nativeArtifacts[platform], evidenceFile, `native artifact ${platform}`).sha256,
-    ]),
-  ) as Record<"macos" | "windows" | "linuxProtected", string>
+  // Written out rather than built by `Object.fromEntries` and asserted back:
+  // the three platforms are the contract `exactKeys` just enforced.
+  const nativeArtifactHashes = {
+    macos: validateFileReference(nativeArtifacts.macos, evidenceFile, "native artifact macos").sha256,
+    windows: validateFileReference(nativeArtifacts.windows, evidenceFile, "native artifact windows").sha256,
+    linuxProtected: validateFileReference(nativeArtifacts.linuxProtected, evidenceFile, "native artifact linuxProtected").sha256,
+  }
   invariant(nativeArtifactHashes.macos === artifactSha, "selected candidate artifact must be the qualified macOS artifact")
 
   const credentials = record(evidence.nativeCredentials, "evidence.nativeCredentials")
@@ -560,6 +624,7 @@ export function qualifyU8Release(input: {
     })
   }
 
+  assertReleaseEvidence(evidenceValue)
   const report: U8QualificationReport = {
     schema: "claxedo-u8-release-qualification/v1",
     status: "pass",
@@ -568,7 +633,7 @@ export function qualifyU8Release(input: {
     baseline: { file: baselineFile, sha256: baselineSha, sourceCommit: baseline.sourceCommit },
     evidence: { file: evidenceFile, releaseSha: evidence.releaseSha },
     boundaryManifestSetSha256: manifestSetSha,
-    raw: { baseline, evidence: evidenceValue as U8ReleaseEvidence },
+    raw: { baseline, evidence: evidenceValue },
   }
   const outputDir = path.resolve(input.outputDir ?? path.join(import.meta.dirname, "../../../.artifacts/u8-package-split/release"))
   fs.mkdirSync(outputDir, { recursive: true })

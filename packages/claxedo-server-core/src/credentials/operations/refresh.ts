@@ -1,3 +1,4 @@
+import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { OPENAI_CLIENT_ID, OPENAI_TOKEN_URL } from "../provider-auth/openai-oauth"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
@@ -39,14 +40,14 @@ export function isRefreshableCredential(credential: CredentialMetadata) {
  * value into several mirrored places depending on where the login came from, so
  * read every known shape rather than assuming one.
  */
-export function credentialRefreshToken(secret: string) {
-  const value = jsonRecord(secret)
-  if (!value) return
-  const tokens = record(value.tokens)
-  const oauth = record(value.oauth)
-  return [value.refresh, value.refresh_token, tokens?.refresh_token, oauth?.refresh, oauth?.refresh_token].find(
-    (item): item is string => typeof item === "string" && item.length > 0,
-  )
+export function credentialRefreshToken(secret: string): string | undefined {
+  const value = parseJsonRecord(secret)
+  if (!value) return undefined
+  const tokens = jsonRecord(value.tokens)
+  const oauth = jsonRecord(value.oauth)
+  return [value.refresh, value.refresh_token, tokens?.refresh_token, oauth?.refresh, oauth?.refresh_token]
+    .map(jsonString)
+    .find((item) => item !== undefined)
 }
 
 export async function refreshCredentialSecret(
@@ -82,13 +83,13 @@ export async function refreshCredentialSecret(
     )
   }
 
-  const body = record(await response.json().catch(() => undefined))
-  const access = text(body?.access_token)
+  const body = jsonRecord(await response.json().catch(() => undefined))
+  const access = jsonString(body?.access_token)
   if (!access) throw new CredentialRefreshError("Credential refresh returned no access token")
   // The provider may or may not rotate the refresh token; keep the current one
   // when it does not, or the next refresh has nothing to present.
-  const refresh = text(body?.refresh_token) ?? current
-  const idToken = text(body?.id_token)
+  const refresh = jsonString(body?.refresh_token) ?? current
+  const idToken = jsonString(body?.id_token)
   const now = options.now ?? Date.now
   const expiresAt = jwtExpiry(access) ?? now() + fallbackLifetimeMs
 
@@ -107,7 +108,7 @@ function rewriteSecret(
   secret: string,
   next: { access: string; refresh: string; idToken?: string; expiresAt: number; now: () => number },
 ) {
-  const value = jsonRecord(secret)
+  const value = parseJsonRecord(secret)
   if (!value) throw new CredentialRefreshError("Credential secret has an unsupported shape")
   const updated: Record<string, unknown> = { ...value }
 
@@ -118,7 +119,7 @@ function rewriteSecret(
   if ("expires" in updated) updated.expires = next.expiresAt
   if ("last_refresh" in updated) updated.last_refresh = new Date(next.now()).toISOString()
 
-  const tokens = record(value.tokens)
+  const tokens = jsonRecord(value.tokens)
   if (tokens) {
     updated.tokens = {
       ...tokens,
@@ -128,7 +129,7 @@ function rewriteSecret(
     }
   }
 
-  const oauth = record(value.oauth)
+  const oauth = jsonRecord(value.oauth)
   if (oauth) {
     updated.oauth = {
       ...oauth,
@@ -144,35 +145,15 @@ function rewriteSecret(
 }
 
 function oauthErrorCode(body: string) {
-  const value = jsonRecord(body)
-  const code = text(value?.error) ?? text(value?.error_description)
+  const value = parseJsonRecord(body)
+  const code = jsonString(value?.error) ?? jsonString(value?.error_description)
   return code?.slice(0, 120)
 }
 
-function jwtExpiry(token: string) {
+function jwtExpiry(token: string): number | undefined {
   const base = token.split(".")[1]
-  if (!base) return
-  try {
-    const claims = JSON.parse(Buffer.from(base, "base64url").toString("utf8")) as { exp?: unknown }
-    return typeof claims.exp === "number" ? claims.exp * 1000 : undefined
-  } catch {
-    return
-  }
+  if (!base) return undefined
+  const claims = parseJsonRecord(Buffer.from(base, "base64url").toString("utf8"))
+  return typeof claims?.exp === "number" ? claims.exp * 1000 : undefined
 }
 
-function text(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
-}
-
-function jsonRecord(input: string) {
-  try {
-    return record(JSON.parse(input) as unknown)
-  } catch {
-    return
-  }
-}
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as Record<string, unknown>
-}

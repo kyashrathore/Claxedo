@@ -9,8 +9,10 @@ import { createHash } from "node:crypto";
 import { materializeClaxedoCorpus, readCanonicalCorpusDigest } from "../src/agent-corpus-materializer";
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
+import { readLoafSamples } from "../src/browser/page-globals-read";
+import type { LoafSample } from "../src/browser/page-globals";
 
-const TURNS = [12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 191, 230, 277, 333, 400];
+const TURNS =[12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 191, 230, 277, 333, 400];
 const repositoryRoot = path.resolve(import.meta.dir, "../../../..");
 const corpusPath = process.argv[2];
 const appPath = process.argv[3] ??
@@ -52,41 +54,44 @@ try {
     }
     const armObserver = () =>
       launch.page.evaluate(() => {
-        const host = window as unknown as { __loafObserver?: PerformanceObserver; __loaf: Array<Record<string, unknown>> };
-        host.__loaf = [];
-        host.__loafObserver?.disconnect();
+        const samples: LoafSample[] = [];
+        window.__loaf = samples;
+        window.__loafObserver?.disconnect();
         const observer = new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            const loaf = entry as PerformanceEntry & Record<string, unknown>;
-            host.__loaf.push({
+          for (const loaf of list.getEntries()) {
+            samples.push({
+              startTime: loaf.startTime,
               duration: loaf.duration,
               blockingDuration: loaf.blockingDuration,
               styleAndLayoutStart: loaf.styleAndLayoutStart,
               renderStart: loaf.renderStart,
-              scripts: (loaf.scripts as Array<{ invoker?: string; duration: number }> ?? []).map(
-                (script) => `${Math.round(script.duration)}ms ${script.invoker ?? "?"}`,
-              ),
+              scripts: (loaf.scripts ?? []).map((script) => ({
+                duration: script.duration,
+                invoker: script.invoker,
+              })),
             });
           }
         });
         observer.observe({ type: "long-animation-frame", buffered: false });
-        host.__loafObserver = observer;
+        window.__loafObserver = observer;
       });
     const collect = async () =>
       launch.page.evaluate(async () => {
         await new Promise((resolve) => setTimeout(resolve, 150));
-        const host = window as unknown as { __loafObserver?: PerformanceObserver; __loaf: Array<Record<string, unknown>> };
-        for (const entry of host.__loafObserver?.takeRecords() ?? []) {
-          const loaf = entry as PerformanceEntry & Record<string, unknown>;
-          host.__loaf.push({
+        const samples = (window.__loaf ??= []);
+        for (const loaf of window.__loafObserver?.takeRecords() ?? []) {
+          samples.push({
+            startTime: loaf.startTime,
             duration: loaf.duration,
             blockingDuration: loaf.blockingDuration,
             styleAndLayoutStart: loaf.styleAndLayoutStart,
             renderStart: loaf.renderStart,
+            // Drained entries are counted but not attributed: `takeRecords`
+            // returns entries the observer callback never projected.
             scripts: [],
           });
         }
-        return host.__loaf;
+        return samples;
       });
     console.log("turns | switch-ms | LoAF n | longest | total-loaf-ms | script-attributed-ms");
     for (let index = 0; index < plan.measured.length; index++) {
@@ -95,13 +100,12 @@ try {
       await armObserver();
       const result = await measureSessionActivation(launch.page, target);
       if (result.state !== "exact") throw new Error(`switch ${turns}t failed: ${result.reason}`);
-      const loaves = (await collect()) as Array<{
-        duration: number;
-        blockingDuration: number;
-        scripts: string[];
-      }>;
+      const loaves = readLoafSamples(await collect());
       const total = loaves.reduce((sum, loaf) => sum + loaf.duration, 0);
-      const attributed = loaves.reduce((sum, loaf) => sum + loaf.scripts.reduce((a, b) => a + Number(b.split("ms")[0] ?? 0), 0), 0);
+      const attributed = loaves.reduce(
+        (sum, loaf) => sum + loaf.scripts.reduce((a, script) => a + Math.round(script.duration), 0),
+        0,
+      );
       const longest = loaves.reduce((max, loaf) => Math.max(max, loaf.duration), 0);
       console.log(
         `${String(turns).padStart(4)}t | ${result.durationMs.toFixed(1).padStart(8)} | ${String(loaves.length).padStart(4)} | ${Math.round(longest).toString().padStart(5)}ms | ${Math.round(total).toString().padStart(8)} | ${Math.round(attributed).toString().padStart(8)}`,

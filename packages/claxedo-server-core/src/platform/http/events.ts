@@ -165,7 +165,11 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
         })
     if (!sharedRetained) {
       for (const event of retained.replayAfter(tombstone?.retainedCursor)) {
-        if (eventVisibleTo(principal, event.payload as ClaxedoEvent)) replay.push(event.payload)
+        const payload = event.payload
+        // A gap frame is minted per connection and never enters the retained
+        // ring, so replaying one would mean the ring had been misused.
+        if (payload.type === "stream.replay-gap") continue
+        if (eventVisibleTo(principal, payload)) replay.push(payload)
       }
     }
     const scope = {

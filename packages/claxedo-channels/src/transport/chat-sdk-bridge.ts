@@ -6,6 +6,7 @@ import type { ChannelWebhookHandler } from "../ingress"
 import { chatSdkApprovalDecision } from "./chat-sdk-actions"
 import { createChatSdkRenderer, type ChatSdkThread } from "./chat-sdk-render"
 import { repoTargetFromText } from "./repo-target"
+import { record } from "../json"
 
 export type ChatSdkMessage = {
   id?: string
@@ -20,7 +21,14 @@ export type ChatSdkMessage = {
   raw?: unknown
 }
 
-export type ChatSdkBridgeThread = ChatSdkThread & {
+/**
+ * The ids a thread is addressed by, with no posting surface.
+ *
+ * Split out because `threadKey()` reads only these — a button-action payload
+ * carries the same ids but is not a postable thread, and composing its key used
+ * to mean asserting the payload WAS one.
+ */
+export type ChatSdkThreadIdentity = {
   id?: string
   threadId?: string
   channel?: string
@@ -33,9 +41,12 @@ export type ChatSdkBridgeThread = ChatSdkThread & {
   messageId?: string
   threadTs?: string
   thread_ts?: string
+}
+
+export type ChatSdkBridgeThread = ChatSdkThread & ChatSdkThreadIdentity & {
   /** Chat SDK's own 1:1 classification (`Postable.isDM`), when the thread has it. */
   isDM?: boolean
-  subscribe?: () => Promise<unknown> | unknown
+  subscribe?: () => unknown
 }
 
 export type ChatSdkBot = {
@@ -55,14 +66,15 @@ function text(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
 
-function firstText(...input: unknown[]) {
+function firstText(...input: unknown[]): string | undefined {
   for (const item of input) {
     const value = text(item)
     if (value) return value
   }
+  return undefined
 }
 
-function threadKey(input: { channel: ChannelId; thread: ChatSdkBridgeThread }) {
+function threadKey(input: { channel: ChannelId; thread: ChatSdkThreadIdentity }) {
   const installation = input.channel === "discord"
     ? firstText(input.thread.guildId, input.thread.installationId, input.thread.teamId) ?? "default"
     : firstText(input.thread.installationId, input.thread.teamId) ?? "default"
@@ -144,8 +156,22 @@ export function chatSdkEnvelope(
   }
 }
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+/** The thread ids carried inline on a button-action payload. */
+function threadIdentity(row: Record<string, unknown>): ChatSdkThreadIdentity {
+  return {
+    id: text(row.id),
+    threadId: text(row.threadId),
+    channel: text(row.channel),
+    platform: text(row.platform),
+    installationId: text(row.installationId),
+    teamId: text(row.teamId),
+    guildId: text(row.guildId),
+    channelId: text(row.channelId),
+    conversationId: text(row.conversationId),
+    messageId: text(row.messageId),
+    threadTs: text(row.threadTs),
+    thread_ts: text(row.thread_ts),
+  }
 }
 
 /**
@@ -164,9 +190,8 @@ function record(input: unknown): Record<string, unknown> | undefined {
  */
 function actionThreadKey(action: unknown): string | undefined {
   const row = record(action)
-  if (!row) return
-  const nested = record(row.thread)
-  const source = (nested ?? row) as ChatSdkBridgeThread
+  if (!row) return undefined
+  const source = threadIdentity(record(row.thread) ?? row)
   const hasIdentity = firstText(
     source.threadId,
     source.threadTs,
@@ -175,7 +200,7 @@ function actionThreadKey(action: unknown): string | undefined {
     source.conversationId,
     source.messageId,
   )
-  if (!hasIdentity) return
+  if (!hasIdentity) return undefined
   return threadKey({ channel: channel(source.channel ?? source.platform), thread: source })
 }
 

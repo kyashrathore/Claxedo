@@ -8,14 +8,27 @@ import {
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "../platform/auth/auth"
-import type { SqliteUsageLedger } from "./adapters/sqlite-usage-ledger"
 import type { UsageLedger } from "./ledger"
 export type { UsageLedger } from "./ledger"
 import { projectTokenTrackerCost, TOKEN_TRACKER_VERSION, type PricedUsage } from "./adapters/token-tracker-pricing"
-import type { TurnUsageRevision } from "./contracts"
+import { isNonEmptyString, isOneOf, jsonRecord } from "../platform/runtime/lib/json"
+import {
+  knownTokenCategories,
+  TURN_USAGE_LOCATIONS,
+  TURN_USAGE_SETTLEMENTS,
+  TURN_USAGE_STATUSES,
+  type TurnUsageRevision,
+  type UsageRevisionReader,
+} from "./contracts"
 import {
   centralProjectionSeries,
+  readCentralUsage,
+  rowNumber,
+  rowText,
+  type CentralUsageProjection,
+  type CentralUsageRow,
   groupUsageFacts,
+  isUsageFilterDimension,
   latestUsageFacts,
   mergeUsageSeries,
   usageSeriesFromExternal,
@@ -25,26 +38,13 @@ import {
   usageFactDimension,
   usageModelKey,
   usageDateFormatter,
+  USAGE_FILTER_DIMENSIONS,
+  type ExternalUsageBucket,
+  type UsageBreakdownDimension,
   type UsageFilters,
   type UsageSeries,
 } from "./projection"
 import { publicUsageHref } from "./public-href"
-
-type ExternalUsageBucket = {
-  app: string
-  provider: string
-  model: string
-  bucketStart: number
-  nativeSessionId: string
-  turnCount: number
-  tokens: {
-    input: number | null
-    output: number | null
-    reasoning: number | null
-    cacheRead: number | null
-    cacheWrite: number | null
-  }
-}
 
 type LocalHistorySnapshot = {
   rows: ExternalUsageBucket[]
@@ -84,8 +84,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, timeoutError: () => Err
   })
 }
 
-const dimensions = new Set(["provider", "harness", "model", "location", "session", "workspace", "app"] as const)
-const filterDimensions = [...dimensions]
 // Ninety inclusive local calendar days can span one DST fall-back hour.
 // This still rejects a 91-day UTC request while accepting the advertised
 // 90-day control in every IANA timezone.
@@ -122,8 +120,9 @@ function parseUsageQuery(query: (name: string) => string | undefined) {
   const timeZone = query("timezone") || "UTC"
   if (!validRange(since, until)) return { error: "invalid_usage_range" } as const
   if (!validTimeZone(timeZone)) return { error: "invalid_timezone" } as const
-  const group = query("group")
-  if (group && !dimensions.has(group as UsageFilterDimension)) return { error: "invalid_usage_group" } as const
+  const requestedGroup = query("group")
+  const group = requestedGroup && isUsageFilterDimension(requestedGroup) ? requestedGroup : undefined
+  if (requestedGroup && !group) return { error: "invalid_usage_group" } as const
   const metric = query("metric") || "tokens"
   if (metric !== "tokens" && metric !== "cost") return { error: "invalid_usage_metric" } as const
   const requestedLimit = query("limit") === undefined ? undefined : Number(query("limit"))
@@ -151,12 +150,12 @@ type CostWithDaily = PricedUsage & {
 }
 
 function filtersFromQuery(query: (name: string) => string | undefined): UsageFilters {
-  return Object.fromEntries(
-    filterDimensions.flatMap((dimension) => {
-      const value = query(`filter_${dimension}`)
-      return value ? [[dimension, value]] : []
-    }),
-  )
+  const filters: UsageFilters = {}
+  for (const dimension of USAGE_FILTER_DIMENSIONS) {
+    const value = query(`filter_${dimension}`)
+    if (value) filters[dimension] = value
+  }
+  return filters
 }
 
 async function priceFacts(facts: readonly TurnUsageRevision[], timeZone = "UTC"): Promise<CostWithDaily> {
@@ -247,22 +246,21 @@ function mergeCost(...costs: CostWithDaily[]) {
   return total
 }
 
-async function priceCentralBreakdown(value: unknown) {
-  const rows = (value as { rows?: Array<Record<string, unknown>> } | null)?.rows ?? []
+async function priceCentralBreakdown(rows: readonly CentralUsageRow[]) {
   const total = emptyCost()
   for (const row of rows) {
-    const [source, ...modelParts] = String(row.value ?? "").split("/")
+    const [source, ...modelParts] = rowText(row, "value").split("/")
     const model = modelParts.join("/")
     if (!source || !model) continue
     const item = await projectTokenTrackerCost({
       source,
       model,
       tokens: {
-        input: Number(row.input_tokens ?? 0),
-        output: Number(row.output_tokens ?? 0),
-        reasoning: Number(row.reasoning_tokens ?? 0),
-        cacheRead: Number(row.cache_read_tokens ?? 0),
-        cacheWrite: Number(row.cache_write_tokens ?? 0),
+        input: rowNumber(row, "input_tokens"),
+        output: rowNumber(row, "output_tokens"),
+        reasoning: rowNumber(row, "reasoning_tokens"),
+        cacheRead: rowNumber(row, "cache_read_tokens"),
+        cacheWrite: rowNumber(row, "cache_write_tokens"),
       },
     })
     total.estimatedUsd += item.estimatedUsd
@@ -283,20 +281,22 @@ async function priceAllCentralModels(
   let after: string | undefined
   const seen = new Set<string>()
   do {
-    const page = await ledger.usageBreakdown({
-      ...identity,
-      ...range,
-      dimension: "model",
-      limit: 100,
-      ...(after ? { after } : {}),
-    })
-    const priced = await priceCentralBreakdown(page)
+    const page = readCentralUsage(
+      await ledger.usageBreakdown({
+        ...identity,
+        ...range,
+        dimension: "model",
+        limit: 100,
+        ...(after ? { after } : {}),
+      }),
+    )
+    const priced = await priceCentralBreakdown(page.rows ?? [])
     total.estimatedUsd += priced.estimatedUsd
     total.pricedTokens += priced.pricedTokens
     total.unpricedTokens += priced.unpricedTokens
     total.catalog = priced.catalog
-    const next = (page as { next?: unknown } | null)?.next
-    if (typeof next === "string" && next.length > 0) {
+    const next = page.next
+    if (next !== undefined && next.length > 0) {
       if (seen.has(next)) throw new Error("central usage breakdown repeated a cursor")
       seen.add(next)
       after = next
@@ -309,18 +309,16 @@ async function priceCentralProjection(
   ledger: UsageLedger,
   identity: { org_id: string; user_id: string },
   range: { since: number; until: number },
-  projection: unknown,
+  projection: CentralUsageProjection,
 ) {
-  const source = projection as { models?: unknown; dailyModels?: unknown } | null
-  const models = source?.models
-  if (Array.isArray(models)) {
-    const total = await priceCentralBreakdown({ rows: models })
+  const models = projection.models
+  if (models) {
+    const total = await priceCentralBreakdown(models)
     const daily = new Map<string, PricedUsage>()
-    const dailyModels = Array.isArray(source?.dailyModels) ? (source.dailyModels as Array<Record<string, unknown>>) : []
-    for (const row of dailyModels) {
-      const date = String(row.date ?? "")
+    for (const row of projection.dailyModels ?? []) {
+      const date = rowText(row, "date")
       if (!date) continue
-      const item = await priceCentralBreakdown({ rows: [row] })
+      const item = await priceCentralBreakdown([row])
       const current = daily.get(date) ?? emptyCost()
       current.estimatedUsd += item.estimatedUsd
       current.pricedTokens += item.pricedTokens
@@ -365,28 +363,26 @@ type UsageChartRow = {
   cacheWrite: number
 }
 
-function chartRow(raw: Record<string, unknown>): UsageChartRow | undefined {
-  const date = String(raw.date ?? "")
-  const value = String(raw.value ?? "")
-  if (!date || !value) return
+function chartRow(raw: CentralUsageRow): UsageChartRow | undefined {
+  const date = rowText(raw, "date")
+  const value = rowText(raw, "value")
+  if (!date || !value) return undefined
   return {
     date,
     value,
-    input: Number(raw.input ?? raw.input_tokens ?? 0),
-    output: Number(raw.output ?? raw.output_tokens ?? 0),
-    reasoning: Number(raw.reasoning ?? raw.reasoning_tokens ?? 0),
-    cacheRead: Number(raw.cacheRead ?? raw.cache_read_tokens ?? 0),
-    cacheWrite: Number(raw.cacheWrite ?? raw.cache_write_tokens ?? 0),
+    input: rowNumber(raw, "input", "input_tokens"),
+    output: rowNumber(raw, "output", "output_tokens"),
+    reasoning: rowNumber(raw, "reasoning", "reasoning_tokens"),
+    cacheRead: rowNumber(raw, "cacheRead", "cache_read_tokens"),
+    cacheWrite: rowNumber(raw, "cacheWrite", "cache_write_tokens"),
   }
 }
 
-function mergeChartSeries(dimension: string, ...sources: unknown[]) {
+function mergeChartSeries(dimension: string, ...sources: Array<readonly CentralUsageRow[] | undefined>) {
   const rows = new Map<string, UsageChartRow>()
   for (const source of sources) {
-    if (!Array.isArray(source)) continue
-    for (const raw of source) {
-      if (!raw || typeof raw !== "object") continue
-      const next = chartRow(raw as Record<string, unknown>)
+    for (const raw of source ?? []) {
+      const next = chartRow(raw)
       if (!next) continue
       const key = `${next.value}\u0000${next.date}`
       const current = rows.get(key) ?? { ...next, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
@@ -419,7 +415,7 @@ function mergeChartSeries(dimension: string, ...sources: unknown[]) {
 
 function chartRowsFromFacts(
   facts: readonly TurnUsageRevision[],
-  dimension: "provider" | "harness" | "model" | "location" | "session" | "workspace",
+  dimension: UsageBreakdownDimension,
   timeZone: string,
 ) {
   const formatDate = usageDateFormatter(timeZone)
@@ -471,29 +467,27 @@ function chartRowsFromSeries(value: string, series: UsageSeries) {
   }))
 }
 
-function canonicalTotals(row: Record<string, unknown>): CanonicalBreakdownTotals {
+function canonicalTotals(row: CentralUsageRow): CanonicalBreakdownTotals {
   return {
-    value: String(row.value ?? "unavailable"),
-    turnCount: Number(row.turnCount ?? row.turn_count ?? 0),
-    input: Number(row.input ?? row.input_tokens ?? 0),
-    output: Number(row.output ?? row.output_tokens ?? 0),
-    reasoning: Number(row.reasoning ?? row.reasoning_tokens ?? 0),
-    cacheRead: Number(row.cacheRead ?? row.cache_read_tokens ?? 0),
-    cacheWrite: Number(row.cacheWrite ?? row.cache_write_tokens ?? 0),
-    unknownCategories: Number(row.unknownCategories ?? row.unknown_token_count ?? 0),
-    partialTurnCount: Number(row.partialTurnCount ?? row.partial_turn_count ?? 0),
-    unavailableTurnCount: Number(row.unavailableTurnCount ?? row.unavailable_turn_count ?? 0),
-    errorTurnCount: Number(row.errorTurnCount ?? row.error_turn_count ?? 0),
+    value: rowText(row, "value", "unavailable"),
+    turnCount: rowNumber(row, "turnCount", "turn_count"),
+    input: rowNumber(row, "input", "input_tokens"),
+    output: rowNumber(row, "output", "output_tokens"),
+    reasoning: rowNumber(row, "reasoning", "reasoning_tokens"),
+    cacheRead: rowNumber(row, "cacheRead", "cache_read_tokens"),
+    cacheWrite: rowNumber(row, "cacheWrite", "cache_write_tokens"),
+    unknownCategories: rowNumber(row, "unknownCategories", "unknown_token_count"),
+    partialTurnCount: rowNumber(row, "partialTurnCount", "partial_turn_count"),
+    unavailableTurnCount: rowNumber(row, "unavailableTurnCount", "unavailable_turn_count"),
+    errorTurnCount: rowNumber(row, "errorTurnCount", "error_turn_count"),
   }
 }
 
-function mergeBreakdownRows(...sources: unknown[]) {
+function mergeBreakdownRows(...sources: Array<readonly CentralUsageRow[] | undefined>) {
   const merged = new Map<string, CanonicalBreakdownTotals>()
   for (const source of sources) {
-    if (!Array.isArray(source)) continue
-    for (const raw of source) {
-      if (!raw || typeof raw !== "object") continue
-      const row = canonicalTotals(raw as Record<string, unknown>)
+    for (const raw of source ?? []) {
+      const row = canonicalTotals(raw)
       const current = merged.get(row.value) ?? {
         ...row,
         turnCount: 0,
@@ -526,10 +520,7 @@ function mergeBreakdownRows(...sources: unknown[]) {
   return [...merged.values()]
 }
 
-function modelBreakdownFromFacts(
-  facts: readonly TurnUsageRevision[],
-  dimension: "provider" | "harness" | "model" | "location" | "session" | "workspace",
-) {
+function modelBreakdownFromFacts(facts: readonly TurnUsageRevision[], dimension: UsageBreakdownDimension) {
   return facts.map((fact) => ({
     group: usageFactDimension(fact, dimension),
     value: usageModelKey(fact.providerId, fact.modelId),
@@ -557,24 +548,24 @@ function breakdownLabel(value: string, dimension?: string) {
 async function canonicalBreakdownPage(input: {
   dimension: UsageFilterDimension
   rows: CanonicalBreakdownTotals[]
-  modelRows?: Array<Record<string, unknown>>
+  modelRows?: readonly CentralUsageRow[]
   metric: "tokens" | "cost"
   after?: string
   limit?: number
 }) {
   const limit = input.limit ?? 25
-  const modelRowsByGroup = new Map<string, Array<Record<string, unknown>>>()
+  const modelRowsByGroup = new Map<string, CentralUsageRow[]>()
   for (const modelRow of input.modelRows ?? []) {
-    const group = String(modelRow.group ?? "")
+    const group = rowText(modelRow, "group")
     const rows = modelRowsByGroup.get(group) ?? []
     rows.push(modelRow)
     modelRowsByGroup.set(group, rows)
   }
   const priceRow = async (row: CanonicalBreakdownTotals) => {
     const modelRows = modelRowsByGroup.get(row.value) ?? []
-    const priced = await priceCentralBreakdown({
-      rows: modelRows.length > 0 ? modelRows : input.dimension === "model" ? [{ ...row, value: row.value }] : [],
-    })
+    const priced = await priceCentralBreakdown(
+      modelRows.length > 0 ? modelRows : input.dimension === "model" ? [{ ...row }] : [],
+    )
     const measuredTokens = row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
     if (priced.pricedTokens + priced.unpricedTokens < measuredTokens)
       priced.unpricedTokens += measuredTokens - priced.pricedTokens - priced.unpricedTokens
@@ -642,7 +633,7 @@ function mergeFilterOptions(...values: Array<Record<string, string[]> | undefine
   return Object.fromEntries([...merged].map(([dimension, rows]) => [dimension, [...rows].toSorted()]))
 }
 
-function locationShare(...sources: unknown[]) {
+function locationShare(...sources: Array<readonly CentralUsageRow[] | undefined>) {
   const rows = mergeBreakdownRows(...sources)
   const tokens = (row: CanonicalBreakdownTotals | undefined) =>
     row ? row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite : 0
@@ -660,88 +651,83 @@ function revisionKey(value: Pick<TurnUsageRevision, "hostId" | "sessionRef" | "m
   return `${value.hostId}\u0000${value.sessionRef}\u0000${value.messageId}\u0000${value.revision}`
 }
 
-function centralUsageFacts(value: unknown): { available: boolean; facts: TurnUsageRevision[] } {
-  const rows = (value as { facts?: unknown } | null)?.facts
-  if (!Array.isArray(rows)) return { available: false, facts: [] }
-  const settlements = new Set<TurnUsageRevision["settlement"]>([
-    "provisional",
-    "final",
-    "partial",
-    "unavailable",
-    "recovered",
-  ])
-  const statuses = new Set<TurnUsageRevision["status"]>([
-    "running",
-    "completed",
-    "error",
-    "stopped",
-    "interrupted_by_steer",
-    "process_lost",
-  ])
-  const locations = new Set<TurnUsageRevision["location"]>(["local", "cloud-workspace", "user-hosted"])
-  const facts = rows.flatMap((raw): TurnUsageRevision[] => {
-    if (!raw || typeof raw !== "object") return []
-    const row = raw as Record<string, unknown>
-    const required = [row.session_ref, row.session_id, row.message_id, row.harness, row.provider_id, row.model_id]
-    if (required.some((item) => typeof item !== "string" || item.length === 0)) return []
-    const revision = Number(row.revision)
-    const observedAt = Number(row.observed_at)
-    if (
-      !Number.isSafeInteger(revision) ||
-      revision < 1 ||
-      !Number.isFinite(observedAt) ||
-      !settlements.has(row.settlement as TurnUsageRevision["settlement"]) ||
-      !statuses.has(row.status as TurnUsageRevision["status"]) ||
-      !locations.has(row.location as TurnUsageRevision["location"])
+/** One published central revision, or nothing when the row is not a well-formed fact. */
+function centralUsageFact(row: CentralUsageRow): TurnUsageRevision | undefined {
+  const sessionRef = row.session_ref
+  const sessionId = row.session_id
+  const messageId = row.message_id
+  const harness = row.harness
+  const providerId = row.provider_id
+  const modelId = row.model_id
+  if (
+    !isNonEmptyString(sessionRef) ||
+    !isNonEmptyString(sessionId) ||
+    !isNonEmptyString(messageId) ||
+    !isNonEmptyString(harness) ||
+    !isNonEmptyString(providerId) ||
+    !isNonEmptyString(modelId)
+  )
+    return undefined
+  const revision = Number(row.revision)
+  const observedAt = Number(row.observed_at)
+  const settlement = row.settlement
+  const status = row.status
+  const location = row.location
+  if (
+    !Number.isSafeInteger(revision) ||
+    revision < 1 ||
+    !Number.isFinite(observedAt) ||
+    !isOneOf(settlement, TURN_USAGE_SETTLEMENTS) ||
+    !isOneOf(status, TURN_USAGE_STATUSES) ||
+    !isOneOf(location, TURN_USAGE_LOCATIONS)
+  )
+    return undefined
+  const token = (name: string) => {
+    const raw = row[name]
+    if (raw === null || raw === undefined) return null
+    const value = Number(raw)
+    return Number.isFinite(value) && value >= 0 ? value : Number.NaN
+  }
+  const tokens = {
+    input: token("input_tokens"),
+    output: token("output_tokens"),
+    reasoning: token("reasoning_tokens"),
+    cache: { read: token("cache_read_tokens"), write: token("cache_write_tokens") },
+  }
+  if (
+    [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write].some(
+      (value) => value !== null && !Number.isFinite(value),
     )
-      return []
-    const token = (name: string) => {
-      if (row[name] === null || row[name] === undefined) return null
-      const value = Number(row[name])
-      return Number.isFinite(value) && value >= 0 ? value : Number.NaN
-    }
-    const tokens = {
-      input: token("input_tokens"),
-      output: token("output_tokens"),
-      reasoning: token("reasoning_tokens"),
-      cache: { read: token("cache_read_tokens"), write: token("cache_write_tokens") },
-    }
-    if (
-      [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write].some(
-        (value) => typeof value === "number" && !Number.isFinite(value),
-      )
-    )
-      return []
-    const knownCategories = [
-      ...(tokens.input === null ? [] : ["input" as const]),
-      ...(tokens.output === null ? [] : ["output" as const]),
-      ...(tokens.reasoning === null ? [] : ["reasoning" as const]),
-      ...(tokens.cache.read === null ? [] : ["cache_read" as const]),
-      ...(tokens.cache.write === null ? [] : ["cache_write" as const]),
-    ]
-    return [
-      {
-        hostId: typeof row.host_id === "string" && row.host_id ? row.host_id : "central",
-        sessionRef: row.session_ref as string,
-        sessionId: row.session_id as string,
-        messageId: row.message_id as string,
-        revision,
-        observedAt,
-        ...(typeof row.completed_at === "number" ? { completedAt: row.completed_at } : {}),
-        settlement: row.settlement as TurnUsageRevision["settlement"],
-        status: row.status as TurnUsageRevision["status"],
-        location: row.location as TurnUsageRevision["location"],
-        harness: row.harness as string,
-        providerId: row.provider_id as string,
-        modelId: row.model_id as string,
-        ...(typeof row.native_session_id === "string" ? { nativeSessionId: row.native_session_id } : {}),
-        ...(typeof row.workspace_id === "string" ? { workspaceId: row.workspace_id } : {}),
-        tokens,
-        quality: { source: "provider", knownCategories },
-      },
-    ]
-  })
-  return { available: true, facts }
+  )
+    return undefined
+  return {
+    hostId: isNonEmptyString(row.host_id) ? row.host_id : "central",
+    sessionRef,
+    sessionId,
+    messageId,
+    revision,
+    observedAt,
+    ...(typeof row.completed_at === "number" ? { completedAt: row.completed_at } : {}),
+    settlement,
+    status,
+    location,
+    harness,
+    providerId,
+    modelId,
+    ...(typeof row.native_session_id === "string" ? { nativeSessionId: row.native_session_id } : {}),
+    ...(typeof row.workspace_id === "string" ? { workspaceId: row.workspace_id } : {}),
+    tokens,
+    quality: { source: "provider", knownCategories: knownTokenCategories(tokens) },
+  }
+}
+
+function centralUsageFacts(projection: CentralUsageProjection | undefined): {
+  available: boolean
+  facts: TurnUsageRevision[]
+} {
+  const rows = projection?.facts
+  if (!rows) return { available: false, facts: [] }
+  return { available: true, facts: rows.flatMap((row) => centralUsageFact(row) ?? []) }
 }
 
 export function UsageRoutes(input: {
@@ -833,32 +819,25 @@ export function UsageRoutes(input: {
         return c.json({ error: "usage projection unavailable" }, 503)
       }
       const filters = filtersFromQuery((name) => c.req.query(name))
-      const dimension =
-        group && group !== "app"
-          ? (group as "provider" | "harness" | "model" | "location" | "session" | "workspace")
-          : undefined
+      const dimension = group && group !== "app" ? group : undefined
       const centralFilters = Object.fromEntries(Object.entries(filters).filter(([key]) => key !== "app"))
       const includeClaxedo = !filters.app || filters.app.toLowerCase() === "claxedo"
-      const summary = await input.ledger.usageDashboard({
-        ...identity,
-        since,
-        until,
-        timeZone,
-        ...(dimension ? { dimension } : {}),
-        ...(Object.keys(centralFilters).length ? { filters: centralFilters } : {}),
-      })
+      const summary = readCentralUsage(
+        await input.ledger.usageDashboard({
+          ...identity,
+          since,
+          until,
+          timeZone,
+          ...(dimension ? { dimension } : {}),
+          ...(Object.keys(centralFilters).length ? { filters: centralFilters } : {}),
+        }),
+      )
       const claxedo = includeClaxedo
         ? centralProjectionSeries(summary)
         : usageSeriesFromFacts({ facts: [], since, until, timeZone })
       const claxedoCost = includeClaxedo
         ? await priceCentralProjection(input.ledger, identity, { since, until }, summary)
         : emptyCost()
-      const summarySource = summary as {
-        breakdown?: unknown
-        breakdownModels?: Array<Record<string, unknown>>
-        models?: Array<Record<string, unknown>>
-        dailyBreakdown?: unknown
-      }
       const chart = group
         ? mergeChartSeries(
             group,
@@ -867,7 +846,7 @@ export function UsageRoutes(input: {
                 ? chartRowsFromSeries("Claxedo", claxedo)
                 : []
               : includeClaxedo
-                ? summarySource.dailyBreakdown
+                ? summary.dailyBreakdown
                 : [],
           )
         : undefined
@@ -878,7 +857,7 @@ export function UsageRoutes(input: {
         claxedo: {
           ...claxedo,
           cost: claxedoCost,
-          locationShare: locationShare(includeClaxedo ? (summary as { locations?: unknown } | null)?.locations : []),
+          locationShare: locationShare(includeClaxedo ? summary.locations : []),
           status: "available" as const,
           scope: "cross-machine" as const,
         },
@@ -892,11 +871,8 @@ export function UsageRoutes(input: {
         total: claxedo,
         totalCost: claxedoCost,
         filterOptions: {
-          claxedo: (summary as { filters?: Record<string, string[]> } | null)?.filters ?? {},
-          total: mergeFilterOptions(
-            { app: ["Claxedo"] },
-            (summary as { filters?: Record<string, string[]> } | null)?.filters,
-          ),
+          claxedo: summary.filters ?? {},
+          total: mergeFilterOptions({ app: ["Claxedo"] }, summary.filters),
         },
         sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
         ...(chart ? { chart } : {}),
@@ -919,15 +895,15 @@ export function UsageRoutes(input: {
       const rows =
         group === "app"
           ? mergeBreakdownRows(includeClaxedo ? [appBreakdownRow(claxedo)] : [])
-          : mergeBreakdownRows(includeClaxedo ? summarySource.breakdown : [])
+          : mergeBreakdownRows(includeClaxedo ? summary.breakdown : [])
       const modelRows =
         group === "app"
-          ? (includeClaxedo ? (summarySource.models ?? []) : []).map((row) => ({ ...row, group: "Claxedo" }))
+          ? (includeClaxedo ? (summary.models ?? []) : []).map((row) => ({ ...row, group: "Claxedo" }))
           : includeClaxedo
-            ? summarySource.breakdownModels
+            ? summary.breakdownModels
             : []
       const breakdown = await canonicalBreakdownPage({
-        dimension: group as UsageFilterDimension,
+        dimension: group,
         rows,
         modelRows,
         metric,
@@ -936,7 +912,7 @@ export function UsageRoutes(input: {
       })
       const modelBreakdown = await canonicalBreakdownPage({
         dimension: "model",
-        rows: mergeBreakdownRows(includeClaxedo ? summarySource.models : []),
+        rows: mergeBreakdownRows(includeClaxedo ? summary.models : []),
         metric,
         ...(c.req.query("model_after") ? { after: c.req.query("model_after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
@@ -945,7 +921,7 @@ export function UsageRoutes(input: {
       return c.json({ ...base, breakdown, modelBreakdown })
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
-        return c.json(controlPlaneAuthErrorBody(error), error.status as 400 | 401 | 403)
+        return c.json(controlPlaneAuthErrorBody(error), error.status)
       }
       throw error
     }
@@ -954,13 +930,13 @@ export function UsageRoutes(input: {
 }
 
 async function localUsageBreakdowns(input: {
-  central: unknown
+  central: CentralUsageProjection | undefined
   centralFactsAvailable: boolean
   localFacts: TurnUsageRevision[]
   totalRows: ExternalUsageBucket[]
   claxedoSeries: UsageSeries
   includeClaxedo: boolean
-  group: string | undefined
+  group: UsageFilterDimension | undefined
   view: "quota" | "claxedo" | "total"
   metric: "tokens" | "cost"
   timeZone: string
@@ -983,20 +959,11 @@ async function localUsageBreakdowns(input: {
     after,
     modelAfter,
   } = input
-  const centralSource = central as
-    | {
-        breakdown?: unknown
-        breakdownModels?: Array<Record<string, unknown>>
-        models?: Array<Record<string, unknown>>
-        dailyBreakdown?: unknown
-      }
-    | undefined
-  const aggregateCentralSource = centralFactsAvailable ? undefined : centralSource
+  const aggregateCentralSource = centralFactsAvailable ? undefined : central
   let breakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
   let modelBreakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
-  if (group && dimensions.has(group as never)) {
-    const dimension =
-      group === "app" ? undefined : (group as "provider" | "harness" | "model" | "location" | "session" | "workspace")
+  if (group) {
+    const dimension = group === "app" ? undefined : group
     const localHistoryBreakdownRows =
       view === "total"
         ? totalRows.map((row) => ({
@@ -1052,7 +1019,7 @@ async function localUsageBreakdowns(input: {
           }))
         : []
     breakdown = await canonicalBreakdownPage({
-      dimension: group as UsageFilterDimension,
+      dimension: group,
       rows,
       modelRows: view === "total" ? localHistoryModelRows : [...centralModelRows, ...localModelRows],
       metric,
@@ -1105,20 +1072,14 @@ async function localUsageBreakdowns(input: {
             : includeClaxedo
               ? aggregateCentralSource?.dailyBreakdown
               : [],
-          group !== "app" && includeClaxedo
-            ? chartRowsFromFacts(
-                localFacts,
-                group as "provider" | "harness" | "model" | "location" | "session" | "workspace",
-                timeZone,
-              )
-            : [],
+          group !== "app" && includeClaxedo ? chartRowsFromFacts(localFacts, group, timeZone) : [],
         )
     : undefined
   return { breakdown, modelBreakdown, chart }
 }
 
 export function LocalUsageRoutes(input: {
-  local: SqliteUsageLedger
+  local: UsageRevisionReader
   central?: UsageLedger
   outbox: Pick<UsageOutboxSync, "flush" | "clearIdentity">
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
@@ -1131,13 +1092,13 @@ export function LocalUsageRoutes(input: {
   // for a first scan competing with desktop startup I/O.
   const LOCAL_HISTORY_DEADLINE_MS = 40_000
   const app = new Hono()
-  const centralCache = new Map<string, unknown>()
+  const centralCache = new Map<string, CentralUsageProjection>()
   const historyCache = new Map<string, LocalHistorySnapshot>()
   const consumedRefreshNonces = new Set<number>()
   let lastQuotaSnapshot: unknown
   const deadline = <T>(promise: Promise<T>, label: string, timeoutMs = 8_000) =>
     withTimeout(promise, timeoutMs, () => new Error(`${label} timed out`))
-  const rememberCentral = (key: string, value: unknown) => {
+  const rememberCentral = (key: string, value: CentralUsageProjection) => {
     centralCache.delete(key)
     centralCache.set(key, value)
     while (centralCache.size > 32) centralCache.delete(centralCache.keys().next().value!)
@@ -1150,7 +1111,7 @@ export function LocalUsageRoutes(input: {
   const consumeRefreshNonce = (raw: string | undefined) => {
     if (raw === undefined) return false
     const nonce = Number(raw)
-    if (!Number.isSafeInteger(nonce) || nonce <= 0) return
+    if (!Number.isSafeInteger(nonce) || nonce <= 0) return undefined
     if (consumedRefreshNonces.has(nonce)) return false
     consumedRefreshNonces.add(nonce)
     while (consumedRefreshNonces.size > 64) consumedRefreshNonces.delete(consumedRefreshNonces.values().next().value!)
@@ -1278,13 +1239,10 @@ export function LocalUsageRoutes(input: {
       pending: syncResult.pending,
     }
 
-    let central: unknown
+    let central: CentralUsageProjection | undefined
     let centralError: string | undefined
     if (identity && input.central?.usageDashboard) {
-      const dimension =
-        group && group !== "app"
-          ? (group as "provider" | "harness" | "model" | "location" | "session" | "workspace")
-          : undefined
+      const dimension = group && group !== "app" ? group : undefined
       const centralFilters = Object.fromEntries(Object.entries(filters).filter(([key]) => key !== "app"))
       const centralKey = JSON.stringify([
         identity.org_id,
@@ -1296,18 +1254,24 @@ export function LocalUsageRoutes(input: {
         centralFilters,
       ])
       try {
-        central = await deadline(
-          input.central.usageDashboard({
-            ...identity,
-            since,
-            until,
-            timeZone,
-            ...(dimension ? { dimension } : {}),
-            ...(Object.keys(centralFilters).length ? { filters: centralFilters } : {}),
-          }),
-          "central usage",
+        const payload = jsonRecord(
+          await deadline(
+            input.central.usageDashboard({
+              ...identity,
+              since,
+              until,
+              timeZone,
+              ...(dimension ? { dimension } : {}),
+              ...(Object.keys(centralFilters).length ? { filters: centralFilters } : {}),
+            }),
+            "central usage",
+          ),
         )
-        rememberCentral(centralKey, central)
+        // A control plane that answers without an object body counts as no
+        // central data at all, exactly like an unreachable one: the response
+        // stays local-scoped rather than claiming an empty cross-machine total.
+        central = payload && readCentralUsage(payload)
+        if (central) rememberCentral(centralKey, central)
       } catch (error) {
         centralError = error instanceof Error ? error.message : String(error)
         central = centralCache.get(centralKey)
@@ -1393,7 +1357,7 @@ export function LocalUsageRoutes(input: {
         cost: claxedoCost,
         locationShare: locationShare(
           includeClaxedo && !centralFactProjection.available
-            ? (central as { locations?: unknown } | undefined)?.locations
+            ? central?.locations
             : [],
           includeClaxedo ? groupUsageFacts(localFacts, "location") : [],
         ),
@@ -1413,7 +1377,7 @@ export function LocalUsageRoutes(input: {
       totalCost,
       filterOptions: {
         claxedo: mergeFilterOptions(
-          (central as { filters?: Record<string, string[]> } | undefined)?.filters,
+          central?.filters,
           usageFactFilterOptions(allClaxedoFacts),
         ),
         total: externalFilterOptions(history.totalRows),

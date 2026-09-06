@@ -64,9 +64,8 @@ function diag(step: string, detail?: Record<string, unknown>): void {
 
 diag("preload-loaded", {
   href: typeof window !== "undefined" ? window.location?.href : null,
-  hasReactGrabModule:
-    typeof (globalThis as { __REACT_GRAB_MODULE__?: unknown }).__REACT_GRAB_MODULE__ === "object",
-  hasReactGrab: typeof (window as unknown as { __REACT_GRAB__?: unknown }).__REACT_GRAB__ === "object",
+  hasReactGrabModule: typeof globalThis.__REACT_GRAB_MODULE__ === "object",
+  hasReactGrab: typeof globalThis.__REACT_GRAB__ === "object",
 })
 
 type PickPayload = {
@@ -165,7 +164,7 @@ function cssEscape(s: string): string {
 
 function pickComputedStyles(el: Element): PickPayload["computedStyles"] {
   try {
-    const cs = (el.ownerDocument?.defaultView ?? window).getComputedStyle(el as HTMLElement)
+    const cs = (el.ownerDocument?.defaultView ?? window).getComputedStyle(el)
     return {
       color: cs.color || undefined,
       backgroundColor: cs.backgroundColor || undefined,
@@ -180,7 +179,7 @@ function pickComputedStyles(el: Element): PickPayload["computedStyles"] {
 
 function buildPayload(el: Element): PickPayload {
   const rect = el.getBoundingClientRect()
-  const outer = (el as HTMLElement).outerHTML ?? ""
+  const outer = el.outerHTML
   const truncated = outer.length > OUTER_HTML_LIMIT ? `${outer.slice(0, OUTER_HTML_LIMIT)}…` : outer
   return {
     selector: buildSelector(el),
@@ -575,7 +574,7 @@ const claxedoCommentPlugin: ReactGrabPlugin = {
 }
 
 function getReactGrabAPI(): ReactGrabAPI | undefined {
-  return (window as unknown as { __REACT_GRAB__?: ReactGrabAPI }).__REACT_GRAB__
+  return window.__REACT_GRAB__
 }
 
 let pluginInstalled = false
@@ -590,7 +589,7 @@ function installPlugin(): void {
     if (typeof api.registerPlugin !== "function") {
       diag("plugin-register-fail", {
         reason: "no-registerPlugin-method",
-        apiKeys: Object.keys(api as unknown as Record<string, unknown>),
+        apiKeys: Object.keys(api),
       })
       return
     }
@@ -626,7 +625,7 @@ function installPlugin(): void {
  */
 function installShadowOverrides(): void {
   const attempt = (retriesLeft: number) => {
-    const host = document.querySelector("[data-react-grab]") as (Element & { shadowRoot: ShadowRoot | null }) | null
+    const host = document.querySelector("[data-react-grab]")
     const shadow = host?.shadowRoot
     if (!shadow) {
       if (retriesLeft > 0) {
@@ -701,17 +700,38 @@ type ReactGrabModule = {
   setGlobalApi?: (api: ReactGrabAPI) => void
   getGlobalApi?: () => ReactGrabAPI | null
 }
+
+/**
+ * The globals react-grab and our IIFE wrapper exchange, declared once.
+ *
+ * Every reader below used to re-state the property it wanted in an inline
+ * object type and assert `globalThis`/`window` into it, so the five names
+ * had seven partial spellings and no single place said what they hold.
+ * They are `var` declarations because that is what puts a name on the
+ * `globalThis` type, which is how both `globalThis.x` and `window.x` see it.
+ */
+declare global {
+  /** Set by `init()` — present once react-grab is live in this frame. */
+  var __REACT_GRAB__: ReactGrabAPI | undefined
+  /** react-grab's own opt-out flag; we never set it, we only honour it. */
+  var __REACT_GRAB_DISABLED__: boolean | undefined
+  /** Registered by the prepended `dist/index.global.js` IIFE. */
+  var __REACT_GRAB_MODULE__: ReactGrabModule | undefined
+  /** The vite-plugin wrapper's deferred runner for that IIFE. */
+  var __CLAXEDO_RUN_REACT_GRAB_IIFE__: (() => void) | undefined
+  /** Where the wrapper stashes a load-time throw from the IIFE. */
+  var __CLAXEDO_REACT_GRAB_IIFE_ERROR__: { message: string; stack: string | null } | undefined
+}
 function bootstrapReactGrab(): void {
   if (typeof window === "undefined") {
     diag("bootstrap-skip", { reason: "no-window" })
     return
   }
-  const w = window as unknown as { __REACT_GRAB__?: ReactGrabAPI; __REACT_GRAB_DISABLED__?: boolean }
-  if (w.__REACT_GRAB_DISABLED__) {
+  if (window.__REACT_GRAB_DISABLED__) {
     diag("bootstrap-skip", { reason: "disabled-flag" })
     return
   }
-  if (w.__REACT_GRAB__) {
+  if (window.__REACT_GRAB__) {
     diag("bootstrap-skip", { reason: "already-initialized" })
     return
   }
@@ -721,8 +741,7 @@ function bootstrapReactGrab(): void {
   // still loading, skip — the DOMContentLoaded handler installed by the
   // vite plugin wrapper will run it later, and the retry on set-mode will
   // pick up the module when it's ready.
-  const runIife = (globalThis as unknown as { __CLAXEDO_RUN_REACT_GRAB_IIFE__?: () => void })
-    .__CLAXEDO_RUN_REACT_GRAB_IIFE__
+  const runIife = globalThis.__CLAXEDO_RUN_REACT_GRAB_IIFE__
   const domReady = typeof document !== "undefined" && document.readyState !== "loading"
   if (typeof runIife === "function" && domReady) {
     try {
@@ -731,25 +750,23 @@ function bootstrapReactGrab(): void {
       // IIFE wrapper swallows internally and stashes error on globalThis.
     }
   }
-  const mod = (globalThis as unknown as { __REACT_GRAB_MODULE__?: ReactGrabModule }).__REACT_GRAB_MODULE__
+  const mod = globalThis.__REACT_GRAB_MODULE__
   if (!mod) {
     // If the IIFE threw at load time, the vite-plugin wrapper stashes the
     // error on globalThis. Surface it so we can see why the module never
     // registered (bippy mis-init, ReferenceError on `this`, etc.).
-    const iifeError = (globalThis as unknown as {
-      __CLAXEDO_REACT_GRAB_IIFE_ERROR__?: { message: string; stack: string | null }
-    }).__CLAXEDO_REACT_GRAB_IIFE_ERROR__
+    const iifeError = globalThis.__CLAXEDO_REACT_GRAB_IIFE_ERROR__
     diag("bootstrap-fail", {
       reason: "no-module-on-globalThis",
       iifeError: iifeError ?? null,
       hasRunner: typeof runIife === "function",
-      globalKeys: Object.keys(globalThis as Record<string, unknown>).filter((k) =>
+      globalKeys: Object.keys(globalThis).filter((k) =>
         k.toLowerCase().includes("react") || k.toLowerCase().includes("grab"),
       ),
     })
     return
   }
-  const modKeys = Object.keys(mod as Record<string, unknown>)
+  const modKeys = Object.keys(mod)
   diag("bootstrap-module-found", { keys: modKeys })
   if (typeof mod.init !== "function") {
     diag("bootstrap-fail", { reason: "no-init-fn", keys: modKeys })
@@ -761,8 +778,8 @@ function bootstrapReactGrab(): void {
       diag("bootstrap-fail", { reason: "init-returned-nullish" })
       return
     }
-    w.__REACT_GRAB__ = api
-    const apiKeys = Object.keys(api as unknown as Record<string, unknown>)
+    window.__REACT_GRAB__ = api
+    const apiKeys = Object.keys(api)
     try {
       mod.setGlobalApi?.(api)
     } catch (err) {
@@ -856,7 +873,7 @@ function applyMode(mode: PickerMode): void {
   // on first activate(), so the install at plugin-register time may not
   // have found it yet. Idempotent: noops if our style is already present.
   installShadowOverrides()
-  const apiKeys = Object.keys(api as unknown as Record<string, unknown>)
+  const apiKeys = Object.keys(api)
   if (mode === "comment") {
     // Use activate() (pure picker), not comment() — the latter enters react-grab's
     // prompt mode which would try to morph their selection-label into a textarea,

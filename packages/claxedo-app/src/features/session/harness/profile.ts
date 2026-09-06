@@ -164,12 +164,17 @@ export function extractThoughtLevelFromConfigOptions(
   }
 }
 
+/** Sound because `harnessStatuses` IS the `HarnessState["status"]` union. */
+function isHarnessStatus(value: unknown): value is NonNullable<HarnessState["status"]> {
+  return (harnessStatuses as readonly unknown[]).includes(value)
+}
+
 export function decodeHarnessState(value: unknown): HarnessState | undefined {
   const raw = record(value)
   if (!raw) return undefined
   const type = pickHarness(raw.harness)
   const activeType = pickHarness(raw.activeHarness)
-  const status = (harnessStatuses as readonly unknown[]).includes(raw.status) ? raw.status as HarnessState["status"] : undefined
+  const status = isHarnessStatus(raw.status) ? raw.status : undefined
   return {
     ...(type ? { type } : {}),
     ...(typeof raw.model === "string" || raw.model === null ? { model: raw.model } : {}),

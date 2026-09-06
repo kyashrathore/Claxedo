@@ -1,7 +1,7 @@
 import { useGlobalSync } from "@/app/providers/global-sync/provider"
 
 export type GlobalBootstrapSource = {
-  bootstrap: (harnessType?: string, opts?: { force?: boolean }) => Promise<unknown> | unknown
+  bootstrap: (harnessType?: string, opts?: { force?: boolean }) => Promise<unknown>
 }
 
 export async function bootstrapGlobalShellData(input: {

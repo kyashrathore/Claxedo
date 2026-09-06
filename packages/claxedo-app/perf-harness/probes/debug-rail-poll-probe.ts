@@ -43,10 +43,13 @@ import { startApp, stopApp } from "../src/browser/environment"
 import { waitForTranscript } from "../src/browser/actions/session"
 import { environmentProfile } from "../src/environment-profile"
 import { seedForScenario } from "../src/seed"
+import { oneOf } from "../src/cli-options"
 
-const SCENARIO = (process.env.RAIL_PROBE_SCENARIO ?? "workspace-lifecycle") as
-  | "workspace-lifecycle"
-  | "session-switch-workspace"
+const SCENARIO = oneOf(
+  process.env.RAIL_PROBE_SCENARIO ?? "workspace-lifecycle",
+  ["workspace-lifecycle", "session-switch-workspace"],
+  "RAIL_PROBE_SCENARIO",
+)
 const OBSERVE_MS = Number(process.env.RAIL_PROBE_OBSERVE_MS ?? "12000")
 
 const TRIPLE = ["/session/status", "/permission", "/question"]

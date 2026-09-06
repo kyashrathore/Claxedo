@@ -187,7 +187,7 @@ export function createProductContributions(input: ProductContributionsInput): Pr
     },
     hostedExpected: () => expectsHosted,
     availableContentTypes: () => [
-      ...local.map((surface) => String(surface.surface)),
+      ...local.map((surface) => surface.surface),
       ...(expectsHosted ? HOSTED_CONTENT_TYPES : []),
       ...(expectsAgentPlugins ? AGENT_PLUGIN_CONTENT_TYPES : []),
     ],

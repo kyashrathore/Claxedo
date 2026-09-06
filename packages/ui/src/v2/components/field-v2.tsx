@@ -82,12 +82,13 @@ function FieldV2Root(props: ParentProps<FieldV2Props>) {
     const root = rootRef
     if (!root) return
 
-    const control = root.querySelector(CONTROL_SELECTOR) as HTMLInputElement | HTMLTextAreaElement | null
-    if (!control) return
+    const control = root.querySelector(CONTROL_SELECTOR)
+    if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) return
 
-    const shell = control.closest(
+    const shellNode = control.closest(
       "[data-component='text-input-v2'], [data-component='textarea-v2'], [data-component='inline-input-v2']",
-    ) as HTMLElement | null
+    )
+    const shell = shellNode instanceof HTMLElement ? shellNode : null
 
     control.id = controlId
     control.setAttribute("aria-labelledby", labelId)

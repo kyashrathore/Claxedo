@@ -15,11 +15,11 @@ const sandboxStub = {
   containerFetch: vi.fn(async () => new Response("ok")),
 }
 const getSandboxMock = vi.fn(() => sandboxStub)
-const containerProxyStub = class {}
+const containerProxyStub = class ContainerProxy { readonly stub = "container-proxy" }
 
 vi.mock("@cloudflare/sandbox", () => ({
   getSandbox: getSandboxMock,
-  Sandbox: class {},
+  Sandbox: class Sandbox { readonly stub = "sandbox" },
   ContainerProxy: containerProxyStub,
 }))
 
@@ -71,7 +71,7 @@ function call(path: string, workerEnv: never, init: RequestInit = {}) {
       headers: {
         authorization: "Bearer tok",
         "content-type": "application/json",
-        ...(init.headers as Record<string, string> ?? {}),
+        ...Object.fromEntries(new Headers(init.headers)),
       },
     }),
     workerEnv,

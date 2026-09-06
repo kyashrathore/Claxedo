@@ -15,7 +15,8 @@ import {
   parseIdempotencyKey,
   serialized,
 } from "../../authority/http/idempotency"
-import { rec, signedOrError, txt } from "../../workspace/route-support"
+import { signedOrError, txt } from "../../workspace/route-support"
+import { asRecord } from "../../platform/json/index"
 type Options = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
@@ -33,7 +34,7 @@ function errorResponse(error: unknown) {
   if (error instanceof HostedControlError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
   }
-  const row = rec(error)
+  const row = asRecord(error)
   if (typeof row?.status === "number" && typeof row?.code === "string" && error instanceof Error) {
     return Response.json({ error: { code: row.code, message: error.message } }, { status: row.status })
   }
@@ -52,17 +53,17 @@ function requireServices(services: ControlPlaneServices | undefined) {
 }
 
 function expectedEventOrdinal(input: unknown) {
-  const value = rec(input)?.expectedEventOrdinal
+  const value = asRecord(input)?.expectedEventOrdinal
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : undefined
 }
 
 async function json(req: Request) {
   const body = await req.json().catch(() => ({}))
-  return rec(body) ?? {}
+  return asRecord(body) ?? {}
 }
 
 function workspaceId(input: unknown) {
-  const id = txt(rec(input)?.workspaceId)
+  const id = txt(asRecord(input)?.workspaceId)
   if (id) return id
   throw new Error("workspaceId is required")
 }
@@ -80,11 +81,11 @@ async function signedAuth(
     requireSigned: true,
   }, services)
   if ("error" in authResult) {
-    const body = rec(authResult.error)
+    const body = asRecord(authResult.error)
     throw new HostedControlError(
-      txt(rec(body?.error)?.message) ?? "Signed auth is required",
+      txt(asRecord(body?.error)?.message) ?? "Signed auth is required",
       authResult.status ?? 401,
-      txt(rec(body?.error)?.code)?.toUpperCase() ?? "UNAUTHORIZED",
+      txt(asRecord(body?.error)?.code)?.toUpperCase() ?? "UNAUTHORIZED",
     )
   }
   if (!authResult.auth) throw new HostedControlError("Signed auth is required", 401, "UNAUTHORIZED")

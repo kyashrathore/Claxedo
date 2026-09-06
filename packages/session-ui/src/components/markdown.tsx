@@ -157,14 +157,14 @@ const viewButtonState = new WeakMap<HTMLElement, () => void>()
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
 
-function codeUrl(text: string) {
+function codeUrl(text: string): string | undefined {
   const href = text.trim().replace(/[),.;!?]+$/, "")
-  if (!urlPattern.test(href)) return
+  if (!urlPattern.test(href)) return undefined
   try {
     const url = new URL(href)
     return url.toString()
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -172,16 +172,17 @@ function createCopyButton(labels: CopyLabels) {
   const host = document.createElement("div")
   host.setAttribute("data-slot", "markdown-copy-button")
 
-  const state: Partial<CopyButtonState> = {}
+  let setLabelsRef: CopyButtonState["setLabels"] | undefined
+  let setCopiedRef: CopyButtonState["setCopied"] | undefined
   const dispose = render(() => {
     const [labelState, setLabels] = createSignal(labels, { equals: false })
     const [copied, setCopied] = createSignal(false)
-    state.setLabels = setLabels
-    state.setCopied = setCopied
+    setLabelsRef = setLabels
+    setCopiedRef = setCopied
     return <MarkdownCopyButton labels={labelState} copied={copied} />
   }, host)
-  state.dispose = dispose
-  copyButtonState.set(host, state as CopyButtonState)
+  if (!setLabelsRef || !setCopiedRef) throw new Error("markdown copy button rendered without its setters")
+  copyButtonState.set(host, { setLabels: setLabelsRef, setCopied: setCopiedRef, dispose })
   return host
 }
 
@@ -505,17 +506,20 @@ function traceMermaid(
   )
 }
 
-function rendererClock() {
-  if (typeof performance === "undefined") return
+function rendererClock(): number | undefined {
+  if (typeof performance === "undefined") return undefined
   return performance.now()
+}
+
+/** The debug hooks the perf harness hangs off `window`; absent in a normal session. */
+interface PerfTraceWindow extends Window {
+  __claxedoPerfTrace?: boolean
+  __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
 }
 
 function traceRenderer(name: string, started?: number) {
   if (typeof window === "undefined") return
-  const target = window as unknown as {
-    __claxedoPerfTrace?: boolean
-    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
-  }
+  const target: PerfTraceWindow = window
   if (!target.__claxedoPerfTrace) return
   target.__claxedoPerfRendererPhases?.push({
     name,
@@ -527,15 +531,16 @@ function largeMermaid(source: string) {
   return source.length > 4_000 || source.split("\n", 33).length > 32
 }
 
-function codeKind(language: string | undefined) {
+function codeKind(language: string | undefined): "shell" | undefined {
   const value = language?.toLowerCase()
-  if (!value) return
+  if (!value) return undefined
   if (shellLanguages.has(value)) return "shell"
+  return undefined
 }
 
-function codeLanguage(block: HTMLPreElement) {
+function codeLanguage(block: HTMLPreElement): string | undefined {
   const code = block.querySelector("code")
-  if (!(code instanceof HTMLElement)) return
+  if (!(code instanceof HTMLElement)) return undefined
   return code.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
 }
 
@@ -746,7 +751,7 @@ function cachedRenderResult(
 ): RenderResult | undefined {
   if (!text) return { text, blocks: [] }
   const base = key ?? checksum(text)
-  if (!base) return
+  if (!base) return undefined
   const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
     if (block.mode === "code") {
       if (!block.complete) return []
@@ -768,7 +773,9 @@ function cachedRenderResult(
     if (cached?.raw !== block.raw) return []
     return [{ key: `${owner}:${cacheKey}`, mode: block.mode, ...cached }]
   })
-  if (blocks.length === projection.blocks.length) return { text, blocks }
+  // A partial hit is no hit: the caller falls back to a synchronous render of the whole text.
+  if (blocks.length !== projection.blocks.length) return undefined
+  return { text, blocks }
 }
 
 function syncRenderResult(text: string, projection: Projection, owner: string, cacheKey: string | undefined): RenderResult {

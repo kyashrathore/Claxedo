@@ -387,7 +387,7 @@ function sandboxTargetResultFromLease(lease: SandboxLeaseRow | undefined): Sandb
 }
 
 function sandboxTargetFromSupervisorState(state: WorkspaceRuntimeState): SandboxTarget | undefined {
-  if (!state.url || !state.sandbox_id) return
+  if (!state.url || !state.sandbox_id) return undefined
   const lease = getSupervisorSandboxLease(state.ws.id)
   const hostId = state.relay_host_id ?? lease?.lease_id ?? state.sandbox_id
   const driverResourceId = lease?.driver_resource_id ?? state.sandbox_id

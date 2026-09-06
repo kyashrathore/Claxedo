@@ -185,6 +185,7 @@ import {
 } from "../helpers/contracts/session-config"
 import { draftDefaultStorageKey } from "../../src/features/session/harness/draft-defaults"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
+import { eventStream, lastEventId } from "../helpers/sse-route"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
@@ -293,16 +294,6 @@ class Bus<T> {
     await this.waitForPending(idleTimeoutMs, cursor)
     return this.log.filter((entry) => entry.id > cursor)
   }
-}
-
-function lastEventId(route: Route) {
-  const value = Number(route.request().headers()["last-event-id"])
-  return Number.isFinite(value) && value > 0 ? value : 0
-}
-
-function eventStream<T>(events: Array<{ id: number; payload: T }>) {
-  if (events.length === 0) return ": heartbeat\n\n"
-  return events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event.payload)}\n\n`).join("")
 }
 
 type HealthOutcome = 200 | 409 | 503

@@ -56,7 +56,15 @@ export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByW
   })
 }
 
-export function mapInventoryToSessions(items: GlobalSessionItem[]) {
+/**
+ * Inventory rows as session-list rows.
+ *
+ * An inventory row carries no `slug` or `version`; `ClaxedoSession` makes both
+ * optional for exactly this reason, so the row is built to the type rather than
+ * asserted into it. Synthesizing empty strings here would enter the session
+ * cache and could overwrite a real slug/version on the next canonical merge.
+ */
+export function mapInventoryToSessions(items: GlobalSessionItem[]): ClaxedoSession[] {
   return items
     .filter((item) => !item.archived)
     .map((item) => ({
@@ -67,6 +75,6 @@ export function mapInventoryToSessions(items: GlobalSessionItem[]) {
       ...(item.parentID ? { parentID: item.parentID } : {}),
       ...(item.lastTurn ? { lastTurn: item.lastTurn } : {}),
       time: item.time,
-    }) as ClaxedoSession)
+    }) satisfies ClaxedoSession)
     .sort((a, b) => cmp(a.id, b.id))
 }

@@ -4,6 +4,7 @@ import type {
   SandboxCheckpointRuntime,
   SandboxManager,
 } from "@claxedo/sandbox-manager"
+import { readJsonRecord } from "../platform/json/index"
 
 export type WorkspaceCheckpointService = ReturnType<typeof createWorkspaceCheckpointService>
 
@@ -46,9 +47,10 @@ export function createWorkspaceCheckpointService(input: {
       const lease = (await input.sandboxManager.list()).find((item) => item.workspaceId === workspaceId)
       const worktrees = lease?.status === "ready"
         ? await (input.inspectRuntimeRequest ?? input.runtimeRequest)(workspaceId, "/api/wr/worktrees", { method: "GET" })
-          .then(async (response) => response.ok
-            ? (await response.json() as { worktrees?: unknown[] }).worktrees ?? []
-            : [])
+          .then(async (response) => {
+            const worktrees = response.ok ? (await readJsonRecord(response))?.worktrees : undefined
+            return Array.isArray(worktrees) ? worktrees : []
+          })
           .catch(() => [])
         : []
       return {

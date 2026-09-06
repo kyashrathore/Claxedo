@@ -135,7 +135,7 @@ export function createLocalDaemonLifecycle(options: {
       leases.clear()
     },
     acquire(client = "desktop") {
-      if (state === "stopping" || state === "stopped") return
+      if (state === "stopping" || state === "stopped") return undefined
       const lease = { id: crypto.randomUUID(), client, expiresAt: now() + leaseTtlMs }
       leases.set(lease.id, lease)
       shutdownRequested = false
@@ -147,7 +147,7 @@ export function createLocalDaemonLifecycle(options: {
       const at = now()
       prune(at)
       const current = leases.get(id)
-      if (!current || state === "stopping" || state === "stopped") return
+      if (!current || state === "stopping" || state === "stopped") return undefined
       const lease = { ...current, expiresAt: at + leaseTtlMs }
       leases.set(id, lease)
       idleSince = undefined

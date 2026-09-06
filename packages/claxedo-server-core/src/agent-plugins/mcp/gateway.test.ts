@@ -3,7 +3,7 @@ import { forwardMcpGatewayRequest, McpGatewayError } from "./gateway"
 
 describe("MCP transport gateway", () => {
   test("forwards one ordinary MCP request with the live token and protocol headers", async () => {
-    const fetch = vi.fn(async (_url: string, init?: RequestInit) => new Response("event: message\ndata: {}\n\n", {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response("event: message\ndata: {}\n\n", {
       status: 200,
       headers: {
         "content-type": "text/event-stream",

@@ -99,12 +99,16 @@ export function workspaceRuntimeKind(
   return "local"
 }
 
-export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
+// `directory` is a directory string, spelled as one. It used to be a
+// `TDirectory extends string` type parameter that constrained nothing and
+// whose only effect was to keep this parameter out of the `directoryStringParams`
+// debt regex; the debt is the same either way, so it is counted now.
+export function railWorkspaceSessionBacking(input: {
   workspaceId?: string
   environmentKind?: string
   sessionRef?: string
   project: Pick<ProjectItem, "workspaces">
-  directory: TDirectory
+  directory: string
 }): WorkspaceSessionBacking | undefined {
   if (
     input.sessionRef?.startsWith("central:") ||

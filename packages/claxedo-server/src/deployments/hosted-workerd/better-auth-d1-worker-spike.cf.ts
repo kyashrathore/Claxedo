@@ -17,6 +17,12 @@ import { betterAuthNativeResource } from "../../platform/auth/better-auth-native
 import { createD1CoreAuthority } from "../../authority/adapters/d1/core-authority"
 import { createD1UserHostedTargetResolver } from "../../authority/adapters/d1/user-hosted-relay-target"
 import type { ControlPlaneServices } from "../../authority/services"
+import {
+  UNUSED_DURABLE_SESSION_LOG,
+  UNUSED_PROJECTION_STORE,
+} from "../../authority/unavailable-session-stores"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
 import { HostedWorkspaceRoutes } from "../../routes/hosted/workspace"
 
@@ -59,7 +65,7 @@ function authentication(env: Env) {
         create: {
           async before(account, context) {
             const field = context?.headers?.get("x-test-account-binding-mutation")
-            if (!field || !["userId", "providerId", "issuer", "accountId"].includes(field)) return
+            if (!field || !["userId", "providerId", "issuer", "accountId"].includes(field)) return undefined
             return { data: { ...account, [field]: `hook-mutated-${field}` } }
           },
         },
@@ -155,13 +161,51 @@ function controlPlaneAuthentication(env: Env) {
  * enrollment lease is live. No `deploymentId` filter here: the hosted product
  * policy stamps personal orgs with a NULL deployment id.
  */
+/**
+ * The spike mounts no credential surface, and the default port is the LOCAL
+ * SQLite registry — wrong for a Worker on two counts, and it drags the Node
+ * agent runtime into a workerd bundle through `authority/default-credentials`.
+ * Every member refuses out loud instead, so a route that grows a credential
+ * read fails here rather than silently reading nothing.
+ */
+const NO_CREDENTIALS: ControlPlaneCredentials = {
+  listCredentials: () => noCredentials("listCredentials"),
+  getCredentialByProvider: () => noCredentials("getCredentialByProvider"),
+  putCredential: () => noCredentials("putCredential"),
+  deleteCredential: () => noCredentials("deleteCredential"),
+  deleteCredentialsByProvider: () => noCredentials("deleteCredentialsByProvider"),
+  updateCredentialStatus: () => noCredentials("updateCredentialStatus"),
+  syncLocalCredentials: () => noCredentials("syncLocalCredentials"),
+}
+
+function noCredentials(member: string): never {
+  throw new Error(`${member} is not available in the Better Auth + D1 spike Worker`)
+}
+
 function controlPlaneApp(env: Env) {
   if (controlPlane) return controlPlane
-  const services = {
-    authority: controlPlaneAuthority(env),
+  // Every field spelled out and CHECKED, rather than a three-field object
+  // asserted into `ControlPlaneServices`: that assertion is satisfied just as
+  // happily by a composition missing something the routes reach for, and the
+  // omission then surfaces as `undefined is not a function` inside a Worker.
+  // `createControlPlaneServices` would say the same thing more briefly, but it
+  // is not reachable from a workerd bundle — `authority/services.ts` drags the
+  // Node-only agent runtime in with it.
+  //
+  // The spike serves no sessions and mounts no relay or sandbox surface, so the
+  // session stores are the shared refusal stubs and the rest are empty by
+  // intent, not by omission.
+  const services: ControlPlaneServices = {
+    projectionStore: UNUSED_PROJECTION_STORE,
+    durableSessionLog: UNUSED_DURABLE_SESSION_LOG,
+    auth: localOnlyAuthAdapter("the workerd auth spike authenticates through its route options"),
+    credentials: NO_CREDENTIALS,
+    relay: {},
     sandbox: {},
     telemetry: { capture() {} },
-  } as unknown as ControlPlaneServices
+    localExecution: { enabled: false },
+    authority: controlPlaneAuthority(env),
+  }
   const hostTunnelTokenSigner: HostTunnelTokenSigner = async (input) => ({
     hostTunnelToken: `htt-${input.hostId}:${[...input.workspaceIds].sort().join("+")}`,
     tokenExpiresAt: 4_102_444_800_000,

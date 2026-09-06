@@ -5,19 +5,19 @@ let mod: typeof import("./first-party-content-surfaces")
 let documents: typeof import("./documents-content-surfaces")
 
 beforeAll(async () => {
-  mock.module("../../features/session/ui/content/session-content", () => ({
+  await mock.module("../../features/session/ui/content/session-content", () => ({
     SessionContent: () => null,
   }))
-  mock.module("../../features/terminal/ui/content/terminal-content", () => ({
+  await mock.module("../../features/terminal/ui/content/terminal-content", () => ({
     TerminalContent: () => null,
   }))
-  mock.module("../../features/documents/ui/content/page-content", () => ({
+  await mock.module("../../features/documents/ui/content/page-content", () => ({
     PageContent: () => null,
   }))
-  mock.module("../workbench/content/context-content", () => ({
+  await mock.module("../workbench/content/context-content", () => ({
     ContextContent: () => null,
   }))
-  mock.module("../../features/documents/ui/content/pages-index-content", () => ({
+  await mock.module("../../features/documents/ui/content/pages-index-content", () => ({
     PagesIndexContent: () => null,
   }))
 

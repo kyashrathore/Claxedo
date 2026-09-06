@@ -11,22 +11,25 @@
 import { and, desc, eq, lte } from "drizzle-orm"
 import type {
   ChannelAccessStore,
-  ChannelId,
   ChannelIdentityBinding,
   ChannelIdentityBindingStore,
   PairingRequest,
 } from "@claxedo/channels"
 import { ClaxedoDB } from "../platform/db"
+import { channelId } from "./channel-id"
 import {
   ClaxedoChannelAllowTable,
   ClaxedoChannelIdentityTable,
   ClaxedoChannelPairingTable,
 } from "./access.sql"
 
-function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRequest {
+/** A row whose channel is no longer a supported one reads as absent, exactly as `identity` treats an unknown status. */
+function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRequest | undefined {
+  const channel = channelId(row.channel)
+  if (!channel) return undefined
   return {
     code: row.code,
-    channel: row.channel as ChannelId,
+    channel,
     externalUserId: row.external_user_id,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
@@ -79,7 +82,7 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
           .where(channel ? eq(ClaxedoChannelPairingTable.channel, channel) : undefined)
           .orderBy(desc(ClaxedoChannelPairingTable.created_at))
           .all(),
-      ).map(pairing)
+      ).flatMap((row) => pairing(row) ?? [])
     },
     async findPending(code) {
       pruneExpired(now())
@@ -133,9 +136,10 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
 
 function identity(row: typeof ClaxedoChannelIdentityTable.$inferSelect): ChannelIdentityBinding | undefined {
   const status = row.status
-  if (status !== "pending" && status !== "bound" && status !== "blocked") return
+  const channel = channelId(row.channel)
+  if (!channel || (status !== "pending" && status !== "bound" && status !== "blocked")) return undefined
   return {
-    channel: row.channel as ChannelId,
+    channel,
     externalUserId: row.external_user_id,
     accountId: row.account_id ?? null,
     status,

@@ -2,6 +2,8 @@ import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
+import { isRecord } from "../../shared/json-read"
+
 export const HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA = "claxedo.host-connector-child/v1"
 
 function sha256(file: string): string {
@@ -21,23 +23,22 @@ export function verifyHostConnectorChildArtifact(resourceDir: string): string {
   } catch {
     throw new Error(`Host Connector child manifest could not be parsed at ${manifestPath}`)
   }
-  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
+  if (!isRecord(manifest)) {
     throw new Error(`Host Connector child manifest has the wrong shape at ${manifestPath}`)
   }
-  const value = manifest as Record<string, unknown>
   if (
-    value.schema !== HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA ||
-    value.entry !== "index.js" ||
-    typeof value.sha256 !== "string" ||
-    !/^[a-f0-9]{64}$/.test(value.sha256) ||
-    Object.keys(value).sort().join(",") !== "entry,schema,sha256"
+    manifest.schema !== HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA ||
+    manifest.entry !== "index.js" ||
+    typeof manifest.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/.test(manifest.sha256) ||
+    Object.keys(manifest).sort().join(",") !== "entry,schema,sha256"
   ) {
     throw new Error(`Host Connector child manifest failed validation at ${manifestPath}`)
   }
 
   const entry = join(resourceDir, "index.js")
   if (!existsSync(entry)) throw new Error(`Host Connector child executable was not found at ${entry}`)
-  if (sha256(entry) !== value.sha256) throw new Error(`Host Connector child fingerprint mismatch at ${entry}`)
+  if (sha256(entry) !== manifest.sha256) throw new Error(`Host Connector child fingerprint mismatch at ${entry}`)
   return entry
 }
 

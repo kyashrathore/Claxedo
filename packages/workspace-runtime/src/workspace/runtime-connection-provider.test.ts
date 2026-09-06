@@ -61,7 +61,10 @@ describe("WorkspaceRuntime generic connection selection", () => {
         return {
           ...adapter(),
           dispose() {
-            if (instance === 1) { canonicalDisposed++; return }
+            if (instance === 1) {
+              canonicalDisposed++
+              return Promise.resolve()
+            }
             const rejected = Promise.reject(new Error("Loser teardown failed"))
             void rejected.catch(() => {})
             return rejected

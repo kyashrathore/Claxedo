@@ -1,3 +1,4 @@
+import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
@@ -212,10 +213,10 @@ function groupRows(rows: SessionNavigationRow[], groupBy: SessionListGroupBy) {
 function sessionNavigationRow(session: unknown): SessionNavigationRow | undefined {
   const item = record(session)
   const sessionId = stringValue(item.sessionID) ?? stringValue(item.session_id) ?? stringValue(item.id)
-  if (!sessionId) return
+  if (!sessionId) return undefined
   const workspaceId = stringValue(item.workspaceID) ?? stringValue(item.workspace_id)
   const projectId = stringValue(item.projectID) ?? stringValue(item.project_id)
-  if (item.host !== undefined && item.host !== "workspace") return
+  if (item.host !== undefined && item.host !== "workspace") return undefined
   const directory = stringValue(item.directory) ?? workspaceId ?? "global"
   const createdAt = numberValue(item.createdAt) ?? numberValue(item.created_at) ?? 0
   const updatedAt = numberValue(item.updatedAt) ?? numberValue(item.updated_at) ?? createdAt
@@ -284,8 +285,9 @@ function sessionRef(input: { sessionId: string; workspaceId?: string; directory:
   return `local:${input.directory}:session:${input.sessionId}`
 }
 
+/** Substitutes `{}` for a non-object so callers can index unconditionally. */
 function record(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" ? input as Record<string, unknown> : {}
+  return jsonRecord(input) ?? {}
 }
 
 function stringValue(input: unknown) {

@@ -28,6 +28,7 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { raw, record } from "../../platform/json"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -56,12 +57,12 @@ async function workspace(c: {
     directory: c.req.query("directory") || (headerWorkspaceId ? undefined : directoryHeader),
   })
   if (hit) return hit
-  if (projectId) return await getProjectWorkspace(projectId)
+  return projectId ? await getProjectWorkspace(projectId) : undefined
 }
 
 async function routeAuth(request: Request, options: Options) {
   const config = options.authConfig ?? controlPlaneAuthConfig()
-  if (!config.enabled && config.mode === "local-only" && !bearerToken(request.headers.get("authorization"))) return
+  if (!config.enabled && config.mode === "local-only" && !bearerToken(request.headers.get("authorization"))) return undefined
   const context = await controlPlaneAuthContext(request, {
     config,
     verifier: options.verifier,
@@ -130,15 +131,7 @@ async function authorizeWorkspaceRead(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
-function record(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
-}
-
-function nonEmptyString(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
-}
+const nonEmptyString = raw
 
 async function authorizedProjectWorkspaceIds(
   auth: SignedControlPlaneAuth,
@@ -176,7 +169,7 @@ function authoritySessionId(input: unknown) {
 
 function authoritySessionMeta(input: unknown, workspaceId: string): SessionMeta | undefined {
   const sessionID = authoritySessionId(input)
-  if (!sessionID) return
+  if (!sessionID) return undefined
   const row = record(input)
   const createdAt = typeof row?.created_at === "number"
     ? row.created_at

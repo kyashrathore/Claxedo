@@ -11,6 +11,7 @@
 
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { resolveTelemetryHost, resolveTelemetryKey, type ObservabilityEnv } from "../telemetry/errors/config"
+import { asRecord } from "../json/index"
 
 type TelemetryEnv = ObservabilityEnv
 
@@ -129,7 +130,7 @@ export function workerErrorCapture(env: TelemetryEnv = {}): WorkerErrorCapture {
     captureException: async (error, distinctId, properties) => {
       try {
         const { type, value } = exceptionIdentity(error)
-        const frames = parseStackFrames((error as { stack?: unknown } | undefined)?.stack)
+        const frames = parseStackFrames(asRecord(error)?.stack)
         await postCapture(host, key, "$exception", distinctId, {
           // Tags/extra ride as ordinary top-level properties so alert rules can
           // match them directly (`page_class = payment` pages the phone).

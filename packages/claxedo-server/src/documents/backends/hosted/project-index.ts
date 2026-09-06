@@ -1,5 +1,6 @@
 import type { ConditionalObjectStore } from "./managed"
 import { DocumentIndexEntrySchema, type DocumentIndexEntry, type DocumentIndexScope } from "../../index-contract"
+import { asRecord, parseJson } from "../../../platform/json/index"
 
 /**
  * A per-project roll-up of every document entry in one R2 object, so listing a project costs one
@@ -110,16 +111,15 @@ export function sortRecords(records: readonly ProjectIndexRecord[]) {
 
 function parseProjectIndex(body: Uint8Array, scope: DocumentIndexScope): ProjectIndexSnapshot | undefined {
   try {
-    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body))
-    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-    const outer = value as Record<string, unknown>
+    const outer = asRecord(parseJson(new TextDecoder("utf-8", { fatal: true }).decode(body)))
+    if (!outer) return undefined
     if (outer.version !== PROJECT_INDEX_VERSION) return undefined
     if (typeof outer.truncated !== "boolean" || !Array.isArray(outer.records)) return undefined
     if (outer.records.length > MAX_PROJECT_INDEX_ENTRIES) return undefined
     const records: ProjectIndexRecord[] = []
     for (const candidate of outer.records) {
-      if (!candidate || typeof candidate !== "object") return undefined
-      const record = candidate as Record<string, unknown>
+      const record = asRecord(candidate)
+      if (!record) return undefined
       if (typeof record.objectKey !== "string" || typeof record.etag !== "string") return undefined
       const parsed = DocumentIndexEntrySchema.safeParse(record.entry)
       // A single unparseable record invalidates the whole roll-up. Keeping the parseable remainder

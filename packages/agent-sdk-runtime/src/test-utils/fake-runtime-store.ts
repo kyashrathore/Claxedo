@@ -2,6 +2,7 @@ import type { CompatEvent } from "../compat-events"
 import type {
   AgentRuntimeCommittedCompatOutput,
   AgentRuntimeStoreWithRecovery,
+  AgentRuntimeTurnStartInput,
 } from "../harnesses/shared/runtime-store"
 import { MemoryRuntimeStore } from "../stores/memory"
 
@@ -21,10 +22,8 @@ export function committedAppend(input: {
 }
 
 /** Commits the standard opening events for a turn. */
-export function committedStartTurn(input: unknown) {
-  return new MemoryRuntimeStore().startTurn(
-    input as Parameters<MemoryRuntimeStore["startTurn"]>[0],
-  )
+export function committedStartTurn(input: AgentRuntimeTurnStartInput) {
+  return new MemoryRuntimeStore().startTurn(input)
 }
 
 /** A complete inert store whose individual operations can be replaced by a test. */
@@ -55,7 +54,7 @@ export function fakeRuntimeStore(
     consumeRecoveryError: () => null,
     ...overrides,
     acquireTurnLease: overrides.acquireTurnLease ?? ((sessionId) => {
-      if (leases.has(sessionId)) return
+      if (leases.has(sessionId)) return undefined
       const lease = `${sessionId}:fake`
       leases.set(sessionId, lease)
       return lease

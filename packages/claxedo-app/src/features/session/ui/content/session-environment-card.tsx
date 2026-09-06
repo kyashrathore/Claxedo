@@ -7,7 +7,6 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import { useShellQueryOptions } from "@/features/session/app-ports"
 import { createProcessClient } from "@/features/session/app-ports"
 import { parseOwnerRepo } from "@/features/session/app-ports"
-import type { ProjectItem } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
 import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
@@ -559,7 +558,7 @@ export function SessionEnvironmentCardMount(props: {
   //    corresponding local `workspaces` record before comparing its directory;
   //  - local: otherwise (the project root or a plain directory).
   const projectsQuery = useQuery(() => queryOptions.projects())
-  const projects = createMemo(() => (projectsQuery.data ?? []) as ProjectItem[])
+  const projects = createMemo(() => projectsQuery.data ?? [])
   const isolation = createMemo<EnvironmentIsolation>(() => {
     if (sdk.workspace()?.kind || sdk.workspaceId) return "cloud"
     const cwd = directory()

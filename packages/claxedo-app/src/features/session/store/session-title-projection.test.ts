@@ -1,17 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createComputed, createRoot } from "solid-js"
-import type { SessionInventoryRow } from "@/features/session/data/query/types"
+import { sessionRow as row } from "@/features/session/data/query/test-support/session-row"
 import { createSessionTitleProjection } from "./session-title-projection"
-
-function row(input: Partial<SessionInventoryRow> & Pick<SessionInventoryRow, "id" | "title" | "directory">): SessionInventoryRow {
-  return {
-    projectID: input.directory,
-    tags: [],
-    attachments: [],
-    time: { created: 1, updated: 1 },
-    ...input,
-  }
-}
 
 describe("session title projection", () => {
   test("indexes workspace rows by directory and workspace id aliases", () => {

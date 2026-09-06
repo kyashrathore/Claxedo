@@ -261,7 +261,7 @@ function correlationKeys(observation: SubagentObservation) {
 }
 
 function providerKey(observation: SubagentObservation) {
-  if (!observation.providerId || !observation.providerKind) return
+  if (!observation.providerId || !observation.providerKind) return undefined
   return `provider:${observation.providerKind}:${observation.providerId}`
 }
 
@@ -273,7 +273,7 @@ function deterministicKey(parentSessionId: string, observation: SubagentObservat
       : observation.toolCallId
         ? `tool:${observation.harnessExecutionId ?? ""}:${observation.toolCallId}`
         : undefined)
-  if (!seed) return
+  if (!seed) return undefined
   return `subagent_${createHash("sha256").update(`${parentSessionId}\0${seed}`).digest("hex").slice(0, 24)}`
 }
 
@@ -281,10 +281,10 @@ function scoped(parentSessionId: string, key: string) {
   return `${parentSessionId}\0${key}`
 }
 
-function sole(values: Iterable<string> | undefined) {
-  if (!values) return
+function sole(values: Iterable<string> | undefined): string | undefined {
+  if (!values) return undefined
   const unique = new Set(values)
-  if (unique.size !== 1) return
+  if (unique.size !== 1) return undefined
   return unique.values().next().value
 }
 

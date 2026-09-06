@@ -24,6 +24,7 @@ import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { SandboxManagerPort } from "../sandbox/manager-port"
 import type {
   CredentialHealth,
+  CredentialKind,
   CredentialMetadata,
   CredentialScope,
   CredentialStatus,
@@ -73,13 +74,17 @@ export type CredentialSyncResult = {
  */
 export type ControlPlaneCredentials = {
   listCredentials: (org?: string) => Promise<CredentialMetadata[]>
-  getCredentialByProvider: (providerId: string, kind?: string, org?: string) => Promise<CredentialMetadata | undefined>
+  getCredentialByProvider: (
+    providerId: string,
+    kind?: CredentialKind,
+    org?: string,
+  ) => Promise<CredentialMetadata | undefined>
   getCredential?: (id: string, org?: string) => Promise<CredentialMetadata | undefined>
   resolveCredentialSecret?: (providerId: string, org?: string) => Promise<string | null>
   resolveCredentialSecretById?: (id: string, org?: string) => Promise<string | null>
   putCredential: (input: CredentialWrite, org?: string) => Promise<CredentialMetadata>
   deleteCredential: (id: string, org?: string) => Promise<boolean>
-  deleteCredentialsByProvider: (providerId: string, kind?: string, org?: string) => Promise<number>
+  deleteCredentialsByProvider: (providerId: string, kind?: CredentialKind, org?: string) => Promise<number>
   updateCredentialStatus: (id: string, status: CredentialStatus, error?: string, org?: string) => Promise<void>
   updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number, org?: string) => Promise<void>
   discoverLocalCredentials?: (org?: string) => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>

@@ -7,6 +7,7 @@ import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/domain-types"
 import type { ProjectActionProps } from "./project-actions"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+import { createMockApi } from "@/architecture/test-support/mock-api"
 
 beforeEach(() => configureAppPortsForTest())
 
@@ -17,8 +18,8 @@ beforeEach(() => configureAppPortsForTest())
 // win32 unit lane hit exactly that in agent-runtime-client.test.ts, where
 // NTFS discovery order ran this file first (runs 382/383/385).
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?project-actions-restore`)) }
-afterAll(() => {
-  mock.module("@/platform/api/api", () => realApiModule)
+afterAll(async () => {
+  await mock.module("@/platform/api/api", () => realApiModule)
 })
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
@@ -65,18 +66,18 @@ type PendingWorkspaceStatus = {
 }
 
 beforeAll(async () => {
-  mock.module("@/app/dialogs/settings", () => ({
+  await mock.module("@/app/dialogs/settings", () => ({
     DialogSettings: () => null,
   }))
 
-  mock.module("@opencode-ai/ui/toast", () => ({
+  await mock.module("@opencode-ai/ui/toast", () => ({
     showToast: (input: { title?: string; description?: string }) => {
       toasts.push(input)
       return 0
     },
   }))
 
-  mock.module("@/platform/sync/worktree", () => ({
+  await mock.module("@/platform/sync/worktree", () => ({
     Worktree: {
       get: (directory: string) => worktreeStates.get(directory),
       pending: (directory: string) => {
@@ -105,11 +106,11 @@ beforeAll(async () => {
     validWorktree: () => true,
   }))
 
-  mock.module("@/app/dialogs/select-directory", () => ({
+  await mock.module("@/app/dialogs/select-directory", () => ({
     DialogSelectDirectory: () => "select-directory",
   }))
 
-  mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
+  await mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
     DialogDeleteWorkspace: (props: { onDelete: (dir: string) => Promise<void> | void }) => {
       deleteDialogProps = props
       return null
@@ -118,21 +119,21 @@ beforeAll(async () => {
     DialogRecoverWorkspace: () => null,
   }))
 
-  // Shadow `../../utils/api` with the full export shape so a mock leaked from
-  // another test file in the same suite run cannot strip exports we need.
-  mock.module("@/platform/api/api", () => ({
+  // `mock.module` replaces a module PROCESS-WIDE, so a hand-listed partial mock
+  // breaks every importer of an export it forgot — this list was missing
+  // `isLoopbackHttpUrl`, `isHostedAppHostname` and friends. `createMockApi` is
+  // the one shared mirror of api.ts's surface, so there is no list to forget
+  // from; only the entries that genuinely differ appear below.
+  await mock.module("@/platform/api/api", () => ({
+    ...createMockApi({
+      // Read `fetch` at call time: the sandbox-destroy tests install their
+      // interceptor by swapping `globalThis.fetch` well after this registration.
+      authFetch: (input, init) => fetch(input, init),
+      baseUrl: "http://test.local",
+      apiBearerToken: async () => boundBearer,
+    }).module,
+    // The only export whose behavior this suite drives per-test.
     api: mockApi,
-    authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
-    getClaxedoServerUrl: () => "http://test.local",
-    getDefaultBaseUrl: () => "http://test.local",
-    isDemoMode: () => false,
-    isDemoPath: () => false,
-    isEmbedMode: () => false,
-    fixDir: (input: string | undefined) => input,
-    configureApiRuntime: () => undefined,
-    resetApiRuntime: () => undefined,
-    apiBearerToken: async () => boundBearer,
-    normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
   }))
 
   const mod = await import("./project-actions")
@@ -617,7 +618,7 @@ describe("createProjectActions", () => {
     const calls: Array<{ url: string; method?: string; auth: string | null }> = []
     globalThis.fetch = (async (input, init) => {
       calls.push({
-        url: String(input),
+        url: requestUrl(input),
         method: init?.method,
         auth: new Headers(init?.headers).get("Authorization"),
       })
@@ -672,3 +673,12 @@ describe("createProjectActions", () => {
     }])
   })
 })
+
+/**
+ * The URL a fetch call targeted. `fetch` accepts a string, a `URL` or a
+ * `Request`, and only the first two survive `String(...)` — a `Request` would
+ * stringify to `[object Request]`.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input)
+}

@@ -45,7 +45,7 @@ export function createCoalescedMicrotask(task: () => void) {
   let queued = false
   let disposed = false
   return {
-    schedule() {
+    schedule: () => {
       if (queued || disposed) return
       queued = true
       queueMicrotask(() => {
@@ -53,7 +53,7 @@ export function createCoalescedMicrotask(task: () => void) {
         if (!disposed) task()
       })
     },
-    dispose() {
+    dispose: () => {
       disposed = true
     },
   }

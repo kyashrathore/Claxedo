@@ -1,3 +1,5 @@
+import { asRecord, readString } from "@/lib/record"
+import { requestErrorMessage } from "../lib/request-error-message"
 import { sameArrayItems, samePartsRecord, sameTurnOutcome } from "./timeline-row-equality"
 import {
   batch,
@@ -45,7 +47,6 @@ import type {
   AgentContentPart as PartType,
   AgentPresentationMessage as MessageType,
   AgentToolPart as ToolPart,
-  AgentUserMessage as UserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/ui/utils/binary"
@@ -76,6 +77,7 @@ import { TimelineDiffSummaryRow, TimelineThinkingRow, TurnFoldRow } from "./mess
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
 import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
+import { isRuntimeAgentMessage } from "../conversation/agent-conversation-codec"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { isSessionTurnActive } from "../store/session-store"
 import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
@@ -105,6 +107,7 @@ import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
+import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 import { TimelineUserMessage } from "./timeline-user-message"
 import {
   timelineAnchorClickTarget,
@@ -133,6 +136,34 @@ const idle = { type: "idle" as const }
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
+
+function hasTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
+  row: TimelineRow.TimelineRow,
+  tag: Tag,
+): row is TimelineRowByTag<Tag> {
+  return row._tag === tag
+}
+
+/**
+ * A tag-narrowed view of the row accessor, seeded with the row the switch
+ * already narrowed.
+ *
+ * `switch (row()._tag)` narrows the row VALUE, not the accessor, so each branch
+ * used to re-assert the accessor's type. A row slot can also be reused for a
+ * different tag for the tick before Solid disposes the branch; latching the last
+ * matching row keeps the disposing branch reading its own fields instead of
+ * silently reading another tag's shape through the asserted type.
+ */
+function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
+  row: Accessor<TimelineRow.TimelineRow>,
+  tag: Tag,
+  seed: TimelineRowByTag<Tag>,
+): Accessor<TimelineRowByTag<Tag>> {
+  return createMemo<TimelineRowByTag<Tag>>((previous) => {
+    const next = row()
+    return hasTag(next, tag) ? next : previous
+  }, seed)
+}
 
 const timelineFallbackItemSize = 60
 const timelineInitialEstimatedItemSize = 180
@@ -312,15 +343,17 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const registerTimelineRoot = (el: HTMLDivElement) => {
     setTimelineRoot(el)
-    const onOpenSubagent = (raw: Event) => {
-      const event = raw as CustomEvent<{ childSessionId?: string; subagentKey?: string }>
-      const childSessionId = event.detail?.childSessionId
+    const onOpenSubagent = (event: Event) => {
+      // The detail rides on a DOM CustomEvent, so it is read structurally rather
+      // than asserted into a typed CustomEvent the listener never guaranteed.
+      const detail = event instanceof CustomEvent ? asRecord(event.detail) : undefined
+      const childSessionId = readString(detail, "childSessionId")
       if (!childSessionId) return
       event.preventDefault()
       const origin = event.target instanceof Element
         ? event.target.closest<HTMLElement>("button, a, [tabindex]") ?? undefined
         : undefined
-      openSubagent(childSessionId, origin, event.detail.subagentKey)
+      openSubagent(childSessionId, origin, readString(detail, "subagentKey"))
     }
     el.addEventListener("claxedo:open-subagent", onOpenSubagent)
     const onCapture = (event: MouseEvent) => {
@@ -367,10 +400,15 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
+  // Both indexes are keyed by, and answer questions about, the parent/completion
+  // fields only a runtime-produced assistant message has. An optimistic row has
+  // no `parentID` to file it under and no `time.completed` to be pending on, so
+  // it is excluded here rather than filed under `undefined` and looked up by no
+  // one (every read below passes a real message id).
   const assistantMessagesByParent = createMemo(() => {
     const result = new Map<string, AssistantMessage[]>()
     for (const message of sessionMessages()) {
-      if (message.role !== "assistant") continue
+      if (!isRuntimeAgentMessage(message) || message.role !== "assistant") continue
       const messages = result.get(message.parentID)
       if (messages) {
         messages.push(message)
@@ -382,7 +420,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   const pending = createMemo(() =>
     sessionMessages().findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
+      (item): item is AssistantMessage =>
+        isRuntimeAgentMessage(item) && item.role === "assistant" && typeof item.time.completed !== "number",
     ),
   )
   const sessionStatus = createActivePaneProjection({ active: props.active, read: () => props.status() ?? idle, initial: idle })
@@ -998,14 +1037,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.setScrollRef(undefined)
   })
 
-  const errorMessage = (err: unknown) => {
-    if (err && typeof err === "object" && "data" in err) {
-      const data = (err as { data?: { message?: string } }).data
-      if (data?.message) return data.message
-    }
-    if (err instanceof Error) return err.message
-    return language.t("common.requestFailed")
-  }
+  const errorMessage = (err: unknown) => requestErrorMessage(err, language.t("common.requestFailed"))
 
   const titleMutation = useMutation(() => ({
     mutationFn: async (input: { id: string; title: string }) => {
@@ -1266,10 +1298,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
           .map((ref) => {
             const message = messageByID().get(ref.messageID)
             const part = getMsgPart(ref.messageID, ref.partID)
-            if (!message || !part || part.type !== "tool") return undefined
+            // The predicate below used to claim `AssistantMessage` for whatever
+            // `messageByID` returned; the group's refs carry no such promise.
+            // It asserts only what the renderer needs — a runtime-produced row.
+            if (!message || !isRuntimeAgentMessage(message)) return undefined
+            if (!part || part.type !== "tool") return undefined
             return { message, part }
           })
-          .filter((member): member is { message: AssistantMessage; part: ToolPart } => !!member)
+          .filter((member): member is { message: MessageType; part: ToolPart } => !!member)
       })
 
       return (
@@ -1314,7 +1350,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const message = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return undefined
-      return messageByID().get(group.ref.messageID)
+      const value = messageByID().get(group.ref.messageID)
+      return value && isRuntimeAgentMessage(value) ? value : undefined
     })
     const part = createMemo(() => {
       const group = row().group
@@ -1380,11 +1417,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
-    switch (row()._tag) {
+    const current = row()
+    switch (current._tag) {
       case "TurnGap":
         return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
       case "CommentStrip": {
-        const commentStripRow = row as Accessor<TimelineRowByTag<"CommentStrip">>
+        const commentStripRow = rowOfTag(row, "CommentStrip", current)
         const comments = createMemo(() =>
           getMsgParts(commentStripRow().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? []),
         )
@@ -1422,10 +1460,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "UserMessage": {
-        const userMessageRow = row as Accessor<TimelineRowByTag<"UserMessage">>
+        const userMessageRow = rowOfTag(row, "UserMessage", current)
         const message = createMemo(() => {
           const m = messageByID().get(userMessageRow().userMessageID)
-          if (m?.role === "user") return m
+          if (m && isRuntimeAgentMessage(m) && m.role === "user") return m
           return undefined
         })
         return (
@@ -1443,7 +1481,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "TurnDivider": {
-        const turnDividerRow = row as Accessor<TimelineRowByTag<"TurnDivider">>
+        const turnDividerRow = rowOfTag(row, "TurnDivider", current)
         // D§3.6 / C4: terminal states are a centred hairline divider, a peer of the
         // "Worked for" fold row — never a card. "interrupted" durationMs (when derivable,
         // T8) reuses the same formatDuration voice as "Worked for {duration}".
@@ -1469,7 +1507,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "AssistantPart": {
-        const assistantPartRow = row as Accessor<TimelineRowByTag<"AssistantPart">>
+        const assistantPartRow = rowOfTag(row, "AssistantPart", current)
         return (
           <TimelineRowFrame row={assistantPartRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1484,7 +1522,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "Thinking": {
-        const thinkingRow = row as Accessor<TimelineRowByTag<"Thinking">>
+        const thinkingRow = rowOfTag(row, "Thinking", current)
         return (
           <TimelineRowFrame row={thinkingRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1497,7 +1535,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "Retry": {
-        const retryRow = row as Accessor<TimelineRowByTag<"Retry">>
+        const retryRow = rowOfTag(row, "Retry", current)
         return (
           <TimelineRowFrame row={retryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1507,7 +1545,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "TurnFold": {
-        const turnFoldRow = row as Accessor<TimelineRowByTag<"TurnFold">>
+        const turnFoldRow = rowOfTag(row, "TurnFold", current)
         return (
           <TimelineRowFrame row={turnFoldRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1528,7 +1566,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "DiffSummary": {
-        const diffSummaryRow = row as Accessor<TimelineRowByTag<"DiffSummary">>
+        const diffSummaryRow = rowOfTag(row, "DiffSummary", current)
         const undoTurn = () => {
           const revert = props.actions?.revert
           const id = sessionID()
@@ -1549,7 +1587,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )
       }
       case "Error": {
-        const errorRow = row as Accessor<TimelineRowByTag<"Error">>
+        const errorRow = rowOfTag(row, "Error", current)
         return (
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">

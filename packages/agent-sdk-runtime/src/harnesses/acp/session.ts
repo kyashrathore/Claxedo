@@ -10,8 +10,14 @@ import type {
   SessionMode,
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
+import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "../../index"
-import type { AgentPermissionMode, AgentPermissionModeState, ResolvedHarnessModel } from "../../adapter-contract"
+import type {
+  AgentConfigOptions,
+  AgentPermissionMode,
+  AgentPermissionModeState,
+  ResolvedHarnessModel,
+} from "../../adapter-contract"
 import { GOAL_OPTIONAL_FIELDS, type GoalAction, type GoalCapabilities, type GoalOptionalField } from "../../capabilities"
 
 export const ACP_GOAL_METHODS = {
@@ -42,19 +48,36 @@ type Meta = {
   models?: unknown
 }
 
-function rec(input: unknown): Record<string, unknown> | null {
-  return input !== null && typeof input === "object" && !Array.isArray(input)
-    ? (input as Record<string, unknown>)
-    : null
-}
-
 function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
 }
 
+/**
+ * A session response's Claxedo-visible extension fields.
+ *
+ * `configOptions` keeps only entries that carry the identity the pickers below
+ * read (`id`, `type`, `name`); the option variants' own fields are the agent's
+ * and travel through unread.
+ */
+function sessionMeta(value: unknown): Meta {
+  const row = asRecord(value)
+  if (!row) return {}
+  return {
+    ...(row.configOptions === undefined
+      ? {}
+      : { configOptions: Array.isArray(row.configOptions) ? row.configOptions.filter(isSessionConfigOption) : null }),
+    ...(row.modes === undefined ? {} : { modes: row.modes }),
+    ...(row.models === undefined ? {} : { models: row.models }),
+  }
+}
+
+function isSessionConfigOption(value: unknown): value is SessionConfigOption {
+  return isRecord(value) && typeof value.id === "string" && typeof value.type === "string" && typeof value.name === "string"
+}
+
 export function goalExtension(meta: unknown): ACPGoalExtension | null {
-  const root = rec(meta)
-  const goal = rec(root?.goal)
+  const root = asRecord(meta)
+  const goal = asRecord(root?.goal)
   if (goal?.version !== 1 || !Array.isArray(goal.methods) || !Array.isArray(goal.actions)) return null
   const methods = new Set(goal.methods.filter((item): item is string => typeof item === "string"))
   if (
@@ -70,9 +93,9 @@ export function goalExtension(meta: unknown): ACPGoalExtension | null {
     && methods.has(ACP_GOAL_METHODS.resume)
   if (reversible) actions.push("pause", "resume")
   if (advertised.has("delete") && methods.has(ACP_GOAL_METHODS.delete)) actions.push("delete")
-  const knownOptional = new Set<GoalOptionalField>(GOAL_OPTIONAL_FIELDS)
+  const knownOptional: ReadonlySet<string> = new Set<string>(GOAL_OPTIONAL_FIELDS)
   const optionalFields = Array.isArray(goal.optionalFields)
-    ? goal.optionalFields.filter((item): item is GoalOptionalField => typeof item === "string" && knownOptional.has(item as GoalOptionalField))
+    ? goal.optionalFields.filter((item): item is GoalOptionalField => typeof item === "string" && knownOptional.has(item))
     : []
   return { version: 1, methods, actions, optionalFields }
 }
@@ -96,13 +119,36 @@ export function goalExtensionCapabilities(extension: ACPGoalExtension | null): G
       }
 }
 
-function flat(options: SessionConfigSelectOption[] | SessionConfigSelectGroup[]) {
-  const first = options[0] as Record<string, unknown> | undefined
-  if (!first) return [] as SessionConfigSelectOption[]
-  if ("group" in first) {
-    return (options as SessionConfigSelectGroup[]).flatMap((item) => item.options)
+/** Config options as the agent reported them, before the contract's normalization. */
+export type AcpConfigOptions = { options: SessionConfigOption[]; resolvedModel?: ResolvedHarnessModel }
+
+/** One process's cached discovery answers, in the ACP protocol's own shape. */
+export function acpProcessOptions(proc: {
+  cachedConfigOptions: SessionConfigOption[] | null
+  cachedResolvedModel: ResolvedHarnessModel | null
+}): AcpConfigOptions {
+  return {
+    options: proc.cachedConfigOptions ?? [],
+    ...(proc.cachedResolvedModel ? { resolvedModel: proc.cachedResolvedModel } : {}),
   }
-  return options as SessionConfigSelectOption[]
+}
+
+/** The same answers as the adapter contract states them: protocol nulls read as absent. */
+export function acpConfigOptions(probed: AcpConfigOptions): AgentConfigOptions {
+  return {
+    options: probed.options.map((option) => ({
+      ...option,
+      description: option.description ?? undefined,
+      category: option.category ?? undefined,
+    })),
+    ...(probed.resolvedModel ? { resolvedModel: probed.resolvedModel } : {}),
+  }
+}
+
+/** A select's options, with any group flattened into the options it holds. */
+function flat(options: SessionConfigSelectOption[] | SessionConfigSelectGroup[]): SessionConfigSelectOption[] {
+  const entries: Array<SessionConfigSelectOption | SessionConfigSelectGroup> = options
+  return entries.flatMap((entry) => "group" in entry ? entry.options : [entry])
 }
 
 function pick(cfg: SessionConfigOption[] | null, kind: "mode" | "model" | "thought_level") {
@@ -179,12 +225,12 @@ export function modeIds(state: ACPState): string[] {
  * label; `description` is optional and passed through as-is.
  */
 function extractModes(modes: unknown): SessionMode[] {
-  if (!modes || typeof modes !== "object") return []
-  const obj = modes as Record<string, unknown>
+  const obj = asRecord(modes)
+  if (!obj) return []
   const available = obj.availableModes
   if (!Array.isArray(available)) return []
   return available.flatMap((entry) => {
-    const mode = rec(entry)
+    const mode = asRecord(entry)
     const id = str(mode?.id)
     const name = str(mode?.name)
     if (!id || !name) return []
@@ -194,7 +240,7 @@ function extractModes(modes: unknown): SessionMode[] {
 }
 
 function extractCurrentModeId(modes: unknown): string | undefined {
-  const obj = rec(modes)
+  const obj = asRecord(modes)
   return obj ? str(obj.currentModeId) : undefined
 }
 
@@ -207,11 +253,11 @@ function extractCurrentModeId(modes: unknown): string | undefined {
  * string where the agent's own word belongs.
  */
 function extractResolvedModel(models: unknown): ResolvedHarnessModel | undefined {
-  const state = rec(models)
+  const state = asRecord(models)
   const id = str(state?.currentModelId)
   if (!id) return undefined
   const available = Array.isArray(state?.availableModels) ? state.availableModels : []
-  const info = available.map((entry) => rec(entry)).find((entry) => str(entry?.modelId) === id)
+  const info = available.map((entry: unknown) => asRecord(entry)).find((entry) => str(entry?.modelId) === id)
   const name = str(info?.name)
   return name ? { id, name } : undefined
 }
@@ -252,7 +298,7 @@ export function resolvedModel(state: ACPState): ResolvedHarnessModel | undefined
   const cfg = pick(state.cfg, "model")
   const id = currentValue(cfg)
   if (!cfg || cfg.type !== "select" || !id) return undefined
-  const name = flat(cfg.options ?? []).find((item) => String(item.value) === id)?.name
+  const name = flat(cfg.options ?? []).find((item) => item.value === id)?.name
   return name ? { id, name } : undefined
 }
 
@@ -318,7 +364,7 @@ export function permissionModes(state: ACPState): AgentPermissionModeState {
   if (cfg && cfg.type === "select") {
     const options = flat(cfg.options ?? [])
     return {
-      modes: options.map((opt) => withLevel({ id: String(opt.value), name: opt.name, ...(opt.description ? { description: opt.description } : {}) })),
+      modes: options.map((opt) => withLevel({ id: opt.value, name: opt.name, ...(opt.description ? { description: opt.description } : {}) })),
       ...(currentValue(cfg) ? { currentModeId: currentValue(cfg) } : {}),
       appliesFrom: "next-turn",
     }
@@ -355,15 +401,15 @@ export async function setPermissionMode(
 ): Promise<{ state: ACPState; result: AgentPermissionModeState }> {
   const cfg = pick(state.cfg, "mode")
   if (cfg && cfg.type === "select") {
-    const known = flat(cfg.options ?? []).some((opt) => String(opt.value) === modeId)
+    const known = flat(cfg.options ?? []).some((opt) => opt.value === modeId)
     if (!known) throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
     const next = merge(
       state,
-      (await conn.request(methods.agent.session.setConfigOption, {
+      sessionMeta(await conn.request(methods.agent.session.setConfigOption, {
         sessionId,
         configId: cfg.id,
         value: modeId,
-      })) as Meta,
+      })),
     )
     return { state: next, result: permissionModes(next) }
   }
@@ -385,8 +431,8 @@ export function extractAgents(state: ACPState): Array<{ name: string; descriptio
     const options = flat(modeCfg.options ?? [])
     if (options.length > 0) {
       return options.map((opt) => ({
-        name: String(opt.value),
-        description: opt.name ?? String(opt.value),
+        name: opt.value,
+        description: opt.name ?? opt.value,
         mode: "primary",
       }))
     }
@@ -418,12 +464,12 @@ export async function resume(
 ) {
   const request = { sessionId, cwd, mcpServers }
   if (state.caps?.sessionCapabilities?.resume) {
-    const result = await conn.request(methods.agent.session.resume, request) as Meta
+    const result = sessionMeta(await conn.request(methods.agent.session.resume, request))
     return { kind: "resume" as const, state: merge(state, result) }
   }
   if (state.caps?.loadSession) {
-    const result = await conn.request(methods.agent.session.load, request) as Meta | undefined
-    return { kind: "load" as const, state: merge(state, result ?? {}) }
+    const result = sessionMeta(await conn.request(methods.agent.session.load, request))
+    return { kind: "load" as const, state: merge(state, result) }
   }
   throw new Error("ACP agent does not advertise session resume or load support")
 }
@@ -504,7 +550,7 @@ export function blocks(
 }
 
 function contentBlock(part: unknown, index: number, caps: PromptCapabilities | null | undefined): ContentBlock {
-  const row = rec(part)
+  const row = asRecord(part)
   switch (str(row?.type)) {
     case "text":
       return { type: "text", text: str(row?.text) ?? "" }
@@ -555,7 +601,7 @@ function audioBlock(row: Record<string, unknown> | null | undefined, caps: Promp
 }
 
 function resourceBlock(row: Record<string, unknown> | null | undefined, index: number, caps: PromptCapabilities | null | undefined): ContentBlock {
-  const item = rec(row?.resource)
+  const item = asRecord(row?.resource)
   const text = str(item?.text)
   if (!caps?.embeddedContext) {
     if (text) return { type: "text", text }

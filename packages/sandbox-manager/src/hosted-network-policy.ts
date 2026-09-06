@@ -83,12 +83,12 @@ export const SANDBOX_BASELINE_EGRESS_HOSTS = [
 /** Hostname of a URL-ish string, or undefined when it is not one. */
 function hostOf(value: string | undefined): string | undefined {
   const raw = value?.trim()
-  if (!raw) return
+  if (!raw) return undefined
   try {
     const host = new URL(raw).hostname.trim().toLowerCase()
     return host ? host : undefined
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -101,7 +101,7 @@ function hostOf(value: string | undefined): string | undefined {
  * network policy should describe the same reachable surface.
  */
 export function sandboxSourceHost(source: SandboxSource | undefined): string | undefined {
-  if (!source || source.kind !== "git") return
+  if (!source || source.kind !== "git") return undefined
   return hostOf(source.repoUrl)
 }
 

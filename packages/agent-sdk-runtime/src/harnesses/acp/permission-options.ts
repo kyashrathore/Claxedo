@@ -28,7 +28,13 @@ export function permissionOptionPreference(decision: AcpPermissionDecision): Per
       return ["reject_once", "reject_always"]
     case "reject_always":
       return ["reject_always", "reject_once"]
+    default:
+      return assertNeverDecision(decision)
   }
+}
+
+function assertNeverDecision(decision: never): never {
+  throw new Error(`Unknown ACP permission decision: ${JSON.stringify(decision)}`)
 }
 
 /**

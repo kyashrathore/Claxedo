@@ -9,7 +9,7 @@ import { LocalInstallationDocumentBroker } from "../../src/documents/backends/lo
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../../src/documents/backends/local/managed"
 import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../workspace-runtime/src/internal-secrets"
-import type { DocumentsRouteBackend } from "../../src/documents/routes/index"
+import type { DocumentBrokerBackend } from "../../src/documents/backend"
 import type { DocumentIndexEntry } from "../../src/documents/index-store"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "documents-relay-live-"))
@@ -66,7 +66,7 @@ const backend = {
     update: async () => entry,
   },
   workspace: managed,
-} as unknown as DocumentsRouteBackend
+} satisfies DocumentBrokerBackend<Awaited<ReturnType<typeof managed.resolve>>>
 const local = new Hono().route(
   "/internal/documents",
   LocalInstallationDocumentBroker({ backend, installationToken }),
@@ -101,7 +101,7 @@ const relay = createWorkspaceRelayBun({
     backing: "cloud-vm",
   }),
 })
-const relayServer = Bun.serve({ port: 0, fetch: relay.fetch, websocket: relay.websocket })
+const relayServer = Bun.serve({ port: 0, fetch: (request, server) => relay.fetch(request, server), websocket: relay.websocket })
 const now = Date.now()
 const runtimeAccessToken = await mintRuntimeAccessToken(
   {
@@ -166,9 +166,9 @@ console.log(
 
 async function close() {
   await fs.unlink(configPath).catch(() => undefined)
-  relayServer.stop(true)
-  runtimeServer.stop(true)
-  localServer.stop(true)
+  await relayServer.stop(true)
+  await runtimeServer.stop(true)
+  await localServer.stop(true)
   await runtime.host.dispose()
   await fs.rm(root, { recursive: true, force: true })
 }

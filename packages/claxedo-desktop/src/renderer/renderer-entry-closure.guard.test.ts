@@ -254,11 +254,19 @@ describe("the optional signed activation", () => {
     expect(activation).not.toContain("configureAuthSession")
     // Exactly the cloud-startup path the binding above needs, and nothing
     // else: no content surfaces, no WorkGraph, no Documents. Measured, so a
-    // sixth module here means a new edge to review rather than a number to bump.
+    // seventh module here means a new edge to review rather than a number to
+    // bump.
+    //
+    // `preload-bridge.ts` is the sixth, and it is a leaf: `hosted-control-call.ts`
+    // (already below) reads `api.account` off the global scope, and that read
+    // moved into its own module when the three adapters that shared it stopped
+    // each writing their own cast. It brings no capability and no further
+    // `platform/` edge — it is the same fact, named once.
     expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([
       "platform/account/control-plane-account-fetch.ts",
       "platform/account/hosted-control-call.ts",
       "platform/account/hosted-operations.ts",
+      "platform/account/preload-bridge.ts",
       "platform/runtime/agent/workspace-relay-connection.ts",
       "platform/runtime/cloud/workspace-runtime-store.ts",
     ])

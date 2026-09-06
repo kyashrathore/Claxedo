@@ -9,7 +9,8 @@ import { randomUUID } from "crypto"
 import { eq } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db"
 import { ClaxedoNetworkPolicyTable } from "./policy.sql"
-import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, PROVIDER_TO_GROUP, flattenDefaultAllowlist, type NetworkPolicyEntry, type PolicyConstraints, type PolicyKind, type PolicyWrite } from "./types"
+import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, POLICY_KINDS, PROVIDER_TO_GROUP, flattenDefaultAllowlist, type NetworkPolicyEntry, type PolicyConstraints, type PolicyKind, type PolicyWrite } from "./types"
+import { parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "network-policy" })
@@ -18,12 +19,22 @@ function now() {
   return Date.now()
 }
 
+/**
+ * Read a stored constraints blob. Every field is read individually because the
+ * column is JSON written by this module across schema versions; an unreadable
+ * or foreign blob degrades to "no constraints" rather than failing the read.
+ */
 function parseConstraints(json: string | null): PolicyConstraints {
-  if (!json) return {}
-  try {
-    return JSON.parse(json)
-  } catch {
-    return {}
+  const row = json ? parseJsonRecord(json) : undefined
+  if (!row) return {}
+  const ports = Array.isArray(row.ports) ? row.ports.filter((port) => typeof port === "number") : undefined
+  const paths = Array.isArray(row.paths) ? row.paths.filter((entry) => typeof entry === "string") : undefined
+  return {
+    ...(ports ? { ports } : {}),
+    ...(paths ? { paths } : {}),
+    ...(typeof row.enabled === "boolean" ? { enabled: row.enabled } : {}),
+    ...(typeof row.auto === "boolean" ? { auto: row.auto } : {}),
+    ...(typeof row.source === "string" ? { source: row.source } : {}),
   }
 }
 
@@ -33,14 +44,14 @@ function toEntry(row: typeof ClaxedoNetworkPolicyTable.$inferSelect): NetworkPol
     workspace_id: row.workspace_id,
     harness: row.harness,
     target: row.target,
-    kind: row.kind as PolicyKind,
+    kind: row.kind,
     constraints: parseConstraints(row.constraints_json),
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
 }
 
-const VALID_KINDS: PolicyKind[] = ["host", "domain", "group"]
+const VALID_KINDS: readonly PolicyKind[] = POLICY_KINDS
 
 function validateTarget(target: string, kind: PolicyKind): string | null {
   if (!target?.trim()) return "Target is required"
@@ -96,7 +107,7 @@ export function updatePolicy(id: string, input: Partial<PolicyWrite>): NetworkPo
   if (!existing) return undefined
 
   const target = input.target ?? existing.target
-  const kind = (input.kind ?? existing.kind) as PolicyKind
+  const kind = input.kind ?? existing.kind
   const err = validateTarget(target, kind)
   if (err) return { error: err }
 
@@ -282,7 +293,7 @@ function removeAutoEntries(target: string, kind: PolicyKind, source: string): vo
       .filter((row) => row.target === target && row.kind === kind),
   )
   for (const row of rows) {
-    const c = parseConstraints(row.constraints_json) as Record<string, unknown>
+    const c = parseConstraints(row.constraints_json)
     if (!c.auto) continue
     if (source && c.source !== source) continue
     ClaxedoDB.use((db) =>
@@ -313,7 +324,7 @@ export function removeAutoHostsForSource(source: string): void {
   const rows = ClaxedoDB.use((db) =>
     db.select().from(ClaxedoNetworkPolicyTable).all()
       .filter((row) => {
-        const c = parseConstraints(row.constraints_json) as Record<string, unknown>
+        const c = parseConstraints(row.constraints_json)
         return c.auto && c.source === source
       }),
   )

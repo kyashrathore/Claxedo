@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { SessionHarnessId } from "./harness-types"
 import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
 
@@ -104,13 +105,11 @@ export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
   setAuth(keys: Record<string, string | undefined>): void
 }
 
-export function hasAdapterCapability<T extends AdapterCapability>(
+export function hasAdapterCapability(
   adapter: unknown,
-  capability: T,
-): adapter is AdapterCapabilityProvider & (
-  RuntimeConfigurableAdapter
-) {
-  if (!adapter || typeof adapter !== "object") return false
-  const list = (adapter as { adapterCapabilities?: unknown }).adapterCapabilities
+  capability: AdapterCapability,
+): adapter is RuntimeConfigurableAdapter {
+  if (!isRecord(adapter)) return false
+  const list = adapter.adapterCapabilities
   return Array.isArray(list) && list.includes(capability)
 }

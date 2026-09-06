@@ -1,5 +1,5 @@
 import { showToast } from "@opencode-ai/ui/toast"
-import { submitErrorMessage } from "./submit-error-message"
+import { requestErrorMessage } from "../../lib/request-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
   isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
@@ -83,7 +83,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
   const surfaceId = () => input.surfaceId?.()
   const optimisticTimeline = createSubmitOptimisticTimeline()
-  const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
+  const errorMessage = (err: unknown) => requestErrorMessage(err, language.t("common.requestFailed"))
 
   const commentActions = createSubmitCommentActions(prompt.context)
 
@@ -145,7 +145,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const projectCatalog = () => globalProjects()
-  const handleSubmit = async (event: Event) => {
+  // Only `preventDefault` is read, and the retry path replays a submit without a
+  // real DOM event — so the parameter states what it uses instead of demanding a
+  // whole `Event` the caller has to fabricate.
+  const handleSubmit = async (event: Pick<Event, "preventDefault">) => {
     event.preventDefault()
 
     const setBooting = createSubmitBootWriter(input)

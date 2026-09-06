@@ -11,7 +11,7 @@ export function outcomeFromPayload(payload: AgentRuntimeStreamEvent): AgentTurnO
     if (payload.type === "session.error") {
       return { status: "failed", completedAt: Date.now(), error: compatErrorMessage(payload.properties.error) }
     }
-    return
+    return undefined
   }
   if (payload.type === "finish") return { status: "completed", completedAt: Date.now() }
   if (payload.type === "session-status" && payload.status === "idle") return { status: "completed", completedAt: Date.now() }
@@ -19,6 +19,7 @@ export function outcomeFromPayload(payload: AgentRuntimeStreamEvent): AgentTurnO
     return { status: "failed", completedAt: Date.now(), error: "session error" }
   }
   if (payload.type === "error") return { status: "failed", completedAt: Date.now(), error: payload.error }
+  return undefined
 }
 
 export function mergeOutcome(previous: AgentTurnOutcome | undefined, next: AgentTurnOutcome | undefined) {

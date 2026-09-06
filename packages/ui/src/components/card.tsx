@@ -1,5 +1,6 @@
 import { type ComponentProps, splitProps } from "solid-js"
 import { Icon, type IconProps } from "./icon"
+import { isKeyOf } from "../utils/record"
 
 type Variant = "normal" | "error" | "warning" | "success" | "info"
 
@@ -26,19 +27,27 @@ export interface CardTitleProps extends ComponentProps<"div"> {
   icon?: IconProps["name"] | false | null
 }
 
-function pick(variant: Variant) {
-  if (variant === "error") return "circle-ban-sign" as const
-  if (variant === "warning") return "warning" as const
-  if (variant === "success") return "circle-check" as const
-  if (variant === "info") return "help" as const
-  return
+/**
+ * What each signalling variant contributes: the default title icon and the token that
+ * tints it. One table so a new variant is added in a single place, and `normal` is
+ * absent because it contributes neither.
+ */
+const VARIANTS = {
+  error: { icon: "circle-ban-sign", accent: "var(--icon-critical-base)" },
+  warning: { icon: "warning", accent: "var(--icon-warning-base)" },
+  success: { icon: "circle-check", accent: "var(--icon-success-active)" },
+  info: { icon: "help", accent: "var(--icon-info-active)" },
+} as const satisfies Partial<Record<Variant, { icon: IconProps["name"]; accent: string }>>
+
+function variantStyle(variant: Variant) {
+  return isKeyOf(VARIANTS, variant) ? VARIANTS[variant] : undefined
 }
 
 function mix(style: ComponentProps<"div">["style"], value?: string) {
   if (!value) return style
   if (!style) return { "--card-accent": value }
   if (typeof style === "string") return `${style};--card-accent:${value};`
-  return { ...(style as Record<string, string | number>), "--card-accent": value }
+  return { ...style, "--card-accent": value }
 }
 
 export function Card(props: CardProps) {
@@ -46,14 +55,7 @@ export function Card(props: CardProps) {
   const variant = () => split.variant ?? "normal"
   // Colours the title icon / tool-error icon (both read `--card-accent`). Legacy tokens only —
   // never feeds the rail on its own; the rail requires the separate `accent` opt-in below.
-  const accentColor = () => {
-    const v = variant()
-    if (v === "error") return "var(--icon-critical-base)"
-    if (v === "warning") return "var(--icon-warning-base)"
-    if (v === "success") return "var(--icon-success-active)"
-    if (v === "info") return "var(--icon-info-active)"
-    return
-  }
+  const accentColor = () => variantStyle(variant())?.accent
   return (
     <div
       {...rest}
@@ -75,10 +77,10 @@ export function Card(props: CardProps) {
 export function CardTitle(props: CardTitleProps) {
   const [split, rest] = splitProps(props, ["variant", "icon", "class", "classList", "children"])
   const show = () => split.icon !== false && split.icon !== null
-  const name = () => {
-    if (split.icon === false || split.icon === null) return
+  const name = (): IconProps["name"] | undefined => {
+    if (split.icon === false || split.icon === null) return undefined
     if (typeof split.icon === "string") return split.icon
-    return pick(split.variant ?? "normal")
+    return variantStyle(split.variant ?? "normal")?.icon
   }
   const placeholder = () => !name()
   return (

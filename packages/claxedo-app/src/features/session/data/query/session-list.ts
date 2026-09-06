@@ -1,3 +1,4 @@
+import { asRecord } from "@/lib/record"
 import { queryOptions } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
@@ -198,7 +199,11 @@ export async function fetchSessionListPage(input: {
     span.end({ status: res.status, ok: false })
     throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
   }
-  const page = await res.json() as SessionListResponse
+  const page: unknown = await res.json()
+  if (!isSessionListResponse(page)) {
+    span.end({ status: res.status, ok: false })
+    throw new Error("Session list response is missing its `view` descriptor")
+  }
   span.end({ status: res.status, ok: true, rows: page.items?.length ?? page.groups?.reduce((n, g) => n + g.items.length, 0) ?? 0 })
   return page
 }
@@ -323,21 +328,22 @@ export function upsertCreatedSessionListRow(input: {
   for (const query of queryClient.getQueryCache().findAll({
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
   })) {
-    const listQuery = sessionListQueryFromKey(query.queryKey)
+    const key = query.queryKey
+    if (!isSessionListQueryKey(key, base)) continue
+    const listQuery = sessionListQueryFromKey(key)
     if (!listQuery || listQuery.cursor) continue
-    const response = query.state.data as SessionListResponse | undefined
+    const response = isSessionListResponse(query.state.data) ? query.state.data : undefined
     const scopedRow = rowForSessionListQuery(row, listQuery, response)
     if (!scopedRow || !rowMatchesSessionListQuery(scopedRow, listQuery)) continue
     setSessionListQueryData(
-      query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>,
+      key,
       (current) => prependCreatedSessionListRow(current, listQuery, scopedRow),
     )
   }
 }
 
 function sessionListQueryFromKey(key: readonly unknown[]): SessionListQuery | undefined {
-  const query = key[3]
-  return query && typeof query === "object" ? query as SessionListQuery : undefined
+  return isSessionListQuery(key[3]) ? key[3] : undefined
 }
 
 /**
@@ -396,8 +402,10 @@ export function reconcileArchivedSessionListQueryData(input: {
   for (const query of queryClient.getQueryCache().findAll({
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
   })) {
-    const archiveView = sessionListArchiveView(query.queryKey)
-    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) =>
+    const key = query.queryKey
+    if (!isSessionListQueryKey(key, base)) continue
+    const archiveView = sessionListArchiveView(key)
+    setSessionListQueryData(key, (response) =>
       response ? reconcileSessionListResponseAfterArchive({
         response,
         sessionRef: input.sessionRef,
@@ -421,7 +429,9 @@ export function removeSessionListQueryData(input: {
   for (const query of queryClient.getQueryCache().findAll({
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
   })) {
-    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) =>
+    const key = query.queryKey
+    if (!isSessionListQueryKey(key, base)) continue
+    setSessionListQueryData(key, (response) =>
       response ? removeSessionFromListResponse(response, input) : response,
     )
   }
@@ -439,7 +449,9 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
   for (const query of queryClient.getQueryCache().findAll({
     predicate: (query) => isSessionListQueryKey(query.queryKey),
   })) {
-    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) => {
+    const key = query.queryKey
+    if (!isSessionListQueryKey(key)) continue
+    setSessionListQueryData(key, (response) => {
       if (!response) return response
       // `updated_desc` is the list's contract for surfacing content edits, and
       // this reconcile can move a row's `updatedAt` — so those rows have to be
@@ -493,7 +505,9 @@ function reorder(
   sorted: boolean,
   sort: SessionListResponse["view"]["sort"] = "updated_desc",
 ) {
-  if (!sorted || sort !== "updated_desc") return rows as SessionNavigationRow[]
+  // A copy either way: the caller stores the result in a mutable `items` field,
+  // and handing back the readonly input required asserting the readonly away.
+  if (!sorted || sort !== "updated_desc") return rows.slice()
   return [...rows].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
 }
 
@@ -636,8 +650,30 @@ function sessionListArchiveView(key: readonly unknown[]): NonNullable<SessionLis
   return "active"
 }
 
-function isSessionListQueryKey(key: readonly unknown[], base?: string) {
-  return key[0] === "shell" && key[2] === "sessionList" && (base === undefined || key[1] === base)
+type SessionListQueryKey = ReturnType<typeof queryKeys.shell.sessionList>
+
+/**
+ * A cache key `queryKeys.shell.sessionList` produced.
+ *
+ * The builder types its query slot as `unknown`, so every reader used to assert
+ * the key's shape back. A predicate states the same check once and narrows.
+ */
+function isSessionListQueryKey(key: readonly unknown[], base?: string): key is SessionListQueryKey {
+  return key[0] === "shell" && typeof key[1] === "string" && key[2] === "sessionList"
+    && (base === undefined || key[1] === base)
+}
+
+/** The query a session-list key was built for, from its fourth slot. */
+function isSessionListQuery(value: unknown): value is SessionListQuery {
+  const query = asRecord(value)
+  if (!query) return false
+  const scope = query.scope
+  return (scope === "global" || scope === "project" || scope === "workspace") && typeof query.limit === "number"
+}
+
+/** A cached or fetched session-list page: `view` is the field every reader keys on. */
+function isSessionListResponse(value: unknown): value is SessionListResponse {
+  return !!asRecord(asRecord(value)?.view)
 }
 
 function normalizedBase(url: string | undefined) {

@@ -1,7 +1,6 @@
 /** Real signed relay fixture, production web build, and shared browser interaction helpers. */
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import * as fs from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import { SELECTORS as RAIL_SELECTORS } from "./rail-oracle"
