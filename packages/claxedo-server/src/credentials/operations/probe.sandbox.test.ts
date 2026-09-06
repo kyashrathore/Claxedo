@@ -5,9 +5,8 @@ import type { LocalCredentialItem } from "@claxedo/server-core/credentials/opera
 /**
  * `probeDiscoveredCredential` is provider-agnostic — it routes through
  * `verifyCredential` and maps whatever comes back. These pin that a sandbox
- * provider key discovered on this machine now earns the same live verdict an
- * AI credential does, rather than the flat "can't check this provider" every
- * sandbox row used to get.
+ * provider key discovered on this machine earns the same live verdict an AI
+ * credential does, not a flat "can't check this provider".
  */
 
 function item(input: Partial<LocalCredentialItem> = {}): LocalCredentialItem {

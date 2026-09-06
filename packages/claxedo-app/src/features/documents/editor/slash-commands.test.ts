@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { Editor, Range } from "@tiptap/core"
 import {
   filterSlashCommands,
@@ -8,402 +8,191 @@ import {
   type SlashCommandSuggestionOptions,
 } from "./slash-commands"
 
-// Exercise the SHIPPED filter predicate (the one the extension's `items`
-// callback calls), not a re-implementation.
 const filterItems = (query: string) => filterSlashCommands(slashCommandItems, query)
 
-describe("slashCommandItems data integrity", () => {
-  test("all items have required fields (id, group, title, description, icon, search, command)", () => {
+function findItem(id: string) {
+  const item = slashCommandItems.find((candidate) => candidate.id === id)
+  if (!item) throw new Error(`slash command item "${id}" not found`)
+  return item
+}
+
+describe("slash menu items", () => {
+  test("items have unique IDs and nonempty menu labels", () => {
+    expect(slashCommandItems.length).toBeGreaterThan(0)
+    expect(new Set(slashCommandItems.map((item) => item.id)).size).toBe(slashCommandItems.length)
     for (const item of slashCommandItems) {
-      expect(typeof item.id).toBe("string")
-      expect(item.id.length).toBeGreaterThan(0)
-      expect(typeof item.group).toBe("string")
-      expect(item.group.length).toBeGreaterThan(0)
-      expect(typeof item.title).toBe("string")
-      expect(item.title.length).toBeGreaterThan(0)
-      expect(typeof item.description).toBe("string")
-      expect(item.description.length).toBeGreaterThan(0)
-      expect(typeof item.icon).toBe("string")
-      expect(item.icon.length).toBeGreaterThan(0)
-      expect(typeof item.search).toBe("string")
-      expect(item.search.length).toBeGreaterThan(0)
-      expect(typeof item.command).toBe("function")
+      for (const value of [item.id, item.group, item.title, item.description, item.icon, item.search]) {
+        expect(value.trim().length, item.id).toBeGreaterThan(0)
+      }
     }
   })
 
-  test("no duplicate ids", () => {
-    const ids = slashCommandItems.map((item) => item.id)
-    const uniqueIds = new Set(ids)
-    expect(uniqueIds.size).toBe(ids.length)
+  test.each(["", " \t"])("empty query %j returns all items unchanged", (query) => {
+    expect(filterItems(query)).toBe(slashCommandItems)
   })
 
-  test("every command is a function", () => {
-    for (const item of slashCommandItems) {
-      expect(typeof item.command).toBe("function")
-    }
+  test("search matches headings regardless of case or surrounding whitespace", () => {
+    expect(filterItems(" HEADING ").map((item) => item.id)).toEqual(["h1", "h2", "h3"])
   })
 
-  test("all groups are from known set", () => {
-    const knownGroups = new Set(["Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
-    for (const item of slashCommandItems) {
-      expect(knownGroups.has(item.group)).toBe(true)
-    }
-  })
-
-  test("has at least one item per known group", () => {
-    const knownGroups = new Set(["Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
-    const groupsWithItems = new Set(slashCommandItems.map((item) => item.group))
-    for (const group of knownGroups) {
-      expect(groupsWithItems.has(group)).toBe(true)
-    }
+  test("search covers list names and task aliases", () => {
+    expect(filterItems("list").map((item) => item.id)).toEqual(["bullet_list", "ordered_list", "todo"])
+    expect(filterItems("checkbox").map((item) => item.id)).toEqual(["todo"])
+    expect(filterItems("zzzzz")).toEqual([])
   })
 })
 
-describe("slash command filtering", () => {
-  test("empty query returns all items", () => {
-    const results = filterItems("")
-    expect(results.length).toBe(slashCommandItems.length)
-    expect(results).toBe(slashCommandItems)
-  })
+type CommandCall = [name: string, ...args: unknown[]]
 
-  test('query "heading" matches Heading 1, 2, 3', () => {
-    const results = filterItems("heading")
-    expect(results.length).toBe(3)
-    const ids = results.map((item) => item.id)
-    expect(ids).toContain("h1")
-    expect(ids).toContain("h2")
-    expect(ids).toContain("h3")
-  })
-
-  test('query "list" matches items containing "list" in title/description/search', () => {
-    const results = filterItems("list")
-    expect(results.length).toBe(3)
-    const ids = results.map((item) => item.id)
-    expect(ids).toContain("bullet_list")
-    expect(ids).toContain("ordered_list")
-    expect(ids).toContain("todo")
-  })
-
-  test('query "zzzzz" returns empty array', () => {
-    const results = filterItems("zzzzz")
-    expect(results.length).toBe(0)
-  })
-})
-
-// ── Mock editor factory ───────────────────────────────────────────────
-
-function mockEditor() {
-  const calls: string[] = []
-  const chain = new Proxy(
-    {},
-    {
-      get(_, method: string) {
-        return (..._args: unknown[]) => {
-          calls.push(method)
-          return chain
-        }
-      },
+function recordEditor(input: { inTable?: boolean; href?: string } = {}) {
+  const calls: CommandCall[] = []
+  const chain = new Proxy({}, {
+    get(_, method: string) {
+      return (...args: unknown[]) => {
+        calls.push([method, ...args])
+        return chain
+      }
     },
-  ) as ReturnType<Editor["chain"]>
+  }) as ReturnType<Editor["chain"]>
   const editor: SlashCommandEditor = {
     chain: () => {
-      calls.push("chain")
+      calls.push(["chain"])
       return chain
     },
-    getAttributes: (_type: string) => ({}),
-    isActive: () => false,
+    getAttributes: (type) => {
+      expect(type).toBe("link")
+      return { href: input.href }
+    },
+    isActive: (type) => {
+      expect(type).toBe("table")
+      return input.inTable === true
+    },
   }
   return { editor, calls }
 }
 
-const range: Range = { from: 0, to: 1 }
+const range: Range = { from: 12, to: 19 }
+const prefix: CommandCall[] = [["chain"], ["focus"], ["deleteRange", range]]
+
+// The editor is the external command boundary: arguments and order protect the
+// selected heading level, slash deletion, table shape, and inserted content.
+const commands: Array<[id: string, expected: CommandCall[]]> = [
+  ["text", [["setParagraph"]]],
+  ["h1", [["setNode", "heading", { level: 1 }]]],
+  ["h2", [["setNode", "heading", { level: 2 }]]],
+  ["h3", [["setNode", "heading", { level: 3 }]]],
+  ["bullet_list", [["toggleBulletList"]]],
+  ["ordered_list", [["toggleOrderedList"]]],
+  ["todo", [["toggleTaskList"]]],
+  ["quote", [["toggleBlockquote"]]],
+  ["code_block", [["toggleCodeBlock"]]],
+  ["mermaid", [["setCodeBlock", { language: "mermaid" }], ["insertContent", "graph TD\n    A[Start] --> B[End]"]]],
+  ["divider", [["setHorizontalRule"]]],
+  ["table", [["insertTable", { rows: 3, cols: 3, withHeaderRow: true }]]],
+  ["bold", [["toggleBold"]]],
+  ["underline", [["toggleUnderline"]]],
+  ["italic", [["toggleItalic"]]],
+  ["strike", [["toggleStrike"]]],
+  ["inline_code", [["toggleCode"]]],
+  ["clear", [["unsetAllMarks"], ["clearNodes"]]],
+]
+const tableCommands = [
+  ["table_add_row_below", "addRowAfter"],
+  ["table_delete_row", "deleteRow"],
+  ["table_add_column_right", "addColumnAfter"],
+  ["table_delete_column", "deleteColumn"],
+  ["table_delete", "deleteTable"],
+] as const
+
+describe("slash command callbacks", () => {
+  test.each(commands)("%s applies the selected command after deleting the slash range", (id, expected) => {
+    const { editor, calls } = recordEditor()
+    findItem(id).command({ editor, range })
+    expect(calls).toEqual([...prefix, ...expected, ["run"]])
+  })
+
+  test.each(tableCommands)("%s applies only inside a table", (id, command) => {
+    for (const inTable of [false, true]) {
+      const { editor, calls } = recordEditor({ inTable })
+      findItem(id).command({ editor, range })
+      expect(calls).toEqual([...prefix, ...(inTable ? [[command]] : []), ["run"]])
+    }
+  })
+})
+
+describe("prompted slash commands", () => {
+  let originalPrompt: typeof window.prompt
+  beforeEach(() => { originalPrompt = window.prompt })
+  afterEach(() => { window.prompt = originalPrompt })
+
+  test("image forwards the trimmed URL", () => {
+    window.prompt = () => "  https://example.com/image.png  "
+    const { editor, calls } = recordEditor()
+    findItem("image").command({ editor, range })
+    expect(calls).toEqual([...prefix, ["setImage", { src: "https://example.com/image.png" }], ["run"]])
+  })
+
+  test.each([null, "", " \t"])("image prompt %j leaves the document untouched", (answer) => {
+    window.prompt = () => answer
+    const { editor, calls } = recordEditor()
+    findItem("image").command({ editor, range })
+    expect(calls).toEqual([])
+  })
+
+  test("link prepopulates the current href and applies its trimmed replacement", () => {
+    const prompts: unknown[][] = []
+    window.prompt = (...args) => {
+      prompts.push(args)
+      return " https://new.example "
+    }
+    const { editor, calls } = recordEditor({ href: "https://old.example" })
+    findItem("link").command({ editor, range })
+    expect(prompts).toEqual([["Enter URL", "https://old.example"]])
+    expect(calls).toEqual([...prefix, ["setLink", { href: "https://new.example" }], ["run"]])
+  })
+
+  test("canceling the link prompt leaves the document untouched", () => {
+    window.prompt = () => null
+    const { editor, calls } = recordEditor()
+    findItem("link").command({ editor, range })
+    expect(calls).toEqual([])
+  })
+
+  test("an empty link removes the existing mark", () => {
+    window.prompt = () => " \t"
+    const { editor, calls } = recordEditor()
+    findItem("link").command({ editor, range })
+    expect(calls).toEqual([...prefix, ["unsetLink"], ["run"]])
+  })
+})
 
 function suggestionOptions() {
   return SlashCommands.configure({}).options.suggestion as SlashCommandSuggestionOptions
 }
 
-function findItem(id: string) {
-  const item = slashCommandItems.find((i) => i.id === id)
-  if (!item) throw new Error(`slash command item "${id}" not found`)
-  return item
-}
-
-// ── Command callback tests ────────────────────────────────────────────
-
-describe("slash command callbacks", () => {
-  test('"text" command calls setParagraph', () => {
-    const { editor, calls } = mockEditor()
-    findItem("text").command({ editor, range })
-    expect(calls).toContain("chain")
-    expect(calls).toContain("focus")
-    expect(calls).toContain("deleteRange")
-    expect(calls).toContain("setParagraph")
-    expect(calls).toContain("run")
-  })
-
-  test('"h1" command calls setNode', () => {
-    const { editor, calls } = mockEditor()
-    findItem("h1").command({ editor, range })
-    expect(calls).toContain("setNode")
-    expect(calls).toContain("run")
-  })
-
-  test('"h2" command calls setNode', () => {
-    const { editor, calls } = mockEditor()
-    findItem("h2").command({ editor, range })
-    expect(calls).toContain("setNode")
-    expect(calls).toContain("run")
-  })
-
-  test('"h3" command calls setNode', () => {
-    const { editor, calls } = mockEditor()
-    findItem("h3").command({ editor, range })
-    expect(calls).toContain("setNode")
-    expect(calls).toContain("run")
-  })
-
-  test('"bullet_list" calls toggleBulletList', () => {
-    const { editor, calls } = mockEditor()
-    findItem("bullet_list").command({ editor, range })
-    expect(calls).toContain("toggleBulletList")
-    expect(calls).toContain("run")
-  })
-
-  test('"ordered_list" calls toggleOrderedList', () => {
-    const { editor, calls } = mockEditor()
-    findItem("ordered_list").command({ editor, range })
-    expect(calls).toContain("toggleOrderedList")
-    expect(calls).toContain("run")
-  })
-
-  test('"todo" calls toggleTaskList', () => {
-    const { editor, calls } = mockEditor()
-    findItem("todo").command({ editor, range })
-    expect(calls).toContain("toggleTaskList")
-    expect(calls).toContain("run")
-  })
-
-  test('"quote" calls toggleBlockquote', () => {
-    const { editor, calls } = mockEditor()
-    findItem("quote").command({ editor, range })
-    expect(calls).toContain("toggleBlockquote")
-    expect(calls).toContain("run")
-  })
-
-  test('"code_block" calls toggleCodeBlock', () => {
-    const { editor, calls } = mockEditor()
-    findItem("code_block").command({ editor, range })
-    expect(calls).toContain("toggleCodeBlock")
-    expect(calls).toContain("run")
-  })
-
-  test('"divider" calls setHorizontalRule', () => {
-    const { editor, calls } = mockEditor()
-    findItem("divider").command({ editor, range })
-    expect(calls).toContain("setHorizontalRule")
-    expect(calls).toContain("run")
-  })
-
-  test('"bold" calls toggleBold', () => {
-    const { editor, calls } = mockEditor()
-    findItem("bold").command({ editor, range })
-    expect(calls).toContain("toggleBold")
-    expect(calls).toContain("run")
-  })
-
-  test('"clear" calls unsetAllMarks and clearNodes', () => {
-    const { editor, calls } = mockEditor()
-    findItem("clear").command({ editor, range })
-    expect(calls).toContain("unsetAllMarks")
-    expect(calls).toContain("clearNodes")
-    expect(calls).toContain("run")
-  })
-
-
-  test('"table" calls insertTable', () => {
-    const { editor, calls } = mockEditor()
-    findItem("table").command({ editor, range })
-    expect(calls).toContain("insertTable")
-    expect(calls).toContain("run")
-  })
-
-  test('"table_add_row_below" calls addRowAfter when inside table', () => {
-    const { editor, calls } = mockEditor()
-    editor.isActive = () => true
-    findItem("table_add_row_below").command({ editor, range })
-    expect(calls).toContain("addRowAfter")
-    expect(calls).toContain("run")
-  })
-
-  test('"table_delete_row" calls deleteRow when inside table', () => {
-    const { editor, calls } = mockEditor()
-    editor.isActive = () => true
-    findItem("table_delete_row").command({ editor, range })
-    expect(calls).toContain("deleteRow")
-    expect(calls).toContain("run")
-  })
-
-  test('"table_add_column_right" calls addColumnAfter when inside table', () => {
-    const { editor, calls } = mockEditor()
-    editor.isActive = () => true
-    findItem("table_add_column_right").command({ editor, range })
-    expect(calls).toContain("addColumnAfter")
-    expect(calls).toContain("run")
-  })
-
-  test('"table_delete_column" calls deleteColumn when inside table', () => {
-    const { editor, calls } = mockEditor()
-    editor.isActive = () => true
-    findItem("table_delete_column").command({ editor, range })
-    expect(calls).toContain("deleteColumn")
-    expect(calls).toContain("run")
-  })
-
-  test('"table_delete" calls deleteTable when inside table', () => {
-    const { editor, calls } = mockEditor()
-    editor.isActive = () => true
-    findItem("table_delete").command({ editor, range })
-    expect(calls).toContain("deleteTable")
-    expect(calls).toContain("run")
-  })
-
-  test('"underline" calls toggleUnderline', () => {
-    const { editor, calls } = mockEditor()
-    findItem("underline").command({ editor, range })
-    expect(calls).toContain("toggleUnderline")
-    expect(calls).toContain("run")
-  })
-
-  test('"italic" calls toggleItalic', () => {
-    const { editor, calls } = mockEditor()
-    findItem("italic").command({ editor, range })
-    expect(calls).toContain("toggleItalic")
-    expect(calls).toContain("run")
-  })
-
-  test('"strike" calls toggleStrike', () => {
-    const { editor, calls } = mockEditor()
-    findItem("strike").command({ editor, range })
-    expect(calls).toContain("toggleStrike")
-    expect(calls).toContain("run")
-  })
-
-  test('"inline_code" calls toggleCode', () => {
-    const { editor, calls } = mockEditor()
-    findItem("inline_code").command({ editor, range })
-    expect(calls).toContain("toggleCode")
-    expect(calls).toContain("run")
-  })
-
-})
-
-// ── Prompt-based command callbacks ─────────────────────────────────────
-
-describe("prompt-based command callbacks", () => {
-  let origPrompt: typeof window.prompt
-
-  beforeEach(() => {
-    origPrompt = window.prompt
-  })
-
-  afterEach(() => {
-    window.prompt = origPrompt
-  })
-
-  test('"image" calls setImage with prompted URL', () => {
-    window.prompt = () => "https://example.com/img.png"
-    const { editor, calls } = mockEditor()
-    findItem("image").command({ editor, range })
-    expect(calls).toContain("setImage")
-    expect(calls).toContain("run")
-  })
-
-  test('"image" does nothing when prompt returns null', () => {
-    window.prompt = () => null
-    const { editor, calls } = mockEditor()
-    findItem("image").command({ editor, range })
-    // Only the chain().focus().deleteRange(range) should NOT happen either
-    // since promptUrl returns null before any editor chain call
-    expect(calls).not.toContain("setImage")
-  })
-
-  test('"link" calls setLink with prompted URL', () => {
-    window.prompt = () => "https://example.com"
-    const { editor, calls } = mockEditor()
-    findItem("link").command({ editor, range })
-    expect(calls).toContain("setLink")
-    expect(calls).toContain("run")
-  })
-
-  test('"link" calls unsetLink when URL is empty', () => {
-    window.prompt = () => ""
-    const { editor, calls } = mockEditor()
-    findItem("link").command({ editor, range })
-    expect(calls).toContain("unsetLink")
-    expect(calls).toContain("run")
-  })
-})
-
-// ── SlashCommands Tiptap extension ────────────────────────────────────
-
-describe("SlashCommands extension filter config", () => {
-  test("extension has name 'slashCommands'", () => {
-    expect(SlashCommands.name).toBe("slashCommands")
-  })
-
-  test("suggestion char is '/'", () => {
+describe("slash suggestion wiring", () => {
+  test("uses slash and the menu's search results", () => {
     const options = suggestionOptions()
     expect(options.char).toBe("/")
+    expect(options.items({ query: "" })).toBe(slashCommandItems)
+    expect(options.items({ query: "heading" }).map((item) => item.id)).toEqual(["h1", "h2", "h3"])
   })
 
-  test("suggestion items filter returns all items for empty query", () => {
-    const items = suggestionOptions().items
-    const all = items({ query: "" })
-    expect(all.length).toBe(slashCommandItems.length)
-  })
-
-  test("suggestion items filter returns headings for 'heading' query", () => {
-    const items = suggestionOptions().items
-    const headings = items({ query: "heading" })
-    expect(headings.length).toBe(3)
-    const ids = headings.map((i) => i.id)
-    expect(ids).toContain("h1")
-    expect(ids).toContain("h2")
-    expect(ids).toContain("h3")
-  })
-
-  test("allow callback returns true when text before slash is empty/whitespace", () => {
-    const allow = suggestionOptions().allow
-    const mockState = {
+  test.each([["", true], [" \t", true], ["some text", false]] as const)("text before slash %j permits suggestion: %s", (before, allowed) => {
+    const state = {
       doc: {
-        resolve: (pos: number) => ({
-          parent: { textBetween: () => "" },
-          parentOffset: pos,
-        }),
+        resolve: (position: number) => {
+          expect(position).toBe(range.from)
+          return { parent: { textBetween: () => before }, parentOffset: before.length }
+        },
       },
     }
-    expect(allow({ state: mockState, range: { from: 0, to: 1 } })).toBe(true)
+    expect(suggestionOptions().allow({ state, range })).toBe(allowed)
   })
 
-  test("allow callback returns false when text before slash is non-empty", () => {
-    const allow = suggestionOptions().allow
-    const mockState = {
-      doc: {
-        resolve: (pos: number) => ({
-          parent: { textBetween: () => "some text" },
-          parentOffset: pos,
-        }),
-      },
-    }
-    expect(allow({ state: mockState, range: { from: 5, to: 6 } })).toBe(false)
-  })
-
-  test("command callback delegates to item.command", () => {
-    const command = suggestionOptions().command
-    const { editor, calls } = mockEditor()
-    const item = findItem("text")
-    command({ editor, range, props: { item } })
-    expect(calls).toContain("setParagraph")
-    expect(calls).toContain("run")
+  test("selection delegates the editor and range to the selected command", () => {
+    const { editor, calls } = recordEditor()
+    suggestionOptions().command({ editor, range, props: { item: findItem("h2") } })
+    expect(calls).toEqual([...prefix, ["setNode", "heading", { level: 2 }], ["run"]])
   })
 })

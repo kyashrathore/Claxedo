@@ -182,16 +182,12 @@ export type WorkspaceAuthority = {
       homeRegion?: string
     },
   ) => Promise<unknown>
-  // --- machine-wide enrollment (Unit 6) ------------------------------------
+  // --- machine-wide enrollment ---------------------------------------------
   //
-  // Enrollment carries no workspace, and that absence IS the feature: a laptop
+  // Enrollment carries no workspace, and that absence is the feature: a laptop
   // is enrolled once, and which workspaces a session may reach is decided at
-  // request time from the workspace tables rather than frozen into a
-  // registration row per project.
-  //
-  // Required on the port. Unit 6's hard cut removed the per-workspace
-  // "local host link" methods these replaced, so every authority implements
-  // this grain and no call site needs an absence check.
+  // request time from the workspace tables. Required on the port, so no call
+  // site needs an absence check.
   createHostEnrollmentRequest: (
     auth: SignedControlPlaneAuth,
     args: { hostId: string },
@@ -537,11 +533,7 @@ export type WorkspaceAuthority = {
   ) => Promise<void>
 }
 
-/**
- * Resolve the configured authority or fail closed. This is the single
- * authority-required helper; it subsumes the copy-pasted per-route helpers that
- * previously guarded authority access in five route modules.
- */
+/** Resolve the configured authority or fail closed (503); the one authority-required helper for every route. */
 export function requireAuthority(services: { authority?: WorkspaceAuthority } | undefined): WorkspaceAuthority {
   if (services?.authority) return services.authority
   throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")

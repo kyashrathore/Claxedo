@@ -14,18 +14,13 @@ import {
 } from "@claxedo/server-core/deployments/product-route-families"
 
 /**
- * Desktop-local product contract.
+ * Desktop-local product contract: the route families `@claxedo/local-server`
+ * must serve, recorded from the self-hosted composition's inventory.
  *
- * This is the oracle Unit 5 has to satisfy. `@claxedo/local-server` is not
- * "whatever compiles after moving files" — it is exactly the set of route
- * families recorded here, served from the same paths, reading the same profile
- * root. Without this table the extraction has no failing condition: a move that
- * silently dropped `/api/wr/pty/:ptyID/connect` would still typecheck, still
- * build, and only surface as a dead terminal in a packaged desktop build.
- *
- * The suite deliberately asserts the WHOLE inventory rather than spot-checking
- * a few paths. A partial assertion cannot detect the failure mode that matters
- * here, which is omission.
+ * The whole inventory is asserted rather than spot-checked because the failure
+ * that matters is omission: a dropped `/api/wr/pty/:ptyID/connect` still
+ * typechecks and builds, and surfaces only as a dead terminal in a packaged
+ * desktop build.
  */
 
 let dataDir: string
@@ -183,10 +178,7 @@ describe("desktop-local product contract", () => {
     ])
   })
 
-  test("records the hosted capabilities the local composition must lose", () => {
-    // Not aspiration — this is the exact list Units 5 to 8 remove from the
-    // desktop-local closure. Shrinking it is the measurable outcome of the
-    // split, so it is asserted rather than described in prose.
+  test("records the hosted-only route families the desktop-local product does not serve", () => {
     expect(pathsByOwner(localApp().routes, "server")).toEqual([
       "/.well-known/jwks.json",
       "/api/channels/discord",
@@ -213,7 +205,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/integrations/connections/:id/repositories",
       "/api/claxedo/integrations/connections/:id/reverify",
       "/api/claxedo/integrations/connections/:id/token",
-      "/api/claxedo/integrations/connections/:id/webhook-secret",
       "/api/claxedo/project/remote",
       "/api/claxedo/remote-access",
       "/api/claxedo/remote-access/devices",
@@ -288,9 +279,8 @@ describe("desktop-local product contract", () => {
   })
 
   test("resolves the profile root from the product data directory, not the package location", async () => {
-    // K7: a package move must not relocate durable state. The data root is
-    // taken from the product/user directory, so the same env var still selects
-    // the same profile after `deployments/local` becomes `@claxedo/local-server`.
+    // A package move must not relocate durable state: the same env var selects
+    // the same profile whichever package serves it.
     const { dataDir: resolveDataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
     expect(resolveDataDir()).toBe(dataDir)
   })

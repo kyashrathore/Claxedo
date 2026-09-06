@@ -42,24 +42,20 @@ import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/se
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
 export type HostedWorkerEnv = Record<string, string | undefined>
 
-export function clean(value: string | undefined) {
-  const normalized = value?.trim()
-  return normalized ? normalized : undefined
-}
-
 export function required(value: string | undefined, code: string, name: string): string {
-  const normalized = clean(value)
+  const normalized = trimToUndefined(value)
   if (!normalized) throw new HostedWorkerCompositionError(code, `Hosted Worker control plane requires ${name}`)
   return normalized
 }
 
 export function positiveInteger(env: HostedWorkerEnv, key: string, fallback: number) {
-  const raw = clean(env[key])
+  const raw = trimToUndefined(env[key])
   if (!raw) return fallback
   const parsed = Number(raw)
   if (Number.isInteger(parsed) && parsed > 0) return parsed
@@ -159,7 +155,7 @@ function sandboxManager(
   telemetry: ControlPlaneTelemetry,
   sandbox: { driver: SandboxDriver; leaseStore: SandboxLeaseStore } | undefined,
 ) {
-  const selectedDriver = clean(env.CLAXEDO_SANDBOX_DRIVER)
+  const selectedDriver = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)
   if (!sandbox) {
     if (!selectedDriver) return undefined
     throw new HostedWorkerCompositionError(
@@ -205,18 +201,18 @@ function sandboxManager(
  * the auth descriptor.
  */
 export function hostedDeviceAuthProvider(env: HostedWorkerEnv): HostedDeviceAuthProvider | undefined {
-  const issuer = clean(env.CLAXEDO_DEVICE_LOGIN_ISSUER)
+  const issuer = trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_ISSUER)
   if (!issuer) return undefined
   const base = issuer.replace(/\/+$/, "")
   return {
     issuer,
-    codeUrl: clean(env.CLAXEDO_DEVICE_LOGIN_CODE_URL) ?? `${base}/device/code`,
-    tokenUrl: clean(env.CLAXEDO_DEVICE_LOGIN_TOKEN_URL) ?? `${base}/device/token`,
-    ...(clean(env.CLAXEDO_DEVICE_LOGIN_CLIENT_ID) ? { clientId: clean(env.CLAXEDO_DEVICE_LOGIN_CLIENT_ID) } : {}),
-    ...(clean(env.CLAXEDO_DEVICE_LOGIN_AUDIENCE) ? { audience: clean(env.CLAXEDO_DEVICE_LOGIN_AUDIENCE) } : {}),
-    ...(clean(env.CLAXEDO_DEVICE_LOGIN_SCOPE) ? { scope: clean(env.CLAXEDO_DEVICE_LOGIN_SCOPE) } : {}),
-    ...(clean(env.CLAXEDO_DEVICE_LOGIN_ISSUER_TOKEN)
-      ? { issuerToken: clean(env.CLAXEDO_DEVICE_LOGIN_ISSUER_TOKEN) }
+    codeUrl: trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_CODE_URL) ?? `${base}/device/code`,
+    tokenUrl: trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_TOKEN_URL) ?? `${base}/device/token`,
+    ...(trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_CLIENT_ID) ? { clientId: trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_CLIENT_ID) } : {}),
+    ...(trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_AUDIENCE) ? { audience: trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_AUDIENCE) } : {}),
+    ...(trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_SCOPE) ? { scope: trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_SCOPE) } : {}),
+    ...(trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_ISSUER_TOKEN)
+      ? { issuerToken: trimToUndefined(env.CLAXEDO_DEVICE_LOGIN_ISSUER_TOKEN) }
       : {}),
   }
 }
@@ -302,7 +298,7 @@ export function composeProviderNeutralHostedControlPlane(
     "hosted_dependency_missing",
     "a relay resolver token (CLAXEDO_RELAY_RESOLVER_TOKEN)",
   )
-  if (clean(env.CLAXEDO_RUNTIME_ADMIN_TOKEN) === resolverToken) {
+  if (trimToUndefined(env.CLAXEDO_RUNTIME_ADMIN_TOKEN) === resolverToken) {
     throw new HostedWorkerCompositionError(
       "hosted_token_reuse",
       "CLAXEDO_RUNTIME_ADMIN_TOKEN must not reuse CLAXEDO_RELAY_RESOLVER_TOKEN — admin and resolver are distinct trust domains",

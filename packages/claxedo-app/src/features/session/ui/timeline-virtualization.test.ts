@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import { Virtualizer } from "@tanstack/solid-virtual"
 import { createTimelineResizeAnchor, estimateLongMarkdownHeight } from "./timeline-virtualization"
 
 describe("timeline Markdown height estimate", () => {
@@ -42,6 +43,8 @@ describe("timeline resize anchor — display gating", () => {
   type Recorded = { scrollToEnd: number }
 
   const paddingEnd = 64
+  const cleanups: Array<() => void> = []
+  afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
 
   function harness(options: {
     displayed: () => boolean
@@ -51,39 +54,49 @@ describe("timeline resize anchor — display gating", () => {
   }) {
     const recorded: Recorded = { scrollToEnd: 0 }
     let resized = 0
-    const estimates = options.estimates ?? []
-    const itemSizeCache = new Map<unknown, number>()
-    const virtualizer = {
-      measurementsCache: estimates.map((size, index) => ({ key: `row-${index}`, index, size })),
-      itemSizeCache,
-      range: undefined,
-      shouldAdjustScrollPositionOnItemSizeChange: undefined as unknown,
-      // Stands in for virtual-core's own resizeItem: it commits the measured
-      // size to the size cache, which is what getTotalSize() then sums.
-      resizeItem: (index: number, size: number) => {
-        resized += 1
-        const item = virtualizer.measurementsCache[index]
-        if (item) itemSizeCache.set(item.key, size)
-      },
-      scrollToEnd: () => {
-        recorded.scrollToEnd += 1
-      },
+    const estimates = options.estimates ?? [180]
+    const virtualizer = new Virtualizer<HTMLDivElement, HTMLDivElement>({
+      count: estimates.length,
+      estimateSize: (index) => estimates[index],
+      initialRect: { width: 800, height: 800 },
+      paddingEnd,
+      getScrollElement: () => null,
+      scrollToFn: () => {},
+      observeElementRect: () => {},
+      observeElementOffset: () => {},
+    })
+    virtualizer.getTotalSize()
+    const resizeItem = virtualizer.resizeItem.bind(virtualizer)
+    virtualizer.resizeItem = (index, size) => {
+      resized += 1
+      resizeItem(index, size)
     }
-    const sizeOf = (index: number) => {
-      const item = virtualizer.measurementsCache[index]
-      return item ? (itemSizeCache.get(item.key) ?? item.size) : undefined
-    }
-    const totalSize = () =>
-      virtualizer.measurementsCache.reduce((sum, item) => sum + (itemSizeCache.get(item.key) ?? item.size), paddingEnd)
-    createTimelineResizeAnchor().install({
-      // The harness stands in for the parts of the virtualizer this owner drives.
-      virtualizer: virtualizer as never,
-      root: () => ({ clientHeight: 800, getBoundingClientRect: () => ({ top: 0, bottom: 800 }), querySelectorAll: () => [] }) as never,
+    // Only observe the outgoing anchor command. The dependency owns its actual
+    // measurement cache and total-size calculation.
+    virtualizer.scrollToEnd = () => { recorded.scrollToEnd += 1 }
+    const root = document.createElement("div")
+    Object.defineProperty(root, "clientHeight", { value: 800 })
+    const anchor = createTimelineResizeAnchor()
+    cleanups.push(() => anchor.dispose())
+    anchor.install({
+      virtualizer,
+      root: () => root,
       displayed: options.displayed,
       shouldAnchorBottom: options.shouldAnchorBottom ?? (() => true),
       hasScrollGesture: () => false,
     })
-    return { virtualizer, recorded, resizedCount: () => resized, sizeOf, totalSize }
+    return {
+      virtualizer,
+      recorded,
+      dispose: () => anchor.dispose(),
+      resizedCount: () => resized,
+      sizeOf: (index: number) => {
+        // Recompute through the dependency before observing its public cache.
+        virtualizer.getTotalSize()
+        return virtualizer.measurementsCache[index]?.size
+      },
+      totalSize: () => virtualizer.getTotalSize(),
+    }
   }
 
   test("a displayed surface still re-anchors to the bottom on a row resize", async () => {
@@ -139,5 +152,30 @@ describe("timeline resize anchor — display gating", () => {
     expect(resizedCount()).toBe(1)
   })
 
+
+  test("stashing after a resize cancels the queued anchor, then a visible resize can anchor again", async () => {
+    let displayed = true
+    const h = harness({ displayed: () => displayed })
+    h.virtualizer.resizeItem(0, 240)
+    displayed = false
+    await Promise.resolve()
+    expect(h.recorded.scrollToEnd).toBe(0)
+    expect(h.totalSize()).toBe(240 + paddingEnd)
+
+    displayed = true
+    h.virtualizer.resizeItem(0, 300)
+    await Promise.resolve()
+    expect(h.recorded.scrollToEnd).toBe(1)
+  })
+
+  test("disposal cancels a queued anchor and further resize work", async () => {
+    const h = harness({ displayed: () => true })
+    h.virtualizer.resizeItem(0, 240)
+    h.dispose()
+    h.virtualizer.resizeItem(0, 300)
+    await Promise.resolve()
+    expect(h.recorded.scrollToEnd).toBe(0)
+    expect(h.totalSize()).toBe(240 + paddingEnd)
+  })
 
 })

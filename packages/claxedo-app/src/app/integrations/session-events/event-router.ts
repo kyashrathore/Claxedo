@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { applyRegisteredConversationEvent } from "../../../features/session/conversation/conversation-registry"
 import { isConversationEventType, type ConversationEventFrame } from "../../../features/session/conversation/conversation-event"
 import { applySessionStatusSseEvent } from "../../../features/session/store/session-status-dispatcher"
@@ -6,7 +7,6 @@ import { applyDirectoryEventToShellQueries } from "../../../features/session/dat
 import { applyDirectorySessionCacheEvent } from "../../../features/session/data/sync/session-list-events"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { invalidateSessionPrefetchFromEvent } from "@/platform/sync/session-prefetch"
-import { asRecord } from "@/lib/record"
 
 export type StreamSyncAction =
   | {

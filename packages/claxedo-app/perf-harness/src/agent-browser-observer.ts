@@ -405,7 +405,10 @@ export function semanticTimelinePaintReady(
   );
 }
 
-export async function installAgentBrowserObserver(page: Page) {
+export async function installAgentBrowserObserver(page: {
+  addInitScript(fn: () => void): Promise<unknown>;
+  evaluate(fn: () => void): Promise<unknown>;
+}) {
   await page.addInitScript(installBrowserBenchmark);
   await page.evaluate(installBrowserBenchmark);
 }
@@ -803,7 +806,7 @@ export async function measureSessionActivation(
           const frame = (paintedAtMs: number) => {
             const observerStartedAtMs = performance.now();
             const current = sample();
-            const diagnostic = current || !window.__claxedoPerfTrace ? undefined : notReadyDiagnostic();
+            const diagnostic = current || !(window as Window & { __claxedoPerfTrace?: boolean }).__claxedoPerfTrace ? undefined : notReadyDiagnostic();
             frames.push({
               atMs: paintedAtMs,
               ready: !!current,
@@ -1179,7 +1182,7 @@ function installBrowserBenchmark() {
         acceptedTail: string;
         acceptedChunks: Array<{ data: string; atMs: number }>;
         acceptedEndTail: string;
-        acceptedHashBuffer: Uint8Array;
+        acceptedHashBuffer: Uint8Array<ArrayBuffer>;
         acceptedHashLength: number;
         acceptedHashDigests: Array<Promise<ArrayBuffer>>;
         acceptedBytes: number;
@@ -1566,25 +1569,20 @@ function installBrowserBenchmark() {
       current.parsedTail = `${current.parsedTail}${receipt.data}`.slice(
         -65_536,
       );
-      // The rolling tail is a CHEAP GATE whose only job is to avoid calling the
-      // expensive `serialize()` on every batch; `serialized.includes(echo)` below
-      // remains the authoritative check and is untouched.
-      //
-      // The gate had a false negative. A parsed batch can be far larger than the
-      // 64 KiB window — measured at 331,990 bytes with the echo 331,967 bytes from
-      // its end, 5.1x past the window — so the same append that DELIVERED the echo
-      // evicted it, the gate never opened, `serialize()` was never called, and a
-      // correctly echoed, parsed, on-screen input was recorded as never observed.
-      // Testing the incoming batch's own `data` as well costs one `indexOf` per
-      // expected echo per batch and cannot admit anything the authoritative check
-      // would reject.
+      // The rolling tail is a cheap gate to avoid calling the expensive
+      // `serialize()` on every batch; `serialized.includes(echo)` below remains
+      // the authoritative check. A batch larger than the 64 KiB window can
+      // evict an echo in the same append that delivers it, so the gate never
+      // opens and a correctly echoed, on-screen input is recorded as never
+      // observed. Testing the incoming batch's own `data` too costs one
+      // `indexOf` per expected echo per batch and cannot admit anything the
+      // authoritative check would reject.
       const matchedEchoes = current.expectedEchoes.filter((echo) => {
-        // `parsedTail` is the last 64 KiB of the stream, and this batch ends the
-        // stream, so the tail contains the echo iff it fits ENTIRELY inside that
-        // window: `bytesFromEnd + echo.length <= 65,536`. The second branch
-        // therefore fires on exactly the population that used to be lost, which
-        // makes recording it free: an `indexOf` where an `includes` already was,
-        // on a batch we were already scanning.
+        // `parsedTail` holds the last 64 KiB of the stream, and this batch ends
+        // it, so the tail contains the echo iff `bytesFromEnd + echo.length <=
+        // 65,536`. The fallback branch below covers exactly the population the
+        // tail check misses, at the cost of one `indexOf` on a batch already
+        // being scanned.
         if (current.parsedTail.includes(echo)) return true;
         const at = receipt.data.indexOf(echo);
         if (at < 0) return false;

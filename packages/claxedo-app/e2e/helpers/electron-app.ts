@@ -18,23 +18,10 @@ const REPO_ROOT = path.resolve(HERE, "../../../..")
 const DESKTOP = path.join(REPO_ROOT, "packages/claxedo-desktop")
 
 /**
- * Where `electron-builder --dir` leaves the unpacked app, per platform.
- *
- * `--dir` is used rather than the full `package:mac` path deliberately: it
- * skips DMG creation and notarisation (`package:mac` is ~5 min / 1.4 GB) while
- * still producing an asar-packed app whose renderer loads over `file://` —
- * asar is never disabled in `electron-builder.config.ts` and `asarUnpack` is in
- * use there (line 154), so packing is independent of the target. The `file://`
- * renderer is the whole reason the lane exists, so this shortcut costs nothing
- * that matters.
- */
-/**
- * DISCOVERED, not hardcoded. The bundle is named per release channel — a Dev
- * build produces `Claxedo Dev.app` with a `Claxedo Dev` executable inside, not
- * `Claxedo.app`/`Claxedo` (observed 2026-08-06). Pinning the product name would
- * make the lane pass or fail on which channel the operator happened to build,
- * which is exactly the kind of environment coupling that makes a lane
- * untrustworthy.
+ * Finds the app `electron-builder --dir` left under `dist/`. `--dir` skips DMG and
+ * notarisation but still asar-packs, so the renderer loads over `file://`. The bundle name
+ * depends on the release channel (`Claxedo Dev.app` vs `Claxedo.app`), so it is discovered
+ * rather than pinned.
  */
 async function discoverPackagedBinary(): Promise<string[]> {
   const dist = path.join(DESKTOP, "dist")
@@ -89,7 +76,7 @@ async function resolvePackagedBinary(): Promise<string> {
       return candidate
   }
   throw new Error(
-    "GATING: no packaged desktop binary found. Build one first (measured 2026-08-06: 42s, 403 MB):\n" +
+    "GATING: no packaged desktop binary found. Build one first:\n" +
       "  cd packages/claxedo-desktop && bun run build && npx electron-builder --dir --config electron-builder.config.ts\n" +
       `Discovered candidates:\n  ${candidates.join("\n  ") || "(none)"}\n` +
       "Or set CLAXEDO_E2E_DESKTOP_BIN to the executable.",
@@ -137,21 +124,12 @@ export type PackagedApp = {
 }
 
 /**
- * Boot the packaged app against a scratch profile.
+ * Boots the packaged app against a scratch profile. `userData` is a fresh `mkdtemp` per
+ * run: the real settings store is shared across release and Dev channels, so a setting
+ * persisted by one run (or by the developer's own app) would leak into the next.
  *
- * `userData` is redirected to a fresh `mkdtemp` on every run, and that is not
- * hygiene theatre: during the 2026-08-05 session a `defaultServerUrl` written
- * while diagnosing persisted into
- * `~/Library/Application Support/@claxedo/desktop/claxedo.settings.json` and
- * produced a "Could not connect to configured server" dialog in later runs —
- * and that store is shared across the release and Dev channels, so a leaked
- * setting crosses builds too. A lane that inherits the developer's real profile
- * is neither reproducible nor safe to run on a workstation.
- *
- * The app boots ITS OWN embedded claxedo-server, which is the production flow
- * and is exactly the seam these lanes exist to exercise. Nothing external is
- * injected except the scripted model endpoint (`env`), which is the one thing
- * the plan permits to be fake.
+ * The app boots its own embedded claxedo-server. Only the scripted model endpoint (`env`)
+ * is fake.
  */
 export async function launchPackagedApp(
   input: {
@@ -160,57 +138,26 @@ export async function launchPackagedApp(
     /** Overrides the default 60s first-window wait; the embedded server boots first. */
     timeoutMs?: number
     /**
-     * ADDED for plan Phase 4 (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`,
-     * `desktop-signed-*` lanes) — additive and optional, so every Phase-2 call site above is
-     * byte-for-byte unaffected. Points the packaged app at an EXTERNAL server instead of its
-     * own embedded one: the two signed lanes run against a real `hosted-node` control plane +
-     * local JWKS issuer spawned OUTSIDE this process (`signed-browser-relay-fixture.mjs`), not
-     * the app's own boot-time server.
+     * Points the packaged app at an external server instead of its embedded one (the signed
+     * lanes' `signed-browser-relay-fixture.mjs`).
      *
-     * `CLAXEDO_SERVER_URL` (the env var `setupServerConnection` in `main/index.ts` reads) is
-     * NOT the seam for this: that branch is gated `if (!IS_PACKAGED)` — a `--dir` build always
-     * has `IS_PACKAGED = !process.defaultApp === true`, so the env var is silently ignored on
-     * every packaged binary (verified by reading `main/index.ts:411-424` — the env var lives
-     * inside the `!IS_PACKAGED` block, and nothing below it re-reads `process.env` at all). The
-     * ONLY seam a packaged build honours is `getSavedServerUrl()` (`main/server.ts`), which
-     * reads `store.get("defaultServerUrl")` from an `electron-store` file the MAIN process opens
-     * during `initialize()`, before any renderer or IPC channel exists — so it must be written
-     * to disk before `electron.launch()`, not pushed in afterward via `window.api.storeSet` the
-     * way Phase 2's `openWorkspaceProject` seeds the project list.
+     * `CLAXEDO_SERVER_URL` is read only when `!IS_PACKAGED`, so a `--dir` build ignores it.
+     * The one seam a packaged build honours is `getSavedServerUrl()` (`main/server.ts`), which
+     * reads `defaultServerUrl` from an `electron-store` file the main process opens during
+     * `initialize()`, before any renderer or IPC exists — so it is written to
+     * `<userDataDir>/claxedo.settings.json` before `electron.launch()`.
      *
-     * `electron-store`'s default `cwd` is `app.getPath('userData')`, which `--user-data-dir`
-     * (below) pins to this run's own `userDataDir` — so the file lands at
-     * `<userDataDir>/claxedo.settings.json`, matching the SAME path the plan's Phase 2 section
-     * names as the real, previously-observed persistence location
-     * (`~/Library/Application Support/@claxedo/desktop/claxedo.settings.json`) rooted at THIS
-     * run's scratch profile instead of a shared one.
-     *
-     * Not paired with a "make the health check unconditionally pass" affordance: if
-     * `serverUrl` isn't reachable yet, `setupServerConnection` -> `checkHealthOrAskRetry` opens
-     * a NATIVE `dialog.showMessageBox` prompt that Playwright's Electron driver cannot click,
-     * hanging the launch until `timeoutMs`. Callers MUST await their external server's own
-     * readiness signal (the fixture's stdout JSON line) before calling this.
+     * If the server is not reachable yet, `checkHealthOrAskRetry` opens a native dialog
+     * Playwright cannot click and the launch hangs until `timeoutMs`; await the external
+     * server's readiness first.
      */
     serverUrl?: string
     /**
-     * ADDED 2026-08-06 for boot-error-detection coverage
-     * (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`,
-     * `desktop-unsigned-embedded.spec.ts`'s boot-observer scenario). Additive
-     * and optional — every existing call site above is byte-for-byte unaffected
-     * when this is omitted.
-     *
-     * Invoked with the launched app's `BrowserContext` immediately after
-     * `electron.launch()` resolves, before EITHER window (splash or shell) is
-     * queried. This is the only point at which `context().addInitScript(...)`
-     * can still land before the shell's first navigation: this function's own
-     * `waitForShellWindow()` below blocks until `index.local.html` has already
-     * loaded, so a `Page`-level `addInitScript` call on the page it returns is
-     * provably too late — the app's real bootstrap fetches and any boot-time
-     * toast have already run by then. `boot-observer.ts`'s `installBootObserver`
-     * is the intended caller (it now accepts `Page | BrowserContext` for
-     * exactly this reason). Kept as an opt-in hook rather than baking a
-     * specific observer in here so this file does not have to know what a
-     * caller wants to observe.
+     * Runs with the app's `BrowserContext` right after `electron.launch()`, before either
+     * window is queried. This is the only point where `context().addInitScript(...)` still
+     * precedes the shell's first navigation: `waitForShellWindow()` returns only after
+     * `index.local.html` has loaded, so a page-level init script misses boot-time fetches
+     * and toasts. `boot-observer.ts`'s `installBootObserver` is the intended caller.
      */
     beforeShellWindow?: (context: BrowserContext) => Promise<void>
     /** Reuse a scratch profile across a restart. The caller remains its owner. */
@@ -229,85 +176,35 @@ export async function launchPackagedApp(
   const userDataDir = input.userDataDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-desktop-")))
   await fs.mkdir(userDataDir, { recursive: true })
   if (input.serverUrl) {
-    // Written BEFORE `electron.launch()` below — see the parameter doc above for why this
-    // can't be an IPC call made after boot. Plain flat JSON: electron-store's on-disk shape
-    // for a store with no `schema`/`migrations` is exactly `JSON.stringify(store, null, 2)`
-    // with no wrapper object, so `{"defaultServerUrl": "..."}` is `store.get("defaultServerUrl")`
-    // returning that exact string on first read — verified against `main/server.ts`'s
-    // `getDefaultServerUrl()`, which does nothing but `store.get(DEFAULT_SERVER_URL_KEY)`.
+    // electron-store with no schema/migrations persists plain `JSON.stringify(store)`, so
+    // this is exactly what `store.get("defaultServerUrl")` reads.
     await fs.writeFile(
       path.join(userDataDir, "claxedo.settings.json"),
       JSON.stringify({ defaultServerUrl: input.serverUrl }, null, 2),
     )
   }
-  // TWO separate roots have to be isolated, and missing the second one is not a
-  // theoretical hazard — it was measured on 2026-08-06. Electron's
-  // `--user-data-dir` moves only the renderer/browser profile; the embedded
-  // claxedo-server keeps its own store at `CLAXEDO_DATA_DIR`, takes an
-  // exclusive lock on it, and refuses to start when another process holds it:
-  //
-  //     code: 'data_dir_already_owned', status: 409, retryable: false,
-  //     owner: { pid: 62177, ... }
-  //     -> "The embedded Claxedo server did not become healthy in time."
-  //
-  // With only `--user-data-dir` isolated, the lane therefore fails on any
-  // machine that happens to be running Claxedo — a dev server, or the user's
-  // own installed app. That is a false red that would train people to ignore
-  // this lane, so the server's data root is scratched per run as well.
-  // THIRD ROOT — the cause of the "Failed to load sessions for opencode /
-  // 404 / 503" toast pair seen on EVERY desktop run (2026-08-06; confirmed
-  // across 245 evidence screenshots in e2e/EVIDENCE-AUDIT.md).
-  //
-  // `--user-data-dir` is INERT for this app. claxedo-desktop/src/main/index.ts:34
-  // explicitly overrides it:
-  //     app.setPath("userData",
-  //       process.env.CLAXEDO_DESKTOP_USER_DATA_DIR ??
-  //         join(app.getPath("appData"), … "ai.claxedo.desktop.dev"))
-  // so the Chromium flag loses to that call and the app keeps reading the real
-  // channel store at
-  //   ~/Library/Application Support/ai.claxedo.desktop.dev/claxedo.global.dat.json
-  // which already lists the developer's own repo checkout as a project. The
-  // app then asked its FRESH scratch server for a directory that server had
-  // never registered -> 404, then 503, then stacked error toasts at boot.
-  //
-  // Verified this was NOT a hardcoded default: no such path exists in
-  // claxedo-desktop/src, in electron-builder.config.ts, or in the built
-  // app.asar (all three grepped). It was inherited persisted state.
-  //
-  // `CLAXEDO_DESKTOP_USER_DATA_DIR` is the app's own supported seam for this,
-  // so no product change is needed — but it MUST be set, and the
-  // `--user-data-dir` arg below is kept only because Chromium's own cache
-  // paths still honour it.
+  // Three roots are isolated per run, and each one matters:
+  // - `CLAXEDO_DATA_DIR`: the embedded claxedo-server's own store. It takes an exclusive
+  //   lock (`data_dir_already_owned`, 409), so sharing it with a running dev server or
+  //   installed app fails the launch.
+  // - `CLAXEDO_DESKTOP_USER_DATA_DIR`: `main/index.ts` passes it to
+  //   `app.setPath("userData", …)`, overriding Chromium's `--user-data-dir`. Without it the
+  //   app reads the real channel store, finds the developer's own projects, and asks the
+  //   scratch server for directories it never registered (404/503 toasts at boot). The
+  //   `--user-data-dir` arg is kept only for Chromium's own cache paths.
+  // - `ZDOTDIR`: the shell a terminal spawns runs the operator's rc files against the same
+  //   PTY a spec types into (oh-my-zsh's update prompt once swallowed the first keystroke
+  //   of an `echo`), so zsh reads its startup files from an empty directory instead.
+  //   `HOME` is left alone: the real git identity, `claude` credential and PATH are what
+  //   make the lane's harnesses real.
   const dataDir = path.join(userDataDir, "server-data")
   await fs.mkdir(dataDir, { recursive: true })
-  // FOURTH ROOT — the interactive shell a terminal in this app spawns.
-  //
-  // A terminal launched from the packaged app runs the operator's own `$SHELL`
-  // with the operator's own rc files, and those rc files write to, and read
-  // from, the same PTY a spec types into. Measured 2026-09-03: oh-my-zsh's
-  // periodic "Would you like to update? [Y/n]" prompt was on screen when
-  // `desktop-unsigned-embedded`'s D1/D3 typed `echo "CLAXEDO_PORT_CHECK=..."`,
-  // so zsh handed the leading `e` to that prompt and ran `cho …` instead —
-  // reported as "the terminal's $CLAXEDO_PORT never echoed the real port" while
-  // the port was never actually asked for. The same rc set `correct`, which then
-  // asked about `cho` too.
-  //
-  // So the shell's startup files are isolated the way `userData` and
-  // `CLAXEDO_DATA_DIR` already are: `ZDOTDIR` points at an empty directory, and
-  // zsh reads its startup files from there instead of the operator's `$HOME`.
-  // `HOME` itself is deliberately left alone — the real git identity, the real
-  // `claude` credential and the real PATH are what make this lane's harnesses
-  // real.
   const shellRcDir = path.join(userDataDir, "shell-rc")
   await fs.mkdir(shellRcDir, { recursive: true })
 
-  // Strip, never merely omit. `ELECTRON_RENDERER_URL` is exported by
-  // `electron-vite dev`, so a developer running the dev server in the same
-  // shell would otherwise hand it to the packaged app and silently turn the
-  // renderer back into `http://localhost` — the exact condition that makes this
-  // lane worthless. `CLAXEDO_DEVTOOLS` is dropped for the same class of reason:
-  // it opens devtools only when the dev URL is present, and a lane should not
-  // vary with the operator's shell.
+  // `ELECTRON_RENDERER_URL` (exported by `electron-vite dev`) would turn the renderer back
+  // into http://localhost; `CLAXEDO_DEVTOOLS` opens devtools with it. Neither may vary the
+  // lane with the operator's shell.
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue
@@ -332,23 +229,15 @@ export async function launchPackagedApp(
     timeout: input.timeoutMs ?? 60_000,
   })
 
-  // MUST run before `waitForShellWindow()` below, for the same reason the
-  // response listener two blocks down does: this is the earliest point at
-  // which the app's `BrowserContext` exists, and therefore the last point at
-  // which a context-level `addInitScript` can still precede the shell's first
-  // navigation. See the `beforeShellWindow` parameter doc above.
+  // Before `waitForShellWindow()`: the last point a context-level init script lands
+  // ahead of the shell's first navigation.
   if (input.beforeShellWindow) await input.beforeShellWindow(app.context())
 
-  // Recorded at the CONTEXT level and attached before `firstWindow()` resolves,
-  // because a per-page listener attached afterwards races the app and loses:
-  // the packaged app finishes its bootstrap fetches while the first window is
-  // still being handed over, so a listener added later observes nothing and the
-  // check fails against a perfectly healthy app (measured 2026-08-06 — the app
-  // had rendered its project list and A1 still saw zero responses).
-  // Main-process output is captured because an Electron app that quits during a
-  // test leaves Playwright saying only "Target page, context or browser has been
-  // closed", which names the symptom and hides every cause. The app's own log
-  // says why.
+  // Context-level listeners, attached before the shell window resolves: the app finishes
+  // its bootstrap fetches while the first window is still being handed over, so a per-page
+  // listener added later sees nothing. Main-process output is kept because an app that
+  // quits mid-test leaves Playwright saying only "Target page, context or browser has been
+  // closed".
   const appLog: string[] = []
   app.process().stdout?.on("data", (chunk) => appLog.push(String(chunk)))
   app.process().stderr?.on("data", (chunk) => appLog.push(String(chunk)))
@@ -361,21 +250,14 @@ export async function launchPackagedApp(
     serverResponses.push(url)
   })
 
-  // NOT `firstWindow()`. The desktop app opens TWO windows: a splash
-  // (`loading.html`, windows.ts:171) while the embedded server boots, and then
-  // the real shell (`index.local.html`, windows.ts). `firstWindow()` resolves to
-  // the SPLASH, which is destroyed the moment the shell is ready — so every
-  // subsequent interaction dies with "Target page, context or browser has been
-  // closed" about two seconds in (measured 2026-08-06). Worse, an assertion
-  // that only inspects recorded state rather than touching the page still goes
-  // GREEN against that dead handle, which is precisely the pass-while-broken
-  // shape INVARIANTS.md forbids. So wait for the shell explicitly.
+  // Not `firstWindow()`: the app opens a splash (`loading.html`) while the embedded
+  // server boots, then the real shell (`index.local.html`). `firstWindow()` resolves to the
+  // splash, which is destroyed once the shell is ready, and every later interaction dies
+  // with "Target page, context or browser has been closed".
   const page = await waitForShellWindow(app, input.timeoutMs ?? 60_000, appLog)
   await page.waitForLoadState("domcontentloaded")
 
-  // ASSERT the premise rather than trusting the env surgery above. If this ever
-  // fails the lane is testing a different application than it claims to, and
-  // every "green" below it is meaningless — so it fails loudly and early.
+  // Assert the premise rather than trust the env surgery above.
   const protocol = await page.evaluate(() => window.location.protocol)
   expect(
     protocol,
@@ -403,30 +285,19 @@ export async function launchPackagedApp(
 }
 
 /**
- * Scenario A1 — the transport tripwire.
- *
- * DELIBERATELY A DIAGNOSTIC, NOT COVERAGE. "The shell rendered" would have been
- * green through every one of the four packaged defects: the shell renders from
- * the local bundle, so it proves nothing about the seam between the renderer
- * and the server. The owner's own account is the evidence — the app booted
- * fine, and breakage only surfaced on CREATING A SESSION or CREATING A
- * TERMINAL. Real coverage therefore lives on the first server-touching
- * mutation (scenarios B1 and D1); this exists only because it fails earlier and
- * names the cause more precisely than they do.
- *
- * The assertion that actually bites: with the API base wrongly resolved to the
- * document, requests go to `file:///api/...` and no 2xx from an http(s) origin
- * is ever observed.
+ * A diagnostic, not coverage: the shell renders from the local bundle whether or not the
+ * renderer can reach its server, so "the shell rendered" proves nothing about that seam.
+ * Real coverage is the first server-touching mutation (session or terminal creation);
+ * this fails earlier and names the cause. With the API base resolved to the document,
+ * requests go to `file:///api/...` and no 2xx from an http(s) origin is ever observed.
  */
 export async function expectServerReachable(packaged: PackagedApp, timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const hit = packaged.serverResponses.find((url) => /\/api\/claxedo\/|\/api\/control\/|\/session/.test(url))
     if (hit) return hit
-    // A PLAIN timer, not `page.waitForTimeout`: if the app quits mid-poll the
-    // page-bound wait throws "Target page, context or browser has been closed"
-    // and destroys the diagnostic — the caller then sees only that symptom
-    // instead of the GATING message and the app log below, which name the cause.
+    // A plain timer, not `page.waitForTimeout`: if the app quits mid-poll the page-bound
+    // wait throws and hides the diagnostic below.
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   throw new Error(

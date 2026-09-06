@@ -3,7 +3,6 @@ import { useGlobalSync } from "@/app/providers/global-sync/provider"
 import { clearRegisteredConversationMemory } from "@/features/session/conversation/conversation-registry"
 import { setConversationPersistencePrincipal } from "@/features/session/conversation/conversation-persistence"
 import { principalDataScope, type Principal } from "@/platform/auth/identity-provider"
-import { UNNAMED_SIGNED_USER_ID } from "@/platform/auth/principal-provider"
 import { queryClient } from "@/platform/query/query-client"
 import type {
   SessionAccessRevocationSource,
@@ -87,24 +86,24 @@ function userIdOf(principal: Principal | undefined): string | undefined {
  */
 function isSamePersonGainingContext(previous: Principal | undefined, next: Principal): boolean {
   if (!previous) return false
-  if (previous.kind === "local" && next.kind !== "local") return true
+  if (previous.kind === "local" && (next.kind === "signed" || next.kind === "org-member")) return true
   const before = userIdOf(previous)
   const after = userIdOf(next)
   if (before === undefined || after === undefined) return false
   if (previous.kind !== "signed" || (next.kind !== "signed" && next.kind !== "org-member")) return false
-  // Sign-in publishes a signed principal before the profile lookup names it;
-  // the named principal that follows is the same session, not another person.
-  return before === UNNAMED_SIGNED_USER_ID || before === "" || before === after
+  return before === after
 }
 
 export function createPrincipalDataIsolation(input: {
   clear?: () => void
   refresh?: () => void
 }) {
-  let previousScope: string | undefined
+  let previousScope: string | null | undefined
   let previousPrincipal: Principal | undefined
-  return (principal: Principal) => {
+  let generation = 0
+  const update = (principal: Principal) => {
     const nextScope = principalDataScope(principal)
+    if (previousScope !== nextScope) generation += 1
     const namespaceChanged = setConversationPersistencePrincipal(nextScope)
     if (previousScope === undefined) {
       previousScope = nextScope
@@ -120,12 +119,14 @@ export function createPrincipalDataIsolation(input: {
     if (softened) (input.refresh ?? refreshPrincipalData)()
     else (input.clear ?? clearPrincipalData)()
   }
+  return { update, generation: () => generation }
 }
 
 export function installPrincipalDataIsolation(input: {
   principal: Accessor<Principal>
   clear?: () => void
 }) {
-  const transition = createPrincipalDataIsolation(input)
-  createComputed(() => transition(input.principal()))
+  const isolation = createPrincipalDataIsolation(input)
+  createComputed(() => isolation.update(input.principal()))
+  return isolation.generation
 }

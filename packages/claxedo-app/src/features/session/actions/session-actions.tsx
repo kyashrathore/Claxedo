@@ -27,7 +27,7 @@ import { removeDirectorySession } from "../data/sync/directory-session-cache"
 import { cleanupSessionCaches } from "../data/sync/session-cache-cleanup"
 import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelectionHandoffID, setLocalSelectionHandoff, type LocalSelectionState } from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
-import { urlRoutingEnabled } from "@/lib/runtime-mode"
+import { writeBrowserRoute } from "@/lib/browser-history"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
 import { cancelArchiveProjectionReads } from "../data/sync/archive-projection-boundary"
@@ -54,14 +54,9 @@ function sessionListRefForArchive(sessionItem: SessionItem, directory: string) {
 export function createSessionActions(props: ActionProps, nav: Nav) {
   const replaceSessionUrl = (sessionId: string) => {
     if (typeof window === "undefined") return
-    // Desktop routes with MemoryRouter over a file:// document: writing the
-    // route here left the window at `file:///s/<session>`, which reloads into a
-    // blank error page. See `urlRoutingEnabled`.
-    if (!urlRoutingEnabled()) return
     const next = canonicalSessionRoute(sessionId)
     if (window.location.pathname === next) return
-    window.history.replaceState(window.history.state, "", next)
-    window.dispatchEvent(new PopStateEvent("popstate"))
+    writeBrowserRoute(next, { replace: true, notify: true })
   }
 
   const remoteHistoryReadOnly = (action: string) => {

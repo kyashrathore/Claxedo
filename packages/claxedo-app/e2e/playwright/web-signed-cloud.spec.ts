@@ -1,51 +1,28 @@
 /**
- * SPEC: web lane — signed, cloud workspace, through the real relay
- * (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`, Phase 4)
+ * Web lane: signed, cloud workspace, through the real relay.
  *
- * PURPOSE — the plan's lane x scenario matrix (line 157) assigns this lane
- * A2-A3, all of B, C1/C4, D1-D2, E1, and F3 ("cloud: same through the relay;
- * reload replays from the remote runtime"). Like its sibling `web-signed-
- * userhosted.spec.ts`, this file is a THIN CONFIGURATION WRAPPER: every
- * scenario body lives once in `e2e/helpers/web-signed-relay-journeys.ts`,
- * shared verbatim between the two lanes. This file owns only: booting the
- * shared fixture with `access: "cloud"`, building and serving the REAL
- * production web bundle against it, and wiring each plan scenario id to its
- * shared journey function.
+ * Thin configuration wrapper: every scenario body lives in
+ * `e2e/helpers/web-signed-relay-journeys.ts`, shared with
+ * `web-signed-userhosted.spec.ts`. This file boots the shared fixture with
+ * `access: "cloud"`, builds and serves the production web bundle against it,
+ * and wires each scenario id to its journey. Test titles carry the ids of the
+ * scenario matrix shared with the `desktop-*` lanes (A = shell integrity,
+ * B = session lifecycle & rail, C = composer & harness, D = terminal,
+ * E = rail geometry).
  *
- * WHAT IS REAL HERE — the built production web app (`vite build && vite
- * preview`, see `web-signed-relay-harness.ts`'s file header), the real
- * `hosted-node` control plane on `createSqliteCentralStore` behind
- * `customVerifierAuthAdapter` (plan Phase 3), a real `@claxedo/workspace-
- * relay` process, and a real in-process cloud workspace-runtime engine
- * (`signed-browser-relay-fixture.mjs`'s `startCloudRuntime`, wired to the
- * REAL embedded engine transport per that fixture's own inline fix note, not
- * the `forbiddenOpencodeServer()` stub). The ONE fake is the model HTTP
- * endpoint.
+ * Real: the built web app (`vite build && vite preview`,
+ * `web-signed-relay-harness.ts`), the `hosted-node` control plane on
+ * `createSqliteCentralStore` behind `customVerifierAuthAdapter`, a
+ * `@claxedo/workspace-relay` process, and an in-process cloud
+ * workspace-runtime (`signed-browser-relay-fixture.mjs`'s `startCloudRuntime`).
+ * The only fake is the model HTTP endpoint.
  *
- * KNOWN BLOCKER, inherited and re-verified here rather than assumed —
- * `real-cloud-relay.spec.ts` (this same fixture, `access: "cloud"`, driven
- * against a dedicated DEV-server frontend instead of a built one) documents an
- * OPEN product gap: the cloud connect gate (`workspace-connection.ts` ->
- * `prepareWorkspaceRuntime` -> `resolveWorkspaceRuntime`) reports "Workspace
- * startup failed" for a workspace that is already `status:"ready"`, so no
- * composer is ever reachable and every scenario below that needs one is
- * blocked on the SAME root cause, independent of which frontend serves the
- * page. This file's own `beforeAll` reproduces that check directly — see the
- * "GATE PROBE" step below — and `test.fixme`s every downstream scenario with a
- * citation to the exact probe result if the gate has not reached ready,
- * rather than letting each scenario time out separately with a less legible
- * failure. If a future fix lands in `prepareWorkspaceRuntime`, the probe
- * flips green on its own and every `test.fixme` below should be revisited
- * (search this file for "GATE PROBE").
- *
- * HARNESS NOTES —
- *   - Fixed backend/preview ports (4527/4529, overridable by env) — see the
- *     sibling spec's identical note and `web-signed-relay-harness.ts`'s file
- *     header for why a build needs its backend URL known in advance.
- *   - `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS=cloud` is what selects `startCloudRuntime`
- *     in the fixture instead of the user-hosted tunnel branch.
+ * Fixed backend/preview ports (4527/4529, overridable by env): a build needs
+ * its backend URL before it starts, and each signed lane has its own port
+ * block. `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS=cloud` selects `startCloudRuntime`
+ * in the fixture.
  */
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import path from "node:path"
 import {
   buildAndServeWebApp,
@@ -83,12 +60,9 @@ let scripted: ScriptedModelServer | undefined
 let fixture: RunningRelayFixture | undefined
 let webApp: RunningWebApp | undefined
 let forbiddenHits: string[] = []
-/** Set by the GATE PROBE in `beforeAll` — see this file's header. `undefined` until the probe runs. */
-let gateProbeError: string | undefined
-
-function ctx(): JourneyCtx {
+function ctx(page: Page): JourneyCtx {
   return {
-    page: undefined as never,
+    page,
     frontendUrl: webApp!.url,
     info: fixture!.info,
     scripted: scripted!,
@@ -101,11 +75,10 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
   test.skip(
     !TIER_REAL,
     "Tier R: set CLAXEDO_TIER_REAL_E2E=1 to run web-signed-cloud against a real relay process, a real in-process " +
-      "cloud workspace-runtime, the real hosted-node control plane, and a REAL BUILT production web bundle (see " +
-      "this file's HARNESS NOTES). Unset -> loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
+      "cloud workspace-runtime, the real hosted-node control plane, and a built production web bundle.",
   )
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ browser }) => {
     if (!TIER_REAL) return
     test.setTimeout(180_000)
     scripted = await startScriptedModelServer()
@@ -122,14 +95,20 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
       outDir: OUT_DIR,
       previewPort: PREVIEW_PORT,
     })
+    const probe = await browser.newPage()
+    try {
+      await seedWorkspace(probe, fixture.info, "cloud")
+      await probe.goto(`${webApp.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
+      await gateReachesReady(probe, 45_000)
+    } finally {
+      await probe.close()
+    }
   })
 
   test.afterAll(async () => {
     if (!TIER_REAL) return
     try {
-      if (!gateProbeError) {
-        expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
-      }
+      expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
     } finally {
       await Promise.allSettled([webApp?.close(), fixture?.close(), scripted?.close()])
     }
@@ -144,96 +123,60 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
   // DIAGNOSTIC, permanent — see the identical note in `web-signed-userhosted
   // .spec.ts`: surfaces the fixture's own server log on any non-green result,
   // which is otherwise invisible from a client-side Playwright error alone.
-  test.afterEach(async (_fixtures, testInfo) => {
+  test.afterEach(async () => {
+    const testInfo = test.info()
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
     console.log(
       `\n[web-signed-cloud] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
     )
   })
 
-  /**
-   * GATE PROBE — not a plan scenario in its own right. Runs FIRST, once,
-   * against a throwaway page, and records whether the cloud connect gate
-   * reaches ready at all. Every scenario below reads `gateProbeError` and
-   * `test.fixme`s itself with the exact probe failure if it is set, rather
-   * than each independently burning its own multi-minute timeout on the same
-   * root cause with a less legible error. If this probe passes, it also
-   * doubles as this lane's own A1-equivalent diagnostic (the composer is
-   * reachable at all) before any scenario spends real turns proving more.
-   */
-  test("GATE PROBE: the cloud connect gate reaches ready (not a plan scenario — see file header)", async ({ page }) => {
-    if (!TIER_REAL) return
-    await seedWorkspace(page, fixture!.info, "cloud")
-    await page.goto(`${webApp!.url}${sessionRoute(fixture!.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
-    try {
-      await gateReachesReady(page, 45_000)
-    } catch (err) {
-      gateProbeError =
-        `cloud connect gate did not reach ready: ${String(err)}. This reproduces real-cloud-relay.spec.ts's ` +
-        `documented "Workspace startup failed" blocker (prepareWorkspaceRuntime's resolve rejecting an already-` +
-        `ready cloud workspace) against a BUILT web bundle instead of that spec's dev-server one, ruling out the ` +
-        `build-vs-dev-server axis as the cause. See docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md, ` +
-        `real-cloud-relay.spec.ts's HARNESS NOTES "REMAINING BLOCKER".`
-      throw new Error(`GATING: ${gateProbeError}`, { cause: err })
-    }
-  })
-
   test("A2: reload mid-session still renders the transcript and completes a further turn", async ({ page }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyA2({ ...ctx(), page })
+    await journeyA2(ctx(page))
   })
 
   test("A3: a cold deep link /w/<ws>/session/<id> loads that session", async ({ page }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyA3({ ...ctx(), page })
+    await journeyA3(ctx(page))
   })
 
   test("B1/B2/B3/B4: a new session's row appears live, completes a turn, auto-titles, and accepts a second message", async ({
     page,
   }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyB1toB4({ ...ctx(), page })
+    await journeyB1toB4(ctx(page))
   })
 
   test("B5/B6: re-prompting an older row bumps it to the top, and its row stays unique", async ({ page }) => {
     test.setTimeout(150_000)
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyB5B6({ ...ctx(), page })
+    await journeyB5B6(ctx(page))
   })
 
   test("B7: the background status dot transitions working -> done on a row mounted while idle and never focused", async ({
     page,
   }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyB7({ ...ctx(), page })
+    await journeyB7(ctx(page))
   })
 
   test("B8: reload preserves rail title, order, and status", async ({ page }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyB8({ ...ctx(), page })
+    await journeyB8(ctx(page))
   })
 
   test("B9: sidebar and compact-switcher status dots agree, including a transition on an already-mounted tab", async ({
     page,
   }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyB9({ ...ctx(), page })
+    await journeyB9(ctx(page))
   })
 
   test("C1: a new draft resolves harness/model within 5s with no reload needed", async ({ page }) => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyC1({ ...ctx(), page })
+    await journeyC1(ctx(page))
   })
 
   test("C4: switching harness survives a reload and completes a second turn", async ({ page }) => {
     test.setTimeout(180_000)
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyC4({ ...ctx(), page })
+    await journeyC4(ctx(page))
   })
 
   test("D1/D2/D3/E1: a real terminal streams a live prompt and its row aligns with session rows", async ({ page }) => {
     test.setTimeout(120_000)
-    test.fixme(!!gateProbeError, gateProbeError)
-    await journeyD1toD3E1({ ...ctx(), page })
+    await journeyD1toD3E1(ctx(page))
   })
 })

@@ -4,7 +4,6 @@
   "app/workbench/rail/rail-sidebar.tsx": 2480,
   "features/terminal/ui/terminal.tsx": 1195,
   "app/providers/layout.tsx": 933,
-  "app/demo/handlers.ts": 1002,
   "features/session/ui/session-screen.tsx": 1548,
   "features/session/ui/message-timeline.tsx": 1997,
   "features/session/store/session-controller.ts": 1107

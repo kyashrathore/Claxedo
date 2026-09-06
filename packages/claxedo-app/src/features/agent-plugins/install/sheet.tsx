@@ -37,9 +37,8 @@ const pluginName = (plugin: PluginCandidate) =>
 const monogram = (text: string) => (text.trim()[0] ?? "?").toUpperCase()
 
 /**
- * Harness rows for step 1. A harness the candidate cannot serve is the one the
- * catalog already reports as `artifact-unavailable` — the same fact the old
- * catalog used to refuse Enable — so it is shown disabled with that reason.
+ * Unavailability is never recomputed here: a row is disabled on the catalog's own
+ * `artifact-unavailable` status and carries the catalog's reason text.
  */
 export function harnessRows(plugin: PluginCandidate, supported: AgentPluginHarness[]): HarnessRow[] {
   return supported.map((harnessId) => {

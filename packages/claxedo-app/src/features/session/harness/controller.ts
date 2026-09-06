@@ -23,7 +23,7 @@ export type HarnessSelectionControllerStore = {
   /** Re-run a hydration probe for a scope still stuck in "polling". */
   reprobe(scope: string, input?: HarnessScopeInput): void | Promise<void>
   /**
-   * Standing harness-health probe (T4): fetch the harness route directly and move
+   * Standing harness-health probe: fetch the harness route directly and move
    * readiness ready<->degraded from the forwarded `harnessHealth`. Unlike
    * `reprobe`, it bypasses the session-config short-circuit so a harness that died
    * after settling is observed on an existing session.

@@ -80,7 +80,7 @@ describe("opencodeProviderCatalog", () => {
 
   test("an unavailable catalog with nothing cached throws instead of returning empty", async () => {
     // "we cannot reach the catalog" is a different fact from "you have no
-    // providers"; collapsing them is what R8 forbids.
+    // providers"; collapsing them would show an outage as an empty picker.
     await expect(
       opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchFails() }),
     ).rejects.toBeInstanceOf(OpenCodeCatalogUnavailableError)

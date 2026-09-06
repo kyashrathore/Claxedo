@@ -26,8 +26,8 @@ import { readField, readString } from "@/lib/record"
  * through `platform/runtime/workspace-startup.ts`, and `app/entry/main.tsx`
  * binds this implementation for the hosted build.
  *
- * Reading the runtime RECORD used to live here too and does not any more; see
- * `platform/runtime/workspace-runtime-record.ts` for why.
+ * Reading the runtime record lives in `platform/runtime/workspace-runtime-record.ts`,
+ * not here.
  */
 
 const ENSURE_RUNTIME_FRESH_MS = 30_000
@@ -96,7 +96,7 @@ function isHostOfflineBody(text: string) {
 
 /**
  * Drive the user-hosted connecting sequence. Resolves the workspace's relay
- * connection (mint) and probes the runtime health endpoint THROUGH the relay,
+ * connection (mint) and probes the runtime health endpoint through the relay,
  * surfacing each phase via `onLog`/`onStatus`. When the host is offline the
  * relay answers `503 user_hosted_app_offline` (or the connection mint fails) —
  * we report `offline: true` so the caller can render the dedicated offline
@@ -340,7 +340,7 @@ export async function prepareWorkspaceSessionWorktree(
  *
  * Composition installs this — see `app/entry/main.tsx`. Assembled here rather
  * than at the entry so that adding an operation to the port is a type error in
- * THIS file, next to the implementation, instead of in a file whose job is to
+ * this file, next to the implementation, instead of in a file whose job is to
  * start the app.
  */
 export const cloudWorkspaceStartup: WorkspaceStartupPort = {

@@ -4,13 +4,11 @@ import { createShellLayoutState } from "./state"
 
 afterEach(cleanup)
 
-// Regression coverage for the "sidebar-toggle collapses the rail's width"
-// investigation (e2e core-sidebar-tree behavior 13). The pure command/state
-// logic is covered by state.test.ts; this drives the SAME accessor chain the
-// app wires — app-shell-layout.tsx's `sidebarWidth` derived from
-// `config().regions.rail.size`, bound into a `--claxedo-sidebar-width` style
-// var the way rail-sidebar-shell.tsx binds it — through a real Solid mount, to
-// prove `size.value: 0` actually propagates to the DOM when `docked` flips.
+// `state.test.ts` covers the pure command/state logic. This drives the accessor
+// chain the app actually wires — `app-shell-layout.tsx`'s `sidebarWidth` derived
+// from `config().regions.rail.size` and bound into a `--claxedo-sidebar-width`
+// style var the way `rail-sidebar-shell.tsx` binds it — through a real Solid
+// mount, so `size.value: 0` is proven to reach the DOM when `docked` flips.
 describe("shell layout rail width reactivity (DOM)", () => {
   test("toggling a pinned rail propagates size 0 to the bound width style var and back", () => {
     let layout!: ReturnType<typeof createShellLayoutState>

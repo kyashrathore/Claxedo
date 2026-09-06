@@ -1,4 +1,5 @@
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { asRecord } from "@claxedo/helpers/guards"
 import { OPENAI_CLIENT_ID, OPENAI_TOKEN_URL } from "../provider-auth/openai-oauth"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
@@ -9,12 +10,11 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
  * carries an access token *and* a refresh token; the CLI refreshes the pair
  * transparently on use, so an access token that expired hours ago says nothing
  * about whether the subscription works. `credentials/sync.ts` stores both but
- * derives `expires_at` from the **access** token's JWT `exp`, which used to make
- * `verifyCredential` declare every imported-and-idle Codex login permanently
- * `expired` without ever contacting the provider.
+ * derives `expires_at` from the access token's JWT `exp`, which goes stale
+ * long before the refresh token does — this module renews the pair so
+ * `verifyCredential` never mistakes an idle Codex login for an expired one.
  *
- * Request shape matches the two existing implementations in this repo —
- * `agent-sdk-runtime/src/harnesses/codex/driver.ts` and
+ * Request shape matches `agent-sdk-runtime/src/harnesses/codex/driver.ts` and
  * `core/src/plugin/provider/openai.ts` — form-encoded, no client secret.
  */
 
@@ -119,7 +119,7 @@ function rewriteSecret(
   if ("expires" in updated) updated.expires = next.expiresAt
   if ("last_refresh" in updated) updated.last_refresh = new Date(next.now()).toISOString()
 
-  const tokens = jsonRecord(value.tokens)
+  const tokens = asRecord(value.tokens)
   if (tokens) {
     updated.tokens = {
       ...tokens,
@@ -129,7 +129,7 @@ function rewriteSecret(
     }
   }
 
-  const oauth = jsonRecord(value.oauth)
+  const oauth = asRecord(value.oauth)
   if (oauth) {
     updated.oauth = {
       ...oauth,

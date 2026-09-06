@@ -3,9 +3,7 @@ import {
   cliCallbackFields,
   cliToken,
   localCallback,
-  number,
   postToken,
-  text,
   userIdentity,
 } from "./cli-login-token"
 
@@ -42,21 +40,6 @@ describe("userIdentity", () => {
     expect(userIdentity({ id: "user_1" })).toBe("user_1")
     expect(userIdentity({})).toBe("browser-session")
     expect(userIdentity(null)).toBe("browser-session")
-  })
-})
-
-describe("text / number coercion", () => {
-  test("text trims and rejects blanks/non-strings", () => {
-    expect(text("  hi ")).toBe("hi")
-    expect(text("   ")).toBeUndefined()
-    expect(text(42)).toBeUndefined()
-  })
-
-  test("number accepts finite numbers only", () => {
-    expect(number(10)).toBe(10)
-    expect(number(Number.NaN)).toBeUndefined()
-    expect(number(Infinity)).toBeUndefined()
-    expect(number("10")).toBeUndefined()
   })
 })
 

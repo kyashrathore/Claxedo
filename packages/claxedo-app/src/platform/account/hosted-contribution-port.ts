@@ -1,5 +1,5 @@
 /**
- * How a composition turns a hosted contribution set ON and, crucially, OFF.
+ * How a composition turns a hosted contribution set on and, crucially, off.
  *
  * `app/composition/product-contributions.ts` owned activation and had no way
  * back: once the hosted set was registered it stayed registered for the life of
@@ -7,14 +7,14 @@
  * surface installed until a reload. The missing half is not a line in that
  * module — it is a lifecycle, and a lifecycle needs an owner.
  *
- * It lives HERE, next to the account port, for one reason: the decision is
+ * It lives here, next to the account port, for one reason: the decision is
  * "does this window hold a signed account", and `platform/*` may not import
  * `@/app/*` (`architecture/ownership.ts`). A hosted-contribution lifecycle
  * declared in app composition could see the account; one declared in platform
  * can be handed the account and stays reusable. The call site keeps the
  * contribution vocabulary.
  *
- * Which is why this is GENERIC. `ContentSurfaceContribution` is an app type and
+ * Which is why this is generic. `ContentSurfaceContribution` is an app type and
  * cannot be named from here; re-declaring its shape across the boundary would
  * create two contracts that drift. `T extends { id: string }` is the entire
  * property this module needs — ids are what it validates and what it removes
@@ -100,10 +100,10 @@ export function createHostedContributionPort<T extends { id: string }>(
   input: HostedContributionInput<T>,
 ): HostedContributionPort {
   /**
-   * The loaded bundle, kept ACROSS deactivation.
+   * The loaded bundle, kept across deactivation.
    *
    * Sign-out → sign-in in one window must not re-run the loader: the chunk is
-   * already in memory and re-importing it buys nothing. Only a load that FAILED
+   * already in memory and re-importing it buys nothing. Only a load that failed
    * leaves this unset, which is what makes a failed activation retryable.
    */
   let bundle: readonly T[] | undefined
@@ -136,7 +136,7 @@ export function createHostedContributionPort<T extends { id: string }>(
       const attempt = (async () => {
         const contributions = bundle ?? (bundle = await input.load())
 
-        // Re-checked AFTER the load. A dynamic import takes a network round
+        // Re-checked after the load. A dynamic import takes a network round
         // trip on a cold cache; signing out inside that window and registering
         // anyway would install hosted surfaces into a signed-out app, which is
         // the failure the account gate exists to prevent.
@@ -153,7 +153,7 @@ export function createHostedContributionPort<T extends { id: string }>(
           )
         }
 
-        // Validated in full before ANY registration. A partial registration
+        // Validated in full before any registration. A partial registration
         // would leave a surface installed that `deactivate()` does not know
         // about, so there would be no way to remove it.
         const registered = new Set(input.registeredIds())
@@ -178,9 +178,9 @@ export function createHostedContributionPort<T extends { id: string }>(
         installed = contributions
       })()
 
-      // Cached only while it is pending or fulfilled. Keeping a REJECTED
-      // promise is how one transient chunk-load failure used to disable hosted
-      // mode for the life of the window, with no way back short of a reload.
+      // Cached only while it is pending or fulfilled. Keeping a rejected
+      // promise would disable hosted mode for the life of the window, with no
+      // way back short of a reload.
       activation = attempt
       attempt.catch(() => {
         if (activation === attempt) activation = undefined

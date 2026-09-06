@@ -47,8 +47,8 @@ describe("extractPromptFromParts", () => {
     const result = extractPromptFromParts([
       text("short"),
       text("the longer real prompt"),
-      text("SYNTHETIC", { synthetic: true }),
-      text("IGNORED", { ignored: true }),
+      text("SYNTHETIC".repeat(10), { synthetic: true }),
+      text("IGNORED".repeat(10), { ignored: true }),
     ])
     expect(result).toEqual([{ type: "text", content: "the longer real prompt", start: 0, end: 22 }])
   })
@@ -74,6 +74,15 @@ describe("extractPromptFromParts", () => {
     )
     const file = result.find((part) => part.type === "file")
     expect(file).toMatchObject({ type: "file", path: "src/a.ts" })
+  })
+
+  test("preserves a file outside the directory that shares its string prefix", () => {
+    const source = "@/repository/a.ts"
+    const result = extractPromptFromParts(
+      [text(source), filePart({ value: source, start: 0, end: source.length })],
+      { directory: "/repo" },
+    )
+    expect(result).toMatchObject([{ type: "file", path: "/repository/a.ts", content: source }])
   })
 
   test("parses a line selection from the file url query", () => {

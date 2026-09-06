@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
 import { arr, rec, str } from "../json-value"
 
@@ -38,15 +39,6 @@ const CURSOR_HOOK_SCRIPT = "cursor-hook.sh"
 const CLAUDE_NOTIFY_RELATIVE = `hooks/${NOTIFY_SCRIPT}`
 const CLAUDE_DYNAMIC_NOTIFY = `$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}`
 const MANAGED_HOOK_PATH_PATTERN = /\/\.claxedo(?:-[^/'"\s\\]+)?\//
-
-/**
- * These settings files are user-owned and arbitrarily shaped, so every read
- * walks them field by field. An absent or non-object node reads as empty rather
- * than throwing, which keeps the reconcile loops below linear.
- */
-function asRecord(value: unknown): Record<string, unknown> {
-  return rec(value) ?? {}
-}
 
 /**
  * The record at `key`, creating and installing an empty one when the file has
@@ -141,7 +133,7 @@ function removeManagedHooksFromDefinition(
 ) {
   const hooks = definition.hooks
   if (!Array.isArray(hooks)) return definition
-  const filtered = hooks.filter((hook) => !isManaged(str(asRecord(hook).command)))
+  const filtered = hooks.filter((hook) => !isManaged(str(asRecordOrEmpty(hook).command)))
   if (filtered.length === hooks.length) return definition
   if (filtered.length === 0) return null
   return { ...definition, hooks: filtered }
@@ -154,7 +146,7 @@ async function upsertNestedHookSettings(input: {
   events: { event: string; definition: Record<string, unknown> }[]
   isManaged: (command: string | undefined) => boolean
 }) {
-  const existing = asRecord(await readJson(input.file))
+  const existing = asRecordOrEmpty(await readJson(input.file))
   const hooks = recordAt(existing, "hooks")
 
   for (const item of input.events) {
@@ -162,7 +154,7 @@ async function upsertNestedHookSettings(input: {
     if (Array.isArray(current)) {
       hooks[item.event] = [
         ...current.flatMap((def) => {
-          const cleaned = removeManagedHooksFromDefinition(asRecord(def), input.isManaged)
+          const cleaned = removeManagedHooksFromDefinition(asRecordOrEmpty(def), input.isManaged)
           return cleaned ? [cleaned] : []
         }),
         item.definition,
@@ -208,7 +200,7 @@ function pruneCodexHooks(hooks: Record<string, unknown>, notifyPath: string) {
   for (const [name, current] of Object.entries(hooks)) {
     if (!Array.isArray(current)) continue
     const entries = current.flatMap((def) => {
-      const next = removeManagedHooksFromDefinition(asRecord(def), (cmd) =>
+      const next = removeManagedHooksFromDefinition(asRecordOrEmpty(def), (cmd) =>
         cmd?.includes(notifyPath) || isManagedHookCommand(cmd, NOTIFY_SCRIPT),
       )
       return next ? [next] : []
@@ -222,7 +214,7 @@ function pruneCodexHooks(hooks: Record<string, unknown>, notifyPath: string) {
 }
 
 async function materializeCodex(input: { file: string; notifyPath: string; force: boolean; native: boolean }) {
-  const existing = asRecord(await readJson(input.file))
+  const existing = asRecordOrEmpty(await readJson(input.file))
   if (!existing.hooks && !input.native) return
   const hooks = recordAt(existing, "hooks")
   pruneCodexHooks(hooks, input.notifyPath)
@@ -244,7 +236,7 @@ async function materializeCodex(input: { file: string; notifyPath: string; force
 }
 
 async function materializeGemini(input: { file: string; hookPath: string; force: boolean }) {
-  const root = asRecord(await readJson(input.file))
+  const root = asRecordOrEmpty(await readJson(input.file))
   const hooks = recordAt(root, "hooks")
 
   for (const event of ["BeforeAgent", "AfterAgent", "AfterTool"]) {
@@ -252,13 +244,13 @@ async function materializeGemini(input: { file: string; hookPath: string; force:
       current: arr(hooks[event]),
       desired: [{ hooks: [{ type: "command", command: input.hookPath }] }],
       isManaged: (entry) => {
-        const nested = arr(asRecord(entry).hooks) ?? []
+        const nested = arr(asRecordOrEmpty(entry).hooks) ?? []
         return nested.some((hook) => {
-          const command = str(asRecord(hook).command)
+          const command = str(asRecordOrEmpty(hook).command)
           return command === input.hookPath || isManagedHookCommand(command, GEMINI_HOOK_SCRIPT)
         })
       },
-      isEquivalent: (a, b) => JSON.stringify(asRecord(a).hooks ?? []) === JSON.stringify(asRecord(b).hooks ?? []),
+      isEquivalent: (a, b) => JSON.stringify(asRecordOrEmpty(a).hooks ?? []) === JSON.stringify(asRecordOrEmpty(b).hooks ?? []),
     })
   }
 
@@ -266,7 +258,7 @@ async function materializeGemini(input: { file: string; hookPath: string; force:
 }
 
 async function materializeCursor(input: { file: string; hookPath: string; force: boolean }) {
-  const root = asRecord(await readJson(input.file))
+  const root = asRecordOrEmpty(await readJson(input.file))
   if (typeof root.version !== "number") root.version = 1
   const hooks = recordAt(root, "hooks")
   const desired: Record<string, { command: string }> = {
@@ -281,10 +273,10 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
       current: arr(hooks[event]),
       desired: [entry],
       isManaged: (item) => {
-        const command = str(asRecord(item).command)
+        const command = str(asRecordOrEmpty(item).command)
         return command?.includes(input.hookPath) || isManagedHookCommand(command, CURSOR_HOOK_SCRIPT)
       },
-      isEquivalent: (a, b) => asRecord(a).command === asRecord(b).command,
+      isEquivalent: (a, b) => asRecordOrEmpty(a).command === asRecordOrEmpty(b).command,
     })
   }
 
@@ -292,7 +284,7 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
 }
 
 async function materializeMastra(input: { file: string; notifyPath: string; force: boolean }) {
-  const root = asRecord(await readJson(input.file))
+  const root = asRecordOrEmpty(await readJson(input.file))
   const command = `bash ${shellQuote(input.notifyPath)}`
 
   for (const event of ["UserPromptSubmit", "Stop", "PostToolUse"]) {
@@ -300,10 +292,10 @@ async function materializeMastra(input: { file: string; notifyPath: string; forc
       current: arr(root[event]),
       desired: [{ type: "command", command }],
       isManaged: (entry) => {
-        const current = str(asRecord(entry).command)
+        const current = str(asRecordOrEmpty(entry).command)
         return current?.includes(input.notifyPath) || isManagedHookCommand(current, NOTIFY_SCRIPT)
       },
-      isEquivalent: (a, b) => asRecord(a).command === asRecord(b).command,
+      isEquivalent: (a, b) => asRecordOrEmpty(a).command === asRecordOrEmpty(b).command,
     })
   }
 

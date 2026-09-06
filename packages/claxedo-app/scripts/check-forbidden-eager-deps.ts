@@ -21,7 +21,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { FORBIDDEN_DEPS, type ForbiddenDep } from "./forbidden-eager-deps.config.ts"
+import { FORBIDDEN_DEPS, type ForbiddenDep } from "./forbidden-eager-deps.config"
 import { stripComments } from "../src/architecture/import-graph"
 
 const here = path.dirname(fileURLToPath(import.meta.url))

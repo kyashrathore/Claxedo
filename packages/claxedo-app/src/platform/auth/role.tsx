@@ -35,6 +35,7 @@ export const RolePolicy: Record<RelayRole, ReadonlySet<WorkspaceCapability>> = {
 export const PrincipalPolicy: Record<Principal["kind"], ReadonlySet<PrincipalCapability>> = {
   anonymous: new Set(["view.account"]),
   local: new Set(),
+  "signed-unresolved": new Set(["share.workspace", "view.account"]),
   signed: new Set(["share.workspace", "view.account"]),
   "org-member": new Set(["share.workspace", "view.account"]),
 }

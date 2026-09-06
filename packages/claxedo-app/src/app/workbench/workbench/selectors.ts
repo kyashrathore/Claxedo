@@ -1,5 +1,5 @@
 import type { Pane, PaneRect, Snapshot, WorkbenchState } from "./types"
-import { computePaneRects } from "./reducers/tree-helpers"
+import { computePaneRects, leafIdsInOrder } from "./reducers/tree-helpers"
 
 export const selectors = {
   aliveContents(state: WorkbenchState): readonly string[] {
@@ -15,8 +15,13 @@ export const selectors = {
     return pane?.id ?? null
   },
 
+  /** Spatial order shared by rendering and left/right pane navigation. */
   visiblePanes(state: WorkbenchState): readonly Pane[] {
-    return state.panes
+    const panes = new Map(state.panes.map((pane) => [pane.id, pane]))
+    return leafIdsInOrder(state.split.root).flatMap((id) => {
+      const pane = panes.get(id)
+      return pane ? [pane] : []
+    })
   },
 
   paneRect(state: WorkbenchState, paneId: string): PaneRect | undefined {

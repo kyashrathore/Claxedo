@@ -81,10 +81,6 @@ export function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
 
-export function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
 /** The raw parsed body, `unknown` rather than `any`, for a schema or `asRecord` to narrow. */
 export async function json(req: Request): Promise<unknown> {
   return await req.json().catch(() => ({}))

@@ -12,23 +12,13 @@ export function isLikelyTui(input: {
 }
 
 /**
- * REMOVED: `filterModeSequences`.
- *
- * The renderer used to persist a snapshot of the terminal modes it had scanned
- * out of the stream, then replay that snapshot on the next mount — filtered by
- * `likelyTui`, which is a match on the tab's TITLE. A tab merely NAMED "Claude"
- * therefore re-armed mouse reporting on every mount, whether or not a TUI was
- * running, which sprayed `ESC[<35;…M` reports into the shell prompt.
- *
- * Modes are now resynced from live server-side truth: the PTY host mirrors its
- * output through a headless xterm and sends a preamble built from the ACTUAL
- * current mode state on every attach (workspace-runtime `pty/mode-tracker.ts`).
- * A snapshot the renderer guessed is strictly worse than asking the process,
- * so there is nothing left to filter.
- *
- * `isLikelyTui` survives because the OTHER heuristics it feeds — cursor replay
- * strategy, SIGWINCH forcing, settle delays — are about how to reconnect, not
- * about what the program's modes are.
+ * Terminal modes are resynced from live server-side truth: the PTY host
+ * mirrors its output through a headless xterm and sends a preamble built from
+ * the current mode state on every attach (workspace-runtime
+ * `pty/mode-tracker.ts`). `isLikelyTui` plays no part in that — it only feeds
+ * the other heuristics below (cursor replay strategy, SIGWINCH forcing, settle
+ * delays), which are about how to reconnect, not about what the program's
+ * modes are.
  */
 
 export function cursorPlan(input: {
@@ -43,18 +33,13 @@ export function cursorPlan(input: {
   const LOOKBACK_BYTES = input.lookbackBytes ?? 256 * 1024
 
   const hasPersistedBuffer = input.snapshotHasBuffer
-  // REMOVED: `tailOnReload`, which asked the server for the LIVE TAIL when a
-  // reload left us with no persisted buffer and no cursor.
-  //
-  // That is precisely the case where the server's buffer is the only copy of
-  // the session's scrollback, and asking for the tail throws it away: the PTY
-  // is alive with a full Claude Code session behind it and the user gets an
-  // empty screen. Observed directly — pty running, 22KB of scrollback held
-  // server-side, terminal blank.
-  //
-  // The live tail is only ever the right ask when the client ALREADY has the
+  // The live tail is only the right ask when the client already has the
   // content locally (the `!likelyTui && hasPersistedBuffer` branch below),
-  // because then replaying would duplicate it. With nothing local, replay.
+  // because replaying it then would duplicate what's on screen. A reload that
+  // lands with no persisted buffer and no cursor must not ask for the tail
+  // either: the server's buffer is the PTY's only copy of scrollback, and
+  // asking for the tail there throws it away, leaving the screen blank behind
+  // a session that is still alive.
   const hasAltSnapshot = input.snapshotWasAltScreen && input.snapshotHasBuffer
   const splitTuiLiveTail = input.likelyTui && input.splitWidthChanged && input.snapshotHasBuffer
 

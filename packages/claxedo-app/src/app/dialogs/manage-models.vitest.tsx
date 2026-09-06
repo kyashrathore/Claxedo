@@ -1,78 +1,78 @@
-import { cleanup, render, waitFor } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { createSignal } from "solid-js"
 
-const providerState = vi.hoisted(() => ({
-  connected: [
-    { id: "anthropic", name: "Anthropic", models: {} },
-    { id: "openai", name: "OpenAI", models: {} },
-  ],
-  loaded: [] as string[],
+const state = vi.hoisted(() => ({
+  model: undefined as undefined | {
+    list: () => unknown[]
+    visible: (key: { providerID: string; modelID: string }) => boolean
+    setVisibility: ReturnType<typeof vi.fn>
+    hydrate: ReturnType<typeof vi.fn>
+  },
 }))
 
-vi.mock("@/app/providers/use-providers", () => ({
-  popularProviders: ["anthropic", "openai", "google"],
-}))
+vi.mock("@/features/session/providers/session-selection", () => ({ useLocal: () => ({ model: state.model }) }))
+vi.mock("@/app/providers/use-providers", () => ({ popularProviders: ["anthropic", "openai"] }))
+vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
+vi.mock("@opencode-ai/ui/context/dialog", () => ({ useDialog: () => ({ show: vi.fn() }) }))
+vi.mock("@opencode-ai/ui/dialog", () => ({ Dialog: (props: { children?: unknown }) => <div>{props.children as never}</div> }))
 
-// The dialog no longer holds a catalog of its own: the pane's model store owns
-// the catalog of the (workspace, harness) it is mounted for, and `hydrate()` is
-// the one call that expands its connected providers.
-vi.mock("@/features/session/providers/session-selection", () => ({
-  useLocal: () => ({
-    model: {
-      list: () => [],
-      visible: () => true,
-      setVisibility: () => undefined,
-      hydrate: async () => {
-        for (const provider of providerState.connected) providerState.loaded.push(provider.id)
-      },
-    },
-  }),
-}))
+import { DialogManageModels } from "./manage-models"
 
-vi.mock("@/platform/i18n/provider", () => ({
-  useLanguage: () => ({ t: (key: string) => key }),
-}))
-
-vi.mock("@opencode-ai/ui/context/dialog", () => ({
-  useDialog: () => ({ show: () => undefined }),
-}))
-
-vi.mock("@opencode-ai/ui/dialog", () => ({
-  Dialog: (props: { children?: unknown }) => <div>{props.children as never}</div>,
-}))
-
-vi.mock("@opencode-ai/ui/list", () => ({
-  List: () => <div data-testid="model-list" />,
-}))
-
-vi.mock("@opencode-ai/ui/button", () => ({
-  Button: (props: { children?: unknown }) => <button>{props.children as never}</button>,
-}))
-
-vi.mock("@opencode-ai/ui/switch", () => ({ Switch: () => null }))
-vi.mock("@opencode-ai/ui/tooltip", () => ({ Tooltip: (props: { children?: unknown }) => props.children }))
-vi.mock("@/app/dialogs/select-provider", () => ({ DialogSelectProvider: () => null }))
-
-const { DialogManageModels } = await import("./manage-models")
-
-afterEach(() => {
-  cleanup()
-  providerState.loaded.length = 0
+beforeEach(() => {
+  const models = [
+    { id: "opus", name: "Opus", provider: { id: "anthropic", name: "Anthropic" } },
+    { id: "sonnet", name: "Sonnet", provider: { id: "anthropic", name: "Anthropic" } },
+    { id: "gpt", name: "GPT", provider: { id: "openai", name: "OpenAI" } },
+  ]
+  const [visible, setVisible] = createSignal(new Set(["anthropic:opus", "anthropic:sonnet", "openai:gpt"]))
+  state.model = {
+    list: () => models,
+    visible: (key) => visible().has(`${key.providerID}:${key.modelID}`),
+    setVisibility: vi.fn((key: { providerID: string; modelID: string }, checked: boolean) => {
+      setVisible((previous) => {
+        const next = new Set(previous)
+        const id = `${key.providerID}:${key.modelID}`
+        if (checked) next.add(id)
+        else next.delete(id)
+        return next
+      })
+    }),
+    hydrate: vi.fn(async () => undefined),
+  }
 })
 
-describe("DialogManageModels provider detail loading", () => {
-  test("expands every configured provider when the dialog opens", async () => {
-    render(() => <DialogManageModels />)
+afterEach(cleanup)
 
-    await waitFor(() => {
-      expect(providerState.loaded.sort()).toEqual(["anthropic", "openai"])
-    })
+async function mount() {
+  const result = render(() => <DialogManageModels />)
+  await screen.findByText("Opus")
+  return result
+}
+
+describe("DialogManageModels", () => {
+  test("asks the pane's model owner to hydrate once when opened", async () => {
+    await mount()
+    expect(state.model?.hydrate).toHaveBeenCalledTimes(1)
   })
 
-  test("does not expand providers that are only present in the catalog", async () => {
-    render(() => <DialogManageModels />)
+  test("selecting a model changes only that model's visibility", async () => {
+    const { container } = await mount()
+    const row = container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="anthropic:opus"]')!
+    fireEvent.click(row)
+    expect(state.model?.setVisibility.mock.calls).toEqual([[{ providerID: "anthropic", modelID: "opus" }, false]])
+    await waitFor(() => expect(within(row).getByRole("switch")).not.toBeChecked())
+    expect(state.model?.visible({ providerID: "anthropic", modelID: "sonnet" })).toBe(true)
+    expect(state.model?.visible({ providerID: "openai", modelID: "gpt" })).toBe(true)
+  })
 
-    await waitFor(() => expect(providerState.loaded.length).toBe(2))
-    expect(providerState.loaded).not.toContain("google")
+  test("the provider switch changes its models without changing another provider", async () => {
+    await mount()
+    fireEvent.click(screen.getByRole("switch", { name: "Anthropic" }))
+    expect(state.model?.setVisibility.mock.calls).toEqual([
+      [{ providerID: "anthropic", modelID: "opus" }, false],
+      [{ providerID: "anthropic", modelID: "sonnet" }, false],
+    ])
+    expect(state.model?.visible({ providerID: "openai", modelID: "gpt" })).toBe(true)
   })
 })

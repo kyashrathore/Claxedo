@@ -54,7 +54,7 @@ export interface BasicToolProps {
   triggerHref?: string
   triggerAsLink?: boolean
   clickable?: boolean
-  /** Epoch ms the tool started running; drives the live "for Xs" elapsed while pending (T6). */
+  /** Epoch ms the tool started running; drives the live "for Xs" elapsed while pending. */
   startedAt?: number
 }
 
@@ -107,7 +107,7 @@ export function BasicTool(props: BasicToolProps) {
   const pending = () => props.status === "pending" || props.status === "running"
   const hasChildren = () => (props.defer ? "children" in props : props.children)
 
-  // Live elapsed (T6): tick once a second only while the tool is running.
+  // Live elapsed: tick once a second only while the tool is running.
   const [nowMs, setNowMs] = createSignal(Date.now())
   createEffect(() => {
     if (!pending() || typeof props.startedAt !== "number") return
@@ -351,9 +351,9 @@ function label(input: Record<string, unknown> | undefined) {
 }
 
 /**
- * Arg chips for tools with no registered renderer. Keep them to short scalars: a long
- * string (a shell command, a patch body) is already the row's subtitle or is simply noise
- * at row width, and repeating the subtitle verbatim is what made these rows unreadable.
+ * Arg chips for tools with no registered renderer. Short scalars only: a long string (a
+ * shell command, a patch body) is already the row's subtitle, and repeating it at row
+ * width makes the row unreadable.
  */
 function args(input: Record<string, unknown> | undefined, exclude?: string) {
   if (!input) return []

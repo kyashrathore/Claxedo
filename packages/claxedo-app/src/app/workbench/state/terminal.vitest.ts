@@ -1,9 +1,9 @@
 // Terminal slice behavior spec (vitest — needs fake timers + a reactive owner
 // for the initial-reservation timer and its onCleanup).
 //
-// Covers the two pieces of nontrivial stateful logic the audit flagged as
-// untested: the lifecycle transition table and the process-pty pending-start
-// counter (including the bare 15s reservation timer and its cleanup).
+// Covers the two nontrivial pieces of stateful logic in this slice: the
+// lifecycle transition table and the process-pty pending-start counter
+// (including the bare 15s reservation timer and its cleanup).
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createComputed, createRoot } from "solid-js"

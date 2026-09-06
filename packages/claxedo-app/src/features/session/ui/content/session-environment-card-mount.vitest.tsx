@@ -1,5 +1,6 @@
-import { cleanup, render, waitFor } from "@solidjs/testing-library"
-import { createEffect, createSignal } from "solid-js"
+import { cleanup, render } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { SessionEnvironmentCardMount } from "./session-environment-card"
 
@@ -13,8 +14,6 @@ type QueryOptions = {
 
 const harness = vi.hoisted(() => ({
   options: [] as Array<() => QueryOptions>,
-  enabledOwners: [] as string[],
-  fetchedAt: new Map<string, number>(),
   quietDelayMs: 0,
   panelState: () => ({ open: false }),
   status: vi.fn(async () => ({ data: [] })),
@@ -29,29 +28,20 @@ const targetKey = (queryKey: readonly unknown[]) => {
   return undefined
 }
 
-vi.mock("@tanstack/solid-query", () => ({
-  queryOptions: (options: QueryOptions) => options,
-  useQuery: (options: () => QueryOptions) => {
-    harness.options.push(options)
-    let wasEnabled = false
-    createEffect(() => {
-      const current = options()
-      const key = targetKey(current.queryKey)
-      const enabled = current.enabled !== false
-      if (key && enabled && !wasEnabled) {
-        const fetchedAt = harness.fetchedAt.get(key)
-        const staleTime = current.staleTime ?? 0
-        if (fetchedAt === undefined || Date.now() - fetchedAt >= staleTime) {
-          harness.enabledOwners.push(key)
-          harness.fetchedAt.set(key, Date.now())
-          void current.queryFn()
-        }
-      }
-      wasEnabled = enabled
-    })
-    return { data: undefined }
-  },
-}))
+// Observe the options this mount owns while the real query client controls
+// enabled transitions, freshness and polling.
+vi.mock("@tanstack/solid-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/solid-query")>()
+  return {
+    ...actual,
+    useQuery: (options: () => QueryOptions) => {
+      harness.options.push(options)
+      return actual.useQuery(options)
+    },
+  }
+})
+
+let client: QueryClient | undefined
 
 vi.mock("@/features/session/app-ports", () => ({
   useSDK: () => ({
@@ -121,8 +111,8 @@ vi.mock("@/platform/persistence/persist", () => ({
 afterEach(() => {
   cleanup()
   harness.options.length = 0
-  harness.enabledOwners.length = 0
-  harness.fetchedAt.clear()
+  client?.clear()
+  client = undefined
   harness.quietDelayMs = 0
   harness.panelState = () => ({ open: false })
   harness.status.mockClear()
@@ -138,7 +128,12 @@ describe("SessionEnvironmentCardMount query ownership", () => {
     const [panelOpen, setPanelOpen] = createSignal(false)
     harness.panelState = () => ({ open: panelOpen() })
 
-    render(() => <SessionEnvironmentCardMount active={active} sessionId={() => "ses_mount"} />)
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(() => (
+      <QueryClientProvider client={client!}>
+        <SessionEnvironmentCardMount active={active} sessionId={() => "ses_mount"} />
+      </QueryClientProvider>
+    ))
 
     const targetOptions = () => harness.options.map((options) => options()).filter((options) => targetKey(options.queryKey))
     const processesOptions = () => targetOptions().find((options) => targetKey(options.queryKey) === "processes")
@@ -147,7 +142,6 @@ describe("SessionEnvironmentCardMount query ownership", () => {
     expect(targetOptions()).toHaveLength(3)
     expect(targetOptions().every((options) => options.enabled === false)).toBe(true)
     expect(processesOptions()?.refetchInterval).toBe(false)
-    expect(harness.enabledOwners).toEqual([])
     expect(harness.status).not.toHaveBeenCalled()
     expect(harness.vcs).not.toHaveBeenCalled()
     expect(harness.processes).not.toHaveBeenCalled()
@@ -155,9 +149,8 @@ describe("SessionEnvironmentCardMount query ownership", () => {
     harness.quietDelayMs = 2_000
     setActive(true)
 
-    await waitFor(() => {
-      expect(harness.enabledOwners).toEqual(["vcs"])
-    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(harness.vcs).toHaveBeenCalledOnce()
     expect(targetOptions().find((options) => targetKey(options.queryKey) === "file-status")?.enabled).toBe(false)
     expect(targetOptions().find((options) => targetKey(options.queryKey) === "vcs")?.enabled).toBe(true)
     expect(processesOptions()?.enabled).toBe(false)
@@ -200,6 +193,11 @@ describe("SessionEnvironmentCardMount query ownership", () => {
     await vi.advanceTimersByTimeAsync(5_001)
     setActive(true)
     await vi.advanceTimersByTimeAsync(250)
+    expect(harness.processes).toHaveBeenCalledTimes(2)
+
+    // A real poller must stop when the retained surface loses ownership.
+    setActive(false)
+    await vi.advanceTimersByTimeAsync(15_000)
     expect(harness.processes).toHaveBeenCalledTimes(2)
   })
 })

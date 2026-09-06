@@ -1,3 +1,4 @@
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { LocalRunStreamEvent, SDKMessage } from "@cursor/sdk"
 import type {
   AgentRuntimeEvent,
@@ -8,7 +9,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
-import { number, object, text } from "../../value"
+import { text } from "../../value"
 
 export type CursorSdkAdapterState = {
   assistantTextByRunId: Record<string, string>
@@ -48,7 +49,7 @@ function assertNever(value: never): never {
 }
 
 function payload(event: { payload: unknown }) {
-  return object(event.payload) ?? {}
+  return asRecord(event.payload) ?? {}
 }
 
 const sdkMessageTypes = {
@@ -70,12 +71,12 @@ const localRunStreamEventTypes = {
 } satisfies Record<LocalRunStreamEvent["type"], true>
 
 function isSdkMessage(value: unknown): value is SDKMessage {
-  const message = object(value)
+  const message = asRecord(value)
   return typeof message?.type === "string" && message.type in sdkMessageTypes
 }
 
 function isLocalRunStreamEvent(value: unknown): value is LocalRunStreamEvent {
-  const message = object(value)
+  const message = asRecord(value)
   return typeof message?.type === "string" && message.type in localRunStreamEventTypes
 }
 
@@ -116,7 +117,7 @@ function unmappedSdkEvent(input: {
 }
 
 function toolInput(value: unknown) {
-  const input = object(value) ?? {}
+  const input = asRecord(value) ?? {}
   return text(input.workingDirectory) && !input.cwd
     ? { ...input, cwd: input.workingDirectory }
     : input
@@ -139,7 +140,7 @@ function cursorTodoStatus(value: unknown) {
 function todosFromInput(input: Record<string, unknown>) {
   const todos = Array.isArray(input.todos) ? input.todos : []
   return todos.flatMap((todo, i) => {
-    const row = object(todo)
+    const row = asRecord(todo)
     if (!row) return []
     return [{
       id: String(i),
@@ -233,26 +234,26 @@ function ensureTool(input: {
 }
 
 function errorMessage(value: unknown) {
-  const row = object(value)
-  const nested = object(row?.error)
+  const row = asRecord(value)
+  const nested = asRecord(row?.error)
   return text(row?.message) ?? text(nested?.message) ?? text(row?.error) ?? text(value) ?? JSON.stringify(value)
 }
 
 function taskErrorMessage(value: unknown) {
-  const row = object(value)
-  const nested = object(row?.error)
+  const row = asRecord(value)
+  const nested = asRecord(row?.error)
   return text(row?.message) ?? text(nested?.message) ?? text(row?.error) ?? text(value) ?? "Cursor task failed"
 }
 
 function successfulOutput(value: unknown) {
-  const row = object(value)
+  const row = asRecord(value)
   if (row?.status === "success" && row.value !== undefined) return row.value
   return value
 }
 
 function taskOutput(value: unknown) {
-  const result = object(value)
-  const success = result?.status === "success" ? object(result.value) : undefined
+  const result = asRecord(value)
+  const success = result?.status === "success" ? asRecord(result.value) : undefined
   if (!success) return successfulOutput(value)
   return safeTaskSuccess(success)
 }
@@ -261,33 +262,33 @@ function safeTaskSuccess(success: Record<string, unknown>) {
   return {
     ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
     ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),
-    ...(number(success.durationMs) !== undefined ? { durationMs: number(success.durationMs) } : {}),
+    ...(asFiniteNumber(success.durationMs) !== undefined ? { durationMs: asFiniteNumber(success.durationMs) } : {}),
     ...(text(success.resultSuffix) ? { resultSuffix: text(success.resultSuffix) } : {}),
     ...(text(success.backgroundReason) ? { backgroundReason: text(success.backgroundReason) } : {}),
   }
 }
 
 function taskMetadata(value: unknown) {
-  const result = object(value)
-  const success = result?.status === "success" ? object(result.value) : undefined
+  const result = asRecord(value)
+  const success = result?.status === "success" ? asRecord(result.value) : undefined
   if (!success) return { transcript: "unavailable" }
   return {
     transcript: text(success.transcriptPath) ? "awaiting-host-resolution" : "unavailable",
     ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
     ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),
-    ...(number(success.durationMs) !== undefined ? { durationMs: number(success.durationMs) } : {}),
+    ...(asFiniteNumber(success.durationMs) !== undefined ? { durationMs: asFiniteNumber(success.durationMs) } : {}),
     ...(text(success.backgroundReason) ? { backgroundReason: text(success.backgroundReason) } : {}),
   }
 }
 
 export function cursorSubagentObservations(value: unknown): CursorSubagentObservation[] {
-  const message = object(value)
+  const message = asRecord(value)
   if (!message || message.type !== "tool_call" || !isTaskTool(text(message.name) ?? "")) return []
   const toolCallId = text(message.call_id)
   if (!toolCallId) return []
   const args = toolInput(message.args)
-  const result = object(message.result)
-  const success = result?.status === "success" ? object(result.value) : undefined
+  const result = asRecord(message.result)
+  const success = result?.status === "success" ? asRecord(result.value) : undefined
   const providerId = text(success?.agentId) ?? text(args.agentId) ?? text(args.resume)
   const priorProviderId = text(args.agentId) ?? text(args.resume)
   const status = message.status === "running"
@@ -295,7 +296,7 @@ export function cursorSubagentObservations(value: unknown): CursorSubagentObserv
     : message.status === "error" || result?.status === "error"
       ? "failed"
       : "completed"
-  const subagentType = text(object(args.subagentType)?.name) ?? text(object(args.subagentType)?.kind)
+  const subagentType = text(asRecord(args.subagentType)?.name) ?? text(asRecord(args.subagentType)?.kind)
   return [{
     observationId: `cursor:task:${text(message.run_id) ?? "unknown"}:${toolCallId}:${status}`,
     ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
@@ -309,16 +310,16 @@ export function cursorSubagentObservations(value: unknown): CursorSubagentObserv
     ...(subagentType ? { subagentType } : {}),
     ...(providerId ? { providerId } : {}),
     ...(providerId ? { providerKind: "cursor-agent" } : {}),
-    // Cursor supplies a provider-local path only on success. U11 owns turning
-    // that path into an authorized opaque handle; until then this rail fails closed.
+    // Cursor supplies a provider-local path only on success. Turning that path into
+    // an authorized opaque handle is not implemented yet, so this rail fails closed.
     transcript: { kind: "none" },
   }]
 }
 
 export function cursorRuntimeMessage(value: unknown) {
-  const message = object(value)
+  const message = asRecord(value)
   if (!message || message.type !== "tool_call" || !isTaskTool(text(message.name) ?? "")) return value
-  const result = object(message.result)
+  const result = asRecord(message.result)
   if (!result) return value
   if (result.status === "error") {
     return {
@@ -329,15 +330,15 @@ export function cursorRuntimeMessage(value: unknown) {
   if (result.status !== "success") return value
   return {
     ...message,
-    result: { ...result, value: safeTaskSuccess(object(result.value) ?? {}) },
+    result: { ...result, value: safeTaskSuccess(asRecord(result.value) ?? {}) },
   }
 }
 
 function isErrorResult(value: unknown) {
-  const row = object(value)
+  const row = asRecord(value)
   if (row?.status === "error") return true
-  const nested = object(row?.value)
-  const exitCode = number(nested?.exitCode)
+  const nested = asRecord(row?.value)
+  const exitCode = asFiniteNumber(nested?.exitCode)
   return exitCode !== undefined && exitCode !== 0
 }
 

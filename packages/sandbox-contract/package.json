@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/sandbox-contract",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Dependency-neutral sandbox driver identity and credential configuration contracts",
   "license": "MIT",
@@ -13,9 +13,9 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "bun": "./src/index.ts",
       "development": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     }
@@ -33,6 +33,9 @@
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

@@ -5,9 +5,11 @@ import {
   virtualMetrics,
 } from "../../../../../session-ui/src/pierre/virtualizer"
 
+const originalLineHeight = virtualMetrics.lineHeight
+
 afterEach(() => {
   document.body.replaceChildren()
-  virtualMetrics.lineHeight = 24
+  virtualMetrics.lineHeight = originalLineHeight
   vi.unstubAllGlobals()
 })
 
@@ -39,12 +41,15 @@ describe("Pierre virtualizer cache", () => {
     const regularLease = acquireVirtualizer(regular)!
     const inlineLease = acquireVirtualizer(inline)!
 
-    expect(inlineLease.virtualizer).not.toBe(regularLease.virtualizer)
-    // as-any: peeks the virtualizer's private config; no public accessor exists.
-    expect((regularLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(1000)
-    // as-any: same private-config peek for the inline lease.
-    expect((inlineLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(240)
-    regularLease.release()
-    inlineLease.release()
+    try {
+      expect(inlineLease.virtualizer).not.toBe(regularLease.virtualizer)
+      // as-any: peeks the virtualizer's private config; no public accessor exists.
+      expect((regularLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(1000)
+      // as-any: same private-config peek for the inline lease.
+      expect((inlineLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(240)
+    } finally {
+      regularLease.release()
+      inlineLease.release()
+    }
   })
 })

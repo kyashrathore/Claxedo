@@ -377,8 +377,6 @@ describe("embedded workspace runtime", () => {
     }
   })
 
-  // ── Characterization (Unit 1): cache-per-workspace-id, config mode,
-  //    configure-affects-creation, shutdown clears the cache. ──────────────────
   test("caches one runtime per workspace id and recreates when the directory changes", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-cache-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")

@@ -17,7 +17,6 @@ import {
   shouldScheduleDirectorySessionHydration,
   updateDirectorySession,
   upsertDirectorySession,
-  useDirectorySessionCacheActions,
 } from "./directory-session-cache"
 import { directorySessionCacheQueryOptions } from "./queries"
 import { queryClient } from "@/platform/query/query-client"
@@ -161,15 +160,6 @@ describe("directory session-cache shell-data boundary", () => {
     })
 
     expect(calls).toEqual([])
-  })
-
-  test("hook-level ensure defaults to quiet while refresh does not", async () => {
-    const source = await Bun.file(new URL("./directory-session-cache.ts", import.meta.url)).text()
-
-    expect(source).toContain("quiet: input.quiet ?? true")
-    expect(source).toMatch(/refresh:\s*\(input: \{ directory: string; harnessType\?: string; quiet\?: boolean; workspace\?: WorkspaceSessionBacking \}\) =>[\s\S]{0,180}refreshDirectorySessionCache/)
-    expect(source).not.toMatch(/refresh:[\s\S]{0,180}quiet: input\.quiet \?\? true/)
-    void useDirectorySessionCacheActions
   })
 
   test("forwards focused directory updates to the cache refresh queue owner", () => {

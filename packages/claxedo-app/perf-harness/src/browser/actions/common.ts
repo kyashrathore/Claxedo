@@ -78,10 +78,6 @@ export async function settleForVideo(page: Page) {
   await page.waitForTimeout(250)
 }
 
-export function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
 export async function waitForAnimationFrame(page: Page, count: number) {
   await page.evaluate(
     (count) =>

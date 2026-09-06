@@ -82,7 +82,7 @@ function invalidBody(error: z.ZodError) {
 
 export type CredentialRoutesOptions = {
   /**
-   * When set, EVERY credential route requires `Authorization: Bearer <token>`.
+   * When set, every credential route requires `Authorization: Bearer <token>`.
    * Deployed/public instances must set this (CLAXEDO_CREDENTIALS_TOKEN) until
    * real accounts land: without it an unsigned public box would accept
    * anonymous credential writes/deletes and sync-local trigger.
@@ -92,8 +92,8 @@ export type CredentialRoutesOptions = {
   now?: () => number
   authenticate?: (request: Request) => Promise<void>
   /**
-   * Signed-auth configuration used to resolve the CALLER'S ORG. When absent,
-   * `requestOrg` passes NO config and `controlPlaneAuthContext` applies its own
+   * Signed-auth configuration used to resolve the caller's org. When absent,
+   * `requestOrg` passes no config and `controlPlaneAuthContext` applies its own
    * unsigned-local default — no environment is consulted here. That is what the
    * self-host composition relies on: signed auth off → the single-tenant
    * partition; signed auth on → the verified `org_id` claim from this config.

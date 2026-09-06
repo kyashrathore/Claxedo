@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createEffect, onCleanup, type JSX } from "solid-js"
-import { ClaxedoStateProvider, useClaxedoState } from "../state/index"
+import { type JSX } from "solid-js"
+import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
 import {
@@ -15,9 +15,6 @@ import { SessionTitleProjectionProvider } from "@/features/session/providers/ses
 
 const processOwnership = vi.hoisted(() => ({
   providers: 0,
-  subscriptions: 0,
-  wakeReconciles: 0,
-  listRequests: 0,
 }))
 
 vi.mock("./rail-sidebar", async () => {
@@ -38,21 +35,7 @@ vi.mock("../../../features/session/ui/components/session-pane-scope", () => ({
 
 vi.mock("../context/process-pane", () => ({
   ProcessPaneProvider: (props: { children: JSX.Element }) => {
-    const state = useClaxedoState()
-    let loaded = false
     processOwnership.providers += 1
-    processOwnership.subscriptions += 5
-    const reconcileOnWake = () => {
-      processOwnership.wakeReconciles += 1
-    }
-    document.addEventListener("visibilitychange", reconcileOnWake)
-    onCleanup(() => document.removeEventListener("visibilitychange", reconcileOnWake))
-    createEffect(() => {
-      const panel = state.workspacePanel.state()
-      if (loaded || !panel.open || panel.navigator !== "processes") return
-      loaded = true
-      processOwnership.listRequests += 1
-    })
     return <>{props.children}</>
   },
   useProcessPane: () => ({}),
@@ -70,13 +53,12 @@ vi.mock("@/features/processes/ui", () => ({
   WorkspaceProcessesNavigator: () => <div data-testid="workspace-processes-navigator" />,
 }))
 
-// These hooks used to be re-exported (and mocked) via the "@claxedo/app"
-// barrel; 48f98d84a re-pointed app-shell-layout at the concrete provider
-// modules, so the mocks must target those or the real hooks run and throw
-// "context must be used within a context provider". Each mock spreads the
-// actual module: they export more than the hook (CommandProvider, the
-// server-health helpers, PlatformProvider), and wiping those would break
-// unrelated imports elsewhere in the render tree.
+// `app-shell-layout` imports these from the concrete provider modules, not
+// the "@claxedo/app" barrel, so the mocks below must target those modules or
+// the real hooks run and throw "context must be used within a context
+// provider". Each mock spreads the actual module: they export more than the
+// hook (CommandProvider, the server-health helpers, PlatformProvider), and
+// wiping those would break unrelated imports elsewhere in the render tree.
 vi.mock("@/app/providers/command", async () => {
   const actual = await vi.importActual<typeof import("../../providers/command")>("@/app/providers/command")
   return { ...actual, useCommand: () => ({ register: vi.fn() }) }
@@ -133,9 +115,6 @@ vi.mock("@/platform/settings/provider", () => ({
 
 beforeEach(() => {
   processOwnership.providers = 0
-  processOwnership.subscriptions = 0
-  processOwnership.wakeReconciles = 0
-  processOwnership.listRequests = 0
 })
 
 afterEach(() => {
@@ -206,12 +185,11 @@ describe("RailLayout workspace tool gates", () => {
     })
 
     // The header's terminal control is role-gated, not surface-gated, so it is
-    // present on every surface including this one. It used to be a pair of
-    // per-agent shortcuts ("New Claude Terminal" / "New Codex Terminal"); 73d56ab29
-    // replaced them with one button that opens the creator, because the header's
-    // directory is an inferred fallback chain rather than a choice. The surface
-    // gate this file is about is the Files/Changes/Processes trio below.
-    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    // present on every surface including this one — a single button that opens
+    // the creator, because the header's directory is an inferred fallback chain
+    // rather than a choice. The surface gate this file is about is the
+    // Files/Changes/Processes trio below.
+    // The workbench shell is lazy() — await its arrival.
     expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
@@ -331,7 +309,7 @@ describe("RailLayout workspace tool gates", () => {
     }
   })
 
-  test("shares one process runtime between the retained review and processes navigator", async () => {
+  test("mounts one process provider around the retained review and processes navigator", async () => {
     setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
     renderRail({
       id: "surface-process-owner",
@@ -358,14 +336,10 @@ describe("RailLayout workspace tool gates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open Processes" }))
     expect(await screen.findByTestId("workspace-processes-navigator")).toBeTruthy()
 
-    // Both retained views are consumers of one directory-scoped runtime. A
-    // second provider would double all five SSE subscriptions and wake work.
+    // The shell mounts both views below one provider. Runtime subscription
+    // and request behavior belongs to the real process provider tests.
     expect(screen.getByTestId("review-workspace")).toBeTruthy()
     expect(processOwnership.providers).toBe(1)
-    expect(processOwnership.subscriptions).toBe(5)
-    expect(processOwnership.listRequests).toBe(1)
 
-    document.dispatchEvent(new Event("visibilitychange"))
-    expect(processOwnership.wakeReconciles).toBe(1)
   })
 })

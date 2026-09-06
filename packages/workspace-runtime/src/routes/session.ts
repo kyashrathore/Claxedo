@@ -119,14 +119,9 @@ export function SessionRoutes(
      * public handler so its private-session filter cannot be shadowed. */
     getStatus?: (c: SessionRouteContext, directory: string) => unknown
     /**
-     * Own session creation instead of delegating straight to the adapter.
-     *
-     * `createSessionRoutes` already supports this; it was simply not exposed
-     * here, so a host had no way to observe a create. Workspace Runtime needs
-     * it to become the OWNER of local session inventory (U8-F7): without a
-     * create hook the store only ever learns about a session from the
-     * list-time adapter fan-out, which makes the store a cache the fan-out
-     * happens to fill rather than the authority.
+     * Own session creation instead of delegating straight to the adapter, so
+     * the host's session store learns about a create directly rather than from
+     * the list-time adapter fan-out.
      */
     createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
@@ -185,11 +180,9 @@ export function SessionRoutes(
     }) => Promise<SessionConfig>
     afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
     /**
-     * Observe a session update (title, archive) after the adapter applies it.
-     *
-     * Exposed for the same reason as `createSession`: without it the durable
-     * store never sees a rename or an archive, so a store-owned inventory would
-     * serve stale titles and resurrect archived sessions (U8-F7).
+     * Observe a session update (title, archive) after the adapter applies it,
+     * so a store-owned inventory does not serve stale titles or resurrect
+     * archived sessions.
      */
     afterUpdateSession?: (input: {
       directory: string

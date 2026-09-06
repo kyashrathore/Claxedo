@@ -91,8 +91,6 @@ async function sendFirstPrompt(page: Page, mock: MockRuntimeHandles, text: strin
   await page.locator('[data-action="prompt-submit"]').last().click()
   await expect(page).toHaveURL(sessionUrlPattern(mock.session.id), { timeout: 20_000 })
   await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
-  // Prove the turn through the shared oracle (DOM + geometric + evidence) before any
-  // later action (revert/fork/rename/archive) treats this message as settled.
   await expectAssistantReplyVisible(page, `ack 1: ${text}`)
   await dismissJumpToBottom(page)
 }
@@ -172,7 +170,7 @@ function trackSessionMutations(page: Page) {
 }
 
 test.describe("core session actions: rename @core", () => {
-  test("double-click opens the inline editor prefilled with the current title — behavior 1", async ({ page }) => {
+  test("double-click opens the inline editor prefilled with the current title", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "rename dblclick original title")
 
@@ -185,7 +183,7 @@ test.describe("core session actions: rename @core", () => {
     await expect(editor).toHaveValue("rename dblclick original title")
   })
 
-  test("kebab menu Rename opens the inline editor — behavior 2", async ({ page }) => {
+  test("kebab menu Rename opens the inline editor", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "rename via kebab menu original title")
 
@@ -197,7 +195,7 @@ test.describe("core session actions: rename @core", () => {
     await expect(editor).toHaveValue("rename via kebab menu original title")
   })
 
-  test("Enter commits the rename via PATCH and updates the header live — behaviors 3", async ({ page }) => {
+  test("Enter commits the rename via PATCH and updates the header live", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
@@ -218,7 +216,7 @@ test.describe("core session actions: rename @core", () => {
     await expect(page.locator('input[data-slot="session-title-child"]')).toHaveCount(0)
   })
 
-  test("Escape cancels the edit without sending a PATCH — behavior 4", async ({ page }) => {
+  test("Escape cancels the edit without sending a PATCH", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
@@ -237,7 +235,7 @@ test.describe("core session actions: rename @core", () => {
     expect(mutations.patches.some((p) => (p.body as { title?: string } | undefined)?.title)).toBe(false)
   })
 
-  test("a failed rename PATCH keeps the editor open and shows a toast — behavior 5", async ({ page }) => {
+  test("a failed rename PATCH keeps the editor open and shows a toast", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
@@ -259,7 +257,10 @@ test.describe("core session actions: rename @core", () => {
 })
 
 test.describe("core session actions: fork @core", () => {
-  test("forking a message creates a new session and restores its draft — behavior 6", async ({ page }) => {
+  test("forking a message creates a new session and restores its draft", async ({ page }) => {
+    // `resolveForkSessionId(params)` (src/features/session/ui/dialogs/fork-messages.ts)
+    // returns `params.sessionId ?? params.id`, so the `/w/:workspaceId/session/:sessionId`
+    // route shape populates the fork list.
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const forkedText = "fork source message please branch me"
     await sendFirstPrompt(page, mock, forkedText)
@@ -339,14 +340,9 @@ test.describe("core session actions: fork @core", () => {
     })
     await page.locator('[data-slot="list-item"]').first().click()
 
-    // Any session-route shape for the forked id. The pane scope may have been
-    // upgraded to the RESOLVED workspace id by the time the fork navigates
-    // (`/api/claxedo/workspace/resolve` — the shared mock answers
-    // `local-${sessionId}`), so the URL's directory segment is that scope's
-    // slug, not necessarily `slug(DIR)` — same multi-shape convention as
-    // `sessionUrlPattern` in core-harness-rendering-matrix.spec.ts. The
-    // behavior under test is navigation onto the forked session plus the
-    // restored draft below, not the slug encoding.
+    // Any session-route shape: the pane scope may have been upgraded to the resolved
+    // workspace id by the time the fork navigates, so the directory segment is not
+    // necessarily `slug(DIR)`.
     await expect(page).toHaveURL(sessionUrlPattern(forkedSessionId), { timeout: 15_000 })
     const forkedInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(forkedInput).toContainText(forkedText, { timeout: 10_000 })
@@ -368,12 +364,11 @@ test.describe("core session actions: revert / unrevert @core", () => {
     }
   }
 
-  test("revert prefills the composer and renders the revert dock — behaviors 7,8", async ({ page }) => {
+  test("revert prefills the composer and renders the revert dock", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "revert flow first message")
 
-    // Second turn so there is a message to revert AWAY from (revert targets the
-    // first message, rolling back the second).
+    // A second turn gives the revert something to roll back: it targets the first message.
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await input.click()
     await input.fill("revert flow second message")
@@ -413,7 +408,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
     await expect(dock.getByRole("button", { name: "Restore message" })).toHaveCount(2, { timeout: 5_000 })
   })
 
-  test("restoring the rolled-back row fully unreverts the session — behavior 9", async ({ page }) => {
+  test("restoring the rolled-back row fully unreverts the session", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "unrevert flow first message")
 
@@ -463,7 +458,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
 })
 
 test.describe("core session actions: archive / delete @core", () => {
-  test("archive sends the archived timestamp and navigates away — behavior 10", async ({ page }) => {
+  test("archive sends the archived timestamp and navigates away", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
@@ -485,7 +480,7 @@ test.describe("core session actions: archive / delete @core", () => {
     await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).not.toContain(mock.session.id)
   })
 
-  test("delete requires confirming a dialog naming the session, then removes it — behavior 11", async ({ page }) => {
+  test("delete requires confirming a dialog naming the session, then removes it", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
@@ -572,7 +567,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     })
   }
 
-  test("a directly-opened child session shows a disabled composer and breadcrumb, no kebab — behavior 12", async ({
+  test("a directly-opened child session shows a disabled composer and breadcrumb, no kebab", async ({
     page,
   }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: PARENT_ID, projectId: PROJECT_ID, projectName: PROJECT_NAME })
@@ -593,7 +588,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     await expect(page.getByRole("button", { name: "More options", exact: true })).toHaveCount(0)
   })
 
-  test("the parent breadcrumb navigates back to the parent session — behavior 13", async ({ page }) => {
+  test("the parent breadcrumb navigates back to the parent session", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: PARENT_ID, projectId: PROJECT_ID, projectName: PROJECT_NAME })
     await installParentChildFixture(page)
     await seedOneProject(page, DIR)
@@ -603,7 +598,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     await expect(page).toHaveURL(sessionUrlPattern(PARENT_ID), { timeout: 15_000 })
   })
 
-  test("a permission raised on the child bubbles into the parent's dock and resolves — behavior 14", async ({
+  test("a permission raised on the child bubbles into the parent's dock and resolves", async ({
     page,
   }) => {
     // The child's permission reaches the parent's dock however the workspace-id remap of
@@ -658,7 +653,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     await expect(page.locator('[data-slot="permission-header-title"]')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test("a harness session's auto-title patches the sidebar inventory even without a resolvable projectID — behavior 15", async ({ page }) => {
+  test("a harness session's auto-title patches the sidebar inventory even without a resolvable projectID", async ({ page }) => {
     const HARNESS_SESSION_ID = "ses_core_session_actions_harness_title"
     await installMockRuntime(page, {
       dir: DIR,
@@ -711,8 +706,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
         return Array.isArray(sessions) ? sessions.find((item) => item?.id === sessionId) : undefined
       }, HARNESS_SESSION_ID)
 
-    // Bootstrap has loaded the session inventory (via `layout.tsx`'s
-    // `sessionInventoryActions.load()` on mount) with the ORIGINAL title.
+    // Bootstrap has loaded the session inventory with the original title.
     await expect.poll(async () => (await inventoryRow())?.title, { timeout: 15_000 }).toBe("New Session")
 
     // The harness's auto-title fallback (`maybeAutoTitle`,
@@ -814,8 +808,8 @@ test.describe("core session actions: switcher tab title sync @core", () => {
 
     await expect(page.locator('h1[data-slot="session-title-child"]')).toHaveText("switcher tab title sync renamed", { timeout: 5_000 })
 
-    // The switcher strip's OWN tab for this same session updates live too, without a
-    // reload — no navigation happens between the rename and this assertion.
+    // The strip's tab for this same session updates live too — nothing navigates between
+    // the rename and this assertion.
     await expect(switcherTitle).toHaveText("switcher tab title sync renamed", { timeout: 10_000 })
   })
 })

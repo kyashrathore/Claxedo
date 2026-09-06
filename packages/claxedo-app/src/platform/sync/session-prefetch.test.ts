@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
   clearSessionPrefetch,
   clearSessionPrefetchDirectory,
@@ -16,6 +16,8 @@ import {
 import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "./keys"
+
+afterEach(() => queryClient.clear())
 
 describe("session prefetch cache", () => {
   beforeEach(() => {

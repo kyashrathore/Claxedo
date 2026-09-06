@@ -20,20 +20,20 @@
  *   bun run check:eager-chunk
  *
  * Env:
- *   CLAXEDO_DIST_DIR  override dist dir (default ./dist, or ./dist-demo for demo build)
+ *   CLAXEDO_DIST_DIR  override dist dir (default ./dist)
  */
 
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { BUILD_MARKER_ALLOWLIST, FORBIDDEN_DEPS } from "./forbidden-eager-deps.config.ts"
+import { BUILD_MARKER_ALLOWLIST, FORBIDDEN_DEPS } from "./forbidden-eager-deps.config"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(here, "..")
 
 const distDir = path.resolve(
   appRoot,
-  process.env.CLAXEDO_DIST_DIR || (process.env.CLAXEDO_BUILD_TARGET === "demo" ? "dist-demo" : "dist"),
+  process.env.CLAXEDO_DIST_DIR || "dist",
 )
 const indexHtml = path.join(distDir, "index.html")
 

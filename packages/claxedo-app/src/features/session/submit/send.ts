@@ -116,9 +116,7 @@ export async function sendPromptRequest(input: SendPromptRequestContext) {
   clearPendingPrompt(input.sessionID)
   await dispatchPrompt({
     client: input.client,
-    demo: input.demo,
     payload: input.payload,
-    onDemoReply: input.onDemoReply,
   })
   setPromptSessionStatus({
     sessionID: input.sessionID,
@@ -127,12 +125,5 @@ export async function sendPromptRequest(input: SendPromptRequestContext) {
   })
   input.clearBoot()
   await Promise.resolve(input.reconcileAfterDispatch?.()).catch(() => undefined)
-  if (input.demo) {
-    setPromptSessionStatus({
-      sessionID: input.sessionID,
-      status: { type: "idle" },
-      source: "server",
-    })
-  }
   input.clearCloudStartup()
 }

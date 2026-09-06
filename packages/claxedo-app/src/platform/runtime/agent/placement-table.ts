@@ -4,13 +4,11 @@
  * agent-runtime-client.ts is the single place that decides, per request,
  * whether a session read/write goes to the client-presentation transport,
  * the loopback runtime transport, the signed central control plane, or the
- * relay-backed workspace runtime. That decision used to live as 4–5-condition-
- * deep branching inline in three closures (`shouldUseRuntimeSessionTransport`,
- * `runtimePlacement`, `fetchSessionResource`). This module lifts the *pure*
- * decision points out so each branch is named for the scenario it handles and
- * can be unit-tested in isolation (see placement-table.test.ts). The client
- * keeps ownership of the async workspace resolution (I/O) and the actual fetch;
- * only the routing decision is pure and lives here.
+ * relay-backed workspace runtime. Each branch here is named for the scenario
+ * it handles and is unit-tested in isolation (see placement-table.test.ts),
+ * as a pure decision point rather than inline branching in the client. The
+ * client keeps ownership of the async workspace resolution (I/O) and the
+ * actual fetch; only the routing decision is pure and lives here.
  */
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { Placement } from "@/platform/runtime/placement"

@@ -291,6 +291,36 @@ describe("Better Auth browser adapter startup outcomes", () => {
     await expect(auth.refreshSession()).resolves.toBeUndefined()
   })
 
+  test("a late session response cannot sign in a deployment whose descriptor failed", async () => {
+    let resolveSession!: (value: { data: { session: { id: string }; user: { id: string } }; error: null }) => void
+    const session = new Promise<{ data: { session: { id: string }; user: { id: string } }; error: null }>((resolve) => {
+      resolveSession = resolve
+    })
+    const adapter = createBetterAuthBrowserAdapter({
+      request: async () => { throw new Error("descriptor rejected") },
+      createClient: () => ({
+        getSession: () => session,
+        signIn: {
+          social: async () => ({ data: null, error: null }),
+          email: async () => ({ data: null, error: null }),
+        },
+        signUp: { email: async () => ({ data: null, error: null }) },
+        signOut: async () => ({ data: null, error: null }),
+      }),
+    })
+
+    await adapter.initialize(HOSTED)
+    expect(adapter.useAuth().isSignedIn()).toBe(false)
+    resolveSession({ data: { session: { id: "late-session" }, user: { id: "late-user" } }, error: null })
+    await session
+    await Promise.resolve()
+
+    expect(adapter.useAuth().isSignedIn()).toBe(false)
+    expect(adapter.useAuth().session()).toBeNull()
+    expect(adapter.useAuth().user()).toBeNull()
+    await expect(adapter.useAuth().signIn({ method: "github" })).rejects.toThrow("descriptor rejected")
+  })
+
   test("an HTTPS deployment loads, and reports loading only while it is in flight", async () => {
     let openDescriptor: () => void = () => {}
     const descriptorGate = new Promise<void>((resolve) => {

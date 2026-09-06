@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# Boot the CURRENTLY SHIPPED self-hosted entry, write durable state through its
-# real HTTP routes, then boot the NEW entry against that exact data root and
+# Boot the currently shipped self-hosted entry, write durable state through its
+# real HTTP routes, then boot the new entry against that exact data root and
 # prove identity, authorization, configuration, and credential state carried
 # across the version boundary — and across one further new-entry restart.
 #
-# Why this exists separately from self-hosted-restart.sh: that script restarts
-# the SAME build twice. Same-version persistence proves the bytes reach disk; it
-# cannot prove that a build which moved the entry, split four packages out, and
-# added a boot gate still READS what the shipped build WROTE. Only two different
-# builds over one data directory can show that, and the two builds must be two
-# process lifetimes for the same reason the restart script gives: an in-process
-# "upgrade" shares the module registry and the open SQLite handle, so it proves
-# the cache still has the row.
+# self-hosted-restart.sh restarts the SAME build twice, which proves the bytes
+# reach disk but not that a different build reads what the shipped one wrote.
+# The two builds must be two process lifetimes: an in-process "upgrade" shares
+# the module registry and the open SQLite handle, so it proves only that the
+# cache still has the row.
 #
 # The old entry (src/deployments/local/main.ts) no longer exists in the working
-# tree — Unit 7 moved it to src/deployments/self-hosted-node/index.ts. It is
-# obtained from git history and materialized in a throwaway worktree. See
-# `materialize_old_tree` for how that worktree gets a usable node_modules and
-# why the result is still a faithful old build.
+# tree; it is obtained from git history and materialized in a throwaway
+# worktree. See `materialize_old_tree` for how that worktree gets a usable
+# node_modules and why the result is still a faithful old build.
 #
 # Exit codes: 0 = the upgrade was verified. 1 = it was run and something did not
 # carry across. 3 = SKIP, the old build could not be materialized here; the

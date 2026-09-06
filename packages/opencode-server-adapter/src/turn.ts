@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { asRecord } from "@claxedo/helpers/guards"
 import { OpenCodeServerAdapterError } from "./errors"
-import { OpenCodeEventTranslator, errorText, record, type OpenCodeLeafEvent } from "./translate"
+import { OpenCodeEventTranslator, errorText, type OpenCodeLeafEvent } from "./translate"
 
 // OpenCode orders messages by their ID, including when deciding whether the
 // latest user prompt has been answered. Its schema permits any msg-prefixed ID.
@@ -27,13 +28,13 @@ export class OpenCodeTurn {
 
   translate(event: OpenCodeLeafEvent): AgentRuntimeEvent[] {
     if (event.type === "message.updated") {
-      const info = record(event.properties.info)
+      const info = asRecord(event.properties.info)
       if (info) this.observe(info)
       return []
     }
     if (event.type === "message.part.updated" || event.type === "message.part.delta") {
       if (this.snapshotOnly) return []
-      const id = record(event.properties.part)?.messageID ?? event.properties.messageID
+      const id = asRecord(event.properties.part)?.messageID ?? event.properties.messageID
       if (typeof id !== "string" || !this.assistantIds.has(id)) return []
     }
     return this.translator.translate(event)
@@ -47,10 +48,10 @@ export class OpenCodeTurn {
     const current = messages.filter((message) => this.observe(message.info)).sort((a, b) => String(a.info.id) < String(b.info.id) ? -1 : 1)
     const events = current.flatMap((message) => message.parts.flatMap((part) => this.translator.translate({ type: "message.part.updated", properties: { part } })))
     const last = current.at(-1)
-    const completed = typeof record(last?.info.time)?.completed === "number"
+    const completed = typeof asRecord(last?.info.time)?.completed === "number"
     const failure = completed && last?.info.error ? errorText(last.info.error) : undefined
     const finished = completed && typeof last?.info.finish === "string" && !["tool-calls", "unknown"].includes(last.info.finish)
-      && !last.parts.some((part) => part.type === "tool" && !record(part.metadata)?.providerExecuted)
+      && !last.parts.some((part) => part.type === "tool" && !asRecord(part.metadata)?.providerExecuted)
     return { events, failure, finished }
   }
 

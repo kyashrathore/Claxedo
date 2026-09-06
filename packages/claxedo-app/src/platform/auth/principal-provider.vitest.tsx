@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { AuthSessionStatus } from "./auth-session"
@@ -76,11 +77,29 @@ describe("PrincipalProvider", () => {
     expect(renderPrincipal(true)).toEqual({ kind: "signed", userId: "usr_desktop" })
   })
 
-  test("falls back to a stable placeholder userId when the port identity is empty", () => {
+  test("represents a credential with unresolved identity explicitly", () => {
     accountState.current = { userId: "" }
 
-    expect(renderPrincipal(true)).toEqual({ kind: "signed", userId: "signed-user" })
+    expect(renderPrincipal(true)).toEqual({ kind: "signed-unresolved" })
   })
+  test("reacts when the account producer resolves its canonical subject", () => {
+    const [account, setAccount] = createSignal({ userId: "" })
+    function Probe() {
+      const principal = usePrincipal()
+      return <pre>{JSON.stringify(principal())}</pre>
+    }
+    const view = render(() => <PrincipalProvider authEnabled signedAccount={account}><Probe /></PrincipalProvider>)
+    expect(view.container.textContent).toBe('{"kind":"signed-unresolved"}')
+    setAccount({ userId: "usr_canonical" })
+    expect(view.container.textContent).toBe('{"kind":"signed","userId":"usr_canonical"}')
+  })
+
+  test("never assigns organization membership without a canonical subject", () => {
+    authState.status = "signed"
+    authState.organization = { id: "org_1" }
+    expect(renderPrincipal(true)).toEqual({ kind: "signed-unresolved" })
+  })
+
 })
 
 function renderPrincipal(authEnabled: boolean) {

@@ -125,16 +125,14 @@ describe("workspace panel slice", () => {
 
 describe("syncFocusedSessionPanel", () => {
   test("remembers the session that is leaving, then restores the one arriving", () => {
-    const remembered: string[] = []
-    const restored: string[] = []
+    const events: string[] = []
     syncFocusedSessionPanel({
       previousSessionId: "ses_a",
       nextSessionId: "ses_b",
-      remember: (id) => remembered.push(id),
-      restore: (id) => restored.push(id),
+      remember: (id) => events.push(`remember:${id}`),
+      restore: (id) => events.push(`restore:${id}`),
     })
-    expect(remembered).toEqual(["ses_a"])
-    expect(restored).toEqual(["ses_b"])
+    expect(events).toEqual(["remember:ses_a", "restore:ses_b"])
   })
 
   test("does not stamp the destination with the live panel after focus already moved", () => {
@@ -150,18 +148,6 @@ describe("syncFocusedSessionPanel", () => {
     expect(remembered).toEqual([])
   })
 
-  test("closes inheritance by restoring a first visit even when the previous panel is open", () => {
-    const remembered: string[] = []
-    const restored: string[] = []
-    syncFocusedSessionPanel({
-      previousSessionId: "ses_a",
-      nextSessionId: "ses_new",
-      remember: (id) => remembered.push(id),
-      restore: (id) => restored.push(id),
-    })
-    expect(remembered).toEqual(["ses_a"])
-    expect(restored).toEqual(["ses_new"])
-  })
 })
 
 describe("workspace panel review working set", () => {

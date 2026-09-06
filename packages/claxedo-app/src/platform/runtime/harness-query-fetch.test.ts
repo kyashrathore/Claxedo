@@ -45,8 +45,12 @@ describe("harnessQueryFetch", () => {
 
     expect(calls[0]?.url).toBe("https://server.test/session/ses_1/message?connectionId=external-opencode")
     expect(calls[0]?.init?.method).toBe("POST")
-    expect(calls[0]?.init?.headers).toBeInstanceOf(Headers)
-    expect(calls[0]?.init?.signal).toBe(controller.signal)
+    expect(new Headers(calls[0]?.init?.headers).get("content-type")).toBe("application/json")
+    const signal = calls[0]?.init?.signal
+    expect(signal?.aborted).toBe(false)
+    controller.abort("navigation changed")
+    expect(signal?.aborted).toBe(true)
+    expect(signal?.reason).toBe("navigation changed")
     expect(new TextDecoder().decode(calls[0]?.init?.body as ArrayBuffer)).toBe('{"text":"hello"}')
   })
 })

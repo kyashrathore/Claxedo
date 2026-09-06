@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono"
-import { rec, str } from "./json-value"
+import { rec } from "./json-value"
 import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /** Hop-only header stamped by `@claxedo/local-server` `embedded()` after actor verification. */
 export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
@@ -178,12 +179,12 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
     const principal_kind = row.principal_kind === "user" || row.principal_kind === "service"
       ? row.principal_kind
       : undefined
-    const actor_id = stringValue(row.actor_id)
+    const actor_id = trimToUndefined(row.actor_id)
     const actor_kind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
-    const actor_public_id = stringValue(row.actor_public_id)
-    const actor_name = stringValue(row.actor_name)
-    const workspace_id = stringValue(row.workspace_id)
-    const org_id = stringValue(row.org_id)
+    const actor_public_id = trimToUndefined(row.actor_public_id)
+    const actor_name = trimToUndefined(row.actor_name)
+    const workspace_id = trimToUndefined(row.workspace_id)
+    const org_id = trimToUndefined(row.org_id)
     const role = row.role === "viewer" || row.role === "editor" || row.role === "admin" || row.role === "owner"
       ? row.role
       : undefined
@@ -205,19 +206,15 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       actor_kind,
       actor_public_id,
       actor_name,
-      ...(stringValue(row.actor_avatar_url) ? { actor_avatar_url: stringValue(row.actor_avatar_url) } : {}),
+      ...(trimToUndefined(row.actor_avatar_url) ? { actor_avatar_url: trimToUndefined(row.actor_avatar_url) } : {}),
       workspace_id,
       org_id,
       role,
-      ...(stringValue(row.host_id) ? { host_id: stringValue(row.host_id) } : {}),
+      ...(trimToUndefined(row.host_id) ? { host_id: trimToUndefined(row.host_id) } : {}),
       ...(row.access === "cloud" || row.access === "user-hosted" ? { access: row.access } : {}),
       ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
     }
   } catch {
     return undefined
   }
-}
-
-function stringValue(input: unknown) {
-  return str(input)?.trim() || undefined
 }

@@ -9,6 +9,7 @@ import type {
   AgentSnapshotFileDiff,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type {
   ClaxedoAgentProfile,
   ClaxedoCommand,
@@ -20,7 +21,6 @@ import type {
   ClaxedoProviderAuthorization,
   ClaxedoVcsInfo,
 } from "./claxedo-api-types"
-import { recordOrEmpty } from "@/lib/record"
 import { errorMessage } from "@/lib/server-errors"
 
 export type ServerClientRequestOptions = { headers?: HeadersInit; signal?: AbortSignal }
@@ -200,8 +200,8 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
     return { data: await responseJson(input.operation, response) as T, request, response }
   }
 
-  const parameters = (value: unknown) => recordOrEmpty(value)
-  const body = (value: unknown, omitted: string[]) => omit(recordOrEmpty(value), [...omitted, "directory", "workspace"])
+  const parameters = (value: unknown) => asRecordOrEmpty(value)
+  const body = (value: unknown, omitted: string[]) => omit(asRecordOrEmpty(value), [...omitted, "directory", "workspace"])
   const sessionPath = (input: SessionInput) => `/session/${encodeURIComponent(input.sessionID)}`
   const request = <T>(operation: string, method: string, path: string, value?: unknown, config?: {
     query?: string[]
@@ -305,8 +305,8 @@ async function responseJson(operation: string, response: Response): Promise<unkn
 }
 async function responseError(operation: string, response: Response) {
   const body = await response.clone().json().catch(() => undefined)
-  const row = recordOrEmpty(body)
-  const nested = recordOrEmpty(row.error)
+  const row = asRecordOrEmpty(body)
+  const nested = asRecordOrEmpty(row.error)
   const code = typeof nested.code === "string" ? nested.code : typeof row.code === "string" ? row.code : `http_${response.status}`
   const message = typeof nested.message === "string" ? nested.message : typeof row.message === "string" ? row.message : `Server request failed with status ${response.status}`
   return new ServerClientResponseError(operation, response.status, code, body, message)

@@ -1,6 +1,7 @@
 import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
+import { escapeRegExp } from "@claxedo/helpers/string"
 import {
   ACP_RECOVER,
   AgentRuntimeStaleTurnError,
@@ -34,6 +35,7 @@ import type {
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   type CompatEvent,
   buildAssistantMessage,
@@ -398,7 +400,7 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
     const encoded = input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length)
     if (!encoded) throw new Error("missing cursor payload")
     const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown
-    const value = rec(decoded)
+    const value = asRecord(decoded)
     if (
       value?.sessionId !== sessionId ||
       typeof value.ord !== "number" ||
@@ -541,10 +543,6 @@ function sessionHarness(input: {
 export function isProvisionalPartId(messageId: string, partId: string) {
   if (!messageId || !partId) return false
   return new RegExp(`^${escapeRegExp(messageId)}-part-\\d+$`).test(partId)
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 /**
@@ -1365,10 +1363,10 @@ export class RuntimeStore {
     for (const row of rows) {
       const part = readColumn.partRecord(row.data_json)
       if (part.type !== "tool") continue
-      const state = rec(part.state)
+      const state = asRecord(part.state)
       const status = str(state?.status)
       if (status !== "pending" && status !== "running") continue
-      const time = rec(state?.time)
+      const time = asRecord(state?.time)
       part.state = {
         ...state,
         status: "error",
@@ -3216,10 +3214,10 @@ export class RuntimeStore {
     return msgs.map((msg) => {
       const info = readColumn.messageInfo(msg.info_json)
       const infoRecord = info as Record<string, unknown>
-      const time = rec(info.time)
+      const time = asRecord(info.time)
       const completed = typeof time?.completed === "number"
-      const err = rec(infoRecord.error)
-      const data = rec(err?.data)
+      const err = asRecord(infoRecord.error)
+      const data = asRecord(err?.data)
       const message = str(data?.message) ?? str(err?.message)
       const terminal = info.role === "assistant" && (completed || !!infoRecord.error)
       const ts = num(time?.completed) ?? num(time?.created) ?? Date.now()

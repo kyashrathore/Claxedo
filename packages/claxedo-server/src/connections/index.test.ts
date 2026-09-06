@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdirSync, realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -16,27 +16,18 @@ const { ClaxedoDB } = await import("../platform/db")
 ClaxedoDB.Drizzle()
 
 const { createConnectionsHost, CONNECTIONS_TOKEN_HEADER } = await import("./index")
-const { createConnectionStoreAdapter, createCredentialStoreAdapter } = await import("./store-adapter")
+const { createConnectionStoreAdapter } = await import("./store-adapter")
+const { createCredentialStoreAdapter } = await import("./credential-store-adapter")
 const { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } = await import("./turn-credentials")
-import type { ControlPlaneCredentials } from "../authority/services"
+import { registryCredentialsPort } from "./test-helper"
 
-function credentialsPort(): ControlPlaneCredentials {
-  return {
-    listCredentials: async () => registry.listCredentials(),
-    getCredentialByProvider: async (providerId) => registry.getCredentialByProvider(providerId),
-    resolveCredentialSecret: (providerId) => registry.resolveSecret(providerId),
-    putCredential: (input) => registry.putCredential(input),
-    deleteCredential: async (id) => registry.deleteCredential(id),
-    deleteCredentialsByProvider: async (providerId) => registry.deleteCredentialsByProvider(providerId),
-    updateCredentialStatus: async (id, status, error) => registry.updateCredentialStatus(id, status, error),
-    syncLocalCredentials: async () => ({ synced: [], removed: [] }) as never,
-  }
-}
+const credentialsPort = () => registryCredentialsPort(registry)
 
 describe("connections host", () => {
   beforeEach(() => {
     setBackendOverride(createTestBackend())
     ClaxedoDB.use((db) => db.run("DELETE FROM claxedo_connection"))
+    ClaxedoDB.use((db) => db.run("DELETE FROM claxedo_provider_credential"))
   })
 
   afterAll(async () => {
@@ -182,6 +173,40 @@ describe("connections host", () => {
     expect(await response.json()).toMatchObject({ token: "alice-secret" })
     host.dispose()
     turns.dispose()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The regression this pins: `readSecret` is the status-INDEPENDENT re-verify
+  // read, and one adapter used to restore `available` while performing it. A
+  // re-verify that the provider still rejects then looked like a repair, and
+  // the very next token request served the secret the provider had rejected.
+  test("a re-verify the provider rejects leaves the token path refusing", async () => {
+    vi.stubGlobal("fetch", async () => new Response("", { status: 401 }))
+    const host = createConnectionsHost({ credentials: credentialsPort(), env: {} })
+    const connections = createConnectionStoreAdapter()
+    const credentials = createCredentialStoreAdapter(credentialsPort())
+    await connections.upsert({
+      id: "team-notion",
+      integrationId: "notion",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await credentials.put({ providerId: "integration:team-notion", kind: "api_key", secret: "rejected-secret" })
+    // What an upstream 401 during a turn records.
+    await credentials.setStatus("integration:team-notion", "error", "upstream_authorization_rejected")
+
+    expect(await host.service.reverify("team-notion")).toEqual({ ok: false, reason: "unauthorized" })
+    expect((await credentials.get("integration:team-notion"))?.status).toBe("error")
+    expect(await host.service.getToken("team-notion", "docs")).toMatchObject({
+      ok: false,
+      code: "connection_not_available",
+    })
+    host.dispose()
   })
 
   test("Google registers only when client credentials are configured", () => {

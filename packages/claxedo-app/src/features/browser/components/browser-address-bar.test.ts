@@ -1,12 +1,7 @@
 /**
- * URL normalization tests for the browser address bar.
- *
- * The user's feedback after the Unit 8 ship was specifically that entering
- * `x.com` snapped the pane back to `about:blank` — because the raw input was
- * passed to `navigate()` which only accepts http(s) URLs. `normalizeAddressBarInput`
- * is the helper that fixes that by matching Chromium-style behavior: bare
- * domains get `https://`, localhost gets `http://`, queries with whitespace
- * go to Google, and fully-qualified URLs pass through untouched.
+ * `navigate()` accepts only http(s) URLs, so raw address-bar input like `x.com`
+ * would snap the pane to `about:blank`; `normalizeAddressBarInput` applies
+ * Chromium-style completion first.
  */
 
 import { describe, expect, test } from "bun:test"

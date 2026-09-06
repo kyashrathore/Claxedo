@@ -54,18 +54,19 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
     const draftDefault = input.draftDefaultApplication?.(scope, type)
     input.setOptionsLoading(scope, true)
     /**
-     * A load whose result is no longer wanted — the scope moved to another
-     * harness, or a newer load superseded this one — must still release the
-     * loading flag it raised. It previously just returned, and since the model
-     * control renders "Loading models" straight off `optionsLoading` with no
-     * other exit, a switch that outran its own in-flight request left the
-     * control stuck there for the life of the scope (caught by Tier R's
-     * `real-harness-local`). Releasing the flag is safe even when someone else
-     * now owns the scope: the winning load raised it again on its own entry,
-     * and whatever it resolves to writes the authoritative value after this.
+     * A load whose result is no longer wanted still has to release the loading
+     * flag it raised: the model control renders "Loading models" straight off
+     * `optionsLoading` with no other exit, so a harness switch that outran its
+     * own in-flight request would leave the control stuck there for the life of
+     * the scope.
+     *
+     * The seq check is what makes that safe. When a NEWER load has taken the
+     * scope it raised the flag for itself and owns it until its own request
+     * settles; clearing here would drop the control out of its loading state
+     * while that request is still running.
      */
     const abandon = () => {
-      input.setOptionsLoading(scope, false)
+      if (input.cache.getSeq(scope) === id) input.setOptionsLoading(scope, false)
       return undefined
     }
     const superseded = () => input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)

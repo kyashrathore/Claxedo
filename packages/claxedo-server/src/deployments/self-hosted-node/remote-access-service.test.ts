@@ -6,7 +6,7 @@ import { signHostPayload, type LocalHostIdentity } from "../../workspace/local-h
 import { createRemoteAccessService } from "./remote-access-service"
 
 /**
- * Machine-wide remote access against the REAL SQLite authority.
+ * Machine-wide remote access against the real SQLite authority.
  *
  * Every route to "routable" here crosses the production contract: the service
  * signs the real enroll-v1 and heartbeat-v2 payload literals with a real P-256
@@ -108,7 +108,7 @@ describe("remote access service", () => {
       host_id: "host_machine",
       display_name: "Yash's Mac",
     })
-    // Routable = owner-assigned AND machine-acked AND live lease, verified by
+    // Routable = owner-assigned and machine-acked and live lease, verified by
     // the real authority from the signatures the service produced.
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
       active: true,
@@ -118,7 +118,7 @@ describe("remote access service", () => {
       active: true,
       host_id: "host_machine",
     })
-    // The v2 heartbeat literal covered the whole served set in ONE signature.
+    // The v2 heartbeat literal covered the whole served set in one signature.
     expect(signSpy.mock.calls.map(([, payload]) => payload)).toContain(
       [
         "claxedo.host-enrollment.heartbeat.v2",
@@ -141,7 +141,7 @@ describe("remote access service", () => {
 
   test("every beat declares the composition of the runtimes this host serves", async () => {
     // The control plane mints each client's event-stream scope from what the
-    // HOST declared and infers nothing, so this service has to carry the
+    // host declared and infers nothing, so this service has to carry the
     // composition of the embedded runtimes it shares out. Read back through
     // the real authority's routing answer — the same value the connection mint
     // reads — for both compositions, because a beat that hard-coded one of
@@ -196,7 +196,7 @@ describe("remote access service", () => {
       active: true,
       host_id: "host_machine",
     })
-    // The devices surface names the MACHINE. A share-path enrollment carries
+    // The devices surface names the machine. A share-path enrollment carries
     // no machine display name yet, so it falls back to the host id.
     await expect(service.devices(auth)).resolves.toEqual([{
       hostId: "host_machine",
@@ -268,7 +268,7 @@ describe("remote access service", () => {
       listLocalWorkspaces: async () => [{ id: "ws_1", kind: "local", displayName: "one" }],
       localHostIdentity: async () => identity,
       sessionAuthority: () => "local",
-      // A tampering signer: heartbeat signatures cover an EMPTY set no matter
+      // A tampering signer: heartbeat signatures cover an empty set no matter
       // what the service claims to serve. The real verifier must refuse it.
       signHostPayload: (who, payload) =>
         signHostPayload(

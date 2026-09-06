@@ -59,8 +59,7 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
     expect(processLineage(rows, 200).some(isT3Process)).toBe(true);
   });
 
-  test("requires known AC, nominal thermal, stable display, and uninterrupted clocks", async () => {
-    if (process.platform !== "darwin") return;
+  test.skipIf(process.platform !== "darwin")("captures macOS host state and rejects display or clock changes", async () => {
     const commands: HostCommands = { async run(command) {
       if (command[0] === "pmset" && command.at(-1) === "batt") return { code: 0, stdout: "Now drawing from 'AC Power'\n", stderr: "" };
       if (command[0] === "pmset") return { code: 0, stdout: "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\n", stderr: "" };
@@ -89,6 +88,7 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
       expect(result.manifest.validity).toBe("invalid");
       expect(result.manifest.samples).toHaveLength(9);
       expect(result.manifest.samples.every((sample) => sample.validity.status === "invalid")).toBe(true);
+      expect(result.manifest.summary).toHaveLength(9);
       expect(result.manifest.summary.every((metric) => metric.validSamples === 0 && metric.excludedInvalidSamples === 1)).toBe(true);
       const persisted = JSON.parse(await readFile(path.join(output, "attempt.json"), "utf8"));
       expect(persisted.samples).toHaveLength(9);

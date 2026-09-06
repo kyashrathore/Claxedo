@@ -6,6 +6,7 @@ import { resolveLocalServerMigrationJournal } from "./local-server"
 import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 import { resolveTargetOsArch } from "./target-platform"
 import { runBunBuild } from "../../../script/bun-build"
+import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 
 // Native modules cannot be bundled — they ship as node_modules content, and the
 // public OpenCode SDK's asset-relative graph is staged separately under
@@ -46,6 +47,9 @@ export async function bundleClaxedoServer(source: string, destination: string) {
       ),
     },
     plugins: [
+      // Sibling packages enter this bundle as the dist an npm consumer gets, not
+      // as workspace source (see the plugin header); prebuild builds them first.
+      publishedExportsPlugin(),
       {
         name: "jsonc-parser-esm",
         setup(build) {

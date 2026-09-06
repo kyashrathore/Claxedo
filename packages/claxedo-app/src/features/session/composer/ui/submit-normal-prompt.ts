@@ -21,7 +21,6 @@ import {
 import { requestAcceptedPromptRefresh } from "../../store/accepted-prompt-refresh"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import type { PromptSnapshot } from "../../commands/prompt-machine"
 
 type PromptContextItem = Parameters<typeof preparePromptRequest>[0]["contextItems"][number]
 type PromptClient = Parameters<typeof sendPromptRequest>[0]["client"]
@@ -71,7 +70,6 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly optimisticTimeline: PromptTimelineOptimisticStore
   readonly runtimePromptClient: PromptClient
   readonly statusClient: { session: { status(): Promise<{ data?: Record<string, unknown> }> } }
-  readonly demo: boolean
   readonly globalSDK?: GlobalEvents
   readonly refreshDirectory: VoidFunction
   readonly clearInput: VoidFunction
@@ -87,13 +85,6 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly showSendFailed: (err: unknown) => void
   readonly worktreePreparingMessage: string
 }) {
-  const snapshot: PromptSnapshot = {
-    bodyMd: input.text,
-    comments: input.contextItems.map((item) => item.key),
-    images: input.images.map((item) => item.filename ?? item.mime),
-    mode: "normal",
-    messageID: Identifier.ascending("message"),
-  }
   const prepare = {
     prompt: input.currentPrompt,
     contextItems: input.contextItems,
@@ -101,7 +92,7 @@ export async function dispatchNormalPromptSubmit(input: {
     text: input.text,
     sessionID: input.session.id,
     sessionDirectory: input.sessionDirectory,
-    messageID: snapshot.messageID,
+    messageID: Identifier.ascending("message"),
   }
   let timeline: ReturnType<typeof createPromptTimelineReconciliation> | undefined
   const timelineFor = (promptRequest: ReturnType<typeof preparePromptRequest>) => {
@@ -150,7 +141,6 @@ export async function dispatchNormalPromptSubmit(input: {
     return {
       sessionID: input.session.id,
       client: input.runtimePromptClient,
-      demo: input.demo,
       waitForWorktree: () => waitForPendingWorktree({
         sessionID: input.session.id,
         sessionDirectory: input.sessionDirectory,
@@ -189,7 +179,6 @@ export async function dispatchNormalPromptSubmit(input: {
           })
         }
       },
-      onDemoReply: timeline.addDemoReply,
       clearBoot: input.clearBoot,
       clearCloudStartup: input.clearCloudStartup,
       onAbortCleanup: abortCleanup,

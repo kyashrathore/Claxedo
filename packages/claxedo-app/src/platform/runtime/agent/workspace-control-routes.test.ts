@@ -107,12 +107,4 @@ describe("workspace control routes", () => {
     expect(experimentalSandboxPath("workspace:ws_cloud"))
       .toBe("/api/experimental/sandbox?directory=workspace%3Aws_cloud")
   })
-
-  test("workspace create surfaces do not import RuntimeGateway for stable route helpers", async () => {
-    // DialogCreateCloudWorkspace (the dead New-workspace Local/Cloud dialog) was
-    // deleted — see e2e/e2e-decisions.md #16. project-actions.tsx remains the
-    // live surface this guard protects.
-    expect(await Bun.file(new URL("../../../features/workspaces/actions/project-actions.tsx", import.meta.url)).text())
-      .not.toContain("RuntimeGateway")
-  })
 })

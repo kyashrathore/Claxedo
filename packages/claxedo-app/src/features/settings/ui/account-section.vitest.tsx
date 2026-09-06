@@ -32,7 +32,7 @@ function mount(port: AccountPort) {
 
 afterEach(() => {
   cleanup()
-  navigate.mockClear()
+  navigate.mockReset()
 })
 
 describe("AccountSettingsSection", () => {
@@ -75,16 +75,24 @@ describe("AccountSettingsSection", () => {
     // Navigating first would unmount this surface mid-flight and, on desktop,
     // abandon the IPC call that actually clears the credential.
     const order: string[] = []
+    let finishSignOut!: () => void
+    const pendingSignOut = new Promise<void>((resolve) => { finishSignOut = resolve })
     const signOut = vi.fn(async () => {
       order.push("signOut")
+      await pendingSignOut
+      order.push("signedOut")
     })
     navigate.mockImplementation(() => order.push("navigate"))
     mount(stubPort({ status: "signed", identity: { userId: "user_1", email: "person@example.com" } }, signOut))
 
     fireEvent.click(screen.getByText("settings.general.account.logout.button"))
 
+    expect(signOut).toHaveBeenCalledOnce()
+    await Promise.resolve()
+    expect(navigate).not.toHaveBeenCalled()
+    finishSignOut()
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/login", { replace: true }))
-    expect(order).toEqual(["signOut", "navigate"])
+    expect(order).toEqual(["signOut", "signedOut", "navigate"])
   })
 
   test("reads the account reactively, not once at mount", async () => {

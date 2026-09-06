@@ -1,5 +1,5 @@
+import { isRecord, isString } from "@claxedo/helpers/guards"
 import { parse as parseYaml } from "yaml"
-import { isJsonRecord } from "../../platform/runtime/lib/json"
 import type { AgentPluginTree } from "../artifacts/tree"
 import { treeChildren, treeEntry, treeText } from "../artifacts/tree"
 import {
@@ -41,21 +41,17 @@ function resolvedKind(tree: AgentPluginTree, relative: string): "file" | "direct
   return entry?.kind ?? "missing"
 }
 
-function validString(value: unknown): value is string {
-  return typeof value === "string"
-}
-
 function stringRecord(value: unknown): value is Record<string, string> {
-  return isJsonRecord(value) && Object.values(value).every(validString)
+  return isRecord(value) && Object.values(value).every(isString)
 }
 
 function extensionRecord(value: unknown): value is Record<string, Record<string, unknown>> {
-  return isJsonRecord(value) && Object.values(value).every(isJsonRecord)
+  return isRecord(value) && Object.values(value).every(isRecord)
 }
 
 function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagnostics: AgentPluginDiagnostic[] } {
   const diagnostics: AgentPluginDiagnostic[] = []
-  if (!isJsonRecord(raw)) {
+  if (!isRecord(raw)) {
     return { diagnostics: [{ code: "manifest_invalid", path: "plugin.json", message: "plugin.json must contain an object" }] }
   }
 
@@ -78,17 +74,17 @@ function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagn
     return fatal("name must satisfy the Agent Plugins v1 name constraints")
   }
   for (const field of ["version", "description", "homepage", "repository", "license"] as const) {
-    if (raw[field] !== undefined && !validString(raw[field])) return fatal(`${field} must be a string`)
+    if (raw[field] !== undefined && !isString(raw[field])) return fatal(`${field} must be a string`)
   }
-  if (raw.keywords !== undefined && (!Array.isArray(raw.keywords) || !raw.keywords.every(validString))) {
+  if (raw.keywords !== undefined && (!Array.isArray(raw.keywords) || !raw.keywords.every(isString))) {
     return fatal("keywords must be an array of strings")
   }
   if (raw.author !== undefined) {
-    if (!isJsonRecord(raw.author)) return fatal("author must be an object")
+    if (!isRecord(raw.author)) return fatal("author must be an object")
     if (Object.keys(raw.author).some((field) => !["name", "email", "url"].includes(field))) {
       return fatal("author contains an unknown field")
     }
-    if (Object.values(raw.author).some((value) => !validString(value))) return fatal("author values must be strings")
+    if (Object.values(raw.author).some((value) => !isString(value))) return fatal("author values must be strings")
   }
 
   if (raw.extensions !== undefined && !extensionRecord(raw.extensions)) {
@@ -100,7 +96,7 @@ function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagn
     name: raw.name,
     ...(typeof raw.version === "string" ? { version: raw.version } : {}),
     ...(typeof raw.description === "string" ? { description: raw.description } : {}),
-    ...(isJsonRecord(raw.author) ? { author: raw.author as AgentPluginManifest["author"] } : {}),
+    ...(isRecord(raw.author) ? { author: raw.author as AgentPluginManifest["author"] } : {}),
     ...(typeof raw.homepage === "string" ? { homepage: raw.homepage } : {}),
     ...(typeof raw.repository === "string" ? { repository: raw.repository } : {}),
     ...(typeof raw.license === "string" ? { license: raw.license } : {}),
@@ -116,7 +112,7 @@ function parseSkillFrontmatter(text: string, directoryName: string): { name: str
   if (!match) return undefined
   try {
     const fields = parseYaml(match[1]) as unknown
-    if (!isJsonRecord(fields)) return undefined
+    if (!isRecord(fields)) return undefined
     if (typeof fields.name !== "string"
       || fields.name !== directoryName
       || fields.name.length > 64
@@ -195,7 +191,7 @@ function remoteUrl(value: unknown): value is string {
 }
 
 function headers(value: unknown): value is Record<string, string> {
-  if (!isJsonRecord(value)) return false
+  if (!isRecord(value)) return false
   const names = new Set<string>()
   try {
     for (const [name, content] of Object.entries(value)) {
@@ -219,7 +215,7 @@ function validateStdioServer(tree: AgentPluginTree, name: string, raw: Record<st
   if (!noUnknownFields(raw, ["type", "command", "args", "env", "cwd"])) return undefined
   if (typeof raw.command !== "string" || raw.command.length === 0) return undefined
   if (/\s/.test(raw.command)) return undefined
-  if (raw.args !== undefined && (!Array.isArray(raw.args) || !raw.args.every(validString))) return undefined
+  if (raw.args !== undefined && (!Array.isArray(raw.args) || !raw.args.every(isString))) return undefined
   if (raw.env !== undefined && !stringRecord(raw.env)) return undefined
   if (stringRecord(raw.env) && ("PLUGIN_ROOT" in raw.env || "PLUGIN_DATA" in raw.env)) return undefined
   if (raw.command.startsWith("./") && resolvedKind(tree, raw.command) !== "file") return undefined
@@ -260,7 +256,7 @@ function validateHttpServer(name: string, raw: Record<string, unknown>): AgentPl
 }
 
 function validateMcpServer(tree: AgentPluginTree, name: string, raw: unknown): AgentPluginMcpServer | undefined {
-  if (!isJsonRecord(raw)) return undefined
+  if (!isRecord(raw)) return undefined
   if (raw.type === "stdio") return validateStdioServer(tree, name, raw)
   if (raw.type === "streamable-http" || raw.type === "sse") return validateHttpServer(name, raw)
   return undefined
@@ -281,9 +277,9 @@ function loadMcp(tree: AgentPluginTree, diagnostics: AgentPluginDiagnostic[]) {
     diagnostics.push({ code: "mcp_invalid", path: "mcp.json", message: "mcp.json is not valid JSON" })
     return { status: "invalid" as const, servers: [] }
   }
-  if (!isJsonRecord(raw)
+  if (!isRecord(raw)
     || raw.$schema !== AGENT_PLUGIN_MCP_SCHEMA
-    || !isJsonRecord(raw.mcpServers)
+    || !isRecord(raw.mcpServers)
     || !noUnknownFields(raw, ["$schema", "mcpServers"])) {
     diagnostics.push({ code: "mcp_invalid", path: "mcp.json", message: "mcp.json does not satisfy the Agent Plugins v1 top-level schema" })
     return { status: "invalid" as const, servers: [] }

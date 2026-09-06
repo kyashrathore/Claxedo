@@ -9,13 +9,10 @@
  * narrows the same way instead of re-deriving a private copy.
  */
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 
-export function record(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
+export { isRecord }
+export { asRecord as record }
 
 /** A non-blank string, trimmed of nothing — callers that need trimming do it. */
 export function text(value: unknown): string | undefined {
@@ -45,7 +42,7 @@ export function strings(value: unknown): string[] {
 
 /** The string-valued members of a record; anything else is dropped. */
 export function stringRecord(value: unknown): Record<string, string> | undefined {
-  const row = record(value)
+  const row = asRecord(value)
   if (!row) return undefined
   const out: Record<string, string> = {}
   for (const [key, item] of Object.entries(row)) if (typeof item === "string") out[key] = item

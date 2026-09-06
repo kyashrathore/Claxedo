@@ -137,7 +137,7 @@ const ROUTE_RULES = [
     ["/api/wr/config", "/api/wr/harness-config-options"],
     RouteDomain.AgentConfigRegistry,
     runtime,
-    "Phase 2 moves canonical config ownership fully into Agent Config Registry.",
+    "Local compatibility path; canonical config ownership is Agent Config Registry.",
   ),
   // `mountWorkspaceFiles` (workspace-runtime) serves the file and search
   // routes at both the bare root and the `/api/wr` prefix; the typed

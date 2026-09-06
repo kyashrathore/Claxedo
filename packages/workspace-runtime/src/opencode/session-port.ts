@@ -1,29 +1,22 @@
 /**
- * The narrow typed session port. This replaces `OpenCodeRequestFn`.
- *
- * Three shapes here exist specifically because of what the pinned SDK does
- * (contract doc §4 and §7), not because of taste:
+ * The narrow typed session port over the pinned SDK.
  *
  *   - Every method takes a `WorkspaceScope`, never a directory. The SDK's
- *     `sessions.get` authorizes nothing, so a port that accepted a caller's
- *     directory would be a cross-workspace read waiting to happen. Every
- *     session-scoped MUTATION proves ownership with a `get` first, because the
- *     SDK's mutating calls take a bare `sessionID` and will happily act on
- *     another workspace's session.
+ *     `sessions.get` authorizes nothing and its mutating calls take a bare
+ *     `sessionID`, so every session-scoped mutation proves ownership with a
+ *     `get` first.
  *
  *   - There is no unscoped `list`. `sessions.list({})` is host-global, and
- *     `SessionListInput` takes a FLAT `directory` — passing the nested
+ *     `SessionListInput` takes a flat `directory`; the nested
  *     `{ location: { directory } }` shape that `sessions.create` and
  *     `integration.list` use is silently ignored and returns every workspace's
- *     sessions. That mistake produced a false isolation result during Unit 1
- *     characterization, so the port makes the wrong shape unrepresentable.
+ *     sessions, so the port makes that shape unrepresentable.
  *
- *   - `prompt` takes Claxedo's own input and flattens it. V2's
- *     `SessionPromptInput` is FLAT — `{ sessionID, text, files?, agents?,
- *     skills?, metadata?, delivery?, resume? }` — with no `parts` array and no
- *     per-call `model`; the model is resolved from agent/config. Modelling it
- *     as V1's `{ parts, model }` draws a typed `Missing key at ["text"]`
- *     rejection (contract doc §2.3).
+ *   - `prompt` flattens Claxedo's input. `SessionPromptInput` is
+ *     `{ sessionID, text, files?, agents?, skills?, metadata?, delivery?, resume? }`
+ *     with no `parts` array and no per-call `model` (resolved from
+ *     agent/config); a `{ parts, model }` body is rejected with
+ *     `Missing key at ["text"]`.
  */
 import type { OpenCodeHost } from "./host"
 import { assertLocationInScope, type WorkspaceScope } from "./scope"

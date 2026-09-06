@@ -31,6 +31,21 @@ describe("fast session switch race proof", () => {
       currentSessionID: visibleSessionID,
     })).toBe(true)
 
+    let releaseStatus!: (value: { data: Record<string, SessionStatus> }) => void
+    let signalStarted!: () => void
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const sdk = metaSdk("ses_a", busy)
+    sdk.session.status = async () => {
+      signalStarted()
+      return await new Promise((resolve) => { releaseStatus = resolve })
+    }
+    const staleRead = syncSessionMeta({
+      sessionID: "ses_a",
+      currentSessionID: () => visibleSessionID,
+      sdk,
+    })
+    await started
+
     markFastSessionSwitch("ses_b", now, { networkQuiet: false })
     visibleSessionID = "ses_b"
 
@@ -41,11 +56,8 @@ describe("fast session switch race proof", () => {
       currentSessionID: visibleSessionID,
     })).toBe(false)
 
-    const staleAccepted = await syncSessionMeta({
-      sessionID: "ses_a",
-      currentSessionID: () => visibleSessionID,
-      sdk: metaSdk("ses_a", busy),
-    })
+    releaseStatus({ data: { ses_a: busy } })
+    const staleAccepted = await staleRead
 
     expect(staleAccepted).toBe(false)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_a", "status"))).toBeUndefined()

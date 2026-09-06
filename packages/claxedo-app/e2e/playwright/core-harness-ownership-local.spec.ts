@@ -174,11 +174,12 @@ test.describe("core harness ownership (local) @core", () => {
   // test in this file headroom above the default so a slow (not stuck) navigation
   // doesn't fail the whole scenario. This is a per-file timeout bump, not a weakened
   // assertion — every wait inside the tests is still a deterministic poll/expect.
-  test.beforeEach(async (_fixtures, testInfo) => {
+  test.beforeEach(async () => {
+    const testInfo = test.info()
     testInfo.setTimeout(120_000)
   })
 
-  test("the unified picker owns OpenCode and harness model selection without duplicate controls — behavior 1", async ({
+  test("the unified picker owns OpenCode and harness model selection without duplicate controls", async ({
     page,
   }) => {
     await seedOneProject(page, DIR)
@@ -250,7 +251,7 @@ test.describe("core harness ownership (local) @core", () => {
       modelID: "cursor-auto",
     },
   ] as const) {
-    test(`${harnessCase.label} owns harness label, model, and payload through draft, sends, and reload; locked after creation — behaviors 1,2,3`, async ({
+    test(`${harnessCase.label} owns harness label, model, and payload through draft, sends, and reload; locked after creation`, async ({
       page,
     }) => {
       const sessionId = `ses_core_harness_${harnessCase.harness.replace(/[^a-z0-9]/g, "_")}`
@@ -317,19 +318,9 @@ test.describe("core harness ownership (local) @core", () => {
   }
 
   /**
-   * The REAL native-SDK catalog, not a one-row stand-in.
-   *
-   * Captured 2026-09-03 from `query(...).supportedModels()` against the local
-   * `claude` CLI, which is what `ClaudeDriver.fetchModels`
-   * (`agent-sdk-runtime/src/harnesses/claude/driver.ts`) maps into the `model`
-   * config option. Three facts only this shape carries, and all three are
-   * load-bearing: the FIRST row is the harness's own `default` sentinel, and it
-   * is the option's `currentValue` — so the harness always resolves a default
-   * the user did not choose, and every other row is a choice made ON TOP of that
-   * default — and every row carries a `description`, which the picker renders as
-   * a second line under the name. A fixture without descriptions makes a row's
-   * whole text equal its name, so a `^Sonnet$` filter over the row matches here
-   * and matches nothing against the real catalog.
+   * The native-SDK catalog shape: the first row is the harness's own `default` sentinel
+   * and the option's `currentValue`, and every row carries a `description` the picker
+   * renders under the name, so a `^Sonnet$` filter over the whole row text matches nothing.
    */
   const REAL_CLAUDE_SDK_MODELS = [
     { id: "default", name: "Default (recommended)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
@@ -352,11 +343,11 @@ test.describe("core harness ownership (local) @core", () => {
     await openDraftPrompt(page, DIR)
 
     const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
-    // Rule 1 — the harness-resolved model is what a draft with no choice shows.
+    // A draft with no choice shows the harness-resolved model.
     await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
     await expect(control).toContainText(/Default \(recommended\)/i)
 
-    // Rule 2 — an explicit pick is authoritative for this (workspace, harness).
+    // An explicit pick is authoritative for this (workspace, harness).
     await control.click()
     const picker = page.locator('[data-component="harness-model-picker"]')
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
@@ -370,7 +361,7 @@ test.describe("core harness ownership (local) @core", () => {
     await expect(control).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
     await expect(control).toContainText(/Sonnet/i)
 
-    // Rule 3 — it survives a reload of the same (server, workspace, harness) scope.
+    // It survives a reload of the same (server, workspace, harness) scope.
     await page.reload()
     await page.waitForLoadState("domcontentloaded")
     const reloaded = page.locator('[data-action="prompt-harness-model"]:visible').last()
@@ -390,12 +381,9 @@ test.describe("core harness ownership (local) @core", () => {
       harness: "opencode",
       harnessModels: { "claude-sdk": REAL_CLAUDE_SDK_MODELS },
     })
-    // The real `claude` model probe is a short-lived SDK query against the CLI
-    // and takes seconds, not milliseconds (`ClaudeDriver.fetchModels` budgets
-    // MODEL_LIST_TIMEOUT_MS for it). The switcher fires the options load without
-    // awaiting it, so that latency is what separates "the harness resolved a
-    // default" from "the user picked" in wall-clock order. Registered AFTER the
-    // mock so it wins the route and falls through to the mock's own answer.
+    // The real model probe takes seconds and the switcher does not await it; the delay
+    // orders "resolved default" before "user picked". Registered after the mock so it
+    // wins the route and falls through to the mock's answer.
     await page.route("**/api/claxedo/agent-config/harness/options**", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1_500))
       return route.fallback()
@@ -495,18 +483,14 @@ test.describe("core harness ownership (local) @core", () => {
         }],
       }),
     }))
-    // Start at home with a cold transient harness store, then let the rail warm
-    // the existing transcript before clicking its row. That click starts the
-    // production fast-switch network-quiet window; direct session URLs and
-    // reloads never exercise it.
+    // A rail click from home starts the fast-switch network-quiet window; direct
+    // session URLs and reloads never do.
     await page.goto("/")
     await page.waitForLoadState("domcontentloaded")
     const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionId}"]`).first()
     await expect(row).toBeVisible({ timeout: 20_000 })
-    // Pin the exact branch independently of first-fold prefetch timing. The
-    // rail owns this global and writes the same 2s values when its transcript
-    // cache is warm; doing both in one browser task guarantees the session
-    // composer mounts while that production quiet window is active.
+    // Write the quiet window in the same browser task as the click, independent of
+    // prefetch timing, so the composer mounts while it is active.
     await row.evaluate((element, id) => {
       ;(element.querySelector("button"))?.click()
       const now = Date.now()
@@ -633,7 +617,7 @@ test.describe("core harness ownership (local) @core", () => {
   })
 
   test(
-    "unavailable/auth-error harness shows one notice row, blocks submit, sends zero requests, never falls back to OpenCode — behavior 5",
+    "unavailable/auth-error harness shows one notice row, blocks submit, sends zero requests, never falls back to OpenCode",
     async ({ page }) => {
       // `hydrate()` seeds the store with a placeholder `{harness:"opencode"}` before
       // it fetches status, and that placeholder is the only harness a fresh scope with
@@ -691,15 +675,14 @@ test.describe("core harness ownership (local) @core", () => {
   )
 
   test(
-    "Connecting keeps the unified picker inspectable while submit stays disabled and sends zero requests — behavior 6",
+    "Connecting keeps the unified picker inspectable while submit stays disabled and sends zero requests",
     async ({ page }) => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_polling",
         harness: "acp:claude",
         harnessReadiness: "polling",
-        // Keep the harness in the "applying" window for the whole assertion so
-        // the polling state is stable (it never flips to ready mid-test).
+        // Stays in the "applying" window for the whole test; it never flips to ready.
         harnessPollingTurns: 1000,
       })
 
@@ -728,18 +711,17 @@ test.describe("core harness ownership (local) @core", () => {
   )
 
   test(
-    "a slow harness settles under the bounded re-probe loop: Connecting clears, readiness becomes ready, and submit unlocks — behavior 6b",
+    "a slow harness settles under the bounded re-probe loop: Connecting clears, readiness becomes ready, and submit unlocks",
     async ({ page }) => {
+      // `harnessGetPollSettleAfter` flips the mock's harness-status GET to ready after N
+      // probes; the previous test omits it and stays polling.
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_polling_settles",
         harness: "acp:claude",
         harnessReadiness: "polling",
-        // Never settles via POST (there is no switch POST in this draft flow);
-        // the ONLY settle path is the client's bounded GET re-probe loop.
+        // No switch POST in this flow; the GET re-probe loop is the only settle path.
         harnessPollingTurns: 1000,
-        // Initial hydrate GET keeps it polling; a couple of re-probe GETs later
-        // it flips to ready — proving the loop drives the harness to settle.
         harnessGetPollSettleAfter: 3,
       })
 
@@ -783,7 +765,7 @@ test.describe("core harness ownership (local) @core", () => {
     },
   )
 
-  test("session busy with abort capability false disables submit while the composer is blank — behavior 7", async ({
+  test("session busy with abort capability false disables submit while the composer is blank", async ({
     page,
   }) => {
     const sessionId = "ses_core_harness_no_abort"
@@ -793,8 +775,7 @@ test.describe("core harness ownership (local) @core", () => {
       harness: "opencode",
       timingsMs: { idle: 3_000 },
     })
-    // Override AFTER installMockRuntime so this route wins (Playwright matches the
-    // most-recently-registered handler first) — same session, abort capability off.
+    // After installMockRuntime so this route wins: same session, abort capability off.
     await page.route("**/session/*/capabilities**", (route) => {
       const type = route.request().resourceType()
       if (type !== "fetch" && type !== "xhr") return route.continue()
@@ -844,7 +825,7 @@ test.describe("core harness ownership (local) @core", () => {
     await expect(submit).toBeEnabled({ timeout: 10_000 })
   })
 
-  test("a stale, model-carrying options response does not clear the resolved model selection, and the retry does not change it — behavior 8", async ({
+  test("a stale, model-carrying options response does not clear the resolved model selection, and the retry does not change it", async ({
     page,
   }) => {
     const sessionId = "ses_core_harness_stale_options"
@@ -914,7 +895,7 @@ test.describe("core harness ownership (local) @core", () => {
   // cross-workspace half needs a workspace-runtime ref, which `installMockRuntime`'s
   // local routes never produce, so it lives in `core-harness-ownership-cloud`.
   test(
-    "a non-OpenCode harness picked on a local draft persists across a same-pane reload — never reset to OpenCode — behavior 9",
+    "a non-OpenCode harness picked on a local draft persists across a same-pane reload — never reset to OpenCode",
     async ({ page }) => {
       await seedOneProject(page, DIR)
       await installMockRuntime(page, { dir: DIR, sessionId: "ses_core_harness_persist", harness: "opencode" })

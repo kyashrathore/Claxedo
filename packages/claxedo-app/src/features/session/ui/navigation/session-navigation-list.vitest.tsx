@@ -172,10 +172,8 @@ describe("SessionNavigation", () => {
       />
     ))
 
-    // WP-C1: the row activates through its native <button> (named after the row
-    // title) and the archive control is a sibling button — both inside the row
-    // container. Enter/Space activation is the platform's job now, so this drives
-    // the click path rather than a synthesized keydown jsdom won't turn into one.
+    // Enter/Space on a native <button> is the platform's job, so this drives the
+    // click path rather than a synthesized keydown jsdom would not turn into one.
     const activateButton = view.getByRole("button", { name: "Build sidebar" })
     fireEvent.click(activateButton)
     engageRow(view.getByTestId("rail-sidebar-session-row"))
@@ -351,10 +349,9 @@ describe("SessionNavigation", () => {
 
     expect(view.getAllByTestId("rail-sidebar-session-row")[0]).toBe(firstRow)
     expect(view.getByRole("button", { name: "Archive Session 1" })).toBe(firstArchive)
-    // Selection is one semantic row state now. CSS projects the title, time,
-    // and background from `data-active`; Solid no longer mutates three class
-    // attributes and starts row/descendant transitions for each side of a
-    // switch.
+    // Selection is one semantic row state: CSS projects the title, time, and
+    // background from `data-active`, so Solid does not mutate three class
+    // attributes and start row/descendant transitions on each side of a switch.
     expect(firstRow.getAttribute("data-active")).toBe("false")
     expect(secondRow.getAttribute("data-active")).toBe("true")
     expect(view.getByRole("button", { name: "Session 1" })).not.toHaveAttribute("aria-current")
@@ -365,10 +362,9 @@ describe("SessionNavigation", () => {
   })
 
   test("prepares the workbench drag payload from a pointer drag", () => {
-    // WP-C3 replaced native HTML5 DnD with the pointer-drag engine
-    // (`useDragSource`), so drags begin on a pointerdown+move past threshold and
-    // the payload lives in the in-memory `workbenchDrag` controller — there is no
-    // `DataTransfer` to seed anymore.
+    // Drags run through the pointer-drag engine (`useDragSource`): pointerdown
+    // plus a move past threshold, payload in the in-memory `workbenchDrag`
+    // controller — there is no `DataTransfer` to seed.
     const onDragStart = vi.fn()
     const view = render(() => (
       <SessionNavigation

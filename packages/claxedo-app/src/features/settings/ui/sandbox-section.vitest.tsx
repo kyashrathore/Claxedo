@@ -66,7 +66,8 @@ vi.mock("@opencode-ai/ui/toast", () => ({
   showToast: (...args: unknown[]) => mocks.toast(...args),
 }))
 
-vi.mock("@/platform/api/api", () => ({
+vi.mock("@/platform/api/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/api/api")>(),
   api: {
     delete: (...args: unknown[]) => mocks.apiDelete(...args),
     get: (...args: unknown[]) => mocks.apiGet(...args),
@@ -74,12 +75,7 @@ vi.mock("@/platform/api/api", () => ({
   },
   getClaxedoServerUrl: () => mocks.baseUrl,
   getDefaultBaseUrl: () => mocks.baseUrl,
-  isLoopbackHttpUrl: (url: string | undefined) => {
-    if (!url) return false
-    const hostname = new URL(url).hostname
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
-  },
-  normalizeUrl: (url: string | undefined) => url?.trim().replace(/\/+$/, "") || undefined,
+
 }))
 
 vi.mock("./network-policy", () => ({
@@ -117,6 +113,10 @@ describe("SandboxSettingsSection", () => {
     fireEvent.input(screen.getByPlaceholderText("API Key"), { target: { value: "secret" } })
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
+    await waitFor(() => expect(mocks.apiPut).toHaveBeenCalledWith(
+      "http://127.0.0.1:3001/api/workspace/drivers/daytona/auth",
+      { auth: { api_key: "secret" }, default: true },
+    ))
     await waitFor(() => expect(mocks.funnelEmit).toHaveBeenCalledWith({
       name: "sandbox_provider_configured",
       provider: "daytona",

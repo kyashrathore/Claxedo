@@ -52,8 +52,8 @@ import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
-import { asRecord } from "../../platform/json/index"
 import { readJsonRecord, stringField } from "../../platform/json/index"
+import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -171,15 +171,6 @@ function piProviderAuth() {
   }
 }
 
-// Copied from routes/bootstrap.ts `signedBootstrapProjects` (that module is
-// local-only: it imports fs-backed agent-config/workspace-store and cannot
-// enter the Worker bundle). Keep the two in sync — this is what teaches the
-// app shell which directories are signed cloud/user-hosted workspaces, which
-// in turn routes runtime-owned reads (provider, files, PTY) through the relay.
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
 /**
  * "owner/repo" from a git remote. Mirrors the app's
  * `app/workbench/rail/rail-git-remote.ts` — the rail has always labelled
@@ -201,16 +192,21 @@ function ownerRepo(remote: string | undefined) {
  * identity is the only project-scoped name the row actually carries.
  */
 function projectDisplayName(row: Record<string, unknown> | undefined, projectId: string) {
-  return txt(row?.project_name) ??
-    txt(row?.projectName) ??
-    txt(row?.repo_name) ??
-    txt(row?.repoName) ??
-    ownerRepo(txt(row?.repo_url) ?? txt(row?.repoUrl)) ??
-    txt(row?.display_name) ??
-    txt(row?.displayName) ??
+  return asString(row?.project_name) ??
+    asString(row?.projectName) ??
+    asString(row?.repo_name) ??
+    asString(row?.repoName) ??
+    ownerRepo(asString(row?.repo_url) ?? asString(row?.repoUrl)) ??
+    asString(row?.display_name) ??
+    asString(row?.displayName) ??
     projectId
 }
 
+// Copied from routes/bootstrap.ts `signedBootstrapProjects` (that module is
+// local-only: it imports fs-backed agent-config/workspace-store and cannot
+// enter the Worker bundle). Keep the two in sync — this is what teaches the
+// app shell which directories are signed cloud/user-hosted workspaces, which
+// in turn routes runtime-owned reads (provider, files, PTY) through the relay.
 export function signedShellProjects(workspaces: unknown[], now: number) {
   const groups = new Map<string, {
     id: string
@@ -222,16 +218,16 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
   }>()
   for (const workspace of workspaces) {
     const row = asRecord(workspace)
-    const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
+    const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
     if (!workspaceId) continue
     // A workspace served elsewhere is addressed by its id; the host's own path
     // is location metadata.
     const directory = `workspace:${workspaceId}`
-    const remoteDirectory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory)
-    const projectId = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
-    const workspaceName = txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? workspaceId
-    const created = num(row?.created_at) ?? num(row?.createdAt) ?? now
-    const updated = num(row?.updated_at) ?? num(row?.updatedAt) ?? num(row?.last_seen_at) ?? created
+    const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
+    const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
+    const workspaceName = asString(row?.workspace_name) ?? asString(row?.workspaceName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? workspaceId
+    const created = asFiniteNumber(row?.created_at) ?? asFiniteNumber(row?.createdAt) ?? now
+    const updated = asFiniteNumber(row?.updated_at) ?? asFiniteNumber(row?.updatedAt) ?? asFiniteNumber(row?.last_seen_at) ?? created
     const group = groups.get(projectId) ?? {
       id: projectId,
       name: projectDisplayName(row, projectId),
@@ -249,14 +245,14 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
+      kind: asString(row?.access) ?? asString(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the
       // rail already does) without a second round-trip.
-      ...(txt(row?.repo_url) ?? txt(row?.repoUrl) ? { repo_url: txt(row?.repo_url) ?? txt(row?.repoUrl) } : {}),
-      ...(txt(row?.repo_name) ?? txt(row?.repoName) ? { repo_name: txt(row?.repo_name) ?? txt(row?.repoName) } : {}),
+      ...(asString(row?.repo_url) ?? asString(row?.repoUrl) ? { repo_url: asString(row?.repo_url) ?? asString(row?.repoUrl) } : {}),
+      ...(asString(row?.repo_name) ?? asString(row?.repoName) ? { repo_name: asString(row?.repo_name) ?? asString(row?.repoName) } : {}),
     }
     groups.set(projectId, group)
   }
@@ -321,13 +317,13 @@ function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
   const healthStatus = health?.status
   return {
     ...(typeof row?.ok === "boolean" ? { ok: row.ok } : {}),
-    ...(txt(row?.status) ? { status: txt(row?.status) } : {}),
+    ...(asString(row?.status) ? { status: asString(row?.status) } : {}),
     ...(decodeHarnessSelection(row?.harness) ? { harness: decodeHarnessSelection(row?.harness) } : {}),
     ...(decodeHarnessSelection(row?.activeHarness) ? { activeHarness: decodeHarnessSelection(row?.activeHarness) } : {}),
     ...(typeof row?.model === "string" || row?.model === null ? { model: row.model } : {}),
     ...(txt(row?.error) ? { error: txt(row?.error) } : {}),
     ...(healthStatus === "ok" || healthStatus === "degraded" || healthStatus === "unavailable"
-      ? { harnessHealth: { status: healthStatus, ...(txt(health?.reason) ? { reason: txt(health?.reason) } : {}) } }
+      ? { harnessHealth: { status: healthStatus, ...(asString(health?.reason) ? { reason: asString(health?.reason) } : {}) } }
       : {}),
   }
 }
@@ -441,7 +437,7 @@ export function hostedHarnessRuntimeStatus(
     const role = relayRoleOf(opened?.role)
     if (!opened || !role) return undefined
     const workspaceRecord = opened.workspace
-    const orgId = txt(workspaceRecord?.org_id) ?? txt(await authority.resolveOrgId(auth))
+    const orgId = asString(workspaceRecord?.org_id) ?? asString(await authority.resolveOrgId(auth))
     const stamp = Date.now()
     const ws: Workspace = {
       id: input.workspaceId,
@@ -579,21 +575,16 @@ const HEARTBEAT_MS = 30_000
 // `routes/events.ts`. This fallback carries heartbeats only; hosted Worker
 // composition supplies `LiveSyncRoom` for mutation nudges.
 //
-// REPLAY IS DELIBERATELY NOT IMPLEMENTED HERE, and the reason is that there is
-// nothing to replay: this fallback has no publisher of any kind. Nothing writes
-// events to it — not the process-global `claxedoBus` (which cannot be reached
-// from a module that must stay in the Worker bundle) and not the Durable Object
-// (whose absence is what selects this branch). A retention ring bolted on here
-// would buffer the empty set forever.
+// Replay is deliberately not implemented here because there is nothing to
+// replay: this fallback has no publisher. Nothing writes events to it — not the
+// process-global `claxedoBus` (unreachable from a module that must stay in the
+// Worker bundle) and not the Durable Object (whose absence selects this
+// branch). A retention ring here would buffer the empty set forever.
 //
-// Its one live consumer is the Node hosted composition (`hosted-node.ts`), which
-// passes no `liveSyncRoom`. That composition is documented as multi-instance by
-// design and single-instance in practice (`docs/plans/
-// 2026-07-18-001-cf-deployment-hardening.md` — per-instance live-sync via a
-// the authority subscription — is unbuilt), so even once it HAS a publisher, a
-// module-singleton ring would be the wrong shape for it: with N instances the
-// ring an isolate fills is not the ring the next reconnect reads. Its resumable
-// story arrives with the cross-instance fan-out, not before.
+// A hosted composition built without a `liveSyncRoom` is multi-instance, so
+// even once it has a publisher a module-singleton ring would be the wrong
+// shape: the ring one isolate fills is not the ring the next reconnect reads.
+// Replay for this branch arrives with cross-instance fan-out, not before.
 //
 // The bootstrap frame still echoes the caller's cursor so the wire contract
 // matches the Worker path and a reconnect cannot silently rewind a client's

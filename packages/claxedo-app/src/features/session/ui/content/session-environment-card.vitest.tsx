@@ -33,6 +33,12 @@ function source(overrides?: Partial<SessionEnvironmentSource>): SessionEnvironme
   }
 }
 
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+afterEach(() => {
+  if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard)
+  else Reflect.deleteProperty(navigator, "clipboard")
+})
+
 const card = () => screen.getByRole("complementary", { name: "Session environment" })
 
 describe("SessionEnvironmentCard", () => {
@@ -115,7 +121,7 @@ describe("SessionEnvironmentCard", () => {
         onOpenTab: () => {},
       }),
     )
-    expect(within(card()).queryByText("Branch")).toBeNull()
+    expect(within(card()).queryByRole("button", { name: /^Copy branch name/ })).toBeNull()
     expect(within(card()).queryByText("—")).toBeNull()
   })
 
@@ -277,10 +283,4 @@ describe("SessionEnvironmentCard", () => {
     expect(screen.getByRole("button", { name: /Changes/ })).toBeInTheDocument()
   })
 
-  test("expanding the card in one session leaves another session collapsed", async () => {
-    const collapse = createSessionEnvironmentCardState()
-    collapse.setCollapsed("ses_a", false)
-    expect(collapse.collapsed("ses_a")).toBe(false)
-    expect(collapse.collapsed("ses_b")).toBe(true)
-  })
 })

@@ -104,10 +104,11 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
   /**
    * Revision of the registry's contents.
    *
-   * The contribution lists are plain mutable arrays, so `addSurface` and
-   * `removeSurface` used to be invisible to SolidJS: a renderer that had
-   * already resolved a contribution kept the answer it got, which made hosted
-   * activation arrive too late to matter and sign-out leave hosted UI mounted.
+   * The contribution lists are plain mutable arrays, invisible to SolidJS on
+   * their own: a renderer that has already resolved a contribution keeps the
+   * answer it got, which would let hosted activation arrive too late to matter
+   * and leave hosted UI mounted after sign-out. This revision signal is what
+   * makes `addSurface` and `removeSurface` visible instead.
    *
    * Invalidation lives HERE rather than at the register/unregister helpers in
    * `first-party-content-surfaces.tsx` because this module owns every mutator
@@ -135,7 +136,7 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
      * Removes a surface by id.
      *
      * The counterpart `addSurface` never had: hosted contributions are
-     * registered when an account signs in and have to come back OUT when it
+     * registered when an account signs in and have to come back out when it
      * signs out, and without this the only way to un-register anything was to
      * reload the page.
      */

@@ -1,10 +1,10 @@
 // Vendored from arctic@2.3.4 (MIT) — see LICENSE-NOTICE.md.
 // Adaptations: node Buffer base64; injectable fetch for tests; the response
-// body is narrowed by a local guard instead of asserted (kept local so this
-// file stays self-contained for re-sync).
+// body is narrowed by a local guard instead of asserted (kept local, under a
+// name no shared module owns, so this file stays self-contained for re-sync).
 import { OAuth2Tokens } from "./oauth2.js"
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isJsonObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
@@ -40,7 +40,7 @@ export async function sendTokenRequest(request: Request, fetchImpl: FetchLike = 
   } catch {
     throw new Error("Failed to parse response body")
   }
-  if (!isRecord(data)) {
+  if (!isJsonObject(data)) {
     throw new Error("Unexpected response body data")
   }
   if (typeof data.error === "string") {

@@ -56,7 +56,7 @@ describe("requestNotificationPermission", () => {
     ;(globalThis as Record<string, unknown>).Notification = original
   })
 
-  test("requests the browser prompt exactly once when permission is undecided", async () => {
+  test("requests permission for an explicit gesture while the browser is undecided", async () => {
     const mock = installMockNotification("default", "granted")
 
     const result = await requestNotificationPermission()
@@ -75,6 +75,13 @@ describe("requestNotificationPermission", () => {
     // The browser's real requestPermission() is only invoked once — every
     // later call short-circuits because permission is no longer "default".
     expect(mock.callCount()).toBe(1)
+  })
+
+  test("a dismissed prompt can be requested again by a later explicit gesture", async () => {
+    const mock = installMockNotification("default", "default")
+    expect(await requestNotificationPermission()).toBe("default")
+    expect(await requestNotificationPermission()).toBe("default")
+    expect(mock.callCount()).toBe(2)
   })
 
   test("never calls requestPermission when already granted", async () => {

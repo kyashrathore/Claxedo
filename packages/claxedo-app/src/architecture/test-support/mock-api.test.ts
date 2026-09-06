@@ -110,12 +110,12 @@ describe("createMockApi defaults", () => {
   test("per-export overrides replace only the named export, leaving the rest at their defaults", async () => {
     const fixture = createMockApi({
       baseUrl: "http://test.local",
-      isDemoMode: () => true,
+      isEmbedMode: () => true,
     })
 
-    expect(fixture.module.isDemoMode()).toBe(true)
-    expect(fixture.module.isDemoPath("/demo/x")).toBe(true)
-    expect(fixture.module.isDemoPath("/x")).toBe(false)
+    expect(fixture.module.isEmbedMode()).toBe(true)
+    expect(fixture.module.isHostedAppHostname("app.claxedo.com")).toBe(true)
+    expect(fixture.module.isHostedAppHostname("x.test")).toBe(false)
   })
 
   test("overriding authFetch bypasses the built-in call recorder entirely", async () => {
@@ -140,14 +140,9 @@ describe("pure export mirrors match the real ../api.ts implementation", () => {
   // Bypass any mock.module("./api"/"@/platform/api/api") registered by
   // other files in this test run — same cache-busting-query technique
   // api.test.ts uses — so this always evaluates the genuine module.
-  test("isDemoPath, fixDir, normalizeUrl, isHostedAppHostname, isEmbedMode agree with the real module across a fixed input table", async () => {
+  test("fixDir, normalizeUrl, isHostedAppHostname, isEmbedMode agree with the real module across a fixed input table", async () => {
     const real = await import(`${import.meta.dir}/../../platform/api/api.ts?mock-api-contract`)
     const fixture = createMockApi()
-
-    const demoPathInputs = ["/", "/demo", "/demo/", "/demo/foo", "/foo/demo"]
-    for (const input of demoPathInputs) {
-      expect(fixture.module.isDemoPath(input)).toBe(real.isDemoPath(input))
-    }
 
     const fixDirInputs = ["/absolute/path", undefined, "relative", "prefix/Users/me/project", "Users/me/project"]
     for (const input of fixDirInputs) {
@@ -178,14 +173,12 @@ describe("pure export mirrors match the real ../api.ts implementation", () => {
       expect(fixture.module.usesUnsignedLocalTransport(input)).toBe(real.usesUnsignedLocalTransport(input))
     }
 
-    // isEmbedMode/isDemoMode read window.location — compare under the same URL.
-    window.location.href = "http://localhost/demo/?embed=1"
+    // isEmbedMode reads window.location — compare under the same URL.
+    window.location.href = "http://localhost/?embed=1"
     expect(fixture.module.isEmbedMode()).toBe(real.isEmbedMode())
-    expect(fixture.module.isDemoMode()).toBe(real.isDemoMode())
 
     window.location.href = "http://localhost/"
     expect(fixture.module.isEmbedMode()).toBe(real.isEmbedMode())
-    expect(fixture.module.isDemoMode()).toBe(real.isDemoMode())
   })
 })
 

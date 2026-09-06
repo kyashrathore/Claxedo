@@ -15,10 +15,6 @@ describe("provider catalog cache ownership", () => {
     expect(readerKey(null, "opencode")).not.toEqual(readerKey("/Users/me/project", "opencode"))
   })
 
-  test("two panes for one harness runtime share one catalog", () => {
-    expect(readerKey("workspace:ws_1", "pi")).toEqual(readerKey("workspace:ws_1", "pi"))
-  })
-
   test("different runtimes cannot reuse one harness catalog", () => {
     expect(readerKey("workspace:ws_1", "pi")).not.toEqual(readerKey("workspace:ws_2", "pi"))
     expect(readerKey("workspace:ws_1", "pi")).not.toEqual(readerKey("/Users/me/project", "pi"))
@@ -45,23 +41,14 @@ describe("workspace-owned harness catalogs", () => {
     default: { [providerID]: modelID },
   } as Parameters<typeof normalizeProviderList>[0])
 
-  const resolveLabel = (scope: string, pick: { providerID: string; modelID: string }) => {
-    const data = queryClient.getQueryData<ReturnType<typeof catalog>>(readerKey(scope, "pi"))
-    if (!data) return undefined
-    const connected = new Set(data.connected)
-    return [...data.all.values()]
-      .filter((provider) => connected.has(provider.id))
-      .flatMap((provider) => Object.values(provider.models).map((model) => ({ ...model, provider })))
-      .find((model) => model.id === pick.modelID && model.provider.id === pick.providerID)
-      ?.name
-  }
+  test("each workspace reads only its authoritative cached Pi catalog", () => {
+    const first = catalog("anthropic", "opus", "Opus")
+    const second = catalog("openai", "gpt", "GPT")
+    queryClient.setQueryData(readerKey("workspace:ws_1", "pi"), first)
+    queryClient.setQueryData(readerKey("workspace:ws_2", "pi"), second)
 
-  test("each workspace resolves only its authoritative Pi model", () => {
-    queryClient.setQueryData(readerKey("workspace:ws_1", "pi"), catalog("anthropic", "opus", "Opus"))
-    queryClient.setQueryData(readerKey("workspace:ws_2", "pi"), catalog("openai", "gpt", "GPT"))
-
-    expect(resolveLabel("workspace:ws_1", { providerID: "anthropic", modelID: "opus" })).toBe("Opus")
-    expect(resolveLabel("workspace:ws_1", { providerID: "openai", modelID: "gpt" })).toBeUndefined()
-    expect(resolveLabel("workspace:ws_2", { providerID: "openai", modelID: "gpt" })).toBe("GPT")
+    expect(queryClient.getQueryData(readerKey("workspace:ws_1", "pi"))).toEqual(first)
+    expect(queryClient.getQueryData(readerKey("workspace:ws_2", "pi"))).toEqual(second)
+    expect(queryClient.getQueryData(readerKey("workspace:ws_3", "pi"))).toBeUndefined()
   })
 })

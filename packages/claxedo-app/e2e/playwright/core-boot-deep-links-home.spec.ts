@@ -203,12 +203,7 @@ async function seedOneProject(page: Page, dir: string) {
   }, { dir, projectId: PROJECT_ID })
 }
 
-/**
- * Answers setup's first question ("where should agents run?") before the page
- * boots, so a test can start at a later step. Without it every run opens on the
- * destination question and the cloud steps stay absent — which is the flow's
- * point, not a bug to route around in production.
- */
+/** Pre-answers setup's destination question so a test can start at a later step. */
 async function seedDestination(page: Page, destination: "local" | "cloud" | "both") {
   await page.addInitScript((value: string) => {
     localStorage.setItem("claxedo.global.dat:onboarding.destination.v1", JSON.stringify({ destination: value }))
@@ -218,22 +213,16 @@ async function seedDestination(page: Page, destination: "local" | "cloud" | "bot
 async function seedNoProjects(page: Page) {
   await page.addInitScript(() => {
     localStorage.clear()
-    // Without this, `getDefaultBaseUrl()`/`server.url` falls through to the hardcoded,
-    // cross-origin default backend (127.0.0.1:3001) instead of the page's own origin —
-    // the resulting fetch is cross-origin, triggers a CORS preflight, and fails outside
-    // any of this file's same-origin `page.route()` patterns ("TypeError: Failed to
-    // fetch" from src/context/global-sdk.tsx's event stream). Same fix as
-    // seedOneProject/seedProjectWithRawLayout below.
+    // Without a serverUrl the app targets the cross-origin default backend
+    // (127.0.0.1:3001), outside every same-origin route mock in this file.
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
     }
   })
 }
 
-/** Seeds one project AND a raw value for the workbench-layout storage key, so we can
- * exercise the corrupted-layout self-heal path (behavior 7) without also triggering
- * the deep-link wipe (`initialStateForPath` only wipes on session-owning routes, and
- * these tests boot at "/"). */
+/** Seeds one project plus a raw `claxedo.state.v5` value. Callers boot at "/" so the
+ * session-route wipe in `initialStateForPath` does not discard it first. */
 async function seedProjectWithRawLayout(page: Page, dir: string, rawLayout: string) {
   await page.addInitScript(
     (input: { d: string; raw: string }) => {
@@ -269,15 +258,8 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
   return input
 }
 
-/** FINDING (shared-helper gap, worked around locally per this pooled phase's rules —
- * mock-runtime.ts edits are forbidden here): the sidebar's session list
- * (`rail-sidebar-session-row`) is populated from `GET /api/control/session-list`
- * (`src/utils/workspace-control-routes.ts` `controlSessionNavigationListUrl`,
- * `src/claxedo-ui/layouts/rail-sidebar.tsx`'s `globalSessionList` query) — a
- * claxedo-server-native endpoint entirely distinct from the OpenCode `/session` API
- * that `installMockRuntime` mocks. Without this route the sidebar shows "Could not
- * load sessions." and no row ever renders. `mock-runtime.ts` should grow a default
- * handler for this route. */
+/** Sidebar session rows come from `GET /api/control/session-list`, which
+ * `installMockRuntime` does not mock. */
 async function installSessionListMock(page: Page) {
   await page.route(sessionListRoute, (route) => {
     const type = route.request().resourceType()
@@ -306,20 +288,14 @@ async function installSessionListMock(page: Page) {
   })
 }
 
-/** Drives a full first-send flow (same shape as core-first-prompt-local) and returns
- * the URL the app navigated to once the session was created. Every deep-link /
- * discard-stale-tab scenario below builds on top of this real, oracle-proven turn.
- * Installs the shared mock runtime itself — every caller in this file relies on this
- * (a prior version of this helper omitted the call, which silently let every route
- * fall through to a real, non-existent backend at 127.0.0.1:3001 and hung every
- * caller on the `ConnectionError` screen — see finding in this spec's PR notes). */
+/** Installs the mock runtime, sends a first prompt, and returns the URL the app
+ * navigated to for the created session. */
 async function createSessionViaFirstSend(page: Page, promptText: string) {
   const mock = await installMockRuntime(page, {
     dir: DIR,
     projectId: PROJECT_ID,
     sessionId: SESSION_ID,
-    // Explicit catalog model — drafts do not invent a default after the
-    // require-explicit-model product change; the helper picks it below.
+    // Drafts require an explicit model; `ensureComposerModelSelected` picks this one.
     harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
   })
   await seedOneProject(page, DIR)
@@ -346,40 +322,16 @@ async function readPersistedLayout(page: Page) {
   })
 }
 
-// FINDING (verified by reading source, not resolvable via a spec-local page.route —
-// mock-runtime.ts edits are forbidden in this pooled phase): `AuthenticatedLayout`'s
-// `resolveDefaultUrl()` (src/app.tsx:353-361) always falls back to the hardcoded
-// `getClaxedoServerUrl()` default (http://127.0.0.1:3001) for the app's own "central"
-// server connection when no `platform.getDefaultServer()`/env override is present —
-// this is a SEPARATE resolution path from `__CLAXEDO__.serverUrl`
-// (`getDefaultBaseUrl()`/`seedOneProject`/`seedNoProjects` in this file), used only by
-// `directory-layout.tsx`. Multiple distinct control-plane-scoped endpoints
-// (`src/context/global-sdk.tsx`'s global event stream on mount, `/api/wr/events` relay
-// polling, `/api/control/sessions`) all connect to this central URL directly and are
-// NOT interceptable from a same-origin `page.route()` — tried with and without a query
-// string, and with/without a resourceType guard, verified not to work — so they
-// genuinely reach 127.0.0.1:3001 and fail to connect (no real claxedo-server runs there
-// in this mocked test). This is an environment/architecture gap, not app misbehavior
-// under real conditions (a real dev environment DOES run claxedo-server on :3001) —
-// filtered by origin here, pending either an app fix
-// (respect a test-injected central server URL) or a mock-runtime.ts default-backend-
-// origin route.
+// The app's central-server connection resolves to 127.0.0.1:3001 independently of
+// `__CLAXEDO__.serverUrl`; same-origin `page.route()` cannot intercept it and no server
+// runs there in this test.
 function fromUnmockedCentralOrigin(item: string) {
   return item.includes("127.0.0.1:3001")
 }
 
-/** Chromium's own console MIRROR of a network event ("Failed to load resource: …").
- * `mock-runtime.ts` records only `message.text()`, which for these lines carries no URL
- * (the origin lives in `message.location()`, which the shared helper does not capture),
- * so they cannot be origin-attributed from the console list alone. Dropping them from
- * `nonProviderConsole` is a DE-DUPLICATION, not a silent hole: a resource that fails to
- * load always also produces either a `requestfailed` (`requests.failed`) or a >=400
- * `response` (`requests.badResponses`) entry WITH its full URL, and those two lists are
- * asserted below with only the two documented origin exclusions. `expectConsoleMirrors
- * AreAccountedFor` pins that correspondence so this filter can never swallow a failure
- * the network assertions cannot see. (The former blanket `"ERR_FAILED"` clause was
- * removed: it was undocumented, matched any origin, and is redundant — Chromium prefixes
- * those same lines with "Failed to load resource".) */
+/** Chromium's console mirror of a network failure carries no URL, so it cannot be
+ * origin-filtered. Each one also appears with its URL in `requests.failed` or
+ * `requests.badResponses`; `expectConsoleMirrorsAreAccountedFor` checks that. */
 function isNetworkMirrorConsole(item: string) {
   return item.includes("Failed to load resource")
 }
@@ -388,10 +340,7 @@ function nonProviderConsole(entries: string[]) {
   return entries.filter((item) => !isNetworkMirrorConsole(item) && !fromUnmockedCentralOrigin(item))
 }
 
-/** Every dropped network-mirror console line must have a real network record behind it.
- * If mirrors outnumber the recorded failures, some failure exists that ONLY the
- * (URL-less, hence unfilterable) console knows about — exactly the blind spot the
- * `isNetworkMirrorConsole` filter would otherwise create. */
+/** Every dropped mirror line needs a network record behind it, or the filter is hiding a failure. */
 function expectConsoleMirrorsAreAccountedFor(requests: { console: string[]; failed: string[]; badResponses: string[] }) {
   const mirrors = requests.console.filter(isNetworkMirrorConsole)
   expect(mirrors.length).toBeLessThanOrEqual(requests.failed.length + requests.badResponses.length)
@@ -406,7 +355,7 @@ function nonProviderBadResponses(entries: string[]) {
 }
 
 test.describe("core boot, deep links, and home @core", () => {
-  test("cold boot with zero projects paints a clean shell and the Home empty state — behaviors 1,2", async ({ page }) => {
+  test("cold boot with zero projects paints a clean shell and the Home empty state", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/bootstrap**", (route) =>
       route.fulfill({
@@ -438,14 +387,10 @@ test.describe("core boot, deep links, and home @core", () => {
 
     if (ONBOARDING_V1) {
       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
-      // Setup is a page with one step on screen, not a checklist of four rows.
-      // Without a sandbox provider token the two cloud steps do not apply, so
-      // the counter reads 2 rather than 4.
+      // Without a sandbox provider token the two cloud steps do not apply, so the counter reads 2.
       await expect(page.locator("header").getByText("Step 1 of 2")).toBeVisible()
       await expect(page.getByRole("heading", { name: "Choose where your first task runs" })).toBeVisible()
-      // Required steps have no exit: no skip, and no Back on the first screen.
-      // Scoped to the setup page — the shell has its own "Skip to composer"
-      // accessibility link that is not a setup affordance.
+      // Scoped to the setup page: the shell's own "Skip to composer" link is not a setup affordance.
       const setupPage = page.locator('[data-component="setup-page"]')
       await expect(setupPage.getByRole("button", { name: /^Skip/ })).toHaveCount(0)
       await expect(setupPage.getByRole("button", { name: "Back" })).toHaveCount(0)
@@ -454,12 +399,7 @@ test.describe("core boot, deep links, and home @core", () => {
       await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
     }
-    // Non-visibility, not `.toHaveCount(0)`: `routes/home.tsx` is dead code but still
-    // MOUNTS, inside `RailWorkbenchShell`'s permanently-`hidden` subtree (see the ANATOMY
-    // finding). Its "Recent projects" node is gated on `recent().length > 0`, which this
-    // zero-project fixture never satisfies — so this line's job is only to state that the
-    // dead recents surface is not user-visible; the load-bearing behavior-2 oracle is the
-    // "No projects yet…" / "Set up Claxedo" branch assertion above.
+    // `not.toBeVisible`, not `toHaveCount(0)`: the home route stays mounted in a hidden subtree.
     await expect(page.getByText("Recent projects")).not.toBeVisible()
 
     await expect(page.locator("text=/something went wrong/i")).toHaveCount(0)
@@ -470,7 +410,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expectConsoleMirrorsAreAccountedFor(mock.requests)
   })
 
-  test("the local-only onboarding ramp hands off from AI verification to the real draft composer — behavior 11 @onboarding-enabled", async ({ page }) => {
+  test("the local-only onboarding ramp hands off from AI verification to the real draft composer @onboarding-enabled", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -519,8 +459,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(await page.evaluate(() => localStorage.getItem("claxedo.global.dat:onboarding.dismissals.v1"))).toBeNull()
     await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
     await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
-    // Web has no remote-access step, so the local flow advances directly to
-    // its second and final step once the project is present.
+    // Web has no remote-access step, so with a project present this is the final step.
     await expect(page.locator("header").getByText("Step 2 of 2")).toBeVisible()
     await expect(page.getByRole("heading", { name: "Your logins" })).toBeVisible()
 
@@ -542,7 +481,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("the remote-access deep link is honoured once earlier steps are proven — behavior 12 @onboarding-enabled", async ({ page }) => {
+  test("the remote-access deep link is honoured once earlier steps are proven @onboarding-enabled", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
@@ -559,8 +498,7 @@ test.describe("core boot, deep links, and home @core", () => {
       })
     })
 
-    // Saying yes to the cloud owes a provider key and a connected repository;
-    // both are already satisfied here, so the flow is free to move past step 1.
+    // A configured driver satisfies the cloud step, so the flow may move past it.
     await page.route("**/api/workspace/drivers**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -577,8 +515,7 @@ test.describe("core boot, deep links, and home @core", () => {
     await page.goto("/?onboarding=remote-access", { waitUntil: "domcontentloaded" })
 
     await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
-    // Web has no "this machine" to reach, so the step is absent and the deep
-    // link lands on the first thing still worth doing rather than on nothing.
+    // Web has no remote-access step, so the deep link lands on the next applicable one.
     await expect(page.getByRole("heading", { name: "Reach this machine from anywhere" })).toHaveCount(0)
     await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
   })
@@ -609,42 +546,19 @@ test.describe("core boot, deep links, and home @core", () => {
     await seedDestination(page, "both")
     await page.goto("/?onboarding=ai", { waitUntil: "domcontentloaded" })
 
-    // The server rejects workspace creation without driver credentials, so a
-    // bare yes is not a finished answer. The deep link past it falls back to
-    // the question, whose own form is where the missing key is repaired —
-    // reachable WITHOUT already having a key, which is the circularity this
-    // flow exists to break.
+    // An unconfigured driver keeps the cloud question open; its form is where the key gets saved.
     await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
     await expect(page.getByText("Sandbox provider", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Save key" })).toBeVisible()
     await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
   })
 
-  test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs — behaviors 5,6", async ({ page }) => {
+  test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs", async ({ page }) => {
     const created = await createSessionViaFirstSend(page, "core boot workspace deep link turn")
-    // A local workspace the server knows by id is addressed by that id, the
-    // same way its session rows and runtime ref carry it — not by its project.
     const primaryUrl = created.url
     expect(primaryUrl).toContain(workspaceSessionUrl(created.workspaceId, SESSION_ID))
 
-    // Behavior 6 needs a stale tab to actually exist before the fresh nav, so open one
-    // DELIBERATELY. The precondition is pinned STRICTLY `> 1`: with the previous
-    // `toBeGreaterThanOrEqual(1)` the post-nav `toBe(1)` assertion below was satisfiable
-    // by a 1 -> 1 no-op, i.e. the test passed without anything ever being discarded.
-    //
-    // CORRECTED FINDING (2026-07-25 — the previous comment here was stale and its
-    // premise is now measurably false): `useRailEmptyDraftController`
-    // (src/app/workbench/rail/rail-empty-draft-controller.ts:53-60) does NOT auto-open a
-    // second draft pane in this scenario. `shouldOpenEmptyDraftSession` requires BOTH
-    // `visibleRenderableSurfaceIds().length === 0` AND `!focusedSurface()`, and the real
-    // session pane materialized by the first send is visible AND focused — so the
-    // auto-draft never fires and `contentIds` stays at exactly 1. (Pinning `> 1` without
-    // this click was tried first and timed out at a steady `Received: 1`, which is what
-    // exposed the stale claim.) With no auto-draft to dedupe against, the "New Session"
-    // click that the old comment described as a no-op now genuinely opens a second pane:
-    // `handleNewSession` (src/features/session/actions/session-actions.tsx:194) calls
-    // `state.layout.openSession(directory, "new", ...)`, and there is no existing
-    // (directory, "new") surface for the workbench to collapse it into.
+    // Open a second pane so the fresh navigation has something to discard.
     await page.getByRole("button", { name: "New Session", exact: true }).first().click()
     await expect
       .poll(async () => (await readPersistedLayout(page))?.workbench?.contentIds?.length ?? 0, { timeout: 15_000 })
@@ -667,7 +581,7 @@ test.describe("core boot, deep links, and home @core", () => {
     }, { timeout: 10_000 }).toBe(1)
   })
 
-  test("bare /s/:sessionId deep link resolves through the session inventory to the same pane — behavior 4", async ({ page }) => {
+  test("bare /s/:sessionId deep link resolves through the session inventory to the same pane", async ({ page }) => {
     await createSessionViaFirstSend(page, "core boot bare session deep link turn")
 
     await page.goto(`/s/${SESSION_ID}`, { waitUntil: "domcontentloaded" })
@@ -681,7 +595,7 @@ test.describe("core boot, deep links, and home @core", () => {
     })
   })
 
-  test("unparseable persisted layout self-heals into a clean boot — behavior 7", async ({ page }) => {
+  test("unparseable persisted layout self-heals into a clean boot", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await seedProjectWithRawLayout(page, DIR, "{not valid json at all")
     await page.goto("/", { waitUntil: "domcontentloaded" })
@@ -691,7 +605,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(mock.requests.console.filter((entry) => entry.startsWith("pageerror:"))).toEqual([])
   })
 
-  test("structurally-invalid persisted layout self-heals into a clean boot — behavior 7", async ({ page }) => {
+  test("structurally-invalid persisted layout self-heals into a clean boot", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     const garbage = JSON.stringify({
       workbench: { panes: "not-an-array", split: null, contentIds: { nope: true }, focusedPaneId: 42 },
@@ -707,14 +621,11 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(mock.requests.console.filter((entry) => entry.startsWith("pageerror:"))).toEqual([])
   })
 
-  test("a session that 404s on fetch shows session-unavailable and is pruned from the sidebar — behavior 8", async ({ page }) => {
+  test("a session that 404s on fetch shows session-unavailable and is pruned from the sidebar", async ({ page }) => {
     const primaryUrl = (await createSessionViaFirstSend(page, "core boot missing session turn")).url
 
-    // Installed only after the send settles (not inside createSessionViaFirstSend):
-    // registering it earlier makes the control-plane list advertise the session
-    // before the app's own create-session call resolves, which hangs the submit
-    // control (session-store reconciliation confusion) — see installSessionListMock's
-    // doc comment for the underlying shared-helper gap this works around.
+    // Installed only after the send settles: advertising the session in the list before
+    // the create call resolves hangs the submit control.
     await installSessionListMock(page)
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -722,14 +633,9 @@ test.describe("core boot, deep links, and home @core", () => {
       timeout: 15_000,
     })
 
-    // Simulate the server having lost this session: its detail/message fetch and the
-    // list endpoint both stop including it.
-    // Bug fix (verified — not shared-helper territory): these patterns end in the same
-    // suffix as the PAGE's own document-navigation URL below
-    // (`/w/<workspaceId>/session/<id>` also ends in `/session/${SESSION_ID}`), so without a
-    // resourceType guard the "session 404" mock also intercepts `page.goto(primaryUrl)`
-    // itself and serves raw JSON as the document — a bare `method !== "GET"` check
-    // does not distinguish the two (both are GET).
+    // The server has lost the session. The resourceType guard keeps these patterns from
+    // also intercepting the page's own document navigation, whose URL ends in the same
+    // `/session/${SESSION_ID}` suffix.
     const isApiCall = (route: Route) => {
       const type = route.request().resourceType()
       return type === "fetch" || type === "xhr"
@@ -766,10 +672,7 @@ test.describe("core boot, deep links, and home @core", () => {
       if (!isApiCall(route) || route.request().method() !== "GET") return route.fallback()
       return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
     })
-    // Also override the control-plane list (installSessionListMock above still reports
-    // the row unconditionally) so this fresh boot's OWN list fetch reflects "gone" too
-    // — a full page.goto tears down the JS/react-query state, so client-side pruning
-    // from a prior boot does not carry over; the list response itself must be empty.
+    // Client-side pruning does not survive a full page load, so the list itself must be empty.
     await page.route(sessionListRoute, (route) => {
       if (!isApiCall(route)) return route.fallback()
       return route.fulfill({
@@ -785,19 +688,14 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.locator(`[data-testid="session-unavailable"][data-session-id="${SESSION_ID}"]`)).toBeVisible({
       timeout: 20_000,
     })
-    // A definitive 404 updates both session inventories synchronously. The
-    // unavailable surface and rail therefore settle from the same result,
-    // without depending on a later discovery/refetch cycle.
     await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0, {
       timeout: 45_000,
     })
   })
 
-  test("session routes reveal the shell immediately while server health is failing — behavior 9", async ({ page }) => {
+  test("session routes reveal the shell immediately while server health is failing", async ({ page }) => {
     const primaryUrl = (await createSessionViaFirstSend(page, "core boot startup gate turn")).url
 
-    // From here on /api/claxedo/health always fails. revealBeforeHealth means this
-    // must NOT block the session pane from rendering.
     await page.route("**/api/claxedo/health", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ healthy: false }) }),
     )
@@ -813,7 +711,7 @@ test.describe("core boot, deep links, and home @core", () => {
     })
   })
 
-  test("non-session routes hold the gate and show Could not reach when health never recovers — behavior 9", async ({ page }) => {
+  test("non-session routes hold the gate and show Could not reach when health never recovers", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/health", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ healthy: false }) }),
@@ -822,16 +720,7 @@ test.describe("core boot, deep links, and home @core", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByText(/Could not reach/)).toBeVisible({ timeout: 15_000 })
-    // The "content never revealed" half of behavior 9 is pinned on the SHELL ROOT, not
-    // on any page-level text. `[data-claxedo]` (app-shell-layout.tsx:301) mounts inside
-    // `ConnectionGate`'s `<Show when={startup()}>` children branch, whose `fallback` is
-    // ConnectionError itself — so its absence is a direct, falsifiable statement that the
-    // gate is still holding, and it flips the instant the gate leaks. (This assertion
-    // previously used `getByText("Recent projects")`, which is a poor oracle here: that
-    // string only ever renders inside `pages/home.tsx`, which `RailWorkbenchShell` keeps
-    // in a permanently `hidden` subtree — see the ANATOMY finding — and only once its
-    // lazy chunk plus the projects query have both landed. It could read 0 for reasons
-    // that have nothing to do with the gate.)
+    // `[data-claxedo]` mounts inside the gate's children branch, so its absence means the gate still holds.
     await expect(page.locator("[data-claxedo]")).toHaveCount(0)
 
     await page.waitForTimeout(1_500)
@@ -839,7 +728,7 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.locator("[data-claxedo]")).toHaveCount(0)
   })
 
-  test("unreachable server auto-recovers once health returns, no retry button — behavior 10", async ({ page }) => {
+  test("unreachable server auto-recovers once health returns, no retry button", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     let claxedoHealthCalls = 0
     await page.route("**/api/claxedo/health", (route) => {
@@ -849,13 +738,9 @@ test.describe("core boot, deep links, and home @core", () => {
       }
       return route.fallback()
     })
-    // Zero projects (not seedOneProject): with ≥1 project the real empty-workbench
-    // surface auto-navigates to a draft-session composer (see ANATOMY finding), which
-    // would confound "recovered to normal content" with "navigated away from /". Zero
-    // projects keeps the real fallback stable and directly comparable to behavior 2.
-    // installMockRuntime's default bootstrap/project routes report ONE project
-    // (session.dir) unconditionally — override both (same shape as behaviors-1,2's
-    // test) so the project list genuinely reflects zero, matching seedNoProjects below.
+    // Zero projects: with one present the empty workbench auto-navigates to a draft
+    // composer, which would confound recovery with navigation. `installMockRuntime`
+    // reports one project from bootstrap and `/project`, so both are overridden.
     await page.route("**/api/claxedo/bootstrap**", (route) =>
       route.fulfill({
         status: 200,

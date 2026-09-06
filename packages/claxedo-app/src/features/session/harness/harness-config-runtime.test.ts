@@ -217,6 +217,7 @@ describe("harness config runtime", () => {
   // `/api/wr/*` runtime paths.
   test("routes signed user-hosted harness config options through the workspace relay for a filesystem directory", async () => {
     const placements: unknown[] = []
+    const urls: string[] = []
     const harnessRuntime = createHarnessConfigRuntime({
       base: "https://claxedo.example.test",
       request: responseFetch("request"),
@@ -234,15 +235,19 @@ describe("harness config runtime", () => {
       createTransport: (input: { placement: unknown }) => {
         placements.push(input.placement)
         return {
-          fetch: async () => Response.json({ ok: true }),
+          fetch: async (resource) => {
+            urls.push(String(resource))
+            return Response.json({ ok: true })
+          },
           sdkFetch: responseFetch("sdk"),
           json: async () => ({}),
         }
       },
     })
 
-    await harnessRuntime.configOptionsFetch("claude-acp", { directory: "/repo/user-hosted/ws_uh1-dir" })
+    await harnessRuntime.configOptionsFetch(connectionHarness("claude-agent"), { directory: "/repo/user-hosted/ws_uh1-dir" })
 
+    expect(urls).toEqual(["/api/wr/harness-config-options?directory=%2Frepo%2Fuser-hosted%2Fws_uh1-dir&connectionId=claude-agent"])
     expect(placements).toEqual([{
       workspaceId: "ws_uh1",
       hosting: "workspace",

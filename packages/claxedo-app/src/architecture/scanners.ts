@@ -84,6 +84,7 @@ export function prodSourcePaths(appRoot: string) {
   return walk(path.join(appRoot, "src"))
     .filter((file) => /\.(ts|tsx)$/.test(file))
     .filter((file) => !/\.(test|vitest)\./.test(file))
+    .filter((file) => !path.relative(path.join(appRoot, "src"), file).split(path.sep).includes("test-support"))
     .filter((file) => !file.endsWith(".d.ts"))
     .filter((file) => !isTestSupport(appRoot, file))
     .filter((file) => !path.relative(path.join(appRoot, "src"), file).startsWith(`architecture${path.sep}`))
@@ -165,11 +166,11 @@ export const metrics: readonly Metric[] = [
 // Standalone drift guard: OSC 10/11 escape handling has a single owner.
 //
 // The terminal foreground/background color queries (OSC 10 / OSC 11) and their
-// magic RGB response literals must live in exactly ONE production module. A dead
-// duplicate used to live in backend/xterm.ts; if either the query detection or
-// the response literals drift back into another file, the two copies silently
-// disagree. This is a source-shape rule (per CONTRIBUTING it belongs here as a
-// named scanner rule, not as a text-scan inside capability-responder.test.ts).
+// magic RGB response literals must live in exactly one production module: if
+// either the query detection or the response literals drift into another
+// file, the two copies silently disagree. This is a source-shape rule (per
+// CONTRIBUTING it belongs here as a named scanner rule, not as a text-scan
+// inside capability-responder.test.ts).
 // Baseline: empty — capability-responder.ts is the only allowed owner.
 // ---------------------------------------------------------------------------
 export const CAPABILITY_RESPONDER_FILE = "features/terminal/core/capability-responder.ts"
@@ -194,24 +195,22 @@ export function oscColorEscapesOutsideResponder(files: SourceFile[]): Finding[] 
  * fails with `net::ERR_FAILED`, and strands the user on a blank
  * `chrome-error://chromewebdata/` window that only a relaunch recovers.
  *
- * Any prod source that writes history state must therefore gate it on
- * `urlRoutingEnabled()`. Referencing the guard anywhere in the file satisfies
- * the rule: the intent is to catch a URL write added with no protocol check at
- * all, not to prove the branch wraps a specific call.
+ * Only lib/browser-history.ts owns document writes. Its behavioral tests
+ * verify protocol gating and notification policy; mentioning a predicate in
+ * another file cannot exempt an unguarded write there.
  */
 const historyUrlWriteRe = /history\.(?:push|replace)State\s*\(/g
 
 export function unguardedHistoryUrlWrites(files: SourceFile[]): Finding[] {
   return files
-    .filter((file) => !file.text.includes("urlRoutingEnabled"))
+    .filter((file) => file.path !== "lib/browser-history.ts")
     .flatMap((file) => findMatches(file, historyUrlWriteRe))
 }
 
 // Standalone drift guard: the app/entry/app.tsx route spine, ordering, and negatives.
 //
-// override-batch-contract.test.ts (retired as snapshot theater) encoded ONE
-// invariant worth keeping: app/entry/app.tsx composes the upstream route spine, in the
-// right order, without retired constructs. The router routes are JSX (there is
+// app/entry/app.tsx composes the upstream route spine, in the right order,
+// without retired constructs. The router routes are JSX (there is
 // no exported route table to assert against), so per CONTRIBUTING this stays a
 // named source-shape rule here — not a Bun.file+toContain grep scattered in a
 // pages/*.test.ts. Baseline: empty — app/entry/app.tsx must satisfy every marker.
@@ -219,10 +218,10 @@ export function unguardedHistoryUrlWrites(files: SourceFile[]): Finding[] {
 export const APP_ROOT_ROUTE_FILE = "app/entry/app.tsx"
 
 // Provider + route markers that must be present in app/entry/app.tsx's route spine.
-// GlobalSyncProvider moved into the lazily loaded runtime-providers module
+// GlobalSyncProvider lives in the lazily loaded runtime-providers module
 // (progressive shell loading), so the spine marker here is the composition
-// point <RuntimeProviders and runtimeProvidersSpineViolations() asserts the
-// provider inside that module — the invariant now spans the two files.
+// point <RuntimeProviders>, and runtimeProvidersSpineViolations() asserts the
+// provider inside that module — the invariant spans the two files.
 const APP_ROUTE_SPINE_REQUIRED = [
   "<ServerProvider",
   "<RuntimeProviders",
@@ -249,7 +248,7 @@ export function runtimeProvidersSpineViolations(source: string): Finding[] {
   return findings
 }
 
-// Retired upstream constructs that must NOT reappear in app/entry/app.tsx.
+// Retired upstream constructs that must not reappear in app/entry/app.tsx.
 const APP_ROUTE_SPINE_FORBIDDEN = ["ServerKey"] as const
 
 // The specific "/marketplace" route must be registered BEFORE the catch-all

@@ -1,3 +1,4 @@
+import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { ScenarioId } from "../types"
 import type { fixtureFor } from "./fixtures"
 import type { Page } from "playwright-core"
@@ -15,22 +16,16 @@ export async function browserFailureDiagnostics(page: Page, monitor: ReturnType<
   // `page.url()` is synchronous; awaiting it inside `Promise.all` said it was
   // fetched alongside the others when it is read immediately.
   const url = page.url()
-  const [title, body, boundaryError, perfState] = await Promise.all([
+  const [title, body, boundaryError, snapshot] = await Promise.all([
     page.title().catch(() => ""),
     page.locator("body").innerText({ timeout: 500 }).catch(() => ""),
     readBoundaryError(page),
+    // The narrowing runs below, not in the browser: an evaluate body is
+    // serialized, so it cannot reach a module-scope import.
     page.evaluate(() => {
-      // Persisted state is whatever the last build wrote; this diagnostic
-      // reports the three fields it can find and stays silent about the rest.
-      const isRecord = (value: unknown): value is Record<string, unknown> =>
-        typeof value === "object" && value !== null && !Array.isArray(value)
-      const parsed: unknown = JSON.parse(localStorage.getItem("claxedo.state.v5") ?? "{}")
-      const state = isRecord(parsed) ? parsed : {}
-      const workbench = isRecord(state.workbench) ? state.workbench : undefined
+      const persisted: unknown = JSON.parse(localStorage.getItem("claxedo.state.v5") ?? "{}")
       return {
-        workspacePanel: state.workspacePanel,
-        focusedPaneId: workbench?.focusedPaneId,
-        panes: workbench?.panes,
+        persisted,
         shell: document.querySelector("[data-testid='workspace-panel-shell']")?.getAttribute("data-open"),
         pending: !!document.querySelector("[data-testid='workspace-review-pending']"),
         review: document.querySelectorAll("[data-review-diff-style]").length,
@@ -41,6 +36,19 @@ export async function browserFailureDiagnostics(page: Page, monitor: ReturnType<
       }
     }).catch(() => undefined),
   ])
+  // Persisted state is whatever the last build wrote; this diagnostic reports
+  // the three fields it can find and stays silent about the rest.
+  const perfState = snapshot && (() => {
+    const { persisted, ...dom } = snapshot
+    const state = asRecordOrEmpty(persisted)
+    const workbench = asRecord(state.workbench)
+    return {
+      workspacePanel: state.workspacePanel,
+      focusedPaneId: workbench?.focusedPaneId,
+      panes: workbench?.panes,
+      ...dom,
+    }
+  })()
   const details = [
     base,
     `url=${url}`,

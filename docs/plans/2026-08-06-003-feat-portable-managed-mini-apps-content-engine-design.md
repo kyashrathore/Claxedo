@@ -1374,7 +1374,7 @@ provider conformance suite.
 ### Local architecture
 
 - `packages/agent-extensions/docs/architecture.md`
-- `packages/claxedo-connections/docs/architecture.md`
+- `packages/claxedo-connections/README.md`
 - `packages/claxedo-app/src/app/integrations/registry.ts`
 - `packages/claxedo-app/src/features/browser/store/browser-pane-context.tsx`
 - `packages/claxedo-server/src/platform/auth/postures.ts`

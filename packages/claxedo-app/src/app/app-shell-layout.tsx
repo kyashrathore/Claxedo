@@ -322,9 +322,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const toggleSidebar = () => {
     shellLayout.toggleRail()
   }
-  // At narrow width the rail is a drawer and the desktop pinned-rail toggle is
-  // meaningless — the header "Show Sidebar" affordance must open the mobile
-  // drawer instead (WP-C3 collapse design §3.1).
+  // At narrow width the rail is a drawer; toggling the pinned rail does nothing visible.
   const showSidebar = () => {
     if (isNarrowViewport()) {
       chrome.openMobileSidebar()

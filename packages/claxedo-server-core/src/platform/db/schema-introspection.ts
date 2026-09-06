@@ -1,10 +1,9 @@
 /**
  * One owner for "what does this SQLite file actually contain?".
  *
- * Schema repair and the authority store both open databases whose shape is not
- * known ahead of time, and both used to answer that question with their own
- * inline `PRAGMA table_info(...)` scan. Two copies of the same read is two
- * places to get identifier quoting wrong, so the reads live here instead.
+ * Schema repair and the authority store both open databases whose shape is
+ * not known ahead of time. Centralizing the `PRAGMA table_info(...)` reads
+ * here means there is only one place to get identifier quoting wrong, not two.
  *
  * Identifiers are backtick-quoted: `PRAGMA table_info` takes a name, not a
  * bound parameter, so a table whose name needs quoting must still resolve.

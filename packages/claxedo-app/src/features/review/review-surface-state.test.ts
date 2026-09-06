@@ -37,6 +37,7 @@ describe("restored open diffs", () => {
 
   test("falls back to the focused file alone when nothing is retained", () => {
     expect(restoredOpenDiffs({ files })).toEqual([])
+    expect(restoredOpenDiffs({ files, focused: "src/gone.ts" })).toEqual([])
     expect(restoredOpenDiffs({ files, focused: "src/b.ts" })).toEqual(["src/b.ts"])
   })
 
@@ -46,6 +47,7 @@ describe("restored open diffs", () => {
   })
 
   test("drops a retained set whose files are all gone", () => {
+    expect(restoredOpenDiffs({ files, retained: ["src/gone.ts"], focused: "src/gone.ts" })).toEqual([])
     expect(restoredOpenDiffs({ files, retained: ["src/gone.ts"], focused: "src/a.ts" }))
       .toEqual(["src/a.ts"])
   })

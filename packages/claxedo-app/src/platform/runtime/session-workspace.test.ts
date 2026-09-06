@@ -66,7 +66,7 @@ describe("session workspace key", () => {
 
   test("keeps bounded workspace selector compatibility behind the shell workspace key", () => {
     // When the kind cannot be resolved from the signed inventory, the directory
-    // path no longer defaults to "cloud" (which would run the provisioning
+    // path does not default to "cloud" (which would run the provisioning
     // resolve and fail for a user-hosted workspace whose mint returns 200). Both
     // kinds route through the relay; "user-hosted" drives readiness off the
     // mint+health path, which is the source of truth.
@@ -198,15 +198,12 @@ describe("session workspace key", () => {
   })
 
   test("a session pane and a secondary surface of the same workspace converge on ONE connection key", () => {
-    // Behavior 19 (e2e core-panes-split-tabs): two panes on the same relay-backed
-    // workspace must share ONE ref-counted connection. The two surfaces reach the
-    // resolver by DIFFERENT directory shapes:
-    //   - the session pane carries the workspace's filesystem worktree (its
-    //     sessionRef cwd / meta.directory), and
-    //   - a newly opened terminal inherits `activeDirectory` — the relay-backed
-    //     workspace id itself (route key).
-    // Both MUST resolve the SAME workspaceId+kind, otherwise the second surface
-    // opens (or skips) a different connection entry and refs never reaches 2.
+    // Two panes on the same relay-backed workspace must share one ref-counted
+    // connection, yet reach the resolver by different directory shapes: the
+    // session pane carries the workspace's filesystem worktree (sessionRef cwd /
+    // meta.directory); a newly opened terminal inherits `activeDirectory`, the
+    // workspace id itself. Both must resolve the same workspaceId+kind or the
+    // second surface opens (or skips) a different connection entry.
     const projects = [
       {
         workspaces: {
@@ -222,11 +219,9 @@ describe("session workspace key", () => {
       sessionPaneWorkspaceKey({ directory: "ws_cloud_1", projects }),
     )
 
-    // The failure mode that made behavior 19 stall at refs=1: a secondary surface
-    // whose inherited directory is a `local-<sessionId>` id the inventory does NOT
-    // carry resolves to local (undefined) and takes no ref. This is exactly what
-    // the default mock `/api/workspace/resolve` produced before the harness was
-    // made faithful to the cloud inventory.
+    // A secondary surface can inherit a `local-<sessionId>` directory the inventory
+    // does not carry; that resolves to local (undefined) and takes no ref, so a
+    // cloud session reached that way never mints a second relay reference.
     expect(sessionWorkspaceRuntimeRef({ directory: "local-ses_cloud_1", projects })).toBeUndefined()
   })
 
@@ -252,7 +247,7 @@ describe("session workspace key", () => {
       projects,
     })).toEqual({ workspaceId: undefined, kind: "local" })
 
-    // Stale session rows used to claim user-hosted hosting for the local UUID.
+    // A stale session row claiming user-hosted hosting for the local UUID must not win.
     expect(sessionWorkspaceRuntimeRef({
       directory,
       workspaceId: projectId,

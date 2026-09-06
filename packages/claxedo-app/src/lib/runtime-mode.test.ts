@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, test } from "bun:test"
-import { isDemoMode, isEmbedMode, urlRoutingEnabled } from "./runtime-mode"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { isEmbedMode, urlRoutingEnabled } from "./runtime-mode"
+
+let previousUrl: string
+afterEach(() => { window.location.href = previousUrl })
 
 beforeEach(() => {
+  previousUrl = window.location.href
   window.location.href = "http://localhost/"
 })
 
@@ -35,13 +39,6 @@ describe("urlRoutingEnabled", () => {
 })
 
 describe("existing runtime mode predicates still read the document", () => {
-  test("isDemoMode tracks the /demo path", () => {
-    window.location.href = "http://localhost/demo/"
-    expect(isDemoMode()).toBe(true)
-    window.location.href = "http://localhost/w/repo"
-    expect(isDemoMode()).toBe(false)
-  })
-
   test("isEmbedMode tracks the embed search param", () => {
     window.location.href = "http://localhost/?embed=1"
     expect(isEmbedMode()).toBe(true)

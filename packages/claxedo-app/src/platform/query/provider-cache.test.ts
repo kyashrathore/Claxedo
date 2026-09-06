@@ -1,35 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { loadProviderDetailsOnce, providerDetailCacheKey } from "./provider-cache"
-import { normalizeProviderList, providerNeedsDetailHydration } from "./provider-list"
+import { normalizeProviderList } from "./provider-list"
 import { queryClient } from "./query-client"
 
-describe("provider detail hydration", () => {
-  test("connected index rows still need a detail fetch", () => {
-    const cached = normalizeProviderList({
-      all: [{ id: "opencode", name: "OpenCode Zen", models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-      connected: ["opencode"],
-      default: { opencode: "big-pickle" },
-    })
-    expect(providerNeedsDetailHydration(cached, "opencode")).toBe(true)
-    expect(providerNeedsDetailHydration(cached, "opencode-go")).toBe(true)
-  })
-
-  test("fully hydrated connected providers skip detail fetch", () => {
-    const cached = normalizeProviderList({
-      all: [{
-        id: "opencode",
-        name: "OpenCode Zen",
-        models: {
-          "big-pickle": { id: "big-pickle", name: "Big Pickle" },
-          "model-b": { id: "model-b", name: "Model B" },
-        },
-      }],
-      connected: ["opencode"],
-      default: { opencode: "big-pickle" },
-    })
-    expect(providerNeedsDetailHydration(cached, "opencode")).toBe(false)
-  })
-})
+afterEach(() => queryClient.clear())
 
 describe("provider detail loading", () => {
   test("shares one provider detail request across consumers and remembers success", async () => {

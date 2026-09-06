@@ -1,6 +1,5 @@
 /**
- * Viewport breakpoint tokens — the single source of truth for every
- * layout-gating pixel threshold in the app (WP-C3).
+ * The single source of truth for every layout-gating pixel threshold in the app.
  *
  * The five on-scale tokens mirror Tailwind's default `screens` map
  * (`sm=640, md=768, lg=1024, xl=1280, 2xl=1536`) so a `md:`/`max-md:` utility
@@ -8,7 +7,7 @@
  * width. The three `BP_EDITOR_*`/`BP_XS` tokens are deliberate exceptions that
  * are NOT on the Tailwind scale — kept named rather than forced onto the
  * nearest stock step, because rounding them would shift real trigger widths
- * (see the inventory §1 page-editor rows).
+ * in document-editor.css.
  *
  * CSS custom properties cannot be interpolated into `@media` conditions
  * (`@media (max-width: var(--bp-md))` is invalid CSS), so the `@media` rules in
@@ -27,7 +26,7 @@ export const BP_XL = 1280 // Tailwind `xl` — reserved (no gate today)
 export const BP_2XL = 1536 // Tailwind `2xl` — ui-overrides timeline/composer max-width restore
 
 // Deliberately OFF the Tailwind scale — named exceptions, not forced onto the
-// nearest stock step (see the inventory §1 page-editor rows).
+// nearest stock step (each is a live document-editor.css trigger width).
 export const BP_EDITOR_WIDE = 1200 // document-editor.css padding tier (between lg and xl)
 export const BP_EDITOR_COMPACT = 900 // document-editor.css padding/actions tier (between md and lg)
 export const BP_XS = 420 // document-editor.css extra-narrow-phone tier — live at the mobile iPhone-13 (390px) viewport, do NOT fold into BP_SM

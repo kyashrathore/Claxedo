@@ -3,8 +3,8 @@ import { defineConfig } from "vitest/config"
 /**
  * The offline gate over the deployed-Cloudflare acceptance HARNESS.
  *
- * `e2e/playwright/deployed-cloudflare-acceptance.test.ts` was collected by no
- * runner before this config existed: it is a vitest file, but
+ * `e2e/playwright/deployed-cloudflare-acceptance.vitest.ts` is outside the app's
+ * default Vitest discovery:
  * `vitest.config.ts` includes only `src/**` and `playwright.config.ts` matches
  * `**\/*.spec.ts`. `tsconfig.e2e.json` typechecked it, so it compiled while
  * none of its assertions ever ran — the harness that proves the deployed
@@ -28,6 +28,6 @@ export default defineConfig({
   resolve: { conditions: ["development", "node"] },
   test: {
     environment: "node",
-    include: ["e2e/playwright/deployed-cloudflare-acceptance.test.ts"],
+    include: ["e2e/playwright/deployed-cloudflare-acceptance.vitest.ts"],
   },
 })

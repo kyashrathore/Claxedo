@@ -84,7 +84,7 @@ describe("mock-runtime route shadowing", () => {
     expect(offenders).toEqual([])
   })
 
-  test("glob translation still matches Playwright's own", () => {
+  test("glob translation handles the route forms used by the static audit", () => {
     // Pins the behaviours `globToRegexPattern` is copied for. `**` crossing `/` and `*`
     // NOT crossing it is the whole basis of the analysis: get it backwards and every
     // `/session/:id`-shaped collision disappears from the report.

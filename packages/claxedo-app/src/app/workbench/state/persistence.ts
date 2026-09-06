@@ -1,6 +1,6 @@
 // Persistence — v5 validator/defaults.
 
-import { isRecord, recordOrEmpty } from "@/lib/record"
+import { asRecordOrEmpty, asString, isRecord } from "@claxedo/helpers/guards"
 import { constructWorkbenchState, validate as validateWorkbench } from "../workbench/index"
 import type { WorkbenchState } from "../workbench/index"
 import {
@@ -24,7 +24,6 @@ import type {
 } from "./types"
 
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
-const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined)
 const contentTypes = new Set<string>(CONTENT_TYPES)
 
 // ── default factories ─────────────────────────────────────────────────────
@@ -80,64 +79,64 @@ const isContentType = (v: unknown): v is ContentType =>
 function validateContentPayload(input: unknown, type: ContentType): ContentPayload | undefined {
   if (!isRecord(input)) return undefined
   if (type === "page") {
-    const pageId = str(input.pageId)
+    const pageId = asString(input.pageId)
     return pageId === undefined ? undefined : { ...input, type, pageId }
   }
   if (type === "pages-index" || type === "marketplace") return { ...input, type }
   if (type === "draft-session") {
-    const draftId = str(input.draftId)
-    const providerDirectory = str(input.providerDirectory)
+    const draftId = asString(input.draftId)
+    const providerDirectory = asString(input.providerDirectory)
     return draftId === undefined || providerDirectory === undefined
       ? undefined
       : { ...input, type, draftId, providerDirectory }
   }
   if (type === "session") {
-    const sessionId = str(input.sessionId)
+    const sessionId = asString(input.sessionId)
     return sessionId === undefined ? undefined : { ...input, type, sessionId }
   }
-  const directory = str(input.directory)
+  const directory = asString(input.directory)
   return directory === undefined ? undefined : { ...input, type, directory }
 }
 
 function validateMeta(input: unknown): ContentMeta | undefined {
   if (!isRecord(input)) return undefined
-  const id = str(input.id)
+  const id = asString(input.id)
   if (!id) return undefined
   if (!isContentType(input.type)) return undefined
   const meta: ContentMeta = {
     id,
     type: input.type,
     scope: input.scope === "global" || input.scope === "directory" ? input.scope : undefined,
-    directory: str(input.directory),
-    draftId: str(input.draftId),
-    providerDirectory: str(input.providerDirectory),
+    directory: asString(input.directory),
+    draftId: asString(input.draftId),
+    providerDirectory: asString(input.providerDirectory),
     draftPanel: input.draftPanel === "attach" || input.draftPanel === "create" ? input.draftPanel : undefined,
-    draftProjectId: str(input.draftProjectId),
-    sessionId: str(input.sessionId),
-    terminalId: str(input.terminalId),
-    filePath: str(input.filePath),
-    pageId: str(input.pageId),
+    draftProjectId: asString(input.draftProjectId),
+    sessionId: asString(input.sessionId),
+    terminalId: asString(input.terminalId),
+    filePath: asString(input.filePath),
+    pageId: asString(input.pageId),
     content: validateContentPayload(input.content, input.type),
   }
   if (meta.content) {
-    meta.directory = meta.directory ?? str(meta.content.directory)
-    meta.sessionId = meta.sessionId ?? str(meta.content.sessionId)
-    meta.terminalId = meta.terminalId ?? str(meta.content.terminalId)
-    meta.filePath = meta.filePath ?? str(meta.content.filePath)
-    meta.pageId = meta.pageId ?? str(meta.content.pageId)
+    meta.directory = meta.directory ?? asString(meta.content.directory)
+    meta.sessionId = meta.sessionId ?? asString(meta.content.sessionId)
+    meta.terminalId = meta.terminalId ?? asString(meta.content.terminalId)
+    meta.filePath = meta.filePath ?? asString(meta.content.filePath)
+    meta.pageId = meta.pageId ?? asString(meta.content.pageId)
   }
   return meta
 }
 
 function missingRequiredSessionRef(meta: ContentMeta) {
-  const sessionId = meta.sessionId ?? str(meta.content?.sessionId)
+  const sessionId = meta.sessionId ?? asString(meta.content?.sessionId)
   if (!sessionId || sessionId === "new") return false
   if (meta.type !== "session" && meta.type !== "context") return false
   return !meta.content?.sessionRef
 }
 
 function validateRail(input: unknown): RailSlice {
-  const o = recordOrEmpty(input)
+  const o = asRecordOrEmpty(input)
   const width = typeof o.width === "number" && Number.isFinite(o.width) && o.width >= 220 && o.width <= 520
     ? o.width
     : 260
@@ -151,28 +150,28 @@ function validateRail(input: unknown): RailSlice {
 }
 
 function validateWorkspace(input: unknown): WorkspaceSlice {
-  const o = recordOrEmpty(input)
+  const o = asRecordOrEmpty(input)
   const paneWorktree: WorkspaceSlice["paneWorktree"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.paneWorktree))) {
-    const e = recordOrEmpty(v)
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.paneWorktree))) {
+    const e = asRecordOrEmpty(v)
     paneWorktree[k] = {
       default: typeof e.default === "string" ? e.default : null,
       pinned: typeof e.pinned === "string" ? e.pinned : null,
     }
   }
   const recency: WorkspaceSlice["recency"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.recency))) {
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.recency))) {
     recency[k] = arr(v).filter((s): s is string => typeof s === "string")
   }
   const worktreeColor: WorkspaceSlice["worktreeColor"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.worktreeColor))) {
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.worktreeColor))) {
     if (typeof v === "string") worktreeColor[k] = v
   }
   return { paneWorktree, recency, worktreeColor }
 }
 
 function validateProcessPane(input: unknown): ProcessPaneSlice {
-  const o = recordOrEmpty(input)
+  const o = asRecordOrEmpty(input)
   const action = o.pendingAction
   return {
     crashedWhileClosed: typeof o.crashedWhileClosed === "boolean" ? o.crashedWhileClosed : false,
@@ -182,21 +181,21 @@ function validateProcessPane(input: unknown): ProcessPaneSlice {
 }
 
 function validateTerminal(input: unknown): TerminalSlice {
-  const o = recordOrEmpty(input)
+  const o = asRecordOrEmpty(input)
   const owner: TerminalSlice["owner"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.owner))) {
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.owner))) {
     if (typeof v === "string") owner[k] = v
   }
   const agentStatus: TerminalSlice["agentStatus"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.agentStatus))) {
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.agentStatus))) {
     if (v === "idle" || v === "working" || v === "permission") agentStatus[k] = v
   }
   const agentSeen: TerminalSlice["agentSeen"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.agentSeen))) {
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.agentSeen))) {
     if (v === true) agentSeen[k] = true
   }
   const lifecycle: TerminalSlice["lifecycle"] = {}
-  for (const [k, v] of Object.entries(recordOrEmpty(o.lifecycle))) {
+  for (const [k, v] of Object.entries(asRecordOrEmpty(o.lifecycle))) {
     if (
       v === "creating" ||
       v === "attaching" ||
@@ -234,19 +233,19 @@ function validateWorkspacePanelFocus(input: unknown): WorkspacePanelState["focus
   if (version === undefined) return undefined
   if (input.kind === "review") return { kind: "review", version }
   if (input.kind === "browser") {
-    const url = str(input.url)
+    const url = asString(input.url)
     return url === undefined ? undefined : { kind: "browser", url, version }
   }
   if (input.kind === "process") {
-    const processId = str(input.processId)
+    const processId = asString(input.processId)
     return processId === undefined ? undefined : { kind: "process", processId, version }
   }
   if (input.kind === "context") {
-    const sessionId = str(input.sessionId)
+    const sessionId = asString(input.sessionId)
     return sessionId === undefined ? undefined : { kind: "context", sessionId, version }
   }
   if (input.kind !== "file") return undefined
-  const path = str(input.path)
+  const path = asString(input.path)
   const intent = input.intent
   if (path === undefined || !isFileFocusIntent(intent)) return undefined
   const line = num(input.line)
@@ -263,10 +262,10 @@ function validateWorkspacePanelFocus(input: unknown): WorkspacePanelState["focus
 
 function validateWorkspacePanelActivity(input: unknown): WorkspacePanelState["activitySubject"] {
   if (!isRecord(input)) return undefined
-  const subjectType = str(input.subjectType)
-  const subjectId = str(input.subjectId)
+  const subjectType = asString(input.subjectType)
+  const subjectId = asString(input.subjectId)
   if (subjectType === undefined || subjectId === undefined) return undefined
-  const label = str(input.label)
+  const label = asString(input.label)
   return { subjectType, subjectId, ...(label === undefined ? {} : { label }) }
 }
 
@@ -280,8 +279,8 @@ function validateWorkspacePanelActivity(input: unknown): WorkspacePanelState["ac
  */
 function validateWorkspacePanel(input: unknown): WorkspacePanelState {
   if (!isRecord(input) || typeof input.open !== "boolean") return createWorkspacePanel()
-  const workspaceDir = str(input.workspaceDir)
-  const targetPaneId = str(input.targetPaneId)
+  const workspaceDir = asString(input.workspaceDir)
+  const targetPaneId = asString(input.targetPaneId)
   const focus = validateWorkspacePanelFocus(input.focus)
   const activitySubject = validateWorkspacePanelActivity(input.activitySubject)
   return {
@@ -328,7 +327,7 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   // Workbench
   const wbResult = validateWorkbench(input.workbench)
   if (wbResult.dirty) dirty = true
-  const metaIn = recordOrEmpty(input.meta)
+  const metaIn = asRecordOrEmpty(input.meta)
   // Contents that do not survive a relaunch: the retired process surface, and
   // the marketplace, which is a place you go rather than work you left open —
   // restoring it made the store the app's landing page and its slow signed

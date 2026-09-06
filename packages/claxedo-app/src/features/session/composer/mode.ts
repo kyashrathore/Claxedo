@@ -27,15 +27,3 @@ export function composerHarnessId(mode: ComposerMode) {
 export function isComposerHarnessMode(mode: ComposerMode) {
   return !!composerHarness(mode)
 }
-
-export function harnessBridge(mode: ComposerMode) {
-  if (mode.kind !== "draft") return false
-  return isComposerHarnessMode(mode)
-}
-
-export function canStartSubmit(
-  mode: ComposerMode,
-  input: { bodyMd: string; imageCount?: number; commentCount?: number },
-) {
-  return input.bodyMd.trim().length > 0 || !!input.imageCount || !!input.commentCount
-}

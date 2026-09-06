@@ -13,20 +13,19 @@ beforeAll(async () => {
 })
 
 function makeProps() {
-  const openPagesIndexCalls: Array<string | undefined> = []
+  const openPagesIndexCalls: Array<Parameters<PageActionProps["state"]["layout"]["openPagesIndex"]>> = []
   const navigateCalls: string[] = []
 
-    const props: PageActionProps & { canUseDocuments?: () => boolean } = {
+    const props: PageActionProps = {
       navigate: (path: string) => navigateCalls.push(path),
       activeDirectory: () => "/workspace/main",
       activeWorkspaceRouteId: () => "p1",
       projects: () => [{ id: "p1", worktree: "/workspace/main" }],
       workspaceRouteId: (directory) => directory === "/workspace/main" ? "p1" : undefined,
-      canUseDocuments: () => true,
       state: {
         layout: {
-          openPagesIndex: (directory?: string) => {
-            openPagesIndexCalls.push(directory)
+          openPagesIndex: (...args) => {
+            openPagesIndexCalls.push(args)
             return "page-index-1"
           },
         },
@@ -41,7 +40,7 @@ describe("createPageActions", () => {
     const { props, openPagesIndexCalls, navigateCalls } = makeProps()
     const actions = createPageActions(props)
     actions.handleNewPage()
-    expect(openPagesIndexCalls).toEqual(["/workspace/main"])
+    expect(openPagesIndexCalls).toEqual([["/workspace/main", { workspaceRouteId: "p1" }]])
     expect(navigateCalls).toEqual([workspacePageRoute("p1", "__index__")])
   })
 
@@ -51,7 +50,7 @@ describe("createPageActions", () => {
     props.activeWorkspaceRouteId = () => undefined
     const actions = createPageActions(props)
     actions.handleNewPage()
-    expect(openPagesIndexCalls).toEqual(["/workspace/main"])
+    expect(openPagesIndexCalls).toEqual([["/workspace/main", { workspaceRouteId: "p1" }]])
   })
 
   test("handleNewPage skips navigation when no workspace dir is available", () => {
@@ -61,7 +60,7 @@ describe("createPageActions", () => {
     props.projects = () => []
     const actions = createPageActions(props)
     actions.handleNewPage()
-    expect(openPagesIndexCalls).toEqual([undefined])
+    expect(openPagesIndexCalls).toEqual([[]])
     expect(navigateCalls).toEqual([])
   })
 
@@ -73,25 +72,8 @@ describe("createPageActions", () => {
 
     createPageActions(props).handleNewPage()
 
-    expect(openPagesIndexCalls).toEqual(["/workspace"])
+    expect(openPagesIndexCalls).toEqual([["/workspace", { workspaceRouteId: "ws_selected" }]])
     expect(navigateCalls).toEqual([workspacePageRoute("ws_selected", "__index__")])
   })
 
-  test("handleNewPage opens pages-index even when signed page access is unavailable", () => {
-    const { props, navigateCalls, openPagesIndexCalls } = makeProps()
-    props.canUseDocuments = () => false
-    const actions = createPageActions(props)
-    actions.handleNewPage()
-    expect(openPagesIndexCalls).toEqual(["/workspace/main"])
-    expect(navigateCalls).toEqual([workspacePageRoute("p1", "__index__")])
-  })
-
-  test("handleNewPage opens pages-index while signed page access is unresolved", () => {
-    const { props, navigateCalls, openPagesIndexCalls } = makeProps()
-    delete props.canUseDocuments
-    const actions = createPageActions(props)
-    actions.handleNewPage()
-    expect(openPagesIndexCalls).toEqual(["/workspace/main"])
-    expect(navigateCalls).toEqual([workspacePageRoute("p1", "__index__")])
-  })
 })

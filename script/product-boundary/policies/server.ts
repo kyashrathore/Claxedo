@@ -88,7 +88,18 @@ export const serverSelfHosted: Policy = {
   // module. The decoders own a shared concept with no schema dependency, so
   // they are their own file, imported by store-adapter.ts and hosted-d1/.
   // Re-measured, no headroom.
-  ceilings: { modules: 133, packages: 36 },
+  // +1 module: `connections/credential-store-adapter.ts`, now the ONE
+  // `CredentialStorePort` implementation for both hosts. It is its own file
+  // rather than part of `connections/store-adapter.ts` on purpose — the hosted
+  // Worker composition imports it too, and `store-adapter.ts` reaches SQLite
+  // (`platform/db`), which must never enter the Worker graph. No package edge.
+  // +1 package: `@claxedo/helpers`, the canonical owner of the record-narrowing
+  // guards that `workspace/signed-access.ts`, `workspace/routes/index.ts`,
+  // `workspace/runtime-token-guards.ts`, `workspace/local-host.ts` and
+  // `hosts/workspace-runtime/workspace-session-admission.ts` each defined
+  // privately. The `/guards` subpath has zero imports and no host APIs, so it
+  // brings no transitive edge. Re-measured, no headroom: 134/37.
+  ceilings: { modules: 134, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -105,6 +116,10 @@ export const serverSelfHosted: Policy = {
 
   isolation: {
     buildPackages: [
+      // `@claxedo/helpers` publishes dist-only subpaths (`/guards`, `/string`)
+      // that every package below bundles against; it has no @claxedo/*
+      // dependencies, so it builds first.
+      { packageDir: "packages/claxedo-helpers" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/agent-sdk-runtime" },

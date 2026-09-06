@@ -99,10 +99,7 @@ describe("safeChunkEnd", () => {
       i = end
     }
     expect(chunks.join("")).toBe(text)
-    // No chunk carries a lone surrogate.
-    for (const chunk of chunks) {
-      expect(chunk).toBe(Array.from(chunk).join(""))
-    }
+    expect(chunks).toEqual([EMOJI, EMOJI, EMOJI, EMOJI])
   })
 })
 
@@ -117,7 +114,7 @@ describe("safeTrimStart", () => {
 
   test("never returns more than the cap", () => {
     const text = "x".repeat(100)
-    expect(safeTrimStart(text, 10).length).toBeLessThanOrEqual(10)
+    expect(safeTrimStart(text, 10)).toBe("x".repeat(10))
   })
 
   test("does not leave a partial escape at the head", () => {
@@ -132,6 +129,6 @@ describe("safeTrimStart", () => {
   test("does not leave a lone surrogate at the head", () => {
     const text = "abcd" + EMOJI + "ef"
     const trimmed = safeTrimStart(text, 3)
-    expect(trimmed).toBe(Array.from(trimmed).join(""))
+    expect(trimmed).toBe("ef")
   })
 })

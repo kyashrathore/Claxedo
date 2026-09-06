@@ -2,37 +2,52 @@ name: claxedo-packages-release
 
 # Publishes the public `@claxedo/*` packages at the versions the repo declares.
 #
-# `claxedo-runtime-release.yml` covers the six-package runtime family and takes
-# the version as an input. This workflow covers everything (default: the six
-# that family misses — channels, connections, mcp, sandbox-contract,
-# sandbox-manager, wakes) and reads each version from its package.json, so a release is a
-# reviewed version-bump commit rather than a number typed into a form.
+# One publisher: packages/claxedo-server/scripts/release/publish-claxedo-packages.ts.
+# It reads each version from its package.json (a release is a reviewed
+# version-bump commit, never a number typed into a form), materializes the
+# repo's `workspace:*` sibling pins into exact versions only inside the packed
+# tarball, and refuses to run while any already-published version has
+# unreleased changes behind it (check-published-versions.ts).
 #
-# On every push to `dev` that touches one of those six package dirs, the
-# dry-run job builds, packs and inspects each tarball — the same gates
-# `script/publish-preflight.sh` encodes — without publishing anything.
+# On every push to `dev` and every PR that touches a public package or the
+# release tooling, the dry-run job builds, packs and inspects every tarball —
+# the same gates the publish runs — without publishing anything.
 
 on:
   push:
     branches:
       - dev
     paths:
+      - "packages/agent-event-runtime/**"
+      - "packages/agent-runtime-contract/**"
+      - "packages/agent-sdk-runtime/**"
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
+      - "packages/claxedo-helpers/**"
       - "packages/claxedo-mcp/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/wakes/**"
+      - "packages/workspace-relay-protocol/**"
+      - "packages/workspace-relay/**"
+      - "packages/workspace-runtime/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   pull_request:
     paths:
+      - "packages/agent-event-runtime/**"
+      - "packages/agent-runtime-contract/**"
+      - "packages/agent-sdk-runtime/**"
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
+      - "packages/claxedo-helpers/**"
       - "packages/claxedo-mcp/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/wakes/**"
+      - "packages/workspace-relay-protocol/**"
+      - "packages/workspace-relay/**"
+      - "packages/workspace-runtime/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   workflow_dispatch:
@@ -40,14 +55,13 @@ on:
       track:
         description: "Which packages to publish"
         required: false
-        default: others
+        default: all
         type: choice
         options:
-          - others # channels, connections, mcp, sandbox-contract, sandbox-manager, wakes
           - all # every public @claxedo/* package
-          - runtime-family # the six claxedo-runtime-release.yml also covers
-          - runtime
-          - apps
+          - helpers # helpers
+          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, agent-event-runtime, sandbox-manager, agent-sdk-runtime, workspace-relay, workspace-runtime
+          - apps # channels, connections, mcp
           - wakes
       npm_tag:
         description: "npm dist-tag"
@@ -74,16 +88,20 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # check-published-versions.ts walks history for the commit that set
+          # each package's version.
+          fetch-depth: 0
 
       - uses: ./.github/actions/setup-bun
 
       - name: Unit-test the release tooling
         working-directory: packages/claxedo-server
-        run: node ./node_modules/vitest/vitest.mjs run scripts/release/tests/publish-claxedo-packages.test.ts scripts/release/tests/publish-runtime-packages.test.ts
+        run: node ./node_modules/vitest/vitest.mjs run scripts/release/tests
 
       - name: Build, pack and inspect every tarball
         working-directory: packages/claxedo-server
-        run: bun run release:packages --track others --dry-run
+        run: bun run release:packages --track all --dry-run
 
   publish:
     name: publish
@@ -94,6 +112,8 @@ jobs:
       id-token: write # npm provenance
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
 
       - uses: ./.github/actions/setup-bun
 

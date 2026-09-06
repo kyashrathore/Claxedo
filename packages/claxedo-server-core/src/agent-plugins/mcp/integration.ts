@@ -1,21 +1,36 @@
-import { isJsonRecord } from "../../platform/runtime/lib/json"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { McpOAuthDiscovery, McpOAuthDynamicClient } from "./discovery"
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 type OAuthTokens = { accessToken: string; refreshToken?: string; expiresAt?: number; fields?: Record<string, string> }
+/**
+ * The `mcp` capability port every synthesized MCP integration serves.
+ *
+ * `mcp` is brokered: the operation schemas belong to the MCP server, so there
+ * are no methods here to derive a capability from. The port is a marker, and it
+ * has to be one — the connections registry derives an integration's capability
+ * set from the ports its impl carries, so an impl without this resolves to no
+ * capability at all and the whole MCP rail goes dark. Every construction site
+ * for these integrations uses this value, including the listing and public
+ * server paths that build no auth.
+ */
+export const MCP_BROKERED_PORT = { mcp: { capability: "mcp" } } as const
+
 export type McpOAuthIntegration = {
   decl: {
     id: string
     name: string
     methods: ["oauth"]
-    capabilities: ["mcp"]
   }
   impl: {
-    canonicalFields: readonly string[]
-    attemptContext: Readonly<Record<string, string>>
-    authorize(state: string, verifier: string): Promise<URL>
-    callback(code: string, verifier: string, context?: Readonly<Record<string, string>>, response?: { issuer?: string }): Promise<OAuthTokens>
-    refresh(refreshToken: string): Promise<OAuthTokens>
+    actions: typeof MCP_BROKERED_PORT
+    auth: {
+      canonicalFields: readonly string[]
+      attemptContext: Readonly<Record<string, string>>
+      authorize(state: string, verifier: string): Promise<URL>
+      callback(code: string, verifier: string, context?: Readonly<Record<string, string>>, response?: { issuer?: string }): Promise<OAuthTokens>
+      refresh(refreshToken: string): Promise<OAuthTokens>
+    }
   }
 }
 const encoder = new TextEncoder()
@@ -50,7 +65,6 @@ export async function mcpOAuthDeclaration(input: { pluginInstanceId: string; ser
     id: await mcpOAuthIntegrationId(input),
     name: `${input.serverName} MCP`,
     methods: ["oauth"] as ["oauth"],
-    capabilities: ["mcp"] as ["mcp"],
   }
 }
 
@@ -81,7 +95,7 @@ async function challenge(verifier: string) {
 async function tokens(response: Response, now: () => number = Date.now): Promise<OAuthTokens> {
   if (!response.ok) throw new Error(`OAuth token endpoint rejected the request with ${response.status}`)
   const raw = await response.json() as unknown
-  if (!isJsonRecord(raw)) throw new Error("OAuth token response is invalid")
+  if (!isRecord(raw)) throw new Error("OAuth token response is invalid")
   const value = raw
   if (typeof value.access_token !== "string"
     || !value.access_token
@@ -123,51 +137,53 @@ export async function createMcpOAuthIntegration(input: {
       id,
       name: `${input.serverName} MCP`,
       methods: ["oauth"],
-      capabilities: ["mcp"],
     },
     impl: {
-      canonicalFields,
-      attemptContext: frozen,
-      async authorize(state, verifier) {
-        const url = new URL(frozen.authorization_endpoint)
-        url.searchParams.set("response_type", "code")
-        url.searchParams.set("client_id", frozen.client_id)
-        url.searchParams.set("redirect_uri", frozen.callback_url)
-        url.searchParams.set("state", state)
-        url.searchParams.set("code_challenge_method", "S256")
-        url.searchParams.set("code_challenge", await challenge(verifier))
-        url.searchParams.set("resource", frozen.resource)
-        if (frozen.scopes) url.searchParams.set("scope", frozen.scopes)
-        return url
-      },
-      async callback(code, verifier, attempt, response) {
-        if (!exactContext(attempt, frozen)) throw new Error("MCP OAuth attempt no longer matches the retained server")
-        if (response?.issuer !== undefined && response.issuer !== frozen.issuer) throw new Error("MCP OAuth authorization response issuer mismatch")
-        if (frozen.response_iss_required === "true" && response?.issuer === undefined) throw new Error("MCP OAuth authorization response omitted its required issuer")
-        const body = new URLSearchParams({
-          grant_type: "authorization_code",
-          code,
-          code_verifier: verifier,
-          redirect_uri: frozen.callback_url,
-          resource: frozen.resource,
-        })
-        clientAuth(body)
-        const result = await tokens(await input.fetch(frozen.token_endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-          body,
-        }), input.now)
-        return { ...result, fields: { ...frozen } }
-      },
-      async refresh(refreshToken) {
-        const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, resource: frozen.resource })
-        if (frozen.scopes) body.set("scope", frozen.scopes)
-        clientAuth(body)
-        return tokens(await input.fetch(frozen.token_endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-          body,
-        }), input.now)
+      actions: MCP_BROKERED_PORT,
+      auth: {
+        canonicalFields,
+        attemptContext: frozen,
+        async authorize(state, verifier) {
+          const url = new URL(frozen.authorization_endpoint)
+          url.searchParams.set("response_type", "code")
+          url.searchParams.set("client_id", frozen.client_id)
+          url.searchParams.set("redirect_uri", frozen.callback_url)
+          url.searchParams.set("state", state)
+          url.searchParams.set("code_challenge_method", "S256")
+          url.searchParams.set("code_challenge", await challenge(verifier))
+          url.searchParams.set("resource", frozen.resource)
+          if (frozen.scopes) url.searchParams.set("scope", frozen.scopes)
+          return url
+        },
+        async callback(code, verifier, attempt, response) {
+          if (!exactContext(attempt, frozen)) throw new Error("MCP OAuth attempt no longer matches the retained server")
+          if (response?.issuer !== undefined && response.issuer !== frozen.issuer) throw new Error("MCP OAuth authorization response issuer mismatch")
+          if (frozen.response_iss_required === "true" && response?.issuer === undefined) throw new Error("MCP OAuth authorization response omitted its required issuer")
+          const body = new URLSearchParams({
+            grant_type: "authorization_code",
+            code,
+            code_verifier: verifier,
+            redirect_uri: frozen.callback_url,
+            resource: frozen.resource,
+          })
+          clientAuth(body)
+          const result = await tokens(await input.fetch(frozen.token_endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+            body,
+          }), input.now)
+          return { ...result, fields: { ...frozen } }
+        },
+        async refresh(refreshToken) {
+          const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, resource: frozen.resource })
+          if (frozen.scopes) body.set("scope", frozen.scopes)
+          clientAuth(body)
+          return tokens(await input.fetch(frozen.token_endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+            body,
+          }), input.now)
+        },
       },
     },
   }

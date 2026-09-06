@@ -15,7 +15,7 @@
 
 import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from "jose"
 
-import { isRecord } from "./record"
+import { isRecord, numberClaim, stringClaim } from "@claxedo/helpers/guards"
 
 export type TokenVerifierBaseClaims = {
   iss: string
@@ -273,16 +273,6 @@ export function createStaticTokenVerifier<TClaims extends Record<string, unknown
       return claims
     },
   }
-}
-
-function stringClaim(input: Record<string, unknown>, key: string) {
-  const value = input[key]
-  return typeof value === "string" && value.trim() ? value : undefined
-}
-
-function numberClaim(input: Record<string, unknown>, key: string) {
-  const value = input[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 function tokenVerifierBaseClaims(input: unknown): TokenVerifierBaseClaims | undefined {

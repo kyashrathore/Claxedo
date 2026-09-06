@@ -27,7 +27,7 @@ import { HostedBrowserFrame } from "./hosted-browser-frame"
  *
  * On `dom-ready`, the pane calls `browser.register(paneId, webContentsId)` so
  * the main-process `BrowserRegistry` can bind the pane to its webContents,
- * and the CDP state machine (Unit 3) takes over from there.
+ * and the main-process CDP state machine takes over from there.
  *
  * When the bridge is absent (cloud / web build) or reports the capability as
  * disabled, the fallback UI keeps the tab legible rather than dispatching to
@@ -757,8 +757,7 @@ function WebviewHost(props: WebviewHostProps) {
    * the `<webview>` element as `ipc-message` with `{ channel, args }`.
    * We translate the guest payload into the renderer's
    * `BrowserNodeSelectedPayload` shape and push it onto the pane context
-   * so the existing floating-card + composer + session-routing pipeline
-   * (unchanged since Unit 6) keeps working.
+   * for the floating-card + composer + session-routing pipeline.
    *
    * We listen directly on the webview rather than going through the main
    * process because the payload originates in the same renderer

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import type { ClaxedoCommand as Command, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
@@ -8,6 +8,8 @@ import {
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { queryClient } from "@/platform/query/query-client"
 import { requestUrl } from "@/lib/url"
+
+afterEach(() => queryClient.clear())
 
 beforeEach(() => queryClient.clear())
 
@@ -158,7 +160,7 @@ describe("http backend ports", () => {
     const backend = createHttpWorkspaceRuntimeBackend({
       baseUrl: "http://claxedo.test",
       request,
-
+      client,
     })
 
     await withGlobalFetch(request, async () => {

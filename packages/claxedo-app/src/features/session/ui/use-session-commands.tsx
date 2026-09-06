@@ -405,19 +405,14 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       },
     }),
     terminalCommand({
-      // Previously a ghost command: `terminal.toggle` was referenced by
-      // session-header's keybind badge, desktop-menu.ts, and command-palette's
-      // EDITABLE_KEYBIND_IDS, and the terminal xterm handler deliberately passes
-      // Ctrl+` through for "the parent app toggle" — but nothing ever registered
-      // the command, so the badge rendered empty and there was no keyboard path.
-      //
-      // Its first registration (WP-C2) forwarded to `view().terminal.toggle()`,
-      // which only flips the vestigial upstream `store.terminal.opened` drawer
-      // flag — a surface no Claxedo component renders. In Claxedo a terminal is a
-      // Workbench pane (see `terminal.new`), so from the palette/chord the toggle
-      // silently no-op'd: no pty request, no terminal pane. Drive the real
-      // Workbench terminal instead: close the focused terminal if one is focused,
-      // otherwise open a new one for the focused pane's directory.
+      // `terminal.toggle` is referenced by session-header's keybind badge,
+      // desktop-menu.ts, command-palette's EDITABLE_KEYBIND_IDS, and the xterm
+      // handler, which passes Ctrl+` through for it. Do not forward to
+      // `view().terminal.toggle()`: that only flips upstream's vestigial
+      // `store.terminal.opened` drawer flag, which no Claxedo component renders.
+      // A Claxedo terminal is a Workbench pane (see `terminal.new`), so close the
+      // focused terminal if one is focused, otherwise open one for the focused
+      // pane's directory.
       id: "terminal.toggle",
       title: language.t("command.terminal.toggle"),
       keybind: "ctrl+`",

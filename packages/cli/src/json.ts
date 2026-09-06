@@ -1,27 +1,13 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
-}
-
-export function object(input: unknown): Record<string, unknown> {
-  return isRecord(input) ? input : {}
-}
-
-export function text(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
-
-export function number(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
+export { asRecordOrEmpty as object } from "@claxedo/helpers/guards"
 
 export function boolean(input: unknown) {
   return typeof input === "boolean" ? input : undefined
 }
 
-export async function readJsonFile(pathname: string) {
+export async function readOptionalJsonFile(pathname: string) {
   try {
     return JSON.parse(await fs.readFile(pathname, "utf8")) as unknown
   } catch (err) {

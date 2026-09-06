@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
 import { FLOWS } from "../../flows"
 import { fileContent, fixtureFor } from "../fixtures"
 import { HEAVY_WORKSPACE_FILE_LINES } from "./heavy-workspace-reopen-contract"
 import { seedForScenario } from "../../seed"
 import {
   OLD_WORKSPACE_RELEASE_BUDGET_MS,
-  RETAINED_PANEL_BODY_HOST_SELECTOR,
-  RETAINED_PANEL_BODY_INERT_ATTRIBUTE,
   SESSION_SWITCH_SUBSTANTIAL_FILE_PATH,
   sessionSwitchClockFailures,
   sessionSwitchPanelTransition,
@@ -173,23 +170,6 @@ describe("session switch with workspace benchmark contract", () => {
       destinationWorkspaceReadyMs: OLD_WORKSPACE_RELEASE_BUDGET_MS,
       timedOut: false,
     })).toEqual([])
-  })
-
-  test("the retained-inert reader's markers are owned by the contract, not by the driver", () => {
-    // The driver and the probe both build their in-page reader out of these,
-    // and the panel stamps them. One owner, three readers.
-    expect(RETAINED_PANEL_BODY_HOST_SELECTOR).toBe("[data-testid='workspace-panel-body']")
-    expect(RETAINED_PANEL_BODY_INERT_ATTRIBUTE).toBe("data-panel-body-inert")
-    const panel = readFileSync(
-      new URL("../../../../src/features/workspaces/ui/panel/workspace-panel.tsx", import.meta.url),
-      "utf8",
-    )
-    const hostTestId = RETAINED_PANEL_BODY_HOST_SELECTOR.slice("[data-testid='".length, -"']".length)
-    // Booleans, not the file: a mismatch here should name the marker, not print the panel.
-    expect({
-      stampsHost: panel.includes(`data-testid="${hostTestId}"`),
-      stampsInertMarker: panel.includes(RETAINED_PANEL_BODY_INERT_ATTRIBUTE),
-    }).toEqual({ stampsHost: true, stampsInertMarker: true })
   })
 
   test("the workspace-open penalty is a first-class derived metric per cell", () => {

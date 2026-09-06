@@ -82,7 +82,7 @@ describe("SessionStatusStage (rubric A2)", () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
-  test("Cancel is idempotent across multiple clicks", () => {
+  test("forwards each Cancel click to its owner", () => {
     // The component itself just forwards each click; idempotency is the
     // responsibility of the consumer's onCancel (existing session.abort).
     // We assert here that the surface does not swallow clicks or otherwise

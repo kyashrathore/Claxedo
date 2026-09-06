@@ -66,12 +66,11 @@ describe("sessionMarkdownTimelineGate", () => {
     ).toBe("live")
   })
 
-  test("identity stays stable when only the live body text grows", () => {
+  test("identity records message IDs and settlement state", () => {
     const messages = [
       { id: "msg_user", role: "user" },
       { id: "msg_assistant", role: "assistant", time: {} },
     ]
-    expect(firstFoldMarkdownPreloadIdentity(messages)).toBe("msg_user:settled|msg_assistant:live")
     expect(firstFoldMarkdownPreloadIdentity(messages)).toBe("msg_user:settled|msg_assistant:live")
   })
 

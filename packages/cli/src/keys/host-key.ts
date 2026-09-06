@@ -1,7 +1,8 @@
 import crypto from "node:crypto"
 import path from "node:path"
 import { config } from "../config"
-import { object, readJsonFile, text, writePrivateJson } from "../json"
+import { object, readOptionalJsonFile, writePrivateJson } from "../json"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /**
  * The MACHINE's signing identity — one per installation, not one per project.
@@ -42,11 +43,11 @@ function publicJwk(input: crypto.JsonWebKey) {
  */
 function privateJwk(input: unknown): crypto.JsonWebKey | undefined {
   const jwk = object(input)
-  const kty = text(jwk.kty)
-  const crv = text(jwk.crv)
-  const d = text(jwk.d)
-  const x = text(jwk.x)
-  const y = text(jwk.y)
+  const kty = trimToUndefined(jwk.kty)
+  const crv = trimToUndefined(jwk.crv)
+  const d = trimToUndefined(jwk.d)
+  const x = trimToUndefined(jwk.x)
+  const y = trimToUndefined(jwk.y)
   if (kty !== "EC" || !crv || !d || !x || !y) return undefined
   return { kty, crv, d, x, y }
 }
@@ -74,8 +75,8 @@ function identity(hostId: string, jwk: crypto.JsonWebKey): MachineHostKey {
  */
 export async function loadMachineHostKey(): Promise<MachineHostKey> {
   const pathname = machineKeyPath()
-  const existing = object(await readJsonFile(pathname))
-  const hostId = text(existing.host_id)
+  const existing = object(await readOptionalJsonFile(pathname))
+  const hostId = trimToUndefined(existing.host_id)
   const stored = existing.private_key_jwk
   if (hostId && stored) {
     const privateKeyJwk = privateJwk(stored)

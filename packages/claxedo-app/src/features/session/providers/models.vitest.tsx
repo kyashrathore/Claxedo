@@ -96,7 +96,7 @@ function mount(input: { workspaceKey: string; harness: () => string; nativeHarne
 }
 
 /**
- * Mounts TWO surfaces on one workspace under ONE registry — the shape the app
+ * Mounts two surfaces on one workspace under one registry — the shape the app
  * shell has, with a pane's composer and the Settings Models page open at once.
  */
 function mountPair(workspaceKey: string) {
@@ -170,10 +170,11 @@ describe("the model store is per (server, workspace, harness)", () => {
     const workspace = nextWorkspaceKey("ws")
     const [pane, settings] = mountPair(workspace)
 
-    settings().setVisibility(OPUS, false)
-
     expect(pane().visible(OPUS)).toBe(false)
-    await waitFor(() => expect(stored(workspace)?.user?.opencode).toEqual([{ ...OPUS, visibility: "hide" }]))
+    settings().setVisibility(OPUS, true)
+
+    expect(pane().visible(OPUS)).toBe(true)
+    await waitFor(() => expect(stored(workspace)?.user?.opencode).toEqual([{ ...OPUS, visibility: "show" }]))
 
     pane().variant.set(OPUS, "thinking")
     expect(settings().variant.get(OPUS)).toBe("thinking")

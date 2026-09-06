@@ -160,13 +160,9 @@ type ViewOverride = {
 async function seedProject(page: Page, opts: { dir: string; view?: ViewOverride | "malformed" }) {
   await page.addInitScript(
     ([dir, view]: [string, ViewOverride | "malformed" | undefined]) => {
-      // No `localStorage.clear()` here: Playwright re-runs `addInitScript`
-      // on every navigation within a test, including `page.reload()` — a
-      // fresh context already starts with empty storage (this call was a
-      // no-op there), but clearing on reload was wiping out whatever the
-      // page itself had just persisted (e.g. the "view state survives
-      // reload" scenario's own `localStorage.setItem` from a real user
-      // interaction), which is exactly what those scenarios exist to prove.
+      // No `localStorage.clear()`: Playwright re-runs init scripts on every navigation,
+      // including `page.reload()`, so clearing here would wipe what the page itself just
+      // persisted — exactly what the reload-survival scenarios assert on.
       ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: dir,
@@ -192,16 +188,9 @@ async function seedProject(page: Page, opts: { dir: string; view?: ViewOverride 
 }
 
 /**
- * Installs the two control-plane endpoints the sidebar tree needs that
- * `installMockRuntime` does not cover (it only mocks the OpenCode-native
- * `/session` surface, not the control-plane session inventory/list used by
- * the tree itself — see SPEC STATE MODEL):
- *   - `GET /api/control/session-list` — the paginated, filterable rows a
- *     project/workspace section actually renders.
- *   - `GET /api/control/sessions` — the flat inventory that feeds the view
- *     menu's Status/Environment/Git filter option lists.
- * Registered AFTER `installMockRuntime` so it wins (Playwright routes run
- * most-recently-registered-first).
+ * Installs the two control-plane endpoints the tree reads — `/api/control/session-list`
+ * for the rows and `/api/control/sessions` for the filter options — which
+ * `installMockRuntime` does not cover. Registered after it so these win.
  *
  * Also overrides `GET /api/workspace/resolve`. `installMockRuntime`'s handler
  * answers `id: options.workspaceId ?? directory`, so the scenarios below that
@@ -327,15 +316,9 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     })
   })
 
-  // Archive PATCH: `installMockRuntime`'s generic `**/session/*` catch-all
-  // answers any method (including PATCH) with a canned 200 and doesn't track
-  // `time.archived`, so it never affects OUR in-memory `sessions` array. If
-  // anything ever re-fetches `/api/control/session-list` after an archive
-  // (a background revalidation, another reconciliation path, etc.), the
-  // stale unarchived list would silently undo the optimistic row removal.
-  // Track the archive here too so a refetch stays consistent with what the
-  // UI already believes happened. Registered after the two list routes
-  // above so it wins for this exact path.
+  // The shared runtime's `**/session/*` catch-all answers PATCH with a canned 200 and
+  // never records `time.archived`, so any refetch of the list would serve the stale
+  // unarchived rows and undo the optimistic removal. Track the archive here instead.
   await page.route("**/session/*", async (route) => {
     if (route.request().method() !== "PATCH") return route.fallback()
     const pathname = new URL(route.request().url()).pathname
@@ -356,13 +339,8 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     setSessionListDelay(ms: number) {
       sessionListDelayMs = ms
     },
-    /**
-     * Fails every session-list request until `stopFailingSessionList()` is
-     * called. Persistent, not one-shot: TanStack Query's default `retry`
-     * silently re-issues the query on failure, so a single failing response
-     * gets retried-and-succeeded before any assertion can observe the error
-     * state.
-     */
+    /** Fails every session-list request until `stopFailingSessionList()`. Persistent
+     * because TanStack Query retries, so one failing response never surfaces an error. */
     failNextSessionList() {
       sessionListFailing = true
     },
@@ -400,7 +378,7 @@ function opacityOf(locator: ReturnType<Page["locator"]>) {
 }
 
 test.describe("core sidebar tree @core", () => {
-  test("project-header disclosure caret toggles collapse only, never navigates — behavior 2", async ({ page }) => {
+  test("project-header disclosure caret toggles collapse only, never navigates", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "root" }) })
     await seedProject(page, { dir: DIR })
@@ -423,14 +401,10 @@ test.describe("core sidebar tree @core", () => {
     expect(page.url()).toBe(draftUrl)
   })
 
-  test("project-header body click selects the project's primary workspace — behavior 2", async ({ page }) => {
-    // `openOrCreateSession` (src/features/workspaces/actions/workspace-actions.ts)
-    // excludes the `"new"` draft sentinel from its reuse check
-    // (`existing.sessionId && existing.sessionId !== "new"`), so a
-    // project-header body click on a bare draft route routes to
-    // `workspaceSessionRoute(workspaceId)` (`/w/<workspaceId>/session`) instead
-    // of treating the draft as a reusable session and landing on the malformed
-    // `/s/new` dead-end the last assertion below guards against.
+  test("project-header body click selects the project's primary workspace", async ({ page }) => {
+    // `openOrCreateSession` excludes the `"new"` draft sentinel from its reuse check, so a
+    // header click on a bare draft route goes to `/w/<workspaceId>/session` rather than
+    // treating the draft as a reusable session and building `/s/new`.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "primary" }) })
     await seedProject(page, { dir: DIR })
@@ -439,16 +413,15 @@ test.describe("core sidebar tree @core", () => {
     const header = page.locator('[data-testid="project-header"]')
     await expect(header).toBeVisible({ timeout: 15_000 })
 
-    // Click the header BODY (x=60 clears the disclosure caret at the far left
-    // and lands ahead of the opacity-0 HeaderActions further right) — this fires
-    // `onWorkspaceSelect` -> `handleWorkspaceSelect` -> `openOrCreateSession`.
+    // x=60 clears the caret at the far left and stays ahead of the header actions further
+    // right, so the click lands on the body and fires `onWorkspaceSelect`.
     await header.click({ position: { x: 60, y: 8 } })
 
     await expect(page).toHaveURL(/\/w\/.+\/session/, { timeout: 15_000 })
     await expect(page).not.toHaveURL(/\/s\/new/)
   })
 
-  test("workspace-header disclosure caret toggles collapse only, never navigates — behavior 1", async ({ page }) => {
+  test("workspace-header disclosure caret toggles collapse only, never navigates", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "ws" }) })
     await seedProject(page, { dir: DIR, view: { group: "workspace" } })
@@ -474,37 +447,23 @@ test.describe("core sidebar tree @core", () => {
     await caret.click()
     await expect(caret).toHaveAttribute("aria-expanded", "false")
     expect(page.url()).toBe(draftUrl)
-    // The caret's `stopPropagation()` means it never reaches the header body's
-    // handler: no navigation (above) and no panel either — it stays unmounted.
+    // The caret never reaches the body's handler, so no panel either.
     await expect(panel).toHaveCount(0)
 
-    // Header body click: re-opens the section (proof it does something the
-    // caret-only click above didn't undo on its own) and targets the
-    // workspace panel at this directory. Unlike project-header,
-    // workspace-header's body click (`openWorkspacePanel` in
-    // src/app/workbench/rail/rail-sidebar.tsx) opens the review side panel for
-    // this specific worktree — it does not navigate the main route to a
-    // `/session` URL; that's `workspace-project-header`'s (the outer,
-    // project-level header) job via `onWorkspaceSelect`. Click at x=60 (not
-    // x=200): the header row is only ~250px wide and HeaderActions (New
-    // session/terminal/Claude/Codex/kebab, opacity-0 at rest but still
-    // hit-testable) sit past x~110 — x=200 lands on "New Codex terminal", not
-    // the header body.
+    // A workspace header's body click opens the review panel for this worktree; it does not
+    // navigate, unlike the outer project header. The row is only ~250px wide and the header
+    // actions start around x=110, so x=60 is the only safe body target.
     await header.click({ position: { x: 60, y: 8 } })
     await expect(caret).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 })
     await expect(page).toHaveURL(draftUrl)
-    // The click's actual selection effect. `toHaveAttribute("data-workspace-id",
-    // DIR)` on the header itself would be a tautology — that attribute is the
-    // element's static identity, true before any click ever happened — so pin
-    // the panel state the click produced instead: open, in review mode, aimed
-    // at THIS worktree. (`workspace-header` carries no `data-active` marker;
-    // route-level selection belongs to the outer project header, behavior 2.)
+    // Asserting `data-workspace-id` on the header would be a tautology — it is the element's
+    // static identity — so pin the panel state the click produced instead.
     await expect(panel).toHaveAttribute("data-state-open", "true", { timeout: 15_000 })
     await expect(panel).toHaveAttribute("data-state-mode", "review")
     await expect(panel).toHaveAttribute("data-state-workspace-dir", DIR)
   })
 
-  test("hover reveals header actions and the session-row archive button — behavior 3", async ({ page }) => {
+  test("hover reveals header actions and the session-row archive button", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "hover" }) })
     await seedProject(page, { dir: DIR })
@@ -518,20 +477,14 @@ test.describe("core sidebar tree @core", () => {
     // "Hidden at rest" is therefore count 0, not opacity 0.
     await expect(newSessionButton).toHaveCount(0)
     await header.hover()
-    // Engaged (pointerenter): the buttons mount, and the cluster wrapper —
-    // which still carries the opacity-0/group-hover:opacity-100 fade — settles
-    // at computed opacity 1, i.e. actually visible to the user.
+    // Once mounted the wrapper still has to finish its fade to be genuinely visible.
     await expect(newSessionButton).toBeVisible()
     const newSessionActions = header.locator('[data-icon-interaction="row-actions"]')
     await expect.poll(() => opacityOf(newSessionActions)).toBe(1)
 
     const row = page.locator('[data-testid="rail-sidebar-session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
-    // Same contract on the session row: the archive button mounts on row
-    // engagement (`NavigationRow.onEngagedChange` -> `engaged()` Show), so
-    // pre-hover it is absent, and post-hover it is mounted AND fades to
-    // computed opacity 1 (`.ui-session-navigation-archive` + the row's
-    // :hover rule).
+    // Same mount-then-fade contract on the session row's archive button.
     const archiveButton = row.getByRole("button", { name: /^Archive / })
     await expect(archiveButton).toHaveCount(0)
     await row.hover()
@@ -539,7 +492,7 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(() => opacityOf(archiveButton)).toBe(1)
   })
 
-  test("status dot: idle has no dot — behavior 4 (partial)", async ({ page }) => {
+  test("status dot: idle has no dot", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "status" }) })
     await seedProject(page, { dir: DIR })
@@ -553,7 +506,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
   })
 
-  test("status dot moves working -> done as session.status/session.idle SSE land — behavior 4", async ({ page }) => {
+  test("status dot moves working -> done as session.status/session.idle SSE land", async ({ page }) => {
     const targetId = "ses_live_0"
     // Two independently-updated caches decide this row's dot: the SSE dispatch
     // into `shellDataKeys.sessionId(id,"status")`, and the sidebar's batched
@@ -588,32 +541,20 @@ test.describe("core sidebar tree @core", () => {
     mock.emit({ type: "session.status", properties: { sessionID: targetId, status: { type: "busy" } } })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
 
-    // working -> done. The row was never opened or focused (this spec never
-    // clicks it), so the active->inactive edge sets the unseen-done flag
-    // rather than falling back to idle — the INVARIANT that a completed but
-    // unfocused turn never silently reverts to "no dot". Settling clears the
-    // session from the live map: the real route reports idle by OMITTING the
-    // key, never by sending `{type:"idle"}` (e2e/helpers/contracts/
-    // session-status.ts).
+    // The row is never clicked, so finishing sets the unseen-done flag rather than falling
+    // back to no dot. The real status route reports idle by omitting the key, so settling
+    // clears the entry instead of writing `{type:"idle"}`.
     mock.setSessionStatus(targetId)
     mock.emit({ type: "session.idle", properties: { sessionID: targetId } })
     await expect(row.locator('[data-sidebar-status="done"]')).toHaveCount(1, { timeout: 20_000 })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(0)
   })
 
-  test("status dot rehydrates from GET /session/status after a reload, with no SSE frame — behavior 4", async ({ page }) => {
-    // The other half of the two-cache model in behavior 4, and the half no SSE
-    // test can reach: a reload throws away every in-memory status cache, so a
-    // session that is STILL busy on the server can only get its dot back from
-    // the batched `client.session.status()` read in rail-sidebar.tsx.
-    // If that read reports the row idle, the dot is silently wrong for up to
-    // the whole rest of the turn — the row looks finished while the agent is
-    // still working.
-    //
-    // This is also what pins the shared mock's live-session map: the map is the
-    // only input here. Seeded via `options.sessionStatuses` rather than
-    // `setSessionStatus` so it is already live at first paint, exactly as a
-    // server restarted mid-turn would report it.
+  test("status dot rehydrates from GET /session/status after a reload, with no SSE frame", async ({ page }) => {
+    // A reload discards every in-memory status cache, so a session still busy on the server
+    // can only get its dot back from the batched `client.session.status()` read — the one
+    // path no SSE scenario reaches. Seeded through `options.sessionStatuses` so the map is
+    // already live at first paint.
     const targetId = "ses_rehydrate_0"
     const mock = await installMockRuntime(page, {
       dir: DIR,
@@ -635,11 +576,8 @@ test.describe("core sidebar tree @core", () => {
     await expect(row).toBeVisible({ timeout: 15_000 })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
 
-    // And settling it server-side (the key is DROPPED, not set to idle — see
-    // e2e/helpers/contracts/session-status.ts) clears the dot on the next
-    // reload. "done" is deliberately NOT expected here: the unseen-done flag is
-    // in-memory sidebar state that a reload discards, so a turn that finished
-    // while the tab was gone rehydrates as plain idle, not as unseen-done.
+    // Settling drops the key, and the next reload has no dot at all: the unseen-done flag is
+    // in-memory, so a turn that finished while the tab was gone comes back as plain idle.
     mock.setSessionStatus(targetId)
     await page.reload()
     await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
@@ -647,7 +585,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0, { timeout: 20_000 })
   })
 
-  test("clicking a session row activates it; a rapid second click resolves onto the last row — behavior 5", async ({ page }) => {
+  test("clicking a session row activates it; a rapid second click resolves onto the last row", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "race" }) })
     await seedProject(page, { dir: DIR })
@@ -671,7 +609,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(rowA).toHaveAttribute("data-active", "false", { timeout: 15_000 })
   })
 
-  test("load more paginates in pages of 5, appending without duplicates — behavior 6", async ({ page }) => {
+  test("load more paginates in pages of 5, appending without duplicates", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(7, { prefix: "page" }) })
     await seedProject(page, { dir: DIR })
@@ -691,13 +629,10 @@ test.describe("core sidebar tree @core", () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  test("load more's done notice replaces the button once every session is loaded — behavior 6", async ({ page }) => {
-    // `mergeSessionListResponses` (src/features/session/data/query/session-list.ts)
-    // advances an append to the freshly-fetched page's OWN `nextCursor` —
-    // including `undefined` once the server reports no further pages — rather
-    // than keeping the first-page cursor. So once the final page loads,
-    // `nextCursor` clears, `more()` goes falsy, the "Load more" button
-    // disappears and `doneLoaded()` fires.
+  test("load more's done notice replaces the button once every session is loaded", async ({ page }) => {
+    // `mergeSessionListResponses` adopts each appended page's own `nextCursor`, including
+    // `undefined` on the last page. Keeping the first page's cursor instead would leave
+    // "Load more" on screen forever.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(7, { prefix: "done" }) })
     await seedProject(page, { dir: DIR })
@@ -716,7 +651,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.getByText("All sessions loaded.")).toBeVisible({ timeout: 15_000 })
   })
 
-  test("view options: Group by restructures the tree; Archived radio changes the fetched set — behavior 7", async ({ page }) => {
+  test("view options: Group by restructures the tree; Archived radio changes the fetched set", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "viewopt" }) })
     await seedProject(page, { dir: DIR })
@@ -741,7 +676,7 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(() => fixtures.sessionListRequests.some((q) => q.includes("archived=all")), { timeout: 10_000 }).toBe(true)
   })
 
-  test("account footer exposes utilities and restores focus across nested panels — behavior 16", async ({ page }) => {
+  test("account footer exposes utilities and restores focus across nested panels", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "account" }) })
     await seedProject(page, { dir: DIR })
@@ -777,7 +712,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(trigger).toHaveAttribute("aria-expanded", "false", { timeout: MENU_FOCUS_TIMEOUT })
   })
 
-  test("view state persists to localStorage across reload; malformed JSON falls back to defaults — behavior 8", async ({ page }) => {
+  test("view state persists to localStorage across reload; malformed JSON falls back to defaults", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "persist" }) })
     await seedProject(page, { dir: DIR })
@@ -798,7 +733,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator('[data-testid="project-header"]')).toHaveCount(0)
   })
 
-  test("malformed view JSON is caught and replaced by defaults, not a broken tree — behavior 8", async ({ page }) => {
+  test("malformed view JSON is caught and replaced by defaults, not a broken tree", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "malformed" }) })
     await seedProject(page, { dir: DIR, view: "malformed" })
@@ -809,7 +744,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator('[data-testid="workspace-header"]')).toHaveCount(0)
   })
 
-  test("loading/error/empty notices render with stable testids; Retry re-fires the query — behavior 9", async ({ page }) => {
+  test("loading/error/empty notices render with stable testids; Retry re-fires the query", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
     await seedProject(page, { dir: DIR })
@@ -825,8 +760,7 @@ test.describe("core sidebar tree @core", () => {
     await page.getByRole("menuitem", { name: "View options" }).hover()
     await page.keyboard.press("Escape")
     await page.keyboard.press("Escape")
-    // Force a refetch by flipping the archived filter, which changes the
-    // query signature and re-fires the request against our failing route.
+    // Flipping the archived filter changes the query signature, re-firing the request.
     await page.getByTestId("rail-account-trigger").click()
     await page.getByRole("menuitem", { name: "View options" }).hover()
     await page.getByRole("menuitemradio", { name: "All" }).click()
@@ -839,7 +773,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator('[data-testid="rail-sidebar-session-list-empty"]')).toBeVisible({ timeout: 15_000 })
   })
 
-  test("archive hover button removes the row; a failed archive is a silent no-op — behavior 10", async ({ page }) => {
+  test("archive hover button removes the row; a failed archive is a silent no-op", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "archive" }) })
     await seedProject(page, { dir: DIR })
@@ -872,7 +806,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(rows).toHaveCount(1)
   })
 
-  test("archiving the only active session leaves its URL for the project root — behavior 10", async ({ page }) => {
+  test("archiving the only active session leaves its URL for the project root", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "only-archive" }) })
     await seedProject(page, { dir: DIR })
@@ -889,9 +823,8 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe(`/w/${PROJECT_ID}`)
     expect(fixtures.sessions.find((item) => item.sessionId === "ses_only-archive_0")?.archivedAt).toEqual(expect.any(Number))
 
-    // Archive completion is a synchronous client-state boundary. No
-    // per-session shell resource, directory row, inventory row, or active list
-    // row may remain available to rehydrate the closed session.
+    // Nothing left in the query cache may rehydrate the closed session — not the per-session
+    // shell resource, nor its inventory, list, or directory rows.
     await expect.poll(() => page.evaluate((sessionId: string) => {
       const qc = (window as unknown as {
         __claxedoQueryClient?: {
@@ -910,14 +843,13 @@ test.describe("core sidebar tree @core", () => {
       })
     }, "ses_only-archive_0"), { timeout: 10_000 }).toBe(false)
 
-    // Re-entering the old URL must consult authoritative archived metadata and
-    // return to the workspace instead of reconstructing a ghost session.
+    // Re-entering the old URL must redirect rather than reconstruct a ghost session.
     await page.goto(new URL("/s/ses_only-archive_0", page.url()).toString())
     await expect.poll(() => new URL(page.url()).pathname, { timeout: 15_000 }).toBe(`/w/${PROJECT_ID}`)
     await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_only-archive_0"]')).toHaveCount(0)
   })
 
-  test("a harness-created session appears once its session.lifecycle event arrives — behavior 15", async ({ page }) => {
+  test("a harness-created session appears once its session.lifecycle event arrives", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -968,21 +900,15 @@ test.describe("core sidebar tree @core", () => {
       ts: now,
     })
 
-    // Asserted on the RENDERED sidebar row, deliberately not on any
-    // window-level debug handle (`__claxedoQueryClient` etc.) — debug seams
-    // can be DEV-only and dead-code-eliminated from production builds, and
-    // the visible row is the behavior users get. Delivery can take a few
-    // seconds: the events stream is a reconnect-poll loop (~2s cadence), and
-    // the row renders after inventory -> section recompute -> session-list
-    // refetch, so keep the generous timeout.
-    // The lifecycle row can currently appear in both the project and workspace
-    // sections; duplication is tracked separately from this delivery proof.
+    // Asserted on the rendered row rather than a window debug handle, which is DEV-only.
+    // Delivery is slow — a ~2s reconnect-poll plus inventory, section recompute and refetch —
+    // hence the wide timeout, and `.first()` because the row can land in both sections.
     await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_codex_new"]').first())
       .toBeVisible({ timeout: 15_000 })
     await expect(page.locator('[data-testid="rail-sidebar-session-list-empty"]')).toHaveCount(0)
   })
 
-  test("sidebar-toggle button un-docks the rail (docked state flips) — behavior 13 (partial)", async ({ page }) => {
+  test("sidebar-toggle button un-docks the rail (docked state flips)", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "toggle" }) })
     await seedProject(page, { dir: DIR })
@@ -998,7 +924,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(toggle).toHaveCount(0)
   })
 
-  test("sidebar-toggle collapses/expands the rail's width — behavior 13", async ({ page }) => {
+  test("sidebar-toggle collapses/expands the rail's width", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "width" }) })
     await seedProject(page, { dir: DIR })
@@ -1026,7 +952,7 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator('[data-testid="sidebar-toggle"]')).toBeVisible()
   })
 
-  test("hot-zone peek expands an unpinned collapsed sidebar; leaving the rail auto-collapses it — behavior 11", async ({ page }) => {
+  test("hot-zone peek expands an unpinned collapsed sidebar; leaving the rail auto-collapses it", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "peek" }) })
     await seedProject(page, { dir: DIR })
@@ -1054,7 +980,7 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(0)
   })
 
-  test("drag-resizing the sidebar handle changes width live and persists across reload — behavior 12", async ({ page }) => {
+  test("drag-resizing the sidebar handle changes width live and persists across reload", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "drag" }) })
     await seedProject(page, { dir: DIR })
@@ -1079,7 +1005,9 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(railWidth, { timeout: 15_000 }).toBe(340)
   })
 
-  test("mobile drawer opens via the opener, scrim-closes, and closes on session select — behavior 14", async ({ page }) => {
+  test("mobile drawer opens via the opener, scrim-closes, and closes on session select", async ({ page }) => {
+    // Picking a session both navigates and closes the drawer, but through separate owners:
+    // `activateSession` navigates, and `onSessionSelect` only dismisses the drawer.
     await page.setViewportSize({ width: 390, height: 844 })
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "drawer" }) })

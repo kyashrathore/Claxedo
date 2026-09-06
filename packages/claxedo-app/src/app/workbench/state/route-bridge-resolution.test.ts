@@ -255,7 +255,7 @@ describe("session probe single-flight", () => {
 
   test("concurrent config probes for one session share a single request", async () => {
     const calls: string[] = []
-    const { request, release } = deferredJson({ harness: { id: "codex-acp" } }, calls)
+    const { request, release } = deferredJson({ harness: { kind: "connection", connectionId: "codex-acp" } }, calls)
 
     const input = { serverUrl: SERVER, sessionID: "ses_config_sf", workspaceDirectory: "/repo", request }
     const first = routeBridgeSessionConfigHarness(input)
@@ -264,7 +264,8 @@ describe("session probe single-flight", () => {
     const [harnessA, harnessB] = await Promise.all([first, second])
 
     expect(calls).toHaveLength(1)
-    expect(harnessA).toEqual(harnessB)
+    expect(harnessA).toEqual({ kind: "connection", connectionId: "codex-acp" })
+    expect(harnessB).toEqual({ kind: "connection", connectionId: "codex-acp" })
   })
 
   test("meta probes for different sessions do not share", async () => {

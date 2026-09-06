@@ -12,6 +12,7 @@
  * Claxedo-distributed build turns telemetry on explicitly at package time.
  */
 import type { PostHog } from "posthog-node"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /**
  * What the fatal path asks of a client: record one exception, then flush.
@@ -54,11 +55,6 @@ const DEFAULT_FLUSH_TIMEOUT_MS = 2000
  *  the ops-plane "system" distinct id rather than inventing a per-install id. */
 const SYSTEM_DISTINCT_ID = "system"
 
-function clean(value: string | undefined): string | undefined {
-  const trimmed = value?.trim()
-  return trimmed ? trimmed : undefined
-}
-
 /**
  * Build-time telemetry config, inlined by electron.vite.config.ts.
  *
@@ -74,9 +70,9 @@ function clean(value: string | undefined): string | undefined {
  * exactly as it did before this existed.
  */
 const baked = {
-  key: clean(import.meta.env.CLAXEDO_POSTHOG_KEY),
-  host: clean(import.meta.env.CLAXEDO_POSTHOG_HOST),
-  mode: clean(import.meta.env.CLAXEDO_TELEMETRY_MODE),
+  key: trimToUndefined(import.meta.env.CLAXEDO_POSTHOG_KEY),
+  host: trimToUndefined(import.meta.env.CLAXEDO_POSTHOG_HOST),
+  mode: trimToUndefined(import.meta.env.CLAXEDO_TELEMETRY_MODE),
 } as const
 
 /** Only `on` permits sending, matched case-insensitively after trimming;
@@ -85,7 +81,7 @@ const baked = {
  *  main process reads process.env directly rather than importing the server
  *  package, so the rule is restated here rather than shared. */
 function telemetryEnabled(env: NodeJS.ProcessEnv): boolean {
-  return (clean(env.CLAXEDO_TELEMETRY_MODE) ?? baked.mode)?.toLowerCase() === "on"
+  return (trimToUndefined(env.CLAXEDO_TELEMETRY_MODE) ?? baked.mode)?.toLowerCase() === "on"
 }
 
 /** CLAXEDO_POSTHOG_KEY first; POSTHOG_KEY is the unprefixed fallback shared
@@ -97,17 +93,17 @@ function telemetryEnabled(env: NodeJS.ProcessEnv): boolean {
  *  surfaces as an opaque SDK-internal field on the client. */
 export function resolveKey(env: NodeJS.ProcessEnv): string | undefined {
   if (!telemetryEnabled(env)) return undefined
-  return clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY) ?? baked.key
+  return trimToUndefined(env.CLAXEDO_POSTHOG_KEY) ?? trimToUndefined(env.POSTHOG_KEY) ?? baked.key
 }
 
 export function resolveHost(env: NodeJS.ProcessEnv): string {
-  return clean(env.CLAXEDO_POSTHOG_HOST) ?? baked.host ?? DEFAULT_HOST
+  return trimToUndefined(env.CLAXEDO_POSTHOG_HOST) ?? baked.host ?? DEFAULT_HOST
 }
 
 /** CLAXEDO_RELEASE wins; GIT_SHA is the deploy-tooling alias the other
  *  runtimes' observability config already accepts. */
 function resolveRelease(env: NodeJS.ProcessEnv): string | undefined {
-  return clean(env.CLAXEDO_RELEASE) ?? clean(env.GIT_SHA)
+  return trimToUndefined(env.CLAXEDO_RELEASE) ?? trimToUndefined(env.GIT_SHA)
 }
 
 export function resolveBaseProperties(env: NodeJS.ProcessEnv = process.env): TelemetryBaseProperties {

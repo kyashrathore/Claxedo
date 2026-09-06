@@ -830,9 +830,6 @@ describe("workspace runtime shutdown handler", () => {
   })
 })
 
-// ── Characterization: app assembly, relay auth, ephemeral startServer,
-//    env helpers (Unit 1). These pin the runnable-host behavior a later unit
-//    will move/extract. ────────────────────────────────────────────────────────
 describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   test("requires an exposure", () => {
     expect(() => createWorkspaceRuntimeApp()).toThrow("Workspace runtime exposure is required")

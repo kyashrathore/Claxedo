@@ -76,10 +76,6 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   const [viewportWidth, setViewportWidth] = createSignal(typeof window === "undefined" ? 1024 : window.innerWidth)
   const stateOpen = () => props.state.open && !!props.state.mode
   const open = () => props.visualOpen?.() ?? stateOpen()
-  // Open question (WP-C3 inventory §5.1 / collapse design note §5 Q1): whether
-  // this full-width/hide-resize-handle boundary stays at BP_SM (640) or migrates
-  // up to BP_MD (768) to match the workbench collapse is a product decision the
-  // leader has NOT yet made. Kept at BP_SM (the zero-behavior-change default).
   const isMobile = () => viewportWidth() < BP_SM
   const availableWidth = () => parentWidth() || viewportWidth()
   const readablePanelLimit = () => Math.max(minWidth, availableWidth() - Math.min(minReadableContentWidth, Math.max(0, availableWidth() - minWidth)))
@@ -308,48 +304,67 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     props.onShellRef?.(undefined)
   })
 
+  let stopResize: VoidFunction | undefined
+  onCleanup(() => stopResize?.())
+
   const resize = (event: PointerEvent) => {
+    stopResize?.()
     event.preventDefault()
     const handle = event.currentTarget
     if (!(handle instanceof HTMLElement)) return
     const startX = event.clientX
     const startWidth = width() ?? defaultWidth()
     handle.setPointerCapture?.(event.pointerId)
+    const previousUserSelect = document.body.style.userSelect
+    const previousCursor = document.body.style.cursor
+    const previousSuspended = document.documentElement.dataset.terminalResizeSuspended
     document.body.style.userSelect = "none"
     document.body.style.cursor = "col-resize"
     // Suppresses terminal re-layout / xterm fit while dragging.
     document.documentElement.dataset.terminalResizeSuspended = "1"
     setDragging(true)
 
-    let pending = false
+    let frame: number | undefined
     let latestX = event.clientX
     const flush = () => {
-      pending = false
+      frame = undefined
       setWidth(clampWidth(startWidth + startX - latestX))
     }
-
     const onMove = (move: PointerEvent) => {
+      if (move.pointerId !== event.pointerId) return
       latestX = move.clientX
-      if (pending) return
-      pending = true
-      requestAnimationFrame(flush)
+      if (frame !== undefined) return
+      frame = requestAnimationFrame(flush)
     }
-
-    const onUp = (up: PointerEvent) => {
-      latestX = up.clientX
-      flush()
+    const finish = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      frame = undefined
       setDragging(false)
-      document.body.style.userSelect = ""
-      document.body.style.cursor = ""
-      delete document.documentElement.dataset.terminalResizeSuspended
+      document.body.style.userSelect = previousUserSelect
+      document.body.style.cursor = previousCursor
+      if (previousSuspended === undefined) delete document.documentElement.dataset.terminalResizeSuspended
+      else document.documentElement.dataset.terminalResizeSuspended = previousSuspended
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
-      handle.releasePointerCapture?.(event.pointerId)
+      window.removeEventListener("pointercancel", onCancel)
+      if (handle.hasPointerCapture?.(event.pointerId)) handle.releasePointerCapture(event.pointerId)
+      stopResize = undefined
       emitTerminalFit()
     }
-
+    const onUp = (up: PointerEvent) => {
+      if (up.pointerId !== event.pointerId) return
+      latestX = up.clientX
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      flush()
+      finish()
+    }
+    const onCancel = (cancel: PointerEvent) => {
+      if (cancel.pointerId === event.pointerId) finish()
+    }
+    stopResize = finish
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
+    window.addEventListener("pointercancel", onCancel)
   }
 
   return (

@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/sandbox-manager",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
   "license": "MIT",
@@ -24,156 +24,156 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
-      "bun": "./dist/index.mjs",
-      "development": "./dist/index.mjs",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     },
     "./command": {
+      "development": "./src/command.ts",
+      "bun": "./src/command.ts",
       "types": "./dist/command.d.ts",
-      "bun": "./dist/command.mjs",
-      "development": "./dist/command.mjs",
       "import": "./dist/command.mjs",
       "default": "./dist/command.mjs"
     },
     "./constants": {
+      "development": "./src/constants.ts",
+      "bun": "./src/constants.ts",
       "types": "./dist/constants.d.ts",
-      "bun": "./dist/constants.mjs",
-      "development": "./dist/constants.mjs",
       "import": "./dist/constants.mjs",
       "default": "./dist/constants.mjs"
     },
     "./checkpoint-manager": {
+      "development": "./src/checkpoint-manager.ts",
+      "bun": "./src/checkpoint-manager.ts",
       "types": "./dist/checkpoint-manager.d.ts",
-      "bun": "./dist/checkpoint-manager.mjs",
-      "development": "./dist/checkpoint-manager.mjs",
       "import": "./dist/checkpoint-manager.mjs",
       "default": "./dist/checkpoint-manager.mjs"
     },
     "./defaults": {
+      "development": "./src/defaults.ts",
+      "bun": "./src/defaults.ts",
       "types": "./dist/defaults.d.ts",
-      "bun": "./dist/defaults.mjs",
-      "development": "./dist/defaults.mjs",
       "import": "./dist/defaults.mjs",
       "default": "./dist/defaults.mjs"
     },
     "./driver-catalog": {
+      "development": "./src/driver-catalog.ts",
+      "bun": "./src/driver-catalog.ts",
       "types": "./dist/driver-catalog.d.ts",
-      "bun": "./dist/driver-catalog.mjs",
-      "development": "./dist/driver-catalog.mjs",
       "import": "./dist/driver-catalog.mjs",
       "default": "./dist/driver-catalog.mjs"
     },
     "./drivers/box": {
+      "development": "./src/drivers/box.ts",
+      "bun": "./src/drivers/box.ts",
       "types": "./dist/drivers/box.d.ts",
-      "bun": "./dist/drivers/box.mjs",
-      "development": "./dist/drivers/box.mjs",
       "import": "./dist/drivers/box.mjs",
       "default": "./dist/drivers/box.mjs"
     },
     "./drivers/exe": {
+      "development": "./src/drivers/exe.ts",
+      "bun": "./src/drivers/exe.ts",
       "types": "./dist/drivers/exe.d.ts",
-      "bun": "./dist/drivers/exe.mjs",
-      "development": "./dist/drivers/exe.mjs",
       "import": "./dist/drivers/exe.mjs",
       "default": "./dist/drivers/exe.mjs"
     },
     "./drivers/cloudflare": {
+      "development": "./src/drivers/cloudflare.ts",
+      "bun": "./src/drivers/cloudflare.ts",
       "types": "./dist/drivers/cloudflare.d.ts",
-      "bun": "./dist/drivers/cloudflare.mjs",
-      "development": "./dist/drivers/cloudflare.mjs",
       "import": "./dist/drivers/cloudflare.mjs",
       "default": "./dist/drivers/cloudflare.mjs"
     },
     "./drivers/daytona": {
+      "development": "./src/drivers/daytona.ts",
+      "bun": "./src/drivers/daytona.ts",
       "types": "./dist/drivers/daytona.d.ts",
-      "bun": "./dist/drivers/daytona.mjs",
-      "development": "./dist/drivers/daytona.mjs",
       "import": "./dist/drivers/daytona.mjs",
       "default": "./dist/drivers/daytona.mjs"
     },
     "./drivers/docker": {
+      "development": "./src/drivers/docker.ts",
+      "bun": "./src/drivers/docker.ts",
       "types": "./dist/drivers/docker.d.ts",
-      "bun": "./dist/drivers/docker.mjs",
-      "development": "./dist/drivers/docker.mjs",
       "import": "./dist/drivers/docker.mjs",
       "default": "./dist/drivers/docker.mjs"
     },
     "./drivers/fetch-bridge": {
+      "development": "./src/drivers/fetch-bridge.ts",
+      "bun": "./src/drivers/fetch-bridge.ts",
       "types": "./dist/drivers/fetch-bridge.d.ts",
-      "bun": "./dist/drivers/fetch-bridge.mjs",
-      "development": "./dist/drivers/fetch-bridge.mjs",
       "import": "./dist/drivers/fetch-bridge.mjs",
       "default": "./dist/drivers/fetch-bridge.mjs"
     },
     "./drivers/modal": {
+      "development": "./src/drivers/modal.ts",
+      "bun": "./src/drivers/modal.ts",
       "types": "./dist/drivers/modal.d.ts",
-      "bun": "./dist/drivers/modal.mjs",
-      "development": "./dist/drivers/modal.mjs",
       "import": "./dist/drivers/modal.mjs",
       "default": "./dist/drivers/modal.mjs"
     },
     "./drivers/vercel": {
+      "development": "./src/drivers/vercel.ts",
+      "bun": "./src/drivers/vercel.ts",
       "types": "./dist/drivers/vercel.d.ts",
-      "bun": "./dist/drivers/vercel.mjs",
-      "development": "./dist/drivers/vercel.mjs",
       "import": "./dist/drivers/vercel.mjs",
       "default": "./dist/drivers/vercel.mjs"
     },
     "./image": {
+      "development": "./src/image.ts",
+      "bun": "./src/image.ts",
       "types": "./dist/image.d.ts",
-      "bun": "./dist/image.mjs",
-      "development": "./dist/image.mjs",
       "import": "./dist/image.mjs",
       "default": "./dist/image.mjs"
     },
     "./image-name": {
+      "development": "./src/image-name.ts",
+      "bun": "./src/image-name.ts",
       "types": "./dist/image-name.d.ts",
-      "bun": "./dist/image-name.mjs",
-      "development": "./dist/image-name.mjs",
       "import": "./dist/image-name.mjs",
       "default": "./dist/image-name.mjs"
     },
     "./lease-policy": {
+      "development": "./src/lease-policy.ts",
+      "bun": "./src/lease-policy.ts",
       "types": "./dist/lease-policy.d.ts",
-      "bun": "./dist/lease-policy.mjs",
-      "development": "./dist/lease-policy.mjs",
       "import": "./dist/lease-policy.mjs",
       "default": "./dist/lease-policy.mjs"
     },
     "./lease-types": {
+      "development": "./src/lease-types.ts",
+      "bun": "./src/lease-types.ts",
       "types": "./dist/lease-types.d.ts",
-      "bun": "./dist/lease-types.mjs",
-      "development": "./dist/lease-types.mjs",
       "import": "./dist/lease-types.mjs",
       "default": "./dist/lease-types.mjs"
     },
     "./runtime-env": {
+      "development": "./src/runtime-env.ts",
+      "bun": "./src/runtime-env.ts",
       "types": "./dist/runtime-env.d.ts",
-      "bun": "./dist/runtime-env.mjs",
-      "development": "./dist/runtime-env.mjs",
       "import": "./dist/runtime-env.mjs",
       "default": "./dist/runtime-env.mjs"
     },
     "./service-url-exposure": {
+      "development": "./src/service-url-exposure.ts",
+      "bun": "./src/service-url-exposure.ts",
       "types": "./dist/service-url-exposure.d.ts",
-      "bun": "./dist/service-url-exposure.mjs",
-      "development": "./dist/service-url-exposure.mjs",
       "import": "./dist/service-url-exposure.mjs",
       "default": "./dist/service-url-exposure.mjs"
     },
     "./stores/memory": {
+      "development": "./src/stores/memory.ts",
+      "bun": "./src/stores/memory.ts",
       "types": "./dist/stores/memory.d.ts",
-      "bun": "./dist/stores/memory.mjs",
-      "development": "./dist/stores/memory.mjs",
       "import": "./dist/stores/memory.mjs",
       "default": "./dist/stores/memory.mjs"
     },
     "./drivers/cloudflare-egress": {
+      "development": "./src/drivers/cloudflare-egress.ts",
+      "bun": "./src/drivers/cloudflare-egress.ts",
       "types": "./dist/drivers/cloudflare-egress.d.ts",
-      "bun": "./dist/drivers/cloudflare-egress.mjs",
-      "development": "./dist/drivers/cloudflare-egress.mjs",
       "import": "./dist/drivers/cloudflare-egress.mjs",
       "default": "./dist/drivers/cloudflare-egress.mjs"
     }
@@ -187,7 +187,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@claxedo/sandbox-contract": "0.7.0",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/sandbox-contract": "workspace:*",
     "@daytona/sdk": "0.192.0",
     "@vercel/sandbox": "1.10.2",
     "modal": "0.7.5"

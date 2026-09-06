@@ -6,18 +6,17 @@
 // sandboxes — so the bench target is a real runtime, not a bench mock.
 //
 // Credentials (never printed):
-//   Daytona    — DAYTONA_API_KEY (Phase 1 verified it in
-//                packages/claxedo-server/.env, as a Fly secret on
-//                claxedo-selfhost-test, and in the local managed encrypted
-//                store). The production resolution path is
+//   Daytona    — DAYTONA_API_KEY, read from packages/claxedo-server/.env, a
+//                Fly secret on claxedo-selfhost-test, or the local managed
+//                encrypted store. Production resolves it via
 //                packages/claxedo-server/src/sandbox/driver-auth.ts
-//                `sandboxDriverAuthManaged("daytona")`; the bench reads the same
-//                key from the environment (export it, or `source
+//                `sandboxDriverAuthManaged("daytona")`; the bench reads the
+//                same key from the environment (export it, or `source
 //                packages/claxedo-server/.env`, before running).
 //                Optional: DAYTONA_API_URL, DAYTONA_ORGANIZATION_ID, DAYTONA_TARGET.
-//   Cloudflare — CLAXEDO_SANDBOX_CLOUDFLARE_WORKER_URL + _API_TOKEN, produced by
-//                deploying scripts/sandbox/cloudflare-worker (Phase 2.3 / the
-//                deploy-cloudflare-sandbox-worker.yml job). Row 6 only.
+//   Cloudflare — CLAXEDO_SANDBOX_CLOUDFLARE_WORKER_URL + _API_TOKEN, produced
+//                by deploying scripts/sandbox/cloudflare-worker
+//                (deploy-cloudflare-sandbox-worker.yml).
 //
 // Snapshot (Daytona): CLAXEDO_DAYTONA_SNAPSHOT → CLAXEDO_SNAPSHOT_NAME → the
 // fresh CI snapshot below → ensureSnapshot() (offline fallback, builds one).
@@ -36,22 +35,17 @@ import { fileURLToPath } from "node:url"
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import type { SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from "@claxedo/sandbox-manager"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const REPORTS_DIR = join(PACKAGE_ROOT, "bench/reports")
 
-// The fresh CI-built snapshot from the pipeline-verification run recorded in the
-// plan (claxedo-sandbox-image run 29598415015). Override with
+// Known-good snapshot from a claxedo-sandbox-image CI build. Override with
 // CLAXEDO_DAYTONA_SNAPSHOT once 0.5.2 publishes and a newer image is built.
 const FRESH_CI_SNAPSHOT = "claxedo-workspace-runtime-0-5-1-ae435f536c-v8"
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function requireEnv(name: string): string {
-  const value = clean(process.env[name])
+  const value = trimToUndefined(process.env[name])
   if (!value) {
     console.error(`[provision] missing required env: ${name}`)
     process.exit(2)
@@ -66,13 +60,13 @@ function stringArg(name: string, fallback?: string): string | undefined {
 }
 
 function resolveDaytonaSnapshot(): string {
-  const explicit = clean(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ?? clean(process.env.CLAXEDO_SNAPSHOT_NAME)
+  const explicit = trimToUndefined(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ?? trimToUndefined(process.env.CLAXEDO_SNAPSHOT_NAME)
   if (explicit) return explicit
-  // The recorded fresh CI snapshot is the default. The offline fallback —
-  // @claxedo/sandbox-manager/image `ensureSnapshot(daytona)` — BUILDS a snapshot
-  // and needs a live Daytona client plus Docker/push rights, so it is a manual
-  // step (rebuild via the claxedo-sandbox-image workflow after 0.5.2 publishes,
-  // then set CLAXEDO_DAYTONA_SNAPSHOT), not an automatic path here.
+  // FRESH_CI_SNAPSHOT is the default. The offline fallback —
+  // @claxedo/sandbox-manager/image `ensureSnapshot(daytona)` — builds a snapshot
+  // and needs a live Daytona client plus Docker/push rights, so it stays a
+  // manual step: rebuild via the claxedo-sandbox-image workflow once 0.5.2
+  // publishes, then set CLAXEDO_DAYTONA_SNAPSHOT.
   if (FRESH_CI_SNAPSHOT) return FRESH_CI_SNAPSHOT
   console.error(
     "[provision] no snapshot: set CLAXEDO_DAYTONA_SNAPSHOT (or rebuild via the claxedo-sandbox-image CI workflow / ensureSnapshot)",
@@ -85,9 +79,9 @@ function resolveDaytonaSnapshot(): string {
 function daytonaDriver(baseSnapshot: string): SandboxDriver {
   return createDaytonaSandboxDriver({
     apiKey: requireEnv("DAYTONA_API_KEY"),
-    ...(clean(process.env.DAYTONA_API_URL) ? { apiUrl: clean(process.env.DAYTONA_API_URL) } : {}),
-    ...(clean(process.env.DAYTONA_ORGANIZATION_ID) ? { organizationId: clean(process.env.DAYTONA_ORGANIZATION_ID) } : {}),
-    ...(clean(process.env.DAYTONA_TARGET) ? { target: clean(process.env.DAYTONA_TARGET) } : {}),
+    ...(trimToUndefined(process.env.DAYTONA_API_URL) ? { apiUrl: trimToUndefined(process.env.DAYTONA_API_URL) } : {}),
+    ...(trimToUndefined(process.env.DAYTONA_ORGANIZATION_ID) ? { organizationId: trimToUndefined(process.env.DAYTONA_ORGANIZATION_ID) } : {}),
+    ...(trimToUndefined(process.env.DAYTONA_TARGET) ? { target: trimToUndefined(process.env.DAYTONA_TARGET) } : {}),
     baseSnapshot,
     // Keep the bench sandbox short-lived so a crashed run cannot leak a
     // long-running sandbox: auto-stop after 30m idle, auto-delete after 60m.
@@ -106,7 +100,7 @@ function cloudflareDriver(): SandboxDriver {
 function ensureInput(workspaceId: string, snapshot?: string): SandboxDriverEnsureInput {
   return {
     workspaceId,
-    homeRegion: clean(process.env.DAYTONA_TARGET) ?? "us",
+    homeRegion: trimToUndefined(process.env.DAYTONA_TARGET) ?? "us",
     epoch: Date.now(),
     labels: { "claxedo.bench": "cf-relay-reeval" },
     ...(snapshot ? { snapshot } : {}),

@@ -1,21 +1,18 @@
 /**
  * Shared `bun.mock.module` fixture for `../api.ts`.
  *
- * API client suites (persist.test.ts and friends) used to hand-copy a full mock of every export of
- * `./api` — and their own comments documented a real hazard: Bun's module
- * cache is process-wide across a `bun test` run, so one file's
+ * Bun's module cache is process-wide across a `bun test` run, so one file's
  * `mock.module("./api", ...)` (or `mock.module("../api", ...)`,
  * or `mock.module("@/platform/api/api", ...)` — all specifier forms
  * resolve to the same absolute file and therefore the same cache slot) can
  * leak into another file and silently swap out its behavior for whatever
- * the last-registered copy implemented. `persist.test.ts` carries a
- * paragraph explaining exactly this.
+ * the last-registered copy implemented.
  *
  * This fixture kills the hazard at the root: there is now exactly one
- * implementation of the mocked module's pure surface (isDemoMode,
- * isDemoPath, isEmbedMode, isHostedAppHostname, fixDir, normalizeUrl) for
+ * implementation of the mocked module's pure surface (isEmbedMode,
+ * isHostedAppHostname, fixDir, normalizeUrl) for
  * every caller to share, so "which copy won the race" no longer matters —
- * they're all the same copy. The pure functions are DELIBERATELY
+ * they're all the same copy. The pure functions are deliberately
  * re-implemented here rather than `import`-ed live from `../api.ts`: this
  * file loads before any test file's `mock.module` call runs, so an eager
  * `import * as RealApi from "../api"` could itself be served a stale mock
@@ -25,9 +22,9 @@
  * via the same cache-busting-query technique api.test.ts uses) so any
  * future drift in `../api.ts` is caught here instead of shipping silently.
  *
- * Only `authFetch` / `api` (the true network-I/O boundary) are mocked
- * per HLD 5's "mock only true I/O boundaries" rule; everything else below
- * is either that boundary or a faithful pure-logic mirror of it.
+ * Only `authFetch` / `api` (the true network-I/O boundary) are mocked;
+ * everything else below is either that boundary or a faithful pure-logic
+ * mirror of it.
  *
  * Usage (mock.module is called from the *.test.ts file, not from here —
  * see "Why createMockApi doesn't call mock.module itself" below):
@@ -44,7 +41,7 @@
  * mock that returns different bodies per pathname), pass a full
  * `authFetch` override in `overrides` — `fixture.calls`/`setResponse` are
  * simply unused in that case, the rest of the module (getClaxedoServerUrl,
- * isDemoMode, ...) is still shared.
+ * isEmbedMode, ...) is still shared.
  *
  * Why createMockApi doesn't call mock.module itself: tsconfig.json's
  * `include` covers src/**\/*.ts but excludes src/**\/*.test.ts, so this
@@ -68,8 +65,6 @@ export type MockApiResponseSpec = {
 export type ApiModuleShape = {
   configureApiRuntime: (input: { baseUrl?: string | null; password?: string | null }) => void
   resetApiRuntime: () => void
-  isDemoPath: (path: string) => boolean
-  isDemoMode: () => boolean
   isEmbedMode: () => boolean
   isHostedAppHostname: (hostname: string | undefined) => boolean
   isLoopbackHttpUrl: (input: string | undefined) => boolean
@@ -115,23 +110,14 @@ export type MockApiFixture = {
   reset: () => void
 }
 
-// Mirrors ../api.ts's isDemoPath exactly — see file header for why this is
+// Mirrors ../api.ts's isEmbedMode exactly — see file header for why this is
 // a deliberate copy rather than a live import.
-function isDemoPath(path: string): boolean {
-  return path === "/demo" || path.startsWith("/demo/")
-}
-
-function isDemoMode(): boolean {
-  if (typeof window === "undefined") return false
-  return isDemoPath(window.location.pathname)
-}
-
 function isEmbedMode(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).has("embed")
 }
 
-function isLoopbackHttpUrl(input: string | undefined): boolean {
+function mirrorIsLoopbackHttpUrl(input: string | undefined): boolean {
   if (!input) return false
   try {
     const url = new URL(input)
@@ -234,12 +220,10 @@ export function createMockApi(overrides: MockApiOverrides = {}): MockApiFixture 
   const module: ApiModuleShape = {
     configureApiRuntime: overrides.configureApiRuntime ?? (() => undefined),
     resetApiRuntime: overrides.resetApiRuntime ?? (() => undefined),
-    isDemoPath: overrides.isDemoPath ?? isDemoPath,
-    isDemoMode: overrides.isDemoMode ?? isDemoMode,
     isEmbedMode: overrides.isEmbedMode ?? isEmbedMode,
     isHostedAppHostname: overrides.isHostedAppHostname ?? isHostedAppHostname,
-    isLoopbackHttpUrl,
-    usesUnsignedLocalTransport: isLoopbackHttpUrl,
+    isLoopbackHttpUrl: mirrorIsLoopbackHttpUrl,
+    usesUnsignedLocalTransport: mirrorIsLoopbackHttpUrl,
     unsignedLocalFetch: authFetch,
     fixDir: overrides.fixDir ?? fixDir,
     normalizeUrl: overrides.normalizeUrl ?? normalizeUrl,

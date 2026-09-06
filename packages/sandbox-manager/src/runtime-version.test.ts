@@ -9,10 +9,10 @@ describe("workspaceRuntimeVersion", () => {
   })
 
   test("resolves at every call, so a later env change is not shadowed by an earlier read", () => {
-    // The module used to memoize the first result, which pinned the version for
-    // the life of the process: any composition that set the env after something
-    // else had already read it got the stale value, and the failure is silent —
-    // a stale version resolves to a real image tag, just the wrong one.
+    // Memoizing the first result would pin the version for the life of the
+    // process: any composition that sets the env after something else already
+    // read it would get the stale value, and the failure is silent — a stale
+    // version resolves to a real image tag, just the wrong one.
     delete process.env.WORKSPACE_RUNTIME_VERSION
     const baked = workspaceRuntimeVersion()
 

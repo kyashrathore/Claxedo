@@ -6,26 +6,22 @@ import { resolveLocalServerEntry } from "./local-server"
 import { spec } from "./contract"
 
 /**
- * Host Connector is an optional child, not part of either shipping closure.
- *
- * U8-R19 makes that a build property: the connector has its own manifest and
- * source graph, base unsigned launch neither starts nor imports it, and it is
- * fingerprinted separately. Two of those are checkable here, and the plan asks
- * for them to be VERIFIED rather than assumed — an import added to the server
- * entry or the renderer would put enrollment, relay transport, and a signing
- * identity inside the unsigned build with nothing to say so.
+ * Host Connector is an optional child, not part of either shipping closure: it
+ * has its own manifest and source graph, base unsigned launch neither starts
+ * nor imports it, and it is fingerprinted separately. An import added to the
+ * server entry or the renderer would put enrollment, relay transport, and a
+ * signing identity inside the unsigned build with nothing to say so.
  *
  * The non-import claim is checked two ways, because neither alone is enough:
  *
- *   - The bundled server's real static import closure is WALKED. That is the
- *     graph `bundle-claxedo-server.ts` feeds to Bun, so its answer is the
- *     artifact's answer. The walk carries positive controls: it must reach the
- *     packages it is supposed to reach and leave nothing unresolved, or a
- *     walker that stopped at the first file would report "clean".
- *   - The renderer closure cannot be walked here — it crosses into
- *     `@claxedo/app`, whose `@/` aliases are Vite's to resolve. So its inputs
- *     are checked instead: the packages the renderer is composed from must
- *     neither declare nor import the connector anywhere.
+ *   - The bundled server's static import closure is walked — the graph
+ *     `bundle-claxedo-server.ts` feeds to Bun, so its answer is the artifact's.
+ *     Positive controls: the walk must reach the packages it is supposed to
+ *     reach and leave nothing unresolved, or a walker that stopped at the first
+ *     file would report "clean".
+ *   - The renderer closure crosses into `@claxedo/app`, whose `@/` aliases are
+ *     Vite's to resolve, so its inputs are checked instead: the packages the
+ *     renderer is composed from must neither declare nor import the connector.
  */
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
@@ -65,7 +61,9 @@ function walk(entry: string): Closure {
     }
     for (const specifier of specifiers(source)) {
       if (specifier.startsWith(".") || specifier.startsWith("/")) {
-        const base = path.resolve(path.dirname(file), specifier)
+        // Asset imports carry a bundler query (`...template.sh?raw`); the file
+        // on disk is the specifier without it.
+        const base = path.resolve(path.dirname(file), specifier.replace(/[?#].*$/, ""))
         const candidate = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}.js`].find(
           (option) => fs.existsSync(option) && fs.statSync(option).isFile(),
         )

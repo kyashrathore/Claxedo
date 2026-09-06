@@ -262,8 +262,6 @@ export const PromptInputFrame: Component<{
           const target = e.target
           if (!(target instanceof HTMLElement)) return
           if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"]')) return
-          // The editor stays live while the harness is still polling (T5 §4): only
-          // submission is gated, so a briefly-not-ready composer is typeable.
           props.focusEditor()
         }}
       >
@@ -286,8 +284,7 @@ export const PromptInputFrame: Component<{
             aria-autocomplete={props.popover !== null ? "list" : undefined}
             aria-activedescendant={activeDescendant()}
             aria-label={props.designPlaceholder()}
-            // T5 §4: keep the editor editable while the harness polls — gate the
-            // submit, not the typing. A dead-looking box teaches nothing.
+            // Editable while the harness polls; only submit is gated.
             contenteditable="true"
             autocapitalize={props.mode() === "normal" ? "sentences" : "off"}
             autocorrect={props.mode() === "normal" ? "on" : "off"}

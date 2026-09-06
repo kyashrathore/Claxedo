@@ -1,70 +1,18 @@
 /**
- * Host adapters: implement @claxedo/connections store ports over the claxedo
- * credential registry and connection table. Owner values remain opaque here;
- * identity and authorization belong to connections-host.ts.
+ * The SQLite `ConnectionStorePort`: connection metadata over the claxedo
+ * connection table. Owner values remain opaque here; identity and
+ * authorization belong to connections-host.ts, and credential material belongs
+ * to `credential-store-adapter.ts`.
  */
 import { and, eq, isNull } from "drizzle-orm"
 import {
-  ConnectionsUnavailableError,
+  ConnectionExistsError,
   type ConnectionRow,
   type ConnectionStorePort,
-  type CredentialStorePort,
 } from "@claxedo/connections"
-import type { ControlPlaneCredentials } from "../authority/services"
 import { ClaxedoDB } from "../platform/db"
 import { ClaxedoConnectionTable } from "./connection.sql"
 import { storedCapabilities, storedFields } from "./stored-columns"
-
-export function createCredentialStoreAdapter(credentials: ControlPlaneCredentials): CredentialStorePort {
-  const credentialFor = async (providerId: string) => {
-    const current = await credentials.getCredentialByProvider(providerId)
-    if (current) return { credential: current, providerId }
-    return undefined
-  }
-
-  return {
-    async put(input) {
-      await credentials.putCredential({
-        provider_id: input.providerId,
-        kind: input.kind,
-        source: "managed",
-        secret: input.secret,
-        ...(input.expiresAt !== undefined ? { expires_at: input.expiresAt } : {}),
-      })
-    },
-    async get(providerId) {
-      const result = await credentialFor(providerId)
-      const meta = result?.credential
-      if (!meta || (meta.kind !== "api_key" && meta.kind !== "oauth_token")) return undefined
-      return {
-        kind: meta.kind,
-        status: meta.status,
-        ...(meta.expires_at !== null && meta.expires_at !== undefined ? { expiresAt: meta.expires_at } : {}),
-      }
-    },
-    async resolveSecret(providerId) {
-      if (!credentials.resolveCredentialSecret) throw new ConnectionsUnavailableError()
-      const result = await credentialFor(providerId)
-      if (!result) return null
-      return credentials.resolveCredentialSecret(result.providerId)
-    },
-    async readSecret(providerId) {
-      if (!credentials.resolveCredentialSecret) throw new ConnectionsUnavailableError()
-      const result = await credentialFor(providerId)
-      if (!result) return null
-      if (result.credential.status !== "available") await credentials.updateCredentialStatus(result.credential.id, "available")
-      return credentials.resolveCredentialSecret(result.providerId)
-    },
-    async setStatus(providerId, status, lastError) {
-      const result = await credentialFor(providerId)
-      if (!result) return
-      await credentials.updateCredentialStatus(result.credential.id, status, lastError)
-    },
-    async deleteByProvider(providerId) {
-      await credentials.deleteCredentialsByProvider(providerId)
-    },
-  }
-}
 
 type ConnectionRowRecord = typeof ClaxedoConnectionTable.$inferSelect
 
@@ -96,7 +44,12 @@ export function createConnectionStoreAdapter(): ConnectionStorePort {
       }
       const existing = await this.get(row.integrationId, row.owner)
       if (existing) {
-        ClaxedoDB.use((db) => db.update(ClaxedoConnectionTable).set({ ...values, id: existing.id }).where(eq(ClaxedoConnectionTable.id, existing.id)).run())
+        // The supplied id is the key, so a DIFFERENT id for a partition that
+        // already holds this integration is refused rather than written under
+        // the old id: overwriting kept the row readable but stranded the
+        // credential the caller had just stored under the id it supplied.
+        if (existing.id !== row.id) throw new ConnectionExistsError()
+        ClaxedoDB.use((db) => db.update(ClaxedoConnectionTable).set(values).where(eq(ClaxedoConnectionTable.id, row.id)).run())
         return
       }
       ClaxedoDB.use((db) => db.insert(ClaxedoConnectionTable).values(values).run())

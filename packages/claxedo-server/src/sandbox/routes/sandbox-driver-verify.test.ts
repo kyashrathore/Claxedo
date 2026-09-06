@@ -7,11 +7,11 @@ import { sandboxDriverRoutes } from "../sandbox-driver-routes"
 import type { ControlPlaneCredentials } from "../../authority/services"
 
 /**
- * A sandbox provider key used to be accepted on sight and only discovered
- * broken at workspace creation — long after the user believed setup had
- * succeeded, and with nothing at that point tying the failure back to the key
- * they pasted. These pin the verdict at paste time, and pin the line between a
- * rejection (the provider said no) and an inconclusive one (we couldn't ask).
+ * These tests pin the verdict at paste time: a sandbox provider key is
+ * validated before it is trusted, not discovered broken later at workspace
+ * creation with nothing tying the failure back to the key the user pasted.
+ * They also pin the line between a rejection (the provider said no) and an
+ * inconclusive result (we couldn't ask).
  */
 
 let previousDataDir: string | undefined

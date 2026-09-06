@@ -1,12 +1,8 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import type { ProjectMeta } from "../../features/session/data/query/types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
-
-await mock.module("@/platform/runtime/platform-provider", () => ({
-  usePlatform: () => ({ platform: "web" }),
-}))
 
 async function manager(input: { resolveScopeKey?: (directory: string) => string | undefined } = {}) {
   const { createDirectoryCacheManager } = await import("./directory-cache-manager")
@@ -21,7 +17,6 @@ async function manager(input: { resolveScopeKey?: (directory: string) => string 
 
 afterEach(() => {
   queryClient.clear()
-  localStorage.clear()
 })
 
 describe("createDirectoryCacheManager", () => {

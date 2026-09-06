@@ -16,8 +16,11 @@ describe("terminal context", () => {
   test("required terminal hook throws outside the provider", () => {
     expect(() =>
       createRoot((dispose) => {
-        useTerminal()
-        dispose()
+        try {
+          useTerminal()
+        } finally {
+          dispose()
+        }
       }),
     ).toThrow("Terminal context must be used within a context provider")
   })

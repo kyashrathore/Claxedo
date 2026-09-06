@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { shouldShowConnectionLine } from "./session-connection-line"
 import { clearStreamSyncLifecycle, reportStreamSyncLifecycle, streamSyncLifecycleSnapshot } from "@/platform/runtime/stream-sync-status"
+
+const streamId = "workspace:connection-line-test" as const
+afterEach(() => clearStreamSyncLifecycle(streamId))
 
 describe("shouldShowConnectionLine (T7 / B5)", () => {
   test("hidden when there is no snapshot yet (module just loaded)", () => {
@@ -38,7 +41,7 @@ describe("shouldShowConnectionLine (T7 / B5)", () => {
 
 describe("reportStreamSyncLifecycle / streamSyncLifecycleSnapshot (reactive seam)", () => {
   test("everLive latches true after the first live and survives a later drop", () => {
-    const id = `workspace:test-${Math.random().toString(36).slice(2)}` as const
+    const id = streamId
 
     expect(streamSyncLifecycleSnapshot(id)).toBeUndefined()
 
@@ -58,7 +61,7 @@ describe("reportStreamSyncLifecycle / streamSyncLifecycleSnapshot (reactive seam
   })
 
   test("a stream that fails its first attempt (never live) never trips the reconnect line", () => {
-    const id = `workspace:fresh-${Math.random().toString(36).slice(2)}` as const
+    const id = streamId
 
     reportStreamSyncLifecycle(id, "connecting")
     reportStreamSyncLifecycle(id, "reconnect-scheduled")
@@ -66,8 +69,8 @@ describe("reportStreamSyncLifecycle / streamSyncLifecycleSnapshot (reactive seam
     expect(shouldShowConnectionLine(streamSyncLifecycleSnapshot(id))).toBe(false)
   })
 
-  test("deliberate teardown clears the snapshot, so switching back to an old session is ordinary startup again (BUG 1)", () => {
-    const id = `workspace:torn-${Math.random().toString(36).slice(2)}` as const
+  test("clearing lifecycle state resets the next connection to ordinary startup", () => {
+    const id = streamId
 
     // A session's stream goes live, then the user switches away: reconcile
     // removes the target — the cleanup steps `stop` and clears the snapshot.

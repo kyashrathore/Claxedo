@@ -26,10 +26,6 @@ test("creates a fresh data directory before opening claxedo.db", () => {
 })
 
 test("applies this product's migration journal, so a fresh profile has its tables", () => {
-  // The failure this guards is silent: an unconfigured journal used to mean
-  // zero migrations and a working handle to a file with no tables, so every
-  // query failed later, somewhere else, for a reason its stack trace did not
-  // name. Assert the schema is actually there.
   process.env.CLAXEDO_DATA_DIR = path.join(root, "with-schema")
 
   const tables = (ClaxedoDB.raw()

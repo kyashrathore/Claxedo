@@ -166,14 +166,12 @@ describe("claxedo applyDirectorySessionCacheEvent", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_z", "todo"))).toEqual([{ id: "todo_z" }])
   })
 
-  // REGRESSION. The runtime's auto-title publishes `buildSession(...)` — a
-  // PARTIAL row: id/slug/directory/title/version/time and no `config`. This
-  // branch used to assign it over the cached row wholesale, erasing
-  // `config.model`; the composer reads exactly that field
-  // (`submit.ts`, `parseExistingSessionConfig(input.info()?.config)`) and then
-  // refused every further prompt in an already-open session with the
-  // "Select an agent and model" toast. Reproduced in the running app the
-  // moment `session.updated` started being delivered at all.
+  // The runtime's auto-title publishes `buildSession(...)` — a partial row:
+  // id/slug/directory/title/version/time and no `config`. Assigning it over
+  // the cached row wholesale would erase `config.model`; the composer reads
+  // that field (`submit.ts`, `parseExistingSessionConfig(input.info()?.config)`)
+  // and would then refuse every further prompt in an already-open session
+  // with the "Select an agent and model" toast.
   test("session.updated merges over the cached row instead of erasing fields it omits", () => {
     const cached = {
       ...root("ses_a"),
@@ -183,7 +181,7 @@ describe("claxedo applyDirectorySessionCacheEvent", () => {
     const next = applyDirectorySessionCacheEvent({
       event: {
         type: "session.updated",
-        // Exactly the shape the auto-title sends: a new title, no `config`.
+        // The shape the auto-title sends: a new title, no `config`.
         properties: { info: { ...root("ses_a"), title: "Say FIXPROBE and nothing else." } },
       },
       cache: cache({ session: [cached], total: 1 }),

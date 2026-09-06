@@ -5,6 +5,9 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
+    // Workspace packages export `development` -> src/*.ts ahead of `types` ->
+    // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
+    "customConditions": ["development"],
     "types": ["vite/client", "node", "vitest/globals", "@testing-library/jest-dom"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
@@ -25,5 +28,6 @@
     }
   },
   "include": ["src", "vite.cloud.config.ts", "vitest.config.ts", "vitest.setup.ts"],
-  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
+  "exclude": ["dist", "node_modules", "src/**/test-support/**", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
+
 }

@@ -7,6 +7,13 @@ import {
   type IntegrationInfo,
 } from "./connections-logic"
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
 type RecordedRequest = { path: string; method: string; body: unknown }
 
 /**
@@ -431,10 +438,9 @@ describe("connect flow: oauth method", () => {
 
 describe("connect flow: device grant", () => {
   test("the user code survives into flow state while the attempt is polled", async () => {
-    // A device grant sends the user to a page that ASKS for this code, and the
-    // connect response is the only place it exists. Dropping it — which this
-    // flow used to do — left the UI spinning next to a page the user could not
-    // get past, so the connect could never complete.
+    // A device grant sends the user to a page that asks for this code, and the
+    // connect response is the only place it exists. Without it, the UI spins
+    // next to a page the user cannot get past and the connect never completes.
     const { request } = scriptedRequest([
       {
         status: 200,
@@ -462,7 +468,7 @@ describe("connect flow: device grant", () => {
 
     await flow.startOAuth()
 
-    // Visible on EVERY poll, not merely set once and cleared — the user is
+    // Visible on every poll, not merely set once and cleared — the user is
     // typing it while these polls run.
     expect(codesWhileWaiting).toEqual(["WDJB-MJHT", "WDJB-MJHT"])
     expect(flow.state.phase).toBe("done")
@@ -571,5 +577,94 @@ describe("connect flow: device grant", () => {
 
     expect(flow.state.userCode).toBeUndefined()
     expect(flow.state.verificationUrl).toBeUndefined()
+  })
+})
+
+
+describe("connect flow cancellation", () => {
+  test("reset ignores a delayed OAuth start and still permits a fresh connection", async () => {
+    const pending = deferred<Response>()
+    const paths: string[] = []
+    const opened: string[] = []
+    let connected = 0
+    const flow = createConnectFlow({
+      integration: google,
+      request: async (path) => {
+        paths.push(path)
+        if (paths.length === 1) return pending.promise
+        if (path === "/google/connect") return Response.json({ url: "https://fresh.example", attemptId: "fresh" })
+        return Response.json({ status: "complete" })
+      },
+      openUrl: (url) => void opened.push(url),
+      onConnected: () => void connected++,
+      sleep: () => Promise.resolve(),
+    })
+    const cancelled = flow.startOAuth()
+    expect(flow.state.phase).toBe("submitting")
+    flow.reset()
+    pending.resolve(Response.json({ url: "https://stale.example", attemptId: "stale", userCode: "OLD" }))
+    await cancelled
+    expect(paths).toEqual(["/google/connect"])
+    expect(opened).toEqual([])
+    expect(connected).toBe(0)
+    expect(flow.state.phase).toBe("form")
+    expect(flow.state.userCode).toBeUndefined()
+
+    await flow.startOAuth()
+    expect(opened).toEqual(["https://fresh.example"])
+    expect(paths).toEqual(["/google/connect", "/google/connect", "/attempts/fresh"])
+    expect(connected).toBe(1)
+    expect(flow.state.phase).toBe("done")
+  })
+
+  test("reset ignores a rejected key submission without replacing the new form error", async () => {
+    const pending = deferred<Response>()
+    const flow = createConnectFlow({ integration: notion, request: () => pending.promise })
+    flow.setSecret("secret")
+    const cancelled = flow.submitKey()
+    flow.reset()
+    await flow.submitKey()
+    const currentError = flow.state.error
+    expect(currentError).toContain("required secret")
+    pending.reject(new Error("stale request failed"))
+    await cancelled
+    expect(flow.state.phase).toBe("form")
+    expect(flow.state.error).toBe(currentError)
+  })
+
+  test.each(["key", "oauth", "poll"] as const)("reset ignores a %s response while its body is being decoded", async (stage) => {
+    const decoding = deferred<void>()
+    const payload = deferred<Record<string, unknown>>()
+    const delayed = Response.json({})
+    delayed.json = () => {
+      decoding.resolve()
+      return payload.promise
+    }
+    const paths: string[] = []
+    const opened: string[] = []
+    let connected = 0
+    const flow = createConnectFlow({
+      integration: stage === "key" ? notion : google,
+      request: async (path) => {
+        paths.push(path)
+        if (stage === "poll" && paths.length === 1) return Response.json({ url: "https://oauth.example", attemptId: "a" })
+        return delayed
+      },
+      openUrl: (url) => void opened.push(url),
+      onConnected: () => void connected++,
+      sleep: () => Promise.resolve(),
+    })
+    flow.setSecret("secret")
+    const cancelled = stage === "key" ? flow.submitKey() : flow.startOAuth()
+    await decoding.promise
+    flow.reset()
+    payload.resolve(stage === "poll" ? { status: "complete" } : { ok: true, url: "https://stale.example", attemptId: "stale" })
+    await cancelled
+    expect(flow.state.phase).toBe("form")
+    expect(flow.state.error).toBeUndefined()
+    expect(flow.state.secret).toBe("")
+    expect(connected).toBe(0)
+    expect(opened).toEqual(stage === "poll" ? ["https://oauth.example"] : [])
+    expect(paths).toEqual(stage === "poll" ? ["/google/connect", "/attempts/a"] : [stage === "key" ? "/notion/connect" : "/google/connect"])
   })
 })

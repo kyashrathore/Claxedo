@@ -34,26 +34,20 @@ export function sessionInventoryResponse(sessions: unknown) {
 }
 
 /**
- * The signed session-list read, as ONE implementation.
+ * The signed session-list read, as one implementation.
  *
  * `GET /api/control/session-list` is what the rail sidebar paginates and what
- * the signed desktop maps `session.navigationList` to. It used to exist only on
- * `ControlPlaneSessionRoutes`, which the Node roots mount and the workerd root
- * cannot (it pulls the Node supervisor). Moving hosted onto workerd therefore
- * dropped the route: the hosted app answered its most-used read with Hono's
- * bare 404 — invisible server-side, and the browser never got as far as
- * reporting it because a preflight failed first. The signed desktop hit the
- * same hole with no browser involved.
+ * the signed desktop maps `session.navigationList` to. The hosted roots need
+ * this read without pulling in the Node router — the workerd root cannot
+ * mount `ControlPlaneSessionRoutes`, since that pulls the Node supervisor —
+ * and duplicating sixty lines of project-resolution logic across three files
+ * is how the next scope bug ships in one of them. So the read lives here, and
+ * every route — canonical, hosted, hosted-core — asks it.
  *
- * The hosted roots need the read without the Node router, and duplicating
- * sixty lines of project-resolution logic across three files is how the next
- * scope bug ships in one of them. So the read lives here, and every route —
- * canonical, hosted, hosted-core — asks it.
- *
- * Only the SIGNED branch. The loopback/projection-store branch belongs to the
+ * Only the signed branch. The loopback/projection-store branch belongs to the
  * local product and stays with the canonical route.
  *
- * The registry is the authority for CLOUD sessions and for nothing else. A
+ * The registry is the authority for cloud sessions and for nothing else. A
  * user-hosted workspace's sessions live on its host and are read by the client
  * over the relay in one hop, so this route names the runtime as their authority
  * rather than pulling them through here.
@@ -126,8 +120,8 @@ async function assertRegistryIsSessionAuthority(
 /**
  * The one answer every session-list route gives for a failed read.
  *
- * Three routes serve this list (canonical, hosted, hosted-core). Each used to
- * carry its own copy of the auth and cursor mapping; it lives once here, and a
+ * Three routes serve this list (canonical, hosted, hosted-core); consolidating
+ * the auth and cursor mapping here keeps them from drifting apart, and a
  * route that cannot map the error re-throws it.
  */
 export function sessionListErrorResponse(error: unknown): Response | undefined {
@@ -165,15 +159,14 @@ function rowText(input: unknown) {
 }
 
 /**
- * Every CLOUD workspace id belonging to a project.
+ * Every cloud workspace id belonging to a project.
  *
- * A project-scoped session list arrives with a PROJECT id, which only doubles
- * as a workspace id for the legacy `ws_`-prefixed shape. Anything else used to
- * 400 (`workspace_id_required`), which made the whole sidebar section fail
- * whenever the client could not independently supply the workspace id — see
- * rail-sidebar.tsx's ProjectBlock, which sends `projectId` and never a
- * `workspaceId`. Resolving it here means every client benefits and the list no
- * longer depends on inventory shape drift in the browser.
+ * A project-scoped session list arrives with a project id, which only doubles
+ * as a workspace id for the legacy `ws_`-prefixed shape. Resolving the
+ * project's workspaces here — rather than requiring the caller to supply a
+ * workspace id independently — serves callers like rail-sidebar.tsx's
+ * ProjectBlock, which sends only `projectId`, without depending on inventory
+ * shape drift in the browser.
  */
 async function registryWorkspaceIdsForProject(
   services: { authority?: WorkspaceAuthority },
@@ -188,7 +181,7 @@ async function registryWorkspaceIdsForProject(
     const workspaceId = rowText(row.workspace_id) ?? rowText(row.workspaceId)
     if (!workspaceId) return []
     // A user-hosted workspace's sessions are the runtime's, not the registry's:
-    // its rows here would be only those created THROUGH the control plane, a
+    // its rows here would be only those created through the control plane, a
     // subset of what its host holds. The client reads each one over the relay.
     if (rowText(row.access) === "user-hosted") return []
     const rowProjectId = rowText(row.project_id) ?? rowText(row.projectID) ?? rowText(row.projectId)

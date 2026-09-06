@@ -107,27 +107,9 @@ async function makeWorkspace(name: string) {
 }
 
 /**
- * Registers `dir` as a real local workspace via the same `GET /api/workspace/resolve
- * ?directory=...&create=true` call the app's own bootstrap flow fires on first
- * navigation to a directory (`src/shell/data/bootstrap.ts`'s fire-and-forget
- * `resolveWorkspace()` inside `postPaint` -> `src/shared/data/http-backend.ts`'s
- * `resolveWorkspace`/`workspaceResolveUrl` -> `packages/claxedo-server/src/routes/
- * workspace.ts:142` (`GET /resolve`) -> `resolveWorkspace({..., create: true})` ->
- * `ensureWorkspace()` in `packages/claxedo-server-core/src/workspace/store/index.ts:287`). This
- * closes a REAL race this spec found empirically against the live server: until that
- * registration completes, `POST /session` 404s (`workspaceRuntimeProxy`'s `resolveWorkspace`
- * lookup finds nothing and falls through to `next()` with no other root `/session`
- * handler registered — `packages/claxedo-local-server/src/workspace/runtime-dispatch/internals.ts:325-350`), confirmed by
- * direct `curl` reproduction: `POST /session` 404s deterministically for a brand-new,
- * never-registered directory and 201s immediately after this exact `GET .../resolve
- * ...&create=true` call. The app's own bootstrap call is fire-and-forget and not
- * awaited before the composer becomes interactive, so under normal human typing
- * latency the client's own retry loop always wins the race; this spec types and
- * submits fast enough (and this host can be under heavy concurrent CPU load) that it
- * does not always win it. Pre-registering here is a real test-setup precondition
- * (same category as the `git init` above), not a mock — it calls the exact real
- * endpoint a slower human user's browser would already have called by the time they
- * finished typing.
+ * Registers `dir` with the same resolve endpoint the app's bootstrap fires without
+ * awaiting; `POST /session` 404s for an unregistered directory, and this spec types
+ * faster than that registration completes.
  */
 async function registerWorkspace(dir: string) {
   const url = `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`
@@ -204,9 +186,9 @@ type HarnessCase = {
   id: string
   option?: RegExp
   optionIndex?: number
-  /** First-party ACP harnesses have no picker row any more (operator-configured
-   *  ACP connections own the picker's ACP group) — they are selected by seeding
-   *  the server default (`seedDefaultHarness`) and letting the draft hydrate. */
+  /** First-party ACP harnesses have no picker row (operator-configured ACP
+   *  connections own the picker's ACP group); they are selected by seeding the
+   *  server default (`seedDefaultHarness`) and letting the draft hydrate. */
   seededHarness?: string
 }
 
@@ -274,9 +256,7 @@ test.describe("live real-harness smoke @live", () => {
     !LIVE,
     "Tier L: set CLAXEDO_E2E_LIVE=1 to run live-real-harness-smoke against a real " +
       "claxedo-server + real harness binaries (opencode is always exercised; " +
-      "claude/codex ACP+SDK are exercised when their binaries are on PATH). Unset " +
-      "-> loud, visible skip per e2e/INVARIANTS.md's Tier L gating contract — never " +
-      "a silent no-op.",
+      "claude/codex ACP+SDK are exercised when their binaries are on PATH).",
   )
 
   test.beforeAll(async () => {
@@ -291,11 +271,12 @@ test.describe("live real-harness smoke @live", () => {
     await Promise.all(scratchDirs.map((dir) => fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)))
   })
 
-  test.beforeEach(async (_fixtures, testInfo) => {
+  test.beforeEach(async () => {
+    const testInfo = test.info()
     testInfo.setTimeout(240_000)
   })
 
-  test("opencode native harness (embedded engine) completes 3 real turns and survives reload — behaviors 1,6,7", async ({
+  test("opencode native harness (embedded engine) completes 3 real turns and survives reload", async ({
     page,
   }) => {
     const dir = await makeWorkspace("opencode")
@@ -303,7 +284,7 @@ test.describe("live real-harness smoke @live", () => {
     await runLiveHarnessSmoke(page, dir, { id: "opencode" })
   })
 
-  test("claude ACP harness (real claude-agent-acp subprocess) completes 3 real turns and survives reload — behaviors 2,6,7", async ({
+  test("claude ACP harness (real claude-agent-acp subprocess) completes 3 real turns and survives reload", async ({
     page,
   }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
@@ -319,20 +300,20 @@ test.describe("live real-harness smoke @live", () => {
     await runLiveHarnessSmoke(page, dir, { id: "acp:claude", seededHarness: "acp:claude" })
   })
 
-  test("claude native SDK harness completes 3 real turns and survives reload — behaviors 3,6,7", async ({ page }) => {
+  test("claude native SDK harness completes 3 real turns and survives reload", async ({ page }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     test.skip(
       !binary,
       "claude binary not found on PATH (or CLAXEDO_E2E_CLAUDE_BIN failed `--version`) — " +
-        "the native claude-sdk harness shares its credential source with the CLI " +
-        "(see HARNESS NOTES); install and authenticate `claude` to include it.",
+        "the native claude-sdk harness shares the CLI's OAuth session; install and " +
+        "authenticate `claude` to include it.",
     )
     const dir = await makeWorkspace("claude-sdk")
     await seedOneProject(page, dir)
     await runLiveHarnessSmoke(page, dir, { id: "claude-sdk", option: /^Claude$/, optionIndex: 0 })
   })
 
-  test("codex ACP harness (real codex-acp subprocess) completes 3 real turns and survives reload — behaviors 4,6,7", async ({
+  test("codex ACP harness (real codex-acp subprocess) completes 3 real turns and survives reload", async ({
     page,
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
@@ -348,7 +329,7 @@ test.describe("live real-harness smoke @live", () => {
     await runLiveHarnessSmoke(page, dir, { id: "acp:codex", seededHarness: "acp:codex" })
   })
 
-  test("codex native SDK harness completes 3 real turns and survives reload — behavior 5", async ({
+  test("codex native SDK harness completes 3 real turns and survives reload", async ({
     page,
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")

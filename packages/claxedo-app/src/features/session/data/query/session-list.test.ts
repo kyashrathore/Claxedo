@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test"
 import { requestUrl } from "@/lib/url"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import {
@@ -7,7 +7,6 @@ import {
   reconcileArchivedSessionListQueryData,
   removeSessionListQueryData,
   reconcileUpdatedSessionListQueryData,
-  sessionListRequest,
   sessionListQueryOptions,
   upsertCreatedSessionListRow,
   type SessionListResponse,
@@ -63,19 +62,37 @@ const row = (id: string, updatedAt: number): NonNullable<SessionListResponse["it
   attachments: [],
 })
 
+const originalApi = (globalThis as { api?: unknown }).api
+
 afterEach(() => {
   queryClient.clear()
+  if (originalApi === undefined) delete (globalThis as { api?: unknown }).api
+  else (globalThis as { api?: unknown }).api = originalApi
 })
 
 describe("session list query cache", () => {
-  test("uses the control-plane AccountPort adapter (or an injected request) for session-list", () => {
-    const request = async () => new Response("{}")
+  test("uses the signed AccountPort operation when no request is injected", async () => {
+    const page = response()
+    const run = mock(async () => page)
+    ;(globalThis as { api?: unknown }).api = {
+      account: {
+        run,
+        state: async () => ({ status: "signed" }),
+        onState: () => () => undefined,
+        signIn: async () => ({ status: "signed" }),
+        signOut: async () => ({ status: "unsigned" }),
+      },
+    }
 
-    // Default transport is the dual-path adapter (AccountPort when the Electron
-    // bridge is present; authFetch otherwise) — never a bare caller-chosen URL.
-    expect(typeof sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe("function")
-    expect(typeof sessionListRequest({ baseUrl: "https://control.example.test" })).toBe("function")
-    expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001", request })).toBe(request)
+    const result = await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "https://control.example.test",
+      query: { scope: "workspace", workspaceId: "ws_1", directory: "/repo", limit: 2 },
+    }))
+
+    expect(result).toEqual(page)
+    expect(run).toHaveBeenCalledWith("session.navigationList", {
+      scope: "workspace", workspaceId: "ws_1", directory: "/repo", limit: "2",
+    })
   })
 
   test("carries scope in the query string and adds no custom header", async () => {

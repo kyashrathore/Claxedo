@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Terminal } from "@xterm/headless"
 import { installInputModeReclaimer } from "../backend/input-mode-reclaimer"
 import { SHELL_READY_MARKER_PAYLOAD } from "../leaked-input-mode-reclaim"
@@ -12,8 +12,12 @@ const ESC = "\x1b"
 const BEL = "\x07"
 const PROMPT = `${ESC}]777;${SHELL_READY_MARKER_PAYLOAD}${BEL}`
 
+const terminals: Terminal[] = []
+afterEach(() => { for (const terminal of terminals.splice(0)) terminal.dispose() })
+
 function harness() {
   const terminal = new Terminal({ cols: 80, rows: 24, allowProposedApi: true })
+  terminals.push(terminal)
   const written: string[] = []
   const realWrite = terminal.write.bind(terminal)
   // Capture what the reclaimer writes back, and still feed it to the parser.

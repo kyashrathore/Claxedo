@@ -20,7 +20,7 @@ import {
   type SessionListQuery,
   type SessionListResponse,
 } from "../query/session-list"
-import { asRecord } from "@/lib/record"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 /**
  * Where one workspace's sessions are read from, chosen by the catalog row's
@@ -289,9 +289,9 @@ function userHostedNavigationRow(
   const sessionId = txt(item?.id)
   if (!sessionId) return undefined
   const time = asRecord(item?.time)
-  const createdAt = num(time?.created) ?? 0
-  const updatedAt = num(time?.updated) ?? createdAt
-  const archivedAt = num(time?.archived)
+  const createdAt = asFiniteNumber(time?.created) ?? 0
+  const updatedAt = asFiniteNumber(time?.updated) ?? createdAt
+  const archivedAt = asFiniteNumber(time?.archived)
   return {
     type: "session",
     sessionRef: `workspace:${source.workspaceId}:session:${sessionId}`,
@@ -367,8 +367,4 @@ function rowMatchesView(row: SessionNavigationRow, query: SessionListQuery) {
 
 function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
-
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }

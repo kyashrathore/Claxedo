@@ -52,6 +52,7 @@ vi.mock("./session-environment-card", () => ({
 afterEach(() => {
   cleanup()
   envcardCalls.active.mockClear()
+  vi.useRealTimers()
 })
 
 beforeEach(() => {
@@ -114,14 +115,18 @@ describe("SessionContent — environment card mounting", () => {
   })
 
   test("does not mount hidden retained card chrome until the pane stays active past the quiet delay", async () => {
+    vi.useFakeTimers()
     const [visible, setVisible] = createSignal(false)
     render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible }} />)
 
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await vi.advanceTimersByTimeAsync(300)
     expect(screen.queryByTestId("envcard-mounted")).toBeNull()
 
     setVisible(true)
-    expect(await screen.findByTestId("envcard-mounted")).toBeTruthy()
+    await vi.advanceTimersByTimeAsync(249)
+    expect(screen.queryByTestId("envcard-mounted")).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.waitFor(() => expect(screen.getByTestId("envcard-mounted")).toBeTruthy())
   })
 
   test("reserves a collapsed gutter on a real session before the lazy card mounts", () => {

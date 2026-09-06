@@ -7,27 +7,18 @@ import {
 } from "@/platform/runtime/stream-sync-status"
 
 /**
- * Visibility derivation for the reconnect line (B5 / T7), factored out as a
- * pure function so the state → shown/hidden mapping — including first-connect
- * suppression — is testable without mounting Solid.
+ * Pure so the state → shown/hidden mapping is testable without mounting Solid.
  *
- * Mounts only for `"reconnect-scheduled"`, and only once the stream has
- * proven itself by reaching `"live"` at least once (`snapshot.everLive`).
- * That second guard is what suppresses the line during the first connect of a
- * fresh session: a brand-new stream that has not yet gone live is ordinary
- * startup — `"connecting"`, or even an early `"reconnect-scheduled"` from a
- * first-attempt failure that has not yet succeeded once — never renders
- * anything. Only a stream that was `"live"` and then dropped counts as a
- * *reconnect*.
+ * Shows only for `"reconnect-scheduled"` on a stream that has reached `"live"`
+ * at least once (`snapshot.everLive`). A fresh session's first connect —
+ * `"connecting"`, or an early `"reconnect-scheduled"` after a failed first
+ * attempt — is ordinary startup and renders nothing; only a drop after a
+ * healthy connection is a reconnect.
  *
- * `"stopped"` deliberately does NOT show the line: the events provider only
- * stops a stream on deliberate teardown (target removed by reconcile, or
- * provider cleanup), and nothing will ever reconnect a stopped stream —
- * "Reconnecting…" over it would be a lie that never clears. Observed as
- * BUG 1: switching away from a session stopped its workspace stream, the
- * frozen `{stopped, everLive: true}` snapshot survived, and every switch
- * back showed a permanent "Reconnecting…". Teardown now also clears the
- * snapshot (`clearStreamSyncLifecycle`), so this branch is defense in depth.
+ * `"stopped"` never shows the line: the events provider stops a stream only on
+ * deliberate teardown and nothing reconnects it, so "Reconnecting…" would never
+ * clear. Teardown also clears the snapshot (`clearStreamSyncLifecycle`); this
+ * branch is defense in depth.
  */
 export function shouldShowConnectionLine(snapshot: StreamSyncSnapshot | undefined): boolean {
   if (!snapshot || !snapshot.everLive) return false
@@ -35,19 +26,16 @@ export function shouldShowConnectionLine(snapshot: StreamSyncSnapshot | undefine
 }
 
 /**
- * A quiet advisory rendered in the composer `beforeInput` slot, beneath
- * `SessionHealthPeek`, when this session's live event stream has dropped and
- * is retrying. Muted anatomy (§2): one centred line, no fill, no rail, no
- * colour — the same visual register as a loading state, never an error
- * (E§5.6). Copy names the effect ("Reconnecting…"), never the transport — no
- * "SSE", no "relay". Renders nothing (zero chrome / zero layout shift) on a
- * healthy session, and — critically — during the first connect of a fresh
- * session (see `shouldShowConnectionLine`).
+ * A quiet advisory in the composer `beforeInput` slot, beneath
+ * `SessionHealthPeek`, while this session's live event stream has dropped and
+ * is retrying: one centred line, no fill, no rail, no colour — a loading state,
+ * never an error. Copy names the effect ("Reconnecting…"), never the transport.
+ * Renders nothing on a healthy session or during a fresh session's first
+ * connect (`shouldShowConnectionLine`).
  *
- * Reactivity gotcha (§2 constraint 6): the `beforeInput` slot is a plain
- * `JSX.Element` evaluated once, so the subscription to the stream-sync
- * lifecycle store lives *inside* this component, never in the caller's
- * synchronous body.
+ * The `beforeInput` slot is a plain `JSX.Element` evaluated once, so the
+ * subscription to the stream-sync store must live inside this component, not
+ * in the caller's synchronous body.
  */
 export function SessionConnectionLine(props: { workspaceId: Accessor<string | undefined> }) {
   const streamId = createMemo<StreamSyncStreamId>(() => {

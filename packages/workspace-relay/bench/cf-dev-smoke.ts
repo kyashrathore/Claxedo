@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-// Phase 0 local-first gate for the Cloudflare relay: boot the worker under
-// `wrangler dev` (Miniflare/workerd — the REAL Cloudflare runtime, locally) and
-// round-trip a smoke HTTP request + WS upgrade end-to-end through it. Proves
+// Local-first gate for the Cloudflare relay: boots the worker under
+// `wrangler dev` (Miniflare/workerd — the real Cloudflare runtime, locally) and
+// round-trips a smoke HTTP request + WS upgrade end-to-end through it. Proves
 // DO bindings resolve, hibernation handlers register, PEM/env boot is correct,
 // and — because it points the worker at a live bench resolver + echo target —
 // that the DO's outbound upstream WebSocket open and the ported relay.trace
-// frame work on workerd. Only after this passes should Phase 2 `wrangler deploy`.
+// frame work on workerd. Run this before `wrangler deploy`.
 //
 //   bun bench/cf-dev-smoke.ts --config wrangler.toml      # stock worker
 //   bun bench/cf-dev-smoke.ts --config wrangler-h2.toml   # H2 variant

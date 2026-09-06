@@ -14,30 +14,27 @@ export type DisposableResource<T> = {
 /**
  * Reference-counted cache: multiple consumers can `acquire` the same key and
  * share one underlying resource; the resource is disposed exactly once, only
- * after every consumer has released it. When the cache grows past `max`,
- * currently-unreferenced entries are pruned (and disposed) oldest-first;
- * still-referenced entries are never evicted.
+ * after every consumer has released it. There is no retained idle state or
+ * capacity: live consumers determine the number of resources.
  */
-export function createRefCountedResourceCache<T>(max: number) {
+export function createRefCountedResourceCache<T>() {
   type Entry = { value: T; dispose: () => void; refs: number }
   const cache = new Map<string, Entry>()
 
-  const release = (key: string) => {
-    const entry = cache.get(key)
-    if (!entry) return
-    entry.refs -= 1
-    if (entry.refs > 0) return
-    entry.dispose()
-    cache.delete(key)
-  }
-
-  const prune = () => {
-    if (cache.size <= max) return
-    for (const [key, entry] of cache) {
-      if (entry.refs > 0) continue
-      entry.dispose()
-      cache.delete(key)
-      if (cache.size <= max) return
+  const handle = (key: string, entry: Entry) => {
+    let released = false
+    return {
+      value: entry.value,
+      release: () => {
+        if (released) return
+        released = true
+        entry.refs -= 1
+        if (entry.refs > 0) return
+        // Remove this entry before disposal, which can synchronously acquire
+        // a replacement. A stale handle never releases the replacement.
+        if (cache.get(key) === entry) cache.delete(key)
+        entry.dispose()
+      },
     }
   }
 
@@ -45,13 +42,13 @@ export function createRefCountedResourceCache<T>(max: number) {
     const existing = cache.get(key)
     if (existing) {
       existing.refs += 1
-      return { value: existing.value, release: () => release(key) }
+      return handle(key, existing)
     }
 
     const created = create()
-    cache.set(key, { value: created.value, dispose: created.dispose, refs: 1 })
-    prune()
-    return { value: created.value, release: () => release(key) }
+    const entry = { value: created.value, dispose: created.dispose, refs: 1 }
+    cache.set(key, entry)
+    return handle(key, entry)
   }
 
   return {

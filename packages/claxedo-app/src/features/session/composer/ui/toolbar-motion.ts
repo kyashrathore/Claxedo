@@ -10,9 +10,8 @@ import { useSpring } from "@opencode-ai/ui/motion-spring"
  *
  * `control` is `buttons` plus a fixed 28px height and a second, independent dim
  * for `pending`: while the harness is still polling, the "who answers" controls
- * are not yet trustworthy. That dim used to apply only to the inline agent chip,
- * which has since moved into the `+` menu, so it now rides the controls the
- * pending state actually concerns.
+ * are not yet trustworthy, so this dim rides those controls specifically
+ * rather than the whole action cluster.
  */
 export function createPromptToolbarMotion(input: {
   shellMode: Accessor<boolean>

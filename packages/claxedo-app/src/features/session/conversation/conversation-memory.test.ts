@@ -21,7 +21,7 @@ describe("conversation memory estimates", () => {
     expect(result.totalBytes).toBe(result.chatBytes + result.imageBytes + result.compactionBytes)
   })
 
-  test("does not loop or count a shared object twice", () => {
+  test("terminates when metadata contains a cyclic reference", () => {
     const metadata: Record<string, unknown> = { text: "shared" }
     metadata.self = metadata
     const result = estimateConversationMemory([{ id: "msg", role: "assistant", parts: [], metadata }])

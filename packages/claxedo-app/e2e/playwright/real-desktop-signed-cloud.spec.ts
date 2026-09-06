@@ -271,7 +271,8 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
     ).toMatchObject({ workspaces: expect.any(Array) })
   })
 
-  test("explicit Remote Access is single-flight and revocation wins a delayed heartbeat", async (_fixtures, testInfo) => {
+  test("explicit Remote Access is single-flight and revocation wins a delayed heartbeat", async () => {
+    const testInfo = test.info()
     const before = await stats()
     const userDataDir = await seedCredential(-1)
     const app = await relaunch(userDataDir)
@@ -348,9 +349,9 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
         ),
       )
 
-    const firstHostId = (await stats()).hostRequests.find(
+    const firstHostId = (await stats()).hostRequests.slice(before.hostRequests.length).find(
       (request) =>
-        request.phase === "started" && request.path.endsWith("/requests") && !before.hostRequests.includes(request),
+        request.phase === "started" && request.path.endsWith("/requests") && true,
     )?.body?.hostId
     expect(firstHostId).toMatch(/^host_/)
     expect(
@@ -418,7 +419,9 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
         const requests = (await stats()).hostRequests.filter(
           (request) => request.phase === "started" && request.path.endsWith("/requests"),
         )
-        return requests.at(-1)?.body?.hostId
+        const hostId = requests.at(-1)?.body?.hostId
+        expect(hostId).toMatch(/^host_/)
+        return hostId
       })
       .not.toBe(firstHostId)
     await expect(app.page.getByText(/^Serving /)).toBeVisible()

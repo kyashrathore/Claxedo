@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "./import-graph"
 import {
   BP_2XL,
   BP_EDITOR_COMPACT,
@@ -12,26 +13,16 @@ import {
   BP_XS,
 } from "../ui/controls/breakpoints"
 
-// This guard is the weld between the breakpoint TS constants
-// (src/ui/controls/breakpoints.ts) and the pixel literals scattered across CSS
-// `@media` rules and JS/TS viewport gates. CSS custom properties CANNOT be
-// interpolated into `@media` conditions, so those literals can never import the
-// token — this source-text guard is the ONLY thing that catches a future edit
-// changing BP_MD in TS without updating the `767`/`768` literals in
-// app-shell.css / document-editor.css / renderer.ts / review-tab.tsx, etc. (WP-C3,
-// inventory §5.4). Same intent as the i18n locale-parity manifest test (WP-A6).
+// CSS custom properties cannot be interpolated into `@media` conditions, so the
+// pixel literals in CSS and in JS viewport gates can never import the breakpoint
+// tokens; this source-text check is the only thing keeping them in step.
 
 const SRC_ROOT = path.resolve(import.meta.dir, "..")
 const read = (rel: string): string => readFileSync(path.join(SRC_ROOT, rel), "utf8")
 
-// Strip `/* … */` and `// …` comments so a literal cited in an explanatory
-// comment (e.g. "preserves the original `<= 767`") does not read as a live gate.
-const stripComments = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
-
 describe("breakpoint token parity: app-shell.css :root custom properties vs TS constants", () => {
   test("every --bp-* custom property equals its src/ui/controls/breakpoints.ts constant", () => {
-    const css = read("app/styles/app-shell.css")
+    const css = stripComments(read("app/styles/app-shell.css"))
     const declared: Record<string, number> = {}
     for (const m of css.matchAll(/--bp-([\w-]+):\s*(\d+)px/g)) {
       declared[m[1]] = Number(m[2])
@@ -63,7 +54,7 @@ describe("breakpoint token parity: CSS @media literals stay welded to the tokens
 
   for (const [file, condition] of cases) {
     test(`${file} contains "${condition}"`, () => {
-      expect(read(file)).toContain(condition)
+      expect(stripComments(read(file))).toContain(condition)
     })
   }
 })
@@ -78,19 +69,9 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
       token: "BP_MD",
       forbidden: [/<=?\s*767\b/],
     },
-    /*
-     * `app/dialogs/settings.tsx` used to be listed here and no longer is.
-     *
-     * This guard exists to stop a JS viewport COMPARISON drifting from the CSS
-     * breakpoint by hard-coding the pixel value. The settings dialog stopped
-     * doing the comparison — its small-viewport branch is now a `max-sm:` class,
-     * so Tailwind owns the number and there is nothing left to keep in parity.
-     *
-     * Kept as a comment rather than deleted silently: the entry asserted the file
-     * still contained `BP_SM`, so once the rewrite landed the guard failed on a
-     * file that had become correct. A guard that fails for doing the right thing
-     * gets muted by whoever hits it next, which costs the rows that still matter.
-     */
+    // Each entry also asserts the file still uses the token, so a file that moves
+    // its viewport branch into a Tailwind class (as settings.tsx did) must be
+    // removed here or the guard fails a file that became correct.
     {
       file: "features/workspaces/ui/panel/workspace-panel.tsx",
       token: "BP_SM",
@@ -105,7 +86,7 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
 
   for (const { file, token, forbidden } of cases) {
     test(`${file} uses ${token} and imports it from @/ui/controls/breakpoints`, () => {
-      const text = read(file)
+      const text = stripComments(read(file))
       expect(text).toContain(token)
       expect(text).toMatch(/from "@\/ui\/controls\/breakpoints"/)
     })
@@ -119,16 +100,3 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
   }
 })
 
-describe("breakpoint token parity: the workbench's duplicate BP_MD is welded", () => {
-  // C3a defines its own `export const BP_MD = 768` in
-  // app/workbench/workbench/collapse-projection.ts (workbench/** is owned by a
-  // sibling worker, so it is not migrated to import from here). Weld the two
-  // definitions so they cannot silently diverge; the follow-up is to have that
-  // module re-export from src/ui/controls/breakpoints.ts.
-  test("collapse-projection.ts's BP_MD literal equals src/ui/controls/breakpoints.ts BP_MD", () => {
-    const text = read("app/workbench/workbench/collapse-projection.ts")
-    const m = text.match(/export const BP_MD\s*=\s*(\d+)/)
-    expect(m).not.toBeNull()
-    expect(Number(m![1])).toBe(BP_MD)
-  })
-})

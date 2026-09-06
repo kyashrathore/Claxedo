@@ -1,171 +1,36 @@
 /**
- * SPEC: Processes panel (dev-process manager)
+ * The Processes panel: per-workspace dev processes (servers, watchers, sidecars) defined
+ * in `.claxedo/processes.jsonc`, launched server-side, and surfaced with a live status,
+ * an assigned URL, and a PTY-backed terminal.
  *
- * PURPOSE — lets a user define, launch, and supervise long-running dev processes
- * (dev servers, watchers, sidecars) scoped to a workspace directory, without leaving
- * the app for a separate terminal multiplexer. Each process is a named command with an
- * optional port binding; the app shows its live status, exposes its assigned URL, and
- * gives the user a PTY-backed terminal view of its output — all from the workspace side
- * panel.
+ * The server is the store. `@claxedo/process/client` talks to `/api/wr/process*` with a
+ * `?directory=` query and an `x-claxedo-directory` header; the browser keeps
+ * `{configs, processes}` unpersisted in `ProcessPaneProvider` and refetches on mount.
+ * That refetch is gated on `isProcessOpen() && !loaded()`, so a fresh load fetches
+ * nothing until the Processes navigator has been opened at least once — the usual reason
+ * an assertion after a reload finds an empty list.
  *
- * STATE MODEL —
- *   - Source of truth is server-side, per directory: `.claxedo/processes.jsonc` (config
- *     list) plus an in-memory `ManagedProcess` map (live status/ptyId/port), owned by
- *     claxedo-server and reached through `@claxedo/process/client`
- *     (`packages/claxedo-app/src/process/client.ts`) at `/api/wr/process*`
- *     (`processPath()`, client.ts:27-33). The client always sends
- *     `?directory=<dir>` (+ `workspaceId` when scoped to a non-local workspace) and an
- *     `x-claxedo-directory` header.
- *   - Client-side cache: `ProcessPaneProvider`
- *     (`src/claxedo-ui/context/process-pane.tsx`) holds a SolidJS store
- *     `{configs, processes, paneHeight}` persisted (paneHeight only, NOT
- *     visibility/configs) under `Persist.scoped(directory, undefined, "process-pane")`.
- *     `configs`/`processes` are NOT persisted — every mount/reload re-fetches via
- *     `GET /api/wr/process` (`fetchProcesses`, process-pane.tsx:181-240), gated to fire
- *     only once the Processes navigator has been opened at least once
- *     (`isProcessOpen()` + `!loaded()`, process-pane.tsx:612-617).
- *   - Per-process status is a `Process.Status` enum: idle → starting → running →
- *     stopping → stopped, or → crashed (`src/process/process.ts:19-27`). Actions
- *     (`start`/`stop`/`restart`/`startAll`/`stopAll`) apply an OPTIMISTIC status
- *     transition locally, then reconcile from the HTTP response
- *     (`Process.LaunchResult` discriminated union: `started` | `already_running` |
- *     `port_conflict` | `route_conflict` | `failed` | `not_found`,
- *     `src/process/process.ts:126-156`); belt-and-suspenders re-sync also happens on
- *     the next `fetchProcesses()` (panel reopen, reload, wake-from-sleep,
- *     visibilitychange).
- *   - A running process owns a PTY (`ManagedProcess.ptyId`). The pane's
- *     `ProcessOwnership` layer (`context/process-ownership.ts`) marks that ptyId as
- *     process-owned so the generic terminal-tab auto-detection effect skips it and
- *     never creates a competing standalone terminal tab for it
- *     (`fetchProcesses`/`applyProcess`/SSE handlers all call
- *     `ownership.ownProcess`/`tabOps.removeAutoCreatedTab`).
- *   - Mutation gating: `canMutateProcesses()` (process-pane.tsx:138-141) is
- *     `!workspaceId || can("mutate.workspace", workspacePlacement(workspaceId))`. A
- *     purely local workspace (no `workspaceId` resolves for the directory) is therefore
- *     ALWAYS mutable; role-based read-only gating only engages once a workspace is
- *     backed by a relay/cloud connection with a resolved role
- *     (`src/shell/auth/role.tsx:26-31`, `viewer` lacks `mutate.workspace`) — see OUT OF
- *     SCOPE.
- *   - Survives reload: the server-side config file + process map (re-fetched on next
- *     open). Does NOT survive: the client store's `configs`/`processes` (always
- *     refetched), pane open/closed state (navigator visibility is not persisted,
- *     `paneHeight` is).
+ * Actions apply an optimistic status locally, then reconcile against the response's
+ * `Process.LaunchResult` union (`started | already_running | port_conflict |
+ * route_conflict | failed | not_found`), and again on the next list fetch.
  *
- * ANATOMY —
- *   `[aria-label="Open Processes"]` / `[aria-label="Close Processes"]` — the L2-header
- *     toolbar toggle (`workspace-tool-buttons.tsx`); carries a small red dot
- *     (`span.bg-surface-critical-strong`, `attention` prop) when
- *     `processPane.crashed(dir) || processPane.crashedWhileClosed()`.
- *   `[data-testid="workspace-panel-shell"][data-open="true"]` — the whole workspace
- *     side panel is mounted/open.
- *   `[data-testid="workspace-navigator-overlay"][data-navigator="processes"]
- *     [data-open="true"]` — the Processes list navigator overlay
- *     (`WorkspaceProcessesNavigator.tsx`): header (icon, "Processes" label,
- *     Start/Stop-all `IconButton` when any config exists, "Add process" `IconButton`
- *     gated by `canMutate()`), then either "No processes configured." + an inline "Add
- *     process" button (empty state) or one row per config (status dot, name, per-row
- *     Start/Stop/Restart `IconButton`s gated by `canMutate()`).
- *   `[data-testid="process-pane-panel"][data-process-id][data-process-name]` — a single
- *     process's terminal panel (`ProcessPanePanel.tsx`). Its contextual L2 header
- *     contains the color dot, status `StatusDot`, name, primary URL, toolbar
- *     `[data-process-action="start"|"stop"|"restart"]` `IconButton`s + edit
- *     `IconButton`; the terminal area is either the live `.xterm` (via
- *     `RoleGuardedTerminal`) or an idle/crashed placeholder with a
- *     `[data-process-action="start-fallback"]` button. A port-conflict overlay
- *     ("Port N is in use" + "Use another port" / "Kill process & reclaim") and a
- *     route-conflict overlay ("Route X is in use", same two actions) render as an
- *     absolute z-10 layer over the terminal area.
- *   Add/Edit dialog (`add-process-dialog.tsx`, `role="dialog"`, title "Add Process" /
- *     "Edit Process"): `[data-testid="process-name-input"]`,
- *     `[data-testid="process-command-input"]`, `[data-testid="process-cwd-input"]`,
- *     env-var rows (`input[placeholder="KEY"]` / `input[placeholder="value"]` +
- *     "Remove variable" button), "Add variable" button, Submit button ("Add" / "Save",
- *     disabled until name+command non-empty), and in edit mode a "Delete" button that
- *     flips the footer to an inline confirm ("Are you sure you want to delete this
- *     process?", "Cancel" / `[data-testid="process-confirm-delete"]`).
- *   Local performance diagnostics are supplied only by the desktop capability
- *     and are covered by the desktop diagnostics suite.
+ * A running process owns a ptyId that `ProcessOwnership` marks as process-owned, so the
+ * generic terminal-tab auto-detection never mints a second tab for it.
  *
- * BEHAVIORS —
- *   1. The Processes navigator opens from the toolbar toggle; with zero configs it
- *      shows the empty state ("No processes configured.") with an inline "Add process"
- *      affordance.
- *   2. The Add Process dialog gates its submit button on name+command both non-empty,
- *      and supports adding/removing arbitrary env-var rows.
- *   3. Submitting the Add dialog issues `POST /api/wr/process`, shows a "Process
- *      created" toast, closes the dialog, and the new config appears in the navigator
- *      list.
- *   4. Selecting a process from the navigator opens its dedicated
- *      `process-pane-panel`.
- *   5. Starting a stopped process (`POST .../:id/start`) flips its status to running,
- *      shows its assigned port/URL, and swaps the Start control for Stop.
- *   6. Stopping a running process (`POST .../:id/stop`) flips status back to
- *      stopped/idle, clears the ptyId, and swaps Stop back to Start.
- *   7. Restart on an already-running process calls the dedicated `POST .../:id/restart`
- *      endpoint; restart on a stopped/crashed process instead calls the same
- *      `POST .../:id/start` a fresh start would use (`process-pane.tsx:796-855`).
- *   8. "Start all" (shown when no process is running) starts every config
- *      SEQUENTIALLY — one `start` call awaited before the next fires; once any process
- *      is running the same button relabels to "Stop all" and stopping fires every
- *      running process's `stop` CONCURRENTLY (`Promise.all`,
- *      `process-pane.tsx:857-931`).
- *   9. A start-triggered launch failure (`{kind:"failed"}` with no `process` payload)
- *      sets status "crashed" with an inline "Failed to start" + error message, opens
- *      the panel if it was not already open, and lights the toolbar attention dot
- *      (`process-pane.tsx:306-334`).
- *  10. A process that crashes after a successful launch (its next `GET
- *      /api/wr/process` reconcile reports `status:"crashed"` + `exitCode`) shows
- *      "Crashed · exit N" and lights the toolbar attention dot even while the panel is
- *      closed.
- *  11. A port conflict on start (`{kind:"port_conflict"}`) shows the inline "Port N is
- *      in use" overlay; both "Use another port" (`portConflict:"pick-new"`) and "Kill
- *      process & reclaim" (`portConflict:"kill-existing"`) resubmit start and clear the
- *      overlay on success.
- *  12. A route conflict on start (`{kind:"route_conflict"}`) shows the analogous "Route
- *      X is in use" overlay with the same two resolution actions
- *      (`routeConflict:"pick-new"|"kill-existing"`).
- *  13. Editing a config (pencil icon) pre-fills name/command from the existing values;
- *      Save issues `PUT .../:id` and shows a "Process updated" toast.
- *  14. Delete requires two clicks: Delete opens an inline confirm; Cancel restores the
- *      form; Confirm Delete issues `DELETE .../:id`, shows a "Process removed" toast,
- *      and the config disappears from the navigator.
- *  15. A running process's PTY never appears as a second entry in the tab strip
- *      (`[data-testid="compact-switcher-tab"]` count is unchanged by starting a
- *      process).
- *  16. After create+start, a full page reload re-fetches from the backend and renders
- *      the same configs/processes — the client-side reload-recovery path that backs
- *      `.claxedo/processes.jsonc` persistence.
- *  17. Diagnostics is absent from the hosted web platform.
- *  18. Mutation controls (Add / Start / Stop / Restart / Start-all / Edit) are present
- *      for a normal local workspace, where `canMutateProcesses()` is unconditionally
- *      true (see STATE MODEL) — the read-only/viewer-hides-controls half of this
- *      behavior is OUT OF SCOPE for this spec (see below).
- *  19. A `process.crashed`/`process.status:"crashed"` SSE event that reaches the client
- *      BEFORE the (slower, already-in-flight) HTTP response for the `start()` call that
- *      launched it resolves is never clobbered back to "running" by that stale response.
- *      `client.start()`'s HTTP response snapshots status at the moment the PTY spawned,
- *      taken server-side before the launched command necessarily finishes running — a
- *      command that exits immediately (e.g. `exit 1`) can have its crash SSE arrive first.
- *      `applyProcess`'s `isStaleProcessSnapshot` guard (`process-pane.tsx`) rejects that
- *      late "running" snapshot when it describes the SAME ptyId as an already-crashed
- *      entry. Observable surfaces (both keyed on `status()` alone, so they discriminate
- *      the clobber): the process panel's title-bar `StatusDot` settles on crashed (never
- *      green), and the Processes NAVIGATOR row keeps its red "exit N" subtitle with
- *      Start (never Stop) as its hover action. The PANEL's own Stop control and its
- *      "Crashed" placeholder are deliberately NOT this behavior's oracle: the SSE crash
- *      handler intentionally PRESERVES `ptyId` (same-spawn-generation marker the guard
- *      itself relies on, see `isStaleProcessSnapshot`'s unit tests), and both of those
- *      panel affordances key on `hasTerminal()`/`visiblePty()`, which stay truthy while
- *      a crashed process still has its dead PTY attached — identical in the buggy and
- *      fixed builds.
+ * `canMutateProcesses()` is `!workspaceId || can("mutate.workspace", ...)`, so a purely
+ * local workspace is always mutable and this file can only prove the controls render.
+ * The viewer-role half of that gate lives in core-cloud-offline-roles.spec.ts.
  *
- * INVARIANTS — Add/Start/Stop/Restart/Start-all/Edit controls are rendered only when
- *   `canMutate()` is true (`WorkspaceProcessesNavigator.tsx` / `ProcessPanePanel.tsx`);
- *   a process-owned ptyId is never independently surfaced as a terminal tab; a crashed
- *   process always lights the toolbar attention dot regardless of which panel is
- *   currently focused (`processesAttention` = `crashed(dir) || crashedWhileClosed()`,
- *   true for ANY crashed process in that directory, not just ones detected while the
- *   panel was closed).
+ * Two traps around a crash that arrives by SSE while the `start()` POST is still in
+ * flight. That POST's response snapshots status at spawn time, so a command that exits
+ * immediately can have its response land after the crash and still describe the process
+ * as running; `isStaleProcessSnapshot` rejects it when the ptyId matches an
+ * already-crashed entry. And the SSE crash handler deliberately keeps `ptyId`, which is
+ * the marker that guard relies on — so `hasTerminal()`/`visiblePty()` stay truthy and the
+ * panel keeps its live terminal and its Stop control rather than the "Crashed"
+ * placeholder, identically whether or not the guard works. Only surfaces keyed on
+ * `status()` alone discriminate it: the title-bar status dot, and the navigator row's
+ * subtitle and hover action.
  *
  * HARNESS NOTES — none; the Processes feature is harness-independent (it lives beside
  *   the session/harness surface, not inside it).
@@ -230,12 +95,7 @@ async function seedOneProject(page: Page, dir: string) {
   }, dir)
 }
 
-/**
- * Fake the PTY WebSocket so a started process's `.xterm` mounts without a real
- * connection attempt hitting a nonexistent backend (harvested from
- * `e2e-legacy/process-management.spec.ts`'s working pattern — this endpoint is a
- * claxedo-server WS, not covered by `installMockRuntime`, which only mocks HTTP).
- */
+/** Fake the PTY WebSocket so a started process's `.xterm` mounts; `installMockRuntime` mocks HTTP only. */
 async function fakePtyWebSocket(page: Page) {
   await page.addInitScript(() => {
     const OriginalWebSocket = window.WebSocket
@@ -283,11 +143,9 @@ async function fakePtyWebSocket(page: Page) {
 }
 
 // ---------------------------------------------------------------------------
-// Process mock — hand-rolled because `installMockRuntime` does not cover
-// `/api/wr/process*` (process management is a distinct claxedo-server
-// surface from the session/chat routes that helper mocks). Route shapes verified
-// against `src/process/client.ts` (`processPath`) and validated against the zod
-// schemas in `src/process/process.ts` that the client parses responses with.
+// Process mock. Route shapes follow `processPath()` in `src/process/client.ts`;
+// response bodies have to satisfy the zod schemas in `src/process/process.ts`
+// that the client parses them with.
 // ---------------------------------------------------------------------------
 
 type MockConfig = {
@@ -338,9 +196,7 @@ type ProcessMockHandle = {
   process: (configId: string) => MockManaged | undefined
   /** Script the NEXT start/restart call for this configId. Consumed once. */
   setStartBehavior: (configId: string, behavior: StartBehavior) => void
-  /** Directly mutate a process's server-side state (simulate an async crash the
-   *  client will only observe on its next GET /process reconcile — e.g. after
-   *  a reload). */
+  /** Mutate server-side state directly; the client only sees it on its next list fetch. */
   setProcessState: (configId: string, patch: Partial<MockManaged>) => void
   nextPort: () => number
 }
@@ -554,14 +410,7 @@ function processesToggle(page: Page) {
   return page.locator('button[aria-label="Open Processes"], button[aria-label="Close Processes"]').first()
 }
 
-/**
- * Open the workspace panel column if it is closed.
- *
- * Every navigator button (Files/Changes/Processes) is rendered inside that
- * column. With the panel closed the column is a `display:none` shell, so those
- * buttons are in the DOM and unclickable — a distinction `toBeVisible` reports
- * as a bare "hidden" timeout that reads like the button was never built.
- */
+/** Open the workspace panel column if it is closed. */
 async function ensureWorkspacePanelOpen(page: Page) {
   const panelToggle = page.locator('[data-testid="workspace-panel-toggle"]').first()
   await expect(panelToggle).toBeVisible({ timeout: 10_000 })
@@ -570,11 +419,9 @@ async function ensureWorkspacePanelOpen(page: Page) {
 
 async function openProcessesNavigator(page: Page): Promise<Locator> {
   const overlay = page.locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]')
-  // `.getAttribute()` auto-waits for the locator to attach (up to the default
-  // 30s action timeout) — on first open the overlay has never mounted yet
-  // (`<Show when={processesNavigatorVisited()}>` in workspace-panel-body.tsx),
-  // so unconditionally calling it here burned most of the 60s test budget
-  // before ever reaching the toggle click. `.count()` resolves immediately.
+  // The overlay is `<Show when={processesNavigatorVisited()}>`, so before the first
+  // open it does not exist and `.getAttribute()` would auto-wait out the full action
+  // timeout. `.count()` answers immediately.
   const alreadyOpen = (await overlay.count()) > 0 && (await overlay.getAttribute("data-open")) === "true"
   if (!alreadyOpen) {
     await ensureWorkspacePanelOpen(page)
@@ -584,10 +431,9 @@ async function openProcessesNavigator(page: Page): Promise<Locator> {
   }
   await expect(overlay).toHaveAttribute("data-open", "true", { timeout: 10_000 })
   const readLayout = () => overlay.evaluate((element) => {
-    // Measure the named Review surface instead of guessing that the first
-    // flex-growing sibling is its lane. During reload, retained/pending panel
-    // bodies can briefly satisfy that structural guess. Also let the 120ms
-    // navigator width transition settle before judging the final geometry.
+    // Measure the named Review surface rather than the first flex-growing sibling:
+    // during a reload a retained or pending panel body can satisfy that structural
+    // guess.
     const content = element.parentElement?.querySelector<HTMLElement>('[data-testid="review-pane-root"]')
     const navigatorBounds = element.getBoundingClientRect()
     const contentBounds = content?.getBoundingClientRect()
@@ -637,11 +483,8 @@ async function addProcess(page: Page, overlay: Locator, input: { name: string; c
   await expect(submit).toBeEnabled()
   await submit.click()
   await expect(dialog).toBeHidden({ timeout: 5_000 })
-  // A prior `addProcess` call's toast can still be visible (3s duration) when a
-  // second process is added in quick succession within the same test (e.g.
-  // behavior 8's start-all/stop-all scenario adds two configs back to back) —
-  // `.last()` picks the most-recently-stacked toast instead of hitting a
-  // strict-mode violation across both.
+  // A previous add's toast can still be on screen when a test adds two configs back
+  // to back; `.last()` takes the newest instead of colliding on strict mode.
   await expect(page.getByText("Process created").last()).toBeVisible({ timeout: 3_000 })
 }
 
@@ -664,7 +507,7 @@ test.describe("core processes @core", () => {
     await fakePtyWebSocket(page)
   })
 
-  test("empty state shows no-processes copy with an inline Add affordance — behavior 1", async ({ page }) => {
+  test("empty state shows no-processes copy with an inline Add affordance", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -675,7 +518,7 @@ test.describe("core processes @core", () => {
     await expect(addProcessButton(page, overlay)).toBeVisible()
   })
 
-  test("Add Process dialog gates submit on name+command and supports env-var rows — behavior 2", async ({ page }) => {
+  test("Add Process dialog gates submit on name+command and supports env-var rows", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -712,7 +555,7 @@ test.describe("core processes @core", () => {
     await expect(dialog).toBeHidden({ timeout: 3_000 })
   })
 
-  test("submitting Add creates the config and lists it in the navigator — behavior 3", async ({ page }) => {
+  test("submitting Add creates the config and lists it in the navigator", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -726,7 +569,7 @@ test.describe("core processes @core", () => {
     expect(mock.configs().map((c) => c.name)).toEqual(["dev-server"])
   })
 
-  test("selecting a process opens its dedicated panel and keeps the navigator open — behavior 4", async ({ page }) => {
+  test("selecting a process opens its dedicated panel and keeps the navigator open", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -749,7 +592,7 @@ test.describe("core processes @core", () => {
     expect(editBounds?.x).toBeLessThan(filesBounds?.x ?? 0)
   })
 
-  test("start flips status to running and shows the assigned URL; stop reverts it — behaviors 5,6", async ({ page }) => {
+  test("start flips status to running and shows the assigned URL; stop reverts it", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -774,7 +617,7 @@ test.describe("core processes @core", () => {
     await expect(stopButton).toHaveCount(0)
   })
 
-  test("restart calls /restart when running, and /start when stopped or crashed — behavior 7", async ({ page }) => {
+  test("restart calls /restart when running, and /start when stopped or crashed", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -796,7 +639,7 @@ test.describe("core processes @core", () => {
     expect(mock.requests.start).toBe(1)
   })
 
-  test("start-all runs sequentially, stop-all runs concurrently, button relabels — behavior 8", async ({ page }) => {
+  test("start-all runs sequentially, stop-all runs concurrently, button relabels", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -807,12 +650,10 @@ test.describe("core processes @core", () => {
     await addProcess(page, overlay, { name: "server-two", command: "node two.js" })
 
     const startTimes: number[] = []
-    // `route.fallback()`, not `route.continue()`: this handler is registered
-    // AFTER `installProcessMock`'s catch-all, and Playwright's route chain
-    // resolves LIFO — `continue()` would send the (unhandled-by-anyone) request
-    // straight to the real network ("Failed to fetch", no such server), where
-    // `fallback()` correctly defers to the previously-registered mock handler
-    // once this one has recorded its timing and added the delay.
+    // `route.fallback()`, not `route.continue()`: Playwright resolves routes
+    // last-registered-first, so `continue()` would send this to the real network
+    // where no server exists. `fallback()` defers to `installProcessMock` once this
+    // handler has recorded its timing and added its delay.
     await page.route("**/api/wr/process/*/start**", async (route) => {
       startTimes.push(Date.now())
       await new Promise((r) => setTimeout(r, 150))
@@ -834,7 +675,7 @@ test.describe("core processes @core", () => {
     await expect(startAll).toBeVisible({ timeout: 10_000 })
   })
 
-  test("start-triggered crash shows Failed to start, auto-opens the panel, and lights the attention dot — behavior 9", async ({ page }) => {
+  test("start-triggered crash shows Failed to start, auto-opens the panel, and lights the attention dot", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -855,7 +696,7 @@ test.describe("core processes @core", () => {
     await expect(attentionDot).toBeVisible({ timeout: 10_000 })
   })
 
-  test("a reconciled process crash shows its exit code and lights the toolbar attention dot — behavior 10", async ({ page }) => {
+  test("a reconciled process crash shows its exit code and lights the toolbar attention dot", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -870,19 +711,16 @@ test.describe("core processes @core", () => {
     const configId = mock.configs()[0].id
     mock.setProcessState(configId, { status: "crashed", ptyId: undefined, exitCode: 17, exitedAt: Date.now() })
 
-    // Close the panel, then reload — the client only reconciles crashes it did
-    // not itself trigger on its next GET /process fetch (see SPEC STATE MODEL).
+    // Close the panel, then reload: a crash the client did not itself trigger is
+    // only picked up by the next list fetch.
     await closeProcessesNavigator(page)
     await page.reload()
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // The reconcile fetch itself is gated behind `isProcessOpen() && !loaded()`
-    // (process-pane.tsx:612-617, cited in this file's SPEC STATE MODEL) — after a
-    // full reload neither flag is true, so nothing refetches `/api/wr/process`
-    // until the Processes navigator is opened at least once. Open the LIST
-    // navigator (not the dedicated per-process panel) to trigger the reconcile
-    // and read the exit code straight off the row.
+    // Nothing refetches `/api/wr/process` until the Processes navigator has been
+    // opened once after the reload. Open the list navigator — not the per-process
+    // panel — so the fetch fires and the exit code can be read off the row.
     const overlay2 = await openProcessesNavigator(page)
     const flakyRow = overlay2.getByRole("button", { name: /flaky/ }).first()
     await expect(flakyRow.getByText(/exit\s+17/)).toBeVisible({ timeout: 10_000 })
@@ -892,24 +730,16 @@ test.describe("core processes @core", () => {
     )).toBeVisible({ timeout: 10_000 })
   })
 
-  test("a late start-response never clobbers a crash the client already learned about via SSE — behavior 19 (BUG B regression)", async ({ page }) => {
+  test("a late start-response never clobbers a crash the client already learned about via SSE", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
 
-    // Reproduces the real-world race behind BUG B: a launched command that
-    // exits almost immediately (`exit 1`) can have its `process.crashed` SSE
-    // event reach the browser BEFORE the slower HTTP response for the
-    // `start()` call that launched it resolves (`client.start()`'s response
-    // snapshots status at the moment the PTY spawned, server-side, before the
-    // command necessarily finishes) — see `isStaleProcessSnapshot` in
-    // `src/claxedo-ui/context/process-pane.tsx`. Reproduced deterministically
-    // (not a real-clock race): hold the workspace-scoped `/api/wr/events`
-    // connection open via a gate promise, release it only once the `start()`
-    // POST is confirmed in flight, and delay that POST's own response past
-    // the point the crash event lands. Process events are workspace-runtime
-    // events; the bare central stream is a different authority and must not be
-    // used as a convenient injection fallback.
+    // Ordered deterministically rather than raced: hold the workspace-scoped
+    // `/api/wr/events` connection open behind a gate promise, release it only once
+    // the `start()` POST is in flight, and delay that POST's response past the point
+    // the crash event lands. Process events are workspace-runtime events — the bare
+    // central stream is a different authority, not an injection shortcut.
     let releaseCrashEvent: (() => void) | undefined
     const crashEventGate = new Promise<void>((resolve) => {
       releaseCrashEvent = resolve
@@ -940,17 +770,13 @@ test.describe("core processes @core", () => {
         })
         .catch(() => {})
     }
-    // `ProcessPaneProvider` reads the crash off `useClaxedoEvents`
-    // (src/app/workbench/context/process-pane.tsx), whose CENTRAL stream target
-    // is `/api/claxedo/events` — `/api/wr/events` is the workspace-scoped
-    // spelling and is also what global-sdk's compat loop is rewritten to, so
-    // pinning only that one let the other reader claim the single `times: 1`
-    // interception and the crash never reached the process pane. Both real
-    // servers mount ONE handler on `/global/event`, `/api/wr/events` and
-    // `/api/claxedo/events` (claxedo-local-server/src/opencode/compat-routes,
-    // claxedo-server/src/routes/hosted/shell.ts), so serving the same frames on
-    // every central spelling is the contract, not a workaround. Delivering the
-    // crash more than once is idempotent: it re-asserts the same crashed state.
+    // `ProcessPaneProvider` reads the crash off `useClaxedoEvents`, whose stream
+    // target is `/api/claxedo/events`, while global-sdk's compat loop reads
+    // `/api/wr/events`. Both real servers mount one handler across `/global/event`,
+    // `/api/wr/events` and `/api/claxedo/events`, so serving the same frames on every
+    // spelling matches the contract — and pinning only one of them lets the other
+    // reader consume the interception, leaving the pane without its crash.
+    // Re-delivery is idempotent: the frame assigns the same crashed state.
     await page.route("**/api/wr/events**", deliverCrashEvent, { times: 1 })
     await page.route("**/api/claxedo/events**", deliverCrashEvent, { times: 1 })
     await page.route("**/api/wr/runtime-events**", deliverCrashEvent, { times: 1 })
@@ -975,27 +801,13 @@ test.describe("core processes @core", () => {
     await startInFlight
     releaseCrashEvent?.()
 
-    // The crashed state must win. NOTE on assertion surface: the SSE
-    // `process.crashed` handler (process-pane.tsx:504-531) intentionally
-    // PRESERVES `ptyId` on crash (unlike a launch-time failure, which routes
-    // through `applyCrash`/`failLaunch` and clears it) — see this guard's own
-    // unit tests (process-pane.test.ts:33-38, `existing: {status: "crashed",
-    // ptyId: "pty_1"}`), which pin ptyId retention as the mechanism
-    // `isStaleProcessSnapshot` uses to recognize "same spawn generation".
-    // Because `ptyId` stays set, `ProcessPanePanel`'s `hasTerminal()` stays
-    // true and it keeps rendering the (dead) terminal instead of its
-    // "Crashed"/"Failed to start" placeholder — that placeholder is gated on
-    // `!visiblePty()` (ProcessPanePanel.tsx:219-243) and is genuinely
-    // unreachable for this scenario, in both the buggy and fixed cases (the
-    // ptyId is identical either way, so terminal-vs-placeholder can't
-    // discriminate the regression). Assert instead on the two surfaces that
-    // DO discriminate it: (1) the title-bar status dot's color, which reads
-    // `status()` directly and is unaffected by ptyId, and (2) the Processes
-    // list row, whose `ProcessSubtitle`/canStart (WorkspaceProcessesNavigator.
-    // tsx:99-104,197-198) key on `status()`/`exitCode` alone, not ptyId — so
-    // an unguarded clobber (status flips to "running", exitCode clears to
-    // undefined) is visible there as "exit 1" disappearing and Stop
-    // reappearing in place of Start.
+    // The crashed state has to win. The crash handler keeps `ptyId`, so
+    // `hasTerminal()`/`visiblePty()` stay true and the panel renders the dead
+    // terminal rather than its "Crashed" placeholder — identical whether or not the
+    // guard works, so neither can discriminate a clobber. Assert on the two surfaces
+    // reading `status()`/`exitCode` alone: the title-bar status dot's color, and the
+    // navigator row, where a clobber shows up as "exit 1" vanishing and Stop
+    // replacing Start.
     const runningColor = await page.evaluate(() => {
       const probe = document.createElement("div")
       probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--surface-success-strong").trim()
@@ -1004,27 +816,22 @@ test.describe("core processes @core", () => {
       probe.remove()
       return rgb
     })
-    // The status dot lives in the pane header, which `portalHeader` portals out
-    // of the panel element into the pane toolbar slot — locate it by the header
-    // testid so the selector holds in both portal and inline modes.
+    // `portalHeader` moves the pane header out of the panel element and into the pane
+    // toolbar slot, so locate the dot by the header testid to hold in either mode.
     const dot = page.locator('[data-testid="process-pane-header"] span.relative.inline-flex.rounded-full').first()
     await expect(dot).not.toHaveCSS("background-color", runningColor, { timeout: 15_000 })
 
     const overlay2 = await openProcessesNavigator(page)
     const flakyRow = overlay2.getByRole("button", { name: /flaky-dev/ }).first()
-    // Scoped to the status span specifically (`style*="critical-strong"`,
-    // ProcessSubtitle's crashed-branch span) — not a bare text match, because
-    // this test's `command: "exit 1"` coincidentally also renders as the
-    // row's command-preview text and would otherwise strict-mode-collide.
+    // Scoped to ProcessSubtitle's crashed span rather than matched by text: the
+    // command here is also `exit 1`, and its preview in the row would collide.
     await expect(flakyRow.locator('span[style*="critical-strong"]').getByText(/exit\s+1\b/)).toBeVisible({ timeout: 10_000 })
     await expect(flakyRow.getByRole("button", { name: "Start process" })).toBeVisible()
     await expect(flakyRow.getByRole("button", { name: "Stop process" })).toHaveCount(0)
 
-    // Give the stale (delayed) start response time to resolve, then
-    // re-assert the crashed state is UNCHANGED — this is the actual
-    // regression: without the `isStaleProcessSnapshot` guard, this late
-    // "started"/"running" response flips status back to running here,
-    // clearing exitCode and swapping Start back in for Stop.
+    // Let the delayed start response resolve, then re-assert the crashed state is
+    // unchanged: unguarded, that late "running" snapshot flips the status back,
+    // clears exitCode, and swaps Start out for Stop.
     await page.waitForTimeout(500)
     await expect(flakyRow.locator('span[style*="critical-strong"]').getByText(/exit\s+1\b/)).toBeVisible()
     await expect(flakyRow.getByRole("button", { name: "Start process" })).toBeVisible()
@@ -1034,7 +841,7 @@ test.describe("core processes @core", () => {
     expect(dotColor).not.toBe(runningColor)
   })
 
-  test("port conflict overlay resolves via pick-new and via kill-existing — behavior 11", async ({ page }) => {
+  test("port conflict overlay resolves via pick-new and via kill-existing", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -1063,7 +870,7 @@ test.describe("core processes @core", () => {
     await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
-  test("route conflict overlay resolves via pick-new — behavior 12", async ({ page }) => {
+  test("route conflict overlay resolves via pick-new", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -1083,7 +890,7 @@ test.describe("core processes @core", () => {
     await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
-  test("edit dialog pre-fills existing values and Save updates the config — behavior 13", async ({ page }) => {
+  test("edit dialog pre-fills existing values and Save updates the config", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -1109,7 +916,7 @@ test.describe("core processes @core", () => {
     expect(mock.configs()[0]?.command).toBe("npm run watch:fast")
   })
 
-  test("delete requires an inline confirm; cancel restores the form, confirm removes the config — behavior 14", async ({ page }) => {
+  test("delete requires an inline confirm; cancel restores the form, confirm removes the config", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -1137,55 +944,23 @@ test.describe("core processes @core", () => {
 
     expect(mock.requests.delete).toBe(1)
     expect(mock.configs()).toHaveLength(0)
-    // Deleting a process does not itself navigate the workspace panel back to
-    // the list — its dedicated panel stays focused on the (now-gone) config id
-    // and renders the "Process not found" placeholder
-    // (`src/claxedo-ui/components/review-workspace.tsx:94`) until the user
-    // explicitly reopens the Processes navigator, same as any other deep-link
-    // to a deleted entity. Reopen it to reach the list's empty state.
+    // Deleting does not navigate the panel back to the list: it stays focused on the
+    // gone config id and renders "Process not found", like any deep link to a deleted
+    // entity. Reopen the navigator to reach the empty state.
     await expect(page.getByText("Process not found")).toBeVisible({ timeout: 5_000 })
-    // The Processes list navigator (`WorkspaceProcessesNavigator`, opened at the
-    // top of this test) and the dedicated panel we just deleted from
-    // (`ReviewWorkspaceProcessSection`, opened via the "Process" review-workspace
-    // tab) each mount their OWN `ProcessPaneProvider` instance with an
-    // independent local `configs`/`processes` store — there is no shared
-    // singleton. In the real app these instances converge via the
-    // `process.config.changed` SSE event every mutation broadcasts
-    // (`workspaceRuntimeBus.publish(...)` in
-    // `packages/workspace-runtime/src/managed-processes/manager.ts:587`, consumed
-    // by every `ProcessPaneProvider` via `claxedoEvents.on("process.config.changed",
-    // ...)` in `src/claxedo-ui/context/process-pane.tsx:537`). `installProcessMock`
-    // is HTTP-only and never pushes that event, so the navigator's own cache goes
-    // stale after a delete performed from the dedicated panel.
+    // The navigator and the dedicated panel each mount their own `ProcessPaneProvider`
+    // with an independent `configs`/`processes` store; in the real app they converge on
+    // the `process.config.changed` event every mutation broadcasts. `installProcessMock`
+    // is HTTP-only and never pushes it, so the navigator's cache goes stale after a
+    // delete performed from the panel. Serve that one event here, as a flat
+    // `ClaxedoEvent` — `ClaxedoEventsProvider` requires `"type"` at the top level and
+    // silently drops the `{directory, payload}` wrapper `mock-runtime` uses for session
+    // events.
     //
-    // Two mechanisms were tried and rejected before this one:
-    // (1) `window.__claxedoEmitTestEvent` — a dev-only hook gated by
-    //     `import.meta.env.DEV` (`src/providers/claxedo-events.tsx:314-320`) —
-    //     is `undefined` in this e2e run (the app is served as a production/
-    //     preview build here, not `vite dev`), confirmed empirically.
-    // (2) `installMockRuntime`'s own `emit()`/SSE bus wraps every event as
-    //     `{directory, payload}` (`sseBody()`, `e2e/helpers/mock-runtime.ts`),
-    //     which is the wire shape `applySessionListEvent` (session/message
-    //     events) expects — but `ClaxedoEventsProvider.emitEvent` (which owns
-    //     `process.config.changed`) parses each SSE `data:` line as a FLAT
-    //     `ClaxedoEvent` (`isClaxedoEvent`: `"type" in input` at the top level,
-    //     `src/providers/claxedo-events.tsx:120-122,446-452`) — the wrapped
-    //     shape never satisfies that check, so it's silently dropped.
-    // `installMockRuntime`/`installProcessMock` are shared/forbidden-to-edit in
-    // this pooled phase regardless, so per the pool amendment this is a
-    // spec-local `page.route` override on the SAME endpoint
-    // (`/api/wr/events`, the "primary origin" stream local/directory-routed
-    // sessions read per `mock-runtime.ts`'s own comment at that route) that
-    // fulfills exactly one flat `process.config.changed` event, then lets
-    // subsequent polls fall through to whatever handled it before (Playwright
-    // route interception is LIFO; `{times: 1}` unregisters itself after one
-    // match).
-    // NOT {times: 1}: the events stream reconnects continuously, and on a
-    // starved runner an unrelated reconnect cycle consumes the single
-    // fulfillment before the navigator's own provider subscribes — the event
-    // is then gone and the navigator keeps its stale cache. Serve the flat
-    // event on EVERY reconnect until the empty state is proven, then unroute
-    // (re-delivery is safe: the event is a state assignment to []).
+    // Not `{times: 1}`: the stream reconnects continuously, and an unrelated reconnect
+    // can consume a single fulfillment before the navigator's provider subscribes.
+    // Serve it on every reconnect until the empty state is proven, then unroute —
+    // re-delivery is safe, the event assigns a list.
     const emptyConfigsEvents = async (route: import("@playwright/test").Route) => {
       await route.fulfill({
         status: 200,
@@ -1202,7 +977,7 @@ test.describe("core processes @core", () => {
     }
   })
 
-  test("a process-owned PTY never duplicates as a terminal tab — behavior 15", async ({ page }) => {
+  test("a process-owned PTY never duplicates as a terminal tab", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -1221,7 +996,7 @@ test.describe("core processes @core", () => {
     await expect(page.locator('[data-testid="compact-switcher-tab"]')).toHaveCount(tabsBefore, { timeout: 5_000 })
   })
 
-  test("reload re-fetches from the backend and renders the same configs/processes — behavior 16", async ({ page }) => {
+  test("reload re-fetches from the backend and renders the same configs/processes", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await seedOneProject(page, DIR)
@@ -1243,7 +1018,9 @@ test.describe("core processes @core", () => {
     await expect(processAction(page, panel2, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
-  test("Diagnostics is absent from the web platform — behavior 17", async ({ page }) => {
+  // This web harness has no desktop diagnostics capability. Assert both entry points:
+  // the zero-project recovery surface and the account menu after a project is loaded.
+  test("Diagnostics is absent from the web platform", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await page.addInitScript(() => localStorage.clear())
@@ -1262,7 +1039,7 @@ test.describe("core processes @core", () => {
     await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
   })
 
-  test("mutation controls are present for a local (unconditionally-mutable) workspace — behavior 18", async ({ page }) => {
+  test("mutation controls are present for a local (unconditionally-mutable) workspace", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page)
     await seedOneProject(page, DIR)

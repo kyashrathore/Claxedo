@@ -7,17 +7,14 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 const log = Log.create({ service: "credentials-probe" })
 
 /**
- * Probes a *discovered but unsaved* candidate against its provider.
+ * Probes a *discovered but unsaved* candidate against its provider, before the
+ * user commits to it. A credential saved and then found broken is worse than
+ * one never offered — the user believes setup succeeded and only discovers
+ * otherwise mid-task.
  *
- * Discovery used to hand back whatever it read off disk, pre-selected, with no
- * claim about whether any of it worked — verification happened only after the
- * user committed. That inverted the cost: a credential saved and then found
- * broken is worse than one never offered, because the user believes setup
- * succeeded and only discovers otherwise mid-task.
- *
- * Cost note: this spends one real request per candidate per scan, and for a
- * ChatGPT subscription that request comes out of the user's own quota. Probes
- * are therefore run once per discovery and stashed with it, never on re-render.
+ * This spends one real request per candidate per scan, and for a ChatGPT
+ * subscription that request comes out of the user's own quota. Probes are
+ * therefore run once per discovery and stashed with it, never on re-render.
  */
 export async function probeDiscoveredCredential(
   item: LocalCredentialItem,

@@ -132,7 +132,7 @@ import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigat
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { projectWorkspaceInfo, railProjectDirectoryRefs } from "./rail-project-session-info"
-import { urlRoutingEnabled } from "@/lib/runtime-mode"
+import { writeBrowserRoute } from "@/lib/browser-history"
 import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
@@ -436,13 +436,10 @@ function git(input: Pick<SessionItem, "git"> | Pick<SessionInventoryRow, "git">)
 
 function replaceSessionUrl(session: Row) {
   if (typeof window === "undefined") return
-  // MemoryRouter routes must not overwrite a file:// renderer document.
-  if (!urlRoutingEnabled()) return
   const workspaceId = workspaceSessionBacking(session, session.directory ?? session.project.worktree)?.workspaceId
   const route = workspaceId ? workspaceSessionRoute(workspaceId, session.id) : sessionRoute(session.id)
   if (window.location.pathname === route) return
-  window.history.replaceState(window.history.state, "", route)
-  window.dispatchEvent(new PopStateEvent("popstate"))
+  writeBrowserRoute(route, { replace: true, notify: true })
 }
 
 export function RailSidebar(props: RailSidebarProps) {

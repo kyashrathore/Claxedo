@@ -1,7 +1,7 @@
-// The ONE file allowed to sniff legacy directory strings (org doc §1).
+// The ONE file allowed to sniff legacy directory strings.
 // New callers are a ratchet failure; move callers toward SessionRef instead.
 //
-// WP-D5: this file is one of the two sanctioned brand-mint owners. The string
+// This file is one of the two sanctioned brand-mint owners. The string
 // sniffers below are the single legal `string -> WorkspaceId` narrowing point
 // (`workspaceIdFromRef`); the route parser owns `string -> DirectoryRef` for
 // route params. Everywhere else the brands are received, never minted.

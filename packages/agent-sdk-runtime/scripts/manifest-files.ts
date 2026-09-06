@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import { isRecord } from "@claxedo/helpers/guards"
 
 /**
  * Readers for the package's own metadata files.
@@ -25,10 +26,6 @@ export type ApiManifest = {
   valueExports: Record<string, string[]>
   declarationHashes: Record<string, string>
   symbols: Record<string, { import: string; kind: string; purpose: string }>
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 function readJson(file: string): Record<string, unknown> {

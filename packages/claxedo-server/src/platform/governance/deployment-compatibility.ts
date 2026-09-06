@@ -1,5 +1,5 @@
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export const CLAXEDO_COMPATIBILITY_SCHEMA_VERSION = 1
 export const CLAXEDO_CONNECTION_SCHEMA_VERSION = 1
@@ -36,20 +36,20 @@ type ComponentCompatibility = {
 
 
 function numberEnv(input: string | undefined, fallback: number) {
-  const parsed = Number(clean(input))
+  const parsed = Number(trimToUndefined(input))
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
 function component(version: string | undefined, expectedVersion: string | undefined): ComponentCompatibility {
   return {
-    ...(clean(version) ? { version: clean(version) } : {}),
-    ...(clean(expectedVersion) ? { expectedVersion: clean(expectedVersion) } : {}),
+    ...(trimToUndefined(version) ? { version: trimToUndefined(version) } : {}),
+    ...(trimToUndefined(expectedVersion) ? { expectedVersion: trimToUndefined(expectedVersion) } : {}),
   }
 }
 
 function versionCheck(name: string, version: string | undefined, expectedVersion: string | undefined) {
-  const actual = clean(version)
-  const expected = clean(expectedVersion)
+  const actual = trimToUndefined(version)
+  const expected = trimToUndefined(expectedVersion)
   return {
     name: `version_${name}`,
     ok: !expected || actual === expected,
@@ -61,8 +61,8 @@ function versionCheck(name: string, version: string | undefined, expectedVersion
 
 export function deploymentCompatibilityReport(env: DeploymentCompatibilityEnv = process.env): DeploymentCompatibilityReport {
   const expectedTunnelProtocolVersion = numberEnv(env.CLAXEDO_EXPECTED_TUNNEL_PROTOCOL_VERSION, TUNNEL_PROTOCOL_VERSION)
-  const centralVersion = clean(env.CLAXEDO_CENTRAL_VERSION) ?? "dev"
-  const relayProtocolVersion = clean(env.CLAXEDO_RELAY_PROTOCOL_VERSION) ?? "0.1.0"
+  const centralVersion = trimToUndefined(env.CLAXEDO_CENTRAL_VERSION) ?? "dev"
+  const relayProtocolVersion = trimToUndefined(env.CLAXEDO_RELAY_PROTOCOL_VERSION) ?? "0.1.0"
   const checks = [
     {
       name: "tunnel_protocol",

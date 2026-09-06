@@ -3,29 +3,17 @@ import { createSignal } from "solid-js"
 export type StreamKind = "central" | "workspace"
 
 /**
- * Per-kind connectedness accounting for the Claxedo event streams.
+ * Per-kind connectedness for the Claxedo event streams.
  *
- * WHY THIS IS NOT ONE SIGNAL. `ClaxedoEventsProvider` runs several independent
- * stream targets at once: the CENTRAL control-plane stream plus one relay-backed
- * stream per remote workspace (§7 keeps those separate — cross-machine fan-in is
- * rejected). The provider used to publish a single `connected()` = "any stream is
- * up", which is an OR across targets, and every consumer read it.
- *
- * That aggregate is unusable as a revalidation trigger. The doorbells that drive
- * Documents (`document.changed`) rides the
- * CENTRAL stream only. If the central stream drops and reconnects while any
- * workspace stream stays up, the aggregate count goes 2 → 1 → 2: it never
- * reaches 0, `connected()` never goes false, and the `false → true` edge that
- * both features use to re-establish currency NEVER FIRES. Every nudge missed
- * during that gap is lost with no recovery path — silently stale state, which is
- * exactly what plan R4 forbids and what §3 claims reconnect-revalidation covers.
- *
- * So connectedness is tracked per kind. `centralConnected()` is the correct
- * revalidation edge for anything that consumes a central-bus doorbell.
- * `connected()` keeps the old "any stream is up" meaning for consumers that
- * genuinely want it (see `workbench/state/agent-status-listener.ts`, which
- * reconciles agent status across workspace runtimes and therefore cares about
- * workspace streams too).
+ * Not one signal: `ClaxedoEventsProvider` runs the central control-plane stream
+ * plus one relay-backed stream per remote workspace. The `document.changed`
+ * doorbell rides the central stream only, and its consumer revalidates on the
+ * `false → true` edge. An aggregate "any stream up" count goes 2 → 1 → 2 when
+ * the central stream drops while a workspace stream stays up, so that edge
+ * never fires and every nudge missed in the gap is lost. `centralConnected()`
+ * is the revalidation edge for central-bus doorbells; `connected()` keeps the
+ * any-stream meaning for consumers that want it
+ * (`workbench/state/agent-status-listener.ts`).
  */
 export function createStreamConnectivity() {
   const [connected, setConnected] = createSignal(false)

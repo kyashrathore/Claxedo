@@ -1,4 +1,5 @@
 import { SignJWT, errors, exportJWK, importJWK, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
+import { numberClaim } from "@claxedo/helpers/guards"
 
 const algorithms = ["EdDSA", "ES256", "RS256"] as const
 
@@ -144,11 +145,6 @@ function requireAlgorithm(input: string): RelayJwtAlgorithm {
 function stringClaim(payload: JWTPayload, key: string) {
   const value = payload[key]
   return typeof value === "string" && value.trim() ? value : undefined
-}
-
-function numberClaim(payload: JWTPayload, key: string) {
-  const value = payload[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 function stringArrayClaim(payload: JWTPayload, key: string) {

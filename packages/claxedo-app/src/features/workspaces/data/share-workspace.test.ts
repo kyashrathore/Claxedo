@@ -8,10 +8,6 @@ import {
 } from "./share-workspace"
 
 describe("share workspace helpers", () => {
-  test("keeps share workspace URLs local to the utility", async () => {
-    expect(await Bun.file(new URL("./share-workspace.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
-  })
-
   test("resolves the local root workspace id from project workspace metadata", () => {
     expect(localWorkspaceShareTarget({
       directory: "/repo/main",

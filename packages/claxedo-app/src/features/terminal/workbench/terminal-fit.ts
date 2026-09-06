@@ -1,11 +1,7 @@
-/**
- * Canonical event name for "the terminal grid should re-fit to its
- * container". This is the single source of truth for the event
- * string — every dispatch/listen site in the app must import this
- * constant (or the emitTerminalFit/requestTerminalFitOnPaneChange
- * helpers below) instead of re-typing the literal.
- */
-export const FIT_EVENT = "claxedo:terminal-fit"
+import { TERMINAL_FIT_EVENT } from "../core/fit-event"
+
+// Preserve the workbench-facing export while the protocol has one owner.
+export const FIT_EVENT = TERMINAL_FIT_EVENT
 
 export function emitTerminalFit(target?: Pick<Window, "dispatchEvent">) {
   const t = target ?? (typeof window !== "undefined" ? window : undefined)

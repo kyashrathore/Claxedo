@@ -28,7 +28,8 @@ import {
 import { isLoopbackLocalRequest, stampRequestPeerAddress } from "@claxedo/server-core/platform/http/peer-address"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"
-import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"
+import { createCredentialStoreAdapter } from "./credential-store-adapter"
+import { createConnectionStoreAdapter } from "./store-adapter"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"
 
 export const CONNECTIONS_TOKEN_HEADER = "x-claxedo-connections"

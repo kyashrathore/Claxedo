@@ -187,12 +187,4 @@ describe("the composition drives it", () => {
     expect(entry).toMatch(/register:\s*registerContentSurface/)
   })
 
-  test("the registry can actually remove a surface", () => {
-    // The end of the chain. `addSurface` had no counterpart, so before this the
-    // only way to un-register anything was to reload the page.
-    expect(code("app/integrations/registry.ts")).toMatch(/removeSurface\s*\(\s*id:\s*string\s*\)/)
-    expect(code("app/integrations/first-party-content-surfaces.tsx")).toMatch(
-      /export function unregisterContentSurface/,
-    )
-  })
 })

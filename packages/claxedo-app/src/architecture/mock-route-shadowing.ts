@@ -4,26 +4,26 @@ import path from "node:path"
 /**
  * Route-shadow analysis for the shared e2e mock (`e2e/helpers/mock-runtime.ts`).
  *
- * WHY THIS EXISTS — Playwright matches `page.route` handlers MOST-RECENTLY-REGISTERED
- * FIRST. A broad pattern registered after a narrow one therefore takes the narrow one's
- * requests, and the narrow handler simply never runs. That failure is silent by
- * construction, because the broad handler still answers 200 with a plausible body:
+ * Playwright matches `page.route` handlers most-recently-registered first. A
+ * broad pattern registered after a narrow one therefore takes the narrow
+ * one's requests, and the narrow handler never runs — silently, because the
+ * broad handler still answers 200 with a plausible body:
  *
- *   `**​/session/status` was swallowed by the `**​/session/*` catch-all for the entire
- *   life of the suite and answered with a SESSION ROW instead of a status map. Nothing
- *   caught it, because every consumer indexes the response by session id
- *   (`statuses[id] ?? {type:"idle"}`) and a session row has no such key — so the wrong
- *   body decoded as the plausible default "everything is idle", and `/session/status`
- *   coverage was decorative for months.
+ *   `**​/session/status` swallowed by the `**​/session/*` catch-all answers
+ *   with a session row instead of a status map. Nothing catches it, because
+ *   every consumer indexes the response by session id
+ *   (`statuses[id] ?? {type:"idle"}`) and a session row has no such key, so
+ *   the wrong body decodes as the plausible default "everything is idle".
  *
- * Same failure shape as a permanently-false tripwire: the signal reads OK, so nobody
- * looks. This module makes the shape mechanically detectable.
+ * Same failure shape as a permanently-false tripwire: the signal reads ok, so
+ * nobody looks. This module makes the shape mechanically detectable.
  *
- * WHAT IT DOES — parses the `page.route(...)` calls in registration order, converts each
- * glob with Playwright's own translation, and asks of every earlier route: does some
- * LATER pattern match every URL this route is realistically for? If so the earlier route
- * is unreachable, and must be either fixed or listed in `ALLOWED_SHADOWS` with the
- * verbatim hand-back expression that keeps it reachable at runtime.
+ * It parses the `page.route(...)` calls in registration order, converts each
+ * glob with Playwright's own translation, and asks of every earlier route:
+ * does some later pattern match every URL this route is realistically for?
+ * If so the earlier route is unreachable, and must be either fixed or listed
+ * in `ALLOWED_SHADOWS` with the verbatim hand-back expression that keeps it
+ * reachable at runtime.
  */
 
 const MOCK_RUNTIME = "e2e/helpers/mock-runtime.ts"
@@ -68,7 +68,7 @@ export type AllowedShadow = {
   /** `raw` pattern of the later route that swallows it. */
   shadower: string
   /**
-   * Verbatim source from the SHADOWER's handler that hands these URLs back. Asserted to
+   * Verbatim source from the shadower's handler that hands these URLs back. Asserted to
    * still be present: delete the hand-back and this entry becomes a failure instead of
    * silently re-opening the hole. An entry with no hand-back is not allowed — a shadow
    * that nothing mitigates is a bug, not a policy.
@@ -195,7 +195,7 @@ function resolveTemplate(raw: string) {
 }
 
 /**
- * The URLs a route is realistically FOR: wildcards collapse to their smallest plausible
+ * The URLs a route is realistically for: wildcards collapse to their smallest plausible
  * instantiation, never to pathological deep paths. Expanding `**` into `/deep/path`
  * instead reports ~44 "overlaps" that are all legitimate origin-scoped overrides, which
  * is how a guard like this ends up allowlisted into uselessness.

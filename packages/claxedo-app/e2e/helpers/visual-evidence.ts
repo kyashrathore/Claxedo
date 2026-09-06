@@ -1,30 +1,12 @@
-// Visual pipeline, mechanical half — Phase 5 of
-// `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`. This module owns exactly
-// two primitives: writing evidence PNGs to the path `e2e/INVARIANTS.md` already mandates
-// (rule #2: "Every oracle assertion produces evidence ... into a per-run evidence
-// directory (`test-results/evidence/<spec>/<scenario>.png`)"), and diffing two PNGs by
-// raw pixel bytes with no AI involved. Judgement (which diffs are "broken", when to
-// escalate to a vision reviewer) lives one layer up, in `scripts/visual-adjudicate.ts` —
-// keeping that split is what lets the owner's constraint hold: "AI screenshot judgement
-// must not slow the loop" (plan, owner decision 4). A pixel-exact match never talks to an
-// adjudicator at all; only a non-zero diff does.
+// Visual pipeline, mechanical half: writes evidence PNGs to
+// `test-results/evidence/<spec>/<scenario>.png` and diffs two PNGs by raw pixel bytes.
+// Judgement (which diffs matter, when to ask a vision reviewer) lives in
+// `e2e/visual-adjudicate.ts`; a pixel-exact match never reaches it.
 //
-// Path convention duplicated from `e2e/helpers/turn-oracle.ts:51-55`'s `evidencePath`
-// (there marked `_evidencePathForTest`, i.e. not a public contract) rather than imported
-// from it — this file's owner is disjoint from turn-oracle.ts's per the plan's "Execution:
-// parallelize with agents & workflows" section (Phase 1 oracles vs Phase 5, independent
-// files, no shared edits). Both must resolve to the SAME path shape because
-// `desktop-unsigned-embedded.spec.ts` and friends already write assistant-reply evidence
-// through turn-oracle.ts's copy; a rail/geometry oracle calling `captureEvidence` here for
-// a non-turn scenario must land in the same `<spec>/<scenario>.png` tree so one CLI
-// (`visual-adjudicate.ts`) can walk both without a spec-specific case.
-//
-// Goldens are NOT evidence — evidence is the per-run, gitignored artifact
-// (`test-results/` is `.gitignore`d at the repo root, unqualified, so it's ignored at any
-// depth including `packages/claxedo-app/test-results/`); a golden is the checked-in
-// reference image a run's evidence is diffed against, and lives under `e2e/goldens/`
-// (tracked in git, sibling to the spec files whose scenarios it baselines) so it survives
-// between runs and reviews as a normal source-controlled file.
+// The path shape duplicates `turn-oracle.ts`'s private `evidencePath` on purpose: both must
+// resolve to the same tree so `visual-adjudicate.ts` walks turn and rail evidence alike.
+// Evidence is per-run and gitignored (`test-results/`); goldens are the tracked reference
+// images under `e2e/goldens/`.
 import type { Page } from "@playwright/test"
 import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -39,11 +21,8 @@ export type Evidence = {
 
 export type PixelDiffResult = {
   /** Count of pixels differing in ANY channel (R/G/B/A), exact byte compare — no
-   * anti-aliasing tolerance, same discipline as the existing pixel-diff in
-   * `scripts/capture-p4-named-surfaces.ts:632-639` (`comparePixelDiff`), which this
-   * function's inner loop mirrors on purpose rather than diverging on style. `Infinity`
-   * means the two images aren't even the same dimensions — same convention as that
-   * function's line 625, `pixelDiffCount: Number.POSITIVE_INFINITY` for a size mismatch. */
+   * anti-aliasing tolerance. `Infinity` means the two images aren't even the same
+   * dimensions, so no pixel count is meaningful. */
   diffPixels: number
   /** `diffPixels / totalPixels`, or `1` for a dimension mismatch (can't be pixel-counted
    * at all — treated as maximally different, not as "0 shared pixels out of 0"). */
@@ -62,16 +41,11 @@ export type ComparePngOptions = {
   /** Where to write the red-highlight diff visualization. Defaults to `actualPath` with
    * its trailing `.png` swapped for `.diff.png`. Pass `null` to skip writing a diff image
    * (e.g. a pixel-exact fast path that doesn't need one — see
-   * `scripts/visual-adjudicate.ts`'s zero-diff branch). */
+   * `e2e/visual-adjudicate.ts`'s zero-diff branch). */
   diffPath?: string | null
 }
 
-/**
- * `e2e/helpers/turn-oracle.ts:63-65`'s `packageRoot()`, duplicated rather than imported —
- * see the file-header note on why these two modules don't share edits. Correct when
- * Playwright/the CLI is invoked from `packages/claxedo-app`, the documented-only
- * invocation directory (same assumption turn-oracle.ts makes).
- */
+/** The package root, assuming invocation from `packages/claxedo-app` (as `turn-oracle.ts` assumes). */
 function packageRoot() {
   return process.cwd()
 }
@@ -80,15 +54,13 @@ function ensureDir(filePath: string) {
   mkdirSync(dirname(filePath), { recursive: true })
 }
 
-/** `test-results/evidence/<spec>/<scenario>.png` — `e2e/INVARIANTS.md` rule #2, verbatim. */
+/** `test-results/evidence/<spec>/<scenario>.png`. */
 export function evidencePath(evidence: Evidence, root: string = packageRoot()): string {
   return join(root, "test-results", "evidence", evidence.spec, `${evidence.scenario}.png`)
 }
 
-/** The checked-in reference image a run's evidence is diffed against. Not gitignored
- * (unlike `evidencePath`'s `test-results/` tree) — a golden is a source-controlled
- * artifact, updated deliberately (`scripts/visual-adjudicate.ts --update-goldens`), never
- * a byproduct of running the suite. */
+/** The tracked reference image a run's evidence is diffed against; updated only via
+ * `e2e/visual-adjudicate.ts --update-goldens`. */
 export function goldenPath(evidence: Evidence, root: string = packageRoot()): string {
   return join(root, "e2e", "goldens", evidence.spec, `${evidence.scenario}.png`)
 }
@@ -102,7 +74,7 @@ function defaultDiffPath(actualPath: string): string {
  * golden) root — e.g. `"desktop-unsigned-embedded/rail-row-visible.png"`, as produced by
  * walking the tree with a glob — recovers `{spec, scenario}`. Returns `null` for anything
  * that isn't a bare `<spec>/<scenario>.png` two-segment shape, which is how
- * `scripts/visual-adjudicate.ts` skips `*.diff.png` and any stray non-PNG file (verdict
+ * `e2e/visual-adjudicate.ts` skips `*.diff.png` and any stray non-PNG file (verdict
  * JSON, `.DS_Store`, …) without a second exclusion list to keep in sync with this one.
  */
 export function parseEvidenceRelativePath(relativePath: string): Evidence | null {
@@ -116,12 +88,8 @@ export function parseEvidenceRelativePath(relativePath: string): Evidence | null
 }
 
 /**
- * Writes the evidence PNG for one scenario. This is the general-purpose sibling of
- * `turn-oracle.ts`'s private `captureEvidence` (turn-oracle.ts:160-164, which the Oracle
- * calls internally for assistant-reply proofs only) — other oracles (rail, geometry,
- * surface-parity) that want a screenshot at their assertion point call THIS one directly,
- * so every scenario's evidence lands in the same tree regardless of which oracle produced
- * it. Returns the absolute path written, same shape turn-oracle.ts's version returns.
+ * Writes one scenario's evidence PNG and returns its absolute path. `turn-oracle.ts` has a
+ * private equivalent for assistant-reply proofs; every other oracle calls this one.
  */
 export async function captureEvidence(params: {
   page: Page
@@ -142,19 +110,11 @@ async function decodeRaw(path: string) {
 }
 
 /**
- * Pure pixel diff — no AI, no perceptual/anti-aliasing tolerance, decode via `sharp`
- * (already a devDependency, used identically by
- * `scripts/capture-p4-named-surfaces.ts:531,616-617` and
- * `e2e/playwright/core-terminal.spec.ts:679`; no new dependency added). Exact per-channel
- * byte compare, same as `capture-p4-named-surfaces.ts`'s `comparePixelDiff` — deliberately
- * NOT a perceptual/fuzzy diff (no pixelmatch-style anti-aliasing detection), because the
- * load-bearing case this exists for (defect 11: the rail dot moving a handful of pixels)
- * is exactly the kind of small, precise shift a fuzzy/AA-tolerant differ is tuned to
- * ignore.
+ * Exact per-channel byte compare via `sharp`, with no anti-aliasing tolerance: the shifts
+ * this must catch (a rail dot moving a few pixels) are what fuzzy differs ignore.
  *
- * When a diff image is written, differing pixels are painted solid red at full alpha;
- * matching pixels are copied through at low alpha (a dim "ghost" of the golden) so the
- * red highlights read against real context instead of a blank canvas.
+ * In the diff image, differing pixels are solid red; matching pixels are the golden at low
+ * alpha for context.
  */
 export async function comparePng(
   actualPath: string,
@@ -169,8 +129,8 @@ export async function comparePng(
     golden.info.width !== actual.info.width ||
     golden.info.height !== actual.info.height
   ) {
-    // Mirrors capture-p4-named-surfaces.ts:619-629's dimension-mismatch branch exactly —
-    // `Infinity`/`1`, no pixel-aligned overlay is meaningful when the shapes differ.
+    // Dimension mismatch: `Infinity`/`1`, no pixel-aligned overlay is meaningful when
+    // the shapes differ.
     return { diffPixels: Number.POSITIVE_INFINITY, diffRatio: 1, diffPath: null }
   }
 

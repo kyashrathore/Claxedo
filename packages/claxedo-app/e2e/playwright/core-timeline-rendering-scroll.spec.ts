@@ -25,6 +25,7 @@
  * link into a tall session can settle permanently short of the target, leaving
  * the jump-to-bottom control visibly stuck showing.
  */
+
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeOptions } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
@@ -33,15 +34,9 @@ const DIR = "/tmp/e2e-core-timeline-rendering-scroll"
 const SESSION_ID = "ses_core_timeline_rendering_scroll"
 const PROJECT_ID = "proj_mock_runtime"
 
-// The mock's DEFAULT opencode model is the `big-pickle` placeholder
-// (`signed-workspace-model.ts` `SIGNED_WORKSPACE_DEFAULT_MODEL`), which the app
-// deliberately filters out of `firstConnectedModelInfo`/`selectRuntimeModel`
-// (`src/features/session/composer/model-strategy.ts`) so it can never be picked as a
-// real default — composer submit stays blocked with "Choose a model to continue"
-// (`no-model`, `submit-block-reason.ts`) until a real model is connected. The one
-// scenario in this spec that drives a real composer send (behavior 8) needs a real,
-// non-placeholder model available, matching the pattern `core-first-prompt-local.spec.ts`
-// already uses for its own send test.
+// The mock's default opencode model is a placeholder the app filters out of model
+// selection, so composer submit stays blocked on "Choose a model to continue" until a real
+// model is connected. The one scenario here that drives a real send needs this.
 const HARNESS_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
 type AnyPart = Record<string, unknown>
@@ -202,13 +197,9 @@ function questionToolPart(input: {
 function userRow(input: {
   id: string
   text: string
-  // `patch` is required here even though the SDK's `SnapshotFileDiff.patch` is
-  // typed optional: the client-side `diff()` type-guard in `src/utils/diffs.ts`
-  // requires `typeof value.patch === "string"` at runtime (any value without it
-  // is silently dropped), and the real snapshot pipeline
-  // (`packages/opencode/src/snapshot/index.ts`) always sets it — `""` for
-  // binary files, the formatted patch text otherwise — so a patch-less diff
-  // fixture here would exercise a shape the real server never actually sends.
+  // `patch` is typed optional on the SDK but required in practice: the client's `diff()`
+  // guard drops any value without a string `patch`, and the snapshot pipeline always sets
+  // one — `""` for binary files.
   summaryDiffs?: Array<{ file: string; additions: number; deletions: number; status?: string; patch: string }>
 }): { info: AnyInfo; parts: AnyPart[] } {
   return {
@@ -251,11 +242,9 @@ async function unfoldTurnIfNeeded(page: Page, userMessageID: string) {
   await expect(trigger).toHaveAttribute("aria-expanded", "true")
 }
 
-// Consecutive work-type tool parts (bash/edit/write/apply_patch/web — see `workGroupTool`
-// in `message-timeline.data.ts`) fold into ONE `WorkGroup` when the run has >=2 members
-// (a lone work tool stays a standalone row). Like `TurnFold`, `WorkGroup`'s own
-// `Collapsible.Content` presence-unmounts its member rows (each still carrying its own
-// independent `data-timeline-part-id`/settings-driven open state) until expanded.
+// Consecutive work-type tool parts (bash/edit/write/apply_patch/web) fold into one work
+// group once the run has two members; a lone one stays a standalone row. The group
+// presence-unmounts its members until expanded, though each keeps its own open state.
 async function expandWorkGroupIfPresent(page: Page, partIds: string) {
   const trigger = page.locator(`[data-timeline-part-ids="${partIds}"] [data-component="work-group-trigger"]`)
   if ((await trigger.count()) === 0) return
@@ -505,13 +494,9 @@ async function scrollTimelineToTop(page: Page) {
 }
 
 /**
- * Found by the SEMANTIC icon id, never by a sprite href.
- *
- * `use[href="#opencode-icon-arrow-down-to-line"]` named the opencode theme's
- * glyph for `scroll-to-latest`; the Codex theme draws the same semantic icon
- * from an external sprite (`codex-20-012`), so that selector silently matched
- * nothing and the opacity read came back `null` instead of "0". `data-icon`
- * carries the semantic name in every theme.
+ * Found by the semantic icon id, never a sprite href: each theme draws this icon from its
+ * own sprite, so an href selector matches nothing outside the theme it was written for and
+ * the opacity read comes back null rather than "0".
  */
 const JUMP_TO_BOTTOM_ICON = '[data-icon="scroll-to-latest"]'
 
@@ -528,16 +513,13 @@ function jumpToBottomButton(page: Page) {
 }
 
 test.describe("core timeline rendering & scroll (local) @core", () => {
-  // This spec's seeded-session scenarios each cost a full navigation (or a
-  // navigation + reload for the busy→settle transition), which on a loaded
-  // shared runner can outrun the default per-test timeout well before
-  // anything the app does is actually slow — give every test in this file
-  // extra headroom rather than tuning each `page.goto` timeout individually.
+  // Every scenario costs a full navigation, some a navigation plus reload, which outruns
+  // the default per-test timeout on a loaded runner before anything the app does is slow.
   test.beforeEach(() => {
     test.slow()
   })
 
-  test("tool call default-open state follows shell/edit settings; unrelated tools stay collapsed — behavior 1", async ({ page }) => {
+  test("tool call default-open state follows shell/edit settings; unrelated tools stay collapsed", async ({ page }) => {
     const userID = "msg_user_tools"
     const assistantID = "msg_assistant_tools"
     await installSeededSession(page, [
@@ -567,14 +549,12 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     const workGroupPartIds = "tools_bash,tools_edit,tools_web"
     await expandWorkGroupIfPresent(page, workGroupPartIds)
 
-    // Settings at their default (both false) — bash/edit/webfetch all collapsed.
+    // Both settings default to false, so all three start collapsed.
     await expect(collapsibleContent(page, "tools_bash")).toHaveCount(0)
     await expect(collapsibleContent(page, "tools_edit")).toHaveCount(0)
     await expect(collapsibleContent(page, "tools_web")).toHaveCount(0)
 
-    // Flip both settings on. An already-rendered, never-manually-toggled tool
-    // part's open state is seeded from a reactive memo (`toolOpen[id] ??
-    // defaultOpen()`), so it flips live — no reload/new turn required.
+    // A never-toggled part reads through to the setting, so flipping it applies live.
     await openSettings(page)
     await setSwitch(page, "settings-feed-shell-tool-parts-expanded", true)
     await setSwitch(page, "settings-feed-edit-tool-parts-expanded", true)
@@ -585,7 +565,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(collapsibleContent(page, "tools_web")).toHaveCount(0)
   })
 
-  test("a pending question tool call renders no row; an answered one opens automatically — behavior 2", async ({ page }) => {
+  test("a pending question tool call renders no row; an answered one opens automatically", async ({ page }) => {
     const userID = "msg_user_question"
     const assistantID = "msg_assistant_question"
     await installSeededSession(page, [
@@ -615,7 +595,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "question handled")
 
-    // Pending question renders no timeline row at all — not merely collapsed.
+    // A pending question renders no row at all, not a collapsed one.
     await expect(page.locator('[data-timeline-part-id="q_pending"]')).toHaveCount(0)
 
     const answeredContent = collapsibleContent(page, "q_answered")
@@ -623,7 +603,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(answeredContent.locator('[data-slot="question-answer-item"]')).toHaveCount(1)
   })
 
-  test("consecutive read/glob/grep/list calls collapse into one expandable Gathered-context group — behavior 3", async ({ page }) => {
+  test("consecutive read/glob/grep/list calls collapse into one expandable Gathered-context group", async ({ page }) => {
     const userID = "msg_user_context"
     const assistantID = "msg_assistant_context"
     await installSeededSession(page, [
@@ -633,13 +613,8 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
         parentID: userID,
         completed: true,
         toolParts: [
-          // IDs are zero-padded so `sortMessageParts`'s lexicographic sort
-          // (`src/session/store/message-page.ts` — every part list the store
-          // holds is sorted by `id`, not insertion order; real part IDs are
-          // monotonic so this is a no-op in production, but a fixture using
-          // descriptive names must sort correctly on its own) preserves this
-          // emission order — the context-group locator below asserts the
-          // exact joined id string, which depends on it.
+          // Zero-padded so the store's lexicographic sort by part id preserves this
+          // emission order; the group locator below asserts the joined id string.
           toolPart({ id: "ctx1_read", messageID: assistantID, tool: "read", input: { filePath: "src/a.ts" } }),
           toolPart({ id: "ctx2_glob", messageID: assistantID, tool: "glob", input: { pattern: "**/*.ts" } }),
           toolPart({ id: "ctx3_grep", messageID: assistantID, tool: "grep", input: { pattern: "TODO" } }),
@@ -678,7 +653,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(group.locator('[data-slot="context-tool-group-item"]')).toHaveCount(4)
   })
 
-  test("a context-tool run split by an unrelated tool call forms two separate groups — behavior 4", async ({ page }) => {
+  test("a context-tool run split by an unrelated tool call forms two separate groups", async ({ page }) => {
     const userID = "msg_user_split"
     const assistantID = "msg_assistant_split"
     await installSeededSession(page, [
@@ -688,9 +663,8 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
         parentID: userID,
         completed: true,
         toolParts: [
-          // Zero-padded IDs — see behavior 3's comment above on why (sort-by-id
-          // part storage). Unpadded "split_bash" < "split_read1" lexicographically
-          // would sort bash BEFORE the reads and silently merge this into one group.
+          // Zero-padded for the same sort-by-id reason: unpadded, "split_bash" sorts
+          // before "split_read1" and the two runs silently merge into one group.
           toolPart({ id: "split1_read", messageID: assistantID, tool: "read", input: { filePath: "a.ts" } }),
           toolPart({ id: "split2_read", messageID: assistantID, tool: "read", input: { filePath: "b.ts" } }),
           toolPart({ id: "split3_bash", messageID: assistantID, tool: "bash", input: { command: "echo hi" }, output: "hi" }),
@@ -714,7 +688,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(page.locator('[data-timeline-part-id="split3_bash"]')).toHaveCount(1)
   })
 
-  test("diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5", async ({ page }) => {
+  test("diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view", async ({ page }) => {
     const userID = "msg_user_diffs"
     const assistantID = "msg_assistant_diffs"
     const summaryDiffs = [
@@ -731,11 +705,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     })
     await gotoSession(page)
 
-    // Confirm the turn is actually rendering as busy before proving the diff row's
-    // absence — a positive signal, not absence-by-default. `sessionStatus()`
-    // only reflects the overridden `/session/status` GET after the app's
-    // ~1.5s first-fold meta hydrate delay (`FIRST_FOLD_SESSION_META_HYDRATE_
-    // DELAY_MS`), hence the generous timeout.
+    // Confirm the turn renders busy before proving the diff row absent, so the absence is a
+    // signal rather than a default. The status GET is only read after the ~1.5s first-fold
+    // meta hydrate delay, hence the timeout.
     await expect(page.locator(`[data-message-id="${userID}"][data-timeline-row="Thinking"]`)).toBeVisible({ timeout: 30_000 })
     const diffRow = page.locator(`[data-message-id="${userID}"][data-timeline-row="DiffSummary"]`)
     await expect(diffRow).toHaveCount(0)
@@ -759,7 +731,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(diffRow.locator('[data-slot="session-turn-diff-view"]')).toHaveCount(1)
   })
 
-  test("diff-summary caps the preview at 3 files with a show all/less toggle — behavior 6", async ({ page }) => {
+  test("diff-summary caps the preview at 3 files with a show all/less toggle", async ({ page }) => {
     const userID = "msg_user_diffs_overflow"
     const assistantID = "msg_assistant_diffs_overflow"
     const diffs = Array.from({ length: 12 }, (_, i) => ({
@@ -796,26 +768,17 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(triggers).toHaveCount(3)
   })
 
-  test("jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9", async ({ page }) => {
+  test("jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 500 })
     await installSeededSession(page, seededTurnRows(8))
     await gotoSession(page, "#message-msg_user_08")
 
     const root = page.locator('[data-testid="session-page-root"]')
     await expect(root).toHaveAttribute("data-session-visible-user-count", "8", { timeout: 20_000 })
-    // Let the initial hash-scroll settle before reading the jump-to-bottom
-    // control's rest state, so the very first poll isn't racing the
-    // mount-time scroll. A `#message-<id>` hash on load disables the
-    // bottom-anchor entirely (`shouldAnchorBottom` in session.tsx is
-    // `!location.hash && ...`) in favor of `useSessionHashScroll` scrolling
-    // the target message to the top of the viewport — so "at rest" here
-    // lands wherever that puts the target, not necessarily flush with the
-    // document's true bottom (this turn's own short reply trails the
-    // anchored user bubble by a small, non-zero amount). Waiting for the
-    // scroll position to stop moving (rather than asserting an exact
-    // pixel distance from the bottom) is the correct settle signal; the
-    // actual behavior-7 contract this proves is the jump-to-bottom
-    // control's own hidden/visible threshold below, not pixel-exactness.
+    // A hash on load disables bottom-anchoring in favour of scrolling the target to the top
+    // of the viewport, so "at rest" is wherever that lands — not flush with the bottom.
+    // Waiting for the position to stop moving is the settle signal; the contract under test
+    // is the control's own visibility threshold, not a pixel offset.
     const scroller = timelineScroller(page)
     let stableReads = 0
     let lastScrollTop = -1
@@ -831,16 +794,14 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       )
       .toBeGreaterThanOrEqual(3)
 
-    // At rest (settled on the hash-scrolled target): jump-to-bottom hidden —
-    // the control's own visibility threshold (`ui.scroll.jump`,
-    // `max(400, clientHeight)` px from the bottom) is what behavior 7
-    // actually pins, not a specific scroll offset.
+    // At rest on the hash-scrolled target the control stays hidden: its threshold is
+    // `max(400, clientHeight)` px from the bottom.
     await expect.poll(() => jumpToBottomOpacity(page), { timeout: 30_000 }).toBe("0")
     const renderedAtRest = Number(await root.getAttribute("data-session-rendered-user-count"))
     expect(renderedAtRest).toBeLessThan(8)
 
-    // Real wheel-scroll gesture (programmatic scrollTop writes are treated as
-    // non-user by the app's gesture tracking and get snapped back).
+    // A real wheel gesture: programmatic `scrollTop` writes are treated as non-user and
+    // snapped back.
     await scrollTimelineToTop(page)
 
     // Nudge-until-revealed: the reveal of older, previously-windowed-out turns
@@ -862,10 +823,8 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
 
     await jumpToBottomButton(page).click()
 
-    // Returns to the bottom and clears the hash that was active on load.
-    // Under suite load, late virtualizer measurements can grow the scroller after
-    // the first scrollToEnd; wait for distance first so opacity is not asserted
-    // against a mid-settlement frame.
+    // Returns to the bottom and clears the load-time hash. Late virtualizer measurements
+    // can still grow the scroller, so settle the distance before reading opacity.
     await expect
       .poll(async () => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), {
         timeout: 30_000,
@@ -900,10 +859,8 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       }))
       if (position.max > 0 && position.top >= position.max * 0.35) break
       await page.mouse.wheel(0, 100)
-      // A wheel command can return before Blink applies the matching scroll
-      // frame. Settle it before either the next threshold check or the
-      // baseline sample below, otherwise the final 100px gesture is mistaken
-      // for a virtualization-induced offset rewrite.
+      // A wheel returns before the browser applies the scroll frame; settle it, or the
+      // final gesture reads as a virtualization-induced offset rewrite.
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     }
 
@@ -981,9 +938,8 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
         }, { capture: true, once: true })
       })
       await page.mouse.wheel(0, -500)
-      // A wheel may also trigger row measurement and the cached reveal. Wait
-      // for that transaction to settle before deciding whether another user
-      // gesture is needed; a second gesture would intentionally cancel it.
+      // A wheel can also trigger measurement and the cached reveal; let that settle before
+      // deciding on another gesture, which would cancel it.
       await page.waitForTimeout(250)
       if ((await root.getAttribute("data-session-rendered-user-count")) !== "12") continue
       beforeAnchor = await page.evaluate(() =>
@@ -1049,38 +1005,30 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(page.locator("[data-session-message-preview]")).toHaveCount(0)
   })
 
-  test("the timeline stays pinned to the bottom while a reply streams in — behavior 8", async ({ page }) => {
-    // Tall enough that 3 turns cumulatively overflow the viewport, but each
-    // individual reply stays well under the viewport height itself — the
-    // oracle's geometric-truth layer requires the claimed reply's WHOLE
-    // bounding box to fit inside the viewport, which a single overflowing
-    // message could never satisfy regardless of scroll position.
+  test("the timeline stays pinned to the bottom while a reply streams in", async ({ page }) => {
+    // Three turns must overflow the viewport together while each reply stays well under it:
+    // the oracle needs the claimed reply's whole bounding box inside the viewport, which no
+    // single overflowing message can satisfy at any scroll position.
     await page.setViewportSize({ width: 1280, height: 600 })
     const longReply = (turn: number, text: string) =>
       `ack ${turn}: ${text}\n\n${"The quick brown fox jumps over the lazy dog. ".repeat(8)}`
     await openSessionWithFirstSend(page, { replyText: longReply, harnessModels: HARNESS_MODELS })
-    // Build up enough height that the timeline genuinely overflows before the
-    // final, observed turn streams in.
+    // Overflow the timeline before the final, observed turn streams in.
     await sendAndProve(page, "second timeline message", "ack 2: second timeline message")
     await sendAndProve(page, "third timeline message", "ack 3: third timeline message")
 
     const scroller = timelineScroller(page)
     await expect.poll(async () => scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 50), { timeout: 30_000 }).toBe(true)
 
-    // No manual scroll interaction happens here — the final assertion proves the
-    // auto-follow tracked the stream all the way to the end.
-    //
-    // Polled, not sampled once: auto-follow settles asynchronously after the last
-    // content lands, so reading the distance the instant overflow appears races it
-    // and reports whatever mid-scroll offset the runner happened to catch (a CI run
-    // read 27px against this 20px bound and went red for it). The invariant is that
-    // it *arrives* at the bottom, and a scroller that never arrives still fails.
+    // Nothing scrolls manually here. Polled rather than sampled once: auto-follow settles
+    // asynchronously after the last content lands, so an immediate read catches a mid-scroll
+    // offset. What matters is that it arrives, and a scroller that never does still fails.
     await expect
       .poll(async () => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), { timeout: 10_000 })
       .toBeLessThan(20)
   })
 
-  test("a #message-<id> hash deep-link scrolls to the target message, including the comment-strip case — behavior 10", async ({ page }) => {
+  test("a #message-<id> hash deep-link scrolls to the target message, including the comment-strip case", async ({ page }) => {
     const plainUserID = "msg_user_plain"
     const commentedUserID = "msg_user_commented"
     const rows: Array<{ info: AnyInfo; parts: AnyPart[] }> = [
@@ -1150,7 +1098,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       return box.y >= -1 && box.y < viewport.height
     }, { timeout: 15_000 }).toBe(true)
 
-    // Commented case: the anchor lands on the CommentStrip row, not the bubble.
+    // With comments it lands on the comment strip instead of the bubble.
     await gotoSession(page, `#message-${commentedUserID}`)
     const commentedAnchor = page.locator(`#message-${commentedUserID}`)
     await expect(commentedAnchor).toHaveAttribute("data-timeline-row", "CommentStrip", { timeout: 15_000 })

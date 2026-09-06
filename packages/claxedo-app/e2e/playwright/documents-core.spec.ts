@@ -194,11 +194,8 @@ class DocumentRuntime {
     )
   }
 
-  // Mutates the durable document as if something wrote the file out of band.
-  // There is no live-refresh notification anymore (the `/documents/events` SSE
-  // and the editor's external-change controller were removed): an open editor
-  // stays put, and the divergence surfaces as a CAS conflict the next time
-  // that editor saves.
+  // Writes the durable document as if something changed the file out of band. Open
+  // editors do not follow it.
   externalEdit(id: string, markdown: string, actor: "agent" | "user" = "agent") {
     const document = this.require(id)
     this.snapshot(document, `before ${actor} edit`, { type: actor, id: `${actor}_documents_core` })
@@ -513,11 +510,9 @@ async function openDocument(page: Page, id: string) {
   await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
 }
 
-// Legacy base64 directory-slug route (`legacyDirectoryRouteKey` in
-// src/platform/identity/route.ts). Used only to reach a draft session view so
-// the workbench shell (with its per-pane "Open Files" toggle) mounts — the
-// same pattern core-composer-modes.spec.ts's `openDraftPrompt` and
-// core-cloud-offline-roles.spec.ts's `gotoDraft` already rely on.
+// The legacy base64 directory-slug route (`legacyDirectoryRouteKey` in
+// src/platform/identity/route.ts). Used only to reach a draft session view, which is what
+// mounts the workbench shell and its per-pane "Open Files" toggle.
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
@@ -540,14 +535,12 @@ async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes"
   await expect(control).toHaveAttribute("aria-pressed", "true")
 }
 
-// The real per-file flow reads the repo file's own bytes over the file API
-// before "Add to Documents" ever runs (src/app/workbench/content/tab-file.tsx
-// -> sdk.client.file.read). `installMockRuntime` only stubs `/file**` under
-// the relay (cloud) origin; local-mode specs like this one get no file-API
-// mock at all, so this file backs GET /file (tree list), /file/status, and
-// /file/content with the same `repositoryFiles` map DocumentRuntime already
-// uses for `/documents/from-repo` and the indexed document's placement I/O —
-// one source of truth for "what's on disk" across both APIs.
+// "Add to Documents" lives on a repo file's own tab, and opening that tab first reads the
+// file's bytes over the file API (src/app/workbench/content/tab-file.tsx ->
+// sdk.client.file.read). `installMockRuntime` stubs `/file**` only under the relay origin,
+// so a local-mode spec like this one gets no file-API mock at all. Backing GET /file,
+// /file/status, and /file/content with the same `repositoryFiles` map that serves
+// `/documents/from-repo` keeps one source of truth for what is on disk across both APIs.
 const FILE_API_PATHS = new Set([
   "/api/wr/file",
   "/api/wr/file/status",
@@ -558,10 +551,9 @@ const FILE_API_PATHS = new Set([
 ])
 
 async function installRepositoryFilesystem(page: Page, files: Map<string, string>) {
-  // Matched by an exact-pathname predicate, NOT a `**/file**` glob: this local
-  // dev/preview server also serves build assets (chunk/source-map filenames
-  // routinely contain the substring "file"), so a broad glob risks swallowing
-  // an unrelated asset request and blanking the whole app boot.
+  // An exact-pathname predicate rather than a `**/file**` glob: this dev/preview server
+  // also serves build assets whose chunk and source-map names routinely contain "file",
+  // and swallowing one of those blanks the whole app boot.
   await page.route(
     (url) => FILE_API_PATHS.has(url.pathname),
     (route) => {
@@ -615,21 +607,11 @@ function annotate(testInfo: TestInfo, extra = "") {
 }
 
 function unexpectedCanaryConsoleErrors(messages: string[]) {
-  // The document `/documents/events` SSE is gone, so its
-  // reconnect noise no longer needs an exemption. The central events stream
-  // (`GET /api/wr/events`) still churns under this deterministic harness: per
-  // core-sidebar-tree.spec.ts's documented shared-helper gap, `installMockRuntime`
-  // only mocks that route under the relay origin (`options.cloud`) — the default
-  // local-mode path here is never intercepted, so it genuinely fails to connect
-  // to a real backend and retries. That surfaces THREE distinct noise shapes
-  // under sustained failure: the browser's own "Failed to load resource" console
-  // noise, `console.error("[global-sdk] event stream failed", ...)`
-  // (src/app/providers/global-sdk/provider.tsx:682), and
-  // `console.error("[claxedo-events] stream failed", ...)`
-  // (src/app/integrations/claxedo-events.tsx) — two independently-escalating
-  // event-stream consumers, not one. Filtered the same way this identical
-  // unmocked-central-origin noise is filtered in
-  // core-boot-deep-links-home.spec.ts's `nonProviderConsole`.
+  // `installMockRuntime` mocks the central event stream (`GET /api/wr/events`) only under
+  // the relay origin, so the local-mode path here reaches for a backend that is not
+  // running and retries. Sustained failure produces three distinct shapes — the browser's
+  // own "Failed to load resource", plus one error apiece from the two independent
+  // event-stream consumers — so all three are filtered, not just the loudest.
   return messages.filter(
     (message) =>
       !message.includes("Failed to load resource") &&
@@ -640,13 +622,10 @@ function unexpectedCanaryConsoleErrors(messages: string[]) {
 }
 
 function unexpectedCanaryRequestFailures(urls: string[]) {
-  // EventSource always has one long-poll request in flight. Closing the page
-  // aborts that request and Playwright reports it as `requestfailed`, even
-  // when the deterministic mock route owns the stream and every delivered
-  // frame was valid. Exclude only the canonical event-stream routes; ordinary
-  // request failures remain release-canary failures. The control-plane origin
-  // is not started by this Tier-M harness, so its incidental background
-  // inventory requests retain the existing origin exemption.
+  // EventSource always has one request in flight, and closing the page aborts it, which
+  // Playwright reports as `requestfailed`. Exempt only the event-stream routes; any other
+  // request failure is a real canary failure. The control-plane origin is not started by
+  // this harness, so its background inventory requests keep their origin exemption.
   return urls.filter((value) => {
     const pathname = new URL(value).pathname
     if (["/api/claxedo/events", "/api/wr/events", "/global/event", "/event"].includes(pathname)) return false
@@ -655,7 +634,7 @@ function unexpectedCanaryRequestFailures(urls: string[]) {
 }
 
 test.describe.serial("Documents core deterministic journeys @core", () => {
-  test("managed create → exact Markdown → restart + checkout loss → exact reopen — behaviors 1,3", async ({
+  test("managed create → exact Markdown → restart + checkout loss → exact reopen", async ({
     page,
   }, testInfo) => {
     annotate(testInfo, "restart and checkout-loss storage are simulated")
@@ -663,10 +642,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await bootstrap(page, runtime)
     await openIndex(page)
     const readsBeforeCreate = runtime.requests.filter((request) => request.pathname.endsWith("/content")).length
-    // "New document" is a searchable project picker, not a direct-create button
-    // (see document-index.tsx's `NewDocumentButton`/`createInProject`: creating a
-    // document requires an EXPLICITLY chosen project) — open it, then pick the
-    // sole fixture project from its list before a document actually gets created.
+    // "New document" opens a searchable project picker rather than creating anything
+    // (document-index.tsx's `NewDocumentButton`/`createInProject`): a document needs a
+    // chosen project, so pick the sole fixture project before one exists.
     await page.getByRole("button", { name: "New document" }).click()
     await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
@@ -694,7 +672,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, reopened, testInfo, "managed-reopened-after-restart-and-checkout-loss")
   })
 
-  test("repository index is metadata-only and edits file in place without a managed copy — behavior 2", async ({
+  test("repository index is metadata-only and edits file in place without a managed copy", async ({
     page,
   }, testInfo) => {
     // The Documents-index repository importer this behavior originally drove was
@@ -726,14 +704,11 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
       (candidate) => candidate.summary.repository_relative_path === "repository.md",
     )!.summary
     const document = runtime.inspect(indexed.id)
-    // No project_id: the per-file flow (review-workspace.tsx's
-    // collaborateWithMarkdown) never resolves one — unlike the deleted index
-    // importer, it only has directory/workspaceId/path in scope. workspace_id
-    // itself resolves to the PROJECT's id, not the raw directory: this fixture
-    // project carries no per-directory `workspaces` map (that field is for
-    // hybrid/toolSandbox-backed projects only), so collaborateWithMarkdown's
-    // `workspace?.workspaceId ?? workspace?.id ?? project?.id` fallback chain
-    // bottoms out on the plain local project's own id.
+    // No project_id: `collaborateWithMarkdown` (review-workspace.tsx) only has directory,
+    // workspaceId, and path in scope. Its `workspace?.workspaceId ?? workspace?.id ??
+    // project?.id` chain bottoms out on the project's own id rather than the raw directory
+    // because this fixture project carries no per-directory `workspaces` map — that field
+    // belongs to hybrid/toolSandbox-backed projects.
     expect(runtime.requests.find((request) => request.pathname === "/documents/from-repo")?.body).toEqual({
       directory: DIR,
       workspace_id: PROJECT_ID,
@@ -759,7 +734,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, await sourceEditor(page), testInfo, "repository-edit-in-place")
   })
 
-  test("open-close performs no write and unsupported Markdown falls back to labeled source mode — behavior 3", async ({
+  test("open-close performs no write and unsupported Markdown falls back to labeled source mode", async ({
     page,
   }, testInfo) => {
     annotate(testInfo)
@@ -818,7 +793,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(runtime.contentWrites(document.summary.id)).toHaveLength(0)
   })
 
-  test("truthful autosave exhausts bounded retries before manual Retry recovers the preserved draft — behavior 4", async ({
+  test("truthful autosave exhausts bounded retries before manual Retry recovers the preserved draft", async ({
     page,
   }, testInfo) => {
     annotate(testInfo)
@@ -850,7 +825,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, page.getByRole("status").filter({ hasText: "Saved" }), testInfo, "autosave-retry-saved")
   })
 
-  test("rich editor accepts typing and its autosave event preserves the editor instance — behavior 4 @documents-rich-canary @documents-release-canary", async ({
+  test("rich editor accepts typing and its autosave event preserves the editor instance @documents-rich-canary @documents-release-canary", async ({
     page,
     context,
   }, testInfo) => {
@@ -864,11 +839,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     })
     page.on("requestfailed", (request) => requestFailures.push(request.url()))
     const runtime = new DocumentRuntime()
-    // NOT `document`: this test also runs `page.evaluate` callbacks that reference the
-    // BROWSER's `document` global. A Node-side local named `document` shadows it for
-    // the whole test body — the callbacks still worked at runtime (Playwright
-    // serializes them, so `document` resolves in the page), but they typechecked
-    // against this seed object instead of the DOM.
+    // Named `doc`, not `document`: this test's `page.evaluate` callbacks reference the
+    // browser's `document` global, and a Node-side local of that name shadows it at
+    // typecheck time even though the callbacks resolve correctly inside the page.
     const doc = runtime.seed({ displayName: "Editable rich document", markdown: "# Editable\n\nStart here.\n" })
     await bootstrap(page, runtime)
     await openDocument(page, doc.summary.id)
@@ -970,7 +943,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     })
     page.on("requestfailed", (request) => requestFailures.push(request.url()))
     const runtime = new DocumentRuntime()
-    // NOT `document` — same DOM-global shadowing trap as the test above.
+    // Named `doc` for the same shadowing reason as the test above.
     const doc = runtime.seed({
       displayName: "Rich interaction document",
       markdown: "First paragraph.\n\nSecond paragraph.\n",
@@ -1033,10 +1006,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await formatting.getByRole("button", { name: "Bold" }).click()
 
     await rich.evaluate((element) => {
-      // Focus first: contenteditable editors are allowed to restore their own
-      // logical selection on focus. Focusing after installing this DOM range
-      // intermittently restored the prior first-paragraph selection, so Enter
-      // replaced the paragraph that the test had just made bold.
+      // Focus first: a contenteditable editor may restore its own logical selection on
+      // focus, discarding a range installed beforehand and leaving the caret in the
+      // previous paragraph.
       ;(element as HTMLElement).focus()
       const range = document.createRange()
       range.selectNodeContents(element)
@@ -1066,7 +1038,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(unexpectedCanaryRequestFailures(requestFailures)).toEqual([])
   })
 
-  test("two tabs surface a CAS conflict and preserve both sides — behavior 5", async ({ page, context }, testInfo) => {
+  test("two tabs surface a CAS conflict and preserve both sides", async ({ page, context }, testInfo) => {
     annotate(testInfo)
     const runtime = new DocumentRuntime()
     const document = runtime.seed({ id: "cas_document", displayName: "CAS", markdown: "Heading\n=======\n\nbase\n" })
@@ -1094,7 +1066,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await second.close()
   })
 
-  test("external write surfaces a CAS conflict on save; out-of-contract edit stays restorable — behavior 6", async ({
+  test("external write surfaces a CAS conflict on save; out-of-contract edit stays restorable", async ({
     page,
   }, testInfo) => {
     annotate(testInfo, "external file write is injected at the document server boundary")
@@ -1139,7 +1111,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, await sourceEditor(page), testInfo, "out-of-contract-previous-version-restored")
   })
 
-  test("version restore is CAS-honest and returns exact snapshot bytes — behavior 7", async ({ page }, testInfo) => {
+  test("version restore is CAS-honest and returns exact snapshot bytes", async ({ page }, testInfo) => {
     annotate(testInfo)
     const runtime = new DocumentRuntime()
     const original = "Heading\n=======\n\noriginal snapshot\n"
@@ -1158,7 +1130,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, await sourceEditor(page), testInfo, "version-restore-exact-bytes")
   })
 
-  test("/docs mention resolves an honest path and hydrated file-tool edit persists, seen on reopen — behavior 8 @documents-unsigned-local-canary @documents-release-canary", async ({
+  test("/docs mention resolves an honest path and hydrated file-tool edit persists, seen on reopen @documents-unsigned-local-canary @documents-release-canary", async ({
     page,
     context,
   }, testInfo) => {
@@ -1190,15 +1162,11 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const picker = page.getByRole("listbox", { name: "Documents" })
     await expect(picker).toBeVisible()
     await picker.getByRole("option", { name: /Agent brief/ }).click()
-    // The composer inserts the mention as the raw, honest `claxedo://document/<id>`
-    // reference (`documentMentionText`, src/app/integrations/document-mentions.ts —
-    // pinned by that file's own unit test), not a pre-resolved path string. Resolving
-    // it to a canonical hydrated file path is an MCP TOOL's job
-    // (`packages/claxedo-mcp/src/documents-tools.ts`'s "Open a claxedo://document/..."
-    // tool, which calls `POST /documents/:id/agent-open`) that only runs when a real
-    // agent processes the reference during a session turn — Tier L, out of this Tier M
-    // mock's reach (see this test's own `annotate()` above). No frontend code path
-    // calls `documentsApi.agentOpen` synchronously on mention insertion.
+    // The composer inserts the raw `claxedo://document/<id>` reference
+    // (`documentMentionText`, src/app/integrations/document-mentions.ts), not a resolved
+    // path. Resolving it is the MCP tool's job during a real agent turn
+    // (packages/claxedo-mcp/src/documents-tools.ts calls `POST /documents/:id/agent-open`);
+    // no frontend path calls `documentsApi.agentOpen` on insertion.
     await expect(composer).toContainText(`claxedo://document/${document.summary.id}`)
     await proveGeometry(page, composer, testInfo, "docs-mention-honest-reference")
 
@@ -1230,7 +1198,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await editorPage.close()
   })
 
-  test("hosted placement survives hydrated VM loss and reconstructs from durable object bytes — behavior 9", async ({
+  test("hosted placement survives hydrated VM loss and reconstructs from durable object bytes", async ({
     page,
   }, testInfo) => {
     annotate(testInfo, "hosted hydration and object placement are locally simulated")

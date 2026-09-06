@@ -6,20 +6,16 @@ import {
 } from "../workspace-files/git-source"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { denyWorkspaceViewers } from "./workspace-role"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 function error(code: string, message: string, extra?: Record<string, unknown>) {
   return Response.json({ error: { code, message, ...extra } }, { status: code === "git_source_conflict" ? 409 : 400 })
 }
 
-function clean(input?: string | null) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 export function GitSourceRoutes() {
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .get("/snapshot", async (c) => {
-      const sourcePath = clean(c.req.query("path"))
+      const sourcePath = trimToUndefined(c.req.query("path"))
       if (!sourcePath) return error("git_source_path_required", "path is required")
       try {
         const info = await gitSourceSnapshot(sourcePath)
@@ -51,8 +47,8 @@ export function GitSourceRoutes() {
         message?: string
         expected?: { baseCommit?: string; baseBlobSha?: string }
       }))
-      const sourcePath = clean(body.path)
-      const message = clean(body.message)
+      const sourcePath = trimToUndefined(body.path)
+      const message = trimToUndefined(body.message)
       if (!sourcePath) return error("git_source_path_required", "path is required")
       if (!message) return error("git_source_message_required", "message is required")
       if (typeof body.content !== "string") return error("git_source_content_required", "content is required")

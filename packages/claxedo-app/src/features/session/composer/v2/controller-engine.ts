@@ -1,17 +1,17 @@
-// The CONTROLLER engine: our frame driven by upstream's vendored
-// `createPromptInputV2Controller` (plan 2026-07-25-005, Option 4 / W2-T2.2).
+// The controller engine: our frame driven by upstream's vendored
+// `createPromptInputV2Controller`.
 //
-// ZERO upstream forks. This file is the whole adapter: it feeds the controller
+// No upstream forks. This file is the whole adapter: it feeds the controller
 // Claxedo's option lists as `PromptInputV2Suggestion`s, binds it to the per-scope
-// draft tuple T2.1 exposed, and projects its state back into the popover/mode
-// shape our frame already renders. Nothing under `packages/session-ui/` changed.
+// draft tuple, and projects its state back into the popover/mode shape our
+// frame already renders. Nothing under `packages/session-ui/` changed.
 //
-// What upstream now owns that our own machinery used to:
+// Upstream's controller owns:
 //   - the `@`/`/` popover state machine, including query derivation at the cursor
 //   - suggestion filtering + active-row keyboard navigation
 //   - shell-mode entry/exit
 //   - prompt-history navigation (index + saved draft)
-// What stays ours (and therefore keeps all eight §3 capabilities working):
+// This file keeps:
 //   - the contenteditable DOM (`v2/editor-bridge.ts` + `editor-serialization.ts`)
 //   - submit, submit-block derivation, boot state, harness/model/permission rows
 //   - attachments (so no `attachments` config is handed to the controller, and
@@ -22,7 +22,7 @@
 import { asRecord } from "@/lib/record"
 import { batch, createEffect, createMemo, createSignal } from "solid-js"
 import { readWithoutSuspending } from "@/features/session/composer/suspense-safe-resource"
-// From the LIGHT prompt boundary, NOT "@/ui/session-kit": this engine is in the
+// From the light prompt boundary, not "@/ui/session-kit": this engine is in the
 // eager main chunk (composer.tsx is statically reachable from the boot entry),
 // and the session-kit barrel statically pulls @pierre/diffs + shiki.
 import { createPromptInputV2Controller, type PromptInputV2Suggestion } from "@/ui/session-kit-prompt"
@@ -142,15 +142,15 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
 
   const state = controller.state
   /**
-   * Every controller entry point that can WRITE the draft goes through a batch.
-   * Reason, measured: `store.ts#addMention` writes `prompt` and then `cursor`
-   * OUTSIDE a batch (unlike `setText`/`setPrompt`/`addText`, which batch), so an
-   * unbatched mention insertion flushes our render effect once with the NEW parts
-   * and the OLD cursor — the caret then lands before the trailing space upstream
-   * just inserted, and the next keystroke produces "@reviewerplease" instead of
-   * "@reviewer please" (core-composer-modes behavior 10 caught exactly this).
-   * Batching makes each dispatch atomic to the DOM, which is what the editor
-   * bridge's content comparison assumes. No upstream change needed.
+   * Every controller entry point that can write the draft goes through a batch.
+   * `store.ts#addMention` writes `prompt` and then `cursor` outside a batch
+   * (unlike `setText`/`setPrompt`/`addText`, which batch), so an unbatched
+   * mention insertion flushes our render effect once with the new parts and the
+   * old cursor — the caret lands before the trailing space upstream just
+   * inserted, and the next keystroke produces "@reviewerplease" instead of
+   * "@reviewer please". Batching makes each dispatch atomic to the DOM, which is
+   * what the editor bridge's content comparison assumes. No upstream change
+   * needed.
    */
   const dispatch = (event: Parameters<typeof controller.dispatch>[0]) => batch(() => controller.dispatch(event))
   const mode = () => state.mode
@@ -202,8 +202,8 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
   /**
    * The three Claxedo selections upstream's machine cannot express. Returning a
    * thunk tells `interaction.ts#dispatch` "the host handles this one"; returning
-   * undefined lets the machine's own draft write stand (which is exactly what a
-   * CUSTOM slash command wants — it inserts `/trigger ` for further editing).
+   * undefined lets the machine's own draft write stand, which is what a custom
+   * slash command wants — it inserts `/trigger ` for further editing.
    */
   const onSuggestionSelect = (suggestion: PromptInputV2Suggestion) => {
     if (suggestion.kind === "resource") {

@@ -3,15 +3,12 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { ControlPlaneServices } from "./services"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export class WorkspaceRuntimeTargetError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
     super(message)
   }
-}
-
-function text(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
 
 export async function resolveWorkspaceRuntimeTarget(
@@ -39,7 +36,7 @@ export async function resolveWorkspaceRuntimeTarget(
     return {
       hostId: activeLink.host_id,
       homeRegion: normalizeClaxedoRegion(
-        text(workspace.home_region) ?? text(workspace.homeRegion),
+        trimToUndefined(workspace.home_region) ?? trimToUndefined(workspace.homeRegion),
         services.defaultHomeRegion ?? defaultHomeRegion(),
       ),
     }

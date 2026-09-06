@@ -79,11 +79,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
   })
 
-  // -- narrow-viewport collapse: below BP_MD the workbench shows exactly one
-  //    full-bleed pane and hides the rest. Pure VIEW projection over unchanged
-  //    WorkbenchState — splits are preserved-but-hidden, not flattened (see the
-  //    WP-C3 collapse design note §1/§4). Measured against our OWN canvas width,
-  //    not window.innerWidth, so it composes with the rail/panel insets.
+  // -- narrow-viewport collapse: one full-bleed pane, the rest hidden. A view
+  //    projection only — splits stay in WorkbenchState. Measured against the
+  //    canvas width, not window.innerWidth, so rail/panel insets count.
   const collapsed = createMemo(() => isCollapsedWidth(containerSize().w))
 
   // -- focus change callback
@@ -248,7 +246,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     })
     onCleanup(dispose)
   })
-  // Escape aborts an in-flight pointer drag (matches the old dragend/drop guard).
+  // Escape aborts an in-flight pointer drag.
   const onWindowKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return
     workbenchDrag.cancel()
@@ -463,7 +461,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             }
             // Keyboard resize parity for the pointer-drag divider: arrow keys
             // nudge the split ratio so keyboard/screen-reader users can resize
-            // panes (previously pointer-only, a named a11y gap).
+            // panes.
             const KEYBOARD_STEP = 0.02
             const onKeyDown = (e: KeyboardEvent) => {
               const root = rs()
@@ -663,13 +661,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                       "z-index": "35",
                     }}
                   >
-                    {/* The REAL pane-drag input surface. WP-C3a fix: the drag source
-                        used to be attached to the pointer-events:none wrapper above,
-                        so it could NEVER receive a pointerdown — the desktop
-                        pane-drag path was entirely dead. Attaching it to this small
-                        grip (pointer-events:auto) is what actually receives input; a
-                        user grabs it and drops the pane onto another pane's edge to
-                        split. Hover-revealed to keep the visual/hit footprint tiny. */}
+                    {/* The drag source lives on this grip, not the pointer-events:none
+                        wrapper, which never receives pointerdown. Hover-revealed to
+                        keep the hit footprint tiny. */}
                     <div
                       data-testid={`pane-handle-${pane.id}`}
                       aria-hidden="true"

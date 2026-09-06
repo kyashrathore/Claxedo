@@ -82,10 +82,9 @@ describe("architecture boundaries", () => {
   })
 
   test("keeps the server host bridge out of harness adapter execution", () => {
-    // The runtime-dispatch directory is walked rather than listed: W11.2b split
-    // proxy.ts into internals + two entrypoints, and naming one file left the
-    // other 149 lines — including the endpoint that mints owner-role tokens —
-    // outside this ban.
+    // The runtime-dispatch directory is walked rather than listed: naming
+    // individual files here risks silently exempting one of them — including
+    // whichever file mints owner-role tokens — from this ban.
     const files = [
       "../../claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts",
       "../../claxedo-server-core/src/workspace/http/sandbox-target-fetch.ts",
@@ -102,7 +101,7 @@ describe("architecture boundaries", () => {
       "CodexHarnessAdapter",
     ]
     const hits = files.flatMap((file) => {
-      // The boundary is about EXECUTION: the host bridge must not *run* harness
+      // The boundary is about execution: the host bridge must not *run* harness
       // adapters. `import type ... ` is erased at compile time and produces no
       // runtime coupling, so a type-only import (e.g. a Pi backend resolver type
       // used to shape a config field) is not a violation — strip those lines
@@ -136,10 +135,9 @@ describe("architecture boundaries", () => {
 
   test("keeps product strings and ambient policy env reads out of the workspace-runtime kit", () => {
     const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../../workspace-runtime/src")
-    // Product domains and host-policy env flags are HOST decisions
-    // (kit-seams plan, Classification Rule). The kit must not embed them:
-    // CORS whitelists arrive via options.corsOrigin, compat via
-    // options.opencodeCompat.
+    // Product domains and host-policy env flags are host decisions. The kit
+    // must not embed them: CORS whitelists arrive via options.corsOrigin,
+    // compat via options.opencodeCompat.
     const forbidden = ["opencode.ai", "DISABLE_OPENCODE_COMPAT"]
     const offenders = walk(workspaceRuntimeSrc)
       .filter((file) => file.endsWith(".ts"))
@@ -331,7 +329,7 @@ describe("architecture boundaries", () => {
   })
 
   test("keeps test-support/ out of production modules", () => {
-    // test-support/ is the ONE home for test-only in-process helpers. A
+    // test-support/ is the one home for test-only in-process helpers. A
     // production module importing it would drag test doubles into runtime
     // bundles — and, worse, invert the dependency direction the directory
     // exists to make legible.
@@ -352,13 +350,10 @@ describe("architecture boundaries", () => {
 
   test("keeps hand-written SQL out of feature code — drizzle tables are the only query surface", () => {
     // adapters/storage owns the schema; everything else queries through the
-    // typed tables so a column rename is a compile error rather than a runtime
-    // surprise. The channel stores were the last holdouts: 28 raw prepare()
-    // calls against tables whose drizzle schemas existed but were never
-    // imported (the schemas had even drifted — two were missing the composite
-    // PRIMARY KEY the live DDL declares).
+    // typed tables so a column rename is a compile error rather than a
+    // runtime surprise.
     //
-    // `ClaxedoDB.raw()` on its own is NOT the violation — server.ts calls it
+    // `ClaxedoDB.raw()` on its own is not the violation — server.ts calls it
     // with no statement to eagerly open SQLite before serving. Executing a
     // hand-written statement is.
     const serverSrc = path.resolve(import.meta.dirname, "../..")

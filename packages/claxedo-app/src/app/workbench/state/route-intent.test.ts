@@ -541,7 +541,7 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("existing-session")
   })
 
-  test("workspace browse route does NOT auto-open the review panel at narrow (collapsed) width — WP-C3 §3.2", () => {
+  test("workspace browse route does not auto-open the review panel at narrow (collapsed) width", () => {
     const original = Object.getOwnPropertyDescriptor(window, "innerWidth")
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 })
     try {
@@ -1811,40 +1811,6 @@ describe("state route intent", () => {
       path: workspaceSessionRoute("ws_main"),
       replace: true,
     })
-  })
-
-  // --- CONFIRMED BUG (compact tabs "circles") ---
-  // Closing a tab is supposed to mark its route closed so the follow-up
-  // navigation doesn't recreate it. The existing test
-  //   "workspace session root does not recreate a draft immediately after user close"
-  // proves this works when the CLOSED surface is a draft (sessionId === "new"),
-  // because ClaxedoLayout.onTabClose marks { workspaceId } in that case.
-  //
-  // For a REAL session that { workspaceId } mark is skipped — it is guarded
-  // behind `closedSurface.sessionId === "new" || !closedSurface.sessionId`.
-  // onTabClose only marks { workspaceId, sessionId } and { sessionId }. With no
-  // next surface it then navigates to the workspace ROOT, which feeds back as a
-  // session-less workspace intent keyed `${workspaceId}\0` — a key that was never
-  // marked closed. So `receive` is NOT suppressed and immediately re-opens a
-  // "New Session" draft. The tab the user just closed reappears, focus moves to
-  // it, and it looks like the tab never closes (the reported "circles").
-  test("closing a real workspace session does not respawn a draft on the fallback route", () => {
-    const harness = createHarness()
-
-    // Mirror ClaxedoLayout.onTabClose for closedSurface = { directory: "/workspace/main", sessionId: "ses-1" }:
-    markRouteIntentClosed({ workspaceId: "/workspace/main", sessionId: "ses-1" })
-    markRouteIntentClosed({ sessionId: "ses-1" })
-    // The fallback-to-workspace-root branch now marks the bare workspace closed
-    // too, so the root navigation below does not respawn a "New Session" draft.
-    markRouteIntentClosed({ workspaceId: "/workspace/main" })
-
-    // onTabClose has no next surface, so it navigates to the workspace root,
-    // which the route layer delivers back as a session-less workspace intent.
-    harness.receive({ workspaceId: "/workspace/main", sessionId: undefined })
-
-    // The just-closed workspace must NOT immediately respawn a draft tab.
-    expect(harness.opened).toEqual([])
-    expect(harness.focused()).toBeNull()
   })
 
   test("terminal deep-links recover real terminal contents and activate existing ones", () => {

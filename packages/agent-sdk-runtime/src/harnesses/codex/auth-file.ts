@@ -1,7 +1,8 @@
 import fs from "fs"
 import path from "path"
 import type { FetchLike } from "../../adapter-contract"
-import { record, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
+import { asRecord } from "@claxedo/helpers/guards"
+import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 
 const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const OPENAI_ISSUER = "https://auth.openai.com"
@@ -18,7 +19,7 @@ export function sourceAuthValue(input: string | undefined): string | undefined {
   if (!input) return undefined
   let value: JsonRecord | undefined
   try {
-    value = record(JSON.parse(input))
+    value = asRecord(JSON.parse(input))
   } catch {
     return input
   }
@@ -30,7 +31,7 @@ export function sourceCodexAuthValue(input: string | undefined): JsonRecord | un
   if (!input) return undefined
   let value: JsonRecord | undefined
   try {
-    value = record(JSON.parse(input))
+    value = asRecord(JSON.parse(input))
   } catch {
     return undefined
   }
@@ -41,7 +42,7 @@ export function sourceCodexAuthValue(input: string | undefined): JsonRecord | un
 
 export function readCodexAuthFile(home: string): JsonRecord | undefined {
   try {
-    return record(JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")))
+    return asRecord(JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")))
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
     throw error
@@ -56,8 +57,8 @@ export async function writeCodexAuthFile(home: string, input: JsonRecord | undef
 
 export function codexChatgptAuthTokens(input: JsonRecord | undefined): CodexChatGptTokens | undefined {
   if (!input) return undefined
-  const tokens = record(input.tokens)
-  const oauth = record(input.oauth)
+  const tokens = asRecord(input.tokens)
+  const oauth = asRecord(input.oauth)
   const access = text(input.access) ?? text(tokens?.access_token) ?? text(oauth?.access)
   const refresh = text(input.refresh) ?? text(tokens?.refresh_token) ?? text(oauth?.refresh)
   const idToken = text(input.id_token) ?? text(tokens?.id_token) ?? text(oauth?.id_token)
@@ -85,8 +86,8 @@ export function mergeCodexAuth(input: JsonRecord | undefined, tokens: {
   planType?: string
 }) {
   const current = input ?? { type: "codex_auth", auth_mode: "chatgpt" }
-  const existingTokens = record(current.tokens) ?? {}
-  const existingOauth = record(current.oauth) ?? {}
+  const existingTokens = asRecord(current.tokens) ?? {}
+  const existingOauth = asRecord(current.oauth) ?? {}
   const idToken = tokens.idToken ?? text(existingTokens.id_token) ?? text(existingOauth.id_token)
   return {
     ...current,
@@ -135,7 +136,7 @@ export async function refreshCodexChatgptAuth(input: {
   if (!response.ok) {
     throw new Error(`Codex ChatGPT auth refresh failed (${response.status}). Run \`codex login\` or sync a valid Codex credential, then retry.`)
   }
-  const row = record(await response.json().catch(() => undefined))
+  const row = asRecord(await response.json().catch(() => undefined))
   const access = text(row?.access_token)
   const refresh = text(row?.refresh_token) ?? current.refresh
   if (!access) throw new Error("Codex ChatGPT auth refresh returned no access token")
@@ -159,8 +160,8 @@ export async function refreshCodexChatgptAuth(input: {
 }
 
 export function accountIdFromClaims(input: JsonRecord | undefined) {
-  return accountIdFromJwt(text(input?.id_token) ?? text(record(input?.tokens)?.id_token))
-    ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(record(input?.tokens)?.access_token))
+  return accountIdFromJwt(text(input?.id_token) ?? text(asRecord(input?.tokens)?.id_token))
+    ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(asRecord(input?.tokens)?.access_token))
 }
 
 function accountIdFromJwt(token: string | undefined): string | undefined {
@@ -168,8 +169,8 @@ function accountIdFromJwt(token: string | undefined): string | undefined {
   const payload = token.split(".")[1]
   if (!payload) return undefined
   try {
-    const claims = record(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
-    const openai = record(claims?.["https://api.openai.com/auth"])
+    const claims = asRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
+    const openai = asRecord(claims?.["https://api.openai.com/auth"])
     return text(claims?.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
   } catch {
     return undefined

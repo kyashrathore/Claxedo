@@ -1,24 +1,16 @@
 /**
- * The OpenCode provider/model catalog, owned by Claxedo.
+ * The OpenCode provider/model catalog, owned by Claxedo rather than read from
+ * the engine: `provider.list` returns 500 on an embedded host, whose default
+ * workspace driver is `registryNode({})`, an empty provider registry
+ * (`docs/architecture/opencode-embedded-sdk-contract.md`).
  *
- * R7 requires the provider/model catalog to keep working "without raw engine
- * control routes". Until now OpenCode was the one harness whose catalog came
- * from the engine, which meant a missing engine artifact emptied the model
- * picker — and after the SDK cutover it would fail outright, because
- * `provider.list` returns 500 on an embedded host (the default workspace
- * driver is `registryNode({})`, an empty provider registry; see
- * `docs/architecture/opencode-embedded-sdk-contract.md` §2.2).
+ * Source: models.dev, the same catalog the engine reads. The offline
+ * `piModelCatalog` would be cheaper but carries 31 providers against
+ * models.dev's 203, so it would silently shrink the model picker.
  *
- * Source choice, deliberately: models.dev, the same catalog the engine reads.
- * Claxedo already ships an offline registry (`piModelCatalog`), and reusing it
- * would be cheaper — but it carries 31 providers against models.dev's 203, so
- * switching would silently delete 177 providers from the model picker. Matching
- * what users see today is worth owning a small cache.
- *
- * Failure stays explicit. With neither a live fetch nor a cached copy this
- * THROWS rather than returning an empty catalog: an unavailable catalog is not
- * the same fact as "there are no providers", and `providerBody` and its
- * contract tests depend on that distinction.
+ * With neither a live fetch nor a cached copy this throws rather than returning
+ * an empty catalog: an unavailable catalog is not "there are no providers", and
+ * `providerBody` and its contract tests depend on the distinction.
  */
 import * as fs from "node:fs"
 import * as path from "node:path"

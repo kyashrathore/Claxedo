@@ -54,6 +54,8 @@ describe("sound helpers", () => {
     expect(FakeAudio.instances).toHaveLength(1)
     expect(FakeAudio.instances[0]?.played).toBe(true)
 
+    expect(FakeAudio.instances[0]?.src).toBe(soundSrc("ios"))
+    FakeAudio.instances[0].currentTime = 3.5
     cleanup?.()
 
     expect(FakeAudio.instances[0]?.paused).toBe(true)

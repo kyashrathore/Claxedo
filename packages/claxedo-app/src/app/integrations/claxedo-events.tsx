@@ -392,10 +392,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // the doorbell consumers revalidate on.
     const setStreamConnected = connectivity.track(target.kind)
 
-    // Stable per-target key for the reactive projection (T7): the shared
-    // control-plane stream is `"central"`; a signed workspace's own stream is
-    // keyed by its workspaceId so `SessionConnectionLine` can read the stream
-    // that actually carries that session's events.
+    // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
+    // carries that session's events.
     const streamId: StreamSyncStreamId = target.kind === "central" ? "central" : `workspace:${target.workspaceId}`
 
     const stepLifecycle = (event: StreamSyncLifecycleEvent) => {
@@ -488,8 +486,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         state.failures = 0
         // Bridge stream health → the single WorkspaceConnection authority: a
         // recovered workspace stream nudges `reconnecting → ready` (no-op unless
-        // the authority had flipped to reconnecting). Readiness is OWNED by the
-        // authority — this stream no longer independently infers "workspace up".
+        // the authority had flipped to reconnecting). Readiness is owned by the
+        // authority; this stream does not infer it.
         if (target.kind === "workspace") markWorkspaceReconnected(target.workspaceId)
         resetHeartbeat()
         const reader = res.body.getReader()

@@ -5,9 +5,8 @@ import { TerminalAccessoryRow } from "./accessory-row"
 
 afterEach(cleanup)
 
-// These tests exercise the ACTUAL shipping wiring from terminal.tsx, not a
-// standalone `visible={() => true}` mount. In production the row is a fixed
-// sibling of the terminal container:
+// These component tests give the accessory row a focus-reactive parent fixture.
+// The fixture represents the active accessor supplied by terminal.tsx:
 //
 //   <div ref={container} onFocusIn=…terminalFocused(true) onFocusOut=…false />
 //   <TerminalAccessoryRow onKey={inject} active={terminalFocused} />
@@ -17,9 +16,9 @@ afterEach(cleanup)
 // flips false, and the row unmounts before the key reaches the PTY. jsdom does
 // not implement the browser's "pointerdown/mousedown moves focus to the target"
 // default, so `Harness`/`tap` model it explicitly: a tap only steals focus when
-// the handler leaves the pointerdown default un-prevented. That is exactly the
-// regression the previous suite (static `visible`+`active` props, no focus
-// wiring) was structurally blind to.
+// the handler leaves the pointerdown default un-prevented. This verifies the
+// row's focus-preserving event contract; terminal.tsx wiring needs its own
+// mounted acceptance test.
 
 /** Mirror of terminal.tsx's accessory-row wiring: container focus drives `active`. */
 function Harness(props: { onKey: (data: string) => void }) {
@@ -67,7 +66,7 @@ function tap(el: HTMLElement, focusHolder: HTMLElement) {
   fireEvent.click(el)
 }
 
-describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
+describe("TerminalAccessoryRow — focus-reactive parent", () => {
   test("row appears once the terminal is focused and hides when it blurs", () => {
     const view = render(() => <Harness onKey={() => {}} />)
     const textarea = view.getByTestId("xterm-textarea")

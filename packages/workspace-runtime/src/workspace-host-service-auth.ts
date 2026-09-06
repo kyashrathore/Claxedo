@@ -11,6 +11,8 @@ import {
   type RelayKey,
 } from "@claxedo/workspace-relay"
 import { bearerToken, errorBody } from "./routes/http"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { numberClaim } from "@claxedo/helpers/guards"
 
 export type RelayHostAuthOptions = {
   /**
@@ -82,13 +84,8 @@ export type RelayHostAuthAuditEvent = {
   method: string
 }
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function pem(input: string | undefined) {
-  return clean(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 function stringClaim(payload: Record<string, unknown>, key: string) {
@@ -104,11 +101,6 @@ function roleClaim(payload: Record<string, unknown>) {
 function actorKindClaim(payload: Record<string, unknown>) {
   const value = stringClaim(payload, "actor_kind")
   return value === "human" || value === "agent" ? value : undefined
-}
-
-function numberClaim(payload: Record<string, unknown>, key: string) {
-  const value = payload[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 function validateRelayHostVerifierClaims(
@@ -214,7 +206,7 @@ export type LoadRelayHostVerificationKeyEnv = {
 export async function loadRelayHostVerificationKeyOrJwks(
   env: LoadRelayHostVerificationKeyEnv,
 ): Promise<RelayKey> {
-  const jwksUrl = clean(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL)
+  const jwksUrl = trimToUndefined(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL)
   if (jwksUrl) {
     return createRemoteJWKSet(new URL(jwksUrl))
   }
@@ -313,11 +305,9 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
           "Relay request workspace is not hosted by this Workspace Host Service",
         ), 404)
       }
-      // T27: For RHTs whose `access` is "cloud" or "user-hosted", the only
-      // legitimate caller is the workspace-relay (T13 sets the marker on
-      // every forwarded request). The `access: "local"` paths bypass the
-      // relay entirely and arrive via `proxy.ts` direct-token, which takes
-      // the `trustedDirectToken` branch above and never reaches this point.
+      // Cloud and user-hosted RHTs only ever arrive through the workspace-relay,
+      // which stamps `x-forwarded-by` on every forwarded request. Local-access
+      // tokens bypass the relay and take the `trustedDirectToken` branch above.
       if (claims.access === "cloud" || claims.access === "user-hosted") {
         if (c.req.header("x-forwarded-by") !== "workspace-relay") {
           await audit(options, {

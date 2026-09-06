@@ -26,10 +26,7 @@ import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { normalize } from "./session-diff"
-
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { isRecord } from "@claxedo/helpers/guards"
 
 function unwrap(message: string) {
   const text = message.replace(/^Error:\s*/, "").trim()
@@ -58,9 +55,9 @@ function unwrap(message: string) {
     }
   }
 
-  if (!record(json)) return message
+  if (!isRecord(json)) return message
 
-  const err = record(json.error) ? json.error : undefined
+  const err = isRecord(json.error) ? json.error : undefined
   if (err) {
     const type = typeof err.type === "string" ? err.type : undefined
     const msg = typeof err.message === "string" ? err.message : undefined

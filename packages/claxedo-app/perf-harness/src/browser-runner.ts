@@ -1,3 +1,4 @@
+import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { runAttribution } from "./attribution"
 import { publishBrowserResult } from "./browser-publication"
 import {
@@ -328,25 +329,30 @@ export async function executeBrowserScenario(
       // ([data-slot="input-input"]); textarea content lives in .value, which
       // body.innerText excludes, so read it explicitly.
       const boundaryError = await readBoundaryError(page)
-      const state = await page.evaluate(() => {
-        // Persisted state is whatever the last build wrote; this debug dump
-        // reports the three fields it can find and stays silent about the rest.
-        const isRecord = (value: unknown): value is Record<string, unknown> =>
-          typeof value === "object" && value !== null && !Array.isArray(value)
+      // The narrowing runs here, not in the browser: an evaluate body is
+      // serialized, so it cannot reach a module-scope import.
+      const snapshot = await page.evaluate(() => {
         const raw = localStorage.getItem("claxedo.state.v5")
-        const decoded: unknown = raw ? JSON.parse(raw) : undefined
-        const parsed = isRecord(decoded) ? decoded : {}
-        const workbench = isRecord(parsed.workbench) ? parsed.workbench : undefined
-        const meta = isRecord(parsed.meta) ? parsed.meta : {}
-        const terminal = isRecord(parsed.terminal) ? parsed.terminal : undefined
-        const owner = terminal && isRecord(terminal.owner) ? terminal.owner : {}
+        const persisted: unknown = raw ? JSON.parse(raw) : undefined
+        return {
+          persisted,
+          terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row']").length,
+        }
+      }).catch(() => undefined)
+      // Persisted state is whatever the last build wrote; this debug dump
+      // reports the three fields it can find and stays silent about the rest.
+      const state = snapshot && (() => {
+        const parsed = asRecordOrEmpty(snapshot.persisted)
+        const workbench = asRecord(parsed.workbench)
+        const meta = asRecordOrEmpty(parsed.meta)
+        const owner = asRecordOrEmpty(asRecord(parsed.terminal)?.owner)
         return {
           contentIds: workbench?.contentIds,
           metaIds: Object.keys(meta),
           terminalIds: Object.keys(owner),
-          terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row']").length,
+          terminalRows: snapshot.terminalRows,
         }
-      }).catch(() => undefined)
+      })()
       console.error(`\n[PERF_DEBUG ${scenario}] pageErrors:`, monitor.pageErrors)
       console.error(`[PERF_DEBUG ${scenario}] consoleErrors:`, monitor.consoleErrors)
       console.error(`[PERF_DEBUG ${scenario}] boundaryError:`, boundaryError || "<none>")

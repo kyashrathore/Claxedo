@@ -2,8 +2,9 @@ import { readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import readline from "node:readline/promises"
+import { trimToUndefined } from "@claxedo/helpers/string"
 import { jwtExpiresAt } from "../auth/jwt"
-import { object, text } from "../json"
+import { object } from "../json"
 
 /**
  * `claxedo creds sync --remote <url>` — push local harness subscription
@@ -143,6 +144,6 @@ export async function creds(args: string[]) {
     throw new Error(`Sync failed: ${response.status} ${body.slice(0, 300)}`)
   }
   const result = object(await response.json().catch(() => undefined))
-  const credentialId = text(object(result.credential).id)
+  const credentialId = trimToUndefined(object(result.credential).id)
   console.log(`Synced codex-app-server → ${remote} (credential ${credentialId ?? "stored"}).`)
 }

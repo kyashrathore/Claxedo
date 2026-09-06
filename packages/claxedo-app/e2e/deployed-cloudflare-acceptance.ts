@@ -45,7 +45,7 @@
  * legitimate after the beat lands.
  *
  * The payload builders exported here are unit-gated offline by
- * `playwright/deployed-cloudflare-acceptance.test.ts`
+ * `playwright/deployed-cloudflare-acceptance.vitest.ts`
  * (`bun run test:deployed-acceptance`), which talks to nothing.
  */
 
@@ -53,6 +53,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { generateKeyPairSync, sign } from "node:crypto"
 import { chromium, type BrowserContext } from "@playwright/test"
+import { asRecord } from "@claxedo/helpers/guards"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnel } from "@claxedo/workspace-runtime/relay"
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/
@@ -192,8 +193,9 @@ function selectedStage(argv: readonly string[]): Stage {
 }
 
 function record(value: unknown, name: string): JsonRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} is not an object`)
-  return value as JsonRecord
+  const row = asRecord(value)
+  if (!row) throw new Error(`${name} is not an object`)
+  return row
 }
 
 function textField(value: unknown, name: string) {

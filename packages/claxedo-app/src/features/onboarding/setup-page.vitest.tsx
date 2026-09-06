@@ -1,7 +1,7 @@
 import { render, screen } from "@solidjs/testing-library"
 import { describe, expect, test, vi } from "vitest"
 import { SetupPage, type SetupPageStep } from "./setup-page"
-import { setupStepLocation, stepPosition, type SetupStepView } from "./navigation"
+import { setupStepLocation } from "./navigation"
 import type { OnboardingStepId } from "./registry"
 
 function step(id: OnboardingStepId, overrides: Partial<SetupPageStep> = {}): SetupPageStep {
@@ -18,7 +18,7 @@ function step(id: OnboardingStepId, overrides: Partial<SetupPageStep> = {}): Set
 }
 
 function renderPage(props: Partial<Parameters<typeof SetupPage>[0]> = {}) {
-  const steps = props.steps ?? [step("destination"), step("project"), step("ai")]
+  const steps = props.steps ?? [step("destination"), step("ai"), step("remote-access")]
   return render(() => (
     <SetupPage
       steps={steps}
@@ -39,8 +39,7 @@ const nav = () => ({
 
 describe("the setup nav row never changes shape", () => {
   test("Back and Next both render on the first step, with Back disabled", () => {
-    // The owner asked "where is Back?" on step 1. It is present and inert, so
-    // the row does not reflow as the user moves through the flow.
+    // Inert rather than absent, so the row does not reflow between steps.
     renderPage()
 
     expect(nav().back).toBeDisabled()
@@ -49,7 +48,7 @@ describe("the setup nav row never changes shape", () => {
 
   test("Back is enabled once there is somewhere to go back to", () => {
     const back = vi.fn()
-    renderPage({ location: setupStepLocation("project"), back })
+    renderPage({ location: setupStepLocation("ai"), back })
 
     expect(nav().back).toBeEnabled()
     nav().back.click()
@@ -106,17 +105,16 @@ describe("the rail and the counter tell the same story", () => {
     // Both halves must read the same list. home-view filters to applying steps
     // before passing them in; if that ever stops, this catches the divergence
     // the owner saw as "bar on 2, count on 1".
-    const steps = [step("destination"), step("project"), step("ai")]
+    const steps = [step("destination"), step("ai"), step("remote-access")]
     renderPage({ steps })
 
-    const position = stepPosition(steps as SetupStepView[], setupStepLocation("destination"))
-    expect(rail()).toHaveLength(position!.total)
-    expect(screen.getByText(`Step ${position!.index} of ${position!.total}`)).toBeInTheDocument()
+    expect(rail()).toHaveLength(3)
+    expect(screen.getByText("Step 1 of 3")).toBeInTheDocument()
   })
 
   test("a non-applying step is counted by neither half", () => {
-    const steps = [step("destination"), step("project"), step("compute", { applies: false, optional: true })]
-    renderPage({ steps: steps.filter((item) => item.applies), location: setupStepLocation("project") })
+    const steps = [step("destination"), step("ai"), step("remote-access", { applies: false, optional: true })]
+    renderPage({ steps: steps.filter((item) => item.applies), location: setupStepLocation("ai") })
 
     expect(rail()).toHaveLength(2)
     expect(screen.getByText("Step 2 of 2")).toBeInTheDocument()
@@ -127,7 +125,7 @@ describe("the rail and the counter tell the same story", () => {
     // step rendered solid while the current destination step animated dim, so
     // the middle segment read as active.
     renderPage({
-      steps: [step("destination"), step("project", { done: true }), step("ai")],
+      steps: [step("destination"), step("ai", { done: true }), step("remote-access")],
       location: setupStepLocation("destination"),
     })
 
@@ -137,8 +135,8 @@ describe("the rail and the counter tell the same story", () => {
 
   test("segments before the current one read as done", () => {
     renderPage({
-      steps: [step("destination", { done: true }), step("project"), step("ai")],
-      location: setupStepLocation("project"),
+      steps: [step("destination", { done: true }), step("ai"), step("remote-access")],
+      location: setupStepLocation("ai"),
     })
 
     expect(stateAt(0)).toBe("done")

@@ -1,4 +1,3 @@
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono } from "hono"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import type { ControlPlaneTelemetry } from "../../authority/services"
@@ -6,6 +5,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { internalAdminAuthorized } from "../../platform/http/internal-admin-auth"
 import { emitSandboxLeaseClosed } from "../../platform/telemetry/product/metering"
 import { readJsonRecord, stringField } from "../../platform/json/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type HostedSandboxAdminOptions = {
   adminToken?: string
@@ -26,7 +26,7 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
   const app = new Hono()
 
   app.use("/internal/sandbox-manager/*", async (c, next) => {
-    if (!internalAdminAuthorized(c.req.raw, clean(options.adminToken))) {
+    if (!internalAdminAuthorized(c.req.raw, trimToUndefined(options.adminToken))) {
       return c.json(errorBody("sandbox_admin_unauthorized", "Sandbox admin routes require a matching bearer token"), 401)
     }
     await next()
@@ -89,7 +89,7 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
       return c.json(errorBody("sandbox_unavailable", "Cloud sandbox is not configured"), 501)
     }
     const body = await readJsonRecord(c.req.raw)
-    const workspaceId = clean(stringField(body, "workspaceId"))
+    const workspaceId = trimToUndefined(stringField(body, "workspaceId"))
     if (!workspaceId) {
       return c.json(errorBody("sandbox_admin_invalid_request", "Releasing a sandbox lease requires a workspaceId"), 400)
     }

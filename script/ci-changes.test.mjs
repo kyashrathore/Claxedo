@@ -6,7 +6,7 @@ import { classifyChangedFiles } from "./ci-changes.mjs"
 await test("documentation-only changes run documentation checks and no product gates", () => {
   const result = classifyChangedFiles([
     "README.md",
-    "public-docs/self-host.md",
+    "public-docs/self-host-fly.md",
     "packages/claxedo-app/README.md",
     "packages/claxedo-server/README.md",
   ])

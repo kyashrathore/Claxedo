@@ -69,19 +69,19 @@ describe("removeProviderAuthEntry", () => {
 
 describe("disconnectProvider", () => {
   test("drops the stored credential, then the harness auth entry", async () => {
-    const calls = { credential: 0, auth: 0, marked: 0, refreshed: false }
+    const calls: string[] = []
     await disconnectProvider({
       providerId: "openai",
       name: "OpenAI",
       source: "api",
-      deleteCredential: async () => { calls.credential += 1 },
-      removeAuth: async () => { calls.auth += 1 },
-      markDisconnected: () => { calls.marked += 1 },
-      refresh: async () => { calls.refreshed = true },
-      onSuccess: () => undefined,
-      onError: () => undefined,
+      deleteCredential: async (id) => { calls.push(`credential:${id}`) },
+      removeAuth: async (id) => { calls.push(`auth:${id}`) },
+      markDisconnected: (id) => { calls.push(`mark:${id}`) },
+      refresh: async () => { calls.push("refresh") },
+      onSuccess: (name) => { calls.push(`success:${name}`) },
+      onError: () => expect.unreachable(),
     })
-    expect(calls).toEqual({ credential: 1, auth: 1, marked: 2, refreshed: true })
+    expect(calls).toEqual(["credential:openai", "auth:openai", "mark:openai", "success:OpenAI", "refresh", "mark:openai"])
   })
 
   test("a missing credential never blocks the auth removal", async () => {

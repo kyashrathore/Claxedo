@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -40,8 +40,18 @@ async function writePackage(root: string, relativeDirectory: string, name: strin
   await writeFile(path.join(root, relativeDirectory, "src/index.ts"), `export const packageName = ${JSON.stringify(name)}\n`)
 }
 
-async function sourceTree(prefix: string) {
+const temporaryRoots: string[] = []
+async function temporaryRoot(prefix: string) {
   const root = await mkdtemp(path.join(os.tmpdir(), prefix))
+  temporaryRoots.push(root)
+  return root
+}
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+async function sourceTree(prefix: string) {
+  const root = await temporaryRoot(prefix)
   for (const [name, relativeDirectory] of Object.entries(MEASUREMENT_RUNTIME_REQUIRED_PACKAGES)) {
     const dependencies = name === "@claxedo/app"
       ? Object.fromEntries(requiredDependencies.map((dependency) => [dependency, "workspace:*"]))
@@ -160,31 +170,31 @@ test("local Claude permissions are excluded without excluding neighboring Claude
 test("missing, root-symlinked, and nested-symlinked source is rejected", async () => {
   const missing = await sourceTree("measurement-provenance-missing-")
   await rm(path.join(missing, "packages/ui"), { recursive: true })
-  expect(resolveMeasurementSourceRoots(missing)).rejects.toThrow(/required|owner mismatch|missing|unresolved/u)
+  await expect(resolveMeasurementSourceRoots(missing)).rejects.toThrow(/required|owner mismatch|missing|unresolved/u)
 
   const rootSymlink = await sourceTree("measurement-provenance-root-link-")
-  const externalRoot = await mkdtemp(path.join(os.tmpdir(), "measurement-provenance-external-root-"))
+  const externalRoot = await temporaryRoot("measurement-provenance-external-root-")
   await rm(path.join(rootSymlink, "packages/ui"), { recursive: true })
   await symlink(externalRoot, path.join(rootSymlink, "packages/ui"), "dir")
-  expect(scanMeasurementSource(rootSymlink)).rejects.toThrow(/symlink/u)
+  await expect(scanMeasurementSource(rootSymlink)).rejects.toThrow(/symlink/u)
 
   const nestedSymlink = await sourceTree("measurement-provenance-nested-link-")
-  const externalFile = path.join(await mkdtemp(path.join(os.tmpdir(), "measurement-provenance-external-file-")), "outside.ts")
+  const externalFile = path.join(await temporaryRoot("measurement-provenance-external-file-"), "outside.ts")
   await writeFile(externalFile, "export default false\n")
   await symlink(externalFile, path.join(nestedSymlink, "packages/claxedo-app/src/outside.ts"))
-  expect(scanMeasurementSource(nestedSymlink)).rejects.toThrow(/does not follow.*symlink/u)
+  await expect(scanMeasurementSource(nestedSymlink)).rejects.toThrow(/does not follow.*symlink/u)
 })
 
 test("build digest requires a real, non-symlinked, non-empty dist root", async () => {
   const root = await sourceTree("measurement-provenance-dist-")
-  expect(digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).rejects.toThrow(/missing/u)
-  const external = await mkdtemp(path.join(os.tmpdir(), "measurement-provenance-dist-external-"))
+  await expect(digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).rejects.toThrow(/missing/u)
+  const external = await temporaryRoot("measurement-provenance-dist-external-")
   await writeFile(path.join(external, "main.js"), "built")
   await symlink(external, path.join(root, "packages/claxedo-app/dist"), "dir")
-  expect(digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).rejects.toThrow(/symlinked/u)
+  await expect(digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).rejects.toThrow(/symlinked/u)
   await rm(path.join(root, "packages/claxedo-app/dist"))
   await mkdir(path.join(root, "packages/claxedo-app/dist"))
-  expect(digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).rejects.toThrow(/empty/u)
+  await expect(digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).rejects.toThrow(/empty/u)
   await writeFile(path.join(root, "packages/claxedo-app/dist/main.js"), "built")
   expect(await digestRequiredMeasurementDirectory(root, "packages/claxedo-app/dist")).toMatch(/^[0-9a-f]{64}$/)
 })

@@ -57,9 +57,9 @@ export function OnboardingEmptyState(props: {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const dismissals = createLocalOnboardingDismissals()
-  // The answer to step 0, persisted. It replaces the inference this component
-  // used to make from `sandboxProviderConfigured`, which could not tell "local
-  // only" from "hasn't set up cloud yet" and was the circularity §4.1 names.
+  // The answer to step 0, persisted. It replaces inferring from
+  // `sandboxProviderConfigured`, which cannot tell "local only" from "hasn't
+  // set up cloud yet."
   const destinationChoice = createLocalOnboardingDestination()
   const destination = () => destinationChoice.destination()
   const surface = () => platform.platform === "desktop" ? "desktop" : config?.sandboxEnabled ? "web" : "self-host"
@@ -106,7 +106,7 @@ export function OnboardingEmptyState(props: {
     sessionInventoryQueryOptions({ baseUrl: globalSDK.url }),
   )
   // The provider catalog behind the inline key form. Unlike `sandboxQuery` this
-  // lists providers that are NOT configured — that is the state the form exists
+  // lists providers that are not configured — that is the state the form exists
   // to repair.
   const sandboxCatalogQuery = useQuery(() => ({
     queryKey: ["claxedo", "onboarding", "sandbox-catalog", server.url] as const,
@@ -225,13 +225,13 @@ export function OnboardingEmptyState(props: {
   }
 
   /**
-   * Answering does NOT advance. Clicking a row is the choice — it tags the row
+   * Answering does not advance. Clicking a row is the choice — it tags the row
    * and releases Next — and Next is the move. Doing both would skip the screen
    * out from under a user who wanted to read the other two consequences, or
    * who mis-clicked a decision about where their code and credentials go.
    */
   async function chooseDestination(next: OnboardingDestination) {
-    // Stay put. Location otherwise resolves to the first UNFINISHED step, so
+    // Stay put. Location otherwise resolves to the first unfinished step, so
     // answering would complete this one and slide the screen away on its own —
     // skipping past the other two consequences, and past any mis-click, on a
     // decision about where the user's code and credentials go. The row is the
@@ -340,7 +340,7 @@ export function OnboardingEmptyState(props: {
   }
 
   /**
-   * The step's own lede, unless the answer changes what the step is FOR. Saying
+   * The step's own lede, unless the answer changes what the step is for. Saying
    * yes turns the first screen into a setup form, so its lede names the two
    * things the user is about to do rather than restating the question.
    */

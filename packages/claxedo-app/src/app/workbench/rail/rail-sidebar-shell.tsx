@@ -120,10 +120,9 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
 
   return (
     <Show when={props.sidebarEligible()}>
-      {/* Narrow-viewport drawer opener. The workbench header's "Show Sidebar"
+      {/* Narrow-viewport drawer opener: the workbench header's "Show Sidebar"
           button is `md:flex hidden` (desktop-only), so a phone needs its own
-          affordance to open the drawer — this is the missing entry point that
-          makes `openMobileSidebar` reachable (WP-C3 collapse design §3.1). */}
+          affordance to reach `openMobileSidebar`. */}
       {/* Mirrors the desktop header "Show Sidebar" button (workbench-shell-header)
           — same glyph and ghost treatment, positioned over the empty left slot of
           the h-9 workbench header row so it reads as part of that row. Stays

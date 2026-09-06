@@ -18,12 +18,12 @@ const e2ePreviewSettingsFlags = {
 
 /**
  * The complete build environment every e2e launcher of this app's vite config
- * hands the child process — `scripts/build-e2e-app.ts` and
- * `scripts/serve-e2e-app.ts` for the shared instance, and each spec that boots
- * a dedicated instance against its own backend
- * (`live-user-hosted-relay.spec.ts`, `real-cloud-relay.spec.ts`,
- * `e2e/helpers/desktop-signed-server.ts`) through
- * `e2e/helpers/live-user-hosted-relay-frontend-server.mjs`.
+ * hands the child process — `e2e/launch/build-e2e-app.ts` and
+ * `e2e/launch/serve-e2e-app.ts` for the shared instance, the signed-web lanes'
+ * production build and gateway (`e2e/helpers/web-signed-relay-harness.ts`),
+ * and the desktop lane's forwarded-for proxy
+ * (`e2e/helpers/desktop-signed-server.ts` through
+ * `e2e/helpers/live-user-hosted-relay-frontend-server.mjs`).
  *
  * One owner rather than one list per launcher: `vite.cloud.config.ts` calls
  * `resolveBrowserAuthBuildSelection`, which refuses to pick a browser auth

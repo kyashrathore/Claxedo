@@ -16,11 +16,12 @@ export type DraftDefaultLabels = {
 }
 
 /**
- * What ONE harness remembers in one workspace: the model last chosen for it.
+ * What one harness remembers in one workspace: the model last chosen for it.
  *
- * Per harness, because the harnesses do not share a model namespace — picking
- * Codex and then Claude used to overwrite the Codex model with a Claude one, so
- * switching back landed on "Choose a model" every time.
+ * Per harness, because the harnesses do not share a model namespace — sharing
+ * one slot would let picking Claude after Codex overwrite the Codex model
+ * with a Claude one, landing back on "Choose a model" every time you switch
+ * back.
  */
 export type DraftDefaultHarnessChoice = {
   model?: ModelKey
@@ -95,7 +96,7 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
       if (!record) return undefined
       return { harness: record.lastHarness, ...record.byHarness[harnessSelectionKey(record.lastHarness)] }
     },
-    /** What ONE harness remembers here, whichever harness was last used. */
+    /** What one harness remembers here, whichever harness was last used. */
     readHarness(input: DraftDefaultScope, harness: HarnessSelection): DraftDefaultHarnessChoice | undefined {
       return load(input)?.byHarness[harnessSelectionKey(harness)]
     },

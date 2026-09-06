@@ -34,6 +34,7 @@ export function createTimelineResizeAnchor() {
   let pinnedIndexes: number[] = []
   let pinFrame: number | undefined
   let anchorScheduled = false
+  let disposed = false
 
   return {
     pinnedIndexes: () => pinnedIndexes,
@@ -60,11 +61,11 @@ export function createTimelineResizeAnchor() {
 
       const resizeItem = input.virtualizer.resizeItem.bind(input.virtualizer)
       const anchorBottom = () => {
-        if (anchorScheduled || input.hasScrollGesture() || !input.displayed()) return
+        if (disposed || anchorScheduled || input.hasScrollGesture() || !input.displayed()) return
         anchorScheduled = true
         queueMicrotask(() => {
           anchorScheduled = false
-          if (!input.shouldAnchorBottom() || input.hasScrollGesture()) return
+          if (disposed || !input.displayed() || !input.shouldAnchorBottom() || input.hasScrollGesture()) return
           input.virtualizer.scrollToEnd()
         })
       }
@@ -79,7 +80,7 @@ export function createTimelineResizeAnchor() {
         // above the composer — until real measurements arrive and shove
         // everything down. Dropping the zero keeps this row on its estimate,
         // which is close enough for the anchor to be right on the first frame.
-        if (size === 0) return
+        if (disposed || size === 0) return
         const item = input.virtualizer.measurementsCache[index]
         const previous = item ? (input.virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
         const root = input.root()
@@ -109,6 +110,7 @@ export function createTimelineResizeAnchor() {
       }
     },
     dispose() {
+      disposed = true
       if (pinFrame !== undefined) cancelAnimationFrame(pinFrame)
     },
   }

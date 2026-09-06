@@ -45,6 +45,7 @@ describe("Agent Plugins client", () => {
     await api.activation({ pluginInstanceId: "source/plugin", harnessIds: ["codex"], choice: true, expectedRevision: 7 })
 
     expect(calls[0]?.url).toBe("http://127.0.0.1:2593/api/claxedo/plugins/projects/project_1/refresh")
+    expect(calls[0]?.init?.method ?? "GET").toBe("GET")
     expect(calls[1]?.url).toBe("http://127.0.0.1:2593/api/claxedo/plugins/activation")
     expect(requestJson(calls[1]?.init)).toEqual({
       pluginInstanceId: "source/plugin",

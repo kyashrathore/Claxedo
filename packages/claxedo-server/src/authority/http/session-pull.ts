@@ -2,10 +2,10 @@ import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
-import { ControlPlaneProtocolError, num, txt, type ControlPlaneHttpOptions } from "./protocol"
+import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./runtime-transport"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import { asRecord } from "../../platform/json/index"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
@@ -239,8 +239,8 @@ function relayRole(value: unknown): RelayRole | undefined {
 
 function sessionStamp(input: Record<string, unknown>) {
   const time = asRecord(input.time)
-  const createdAt = num(time?.created) ?? num(input.created_at)
-  const updatedAt = num(time?.updated) ?? num(input.updated_at) ?? createdAt
+  const createdAt = asFiniteNumber(time?.created) ?? asFiniteNumber(input.created_at)
+  const updatedAt = asFiniteNumber(time?.updated) ?? asFiniteNumber(input.updated_at) ?? createdAt
   return {
     ...(createdAt === undefined ? {} : { createdAt }),
     ...(updatedAt === undefined ? {} : { updatedAt }),

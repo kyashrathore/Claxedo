@@ -21,11 +21,10 @@ import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-reso
  * The packaged app contains only declared structural resources.
  *
  * `electron-builder.config.ts` decides what goes in and
- * `verify-package-contents.ts` checks what came out. They used to spell the
- * native-module set twice, which made the check unable to disagree with the
- * config; both now read one declaration, and these tests hold the pair
- * together — including against a synthetic asar, so the invariant is exercised
- * without a signed, notarized release build.
+ * `verify-package-contents.ts` checks what came out. Both read the same
+ * declaration, so the check can actually disagree with the config; these
+ * tests hold the pair together — including against a synthetic asar, so the
+ * invariant is exercised without a signed, notarized release build.
  */
 
 test("the electron-builder file globs are exactly the declared roots", () => {

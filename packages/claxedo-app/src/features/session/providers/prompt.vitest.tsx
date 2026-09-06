@@ -16,7 +16,7 @@ vi.mock("@/platform/persistence/persist", async () => {
       scoped: (...input: unknown[]) => JSON.stringify(input),
       serverScoped: (...input: unknown[]) => JSON.stringify(input),
     },
-    persisted: (_key: string, initial: ReturnType<typeof createStore>) => [...initial, () => true] as const,
+    persisted: (_key: string, initial: ReturnType<typeof createStore>) => [...initial, undefined, () => true] as const,
   }
 })
 
@@ -149,7 +149,14 @@ describe("PromptProvider", () => {
     await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("beta"))
 
     latest.set(text("gamma"), 5, { dir: "/repo", id: "ses-c" })
+    expect(view.getByTestId("prompt").textContent).toBe("beta")
+    setSessionId("ses-c")
+    await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("gamma"))
+    setSessionId("ses-b")
     latest.reset({ dir: "/repo", id: "ses-c" })
+    expect(view.getByTestId("prompt").textContent).toBe("beta")
+    setSessionId("ses-c")
+    await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe(""))
 
     setSessionId("ses-a")
     await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("alpha"))
@@ -158,12 +165,11 @@ describe("PromptProvider", () => {
     await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("beta"))
   })
 
-  // Defect 2. LIVENESS, not presence: `session()` is memoized on the provider's
-  // props, so after an eviction it keeps handing out the SAME PromptSession
-  // object whose reactive root was disposed underneath it. The object is still
-  // there; its memos have been unsubscribed from the store. So the assertion has
-  // to be that a write still propagates, which is the user-visible symptom
-  // (composer stops rendering what the user types).
+  // Liveness, not presence: `session()` is memoized on the provider's props, so
+  // after an eviction it keeps handing out the same PromptSession object whose
+  // reactive root was disposed underneath it. The assertion must therefore be
+  // that a write still propagates — the user-visible symptom is the composer no
+  // longer rendering what the user types.
   test("keeps a mounted scope reactive when scoped writes push past the cache cap", async () => {
     setSessionId("live-a")
     const view = render(() => (
@@ -179,8 +185,7 @@ describe("PromptProvider", () => {
     const captured = latest.capture()
     pressureScopes(latest, "/pressure-repo", MAX_PROMPT_SESSIONS + 2)
 
-    // Identity is deliberately checked too, to show it is NOT the discriminator:
-    // it holds both before and after the fix.
+    // Object identity is not the discriminator; it holds either way.
     expect(latest.capture()).toBe(captured)
 
     latest.set(text("beta"), 4)
@@ -189,9 +194,9 @@ describe("PromptProvider", () => {
     expect(latest.dirty()).toBe(true)
   })
 
-  // Defect 2, the multi-pane shape the cap actually makes plausible: pane B walks
-  // through sessions while pane A sits still. Pane A never re-resolves, so under a
-  // pure LRU its root is disposed out from under a component that is on screen.
+  // Pane B walks through sessions while pane A sits still. Pane A never
+  // re-resolves, so under a pure LRU its root would be disposed out from under a
+  // component that is on screen.
   test("one pane's session churn does not disturb the other pane's mounted scope", async () => {
     setSessionId("pane-a")
     setOtherSessionId("pane-b-0")
@@ -219,9 +224,8 @@ describe("PromptProvider", () => {
     await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("kept-live"))
   })
 
-  // The other half of the ref-counting contract, and the one that turns a fix into
-  // a leak if it is missing: an UNMOUNTED scope must lose its pin and become
-  // collectable, so the cap still bounds memory. Observable without exporting the
+  // The other half of the ref-counting contract: an unmounted scope must lose
+  // its pin and become collectable, so the cap still bounds memory. Observable without exporting the
   // cache — a collected entry means the next mount of that scope starts from a
   // fresh store, so the old draft is gone.
   test("collects a scope once it is unmounted, so the cap still bounds the cache", async () => {
@@ -256,10 +260,10 @@ describe("PromptProvider", () => {
     await waitFor(() => expect(second.getByTestId("prompt").textContent).toBe(""))
   })
 
-  // Defect 1, runtime half: the field the vendored v2 attachment writer sets must
-  // survive `clonePart`'s copy into the draft store. (The half that could FAIL
-  // before the fix is the compile-time tripwire in prompt.tsx — this file is
-  // excluded from `tsconfig.json`, so a type error here would not be checked.)
+  // `sourcePath`, set by the vendored v2 attachment writer, must survive
+  // `clonePart`'s copy into the draft store. The compile-time half of this guard
+  // lives in prompt.tsx; this file is excluded from `tsconfig.json`, so a type
+  // error here would go unchecked.
   test("preserves an image attachment's sourcePath through the draft store", async () => {
     setSessionId("image-a")
     const view = render(() => (

@@ -263,26 +263,30 @@ function createThrottledQueryPersistence(input: {
   maxBytes: number
   buster: string
   quietDelay: () => number
-  scope: () => string
+  scope: () => string | null
+  generation: () => number
 }) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let dirty = false
   let disposed = false
   let writes = Promise.resolve()
 
-  const snapshot = () => ({
+  const snapshot = (scope: string) => ({
     buster: input.buster,
     timestamp: Date.now(),
-    scope: input.scope(),
+    scope,
     clientState: dehydrate(queryClient, { shouldDehydrateQuery }),
   })
 
   const flush = () => {
     if (!dirty || disposed) return writes
     dirty = false
-    const client = snapshot()
+    const scope = input.scope()
+    if (scope === null) return writes
+    const client = snapshot(scope)
+    const generation = input.generation()
     writes = writes.then(async () => {
-      if (disposed) return
+      if (disposed || generation !== input.generation() || scope !== input.scope()) return
       const serialized = JSON.stringify(safePersistedClient(client), mapReplacer)
       if (serializedBytes(serialized) > input.maxBytes) {
         await input.storage.removeItem(queryPersisterKey)
@@ -331,7 +335,10 @@ function createThrottledQueryPersistence(input: {
         return Promise.resolve()
       },
       async restoreClient() {
+        if (input.scope() === null) return undefined
+        const generation = input.generation()
         const cached = await input.storage.getItem(queryPersisterKey)
+        if (generation !== input.generation()) return undefined
         if (!cached) return undefined
         const parsed: unknown = JSON.parse(cached, mapReviver)
         // Pre-scope snapshots and snapshots from another principal are not
@@ -375,7 +382,9 @@ export function installQueryPersister(input: {
   /** Product-composition policy for deferring durable work during interactions. */
   quietDelay?: () => number
   /** Current identity scope. The durable snapshot is rejected on mismatch. */
-  scope?: () => string
+  scope?: () => string | null
+  /** Required by mutable principal composition to fence changes back to the same scope. */
+  generation?: () => number
   /**
    * When true, schedule the persistQueryClient setup behind requestIdleCallback
    * so the initial cache hydration + subscription wiring does not contend with
@@ -407,6 +416,7 @@ export function installQueryPersister(input: {
       buster: input.buster ?? buildHash,
       quietDelay: input.quietDelay ?? (() => 0),
       scope: input.scope ?? (() => "anonymous"),
+      generation: input.generation ?? (() => 0),
     })
     flushInstalledPersistence = persistence.flushNow
 
@@ -418,8 +428,9 @@ export function installQueryPersister(input: {
     // principal's live cache.
     let unsubscribeCaches: (() => void) | undefined
     let cancelled = false
+    const restoreGeneration = input.generation?.()
     const restore = persistence.persister.restoreClient().then((client) => {
-      if (client?.clientState && client.scope === (input.scope ?? (() => "anonymous"))() && !cancelled) {
+      if (client?.clientState && restoreGeneration === input.generation?.() && client.scope === (input.scope ?? (() => "anonymous"))() && !cancelled) {
         hydrate(queryClient, client.clientState)
       }
       if (cancelled) return

@@ -108,16 +108,13 @@ export function initClaxedo(config: ClaxedoConfig): void {
     })
   }
 
-  // Starting the identity provider is NOT this function's job.
+  // Starting the identity provider is not this function's job: guarding it
+  // behind `config.authEnabled` would not keep it out of the local bundle,
+  // since a non-executing branch does not remove the module, and a dynamic
+  // import only turns it into a lazy chunk the local build still ships.
   //
-  // It used to be, and that put the identity provider in the import graph of every build that
-  // calls `initClaxedo` — including the local one, which can never sign in.
-  // Guarding it behind `config.authEnabled` did not help: the branch not
-  // running does not remove the module from the bundle. Making it a dynamic
-  // import only moved it to a lazy chunk that a local build still ships.
-  //
-  // So the hosted entry starts it (`app/entry/main.tsx`), which is where the
-  // decision to have an identity provider is actually made, and this function
+  // The hosted entry starts it instead (`app/entry/main.tsx`), where the
+  // decision to have an identity provider is actually made; this function
   // keeps only the parts both products share.
   if (config.loadHostedContributions) contributions.expectHosted()
 
@@ -132,7 +129,7 @@ export function initClaxedo(config: ClaxedoConfig): void {
     //
     // `expectHosted()` runs synchronously and `activateHosted` resolves later,
     // and the split matters: restored-state pruning must know that a hosted
-    // tabs are legal in this build BEFORE the dynamic import lands, or a hosted
+    // tabs are legal in this build before the dynamic import lands, or a hosted
     // reload would drop every restored hosted tab in the gap.
     void contributions.activateHosted().catch(() => {})
   }
@@ -165,7 +162,7 @@ export function getDefaultConfig(): ClaxedoConfig {
 export type { ClaxedoConfig as Config }
 
 // This barrel is the eager boot graph of every product entry (web main.tsx,
-// local.tsx, desktop shell.tsx), so it exports ONLY what those entries and
+// local.tsx, desktop shell.tsx), so it exports only what those entries and
 // external consumers actually import. A re-export here rides the eager main
 // chunk of every build — surfaces that open on demand (settings, routes,
 // dialogs) must stay behind their lazy() boundaries in feature-ports instead.

@@ -1,6 +1,6 @@
-import { asRecord } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   buildAssistantMessage,
   messageUpdated,

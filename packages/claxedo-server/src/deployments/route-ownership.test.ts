@@ -111,9 +111,6 @@ describe("withRouteOwnership", () => {
   })
 
   test("catches a duplicate the shared core and an adapter would both mount", () => {
-    // The concrete Unit 7 case: the signed control-plane core and the
-    // local-execution adapter are separate compositions that will be combined,
-    // and both have a claim on some of these prefixes today.
     const ownership = createRouteOwnership()
     const app = new Hono()
     const core = withRouteOwnership(app, ownership, "signed-control-plane")

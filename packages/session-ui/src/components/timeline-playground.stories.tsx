@@ -16,6 +16,7 @@ import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { SessionTurn } from "./session-turn"
 import { isKeyOf } from "@opencode-ai/ui/utils/record"
+import { isRecord } from "@claxedo/helpers/guards"
 
 // ---------------------------------------------------------------------------
 // ID helpers
@@ -519,14 +520,14 @@ function isMessage(value: unknown): value is Message {
 
 function normalize(raw: unknown) {
   if (Array.isArray(raw)) {
-    const info = raw.find((row) => record(row) && row.type === "session" && record(row.data))?.data
-    if (!record(info) || typeof info.id !== "string") {
+    const info = raw.find((row) => isRecord(row) && row.type === "session" && isRecord(row.data))?.data
+    if (!isRecord(info) || typeof info.id !== "string") {
       throw new Error("No session found in JSON")
     }
 
     const part = new Map<string, Part[]>()
     const messages = raw.flatMap((row) => {
-      if (!record(row) || !record(row.data)) return []
+      if (!isRecord(row) || !isRecord(row.data)) return []
       if (row.type === "part" && typeof row.data.messageID === "string") {
         if (!isPart(row.data)) return []
         const list = part.get(row.data.messageID) ?? []
@@ -547,7 +548,7 @@ function normalize(raw: unknown) {
     }
   }
 
-  if (!record(raw) || !record(raw.info) || typeof raw.info.id !== "string" || !Array.isArray(raw.messages)) {
+  if (!isRecord(raw) || !isRecord(raw.info) || typeof raw.info.id !== "string" || !Array.isArray(raw.messages)) {
     throw new Error("Expected an `opencode export` JSON file")
   }
 

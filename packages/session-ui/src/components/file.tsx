@@ -771,9 +771,9 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   // A text view windows its rows, exactly like DiffViewer below: a workspace
   // file tab mounts and disposes its viewer on every tab activation, so the
-  // cost of one mount must scale with the viewport, not with the file. A
-  // 3200-line file used to materialize all 3200 rows on open.
-  // `virtualized` records whether the CURRENT instance is windowed: the
+  // cost of one mount must scale with the viewport, not with the file — a
+  // 3200-line file must not materialize all 3200 rows on open.
+  // `virtualized` records whether the current instance is windowed: the
   // strategy yields no virtualizer without a document (SSR), and the plain
   // viewer it falls back to needs the whole-file readiness and selection
   // checks below.

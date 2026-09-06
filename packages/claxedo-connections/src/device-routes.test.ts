@@ -5,6 +5,7 @@ import { createIntegrationsRoutes } from "./routes.js"
 import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
 import type { DevicePoll } from "./types.js"
+import { workSourcePort } from "./ports/index.js"
 
 function harness(polls: DevicePoll[], options: { gateDenies?: boolean } = {}) {
   const registry = createIntegrationRegistry()
@@ -14,21 +15,24 @@ function harness(polls: DevicePoll[], options: { gateDenies?: boolean } = {}) {
       id: "github",
       name: "GitHub",
       methods: ["oauth", "key"],
-      capabilities: ["code-host", "work-source"],
       keyTokenType: "bearer",
-      prompts: [{ id: "token", label: "Token", secret: true }],
+      prompts: [{ id: "token", label: "Token", secret: true }]
     },
     {
-      verify: async () => ({ ok: true, accountLabel: "octocat" }),
-      device: {
-        start: async () => ({
-          deviceCode: "device-abc",
-          userCode: "WDJB-MJHT",
-          verificationUri: "https://github.com/login/device",
-          intervalMs: 5_000,
-          expiresAt: Date.now() + 900_000,
-        }),
-        poll: async () => polls[Math.min(pollIndex++, polls.length - 1)],
+      actions: { "code-host": { capability: "code-host", listRepositories: async () => [] }, "work-source": workSourcePort },
+      auth: {
+        verify: async () => ({ ok: true, accountLabel: "octocat" }),
+        device: {
+          start: async () => ({
+            deviceCode: "device-abc",
+            userCode: "WDJB-MJHT",
+            verificationUri: "https://github.com/login/device",
+            intervalMs: 5_000,
+            expiresAt: Date.now() + 900_000,
+          }),
+          poll: async () => polls[Math.min(pollIndex++, polls.length - 1)],
+        },
+    
       },
     },
   )

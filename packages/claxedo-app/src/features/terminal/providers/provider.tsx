@@ -4,7 +4,6 @@ import { useSDK, useClaxedoEventsOptional } from "@/features/terminal/app-ports"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { scopeUrl } from "@/lib/url"
 import { defaultTitleNumber } from "@/lib/terminal-title"
-import { isRecord } from "@/lib/record"
 import { clearInitialCommandMarker } from "@/features/terminal/core/terminal-recovery"
 import { pickPersistBufferEvictions } from "@/features/terminal/core/terminal-buffer"
 import { mergeCreatedTerminal, nextTerminalNumber, type LocalPTY, type NewTerminalInput } from "@/features/terminal/providers/shared"
@@ -20,10 +19,10 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { terminalPtyApiPath } from "@/features/terminal/core/terminal-connection"
 import { terminalLaunchCommand } from "@/features/terminal/core/terminal-launch-command"
 import { createRefCountedResourceCache } from "@/platform/sync/live-resource-cache"
+import { asFiniteNumber, asString, isRecord } from "@claxedo/helpers/guards"
 export type { LocalPTY } from "@/features/terminal/providers/shared"
 
 const WORKSPACE_KEY = "__workspace__"
-const MAX_TERMINAL_SESSIONS = 20
 const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "true"
 
 type TerminalSession = ReturnType<typeof createTerminalSession>
@@ -34,14 +33,6 @@ type TerminalCacheEntry = {
 }
 
 const scope = scopeUrl
-
-function str(value: unknown) {
-  return typeof value === "string" ? value : undefined
-}
-
-function num(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
 
 function bool(value: unknown) {
   return typeof value === "boolean" ? value : undefined
@@ -71,25 +62,25 @@ export function workspaceRelativeCwd(workspaceDir: string, cwd: string | undefin
 }
 
 function pty(value: unknown): LocalPTY | undefined {
-  if (!isRecord(value)) return undefined
 
-  const id = str(value.id)
+  if (!isRecord(value)) return undefined
+  const id = asString(value.id)
   if (!id) return undefined
 
-  const title = str(value.title) ?? ""
-  const cwd = str(value.cwd)
-  const rows = num(value.rows)
-  const cols = num(value.cols)
-  const buffer = str(value.buffer)
-  const modeSequences = str(value.modeSequences)
+  const title = asString(value.title) ?? ""
+  const cwd = asString(value.cwd)
+  const rows = asFiniteNumber(value.rows)
+  const cols = asFiniteNumber(value.cols)
+  const buffer = asString(value.buffer)
+  const modeSequences = asString(value.modeSequences)
   const wasAltScreen = bool(value.wasAltScreen)
   const wasAtBottom = bool(value.wasAtBottom)
-  const scrollY = num(value.scrollY)
-  const cursor = num(value.cursor)
-  const initialCommand = str(value.initialCommand)
-  const sessionId = str(value.sessionId)
-  const createRequestId = str(value.createRequestId)
-  const direct = num(value.titleNumber)
+  const scrollY = asFiniteNumber(value.scrollY)
+  const cursor = asFiniteNumber(value.cursor)
+  const initialCommand = asString(value.initialCommand)
+  const sessionId = asString(value.sessionId)
+  const createRequestId = asString(value.createRequestId)
+  const direct = asFiniteNumber(value.titleNumber)
 
   return {
     id,
@@ -121,7 +112,7 @@ function migrateTerminalState(value: unknown) {
     return [next]
   })
 
-  const active = str(value.active)
+  const active = asString(value.active)
 
   return {
     active: active && seen.has(active) ? active : all[0]?.id,
@@ -137,7 +128,7 @@ function terminalPersistTarget(url: string, dir: string) {
 
 // Ref-counted so multiple provider instances scoped to the same directory
 // share one live terminal session and dispose it once, after the last releases.
-const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>(MAX_TERMINAL_SESSIONS)
+const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>()
 
 type TerminalSessionOptions = {
   claxedoServerUrl?: string
@@ -366,26 +357,18 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     return runtime.transport.fetch(ptyPath(path, runtime.workspaceId), init)
   }
   const claxedoPort = (() => {
-    // NEVER fall back to a constant port. This value becomes `CLAXEDO_PORT` in
+    // Never fall back to a constant port. This value becomes `CLAXEDO_PORT` in
     // every terminal's environment, and the agent notify hook
-    // (`~/.workspace-runtime/hooks/notify.sh`) POSTs its lifecycle events there
-    // — so a wrong value means terminal coding agents show no status at all,
-    // SILENTLY, because notify.sh discards its curl output.
-    //
-    // The old code returned the historical fixed dev port both when the URL had no explicit port and
-    // when it failed to parse. That is right only for the dev server, which
-    // once genuinely used that port — which is exactly why this stayed invisible. The
-    // PACKAGED app's embedded server binds an EPHEMERAL port (61435, 61883 and
-    // 54728 observed across runs on 2026-08-06), and `lsof`/`curl` confirmed
-    // nothing listens on the guessed port there, so every hook POST was swallowed. Same
-    // failure shape as the `CLAXEDO_PORT=80` defect fixed in claxedo-server's
-    // `embeddedRuntimeTargetUrl`, reintroduced downstream by a different
-    // wrong constant.
+    // (`~/.workspace-runtime/hooks/notify.sh`) POSTs its lifecycle events there,
+    // so a wrong value means terminal coding agents show no status at all and
+    // notify.sh discards the failing curl's output silently. The packaged
+    // app's embedded server binds an ephemeral port per launch, so there is no
+    // fixed value to guess even for one product.
     //
     // A missing port is legitimate (a plain http/https origin), so that case
-    // derives the scheme default. An UNPARSEABLE base is not legitimate — it
+    // derives the scheme default. An unparseable base is not legitimate — it
     // means the caller handed us something that is not an origin, and guessing
-    // a port there is what made this class of bug undetectable. Return
+    // a port there is what would make this class of bug undetectable. Return
     // undefined and let the caller omit the variable rather than inject a lie.
     try {
       const u = new URL(claxedoBase)

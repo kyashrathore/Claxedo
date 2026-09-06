@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentPresentationSession as Session, AgentSnapshotFileDiff as SnapshotFileDiff, AgentTodo as Todo } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 import { applyDirectoryEventToShellQueries } from "./directory-event-projector"
 import { shellDataKeys } from "@/platform/sync/keys"
 
@@ -79,14 +80,18 @@ describe("directory event shell query projector", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "todo"))).toBeUndefined()
   })
 
-  test("leaves session list creates and non-archived updates to the directory cache projector", () => {
-    apply({ type: "session.created", properties: { info: root("ses_created") } })
-    apply({
-      type: "session.updated",
-      properties: { info: { ...root("ses_created"), title: "Renamed" } },
+  test("non-archived updates rename the cached list row without clearing session resources", () => {
+    const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws" })
+    queryClient.setQueryData(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [{ sessionId: "ses_created", directory: "/tmp/ws", title: "Before", updatedAt: 1 }],
     })
+    queryClient.setQueryData(shellDataKeys.sessionId("ses_created", "todo"), [{ id: "todo_1" }])
 
-    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_created", "todo"))).toBeUndefined()
+    apply({ type: "session.updated", properties: { info: { ...root("ses_created"), title: "Renamed" } } })
+
+    expect(queryClient.getQueryData(key)).toMatchObject({ items: [{ sessionId: "ses_created", title: "Renamed" }] })
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_created", "todo"))).toEqual([{ id: "todo_1" }])
   })
 
   test("archives remove shell session queries", () => {
@@ -98,9 +103,9 @@ describe("directory event shell query projector", () => {
   })
 
   test("message.completed bumps session list updatedAt for reorder", () => {
-    const key = ["shell", "default", "sessionList", { scope: "directory", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" }] as const
+    const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" })
     queryClient.setQueryData(key, {
-      view: { scope: "directory", groupBy: "none", sort: "updated_desc", limit: 50 },
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
       items: [
         { sessionId: "ses_b", directory: "/tmp/ws", updatedAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
         { sessionId: "ses_a", directory: "/tmp/ws", updatedAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },

@@ -79,6 +79,7 @@ import {
 } from "./session-turn-lease"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import { SessionRollbackError } from "../session-rollback-error"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -540,7 +541,7 @@ function sessionLifecycleInfo(input: {
   workspaceId?: string
 }) {
   const row = input.session as Record<string, unknown>
-  const time = rec(row.time)
+  const time = asRecord(row.time)
   const created = typeof time?.created === "number"
     ? time.created
     : Date.now()
@@ -902,7 +903,7 @@ async function collectionSessionIds(
 }
 
 function explicitSessionId(input: unknown) {
-  const row = rec(input)
+  const row = asRecord(input)
   return typeof row?.sessionID === "string"
     ? row.sessionID
     : typeof row?.sessionId === "string"
@@ -911,12 +912,12 @@ function explicitSessionId(input: unknown) {
 }
 
 function rowSessionId(input: unknown) {
-  const row = rec(input)
+  const row = asRecord(input)
   return explicitSessionId(row) || (typeof row?.id === "string" ? row.id : "")
 }
 
 function interactionSessionId(rows: readonly unknown[], interactionId: string) {
-  return explicitSessionId(rows.find((item) => rec(item)?.id === interactionId))
+  return explicitSessionId(rows.find((item) => asRecord(item)?.id === interactionId))
 }
 
 function interactionNotFound(c: Ctx, kind: "permission" | "question", id: string) {
@@ -963,7 +964,7 @@ function sessionBusEventSessionId(event: unknown): string | undefined {
 }
 
 function sensitiveSessionBusEvent(event: unknown) {
-  const row = rec(event)
+  const row = asRecord(event)
   return row?.type === "agent.lifecycle" && (typeof row.prompt === "string" || typeof row.lastAssistantMessage === "string")
 }
 
@@ -1072,7 +1073,7 @@ export function createSessionRoutes(opts: Opts) {
           .map(summarizeSession)
           .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
           .filter((item) => !roots || typeof item.parentID !== "string")
-          .filter((item) => archived || typeof rec(item.time)?.archived !== "number")
+          .filter((item) => archived || typeof asRecord(item.time)?.archived !== "number")
           .slice(0, limit)
       return c.json(data)
     })
@@ -1748,7 +1749,7 @@ export function createSessionRoutes(opts: Opts) {
           if (c.req.header("x-claxedo-idempotency-retry") === "1") {
             const messages = await opts.getMessages?.(c, directory, id)
               ?? await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
-            const projected = messages.some((message) => rec(message.info)?.id === body.messageID)
+            const projected = messages.some((message) => asRecord(message.info)?.id === body.messageID)
             const session = projected
               ? undefined
               : await readSession(opts, c, directory, id, adapter)

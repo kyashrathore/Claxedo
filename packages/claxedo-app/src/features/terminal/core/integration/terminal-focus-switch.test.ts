@@ -59,6 +59,7 @@ function makeQueue(input?: {
       if (!next) continue
       next()
     }
+    expect(frames).toHaveLength(0)
   }
 
   const flushAsyncWrites = () => {
@@ -81,6 +82,7 @@ describe("portal remount: dispose and recreate queue", () => {
     env1.queue.push("first-mount")
     // Immediate unmount before frame fires
     env1.queue.dispose()
+    env1.runFrames() // A callback already handed to the browser must remain inert.
 
     // Second mount
     const env2 = makeQueue()
@@ -127,12 +129,7 @@ describe("pending to live transition during focus switch", () => {
 
     env.runFrames()
 
-    // Verify ordering: pending must come before live
-    const all = env.writes.join("")
-    const pendingIdx = all.indexOf("pending")
-    const liveIdx = all.indexOf("live")
-    expect(pendingIdx).toBeGreaterThanOrEqual(0)
-    expect(liveIdx).toBeGreaterThan(pendingIdx)
+    expect(env.writes.join("")).toBe("pendinglive")
   })
 
   test("flushPending is idempotent", () => {
@@ -286,9 +283,7 @@ describe("high throughput during focus switch", () => {
     env.queue.flushPending()
     env.runFrames()
 
-    const all = env.writes.join("")
-    const chunkCount = (all.match(/chunk-/g) || []).length
-    expect(chunkCount).toBe(count)
+    expect(env.writes.join("")).toBe(Array.from({ length: count }, (_, index) => `chunk-${index}\n`).join(""))
   })
 
   test("alternating push and frame execution drains completely", () => {
@@ -301,9 +296,7 @@ describe("high throughput during focus switch", () => {
       env.runFrames()
     }
 
-    expect(env.writes.length).toBe(50)
-    expect(env.writes[0]).toBe("msg-0")
-    expect(env.writes[49]).toBe("msg-49")
+    expect(env.writes).toEqual(Array.from({ length: 50 }, (_, index) => `msg-${index}`))
   })
 
   test("burst of data followed by silence drains all chunks", () => {
@@ -319,8 +312,6 @@ describe("high throughput during focus switch", () => {
     // Then frames execute (simulates requestAnimationFrame catching up)
     env.runFrames()
 
-    const all = env.writes.join("")
-    const burstCount = (all.match(/burst-/g) || []).length
-    expect(burstCount).toBe(count)
+    expect(env.writes.join("")).toBe(Array.from({ length: count }, (_, index) => `burst-${index}\n`).join(""))
   })
 })

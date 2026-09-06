@@ -103,7 +103,7 @@ export function createShellSettle(input: {
     // count: re-opening inside the closing motion cancels the close's
     // transitions, and those `transitioncancel`s arrive BEFORE the opening
     // ones start. They are not this motion's, so they must not end it.
-    const running = new Set<string>()
+    const running = new Set<ShellSettleMotion>()
     const detachMotion = () => {
       for (const motion of motions) {
         motion.element.removeEventListener("transitionrun", onRun)
@@ -160,14 +160,16 @@ export function createShellSettle(input: {
       }, { timeout: SETTLE_IDLE_TIMEOUT_MS })
     }
     const tracks = (event: TransitionEvent) =>
-      motions.some((motion) => event.target === motion.element && event.propertyName === motion.property)
+      motions.find((motion) => event.target === motion.element && event.propertyName === motion.property)
     const onRun = (event: TransitionEvent) => {
-      if (tracks(event)) running.add(event.propertyName)
+      const motion = tracks(event)
+      if (motion) running.add(motion)
     }
     // The open animates two elements; the motion is over when the last of the
     // ones that started has finished, not the first.
     const onEnd = (event: TransitionEvent) => {
-      if (!tracks(event) || !running.delete(event.propertyName)) return
+      const motion = tracks(event)
+      if (!motion || !running.delete(motion)) return
       if (running.size === 0) settleMotion()
     }
     cancel = cleanup

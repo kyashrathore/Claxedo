@@ -61,7 +61,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version-file: package.json
 
       # --minimum-release-age=0: a tag build adopts nothing new, it rebuilds the
       # exact integrity-hashed graph already in bun.lock, so the age gate adds no
@@ -95,7 +95,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build diagnostics package dependencies
-        run: bun run build:claxedo-runtime-deps
+        run: bun run build:packages
 
       - name: Build desktop diagnostics helper
         working-directory: packages/claxedo-desktop
@@ -203,7 +203,7 @@ jobs:
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       - name: Setup Node.js
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
@@ -226,12 +226,12 @@ jobs:
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         run: bun install --frozen-lockfile --minimum-release-age=0
 
-      # The @claxedo workspace packages resolve through their dist/ exports,
-      # which don't exist on a fresh checkout; the desktop server bundle
-      # imports them. Same list as test.yml's dist-resolved build step.
+      # The desktop server bundle consumes the @claxedo workspace packages as
+      # their published dist (script/published-exports-plugin.ts), which does
+      # not exist on a fresh checkout. One list: root package.json `build:packages`.
       - name: Build dist-resolved workspace packages
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
-        run: bun run build:claxedo-runtime-deps
+        run: bun run build:packages
 
       - name: Pin release version
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
@@ -561,7 +561,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       # Same rationale as the other release installs: exact locked graph, and the
       # age gate must never brick the updater-feed job on wall-clock time.

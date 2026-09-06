@@ -75,10 +75,7 @@ export function sessionHarnessIdentity(type: HarnessType) {
     : { id: type.connectionId, access: "connection" as const }
 }
 
-export function effectiveHarnessModel(type: HarnessType, selected?: string | null) {
-  if (isCatalogHarness(type)) return selected || ""
-  return selected || DEFAULT_HARNESS_MODEL.id
-}
+
 
 /** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
 export function isNativeSdkHarness(type: HarnessType) {

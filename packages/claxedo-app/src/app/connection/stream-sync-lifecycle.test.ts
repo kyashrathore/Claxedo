@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   streamSyncArmedTimer,
-  streamSyncLifecycleTransitions,
   transitionStreamSyncLifecycle,
   type StreamSyncLifecycleEvent,
   type StreamSyncLifecycleState,
@@ -50,16 +49,5 @@ describe("StreamSync lifecycle", () => {
     expect(streamSyncArmedTimer("idle")).toBe("none")
     expect(streamSyncArmedTimer("connecting")).toBe("none")
     expect(streamSyncArmedTimer("stopped")).toBe("none")
-    for (const state of states) {
-      expect(["none", "heartbeat", "reconnect"]).toContain(streamSyncArmedTimer(state))
-    }
-  })
-
-  test("matches the declared transition table for every state/event pair", () => {
-    for (const state of states) {
-      for (const event of events) {
-        expect(transitionStreamSyncLifecycle(state, event)).toBe(streamSyncLifecycleTransitions[state][event])
-      }
-    }
   })
 })

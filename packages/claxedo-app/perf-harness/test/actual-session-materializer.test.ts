@@ -12,6 +12,7 @@ describe("actual OpenCode session materialization", () => {
       const sourcePath = path.join(root, "source.db")
       writeSourceDatabase(sourcePath)
       const before = await stat(sourcePath)
+      const originalBytes = await readFile(sourcePath)
       const result = await materializeActualSessions({
         sourceDatabasePath: sourcePath,
         dataDirectory: path.join(root, "state", "data"),
@@ -28,7 +29,6 @@ describe("actual OpenCode session materialization", () => {
       expect(result.sourceAliasCount).toBe(0)
       expect(result.readinessTargets.size).toBe(41)
       expect(result.messageCount).toBe(82)
-      expect(JSON.stringify(result)).not.toContain("source-session-")
       const control = result.readinessTargets.get("control")
       expect(control?.expectedPartIds).toHaveLength(2)
       // Claxedo's journal preserves each source part, including whitespace-only parts.
@@ -49,13 +49,15 @@ describe("actual OpenCode session materialization", () => {
       }>
       destination.close()
       expect(identities).toHaveLength(41)
+      expect(messageData).toHaveLength(82)
+      expect([...result.readinessTargets.values()].every((target) => !JSON.stringify(target).includes("source-session-"))).toBe(true)
       expect(
         identities.every((row) => row.id.startsWith("ses_actual_") && row.title.startsWith("Actual session ")),
       ).toBe(true)
       expect(
         messageData.every((row) => !row.data.includes("source-message-") && !row.data.includes("/private/source")),
       ).toBe(true)
-      expect(await readFile(sourcePath)).toHaveLength(before.size)
+      expect(await readFile(sourcePath)).toEqual(originalBytes)
 
       const source = new Database(sourcePath)
       source

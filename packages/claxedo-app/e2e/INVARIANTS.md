@@ -43,7 +43,7 @@ green output alone.
    A1, which keeps exactly this kind of assertion but demotes it explicitly: "A1 is
    explicitly demoted... It stays only because it fails earlier and more legibly than B1."
 
-## The Oracle (verbatim from the plan)
+## The Oracle
 
 Proof of a completed turn is ALL of:
 
@@ -72,7 +72,7 @@ arrives), delayed idle, error mid-turn, dispatch failure, and slow/failed config
 ## Cross-cutting invariants
 
 These hold across every spec in this suite. A spec that needs to violate one must say so
-explicitly in its own SPEC block's INVARIANTS section, with a reason.
+in its own header comment, with a reason.
 
 1. **Harness ownership.** The selected harness (opencode / acp:claude / codex-app-server /
    acp:cursor / pi / …) owns model, effort/variant, and submit payload shape at every
@@ -111,35 +111,24 @@ explicitly in its own SPEC block's INVARIANTS section, with a reason.
    must call `stampTestAuth()` explicitly; no spec may depend silently on
    `navigator.webdriver` to become Test User.
 
-## The SPEC comment (every spec file, non-negotiable)
+## The header comment (every spec file)
 
-Every spec file opens with a `/** SPEC … */` block — a complete prose specification of the
-feature it owns, written so that an engineer or AI agent who reads ONLY the spec file can
-re-implement the feature in another language/framework:
+Every spec file opens with a doc comment naming what the file covers and the constraints a
+reader has to know before editing it: where the relevant state lives and what survives a
+reload, the traps in the harness (a route pattern that must end in `**`, a fixture whose
+ids have to sort in emission order, a selector that resolves to an off-screen twin), and
+anything the file does that looks wrong until you know why.
 
-```
-/**
- * SPEC: <feature name>
- *
- * PURPOSE — what the user accomplishes with this feature and why it exists.
- * STATE MODEL — the states/transitions (draft→submitting→busy→settled…), where each
- *   piece of state lives (URL, localStorage key, server, in-memory store), and what
- *   survives reload vs navigation vs nothing.
- * ANATOMY — the DOM contract: every data-slot/data-testid/role this feature exposes,
- *   what renders where, and what each visual state looks like (busy, empty, error,
- *   disabled, offline, read-only).
- * BEHAVIORS — numbered list; every user-visible behavior with its trigger and its
- *   observable proof. Each test() below cites the behavior number(s) it pins.
- * INVARIANTS — the never-break rules (e.g. "selected harness owns model/effort/payload
- *   at every stage", "completed assistant content is never hidden by stale busy state").
- * HARNESS NOTES — per-harness differences that reach this feature (event shapes,
- *   capability gating), if any.
- * OUT OF SCOPE — what this spec deliberately does not cover and which spec does.
- */
-```
+Keep it to what a reader of this file alone cannot work out from the code below it. It is
+not a specification of the feature, an inventory of selectors, a list of the tests, or a
+record of how the file came to look this way. A header that restates the test titles has
+nothing in it; delete those lines rather than maintain them.
 
-Behavior numbers make drift visible: a test with no behavior citation, or a behavior with
-no test, fails review.
+The same bar applies to every comment in the file. A comment earns its place by naming a
+non-obvious invariant, a reason, or a trap — written in the present tense against the code
+as it stands. References to plans, reviews, defect numbers, dated decisions, or numbered
+behaviors resolve to nothing for the next reader and do not belong in the source. A past
+failure may appear only as the clause explaining why a guard exists.
 
 ## Authoring rules
 
@@ -158,9 +147,10 @@ no test, fails review.
    deterministic wait (`expect.poll`, `page.waitForResponse`, a DOM state change) — never
    by sleeping N ms and hoping nothing showed up. `waitForTimeout` is fine as an
    *additional* settle buffer alongside a real assertion, never as the only proof.
-4. **Behavior-number citations.** Every `test()` title or leading comment cites the
-   BEHAVIORS number(s) from its file's SPEC block it is pinning, e.g. `test("core local
-   session survives multiple turns and reload resume — behaviors 2,4 @core", ...)`.
+4. **Titles state the behavior.** A `test()` title says what the user-visible behavior is
+   and, where it matters, what proves it — e.g. `test("core local session survives multiple
+   turns and reload resume @core", ...)`. A title that names only a mechanism or a number
+   tells a reader of a failing CI log nothing.
 5. **Evidence path convention.** Screenshots land at
    `test-results/evidence/<spec-file-basename-without-.spec.ts>/<test-title-slug>.png`.
    `expectAssistantReplyVisible` derives this automatically from Playwright's `testInfo`

@@ -1,16 +1,17 @@
 import type { ChannelSink, OutboundChunk } from "../envelope"
 import type { ApprovalBridge } from "./approval-bridge"
-import { filled as str, record as rec } from "../json"
+import { asRecord } from "@claxedo/helpers/guards"
+import { filled as str } from "../json"
 
 function textFromPart(input: unknown): string | undefined {
-  const row = rec(input)
+  const row = asRecord(input)
   if (row?.type !== "text") return undefined
   return typeof row.text === "string" ? row.text : undefined
 }
 
 function textFromMessageUpdated(input: Record<string, unknown>): string | undefined {
-  const properties = rec(input.properties)
-  const info = rec(properties?.info)
+  const properties = asRecord(input.properties)
+  const info = asRecord(properties?.info)
   if (info?.role !== "assistant") return undefined
   return Array.isArray(properties?.parts)
     ? properties.parts.flatMap((part) => textFromPart(part) ?? []).join("")
@@ -18,15 +19,15 @@ function textFromMessageUpdated(input: Record<string, unknown>): string | undefi
 }
 
 function textPartUpdate(input: Record<string, unknown>): { id: string; text: string } | undefined {
-  const properties = rec(input.properties)
-  const part = rec(properties?.part)
+  const properties = asRecord(input.properties)
+  const part = asRecord(properties?.part)
   if (part?.type !== "text") return undefined
   const id = typeof part.id === "string" ? part.id : "part"
   return typeof part.text === "string" ? { id, text: part.text } : undefined
 }
 
 function textFromMessagePartDelta(input: Record<string, unknown>): string | undefined {
-  const properties = rec(input.properties)
+  const properties = asRecord(input.properties)
   if (typeof properties?.delta !== "string") return undefined
   return properties.delta
 }
@@ -66,9 +67,9 @@ function approvalFromRuntimeEvent(input: Record<string, unknown>, context: {
   requestee?: string
 }) {
   if (input.type !== "permission.asked") return undefined
-  const properties = rec(input.properties)
+  const properties = asRecord(input.properties)
   if (!properties || typeof properties.id !== "string") return undefined
-  const metadata = rec(properties.metadata)
+  const metadata = asRecord(properties.metadata)
   const patterns = Array.isArray(properties.patterns)
     ? properties.patterns.flatMap((pattern) => str(pattern) ?? [])
     : []
@@ -103,7 +104,7 @@ export async function streamRuntimeReplies(input: {
   const parts = new Map<string, string>()
   await input.reply({ kind: "status", phase: "running", sessionId: input.sessionId, ...(input.appUrl ? { appUrl: input.appUrl } : {}) })
   for await (const event of input.events) {
-    const row = rec(event)
+    const row = asRecord(event)
     if (!row) continue
     const approval = approvalFromRuntimeEvent(row, {
       sessionId: input.sessionId,

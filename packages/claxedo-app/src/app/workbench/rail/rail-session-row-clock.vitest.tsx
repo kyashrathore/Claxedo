@@ -40,7 +40,7 @@ vi.mock("@/app/connection/server", () => ({
 
 vi.mock("@/platform/account/account-provider", () => ({
   useAccountPort: () => ({
-    state: () => ({ status: "signed-out" }),
+    state: () => ({ status: "unsigned" }),
     signIn: async () => undefined,
     signOut: async () => undefined,
     run: async () => undefined,

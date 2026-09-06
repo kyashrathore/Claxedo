@@ -1,6 +1,8 @@
 import path from "node:path"
 import { config } from "../config"
-import { number, object, readJsonFile, text, writePrivateJson } from "../json"
+import { object, readOptionalJsonFile, writePrivateJson } from "../json"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { asFiniteNumber } from "@claxedo/helpers/guards"
 
 export type HostRecord = {
   workspaceId: string
@@ -22,12 +24,12 @@ function statePath() {
 
 function hostRecord(input: unknown): HostRecord | undefined {
   const row = object(input)
-  const workspaceId = text(row.workspaceId)
-  const hostId = text(row.hostId)
-  const directory = text(row.directory)
-  const displayName = text(row.displayName)
-  const controlPlaneUrl = text(row.controlPlaneUrl)
-  const appUrl = text(row.appUrl)
+  const workspaceId = trimToUndefined(row.workspaceId)
+  const hostId = trimToUndefined(row.hostId)
+  const directory = trimToUndefined(row.directory)
+  const displayName = trimToUndefined(row.displayName)
+  const controlPlaneUrl = trimToUndefined(row.controlPlaneUrl)
+  const appUrl = trimToUndefined(row.appUrl)
   if (!workspaceId || !hostId || !directory || !displayName || !controlPlaneUrl || !appUrl) return undefined
   return {
     workspaceId,
@@ -36,16 +38,16 @@ function hostRecord(input: unknown): HostRecord | undefined {
     displayName,
     controlPlaneUrl,
     appUrl,
-    ...(text(row.relayUrl) ? { relayUrl: text(row.relayUrl) } : {}),
-    ...(number(row.runtimePort) ? { runtimePort: number(row.runtimePort) } : {}),
-    ...(number(row.pid) ? { pid: number(row.pid) } : {}),
+    ...(trimToUndefined(row.relayUrl) ? { relayUrl: trimToUndefined(row.relayUrl) } : {}),
+    ...(asFiniteNumber(row.runtimePort) ? { runtimePort: asFiniteNumber(row.runtimePort) } : {}),
+    ...(asFiniteNumber(row.pid) ? { pid: asFiniteNumber(row.pid) } : {}),
     ...(typeof row.detached === "boolean" ? { detached: row.detached } : {}),
-    updatedAt: number(row.updatedAt) ?? 0,
+    updatedAt: asFiniteNumber(row.updatedAt) ?? 0,
   }
 }
 
 export async function readHostState() {
-  const raw = object(await readJsonFile(statePath()))
+  const raw = object(await readOptionalJsonFile(statePath()))
   const hosts = Array.isArray(raw.hosts) ? raw.hosts.map(hostRecord).filter((item) => !!item) : []
   return { hosts }
 }

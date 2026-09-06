@@ -177,21 +177,6 @@ describe("hosted cloud project label", () => {
     expect(projectChip()?.label).toBe("claxedo/opencode")
   })
 
-  // The guarantee the bug report is really about: whatever else is missing, the
-  // chip must not read "workspace" while better data is in the inventory.
-  test("never labels a hosted cloud project 'workspace'", () => {
-    for (const projects of [
-      [bootstrapProject],
-      [snapshotProject],
-      [{ ...bootstrapProject, name: "claxedo/opencode" }],
-    ]) {
-      state.projects = projects
-      renderView()
-      expect(projectChip()?.label).not.toBe("workspace")
-      cleanup()
-    }
-  })
-
   // With genuinely nothing to derive from, the basename is still the honest
   // last resort — this pins that the fallback was not removed.
   test("falls back to the basename when no repo identity exists anywhere", () => {

@@ -1,3 +1,4 @@
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type {
   AgentRuntimeEvent,
   SubagentStatus,
@@ -6,7 +7,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
-import { number, object, optionLabels, pathFields, text } from "../../value"
+import { optionLabels, pathFields, text } from "../../value"
 import type { ServerNotification, ServerRequest } from "./protocol"
 
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
@@ -55,11 +56,11 @@ function pruneTurnState(state?: CodexAppServerAdapterState): CodexAppServerAdapt
 }
 
 function payload(event: { payload: unknown }) {
-  return object(event.payload) ?? {}
+  return asRecord(event.payload) ?? {}
 }
 
 function eventFields(event: { payload: unknown }) {
-  return object(event) ?? {}
+  return asRecord(event) ?? {}
 }
 
 function eventText(event: { payload: unknown }) {
@@ -69,7 +70,7 @@ function eventText(event: { payload: unknown }) {
 }
 
 function item(event: { payload: unknown }) {
-  return object(payload(event).item)
+  return asRecord(payload(event).item)
 }
 
 export type CodexCollabAgentCall = {
@@ -84,14 +85,14 @@ export type CodexCollabAgentCall = {
 }
 
 export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | undefined {
-  const row = object(value)
+  const row = asRecord(value)
   if (row?.type !== "collabAgentToolCall") return undefined
   const id = text(row.id)
   const tool = text(row.tool)
   const senderThreadId = text(row.senderThreadId)
   if (!id || !tool || !senderThreadId || !Array.isArray(row.receiverThreadIds)) return undefined
   const receiverThreadIds = row.receiverThreadIds.filter((value): value is string => typeof value === "string" && value.length > 0)
-  const agentsStates = object(row.agentsStates) ?? {}
+  const agentsStates = asRecord(row.agentsStates) ?? {}
   return {
     id,
     tool,
@@ -101,7 +102,7 @@ export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | und
     ...(text(row.prompt) ? { prompt: text(row.prompt) } : {}),
     ...(text(row.model) ? { model: text(row.model) } : {}),
     statuses: Object.fromEntries(receiverThreadIds.flatMap((threadId) => {
-      const status = codexCollabAgentStatus(object(agentsStates[threadId])?.status)
+      const status = codexCollabAgentStatus(asRecord(agentsStates[threadId])?.status)
       return status ? [[threadId, status]] : []
     })),
   }
@@ -119,11 +120,11 @@ export function codexCollabAgentStatus(value: unknown): SubagentStatus | undefin
 }
 
 export function codexStartedSubagent(value: unknown) {
-  const thread = object(object(value)?.thread)
+  const thread = asRecord(asRecord(value)?.thread)
   const id = text(thread?.id)
   const parentThreadId = text(thread?.parentThreadId)
   if (!id || !parentThreadId) return undefined
-  const status = text(object(thread?.status)?.type)
+  const status = text(asRecord(thread?.status)?.type)
   return {
     id,
     parentThreadId,
@@ -181,7 +182,7 @@ function toolNameForItem(itemType: string, row: Record<string, unknown>) {
 }
 
 function structuredInput(row: Record<string, unknown>) {
-  const direct = object(row.input)
+  const direct = asRecord(row.input)
   if (direct) return direct
   const input = Object.fromEntries(
     ["command", "cwd", "path", "filePath", "query", "prompt", "toolName", "name", "processId", "processHandle", "stream"].flatMap((key) =>
@@ -217,7 +218,7 @@ function requestTool(method: string, row: Record<string, unknown>) {
 function questions(row: Record<string, unknown>) {
   const raw = Array.isArray(row.questions) ? row.questions : []
   return raw.flatMap((question, i) => {
-    const item = object(question)
+    const item = asRecord(question)
     if (!item) return []
     const prompt = text(item.question) ?? text(item.prompt) ?? text(item.text)
     if (!prompt) return []
@@ -232,7 +233,7 @@ function questions(row: Record<string, unknown>) {
 function todosFromPlan(row: Record<string, unknown>) {
   const plan = Array.isArray(row.plan) ? row.plan : []
   return plan.flatMap((step, i) => {
-    const item = object(step)
+    const item = asRecord(step)
     if (!item) return []
     const description = text(item.step) ?? text(item.content) ?? text(item.description)
     if (!description) return []
@@ -257,11 +258,11 @@ function usage(
   turnUsage: CodexTurnUsageState | undefined,
   nativeSessionId?: string,
 ): { event: AgentRuntimeEvent; turnUsage: CodexTurnUsageState } | undefined {
-  const tokenUsage = object(row.tokenUsage) ?? row
-  const total = object(tokenUsage.total)
-  const last = object(tokenUsage.last) ?? {}
-  const contextSize = number(tokenUsage.modelContextWindow) ?? number(row.modelContextWindow)
-  const contextUsed = number(last.totalTokens) ?? number(tokenUsage.totalTokens) ?? number(total?.totalTokens)
+  const tokenUsage = asRecord(row.tokenUsage) ?? row
+  const total = asRecord(tokenUsage.total)
+  const last = asRecord(tokenUsage.last) ?? {}
+  const contextSize = asFiniteNumber(tokenUsage.modelContextWindow) ?? asFiniteNumber(row.modelContextWindow)
+  const contextUsed = asFiniteNumber(last.totalTokens) ?? asFiniteNumber(tokenUsage.totalTokens) ?? asFiniteNumber(total?.totalTokens)
   if (contextUsed === undefined && contextSize === undefined) return undefined
   const usageEvent = (observation?: Extract<AgentRuntimeEvent, { type: "usage" }>["observation"]) => ({
     type: "usage" as const,
@@ -279,17 +280,17 @@ function usage(
   }
   // A turn spans many API requests. Sum each request into a turn-cumulative
   // accumulator (kind "cumulative" replaces on the meter side, so emitting the
-  // bare per-request `last` used to drop every request but the final one).
+  // bare per-request `last` would drop every request but the final one).
   // Within a turn, prefer the difference of session totals so a missed
   // emission is recovered; the turn's first request falls back to `last`.
   const previousTotals = turnUsage?.previousTotals
   const delta = (field: CodexUsageField) => {
     if (total && previousTotals) {
-      const current = number(total[field])
-      const previous = number(previousTotals[field])
+      const current = asFiniteNumber(total[field])
+      const previous = asFiniteNumber(previousTotals[field])
       if (current !== undefined && previous !== undefined) return Math.max(0, current - previous)
     }
-    return number(last[field])
+    return asFiniteNumber(last[field])
   }
   const accumulated = {
     inputTokens: addNullable(turnUsage?.accumulated.inputTokens ?? null, delta("inputTokens")),
@@ -329,10 +330,10 @@ function completionEvents(
   lastLimitedRateLimitMessage?: string,
 ) {
   const row = payload(event)
-  const turn = object(row.turn) ?? row
+  const turn = asRecord(row.turn) ?? row
   const status = text(turn.status)
   if (status === "failed" || status === "error") {
-    const message = turnErrorMessage(object(turn.error), lastLimitedRateLimitMessage)
+    const message = turnErrorMessage(asRecord(turn.error), lastLimitedRateLimitMessage)
       ?? text(row.message)
       ?? lastLimitedRateLimitMessage
       ?? "Codex turn failed"
@@ -506,7 +507,7 @@ function processExitEvents(input: {
     toolName: "process",
     rawInput: structuredInput(input.row),
   })
-  const exitCode = number(input.row.exitCode) ?? 0
+  const exitCode = asFiniteNumber(input.row.exitCode) ?? 0
   const bufferedOutput = [text(input.row.stdout), text(input.row.stderr)].filter((item): item is string => !!item).join("\n")
   const output = bufferedOutput || input.state.toolOutputByCallId[input.toolCallId] || ""
   return {
@@ -527,18 +528,18 @@ function processExitEvents(input: {
 }
 
 function rateLimitEvent(row: Record<string, unknown>) {
-  const rateLimits = object(row.rateLimits) ?? {}
-  const primary = object(rateLimits.primary)
-  const secondary = object(rateLimits.secondary)
+  const rateLimits = asRecord(row.rateLimits) ?? {}
+  const primary = asRecord(rateLimits.primary)
+  const secondary = asRecord(rateLimits.secondary)
   const window = [primary, secondary]
     .filter((item): item is Record<string, unknown> => !!item)
-    .sort((a, b) => (number(b.usedPercent) ?? 0) - (number(a.usedPercent) ?? 0))[0]
+    .sort((a, b) => (asFiniteNumber(b.usedPercent) ?? 0) - (asFiniteNumber(a.usedPercent) ?? 0))[0]
   return {
     type: "rate-limit",
     status: rateLimits.rateLimitReachedType ? "limited" : "ok",
-    usedPercent: number(window?.usedPercent),
-    resetsAt: number(window?.resetsAt) ?? null,
-    windowDurationMins: number(window?.windowDurationMins) ?? null,
+    usedPercent: asFiniteNumber(window?.usedPercent),
+    resetsAt: asFiniteNumber(window?.resetsAt) ?? null,
+    windowDurationMins: asFiniteNumber(window?.windowDurationMins) ?? null,
     limitId: text(rateLimits.limitId) ?? null,
     limitName: text(rateLimits.limitName) ?? null,
     reason: text(rateLimits.rateLimitReachedType) ?? null,
@@ -590,7 +591,7 @@ function codexErrorInfoMessage(info: unknown) {
 }
 
 function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimitedRateLimitMessage?: string) {
-  const message = text(error?.message) ?? text(object(error?.message)?.message)
+  const message = text(error?.message) ?? text(asRecord(error?.message)?.message)
   const details = text(error?.additionalDetails)
   const fromInfo = codexErrorInfoMessage(error?.codexErrorInfo)
   const generic = !message || message.trim().toLowerCase() === "session error"
@@ -601,16 +602,16 @@ function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimite
 }
 
 function threadStatusEvents(row: Record<string, unknown>, lastLimitedRateLimitMessage?: string) {
-  const status = object(row.status)
+  const status = asRecord(row.status)
   const type = text(status?.type)
   if (type === "active") return [{ type: "session-status", status: "busy" }] satisfies AgentRuntimeEvent[]
   if (type === "idle" || type === "notLoaded") return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
   if (type === "systemError") {
     const message = lastLimitedRateLimitMessage
-      ?? turnErrorMessage(object(status) ?? object(row.error), lastLimitedRateLimitMessage)
-      ?? text(object(status)?.message)
+      ?? turnErrorMessage(asRecord(status) ?? asRecord(row.error), lastLimitedRateLimitMessage)
+      ?? text(asRecord(status)?.message)
       ?? text(row.message)
-      ?? text(object(row.error)?.message)
+      ?? text(asRecord(row.error)?.message)
       ?? "session error"
     return [
       { type: "session-status", status: "error" },
@@ -937,7 +938,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           })]
 
         case "error": {
-          const error = object(row.error)
+          const error = asRecord(row.error)
           const message = turnErrorMessage(error, state.lastLimitedRateLimitMessage)
             ?? text(row.message)
             ?? state.lastLimitedRateLimitMessage
@@ -1081,7 +1082,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           })
           const diffs = Array.isArray(row.changes)
             ? row.changes.flatMap((change) => {
-              const item = object(change)
+              const item = asRecord(change)
               const path = text(item?.path)
               const diff = text(item?.diff)
               if (!path || !diff) return []

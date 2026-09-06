@@ -237,7 +237,7 @@ describe("state/persistence", () => {
     expect(result.state.meta.content_1?.sessionId).toBe("ses_1")
   })
 
-  test("the marketplace does not survive a relaunch (owner decision 2026-09-04)", () => {
+  test("the marketplace does not survive a relaunch", () => {
     const input = emptyClaxedoState()
     input.workbench = {
       panes: [{ id: "pane_1", contentId: "marketplace_1" }],

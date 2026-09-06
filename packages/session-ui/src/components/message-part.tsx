@@ -657,7 +657,7 @@ export type PartRef = {
   partID: string
 }
 
-/** Category discriminator for a work group (T3): drives icon + summary priority. */
+/** Category discriminator for a work group: drives icon + summary priority. */
 export type WorkGroupTool = "bash" | "edit" | "write" | "apply_patch" | "webfetch" | "websearch"
 
 export const WORK_GROUP_TOOLS = new Set<string>([
@@ -1289,7 +1289,6 @@ function workGroupSummary(parts: AgentToolPart[]): WorkGroupCounts {
   return { edited, commands, fetched, searched }
 }
 
-// Icon priority (T4): edit wins when any edit exists, else web, else run-command.
 const EDIT_TOOL_NAMES = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
 const WEB_TOOL_NAMES = new Set(["webfetch", "websearch", "web_search"])
 
@@ -1299,7 +1298,7 @@ function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
   return "terminal-square"
 }
 
-// Segmented summary (D§3.4): present-continuous while running, past tense when settled;
+// Segmented summary: present-continuous while running, past tense when settled;
 // leading segment sentence-case, followers lowercase, joined with " · ".
 function workGroupSegments(counts: WorkGroupCounts, pending: boolean): string[] {
   const segs: string[] = []
@@ -1325,7 +1324,7 @@ function clampLabel(value: string, max = 72) {
 }
 
 /**
- * "active" header kind (D§3.4): while a member is still running, the group header shows
+ * "active" header kind: while a member is still running, the group header shows
  * that member's live summary instead of the settled aggregate — so a long run of tool
  * calls stays ONE row that keeps updating, rather than appending a row per call.
  */
@@ -1367,11 +1366,11 @@ function workGroupActiveLabel(parts: AgentToolPart[]): string | undefined {
 }
 
 /**
- * WorkGroup (T4) — generalizes ContextToolGroup for bash/edit/write/apply_patch/web runs.
+ * WorkGroup — generalizes ContextToolGroup for bash/edit/write/apply_patch/web runs.
  * Collapsed by default; header = category icon + segmented summary + gated chevron.
  * Expanded body is a 224px scroll region with edge fades when it overflows; member rows
  * are passed in as children (the app renders them so per-part open state persists) and are
- * dimmed + icon-less via CSS (depth by dimming, D§8 rule 6).
+ * dimmed + icon-less via CSS (nesting depth is conveyed by dimming, not by extra icons).
  */
 export function WorkGroup(props: {
   parts: AgentToolPart[]
@@ -2561,7 +2560,7 @@ ToolRegistry.register({
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"
     const sawPending = pending()
-    // Row reads "Ran <command>" (D§3.3) — verb + the real command, not a static "Shell"
+    // Row reads "Ran <command>" — verb + the real command, not a static "Shell"
     // label with the login-shell wrapper trailing behind it.
     const displayCommand = createMemo(() =>
       stripShellWrapper(String(props.input.command ?? props.metadata.command ?? "")),
@@ -2573,7 +2572,7 @@ ToolRegistry.register({
     })
     const [copied, setCopied] = createSignal(false)
 
-    // Dev-server preview row (T23): surface a "Local preview · 127.0.0.1:port" chip when the
+    // Dev-server preview row: surface a "Local preview · 127.0.0.1:port" chip when the
     // command output advertises a listening localhost URL. Pure client-side regex.
     const localUrl = createMemo(() => {
       if (pending()) return undefined

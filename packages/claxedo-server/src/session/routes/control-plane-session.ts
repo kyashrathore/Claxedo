@@ -26,9 +26,8 @@ import {
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
-import { readJsonRecord } from "../../platform/json/index"
+import { asRecord, readJsonRecord } from "../../platform/json/index"
 import { contentfulStatus } from "../../platform/http/status"
-import { asRecord } from "../../platform/json/index"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig

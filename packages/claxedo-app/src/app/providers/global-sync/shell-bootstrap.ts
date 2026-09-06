@@ -1,5 +1,6 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import { isRecord, readString } from "@/lib/record"
+import { readString } from "@/lib/record"
 
 export type ShellBootstrap = {
   path: GlobalBootstrapState["path"]

@@ -1,13 +1,17 @@
 import { expect, test } from "@playwright/test"
+import { installMockRuntime } from "../helpers/mock-runtime"
 
-test.describe("Codex theme contract @core", () => {
+test.describe("Codex stylesheet contract @core", () => {
+  test.beforeEach(async ({ page }) => {
+    await installMockRuntime(page, { dir: "/tmp/e2e-theme-contract", sessionId: "ses_theme" })
+  })
   for (const scheme of ["light", "dark"] as const) {
-    test(`prominent surfaces match the installed Codex elevation in ${scheme} mode`, async ({ page }) => {
+    test(`stylesheet surface hooks apply the specified Codex elevation in ${scheme} mode`, async ({ page }) => {
       await page.addInitScript((nextScheme) => {
         localStorage.setItem("opencode-theme-id", "codex")
         localStorage.setItem("opencode-color-scheme", nextScheme)
       }, scheme)
-      await page.goto("/demo/index.html")
+      await page.goto("/")
       await expect(page.locator("html")).toHaveAttribute("data-theme", "codex")
 
       const result = await page.evaluate(() => {
@@ -55,20 +59,15 @@ test.describe("Codex theme contract @core", () => {
     })
   }
 
-  test("component-owned geometry preserves Codex and non-Codex contracts", async ({ page }) => {
+  test("stylesheet geometry hooks preserve Codex and non-Codex values", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("opencode-theme-id", "codex")
       localStorage.setItem("opencode-color-scheme", "dark")
     })
-    await page.goto("/demo/index.html")
+    await page.goto("/")
 
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--composer-border").trim())).not.toBe("")
     const result = await page.evaluate(() => {
-      // The demo fixture loads the base theme sheet without the app's extended
-      // semantic-role injector. Supply the Codex dark value that production
-      // emits so the composer contract is exercised at the same boundary.
-      if (!getComputedStyle(document.documentElement).getPropertyValue("--composer-border").trim()) {
-        document.documentElement.style.setProperty("--composer-border", "#303030")
-      }
       const add = (attributes: Record<string, string>, className?: string) => {
         const node = document.createElement("div")
         Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, value))
@@ -180,7 +179,7 @@ test.describe("Codex theme contract @core", () => {
       localStorage.setItem("opencode-color-scheme", "dark")
     })
     await page.emulateMedia({ forcedColors: "active" })
-    await page.goto("/demo/index.html")
+    await page.goto("/")
 
     const result = await page.evaluate(() => {
       const overlay = document.createElement("div")

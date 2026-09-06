@@ -172,11 +172,9 @@ export function applyDirectorySessionCacheEvent(input: {
 // directly and either reconciles them with the HTTP response or marks the
 // draft as rolled back. This projection therefore only handles the `created`
 // phase, which is the one that needs to project the new session into the
-// per-directory session list. Server protocol confirmation
-// (rubric C5 / bug-bash open question #5): `creating` and `failed` events
-// never carry a `sessionID` — there is no live session row to attach UI
-// state to in those phases — so the dead branches that used to fire here
-// were no-op-by-construction.
+// per-directory session list. `creating` and `failed` events never carry a
+// `sessionID`, so there is no live session row to attach UI state to in
+// those phases anyway.
 export function applyClaxedoSessionLifecycleEvent(input: {
   event: ClaxedoSessionLifecycleEvent
   push: (directory: string) => void

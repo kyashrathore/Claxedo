@@ -9,8 +9,8 @@ import type {
   AgentSession,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 

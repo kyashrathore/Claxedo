@@ -1,48 +1,32 @@
 /**
- * SPEC: Hosted composer chip row — project identity, environment, workspace and branch choice
+ * The empty-draft composer's chip row on a hosted cloud session
+ * (`session-new-design-view.tsx` -> `session-context-row.tsx`): which project, where it
+ * runs, in which workspace, and from which branch. Mocked runtime only, no live control
+ * plane.
  *
- * PURPOSE — the empty-draft composer's chip row (`session-new-design-view.tsx` →
- * `session-context-row.tsx`) is the last thing a user configures before their first
- * prompt: WHICH project, WHERE it runs, IN WHICH workspace, and FROM WHICH branch.
- * On a hosted cloud session the context chips read from signed inventory and the
- * selected workspace runtime
- * (`queryOptions.projects()`, fed by `/api/claxedo/bootstrap`'s `project[]`), and all
- * three were wrong there in a way no local-lane spec could see:
+ * Every hosted cloud workspace is created with `remote_directory: "/workspace"`, so the
+ * chip's last-resort basename label reads as the literal word "workspace"; the project's
+ * real identity has to come from the workspace authority's repo fields. The environment
+ * chip offers cloud only on web — there is no local machine behind the renderer. The
+ * workspace chip lists the active project's workspaces, and the inventory arrives in two
+ * shapes keyed differently (by workspace id from the server bootstrap, by directory from
+ * the client snapshot), so a lookup that matches only one key collapses the chip to
+ * "create new" for a project that already has cloud workspaces.
  *
- *   1. PROJECT — hosted cloud workspaces are created with `remote_directory:
- *      "/workspace"` (routes/hosted/workspace.ts), and the chip's last-resort label is
- *      the directory BASENAME, so the chip read the literal word "workspace". The
- *      project's real identity is its repo; the workspace authority's `list` did not
- *      return `repo_url`/`repo_name`/`project_id` at all, so nothing better ever
- *      reached the client.
- *   2. ENVIRONMENT — the chip hardcoded `["local", "cloud"]`. On web there is no local
- *      machine behind the renderer, so "Local" was selectable but could never resolve
- *      to a workspace.
- *   3. WORKSPACE — the chip lists the ACTIVE project's workspaces filtered by kind, and
- *      the active-project lookup matched only the `workspaces` KEY. The inventory ships
- *      in two shapes that key it differently (by workspace id from the server
- *      bootstrap, by directory from the client snapshot), so the lookup missed one and
- *      the chip collapsed to "create new" for a project that already had cloud
- *      workspaces.
- *
- * This spec owns the hosted chip ROW's contract — what the chips offer and
- * display on a cloud draft. The branch case follows its selection through the canonical
- * workspace-create payload and one oracle-verified reply; the full provisioning state
- * machine remains owned by `core-cloud-provisioning.spec.ts`.
- *
- * ANATOMY — all three chips are `SessionContextRow` popovers; each trigger carries a
- * stable `data-slot` and a STATIC `aria-label` (the human-readable value is inner text
- * at `[data-slot="context-chip-label"]`, so the label is asserted as a FACT and never
- * used as a selector). Rows inside are `@opencode-ai/ui` `List` buttons —
- * `[data-slot="list-item"][data-key="<value>"]` — with no ARIA listbox roles.
+ * Each chip is a `SessionContextRow` popover whose trigger carries a stable `data-slot`
+ * and a static `aria-label`; the human-readable value is inner text at
+ * `[data-slot="context-chip-label"]`, so it is asserted as a fact and never used as a
+ * selector. Rows inside are `@opencode-ai/ui` `List` buttons
+ * (`[data-slot="list-item"][data-key="<value>"]`) with no ARIA listbox roles.
  *
  *   `[data-slot="context-chip-project"]`      — project;    keys are directories
  *   `[data-slot="context-chip-environment"]`  — local/cloud; keys are "local"/"cloud"
  *   `[data-slot="context-chip-worktree"]`     — workspace;   keys are workspace refs
  *   `[data-slot="context-chip-branch"]`       — base branch; keys are Git refs
  *
- * LANE — `@core`, selected by `CLAXEDO_E2E_SUITE=core`; mocked runtime only
- * (`e2e/helpers/mock-runtime.ts`), no live control plane.
+ * The branch case follows its selection through the canonical workspace-create payload
+ * and one oracle-verified reply; the provisioning state machine itself lives in
+ * `core-cloud-provisioning.spec.ts`.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
@@ -52,8 +36,8 @@ const DIR = "/tmp/e2e-core-composer-hosted-chips"
 const PROJECT_ID = "proj_core_composer_hosted"
 const PROJECT_NAME = "core-composer-hosted-local"
 const WORKSPACE_ID = "ws_core_composer_hosted"
-// The chip must render THIS, derived from the workspace's repo — never
-// "workspace", the basename of the hosted "/workspace" directory.
+// The chip renders this, derived from the workspace's repo, never "workspace", the
+// basename of the hosted "/workspace" directory.
 const WORKSPACE_PROJECT_NAME = "claxedo/hosted-composer"
 const RELAY_ORIGIN = "https://relay.core-composer-hosted-chips.test"
 
@@ -112,9 +96,9 @@ async function openCloudDraft(page: Page) {
 }
 
 /**
- * Resolve a chip trigger, requiring EXACTLY ONE visible instance. Zero (a
- * renamed slot, or a chip that never rendered because the row bailed) must fail
- * loudly here rather than as a downstream timeout that reads like a product bug.
+ * Resolves a chip trigger, requiring exactly one visible instance. A renamed slot or a
+ * chip the row never rendered fails here by name rather than as a downstream timeout
+ * that reads like a product bug.
  */
 async function chip(page: Page, slot: string): Promise<Locator> {
   const trigger = page.locator(`[data-slot="${slot}"]`).filter({ visible: true })
@@ -152,27 +136,25 @@ async function selectAgentConnection(page: Page, connectionId: string) {
 }
 
 test.describe("core composer hosted chips @core", () => {
-  test("the project chip shows the project's repo identity, never the '/workspace' basename — behavior 1", async ({ page }) => {
+  test("the project chip shows the project's repo identity, never the '/workspace' basename", async ({ page }) => {
     await openCloudDraft(page)
 
     const trigger = await chip(page, "context-chip-project")
     const label = trigger.locator('[data-slot="context-chip-label"]')
     await expect(label).toHaveText(WORKSPACE_PROJECT_NAME, { timeout: 20_000 })
-    // The regression, pinned as its own assertion: "workspace" is the basename
-    // of the literal directory every hosted cloud workspace is created in, and
-    // it is a real-looking label, so an equality check on the good value alone
-    // would not make the failure legible.
+    // Pinned as its own assertion: "workspace" is a real-looking label, so an equality
+    // check on the good value alone would not make the failure legible.
     await expect(label).not.toHaveText("workspace")
     await expect(label).not.toHaveText("/workspace")
 
     await page.screenshot({ path: `${EVIDENCE}/project-chip-label.png`, fullPage: true })
   })
 
-  test("the environment chip offers cloud only on web — behavior 2", async ({ page }) => {
+  test("the environment chip offers cloud only on web", async ({ page }) => {
     await openCloudDraft(page)
 
-    // Asserted as an exact list, not "does not contain local": a chip that
-    // renders zero options is also wrong, and `toEqual` catches both.
+    // An exact list, not "does not contain local": a chip that renders zero options is
+    // also wrong, and `toEqual` catches both.
     expect(await chipOptionKeys(page, "context-chip-environment")).toEqual(["cloud"])
 
     const trigger = await chip(page, "context-chip-environment")
@@ -182,31 +164,29 @@ test.describe("core composer hosted chips @core", () => {
     await page.keyboard.press("Escape")
   })
 
-  test("the workspace chip lists the project's existing cloud workspace to choose — behavior 3", async ({ page }) => {
+  test("the workspace chip lists the project's existing cloud workspace to choose", async ({ page }) => {
     await openCloudDraft(page)
 
     const trigger = await chip(page, "context-chip-worktree")
     await trigger.click()
     const rows = page.locator('[data-slot="list-item"]').filter({ visible: true })
-    // The defect was ZERO selectable rows — the chip collapsed straight to the
-    // create path — so the load-bearing claim is that an EXISTING workspace is
-    // offered at all.
+    // The load-bearing claim is that an existing workspace is offered at all: the
+    // failure mode is a chip that collapses straight to the create path.
     await expect(rows).toHaveCount(1, { timeout: 20_000 })
     await expect(rows.first()).toContainText("main")
 
     await page.screenshot({ path: `${EVIDENCE}/workspace-chip-existing.png`, fullPage: true })
     await page.keyboard.press("Escape")
 
-    // Choosing an existing workspace and creating a new one must stay distinct
-    // affordances: the create path is the popover's FOOTER action, never one of
-    // the rows above.
+    // Choosing an existing workspace and creating a new one stay distinct affordances:
+    // the create path is the popover's footer action, never one of the rows above.
     await trigger.click()
     await expect(page.getByText("New cloud sandbox").filter({ visible: true }))
       .toHaveCount(1, { timeout: 20_000 })
     await page.keyboard.press("Escape")
   })
 
-  test("selecting the existing cloud workspace keeps the draft on it — behavior 4", async ({ page }) => {
+  test("selecting the existing cloud workspace keeps the draft on it", async ({ page }) => {
     await openCloudDraft(page)
 
     const trigger = await chip(page, "context-chip-worktree")
@@ -216,8 +196,8 @@ test.describe("core composer hosted chips @core", () => {
     const key = await row.getAttribute("data-key")
     await row.click()
 
-    // The selection is proven to have TAKEN EFFECT — the trigger's own label
-    // settles on the chosen workspace rather than flipping to the create path.
+    // The trigger's own label settles on the chosen workspace rather than flipping back
+    // to the create path.
     await expect(trigger.locator('[data-slot="context-chip-label"]'))
       .not.toHaveText("New cloud sandbox", { timeout: 20_000 })
     expect(key).toBeTruthy()
@@ -225,7 +205,7 @@ test.describe("core composer hosted chips @core", () => {
     await page.screenshot({ path: `${EVIDENCE}/workspace-chip-selected.png`, fullPage: true })
   })
 
-  test("the branch chip lists refs and selecting one prepares a new cloud workspace — behavior 5", async ({ page }) => {
+  test("the branch chip lists refs and selecting one prepares a new cloud workspace", async ({ page }) => {
     const mock = await openCloudDraft(page)
 
     const trigger = await chip(page, "context-chip-branch")

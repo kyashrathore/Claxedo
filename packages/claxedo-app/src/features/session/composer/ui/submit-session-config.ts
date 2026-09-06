@@ -1,6 +1,6 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { pickHarness, type HarnessType } from "@/features/session/harness/profile"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
-import { asRecord } from "@/lib/record"
 
 export type ExistingSessionConfig = {
   harnessType: HarnessType

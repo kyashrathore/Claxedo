@@ -36,8 +36,7 @@ export interface ForkConversationSnapshot {
  * The session id to fork, resolved from route params. The canonical routes
  * (`/w/:workspaceId/session/:sessionId`, `/s/:sessionId`) expose it as
  * `sessionId`; the legacy directory route (`/:dir/session/:id?`) exposes it as
- * `id`. Reading only `id` (as this dialog used to) left the fork list empty on
- * every canonical route — see core-session-actions e2e behavior 555.
+ * `id`. Reading only `id` leaves the fork list empty on every canonical route.
  */
 export function resolveForkSessionId(params: {
   readonly sessionId?: string

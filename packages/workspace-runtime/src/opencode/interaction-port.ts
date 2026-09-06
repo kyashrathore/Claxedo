@@ -1,18 +1,13 @@
 /**
- * Pending human interactions: permission requests and forms.
- *
- * V1 exposed two different ad-hoc shapes ("questions" answered with a string,
- * permissions answered by id) and the adapter carried both plus a fallback
- * path for ids that could not be routed. V2 has one shape for each and both
- * are workspace-scoped lists with session-scoped replies:
+ * Pending human interactions: permission requests and forms. Both are
+ * workspace-scoped lists with session-scoped replies:
  *
  *   permission.request.list({ location })  ->  permission.reply({ sessionID, requestID, reply, message? })
  *   form.request.list({ location })        ->  form.reply({ sessionID, formID, answer })
  *                                              form.cancel({ sessionID, formID })
  *
- * `answer` is a structured record, not a string. That is what lets Claxedo's
- * harness-neutral question reply carry real form values (R5) instead of
- * stringifying them at the boundary and losing types.
+ * `answer` is a structured record, not a string, so form values keep their
+ * types across the harness-neutral question reply.
  */
 import type { OpenCodeHost } from "./host"
 import { assertLocationInScope, type WorkspaceScope } from "./scope"

@@ -166,9 +166,11 @@ export type CodexPermissionSettings = {
   sandbox: "read-only" | "workspace-write" | "danger-full-access"
 }
 
+const DEFAULT_CODEX_SETTINGS: CodexPermissionSettings = { approvalPolicy: "on-request", sandbox: "workspace-write" }
+
 export const CODEX_SETTINGS: Record<string, CodexPermissionSettings> = {
   "read-only": { approvalPolicy: "never", sandbox: "read-only" },
-  "workspace-write": { approvalPolicy: "on-request", sandbox: "workspace-write" },
+  "workspace-write": DEFAULT_CODEX_SETTINGS,
   untrusted: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
   "full-access": { approvalPolicy: "never", sandbox: "danger-full-access" },
 }
@@ -177,7 +179,7 @@ export const CODEX_SETTINGS: Record<string, CodexPermissionSettings> = {
 export const DEFAULT_CODEX_MODE = "workspace-write"
 
 export const codexSettingsFor = (modeId: string | undefined): CodexPermissionSettings =>
-  CODEX_SETTINGS[modeId ?? ""] ?? CODEX_SETTINGS[DEFAULT_CODEX_MODE]
+  CODEX_SETTINGS[modeId ?? ""] ?? DEFAULT_CODEX_SETTINGS
 
 /**
  * `turn/start` takes a structured sandbox policy while `thread/start` takes the

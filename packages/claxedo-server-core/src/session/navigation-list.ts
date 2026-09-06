@@ -1,4 +1,6 @@
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
@@ -76,18 +78,18 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
   const groupBy = groupByValue(url.searchParams.get("groupBy"))
   return {
     scope,
-    ...(text(url.searchParams.get("projectId")) ? { projectId: text(url.searchParams.get("projectId")) } : {}),
-    ...(text(url.searchParams.get("workspaceId")) ? { workspaceId: text(url.searchParams.get("workspaceId")) } : {}),
-    ...(text(url.searchParams.get("directory")) ? { directory: text(url.searchParams.get("directory")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("projectId")) ? { projectId: trimToUndefined(url.searchParams.get("projectId")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("workspaceId")) ? { workspaceId: trimToUndefined(url.searchParams.get("workspaceId")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("directory")) ? { directory: trimToUndefined(url.searchParams.get("directory")) } : {}),
     groupBy,
     archived: archivedValue(url.searchParams.get("archived")),
     status: list(url.searchParams.get("status") ?? url.searchParams.get("filter.status")),
     environment: list(url.searchParams.get("environment") ?? url.searchParams.get("filter.environment")),
     git: list(url.searchParams.get("git") ?? url.searchParams.get("filter.git")),
-    ...(text(url.searchParams.get("search")) ? { search: text(url.searchParams.get("search")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("search")) ? { search: trimToUndefined(url.searchParams.get("search")) } : {}),
     sort: sortValue(url.searchParams.get("sort")),
     limit: limitValue(url.searchParams.get("limit")),
-    ...(text(url.searchParams.get("cursor")) ? { cursor: text(url.searchParams.get("cursor")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("cursor")) ? { cursor: trimToUndefined(url.searchParams.get("cursor")) } : {}),
   }
 }
 
@@ -227,7 +229,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     type: "session",
     sessionRef: stringValue(item.sessionRef) ?? stringValue(item.session_ref) ?? sessionRef({ sessionId, workspaceId, directory }),
     sessionId,
-    title: stringValue(item.title) ?? "Untitled session",
+    title: trimToUndefined(item.title) ?? "Untitled session",
     directory,
     ...(workspaceId ? { workspaceId } : {}),
     ...(projectId ? { projectId } : {}),
@@ -236,40 +238,40 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     ...(archivedAt ? { archivedAt } : {}),
     tags: stringArray(item.tags),
     attachments: arrayValue(item.attachments).flatMap((attachment) => {
-      const row = record(attachment)
-      const kind = stringValue(row.kind)
+      const row = asRecordOrEmpty(attachment)
+      const kind = trimToUndefined(row.kind)
       if (!kind) return []
       return [{
         kind,
-        targetId: stringValue(row.targetID) ?? stringValue(row.target_id),
+        targetId: trimToUndefined(row.targetID) ?? trimToUndefined(row.target_id),
       }]
     }),
     ...(Object.keys(environment).length ? { environment: {
-      ...(stringValue(environment.kind) ? { kind: stringValue(environment.kind) } : {}),
-      ...(stringValue(environment.driver) ? { driver: stringValue(environment.driver) } : {}),
+      ...(trimToUndefined(environment.kind) ? { kind: trimToUndefined(environment.kind) } : {}),
+      ...(trimToUndefined(environment.driver) ? { driver: trimToUndefined(environment.driver) } : {}),
     } } : {}),
     ...(Object.keys(git).length ? { git: {
-      ...(stringValue(git.repo) ? { repo: stringValue(git.repo) } : {}),
-      ...(stringValue(git.branch) ? { branch: stringValue(git.branch) } : {}),
-      ...(stringValue(git.remote) ? { remote: stringValue(git.remote) } : {}),
+      ...(trimToUndefined(git.repo) ? { repo: trimToUndefined(git.repo) } : {}),
+      ...(trimToUndefined(git.branch) ? { branch: trimToUndefined(git.branch) } : {}),
+      ...(trimToUndefined(git.remote) ? { remote: trimToUndefined(git.remote) } : {}),
     } } : {}),
     ...ownerFromSession(item),
   }
 }
 
 function ownerFromSession(item: Record<string, unknown>): { owner?: SessionNavigationRow["owner"] } {
-  const nested = record(item.owner)
-  const name = stringValue(nested.name)
-    ?? stringValue(item.owner_name)
-    ?? stringValue(item.ownerName)
-  const avatarUrl = stringValue(nested.avatarUrl)
-    ?? stringValue(nested.avatar_url)
-    ?? stringValue(item.owner_avatar_url)
-    ?? stringValue(item.ownerAvatarUrl)
-  const publicId = stringValue(nested.publicId)
-    ?? stringValue(nested.public_id)
-    ?? stringValue(item.owner_public_id)
-    ?? stringValue(item.ownerPublicId)
+  const nested = asRecordOrEmpty(item.owner)
+  const name = trimToUndefined(nested.name)
+    ?? trimToUndefined(item.owner_name)
+    ?? trimToUndefined(item.ownerName)
+  const avatarUrl = trimToUndefined(nested.avatarUrl)
+    ?? trimToUndefined(nested.avatar_url)
+    ?? trimToUndefined(item.owner_avatar_url)
+    ?? trimToUndefined(item.ownerAvatarUrl)
+  const publicId = trimToUndefined(nested.publicId)
+    ?? trimToUndefined(nested.public_id)
+    ?? trimToUndefined(item.owner_public_id)
+    ?? trimToUndefined(item.ownerPublicId)
   if (!name && !avatarUrl && !publicId) return {}
   return {
     owner: {
@@ -421,11 +423,6 @@ function limitValue(input: string | null) {
   const parsed = Number(input ?? 50)
   if (!Number.isSafeInteger(parsed) || parsed <= 0) return 50
   return Math.min(parsed, 100)
-}
-
-function text(input: string | null) {
-  const value = input?.trim()
-  return value ? value : undefined
 }
 
 function list(input: string | null) {

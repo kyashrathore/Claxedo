@@ -1,17 +1,7 @@
 /**
- * The B/C/D/E scenario bodies both web lanes drive — `web-signed-cloud.spec.ts`
- * (`access: "cloud"`) and `web-signed-userhosted.spec.ts`
- * (`access: "user-hosted"`) — from `docs/plans/2026-08-06-001-test-full-matrix-
- * real-e2e-plan.md`'s Phase 4 lane x scenario matrix. Written once here so
- * neither spec file duplicates journey logic (Phase 4's own checklist item),
- * on top of Phase 1's oracles (`rail-oracle.ts`, `geometry-oracle.ts`,
- * `surface-parity.ts`, `turn-oracle.ts`) and this task's own
- * `web-signed-relay-harness.ts` primitives.
- *
- * Every function takes a `JourneyCtx` (an already-booted fixture + a fresh
- * Playwright `page`) and performs its OWN navigation — a spec file's test
- * body is therefore exactly one call into this module, matching the plan's
- * "thin configuration wrapper" mandate literally, not just in spirit.
+ * Journeys shared by `web-signed-cloud.spec.ts` and `web-signed-userhosted.spec.ts`.
+ * Each takes a `JourneyCtx` (booted fixture + fresh page) and does its own navigation,
+ * so a spec's test body is one call into this module.
  */
 import { expect, type Locator, type Page } from "@playwright/test"
 import {
@@ -60,25 +50,10 @@ export type JourneyCtx = {
 }
 
 /**
- * The project/workspace header's "New session in <label>" affordance
- * (`rail-sidebar.tsx:1568`) — present for EVERY workspace kind (project or
- * workspace scope alike, `input.scope` only changes the terminal button's
- * behavior, not this one), unlike `desktop-unsigned-embedded.spec.ts`'s
- * git-branch-specific `[aria-label="New session in main"]`.
- *
- * NOT scoped by a client-seeded `data-project-id`, deliberately — MEASURED
- * live 2026-08-06: for a SIGNED (relay-backed) workspace the rail's project
- * label and grouping come from the real signed-bootstrap inventory
- * (`signed-browser-relay-fixture.mjs`'s `projectId = "proj_signed_browser_
- * relay"` / `displayName: "Signed Browser Relay"`), which OVERRIDES whatever
- * project id/name `seedWorkspace`'s client-side localStorage seed proposed —
- * unlike `real-cloud-relay.spec.ts`'s/`live-user-hosted-relay.spec.ts`'s
- * single-session journeys, which never needed to locate this button at all
- * and so never surfaced the mismatch. Header actions are mounted only while
- * their owner is engaged. The signed fixture has one canonical project
- * header, so engage and scope to that owner before resolving its action; a
- * page-wide button lookup cannot observe an action that does not exist at
- * rest.
+ * Clicks the project header's "New session in <label>" action and returns the new draft's
+ * composer input. Header actions mount only while the header is hovered, so the header is
+ * engaged first. The button is matched by role name, not a seeded project id: the signed
+ * bootstrap inventory overrides the client-seeded project label.
  */
 async function openNewDraftInProject(page: Page): Promise<Locator> {
   const header = page.locator('[data-testid="project-header"]:visible').first()
@@ -102,22 +77,9 @@ async function openReadyDraft(ctx: JourneyCtx): Promise<Locator> {
   await seedWorkspace(page, info, kind)
   await page.goto(`${frontendUrl}${sessionRoute(info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
   await gateReachesReady(page)
-  // The relay fixture is shared by this spec's tests, so the workspace can
-  // already have sessions even though each browser context is fresh. Enter a
-  // draft through the product's canonical New Session action instead of
-  // relying on the bare workspace route to remain a draft forever.
-  //
-  // When the connect gate is already `ready` on the workspace draft route,
-  // submitting from that composer matches the real-cloud-relay lane and avoids
-  // a second submit-time provisioning pass through the project header flow.
-  const gateComposer = page
-    .getByRole("textbox", { name: /Ask anything/i })
-    .filter({ visible: true })
-    .last()
-  if (await gateComposer.isVisible().catch(() => false)) {
-    return gateComposer
-  }
-  return openNewDraftInProject(page)
+  // The relay fixture is shared across tests, so the workspace may already have sessions;
+  // once the gate is ready, the draft route's composer is still the submit target.
+  return composerInput(page)
 }
 
 function marker(prefix: string) {
@@ -129,10 +91,10 @@ async function promptText(text: string) {
 }
 
 // ---------------------------------------------------------------------------
-// A2 / A3 — shell integrity
+// Shell integrity
 // ---------------------------------------------------------------------------
 
-/** A2: reload mid-session still renders the transcript AND a subsequent send completes a full turn. */
+/** Reload mid-session still renders the transcript AND a subsequent send completes a full turn. */
 export async function journeyA2(ctx: JourneyCtx) {
   const { page, scripted } = ctx
   const input = await openReadyDraft(ctx)
@@ -169,23 +131,14 @@ export async function journeyA2(ctx: JourneyCtx) {
 }
 
 /**
- * A3: a COLD deep link `/w/<ws>/session/<id>` loads that session. Unlike the
- * desktop lane (whose `file://` renderer runs on Solid Router's `MemoryRouter`
- * and has no URL to deep-link into at all — see `desktop-unsigned-embedded
- * .spec.ts`'s test.fixme note), a web lane's document IS the real URL
- * (`urlRoutingEnabled()` is true for any http(s) document,
- * `src/lib/runtime-mode.ts:14-29`), so this scenario is genuinely testable
- * here — the one place in the whole matrix it can be.
+ * A cold deep link `/w/<ws>/session/<id>` loads that session. Only a web lane can test
+ * this: the desktop `file://` renderer runs on a MemoryRouter and has no URL.
  */
 export async function journeyA3(ctx: JourneyCtx) {
   const { page, frontendUrl, info, scripted } = ctx
   const input = await openReadyDraft(ctx)
-  // Model selected BEFORE composing — every OTHER journey in this file does
-  // the same and is stable; composing first was this journey's original,
-  // untested draft and measured live 2026-08-06 to make the harness/model
-  // popover intermittently never open (a real timing interaction between
-  // composer-text state and the picker, not investigated further since the
-  // fix is free — there is no product reason A3 needs the opposite order).
+  // Select the model before composing; composing first intermittently keeps the
+  // harness/model popover from opening.
   await selectScriptedModel(page)
   scripted.resetCounts()
   const m1 = marker("A3")
@@ -193,9 +146,8 @@ export async function journeyA3(ctx: JourneyCtx) {
   const sessionId = await submitDraft(page)
   await expectAssistantReplyVisible(page, new RegExp(m1), { spec: ctx.spec, scenario: "a3-seed" })
 
-  // A genuinely COLD document navigation, not a client-side route push from
-  // an already-hydrated app. The context is retained intentionally because
-  // its signed bootstrap and workspace seed are part of the authenticated lane.
+  // A document navigation, not a client-side route push; the context keeps its signed
+  // bootstrap and workspace seed.
   const deepLinkUrl = `${frontendUrl}/w/${encodeURIComponent(info.workspaceId)}/session/${encodeURIComponent(sessionId)}`
   await page.goto(deepLinkUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
   await expect(page.locator("[data-claxedo]"), "shell never painted on the cold deep link").toBeVisible({
@@ -205,12 +157,12 @@ export async function journeyA3(ctx: JourneyCtx) {
 }
 
 // ---------------------------------------------------------------------------
-// B — session lifecycle & rail
+// Session lifecycle & rail
 // ---------------------------------------------------------------------------
 
-/** B1/B2/B3/B4: a new session's row appears live, completes a turn, auto-titles, accepts a second message. */
+/** A new session's row appears live, completes a turn, auto-titles, accepts a second message. */
 export async function journeyB1toB4(ctx: JourneyCtx) {
-  const { page, info, scripted } = ctx
+  const { page, scripted } = ctx
   const input = await openReadyDraft(ctx)
   await selectScriptedModel(page)
   scripted.resetCounts()
@@ -229,19 +181,16 @@ export async function journeyB1toB4(ctx: JourneyCtx) {
   await composeText(page, composerInput(page), await promptText(m2))
   await expect(
     submitControl(page),
-    'defect 9 / open issue #16: the second send is refused ("Select an agent and model")',
+    'the second send is refused ("Select an agent and model")',
   ).not.toHaveAttribute("aria-label", /select an agent/i)
   await sendSubsequentMessage(page)
   await expectAssistantReplyVisible(page, m2, { spec: ctx.spec, scenario: "b4-second-turn" })
 
-  expect(
-    scripted.counts().responses,
-    "fewer scripted Responses calls than expected — a Pi turn did not reach the configured endpoint",
-  ).toBeGreaterThanOrEqual(3)
-  void info
+  expect(scripted.requests.filter((request) => request.dialect === "responses"
+    && request.reply.kind === "text" && [m1, m2].includes(request.reply.text))).toHaveLength(2)
 }
 
-/** B5/B6: re-prompting an older row (index >= 3) bumps it to the top, and its row stays unique. */
+/** Re-prompting an older row (index >= 3) bumps it to the top, and its row stays unique. */
 export async function journeyB5B6(ctx: JourneyCtx) {
   const { page, scripted } = ctx
   let input = await openReadyDraft(ctx)
@@ -271,7 +220,7 @@ export async function journeyB5B6(ctx: JourneyCtx) {
   await expectAssistantReplyVisible(page, "B5_REPROMPT", { spec: ctx.spec, scenario: "b5-repromt-reply" })
 }
 
-/** B7: the background status dot transitions working -> done on a row mounted while idle and never focused. */
+/** The background status dot transitions working -> done on a row mounted while idle and never focused. */
 export async function journeyB7(ctx: JourneyCtx) {
   const { page, scripted } = ctx
   const inputA = await openReadyDraft(ctx)
@@ -313,7 +262,7 @@ export async function journeyB7(ctx: JourneyCtx) {
   })
 }
 
-/** B8: reload preserves rail title, order, and status. */
+/** Reload preserves rail title, order, and status. */
 export async function journeyB8(ctx: JourneyCtx) {
   const { page, scripted } = ctx
   const input = await openReadyDraft(ctx)
@@ -337,7 +286,7 @@ export async function journeyB8(ctx: JourneyCtx) {
   ).toHaveCount(0)
 }
 
-/** B9: sidebar and compact-switcher status dots agree, including a transition on an already-mounted tab. */
+/** Sidebar and compact-switcher status dots agree, including a transition on an already-mounted tab. */
 export async function journeyB9(ctx: JourneyCtx) {
   const { page, scripted } = ctx
   const input = await openReadyDraft(ctx)
@@ -377,17 +326,16 @@ export async function journeyB9(ctx: JourneyCtx) {
     await expect(page.locator('[data-component="session-new-composer"]:visible')).toBeVisible({ timeout: 10_000 })
     await expect.poll(
       () => Object.values(scripted.counts()).reduce((total, count) => total + count, 0),
-      { message: "scripted provider never received B9's delayed second turn", timeout: 10_000 },
+      { message: "scripted provider never received the delayed second turn", timeout: 10_000 },
     ).toBeGreaterThan(0)
     await pollSurfaceStatus({ page, sessionId, expected: "working" })
-    await page.waitForTimeout(12_000)
     await pollSurfaceStatus({ page, sessionId, expected: "done" }, 20_000)
   } finally {
     scripted.setReplyDelayMs(0)
   }
 }
 
-/** Same poll wrapper `desktop-unsigned-embedded.spec.ts` uses — see that file's doc for why a bare single-shot check races a real busy/idle transition by a beat. */
+/** Retries `expectSurfaceStatus` until `timeoutMs`; a single-shot check races a live busy/idle transition. */
 async function pollSurfaceStatus(opts: { page: Page; sessionId: string; expected: SurfaceStatus }, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs
   for (;;) {
@@ -401,11 +349,11 @@ async function pollSurfaceStatus(opts: { page: Page; sessionId: string; expected
 }
 
 // ---------------------------------------------------------------------------
-// C — composer & harness
+// Composer & harness
 // ---------------------------------------------------------------------------
 
 /**
- * C1: a new draft resolves harness/model within 5s with no reload needed.
+ * A new draft resolves harness/model within 5s with no reload needed.
  * Checked on the unified `[data-action="prompt-harness-model"]` trigger used
  * by every harness, including OpenCode.
  */
@@ -415,7 +363,7 @@ export async function journeyC1(ctx: JourneyCtx) {
   const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
   await expect(
     control,
-    'open issue #15: draft stuck on "Loading models" (or blank) past 5s with no reload',
+    'draft stuck on "Loading models" (or blank) past 5s with no reload',
   ).not.toContainText(/Loading models|^$/, { timeout: 5_000 })
 
   await composeText(page, input, "Reply with exactly this one token, nothing else: C1_MARK")
@@ -426,7 +374,7 @@ export async function journeyC1(ctx: JourneyCtx) {
 }
 
 /**
- * C4: switching harness survives a reload and completes a second turn.
+ * Switching harness survives a reload and completes a second turn.
  *
  * Select Pi first, then switch to Claude through the unified picker. Both
  * turns must use Claude's Anthropic endpoint and retain that harness on reload.
@@ -456,9 +404,7 @@ export async function journeyC4(ctx: JourneyCtx) {
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator("[data-claxedo]"), "shell never repainted after reload").toBeVisible({ timeout: 30_000 })
 
-  // Harness/model trigger same + real model name, never "Loading models"/empty
-  // (open issue #15), matching `core-harness-ownership-*`'s "locked once a
-  // session exists" contract, proven here against a real backend.
+  // Same harness and a real model name after reload, never "Loading models"/empty.
   const harnessTriggerAfter = page.locator('[data-action="prompt-harness-model"]:visible').last()
   await expect(harnessTriggerAfter).toHaveAttribute("data-harness", "claude")
   await expect(harnessTriggerAfter, "harness+model trigger label changed across reload").toContainText(labelBefore, {
@@ -466,7 +412,7 @@ export async function journeyC4(ctx: JourneyCtx) {
   })
   await expect(
     harnessTriggerAfter,
-    'open issue #15: harness+model trigger stuck on "Loading models" (or blank) after reload',
+    'harness+model trigger stuck on "Loading models" (or blank) after reload',
   ).not.toContainText(/Loading models|^$/, { timeout: 20_000 })
 
   const m2 = marker("C4T2")
@@ -487,12 +433,11 @@ export async function journeyC4(ctx: JourneyCtx) {
 }
 
 // ---------------------------------------------------------------------------
-// D — terminal, folded with E1's geometry proof (same pairing `desktop-
-// unsigned-embedded.spec.ts` uses: geometry needs both a session row and a
-// terminal row on screen at once, so D1-D3 and E1 share one journey).
+// Terminal, folded with the row-geometry check: geometry needs a session row
+// and a terminal row on screen at once.
 // ---------------------------------------------------------------------------
 
-/** D1/D2/D3/E1: a real terminal streams a live prompt, its rail row settles, and row geometry matches session rows. */
+/** A real terminal streams a live prompt, its rail row settles, and row geometry matches session rows. */
 export async function journeyD1toD3E1(ctx: JourneyCtx) {
   const { page, scripted, frontendUrl, info } = ctx
   const seedInput = await openReadyDraft(ctx)
@@ -507,17 +452,13 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
   await submitDraft(page)
   await expectAssistantReplyVisible(page, "D0_SESSION", { spec: ctx.spec, scenario: "d0-session-for-pty" })
 
-  // Force xterm's DOM renderer BEFORE opening any terminal — the default is a
-  // WebGL/canvas renderer whose painted pixels a `page.locator` cannot read as
-  // text, matching `desktop-unsigned-embedded.spec.ts`'s identical finding for
-  // this same component (`renderer.ts`'s `rendererPreference()` reads plain
-  // `localStorage`, not the `Persist`/electron-store system, so this is
-  // surface-agnostic — it is not a desktop-only escape hatch).
+  // Force xterm's DOM renderer before opening a terminal: the default canvas/WebGL
+  // renderer's pixels cannot be read as text. `rendererPreference()` reads plain localStorage.
   await page.evaluate(() => localStorage.setItem("claxedo.terminal.renderer", "dom"))
 
   const terminalId = await createShellTerminal(page)
 
-  // D1: streams a live prompt within 30s and never matches /Reconnecting.../.
+  // Terminal creation: streams a live prompt within 30s and never matches /Reconnecting.../.
   const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
   await expect(pane, "terminal pane never mounted").toBeVisible({ timeout: 15_000 })
   await pane.click()
@@ -527,7 +468,7 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
     async () => (await xtermRows.innerText().catch(() => "")).replace(/\s+/g, " ").trim(),
     {
       message:
-        "no DOM-rendered terminal content within 30s — see defects 4/5/6/7 / open issue #17 (terminal creation hangs)",
+        "no DOM-rendered terminal content within 30s",
       timeout: xtermDeadlineMs,
     },
   ).toMatch(/\S/)
@@ -535,25 +476,20 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
     const text = (await xtermRows.innerText().catch(() => "")) ?? ""
-    expect(text, "defect 4: terminal buffer shows a Reconnecting banner").not.toMatch(/Reconnecting\.\.\. \d\/6/)
+    expect(text, "terminal buffer shows a Reconnecting banner").not.toMatch(/Reconnecting\.\.\. \d\/6/)
     await page.waitForTimeout(500)
   }
 
-  // D2: rail row shows working then settles — proven here by the row simply
-  // existing and (eventually) losing any error/reconnecting affordance; the
-  // richer working->done proof for a SESSION row is B7's job, and a terminal
-  // row's own status semantics are `[data-terminal-id]` presence + no
-  // reconnect banner, which the loop above already covers over the full 10s.
+  // A terminal row's settled state is its presence with no reconnect banner (checked
+  // over 10s above); the working -> done proof for a session row is `journeyB7`.
   await ensureWorkspaceSectionExpanded(page, info)
   await expect(
     page.locator(RAIL_SELECTORS.terminalRow(terminalId)),
     "terminal never gained a stable rail row",
   ).toBeVisible({ timeout: 10_000 })
 
-  // D3/E1: create a session too, so the geometry oracle has both row kinds to compare.
-  // Creating a terminal makes its pane active and intentionally hides the
-  // draft composer. Return through the real session route before typing; a
-  // retained hidden composer is not an interactive submit target.
+  // Creating a terminal makes its pane active and hides the draft composer; return through
+  // the session route and create a session so the geometry oracle has both row kinds.
   await page.goto(`${frontendUrl}${sessionRoute(info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
   await gateReachesReady(page)
   const input = await openNewDraftInProject(page)
@@ -564,11 +500,7 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
 }
 
 // ---------------------------------------------------------------------------
-// F — transport proof (F2 user-hosted / F3 cloud, per the lane's own kind).
-// Every scenario above already rides the real relay; this journey is the
-// EXPLICIT negative-space proof that nothing bypassed it, mirroring
-// `real-cloud-relay.spec.ts` behavior 5 / `live-user-hosted-relay.spec.ts`
-// behavior 8.
+// Transport proof: nothing bypassed the relay to hit the backend origin directly.
 // ---------------------------------------------------------------------------
 
 function isForbiddenDirectPath(pathname: string) {

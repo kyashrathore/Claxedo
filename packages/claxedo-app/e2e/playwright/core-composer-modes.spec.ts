@@ -155,15 +155,9 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-// NOTE: `page.addInitScript` re-runs on EVERY navigation for the page's lifetime (not
-// just the first), including `page.reload()` and subsequent `page.goto()` calls. An
-// unconditional `localStorage.clear()` here would wipe the persisted composer draft
-// (behaviors 20/21 test exactly that survival) out from under the app on the very
-// reload/navigate the test is asserting about. `window.__CLAXEDO__` is a fresh JS
-// realm on every navigation so it must always be reset, but the server-catalog
-// localStorage seed is written idempotently (only if absent) so it seeds a clean
-// profile once per test (Playwright gives each test a fresh context) without erasing
-// state the app itself persists across navigations within that same test.
+// `addInitScript` re-runs on every navigation, including reload. An unconditional
+// `localStorage.clear()` would wipe the persisted draft the reload tests assert on, so
+// the seed is written only when absent; `__CLAXEDO__` is a fresh realm each time.
 async function seedProjects(page: Page, dirs: string[]) {
   await page.addInitScript((worktrees: string[]) => {
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
@@ -195,9 +189,8 @@ async function openDraftPrompt(page: Page, dir: string) {
   return editor
 }
 
-/** Overrides the mock's default @-mention agent catalog (which only has the "primary"
- * `build` agent, filtered OUT of @-mention options) with two selectable, non-primary
- * agents. Registered AFTER installMockRuntime so it takes precedence. */
+/** Two selectable non-primary agents; the mock's default `build` agent is primary and
+ * filtered out of @-mentions. Registered after `installMockRuntime` so it wins. */
 async function overrideMentionAgents(page: Page) {
   await page.route("**/api/claxedo/agent-config/agents**", (route) => {
     const type = route.request().resourceType()
@@ -218,18 +211,13 @@ function pngFile(name = "attachment.png") {
 }
 
 function unsupportedFile(name = "mystery.dat") {
-  // A null byte anywhere in the first 4096 bytes fails the text-content heuristic in
-  // `files.ts#textBytes`, and the type/extension are both unrecognized, so
-  // `attachmentMime` resolves to `undefined` — the "unsupported attachment" path.
+  // A null byte fails the text heuristic and the type/extension are unrecognized, so
+  // `attachmentMime` resolves to undefined.
   return { name, mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 0, 5, 6, 7, 0, 9]) }
 }
 
-/**
- * Opens the file chooser the way a user now has to: `+` opens the flat action
- * menu, "Images and files" inside it opens the native picker. The filechooser
- * listener is registered BEFORE the click that triggers it, then awaited, so the
- * event can never be missed between the two.
- */
+/** `+` opens the action menu; "Images and files" opens the native picker. The
+ * filechooser listener is registered before the click so the event cannot be missed. */
 async function openAttachPicker(page: Page) {
   const chooserPromise = page.waitForEvent("filechooser")
   await page.locator('[data-action="prompt-add"]').last().click()
@@ -240,7 +228,7 @@ async function openAttachPicker(page: Page) {
 }
 
 test.describe("core composer modes @core", () => {
-  test("builtin slash command fires immediately and clears the editor — behavior 1", async ({ page }) => {
+  test("builtin slash command fires immediately and clears the editor", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -254,7 +242,7 @@ test.describe("core composer modes @core", () => {
     await expect(editor).toHaveText("", { timeout: 5_000 })
   })
 
-  test("custom slash command inserts the trigger for editing instead of firing — behavior 2", async ({ page }) => {
+  test("custom slash command inserts the trigger for editing instead of firing", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -268,7 +256,7 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator("[data-slash-id]")).toHaveCount(0)
   })
 
-  test("! enters shell mode without inserting a character; backspace-on-empty exits — behavior 3", async ({
+  test("! enters shell mode without inserting a character; backspace-on-empty exits", async ({
     page,
   }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -288,7 +276,7 @@ test.describe("core composer modes @core", () => {
     await expect(submit).toHaveAttribute("data-icon", "send")
   })
 
-  test("Escape closes an open popover without touching mode or text — behavior 6", async ({ page }) => {
+  test("Escape closes an open popover without touching mode or text", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -304,7 +292,7 @@ test.describe("core composer modes @core", () => {
     await expect(editor).not.toHaveClass(/font-mono/)
   })
 
-  test("Escape exits shell mode when no popover is open — behavior 7", async ({ page }) => {
+  test("Escape exits shell mode when no popover is open", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -321,7 +309,7 @@ test.describe("core composer modes @core", () => {
   })
 
   test(
-    "Escape aborts an in-flight turn when not in shell mode and no popover is open — behavior 8",
+    "Escape aborts an in-flight turn when not in shell mode and no popover is open",
     async ({ page }) => {
       test.setTimeout(120_000)
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, holdTurn: true })
@@ -343,7 +331,7 @@ test.describe("core composer modes @core", () => {
     },
   )
 
-  test("Shift+Enter inserts a newline instead of submitting — behavior 9", async ({ page }) => {
+  test("Shift+Enter inserts a newline instead of submitting", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -358,7 +346,7 @@ test.describe("core composer modes @core", () => {
     expect(mock.requests.promptCount).toBe(0)
   })
 
-  test("@ mention popover keyboard nav inserts a pill and the sent message reaches the payload — behavior 10", async ({
+  test("@ mention popover keyboard nav inserts a pill and the sent message reaches the payload", async ({
     page,
   }) => {
     test.setTimeout(120_000)
@@ -380,26 +368,19 @@ test.describe("core composer modes @core", () => {
     await expect(pill).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText("@tester", { exact: true })).toHaveCount(0)
 
-    // `addPart` (editor-actions.ts:175, `const gap = document.createTextNode(" ")`)
-    // already inserts a single trailing space after the pill — typing a SECOND
-    // leading space here would send "@reviewer  please" (double space) and never
-    // match the mock's `ack 1: ...` echo.
+    // The pill already carries a trailing space; a leading space here would double it.
     await page.keyboard.type("please take a look")
     await ensureComposerModelSelected(page)
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
     expect(mock.requests.promptBodies[0]?.text).toBe("@reviewer please take a look")
-    // No trailing `$` anchor: `session-turn-assistant-content`'s textContent also
-    // includes the row's agent/model/timestamp footer ("Reviewer · big-pickle · 0s")
-    // concatenated after the reply text, so a fully-anchored regex can never match —
-    // every other passing spec in this suite either uses a plain string (substring
-    // match) or a leading-anchor-only regex for this exact reason.
+    // No trailing anchor: the content slot's text also includes the row's footer.
     await expectAssistantReplyVisible(page, /^ack 1: @reviewer please take a look/)
   })
 
   test(
-    "the sent (optimistic) user message highlights an inline agent mention — behavior 11",
+    "the sent (optimistic) user message highlights an inline agent mention",
     async ({ page }) => {
       test.setTimeout(120_000)
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -424,7 +405,7 @@ test.describe("core composer modes @core", () => {
     },
   )
 
-  test("attach button adds a thumbnail, preview opens on click, and remove deletes it — behaviors 12,16,17", async ({
+  test("attach button adds a thumbnail, preview opens on click, and remove deletes it", async ({
     page,
   }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -451,7 +432,7 @@ test.describe("core composer modes @core", () => {
     await expect(editor).toBeVisible()
   })
 
-  test("clipboard paste adds a supported attachment — behavior 13", async ({ page }) => {
+  test("clipboard paste adds a supported attachment", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -469,7 +450,7 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator('img[alt="pasted.png"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("drag-over shows the drop overlay and dropping adds the attachment — behavior 14", async ({ page }) => {
+  test("drag-over shows the drop overlay and dropping adds the attachment", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     await openDraftPrompt(page, DIR)
@@ -501,7 +482,7 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator('img[alt="dropped.png"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("unsupported file type shows a warning toast and adds nothing — behavior 15", async ({ page }) => {
+  test("unsupported file type shows a warning toast and adds nothing", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     await openDraftPrompt(page, DIR)
@@ -514,7 +495,7 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator("img[alt=\"mystery.dat\"]")).toHaveCount(0)
   })
 
-  test("an image-only prompt with no text is a valid, submittable turn — behavior 18", async ({ page }) => {
+  test("an image-only prompt with no text is a valid, submittable turn", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     await seedProjects(page, [DIR])
@@ -530,13 +511,11 @@ test.describe("core composer modes @core", () => {
     await submit.click()
 
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
-    // No trailing `$` anchor — see the identical note on behavior 10's test above:
-    // `session-turn-assistant-content`'s textContent includes the row's trailing
-    // agent/model/timestamp footer, so a fully-anchored regex never matches.
+    // No trailing anchor: the content slot's text also includes the row's footer.
     await expectAssistantReplyVisible(page, /^ack 1: message 1/)
   })
 
-  test("draft text, an inline pill, and an image attachment survive a full reload — behavior 20", async ({
+  test("draft text, an inline pill, and an image attachment survive a full reload", async ({
     page,
   }) => {
     test.setTimeout(120_000)
@@ -555,10 +534,8 @@ test.describe("core composer modes @core", () => {
     await chooser.setFiles(pngFile("draft-image.png"))
     await expect(page.locator('img[alt="draft-image.png"]')).toBeVisible({ timeout: 10_000 })
 
-    // Persistence is localStorage-backed and effect-driven. Poll for the actual
-    // PERSISTED VALUE to contain the typed text (not merely that some "prompt" key
-    // exists — a key can exist from the initial empty-draft mount before the latest
-    // keystrokes have flushed, which would let a stale/empty value slip through).
+    // Poll for the persisted value itself: a "prompt" key exists from the empty-draft
+    // mount before the keystrokes flush.
     await expect
       .poll(() =>
         page.evaluate(() =>
@@ -579,12 +556,10 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator('img[alt="draft-image.png"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("draft text is scoped to its surface and does not leak into a later draft surface — behavior 21", async ({ page }) => {
+  test("draft text is scoped to its surface and does not leak into a later draft surface", async ({ page }) => {
     test.setTimeout(120_000)
-    // Draft persistence is keyed by the workbench surface identity. Navigating to an
-    // existing session and then opening a new draft creates distinct surfaces, so neither
-    // composer may inherit text from the first draft even though all three routes share a
-    // project directory.
+    // Drafts are keyed by surface identity, so neither the session composer nor a later
+    // draft may inherit the first draft's text even though all share a directory.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
 
@@ -607,7 +582,6 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     const editorSession = page.locator('[data-component="prompt-input"]').last()
     await expect(editorSession).toBeVisible({ timeout: 30_000 })
-    // A real session has its own, separately-scoped (and here, untouched) draft.
     await expect(editorSession).toHaveText("", { timeout: 10_000 })
 
     const editorAAgain = await openDraftPrompt(page, DIR)

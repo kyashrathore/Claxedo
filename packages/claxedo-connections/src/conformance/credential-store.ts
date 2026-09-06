@@ -9,7 +9,7 @@
 // gating, and — where the port must hide it — the secret's ABSENCE.
 import type { CredentialStorePort } from "../types.js"
 
-export const CREDENTIAL_STORE_CONFORMANCE_VERSION = 1 as const
+export const CREDENTIAL_STORE_CONFORMANCE_VERSION = 2 as const
 
 export const CREDENTIAL_STORE_CONFORMANCE_SCOPE = {
   covered: [
@@ -20,14 +20,12 @@ export const CREDENTIAL_STORE_CONFORMANCE_SCOPE = {
     "provider_ids_are_isolated_from_one_another",
     "resolve_secret_is_available_status_only",
     "read_secret_reads_regardless_of_status",
+    "read_secret_never_repairs_status",
     "set_status_error_records_and_available_clears",
     "set_status_on_an_unknown_provider_is_a_no_op",
     "delete_by_provider_removes_metadata_and_both_secret_seams",
   ],
-  // `readSecret` status side effects differ between hosts (the SQLite adapter
-  // restores an errored credential to `available` on re-verify read). The port
-  // documents the return value only, so only the return value is pinned.
-  remaining: ["read_secret_status_side_effects", "webhook_signing_credential_lifecycle"],
+  remaining: [],
 } as const
 
 export type CredentialStoreConformanceFactory = () => Promise<
@@ -128,6 +126,18 @@ export function credentialStoreConformance(
       await store.setStatus(PROVIDER_A, "error", "conformance failure")
       assertSecretPresent(await store.readSecret(PROVIDER_A), "readSecret refused a non-available credential")
       assertEqual(await store.readSecret("integration:conformance-unknown"), null, "readSecret served an unknown provider")
+    }),
+
+    // A read is not a repair. Only `setStatus` may declare a credential
+    // healthy: an adapter that restored `available` here made a re-verify that
+    // still fails look like it succeeded, and re-opened the token path onto a
+    // secret the provider had already rejected.
+    testCase("readSecret never repairs status", async () => {
+      const store = await seed()
+      await store.setStatus(PROVIDER_A, "error", "conformance failure")
+      assertSecretPresent(await store.readSecret(PROVIDER_A), "readSecret refused a non-available credential")
+      assertEqual((await store.get(PROVIDER_A))?.status, "error", "readSecret restored the credential to available")
+      assertEqual(await store.resolveSecret(PROVIDER_A), null, "the token path served a credential only readSecret had touched")
     }),
 
     testCase("setStatus error records and available clears", async () => {

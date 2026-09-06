@@ -9,16 +9,11 @@ import type * as Events from "@/app/integrations/claxedo-events"
 
 export type DocumentsAppPorts = {
   /**
-   * Central events stream — the `document.changed`
-   * doorbell that replaced the index surface's own `/documents/events` SSE.
-   *
-   * REQUIRED as of Wave 3: `app/integrations/feature-ports.ts` (production) and
-   * `app/integrations/test-support/app-ports-stub.ts` (tests) both supply it, so
-   * the type no longer has to tolerate its absence. It stays the *Optional*
-   * variant of the hook because the hook itself returns `undefined` outside a
-   * `ClaxedoEventsProvider` — a Documents surface rendered without the events
-   * provider degrades to load-on-open + refresh-on-focus rather than crashing,
-   * and `createDocumentIndexController` warns once so that cannot rot silently.
+   * Central events stream carrying the `document.changed` doorbell. The
+   * *Optional* hook variant: it returns `undefined` outside a
+   * `ClaxedoEventsProvider`, where a Documents surface degrades to
+   * load-on-open + refresh-on-focus and `createDocumentIndexController` warns
+   * once.
    */
   useClaxedoEventsOptional: typeof Events.useClaxedoEventsOptional
   useSessionSyncOptional: typeof SessionSync.useSessionSyncOptional

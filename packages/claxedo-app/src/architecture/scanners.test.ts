@@ -1,7 +1,28 @@
 import { describe, expect, test } from "bun:test"
-import { metricCounts, metrics, type SourceFile } from "./scanners"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { prodSourcePaths, metricCounts, metrics, type SourceFile } from "./scanners"
 
 describe("architecture scanners", () => {
+  test("excludes test-support directories without hiding similarly named production files", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "claxedo-source-kinds-"))
+    try {
+      for (const file of [
+        "feature/test-support/fixture.ts", "test-support/root-fixture.tsx",
+        "feature/test-support.ts", "feature/test-supporting/owner.ts", "feature/owner.ts",
+      ]) {
+        const absolute = path.join(root, "src", file)
+        mkdirSync(path.dirname(absolute), { recursive: true })
+        writeFileSync(absolute, "export const value = 1\n")
+      }
+      expect(prodSourcePaths(root).map((file) => path.relative(path.join(root, "src"), file).split(path.sep).join("/")).sort())
+        .toEqual(["feature/owner.ts", "feature/test-support.ts", "feature/test-supporting/owner.ts"])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("counts core regex metrics and drops test files through caller-provided filtering", () => {
     const counts = metricCounts([
       source(
@@ -107,7 +128,7 @@ describe("architecture scanners", () => {
     if (!metric) throw new Error("missing timerDrivenDataPolls metric")
 
     expect(metric.scan([
-      source("app/demo/handlers.ts", "setInterval(work, 1000)"),
+      source("app/workbench/rail/rail-sidebar.tsx", "setInterval(work, 1000)"),
       source("app/entry/app.tsx", "const retry = () => {\n  props.onRetry?.()\n  timer = setTimeout(retry, 1000)\n}\ntimer = setTimeout(retry, 1000)"),
       source("features/session/store/session-controller.ts", "const schedule = (delay: number) => {\n  timeout = timers.setTimeout(() => {\n    input.refresh()\n    schedule(5000)\n  }, delay)\n}"),
       source("components/live.tsx", "setInterval(work, 1000)"),

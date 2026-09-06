@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { isHexColor } from "./color"
 import type {
   ColorValue,
@@ -22,10 +23,6 @@ export class ThemeParseError extends Error {
     super(`${path}: ${detail}`)
     this.name = "ThemeParseError"
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function isCssVarRef(value: string): value is CssVarRef {

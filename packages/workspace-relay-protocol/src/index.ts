@@ -1,4 +1,4 @@
-import { isRecord } from "./record"
+import { isFiniteNumber, isRecord } from "@claxedo/helpers/guards"
 
 export const TUNNEL_PROTOCOL_VERSION = 1
 export const SESSION_STREAM_LEASE_TTL_MS = 15_000
@@ -191,64 +191,60 @@ function isTunnelMessageRecord(row: Record<string, unknown>): row is TunnelMessa
   if (row.protocol !== TUNNEL_PROTOCOL_VERSION) return false
   switch (row.type) {
     case "ping":
-      return isString(row.id) && isFiniteNumber(row.sent_at)
+      return isNonEmptyString(row.id) && isFiniteNumber(row.sent_at)
     case "pong":
-      return isString(row.id) && isFiniteNumber(row.sent_at) && isFiniteNumber(row.received_at)
+      return isNonEmptyString(row.id) && isFiniteNumber(row.sent_at) && isFiniteNumber(row.received_at)
     case "host.registration.update":
-      return isStringArray(row.workspace_ids) && isString(row.token)
+      return isStringArray(row.workspace_ids) && isNonEmptyString(row.token)
     case "http.request":
-      return isString(row.request_id)
-        && isString(row.workspace_id)
-        && isString(row.method)
-        && isString(row.path)
+      return isNonEmptyString(row.request_id)
+        && isNonEmptyString(row.workspace_id)
+        && isNonEmptyString(row.method)
+        && isNonEmptyString(row.path)
         && isTunnelHeaderMap(row.headers)
         && isOptionalBase64(row.body_base64)
         && typeof row.end === "boolean"
     case "http.response.start":
-      return isString(row.request_id)
+      return isNonEmptyString(row.request_id)
         && isHttpStatus(row.status)
         && isTunnelHeaderMap(row.headers)
     case "http.response.chunk":
-      return isString(row.request_id) && isBase64(row.body_base64)
+      return isNonEmptyString(row.request_id) && isBase64(row.body_base64)
     case "http.response.end":
-      return isString(row.request_id)
+      return isNonEmptyString(row.request_id)
     case "http.response.flow":
-      return isString(row.request_id)
+      return isNonEmptyString(row.request_id)
         && typeof row.paused === "boolean"
         && (row.reason === undefined || row.reason === "slow_consumer" || row.reason === "drained" || row.reason === "closed")
     case "ws.open":
-      return isString(row.channel_id)
-        && isString(row.workspace_id)
-        && isString(row.path)
+      return isNonEmptyString(row.channel_id)
+        && isNonEmptyString(row.workspace_id)
+        && isNonEmptyString(row.path)
         && isTunnelHeaderMap(row.headers)
     case "ws.frame":
-      return isString(row.channel_id)
+      return isNonEmptyString(row.channel_id)
         && isBase64(row.data_base64)
         && typeof row.binary === "boolean"
     case "ws.close":
-      return isString(row.channel_id)
+      return isNonEmptyString(row.channel_id)
         && (row.code === undefined || isCloseCode(row.code))
-        && (row.reason === undefined || isString(row.reason))
+        && (row.reason === undefined || isNonEmptyString(row.reason))
     case "error":
-      return (row.request_id === undefined || isString(row.request_id))
-        && (row.channel_id === undefined || isString(row.channel_id))
-        && isString(row.code)
-        && isString(row.message)
+      return (row.request_id === undefined || isNonEmptyString(row.request_id))
+        && (row.channel_id === undefined || isNonEmptyString(row.channel_id))
+        && isNonEmptyString(row.code)
+        && isNonEmptyString(row.message)
     default:
       return false
   }
 }
 
-function isString(input: unknown) {
+function isNonEmptyString(input: unknown) {
   return typeof input === "string" && input.length > 0
 }
 
 function isStringArray(input: unknown): input is string[] {
-  return Array.isArray(input) && input.length > 0 && input.every(isString)
-}
-
-function isFiniteNumber(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input)
+  return Array.isArray(input) && input.length > 0 && input.every(isNonEmptyString)
 }
 
 function isHttpStatus(input: unknown) {

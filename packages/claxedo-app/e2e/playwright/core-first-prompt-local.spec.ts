@@ -1,10 +1,18 @@
 /**
- * SPEC: First prompt in a new local session
+ * The first turn of a brand-new local session: open a local worktree, type, send, see a
+ * reply. Second turns, reload recovery and prompt history belong to
+ * core-turns-reload-recovery, harness switching to core-harness-ownership-local. The
+ * harness here is fixed to the default `opencode` so the first-turn contract stays isolated
+ * from harness selection.
  *
- * PURPOSE — the entry point to the whole product: a user opens a local worktree,
- * types a first message, and gets a visible reply. Every other core-loop spec builds
- * on this working. This spec owns only the FIRST turn of a brand-new local session;
- * multi-turn/reload/history live in `core-turns-reload-recovery`.
+ * A session starts as a draft: no server session exists yet, only a `draftId` keyed by
+ * directory in the composer's local store. On submit the client renders the user turn
+ * optimistically (`addRegisteredConversationMessage` in `src/components/prompt-input/
+ * submit.ts`) before any round-trip settles; `POST /session` then creates the session and
+ * `POST /session/:id/prompt_async` returns 204 without waiting for the reply. The reply
+ * arrives over `/global/event` SSE as `session.status busy` → `message.updated` pending →
+ * `message.part.delta`* → `message.updated` completed → `session.idle`, and the URL moves
+ * from the draft route onto the session's route once the session exists.
  *
  * STATE MODEL — a session starts as a "draft" (no server session yet, `sessionID`
  * conceptually "new", tracked by a `draftId` and keyed by `directory` in the composer's
@@ -245,7 +253,7 @@ async function finishTitleContinuityProbe(page: Page) {
 }
 
 test.describe("core first prompt (local) @core", () => {
-  test("draft composer is reachable and editable before any send — behavior 1", async ({ page }) => {
+  test("draft composer is reachable and editable before any send", async ({ page }) => {
     await seedOneProject(page, DIR)
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
 
@@ -258,7 +266,7 @@ test.describe("core first prompt (local) @core", () => {
     await expect(page.locator(SELECTORS.assistantContent)).toHaveCount(0)
   })
 
-  test("first send renders the full session UI and the oracle proves the reply — behaviors 2,3,4", async ({ page }) => {
+  test("first send renders the full session UI and the oracle proves the reply", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -317,7 +325,7 @@ test.describe("core first prompt (local) @core", () => {
     expect(mock.requests.promptBodies[0]?.text).toBe(promptText)
   })
 
-  test("selecting a base branch provisions the first session from that exact ref — behavior 6", async ({ page }) => {
+  test("selecting a base branch provisions the first session from that exact ref", async ({ page }) => {
     const branches = ["main", "release/next"]
     const mock = await installMockRuntime(page, {
       dir: DIR,
@@ -356,7 +364,19 @@ test.describe("core first prompt (local) @core", () => {
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
   })
 
-  test("a directory-less draft offers no compose surface and creates zero sessions — behavior 5", async ({ page }) => {
+  test("a directory-less draft offers no compose surface and creates zero sessions", async ({ page }) => {
+    // With no project ever registered — `seedNoProjects` clears localStorage and the
+    // bootstrap/project endpoints below report zero projects — `emptyDraftDirectory()`
+    // (`src/app/workbench/rail/rail-workbench-canvas.tsx`) is undefined, so no surface can
+    // render `EmptyDraftSessionComposer`. This is the only app state with no fallback
+    // directory anywhere; every other draft surface carries one, which is why
+    // `resolveSubmitDirectory`'s `draftId && !projectDirectory` toast
+    // (`src/session/submit/resolve.ts`) is not reachable from a browser at all. The
+    // observable contract asserted here is stronger anyway: no compose surface, so no
+    // session can be created.
+    //
+    // The (a) and (b) notes below mark the two settled surfaces; each is asserted only on
+    // the route where it settles.
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/bootstrap**", (route) =>
       route.fulfill({
@@ -381,19 +401,17 @@ test.describe("core first prompt (local) @core", () => {
 
     await seedNoProjects(page)
 
-    // (a) Shell root — the workbench-empty path. No route surface is owned here
-    // (`routeOwnsInitialSurface("/")` is false in `src/app/workbench/state/
-    // provider.tsx`, and `receive()` in `route-intent.ts` returns immediately when
-    // the intent carries neither a workspaceId nor a sessionId), so the workbench
-    // never gains a content and `renderEmpty` is the SETTLED render — the "No
-    // projects yet" onboarding placeholder, permanently, not for one frame.
+    // (a) Shell root, the workbench-empty path. `routeOwnsInitialSurface("/")` is false
+    // (`src/app/workbench/state/provider.tsx`) and `receive()` in `route-intent.ts` returns
+    // immediately for an intent carrying neither workspaceId nor sessionId, so the
+    // workbench never gains a content and the "No projects yet" placeholder is permanent
+    // rather than a frame on the way somewhere.
     await page.goto("/")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
-    // Positive precondition for the two negative assertions below: the onboarding
-    // placeholder's own New Project affordance is painted, so "no composer" is a
-    // statement about a rendered surface rather than about an unpainted app.
+    // The placeholder's own New Project affordance is painted first, so "no composer"
+    // below is a statement about a rendered surface rather than an unpainted app.
     await expect(page.getByRole("button", { name: "New Project" }).first()).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)

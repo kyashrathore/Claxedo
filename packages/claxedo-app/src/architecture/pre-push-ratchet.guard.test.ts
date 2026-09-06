@@ -11,7 +11,10 @@ describe("pre-push architecture ratchet", () => {
     const manifest = await Bun.file(new URL("package.json", root)).json()
 
     expect(manifest.scripts["test:architecture-ratchets"]).toBe(
-      "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/bun-build.test.ts && bun ./script/product-boundary/verify.ts --all --source-only",
+      // The helper-duplication ratchet is pinned here for the same reason as the
+      // closure walk: a gate that is easy to drop from the script is a gate that
+      // silently stops running.
+      "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/bun-build.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts",
     )
     expect(manifest.scripts.prepush).toBe(
       "bun run lint && bun run typecheck && bun run test:architecture-ratchets",

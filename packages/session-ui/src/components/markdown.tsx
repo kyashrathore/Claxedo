@@ -259,7 +259,7 @@ export function stageMarkdownCollections(root: HTMLElement) {
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
 
 /**
- * Mermaid (T14) — the app registers a renderer (it owns the `mermaid` dep + theming);
+ * Mermaid — the app registers a renderer (it owns the `mermaid` dep + theming);
  * session-ui stays dependency-free and just calls back. Rendering is idempotent and
  * self-healing: if the block cache replaces the DOM node, decorate re-runs and re-renders.
  * Errors fall back to the plain code block (never mermaid's own error graphics).
@@ -687,9 +687,6 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
-  // Inline-code kinds (path/url) and code links used to be gated behind the dead
-  // `data-new-layout` flag; enable them unconditionally so path pills and URL links
-  // render in the app (T15/T16).
   markInlineCode(root)
   markCodeLinks(root)
   decorateTables(root, labels)

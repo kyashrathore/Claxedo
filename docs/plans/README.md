@@ -29,6 +29,33 @@ explain a maintained package or cross-package delivery contract.
     supersedes nor duplicates the Pi refactor, and its implementation does not
     run concurrently with it. Resolve its design-review findings before execution.
 
+- [Reliable product reporting, error reporting, and distributed tracing](./2026-09-05-1600-feat-product-errors-tracing-plan.md) — proposed implementation plan.
+  - Covers unsigned/signed local, hosted and user-hosted modes; separate product,
+    error and trace policies; safe offline journals and reviewed support uploads;
+    canonical usage/funnels; durable delivery and privacy/deletion qualification.
+    Includes 17 implementation units, an explicit 18-journey inventory, a
+    consolidation/deletion map, agent-app benchmark performance integration,
+    and real packaged/deployed release gates.
+    Runtime integration follows the settled Pi refactor in 004. Supersedes the
+    tracing exclusion in the July 28 PostHog observability plan.
+
+- [Pi is a native harness; remove the central/VM split](./2026-09-05-004-pi-native-harness-remove-central-plan.md) — **active; execute first**.
+  - Standalone refactor. Pi uses the shared native adapter and its RPC process
+    on local or cloud machines. Removes the central/hybrid/tools-only execution
+    dimension, SessionEnv bridge and embedded Pi model backend. Includes
+    credentials, native configuration, composer defaults, channel/wake/MCP
+    consumer cutover and real local/cloud proof. This is a clean break: no
+    legacy adapters, old-session migration or backward compatibility.
+    Bootless agents remain a separate future feature. No Think dependency.
+  - Supersedes the placement proposals 001–003; no longer folded into 005.
+
+- [Claxedo agent base tier: durable agents on Cloudflare, machines on demand](./2026-09-05-005-think-agent-base-tier-plan.md) — **proposed; execute after 004 completes**.
+  - New durable work-session feature using Project Think, with memory,
+    workspace, scheduling, gateway and machine access. Code sessions retain
+    the native harness architecture delivered by 004. This feature neither
+    supersedes nor duplicates the Pi refactor, and its implementation does not
+    run concurrently with it. Resolve its design-review findings before execution.
+
 - [OpenCode v2 worker runtime on workerd with a credential gateway](./2026-09-05-003-opencode-v2-worker-runtime-plan.md) — superseded by 004.
 - [Pi worker runtime and credential gateway on workerd](./2026-09-05-002-pi-worker-runtime-and-gateway-plan.md) — superseded by 004.
 

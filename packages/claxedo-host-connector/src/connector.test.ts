@@ -533,10 +533,10 @@ describe("host identity", () => {
 
 describe("a control-plane failure before enrollment", () => {
   test("stops rather than escaping as a rejection", async () => {
-    // `createRequest` is a network call. It used to sit outside the try, so it
-    // rejected while every other enrollment failure returned a stopped state —
-    // two shapes for one outcome, and on Electron startup the rejecting one is
-    // unhandled.
+    // `createRequest` is a network call inside the try, so every enrollment
+    // failure normalizes to one stopped state instead of two different
+    // shapes — a rejection here would surface as unhandled on Electron
+    // startup.
     const { instance, calls } = await connector({
       createRequest: async () => {
         throw new Error("control plane unreachable")

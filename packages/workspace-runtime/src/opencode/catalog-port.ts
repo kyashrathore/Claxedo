@@ -1,18 +1,14 @@
 /**
  * Read-only workspace catalogs: agents, commands, models.
  *
- * These are the surfaces that returned empty 500s in the broken upstream
- * beta-18314 build (contract doc §2.3), so the port's contract about failure
- * matters as much as its shape: an unavailable SDK RAISES. It never answers
- * with an empty list.
- * A fabricated empty catalog is indistinguishable in the UI from "this
- * workspace genuinely has no agents", and Unit 1 recorded that as the exact
- * failure mode to keep out (R8).
+ * An unavailable SDK raises; the port never answers with an empty list, because
+ * a fabricated empty catalog is indistinguishable in the UI from a workspace
+ * that genuinely has no agents.
  *
- * Provider/model identity for the PICKER is not here — Claxedo owns that
+ * Provider/model identity for the picker is not here — Claxedo owns that
  * catalog through `opencodeProviderCatalog` (models.dev backed). `models()`
- * below reports what the running host can actually resolve for a workspace,
- * which is a different question and has a different authority.
+ * reports what the running host can resolve for a workspace, a different
+ * question with a different authority.
  */
 import type { OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"

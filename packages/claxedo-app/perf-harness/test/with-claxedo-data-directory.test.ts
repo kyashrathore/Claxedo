@@ -13,11 +13,17 @@ describe("disposable Claxedo data-directory scope", () => {
     const previous = process.env.CLAXEDO_DATA_DIR
     const order: string[] = []
     const ClaxedoDB = await claxedoDatabase()
+    let releaseFirst!: () => void
+    const released = new Promise<void>((resolve) => { releaseFirst = resolve })
+    let enterFirst!: () => void
+    const entered = new Promise<void>((resolve) => { enterFirst = resolve })
+    let operations: Promise<void>[] = []
     try {
-      await Promise.all([
+      operations = [
         withClaxedoDataDirectory(first, async () => {
           order.push("first:start")
-          await Bun.sleep(10)
+          enterFirst()
+          await released
           ClaxedoDB.raw().exec("CREATE TABLE materializer_owner (value TEXT NOT NULL); INSERT INTO materializer_owner VALUES ('first')")
           order.push("first:end")
         }),
@@ -26,13 +32,20 @@ describe("disposable Claxedo data-directory scope", () => {
           ClaxedoDB.raw().exec("CREATE TABLE materializer_owner (value TEXT NOT NULL); INSERT INTO materializer_owner VALUES ('second')")
           order.push("second:end")
         }),
-      ])
+      ]
+      await entered
+      expect(order).toEqual(["first:start"])
+      expect(process.env.CLAXEDO_DATA_DIR).toBe(first)
+      releaseFirst()
+      await Promise.all(operations)
 
       expect(order).toEqual(["first:start", "first:end", "second:start", "second:end"])
       expect(process.env.CLAXEDO_DATA_DIR).toBe(previous)
       expect(readOwner(first)).toBe("first")
       expect(readOwner(second)).toBe("second")
     } finally {
+      releaseFirst()
+      await Promise.allSettled(operations)
       ClaxedoDB.close()
       await rm(root, { recursive: true, force: true })
     }

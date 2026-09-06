@@ -1,21 +1,14 @@
 /**
  * Every bundler-hidden lazy import specifier must resolve to a real module.
  *
- * NOTE (2026-08-08): there are no such call sites left — all three became
- * ports. This guard now asserts that, and keeps the resolver so a
- * reintroduced one is still checked. The rest of this comment records why the
- * pattern existed and why it was worth removing.
- *
- * A handful of call sites held their specifier in a variable
+ * A call site can hide its specifier in a variable
  * (`const embeddedMod = "../deployments/local/…"`) precisely so esbuild/Vite
  * cannot follow the edge — the targets are Node-only deployment modules that
- * must not land in a Worker build. The cost of that trick is that tsc cannot
- * see the edge either: a directory reorg that moves the importer or the target
- * leaves the string pointing at nothing, typecheck stays green, every unit
- * suite stays green, and the failure surfaces as a runtime
- * `ERR_MODULE_NOT_FOUND` the first time a live server executes the branch —
- * which is exactly how the 2026-08 reorg broke `sandboxFetch` for local
- * workspaces with zero red tests.
+ * must not land in a Worker build. The cost is that tsc cannot see the edge
+ * either: a directory reorg that moves the importer or the target leaves the
+ * string pointing at nothing, typecheck stays green, every unit suite stays
+ * green, and the failure only surfaces as a runtime `ERR_MODULE_NOT_FOUND`
+ * when a live server executes the branch.
  *
  * This guard finds each vite-ignore `import(<variable>)` call, walks
  * back to the variable's string-literal assignment in the same file, resolves
@@ -63,13 +56,11 @@ describe("lazy import specifiers", () => {
       }
     }
     expect(failures).toEqual([])
-    // There are now ZERO of these, and that is the point.
-    //
-    // All three call sites reached a Node-only deployment module from shared
-    // code, hiding the edge from the bundler on purpose. They are ports now
-    // (`workspace/local-runtime-port.ts`, `workspace/supervisor-port.ts`),
-    // which keeps the Worker build clean AND leaves the edge visible to tsc,
-    // to import rewriters, and to the closure walker.
+    // A relative dynamic-import specifier that resolves to nothing hides a
+    // Node-only edge from the bundler. Routing through a port
+    // (`workspace/local-runtime-port.ts`, `workspace/supervisor-port.ts`)
+    // keeps the edge visible to tsc, to import rewriters, and to the closure
+    // walker instead.
     //
     // The resolver above stays: a new hidden import must still point at a real
     // module. This assertion is the stronger statement — do not reintroduce

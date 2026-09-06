@@ -1,5 +1,15 @@
-import { describe, expect, test } from "bun:test";
-import { QUIET_HOST_LOAD_LIMIT, assertQuietHost, parseLoadAverage } from "../src/agent-host-preflight";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertQuietHost, parseLoadAverage } from "../src/agent-host-preflight";
+
+let previousOverride: string | undefined;
+beforeEach(() => {
+  previousOverride = process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST;
+  delete process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST;
+});
+afterEach(() => {
+  if (previousOverride === undefined) delete process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST;
+  else process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST = previousOverride;
+});
 
 // Real `uptime` output, macOS and Linux, including the comma-separated locale form.
 const MAC = "23:14  up 2 days,  4:11, 3 users, load averages: 1.94 2.21 2.40";
@@ -38,7 +48,8 @@ describe("quiet-host preflight", () => {
     expect(() => assertQuietHost("no load information here")).toThrow(/could not read/u);
   });
 
-  test("the limit is a documented constant, not a magic number at the call site", () => {
-    expect(QUIET_HOST_LOAD_LIMIT).toBe(4);
+  test("accepts load exactly at four and rejects load above it", () => {
+    expect(assertQuietHost("load averages: 4.00 2.00 1.00")).toBe(4);
+    expect(() => assertQuietHost("load averages: 4.01 2.00 1.00")).toThrow(/quiet host/u);
   });
 });

@@ -13,7 +13,7 @@ const liveTypeContracts = [
   "features/session/data/session-lifecycle.ts",
   // Doorbell event mirrors. Same shape as
   // `session-lifecycle.ts` above: the feature owns the event type, the shell
-  // folds it into the `ClaxedoEvent` union with a TYPE-ONLY import, so the
+  // folds it into the `ClaxedoEvent` union with a type-only import, so the
   // import graph sees no value edge into them.
   "features/documents/data/document-changed-event.ts",
   "features/session/data/backend/types.ts",
@@ -28,9 +28,8 @@ const liveTypeContracts = [
   // Claxedo's HTTP presentation contract is intentionally consumed only as
   // types; no runtime module should be generated from or coupled to a vendor SDK.
   "platform/api/claxedo-api-types.ts",
-  // The workspace-startup port. `workspace-log.ts` used to sit here and no
-  // longer does: it gained `appendWorkspaceRuntimeLog`, so it is reached by
-  // value and is not a pure type contract any more.
+  // The workspace-startup port: import-free of any implementation, so the
+  // import graph sees it as a pure type contract.
   "platform/runtime/workspace-startup-port.ts",
   "platform/query/project-meta.ts",
   "platform/account/account-port.ts",

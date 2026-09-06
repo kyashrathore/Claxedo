@@ -52,11 +52,11 @@ describe("createProcessPaneSync", () => {
     return { sync, calls }
   }
 
-  test("a crash discovered while the pane is CLOSED raises the persisted attention badge (behavior 10)", () => {
+  test("a crash discovered while the pane is CLOSED raises the persisted attention badge", () => {
     const { sync, calls } = harness({ processes: { a: proc("crashed") }, isProcessOpen: false })
     sync()
     expect(calls.crashed).toEqual([["/repo", true]])
-    // The GET-reconcile path now mirrors the SSE handler and lights the badge.
+    // The GET-reconcile path mirrors the SSE handler and lights the badge.
     expect(calls.crashedWhileClosed).toEqual([true])
   })
 

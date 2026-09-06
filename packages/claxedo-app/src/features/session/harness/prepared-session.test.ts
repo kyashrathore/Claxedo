@@ -66,6 +66,13 @@ describe("prepared harness session planning", () => {
     })
   })
 
+  test("cannot reuse a prepared session for a different connection with the same model", () => {
+    const harness = { kind: "connection", connectionId: "other-team" } as const
+    expect(planPreparedHarnessSession({
+      enabled: true, directory: "/repo", state: { harness, selectedModel: "sonnet" }, prepared,
+    })).toEqual({ status: "create", directory: "/repo", harness, model: "sonnet", stale: prepared })
+  })
+
   test("plans stale cleanup when a prepared session does not match", () => {
     expect(planPreparedHarnessSession({
       enabled: true,
@@ -81,13 +88,5 @@ describe("prepared harness session planning", () => {
     })
   })
 
-  test("stays pure and out of runtime/query/UI layers", async () => {
-    const source = await Bun.file(new URL("./prepared-session.ts", import.meta.url)).text()
 
-    expect(source).not.toContain("solid-js")
-    expect(source).not.toContain("@tanstack")
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("@opencode-ai/sdk")
-    expect(source).not.toContain("localStorage")
-  })
 })

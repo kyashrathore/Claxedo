@@ -1,6 +1,6 @@
 {
   "package": "@claxedo/agent-sdk-runtime",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "rootPolicy": "stable AgentRuntime facade and shared runtime types",
   "stabilityLabels": {
     "stable": "Intended public API for external hosts.",

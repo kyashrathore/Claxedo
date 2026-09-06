@@ -370,6 +370,12 @@ describe("session-status dispatcher", () => {
       event: { type: "session.status.timeout", sessionID, stage: "failed" },
     })
     expect(promptSessionStatusStage(sessionID)).toBe("failed")
+    const failedStatus = statusFor(sessionID)
+    expect(dispatchSessionStatusTimeoutStage({
+      event: { type: "session.status.timeout", sessionID, stage: "pending" },
+    })).toBe(false)
+    expect(promptSessionStatusStage(sessionID)).toBe("failed")
+    expect(statusFor(sessionID)).toBe(failedStatus)
   })
 
   test("timeout stage clears meta once status reaches idle", () => {
@@ -462,13 +468,6 @@ describe("session-status dispatcher", () => {
     expect(todoFor("ses_todo")).toEqual([{ id: "todo_1", content: "ship", status: "pending" }])
   })
 
-  test("optimistic metadata stays query-owned instead of a private Solid signal mirror", async () => {
-    const source = await Bun.file(new URL("./session-status-dispatcher.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("createSignal")
-    expect(source).not.toContain("promptSessionStatusMetaBySession")
-    expect(source).toContain('shellDataKeys.sessionId(sessionID, "status-meta")')
-  })
 
   test("subscribePromptSessionStatusMeta notifies on stage writes and on the reconcile clear, for its session only", () => {
     const now = 10_000

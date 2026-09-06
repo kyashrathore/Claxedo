@@ -76,3 +76,12 @@ describe("message page part reconciliation", () => {
 function text(id: string, value: string): Part {
   return { id, type: "text", sessionID: "ses_1", messageID: "msg_1", text: value } as Part
 }
+
+
+test("incremental parts survive a stale additive snapshot without losing their order", () => {
+  const part = (id: string, text = id) => ({ id, sessionID: "session", messageID: "message", type: "text" as const, text })
+  let parts = mergeParts(undefined, [part("p1"), part("p2"), part("p3")])
+  for (const id of ["p4", "p5", "p6", "p7"]) parts = mergeParts(parts, [part(id)])
+  const result = mergeParts(parts, [part("p2", "stale2"), part("p3", "stale3")])
+  expect(result).toEqual(["p1", "p2", "p3", "p4", "p5", "p6", "p7"].map((id) => part(id)))
+})

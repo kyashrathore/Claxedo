@@ -14,16 +14,15 @@ import {
 } from "./app"
 
 /**
- * The local / self-host server is the ONE surface that answers both response
- * classes: JSON/SSE API routes AND — when `CLAXEDO_APP_DIST_DIR` is set — the
+ * The local / self-host server is the one surface that answers both response
+ * classes: JSON/SSE API routes and — when `CLAXEDO_APP_DIST_DIR` is set — the
  * built claxedo-app bundle plus its index.html, same origin, same Hono app.
  *
  * The hosted middleware (security-headers.test.ts) and the Cloudflare Pages
- * `_headers` file each cover exactly one of those. Neither covers this server,
- * which shipped with no security headers at all. These are the pins for the
- * split policy that fixes that, and in particular for the failure mode that
- * makes the split necessary: blanket `default-src 'none'` white-screens the
- * self-hosted UI.
+ * `_headers` file each cover exactly one of those; neither covers this
+ * server. These pin the split policy this server needs, and in particular the
+ * failure mode that makes the split necessary: a blanket `default-src 'none'`
+ * white-screens the self-hosted UI.
  */
 
 const REQUIRED = ["content-security-policy", "x-content-type-options", "x-frame-options", "referrer-policy"] as const
@@ -43,7 +42,7 @@ function createTestApp() {
 
 /**
  * A miniature `dist/` with the two shapes that matter: the SPA document, and a
- * same-origin MODULE worker (the real bundle ships
+ * same-origin module worker (the real bundle ships
  * `assets/markdown-shiki.worker-*.js`), whose own response CSP becomes its
  * global CSP.
  */
@@ -161,7 +160,7 @@ describe("self-host SPA bundle responses carry the document policy", () => {
   test("the document CSP is REPORT-ONLY; only frame-ancestors is enforcing", async () => {
     // Asserted explicitly so promoting the full policy to enforcing is a
     // visible, reviewable diff rather than a silent one-word edit. It stays
-    // report-only because it has NOT been validated against a running
+    // report-only because it has not been validated against a running
     // self-hosted app with a live backend — see the promotion checklist on
     // SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY. "No compat debt pre-launch"
     // is not evidence.
@@ -181,8 +180,8 @@ describe("self-host SPA bundle responses carry the document policy", () => {
 
   test("connect-src allows the plaintext loopback control plane", async () => {
     // Self-host talks to `http://127.0.0.1:<port>` for real. The Pages policy
-    // only allows `https:`/`wss:` and recorded plaintext loopback as a KNOWN
-    // GAP it would report; here it would be a broken app, not a report.
+    // only allows `https:`/`wss:` and recorded plaintext loopback as a known
+    // gap it would report; here it would be a broken app, not a report.
     const res = await createTestApp().request("http://localhost:3001/s/some-session", {
       headers: { accept: "text/html" },
     })
@@ -196,7 +195,7 @@ describe("self-host SPA bundle responses carry the document policy", () => {
   })
 
   test("a bundle module worker does NOT get `default-src 'none'`", async () => {
-    // `assets/*.worker-*.js` are same-origin MODULE workers, and a worker's
+    // `assets/*.worker-*.js` are same-origin module workers, and a worker's
     // own response CSP becomes its global CSP. `default-src 'none'` on these
     // bytes kills Shiki's WASM compile inside the worker with no
     // document-level violation to explain it — which is why the policy split

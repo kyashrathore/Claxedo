@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 
 const {
   createSubmit,
@@ -26,7 +26,7 @@ afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Comment routing, shell, and slash command dispatch", () => {
   test("prepares prompt request parts without treating page comments as file attachments", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     promptContextItems.push(
       {
         key: "file-comment",
@@ -93,7 +93,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       agent: "agent",
       model: { providerID: "provider", modelID: "model" },
     })
-    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
+    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "busy" })
   })
 
   test("runtime failure restores the draft and persisted edit mode after normalization", async () => {
@@ -144,11 +144,15 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     await new Promise<void>((r) => setTimeout(r, 0))
 
     expect(commandCalls).toEqual([])
-    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ mode: "sync" })
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      sessionID: "session-existing",
+      agent: "agent",
+      variant: "high",
+    })
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(buildRequestPartCalls).toHaveLength(1)
-    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
+    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "busy" })
   })
 
   test("runtime failure for slash-looking text restores the draft", async () => {

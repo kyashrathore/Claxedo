@@ -134,10 +134,22 @@ describe("startHarnessReprobeLoop", () => {
     loop.cancel() // idempotent, no throw
   })
 
-  test("exposes production interval/cap defaults (~40 attempts over ~60s)", () => {
-    expect(HARNESS_REPROBE_INTERVAL_MS).toBe(1500)
-    expect(HARNESS_REPROBE_MAX_ATTEMPTS).toBe(40)
-    expect(HARNESS_REPROBE_MAX_ATTEMPTS * HARNESS_REPROBE_INTERVAL_MS).toBe(60_000)
+  test("uses the production interval and cap when both options are omitted", () => {
+    const timers = makeManualScheduler()
+    let reprobes = 0
+    let exhausted = 0
+    startHarnessReprobeLoop({
+      schedule: timers.schedule,
+      onReprobe: () => { reprobes++ },
+      onExhausted: () => { exhausted++ },
+    })
+    expect(timers.lastMs()).toBe(HARNESS_REPROBE_INTERVAL_MS)
+    for (let n = 0; n < HARNESS_REPROBE_MAX_ATTEMPTS; n++) timers.tick()
+    expect(reprobes).toBe(HARNESS_REPROBE_MAX_ATTEMPTS)
+    expect(exhausted).toBe(0)
+    timers.tick()
+    expect(exhausted).toBe(1)
+    expect(timers.pendingCount()).toBe(0)
   })
 })
 

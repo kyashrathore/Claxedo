@@ -64,7 +64,6 @@ function mountController() {
       active: () => true,
       sessionID: () => "ses_1",
       directory: () => "/repo/main",
-      client: {} as never,
       serverUrl: () => serverUrl,
       source: () => queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope)),
       suppressed: () => false,

@@ -1,10 +1,10 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import type { ConversationEventFrame } from "./conversation-event"
 export type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
 import { preserveMessageFields, withPreservedAuthor } from "./conversation-snapshot"
-import { asRecord } from "@/lib/record"
 import {
   agentMessageToChatMessage,
   agentPartId,

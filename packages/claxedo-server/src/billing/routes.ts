@@ -1,7 +1,7 @@
 /**
- * Polar billing routes for the hosted control plane (ADR 014 addendum:
- * Option B — raw `@polar-sh/sdk`, our own webhook route,
- * everything Polar confined to src/billing/**).
+ * Polar billing routes for the hosted control plane: the raw `@polar-sh/sdk`
+ * and our own webhook route, with everything Polar-specific confined to
+ * src/billing/**.
  *
  * Mounted by claxedo-hosted-product-app.ts (createClaxedoHostedProductApp) at
  * /api/billing:
@@ -9,10 +9,10 @@
  *   POST /api/billing/checkout       — Polar checkout session (admin/owner)
  *   POST /api/billing/portal         — Polar customer portal session (admin/owner)
  *
- * Customer linkage (ADR addendum): NO customer pre-creation — Polar
- * creates the customer lazily at first checkout with `external_customer_id` =
- * a STABLE ORG-scoped id (`org_{orgId}`), NOT the purchasing admin's the identity provider
- * subject. Keying on the org (not the human) means any admin of the org reaches
+ * Customer linkage: no customer pre-creation — Polar creates the customer
+ * lazily at first checkout with `external_customer_id` = a stable org-scoped
+ * id (`org_{orgId}`), not the purchasing admin's identity-provider subject.
+ * Keying on the org (not the human) means any admin of the org reaches
  * the same Polar customer/portal, and a second admin cannot mint a second
  * customer for the same org. `metadata.org_id` (the authority's org id) still
  * rides the checkout onto the subscription and is how webhook state re-attaches
@@ -23,7 +23,6 @@
  * → 401 and the state is never applied.
  */
 
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono } from "hono"
 import { z } from "zod"
 import { Polar } from "@polar-sh/sdk"
@@ -45,6 +44,7 @@ import type { BillingStore, CheckoutContext } from "./store-contract"
 import { webhookEventToApplyArgs, isBillingRelevantEventType, type PolarProductConfig } from "./apply-polar-state"
 import { verifyStandardWebhook, WebhookSignatureError } from "./standard-webhooks"
 import { asRecord, isStringArray } from "../platform/json/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type BillingEnv = Record<string, string | undefined>
 
@@ -59,16 +59,16 @@ export type BillingEnv = Record<string, string | undefined>
  * `@polar-sh/sdk` 0.48.1 takes `{ timeoutMs }` as each method's second argument
  * and turns it into a real `AbortSignal.timeout` on the underlying fetch
  * (`lib/sdks.js`: `if (!fetchOptions?.signal && conf.timeoutMs > 0)`). So unlike
- * the generic `withTimeout` wrapper — which bounds only the caller's wait — this
- * genuinely CANCELS the request. That distinction is why the SDK's own option is
- * used here instead of wrapping the promise: a cancelled Polar call cannot land
- * later, so nothing downstream has to be idempotent against it.
+ * the generic `withTimeout` wrapper — which bounds only the caller's wait —
+ * this genuinely cancels the request. That distinction is why the SDK's own
+ * option is used here instead of wrapping the promise: a cancelled Polar call
+ * cannot land later, so nothing downstream has to be idempotent against it.
  *
  * One budget serves both kinds of caller today:
  *
  *   - user-facing (checkout, portal): a person is waiting on a redirect, so the
  *     deadline is short enough to fail visibly rather than hang the tab.
- *   - cron sweeps (reconcile, deleted-org cancel): these iterate SERIALLY over
+ *   - cron sweeps (reconcile, deleted-org cancel): these iterate serially over
  *     flagged orgs, so one untimed call stalls the whole sweep and every org
  *     behind it — the reason these were the genuine gap the review found. They
  *     share the interactive budget; a separate, longer sweep budget was declared
@@ -124,8 +124,8 @@ export type PolarClientLike = {
  */
 function webhookClientKey(request: Request) {
   return (
-    clean(request.headers.get("cf-connecting-ip") ?? undefined) ??
-    clean(request.headers.get("x-forwarded-for")?.split(",")[0]) ??
+    trimToUndefined(request.headers.get("cf-connecting-ip") ?? undefined) ??
+    trimToUndefined(request.headers.get("x-forwarded-for")?.split(",")[0]) ??
     "anonymous"
   )
 }
@@ -133,7 +133,7 @@ function webhookClientKey(request: Request) {
 /**
  * The stable, org-scoped Polar `external_customer_id`. Both checkout and
  * portal derive the customer from the org (never the purchasing admin's the identity provider
- * subject), so every admin of the org resolves the SAME Polar customer.
+ * subject), so every admin of the org resolves the same Polar customer.
  */
 function orgExternalCustomerId(orgId: string) {
   return `org_${orgId}`
@@ -143,22 +143,22 @@ function orgExternalCustomerId(orgId: string) {
 const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
 export function polarProductConfig(env: BillingEnv): PolarProductConfig {
-  const ids = [clean(env.CLAXEDO_POLAR_PRODUCT_MONTHLY), clean(env.CLAXEDO_POLAR_PRODUCT_YEARLY)]
+  const ids = [trimToUndefined(env.CLAXEDO_POLAR_PRODUCT_MONTHLY), trimToUndefined(env.CLAXEDO_POLAR_PRODUCT_YEARLY)]
     .filter((id): id is string => !!id)
   return {
     knownProductIds: new Set(ids),
-    allowAllProductsWhenUnconfigured: clean(env.CLAXEDO_POLAR_SERVER) === "sandbox",
+    allowAllProductsWhenUnconfigured: trimToUndefined(env.CLAXEDO_POLAR_SERVER) === "sandbox",
   }
 }
 
 /** Real SDK client from env; undefined without an access token (fail closed at routes). */
 export function polarClientFromEnv(env: BillingEnv): PolarClientLike | undefined {
-  const accessToken = clean(env.CLAXEDO_POLAR_ACCESS_TOKEN)
+  const accessToken = trimToUndefined(env.CLAXEDO_POLAR_ACCESS_TOKEN)
   if (!accessToken) return undefined
   return new Polar({
     accessToken,
     // Polar test mode rides the sandbox server.
-    ...(clean(env.CLAXEDO_POLAR_SERVER) === "sandbox" ? { server: "sandbox" as const } : {}),
+    ...(trimToUndefined(env.CLAXEDO_POLAR_SERVER) === "sandbox" ? { server: "sandbox" as const } : {}),
   })
 }
 
@@ -190,14 +190,14 @@ export type BillingRouteOptions = {
  * customer + product + price expansion — is single-digit KiB, so this is ~100x
  * real traffic and still an order of magnitude under the 1 MiB default guard.
  * The webhook is the plane's only unauthenticated write surface, so it takes the
- * TIGHTER number rather than inheriting the general one.
+ * tighter number rather than inheriting the general one.
  */
 export const POLAR_WEBHOOK_MAX_BODY_BYTES = 512 * 1024
 
 /**
  * This surface's exemption from the app-wide default guard.
  *
- * Declared HERE rather than in `authority/request-guard.ts` because the
+ * Declared here rather than in `authority/request-guard.ts` because the
  * reason names the payment vendor, and `billing/invariants.test.ts` keeps the
  * vendor-agnostic control-plane core free of Polar tokens. `claxedo-hosted-product-app.ts`
  * threads it into `createHostedCoreApp`'s `requestGuardExemptions`, and
@@ -215,7 +215,7 @@ export const BILLING_WEBHOOK_GUARD_EXEMPTION = {
 } as const satisfies RouteGuardExemption
 
 /**
- * Read the request body with a hard byte ceiling, BEFORE anything buffers it.
+ * Read the request body with a hard byte ceiling, before anything buffers it.
  *
  * Why not `hono/body-limit` here: the default guard exempts this route (see
  * BILLING_WEBHOOK_GUARD_EXEMPTION) because the webhook needs its own tighter cap,
@@ -224,14 +224,14 @@ export const BILLING_WEBHOOK_GUARD_EXEMPTION = {
  *
  *   1. `content-length` precheck — rejects an oversized declared body without
  *      reading a byte. Cheap, and catches the honest case.
- *   2. Streaming count on the ACTUAL read — a lying or absent content-length
+ *   2. Streaming count on the actual read — a lying or absent content-length
  *      (chunked `transfer-encoding`) must not get a free pass. Without this the
  *      precheck is trivially bypassed by omitting the header, which is why the
  *      cap has to hold on the real bytes and not just the claim about them.
  *
- * The previous code called `c.req.text()` directly, which buffers the WHOLE body
- * into the isolate's memory before signature verification — so an unauthenticated
- * caller chose how much memory the Worker allocated.
+ * Calling `c.req.text()` directly would buffer the whole body into the
+ * isolate's memory before signature verification, letting an unauthenticated
+ * caller choose how much memory the Worker allocates.
  */
 export async function readCappedBody(
   request: Request,
@@ -309,20 +309,21 @@ export function BillingRoutes(options: BillingRouteOptions) {
   const products = polarProductConfig(env)
   // Same fixed-window pattern the workspace routes use (control-plane class):
   // Checkout/portal mint external requests; keep floods off Polar and the authority.
-  // Keys on auth.user.subject, so it reaches ONLY /checkout and /portal — the
+  // Keys on auth.user.subject, so it reaches only /checkout and /portal — the
   // webhook has no principal and gets its own IP-keyed limiter below.
   const rateLimiter = options.rateLimiter ?? createFixedWindowConnectionRateLimiter({ limit: 20, windowMs: 60_000 })
   /**
-   * The webhook's own limiter, keyed on the CALLER'S IP.
+   * The webhook's own limiter, keyed on the caller's IP.
    *
    * The route is unauthenticated by construction — Polar proves itself with a
    * Standard-Webhooks signature, not a bearer token — so there is no principal
-   * to key on and `rateLimiter` above could never cover it. It was therefore the
-   * one hosted surface that was both unauthenticated AND unlimited.
+   * to key on and `rateLimiter` above could never cover it. Without this
+   * limiter it would be the one hosted surface that is both unauthenticated
+   * and unlimited.
    *
    * 120/min is generous against real Polar delivery (a burst of subscription
    * events is single digits) while bounding a flood of unsigned garbage. This
-   * limiter runs BEFORE signature verification on purpose: verification is the
+   * limiter runs before signature verification on purpose: verification is the
    * expensive step (HMAC over the whole body), so gating on it first would mean
    * the flood pays nothing and we pay for every request.
    */
@@ -426,7 +427,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
     new Hono()
       // ── Webhook intake (single-writer path) ────────────────────────────────
       .post("/polar/webhook", async (c) => {
-        // Limiter FIRST, before the secret lookup, the body read, and the
+        // Limiter first, before the secret lookup, the body read, and the
         // signature HMAC. Every step after this point costs something an
         // unauthenticated caller should not be able to spend without bound.
         const webhookLimit = webhookRateLimiter.check({
@@ -445,13 +446,12 @@ export function BillingRoutes(options: BillingRouteOptions) {
             429,
           )
         }
-        // Cap the body BEFORE buffering it, and before the secret lookup.
-        // Previously this was a bare `c.req.text()` further down, so an
-        // unauthenticated caller decided how much memory the Worker allocated,
-        // ahead of signature verification.
+        // Cap the body before buffering it, and before the secret lookup: a bare
+        // `c.req.text()` here would let an unauthenticated caller decide how
+        // much memory the Worker allocates, ahead of signature verification.
         //
         // Ordering note: the cap runs before the missing-secret 503 so that it
-        // cannot be skipped by a CONFIG state. An unconfigured deploy still
+        // cannot be skipped by a config state. An unconfigured deploy still
         // rejects oversized bodies, which is the property that makes "this route
         // is capped" true unconditionally rather than true-when-configured.
         const body = await readCappedBody(c.req.raw, options.webhookMaxBodyBytes ?? POLAR_WEBHOOK_MAX_BODY_BYTES)
@@ -466,7 +466,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
             413,
           )
         }
-        const secret = clean(env.CLAXEDO_POLAR_WEBHOOK_SECRET)
+        const secret = trimToUndefined(env.CLAXEDO_POLAR_WEBHOOK_SECRET)
         if (!secret) {
           // A hosted deploy that lost the secret must be a visible outage —
           // 503 makes Polar retry (and eventually alert us), never 2xx.
@@ -479,7 +479,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         // The same header the signature is computed over, kept for dedup.
         // Read once so verification and dedup cannot disagree about which
         // delivery this is.
-        const webhookId = clean(c.req.header("webhook-id"))
+        const webhookId = trimToUndefined(c.req.header("webhook-id"))
         try {
           await verifyStandardWebhook({
             payload,
@@ -493,7 +493,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           })
         } catch (err) {
           if (err instanceof WebhookSignatureError) {
-            // Unverifiable = unauthenticated (I-4): 401, state never applied.
+            // Unverifiable = unauthenticated: 401, state never applied.
             reportPaymentError(err, { tags: { source: "billing_webhook", reason: "bad_signature" } })
             return c.json({ error: { code: "invalid_webhook_signature", message: err.message } }, 401)
           }
@@ -524,13 +524,14 @@ export function BillingRoutes(options: BillingRouteOptions) {
         }
 
         try {
-          // Dedup on `webhook-id`. Until now that header was read only as
+          // Dedup on `webhook-id`. That header is otherwise read only as
           // signature input (`standard-webhooks.ts`), so a redelivery of the same
-          // event re-applied it. The existing protection is the single writer's
-          // `source_ts` guard (the billing authority), which is last-write-wins on a
-          // TIMESTAMP: it correctly no-ops a re-apply at an already-seen ts, but
-          // it is a per-org monotonic check, not a delivery-level one, and Polar
-          // retries up to 10 times.
+          // event would re-apply it unless this catches it. The existing
+          // protection is the single writer's `source_ts` guard (the billing
+          // authority), which is last-write-wins on a timestamp: it correctly
+          // no-ops a re-apply at an already-seen ts, but it is a per-org
+          // monotonic check, not a delivery-level one, and Polar retries up
+          // to 10 times.
           //
           // Both layers stay. `source_ts` is the ordering invariant; this is the
           // delivery-identity one, and it composes with the body cap and IP
@@ -551,14 +552,14 @@ export function BillingRoutes(options: BillingRouteOptions) {
           }
           return c.json({ received: true, ...result })
         } catch (err) {
-          // Mirror write failed (the authority unreachable): 500 so Polar RETRIES —
+          // Mirror write failed (the authority unreachable): 500 so Polar retries —
           // the delivery is good, we were not.
           reportPaymentError(err, { tags: { source: "billing_webhook", reason: "apply_failed" } })
           return c.json(unavailable("Failed to apply billing state"), 500)
         }
       })
 
-      // ── Checkout session (lazy customer creation, ADR 014 addendum) ───────
+      // ── Checkout session (lazy customer creation) ─────────────────────────
       .post("/checkout", async (c) => {
         const authResult = await signedAuth(c)
         if ("error" in authResult) return c.json(authResult.error.body, authResult.error.status)
@@ -572,8 +573,8 @@ export function BillingRoutes(options: BillingRouteOptions) {
           return c.json({ error: { code: "invalid_billing_request", message: parsed.error.message } }, 400)
         }
         const product = parsed.data.plan === "monthly"
-          ? clean(env.CLAXEDO_POLAR_PRODUCT_MONTHLY)
-          : clean(env.CLAXEDO_POLAR_PRODUCT_YEARLY)
+          ? trimToUndefined(env.CLAXEDO_POLAR_PRODUCT_MONTHLY)
+          : trimToUndefined(env.CLAXEDO_POLAR_PRODUCT_YEARLY)
         const client = polar()
         if (!product || !client) {
           reportPaymentError(new Error("Polar checkout is not configured (product ids / access token)"), {
@@ -586,18 +587,17 @@ export function BillingRoutes(options: BillingRouteOptions) {
         if ("error" in admin) return c.json(admin.error.body, admin.error.status)
         const context = admin.context
 
-        // Refuse a SECOND checkout when the org already holds a live Polar
+        // Refuse a second checkout when the org already holds a live Polar
         // subscription (active/trialing/past_due) — a second checkout mints a
         // second subscription for the same org and double-bills. The mirrored
         // status (single writer) is authoritative here; direct the caller to
         // the customer portal / seat management instead.
         //
-        // PENDING: the mid-cycle SEAT-INCREASE path (a Polar
-        // subscription-UPDATE that changes the licensed seat count on the
-        // existing subscription) is deliberately NOT implemented here — it
-        // depends on confirming Polar's seat-update semantics against the
-        // sandbox. Until then "buy more seats" routes through the portal,
-        // never through a fresh /checkout.
+        // The mid-cycle seat-increase path (a Polar subscription update that
+        // changes the licensed seat count on the existing subscription) is
+        // deliberately not implemented here: it depends on confirming Polar's
+        // seat-update semantics against the sandbox. Until then, buying more
+        // seats routes through the portal, never through a fresh /checkout.
         if (context.subscription_status && LIVE_SUBSCRIPTION_STATUSES.has(context.subscription_status)) {
           return c.json(
             {
@@ -610,8 +610,8 @@ export function BillingRoutes(options: BillingRouteOptions) {
           )
         }
 
-        // Per-seat floor (ADR 014 §4): a subscription can never license fewer
-        // seats than the org has members.
+        // Per-seat floor: a subscription can never license fewer seats than
+        // the org has members.
         const seats = parsed.data.seats ?? Math.max(context.member_count, 1)
         if (seats < context.member_count) {
           return c.json(
@@ -628,16 +628,16 @@ export function BillingRoutes(options: BillingRouteOptions) {
         try {
           const session = await client.checkouts.create({
             products: [product],
-            // PENDING (ADR 014 §6.3): SDK 0.48.1 has NO plain quantity
-            // on checkout — `seats` (Polar seat-based pricing) is the
-            // pre-decided fallback and the only per-seat lever the API offers.
+            // SDK 0.48.1 has no plain quantity on checkout — `seats` (Polar
+            // seat-based pricing) is the only per-seat lever the API offers,
+            // so it doubles as the quantity control here.
             seats,
             // org-scoped customer id (stable across admins), not the
             // purchasing admin's subject.
             externalCustomerId: orgExternalCustomerId(context.org_id),
             metadata: { org_id: context.org_id },
-            ...(clean(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)
-              ? { successUrl: clean(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)! }
+            ...(trimToUndefined(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)
+              ? { successUrl: trimToUndefined(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)! }
               : {}),
             // A person is waiting on a redirect. Without a deadline this
             // held the request open for as long as Polar took to answer, which
@@ -673,10 +673,9 @@ export function BillingRoutes(options: BillingRouteOptions) {
         if ("error" in admin) return c.json(admin.error.body, admin.error.status)
 
         try {
-          // resolve the portal from the ORG-scoped customer, so a
-          // non-purchasing admin reaches the same Polar customer as whoever
-          // first checked out (previously this used auth.user.subject → 502 for
-          // every admin but the original purchaser).
+          // Resolve the portal from the org-scoped customer rather than
+          // `auth.user.subject`, so a non-purchasing admin reaches the same
+          // Polar customer as whoever first checked out instead of a 502.
           const session = await client.customerSessions.create({
             externalCustomerId: orgExternalCustomerId(admin.context.org_id),
           }, { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS })

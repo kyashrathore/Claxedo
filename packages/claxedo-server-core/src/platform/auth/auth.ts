@@ -252,12 +252,6 @@ export function controlPlaneAuthConfig(
   return localOnlyAuthAdapter().config
 }
 
-export function bearerToken(header: string | null): string | undefined {
-  if (!header) return undefined
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
-  return match?.[1]?.trim() || undefined
-}
-
 export async function controlPlaneAuthContext(
   request: Request,
   options: {
@@ -336,9 +330,12 @@ export function controlPlaneAuthErrorBody(err: ControlPlaneAuthError) {
     },
   }
 }
+import { bearerToken } from "@claxedo/helpers/string"
 import {
   AuthenticationError,
   type AuthAdapterId,
   type ControlPlanePrincipal,
   type RequestAuthenticationAdapter,
 } from "./authentication"
+
+export { bearerToken }

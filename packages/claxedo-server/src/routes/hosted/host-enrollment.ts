@@ -84,13 +84,10 @@ function missingBearer() {
  * Per-account budget for `POST /requests`, the one route here that WRITES a row
  * per call.
  *
- * Not covered by the app-wide `defaultRequestGuard` in
- * `deployments/hosted-shared/hosted-core-app.ts`, and the difference is the point:
- * that guard is IP-keyed by design, so it bounds one network path and says
- * nothing about one ACCOUNT. A signed caller behind rotating addresses — a
- * cloud function, a residential proxy pool — passes it while minting enrollment
- * requests without limit; the plan's Unit 6 abuse-control bullet asks for
- * per-account, per-host and per-peer limits for exactly that reason.
+ * The app-wide `defaultRequestGuard` (`hosted-core-app.ts`) is IP-keyed, so a
+ * signed caller behind rotating addresses — a cloud function, a proxy pool —
+ * passes it while minting enrollment requests without limit. This budget is
+ * keyed on the account instead.
  *
  * Sized against the human action rather than round: enrolling a machine happens
  * once per machine, and even a user setting up several laptops back to back,

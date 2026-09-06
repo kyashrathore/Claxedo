@@ -1,4 +1,5 @@
 import { isJsonRecord, isNonEmptyString } from "../../platform/runtime/lib/json"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export type McpOAuthClientRegistration =
   | { kind: "pre-registered"; clientId: string; clientSecret?: string }
@@ -162,7 +163,7 @@ async function firstMetadata(
     if (response.status === 404) continue
     if (!response.ok) throw new Error(`metadata request failed with ${response.status}`)
     const raw = await boundedJson(response)
-    if (!isJsonRecord(raw)) throw new Error("metadata response is not an object")
+    if (!isRecord(raw)) throw new Error("metadata response is not an object")
     return { url: candidate.toString(), raw }
   }
   return undefined

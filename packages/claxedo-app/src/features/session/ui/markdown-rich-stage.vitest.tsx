@@ -16,6 +16,9 @@ declare global {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const originalTrace = Object.getOwnPropertyDescriptor(window, "__claxedoPerfTrace")
+const originalPhases = Object.getOwnPropertyDescriptor(window, "__claxedoPerfRendererPhases")
+
 function traceNames() {
   return (window.__claxedoPerfRendererPhases ?? []).map((entry) => entry.name)
 }
@@ -52,7 +55,13 @@ async function until(check: () => boolean, timeoutMs = 1_000) {
 afterEach(() => {
   vi.useRealTimers()
   cleanup()
-  window.__claxedoPerfTrace = false
+  for (const [name, descriptor] of [
+    ["__claxedoPerfTrace", originalTrace],
+    ["__claxedoPerfRendererPhases", originalPhases],
+  ] as const) {
+    if (descriptor) Object.defineProperty(window, name, descriptor)
+    else Reflect.deleteProperty(window, name)
+  }
   clearCompletedMarkdownPaintCache()
 })
 
@@ -89,10 +98,11 @@ describe("Markdown completed-body first paint", () => {
       resolve = done
     })
     const source = "Complete response"
-    const view = mountMarkdown({ text: source, parse: () => pending })
+    const parse = vi.fn(() => pending)
+    const view = mountMarkdown({ text: source, parse })
     const root = view.container.querySelector<HTMLElement>('[data-component="markdown"]')
 
-    await wait(50)
+    await until(() => parse.mock.calls.length === 1)
     expect(root?.dataset.markdownStage).toBeUndefined()
     expect(root?.textContent?.trim()).toBe(source)
     expect(root?.isConnected).toBe(true)
@@ -104,19 +114,26 @@ describe("Markdown completed-body first paint", () => {
     expect(root?.textContent?.trim()).toBe(source)
   })
 
-  test("unmount does not throw if the rich parse settles after the body is gone", async () => {
+  test("a late rich result cannot commit into an unmounted body", async () => {
+    window.__claxedoPerfTrace = true
+    window.__claxedoPerfRendererPhases = []
     let resolve!: (html: string) => void
-    const parse = vi.fn(
-      () =>
-        new Promise<string>((done) => {
-          resolve = done
-        }),
-    )
+    const parse = vi.fn(() => new Promise<string>((done) => { resolve = done }))
     const view = mountMarkdown({ text: "Never project this", parse })
-    await Promise.resolve()
+    await until(() => parse.mock.calls.length === 1)
+    const root = view.container.querySelector<HTMLElement>('[data-component="markdown"]')!
+    expect(root.isConnected).toBe(true)
+    const before = root.innerHTML
     view.unmount()
-    resolve?.("<p>Never project this</p>")
-    await wait(30)
+    const commits = traceNames().filter((name) => name.startsWith("markdown.commit.")).length
+    resolve('<p data-rich-result="late">Late result</p>')
+    await until(() => traceNames().some((name) => name.startsWith("markdown.sanitize.")))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(root.isConnected).toBe(false)
+    expect(view.container.childElementCount).toBe(0)
+    expect(root.innerHTML).toBe(before)
+    expect(traceNames().filter((name) => name.startsWith("markdown.commit."))).toHaveLength(commits)
   })
 
   test("remount of a completed body paints rich immediately without a plain stage", async () => {
@@ -199,8 +216,9 @@ describe("Markdown completed-body first paint", () => {
     setStreaming(false)
     expect(root?.querySelector("strong")?.textContent).toBe("bold")
 
-    resolve("<p>Streamed <strong>bold</strong> tokens</p>")
-    await until(() => !!root?.querySelector("strong"))
+    await until(() => parse.mock.calls.length > 0)
+    resolve('<p data-rich-result="completed">Streamed <strong>bold</strong> tokens</p>')
+    await until(() => !!root?.querySelector('[data-rich-result="completed"]'))
     expect(root?.querySelector("strong")?.textContent).toBe("bold")
   })
 

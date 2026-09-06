@@ -16,7 +16,7 @@ import {
 import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { raw as txt, record as rec } from "../../platform/json"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -81,8 +81,8 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     workspaces: Record<string, unknown>
   }>()
   for (const workspace of workspaces) {
-    const row = rec(workspace)
-    const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
+    const row = asRecord(workspace)
+    const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
     if (!workspaceId) continue
     // A workspace served elsewhere is ADDRESSED by its id; the host's own path
     // is location metadata. Every row here comes from the signed control plane,
@@ -94,19 +94,19 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     // live frame of an attached turn was dropped for the mismatch. Same shape
     // the hosted control plane already serves (`signedShellProjects`).
     const directory = `workspace:${workspaceId}`
-    const remoteDirectory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory)
-    const projectId = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
-    const workspaceName = txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? workspaceId
+    const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
+    const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
+    const workspaceName = asString(row?.workspace_name) ?? asString(row?.workspaceName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? workspaceId
     const group = groups.get(projectId) ?? {
       id: projectId,
-      name: txt(row?.project_name) ?? txt(row?.projectName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? projectId,
+      name: asString(row?.project_name) ?? asString(row?.projectName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? projectId,
       directories: [],
       workspaces: {},
     }
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
+      kind: asString(row?.access) ?? asString(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),

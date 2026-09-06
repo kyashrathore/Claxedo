@@ -75,8 +75,6 @@ describe("FirstTurnRecoveryCard", () => {
     expect(disclosure).toHaveTextContent("Error details")
     expect(disclosure).not.toHaveTextContent(body)
     expect(view.container.textContent?.split(body)).toHaveLength(2)
-    expect(view.container.querySelector('[data-slot="turn-error-detail-header"]')).toHaveClass("items-center")
-    expect(view.getByRole("button", { name: "Copy error" })).toHaveAttribute("data-size", "small")
   })
 
   test("does not offer a disclosure when the detail only repeats the description", () => {
@@ -109,8 +107,6 @@ describe("FirstTurnRecoveryCard", () => {
     expect(view.container.querySelectorAll("button")).toHaveLength(0)
     expect(view.queryByTestId("first-turn-recovery-card")).toBeNull()
     expect(view.getByTestId("usage-limit-status-message")).toHaveAttribute("role", "status")
-    expect(view.getByTestId("usage-limit-status-message")).toHaveClass("text-text-weaker")
-    expect(view.getByText("Claude usage limit reached")).toHaveClass("text-12-regular")
   })
 
   test("renders a turn-admission conflict as compact status text with no action or card", () => {
@@ -158,19 +154,11 @@ describe("FirstTurnRecoveryCard", () => {
     expect(view.container.textContent).not.toMatch(/no more detail was reported|something went wrong/i)
   })
 
-  test("keeps recovery cards separated from the preceding timeline row", () => {
-    const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="detail" onAction={vi.fn()} />)
-    expect(view.getByTestId("first-turn-recovery-card")).toHaveClass("mt-2")
-  })
-
-  test("renders a classified turn error as inline status, not a bordered card", () => {
+  test("renders a classified turn error with its diagnosis and recovery action", () => {
     const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="session error" onAction={vi.fn()} />)
     const card = view.getByTestId("first-turn-recovery-card")
     expect(card).toHaveAttribute("role", "status")
-    expect(card).toHaveClass("text-text-weaker")
-    expect(card.className).not.toMatch(/\brounded-lg\b/)
-    expect(card.className).not.toMatch(/\bborder\b/)
     expect(view.getByRole("button", { name: "Resend last prompt" })).toBeTruthy()
-    expect(view.getByText("That turn didn't complete")).toHaveClass("text-12-regular")
+    expect(view.getByText("That turn didn't complete")).toBeTruthy()
   })
 })

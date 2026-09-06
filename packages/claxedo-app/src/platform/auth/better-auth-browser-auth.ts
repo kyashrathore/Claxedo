@@ -102,14 +102,20 @@ export function createBetterAuthBrowserAdapter(
     return selected
   }
 
-  const hydrateSession = async () => {
+  const readSession = async () => {
     const result = await requireClient().getSession()
     if (result.error) throw clientError("session refresh", result.error)
-    const nextUser = normalizedUser(result.data?.user)
+    return result.data
+  }
+
+  const adoptSession = (data: BetterAuthSessionData | null) => {
+    const nextUser = normalizedUser(data?.user)
     recordBrowserAuthIdentity(nextUser?.id)
-    setSession(result.data?.session ?? null)
+    setSession(data?.session ?? null)
     setUser(nextUser)
   }
+
+  const hydrateSession = async () => adoptSession(await readSession())
 
   const reloadDescriptor = async () => {
     const expected = descriptor()
@@ -218,15 +224,19 @@ export function createBetterAuthBrowserAdapter(
         fetchOptions: { credentials: "include" },
       })
       try {
-        const [live] = await Promise.all([
+        const [live, initialSession] = await Promise.all([
           loadBrowserAuthDescriptor({
             selectedAdapter: "better-auth",
             ...nextOrigins,
             ...(input.request ? { request: input.request } : {}),
           }),
-          hydrateSession(),
+          readSession(),
         ])
+        // Neither session state nor persisted identity is adopted until the
+        // descriptor authorizes this deployment. A late session response after
+        // descriptor failure must not turn the rejected deployment signed.
         setDescriptor(live)
+        adoptSession(initialSession)
         setUnavailable(null)
       } catch (error) {
         // A descriptor this build cannot accept, or a deployment that did not

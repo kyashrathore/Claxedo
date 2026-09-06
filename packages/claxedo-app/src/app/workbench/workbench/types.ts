@@ -1,5 +1,3 @@
-// Workbench layout types — Phase 1 clean rewrite.
-
 export type Edge = "left" | "right" | "top" | "bottom"
 
 /**

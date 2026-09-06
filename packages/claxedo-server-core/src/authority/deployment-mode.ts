@@ -48,6 +48,7 @@
 import type { MiddlewareHandler } from "hono"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export const DEPLOYMENT_MODE_ENV = "CLAXEDO_DEPLOYMENT_MODE"
 
@@ -75,11 +76,6 @@ export class DeploymentModeError extends Error {
   }
 }
 
-function clean(input?: string) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 /**
  * Resolve the trust posture. Absent/blank = `local` (zero-config DX unchanged).
  * Any other value throws: a typo in a deploy manifest must be a boot failure,
@@ -89,7 +85,7 @@ function clean(input?: string) {
  * that is the one stale value an existing deployment is likely to carry.
  */
 export function deploymentMode(env: DeploymentEnv = process.env): Trust {
-  const raw = clean(env[DEPLOYMENT_MODE_ENV])?.toLowerCase()
+  const raw = trimToUndefined(env[DEPLOYMENT_MODE_ENV])?.toLowerCase()
   if (!raw || raw === "local") return "local"
   if (raw === "hosted") return "hosted"
   if (raw === "self-host") {

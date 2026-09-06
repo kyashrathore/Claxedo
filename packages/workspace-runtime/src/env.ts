@@ -1,10 +1,6 @@
 import os from "node:os"
 import path from "node:path"
-
-export function envText(env: NodeJS.ProcessEnv, key: string) {
-  const value = env[key]?.trim()
-  return value || undefined
-}
+import { envText } from "@claxedo/helpers"
 
 export function runtimeEnvText(env: NodeJS.ProcessEnv, key: string) {
   return envText(env, key)

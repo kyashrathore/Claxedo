@@ -41,7 +41,7 @@ describe("prepared runtime session store", () => {
     expect(removed).toEqual([])
   })
 
-  test("takes and deletes stale prepared sessions before creating the replacement", async () => {
+  test("evicts a stale prepared entry and starts its asynchronous removal before creating the replacement", async () => {
     preparedCache[scope] = prepared
     const removed: PreparedRuntimeSession[] = []
     const store = storeFor({

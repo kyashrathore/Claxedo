@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -27,11 +28,14 @@ describe("Claxedo terminal workload", () => {
         ],
         inputSentinels: ["probe-1"],
       }, { durationMs: 100, loadMiBS: 0.0002, ticks: 2 })
-      expect(result.expectedBytes).toBe(Buffer.byteLength(
-        `${TERMINAL_START_MARKER}before\r\nafter\r\n\u001b[33m⟦input-ready:probe-1⟧\u001b[0m\r\n\u001b[36m⟦input:probe-1⟧\u001b[0m\r\nbefore\r\nafter\r\n${TERMINAL_COMPLETE_MARKER}`,
-      ))
+      const expected =
+        `${TERMINAL_START_MARKER}before\r\nafter\r\n\u001b[33m⟦input-ready:probe-1⟧\u001b[0m\r\n\u001b[36m⟦input:probe-1⟧\u001b[0m\r\nbefore\r\nafter\r\n${TERMINAL_COMPLETE_MARKER}`
+      expect(result.expectedBytes).toBe(Buffer.byteLength(expected))
       expect(result.sustainedDurationMs).toBe(100)
-      expect(result.expectedSha256).toMatch(/^[0-9a-f]{64}$/)
+      expect(Buffer.concat([...result.expectedSegments()]).toString()).toBe(expected)
+      // This short fixture occupies one block of the protocol chunk-tree hash.
+      const blockDigest = createHash("sha256").update(expected).digest()
+      expect(result.expectedSha256).toBe(createHash("sha256").update(blockDigest).digest("hex"))
       expect(result.command).toContain("terminal-workload.mjs")
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -73,6 +77,8 @@ describe("Claxedo terminal workload", () => {
 
   test("keeps the PTY workload alive until the measured model has drained", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-terminal-lifecycle-"))
+    let child: Bun.Subprocess<"pipe", "pipe", "pipe"> | undefined
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
     try {
       await createTerminalWorkload(root, {
         id: "terminal-lifecycle",
@@ -86,20 +92,20 @@ describe("Claxedo terminal workload", () => {
         ],
         inputSentinels: ["probe-1"],
       }, { durationMs: 50, loadMiBS: 0.001, ticks: 2 })
-      const child = Bun.spawn([
+      child = Bun.spawn([
         process.execPath,
         path.join(root, "terminal-workloads", "terminal-workload.mjs"),
         path.join(root, "terminal-workloads", "terminal-lifecycle.json"),
       ], { stdin: "pipe", stdout: "pipe", stderr: "pipe" })
       let exited = false
       void child.exited.then(() => { exited = true })
-      const reader = child.stdout.getReader()
+      reader = child.stdout.getReader()
       const decoder = new TextDecoder()
       let output = ""
       const readUntil = async (marker: string) => {
         while (!output.includes(marker)) {
-          const next = await reader.read()
-          if (next.done) break
+          const next = await reader!.read()
+          if (next.done) throw new Error(`Workload ended before ${marker}`)
           output += decoder.decode(next.value, { stream: true })
         }
       }
@@ -120,8 +126,10 @@ describe("Claxedo terminal workload", () => {
       await child.stdin.flush()
       await child.stdin.end()
       expect(await child.exited).toBe(0)
-      reader.releaseLock()
     } finally {
+      if (child && child.exitCode === null) child.kill()
+      if (child) await child.exited
+      reader?.releaseLock()
       await rm(root, { recursive: true, force: true })
     }
   })

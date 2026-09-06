@@ -1,6 +1,6 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createSignal, onCleanup, type Accessor } from "solid-js"
-import { isRecord } from "@/lib/record"
 
 /**
  * BrowserPaneContext.

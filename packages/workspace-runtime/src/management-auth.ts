@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, importSPKI, jwtVerify, type JWTVerifyGetKey, type KeyObject } from "jose"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export const WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER = "x-workspace-runtime-management-token"
 
@@ -60,13 +61,8 @@ export type WorkspaceRuntimeJwtManagementAuthOptions = {
   header?: string
 }
 
-function text(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function pem(input: string | undefined) {
-  return text(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 function stringClaim(payload: Record<string, unknown>, key: string) {
@@ -84,7 +80,7 @@ function scopes(payload: Record<string, unknown>) {
 export async function loadWorkspaceRuntimeManagementVerificationKey(
   env: LoadWorkspaceRuntimeManagementKeyEnv,
 ): Promise<WorkspaceRuntimeManagementVerifierKey> {
-  const jwksUrl = text(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL)
+  const jwksUrl = trimToUndefined(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL)
   if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
   const verifyPem = pem(env.WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM)
   if (!verifyPem) {

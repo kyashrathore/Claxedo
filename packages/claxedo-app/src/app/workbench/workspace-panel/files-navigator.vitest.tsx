@@ -45,7 +45,6 @@ vi.mock("@/platform/runtime/session-switch", () => ({
 let statusFiles: Array<{ path: string; status: string }> = []
 let searchHits: string[] = []
 let statusCalls = 0
-let watcher: ((event: { details: { type: string } }) => void) | undefined
 
 vi.mock("@/app/providers/sdk/sdk", () => ({
   useSDK: () => ({
@@ -58,10 +57,6 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
         statusCalls += 1
         return { data: statusFiles }
       },
-    } },
-    event: { listen: (listener: typeof watcher) => {
-      watcher = listener
-      return () => {}
     } },
   }),
 }))
@@ -82,17 +77,21 @@ vi.mock("@/app/providers/file", () => ({
 import { WorkspaceFilesNavigator } from "./files-navigator"
 import { queryClient } from "@/platform/query/query-client"
 
+const navigatorClients: QueryClient[] = []
+
 const renderNavigator = (view: () => ReturnType<typeof WorkspaceFilesNavigator>) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(() => <QueryClientProvider client={client}>{view()}</QueryClientProvider>)
+  navigatorClients.push(client)
+  return { ...render(() => <QueryClientProvider client={client}>{view()}</QueryClientProvider>), client }
 }
 
 afterEach(() => {
   cleanup()
+  for (const client of navigatorClients.splice(0)) client.clear()
+  vi.useRealTimers()
   statusFiles = []
   searchHits = []
   statusCalls = 0
-  watcher = undefined
   h.treeExpand.mockClear()
   h.treeList.mockClear()
   h.fileRead.mockClear()
@@ -150,28 +149,31 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
     await waitFor(() => expect(view.getByText("No changed files")).toBeTruthy())
   })
 
-  test("does not refetch from a delayed watcher event after the retained panel becomes inactive", async () => {
+  test("does not refetch an invalidated query while the retained panel is inactive", async () => {
     const [active, setActive] = createSignal(true)
-    renderNavigator(() => (
+    const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="changes" active={active()} onFileClick={() => {}} />
     ))
     await waitFor(() => expect(statusCalls).toBeGreaterThan(0))
     const before = statusCalls
-    watcher?.({ details: { type: "file.watcher.updated" } })
     setActive(false)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await view.client.invalidateQueries()
     expect(statusCalls).toBe(before)
   })
 })
 
 describe("WorkspaceFilesNavigator (files mode)", () => {
   test("warms the canonical file request on deliberate hover without opening a surface", async () => {
+    vi.useFakeTimers()
     const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="files" active onFileClick={() => {}} />
     ))
 
     fireEvent.pointerEnter(view.getByTestId("mock-file-row"))
-    await waitFor(() => expect(h.fileRead).toHaveBeenCalledWith({ path: "src/hovered.ts" }), { timeout: 1_000 })
+    await vi.advanceTimersByTimeAsync(119)
+    expect(h.fileRead).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(h.fileRead).toHaveBeenCalledWith({ path: "src/hovered.ts" })
     await waitFor(() => {
       const navigator = view.getByTestId("workspace-files-navigator")
       expect(navigator.dataset.filePrefetchPath).toBe("src/hovered.ts")
@@ -181,6 +183,7 @@ describe("WorkspaceFilesNavigator (files mode)", () => {
   })
 
   test("cancels hover prefetch when the retained navigator becomes inactive", async () => {
+    vi.useFakeTimers()
     const [active, setActive] = createSignal(true)
     const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="files" active={active()} onFileClick={() => {}} />
@@ -188,7 +191,7 @@ describe("WorkspaceFilesNavigator (files mode)", () => {
 
     fireEvent.pointerEnter(view.getByTestId("mock-file-row"))
     setActive(false)
-    await new Promise((resolve) => setTimeout(resolve, 180))
+    await vi.advanceTimersByTimeAsync(120)
 
     expect(h.fileRead).not.toHaveBeenCalled()
     expect(view.getByTestId("workspace-files-navigator").dataset.filePrefetchState).not.toBe("ready")

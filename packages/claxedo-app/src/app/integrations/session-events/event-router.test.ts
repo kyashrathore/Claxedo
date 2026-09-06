@@ -6,7 +6,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { conversationEventTypes } from "../../../features/session/conversation/conversation-event"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { classifyStreamEvent, routeDirectoryEvent, type DirectoryEventRouterSinks, type RoutableEvent } from "./event-router"
-import { sessionTodoQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
+import { sessionTodoCacheQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 
 function event(type: string, properties: Record<string, unknown> = {}): RoutableEvent {
   return { type, properties }
@@ -121,17 +121,7 @@ describe("directory event router", () => {
   test("notifies query subscribers when an SSE event writes session todo data", async () => {
     const sessionID = "ses_query"
     const notifications: Todo[][] = []
-    const options = sessionTodoQueryOptions({
-      sessionId: sessionID,
-      staleTime: Infinity,
-      client: {
-        session: {
-          todo: () => {
-            throw new Error("subscriber freshness test should not refetch")
-          },
-        },
-      },
-    })
+    const options = sessionTodoCacheQueryOptions({ sessionId: sessionID })
     queryClient.setQueryData(options.queryKey, [])
     const observer = new QueryObserver(queryClient, options)
     const unsubscribe = observer.subscribe((result) => {

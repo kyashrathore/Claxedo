@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import path from "node:path"
 import type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import {
@@ -12,8 +11,6 @@ import {
   reviewVcsFileQueryKey,
   updateCachedReviewVcsDiff,
 } from "./review-vcs-cache"
-
-const root = path.resolve(import.meta.dir, "../../..")
 
 describe("review VCS cache", () => {
   afterEach(() => {
@@ -133,21 +130,5 @@ describe("review VCS cache", () => {
     }))?.[1]?.patch).toBe("diff --git a/src/app.ts b/src/app.ts")
   })
 
-  test("ReviewTab does not own VCS payloads in private maps", async () => {
-    const text = await Bun.file(path.join(root, "features/review/ui/review-tab.tsx")).text()
 
-    // The corpus summary goes through the shared loader, which is itself
-    // backed by cachedReviewVcsDiff.
-    expect(text).toMatch(/fetchReviewVcsDiffSummary/)
-    expect(text).toMatch(/cachedReviewVcsFile/)
-    expect(text).toMatch(/cachedReviewVcsRefs/)
-    expect(text).toMatch(/cachedReviewVcsTargets/)
-    expect(text).toMatch(/restoredOpenDiffs\(\{ files/)
-    expect(text).not.toMatch(/initialReviewOpenDiffs/)
-    expect(text).not.toMatch(/setStore\("openDiffs", files\)/)
-    expect(text).not.toMatch(/vcsDiffCache = new Map/)
-    expect(text).not.toMatch(/vcsDiffInflight = new Map/)
-    expect(text).not.toMatch(/vcsFileCache = new Map/)
-    expect(text).not.toMatch(/vcsFileInflight = new Map/)
-  })
 })

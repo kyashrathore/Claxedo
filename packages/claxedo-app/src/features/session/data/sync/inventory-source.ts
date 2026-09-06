@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import type { SessionInventoryRow, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import { insertSortedSessionItem } from "@/platform/sync/global-session-identity"
@@ -23,7 +24,6 @@ import {
   inventorySessionEnvironment,
   inventorySessionGit,
   inventorySessionId,
-  inventoryText as txt,
 } from "./session-inventory"
 import { asRecord as rec, readArray } from "@/lib/record"
 export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
@@ -159,9 +159,9 @@ export function controlPlaneSessionToItem(input: {
   directory: ProjectDirectory
   workspaceId: string
 }): SessionInventoryRow | undefined {
-  const row = rec(input.session)
-  const workspace = rec(input.workspace)
-  const id = txt(row?.session_id) ?? txt(row?.sessionID) ?? txt(row?.id)
+  const row = asRecord(input.session)
+  const workspace = asRecord(input.workspace)
+  const id = asString(row?.session_id) ?? asString(row?.sessionID) ?? asString(row?.id)
   if (!id) return undefined
   const created = typeof row?.created_at === "number"
     ? row.created_at
@@ -176,16 +176,16 @@ export function controlPlaneSessionToItem(input: {
   const lastTurn = normalizeSessionTurnOutcome(row?.lastTurn)
   return {
     id,
-    title: txt(row?.title) ?? id,
+    title: asString(row?.title) ?? id,
     directory: input.directory,
     workspaceId: input.workspaceId,
-    workspaceName: txt(workspace?.workspace_name) ?? txt(workspace?.workspaceName) ?? txt(workspace?.display_name) ?? txt(workspace?.displayName),
-    projectID: txt(workspace?.project_id) ?? txt(workspace?.projectID) ?? id,
+    workspaceName: asString(workspace?.workspace_name) ?? asString(workspace?.workspaceName) ?? asString(workspace?.display_name) ?? asString(workspace?.displayName),
+    projectID: asString(workspace?.project_id) ?? asString(workspace?.projectID) ?? id,
     tags: [],
     attachments: [],
     environment: {
       kind: workspaceHostingKind(workspace),
-      driver: txt(workspace?.backing) ?? txt(workspace?.access),
+      driver: asString(workspace?.backing) ?? asString(workspace?.access),
     },
     ...(lastTurn ? { lastTurn } : {}),
     time: { created, updated },
@@ -217,21 +217,21 @@ export function toSessionInventoryRow(session: InventoryGlobalSession, input: { 
 }
 
 export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSession {
-  const row = rec(input)
+  const row = asRecord(input)
   const lastTurn = normalizeSessionTurnOutcome(row?.lastTurn)
   const created = typeof row?.createdAt === "number" ? row.createdAt : 0
-  const workspaceID = txt(row?.workspaceID) ?? txt(row?.workspaceId)
+  const workspaceID = asString(row?.workspaceID) ?? asString(row?.workspaceId)
   return {
-    id: txt(row?.sessionID) ?? txt(row?.id) ?? "",
-    ...(txt(row?.sessionRef) ?? txt(row?.session_ref)
-      ? { sessionRef: (txt(row?.sessionRef) ?? txt(row?.session_ref))! }
+    id: asString(row?.sessionID) ?? asString(row?.id) ?? "",
+    ...(asString(row?.sessionRef) ?? asString(row?.session_ref)
+      ? { sessionRef: (asString(row?.sessionRef) ?? asString(row?.session_ref))! }
       : {}),
-    title: txt(row?.title) ?? "New Session",
-    directory: txt(row?.directory) ?? "",
+    title: asString(row?.title) ?? "New Session",
+    directory: asString(row?.directory) ?? "",
     ...(workspaceID ? { workspaceID } : {}),
-    ...(txt(row?.projectID) ? { projectID: txt(row?.projectID) } : {}),
-    ...(txt(row?.parentID) ? { parentID: txt(row?.parentID) } : {}),
-    ...(txt(row?.rootID) ? { rootID: txt(row?.rootID) } : {}),
+    ...(asString(row?.projectID) ? { projectID: asString(row?.projectID) } : {}),
+    ...(asString(row?.parentID) ? { parentID: asString(row?.parentID) } : {}),
+    ...(asString(row?.rootID) ? { rootID: asString(row?.rootID) } : {}),
     tags: Array.isArray(row?.tags) ? row.tags : [],
     attachments: Array.isArray(row?.attachments) ? row.attachments : [],
     ...(lastTurn ? { lastTurn } : {}),
@@ -246,7 +246,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
 export function createSignedInventorySource(input: {
   queryClient: Pick<QueryClient, "fetchQuery">
   baseUrl: () => string
-  owner: () => string
+  owner: () => string | null
   authFetch: typeof fetch
   signedWorkspaceInfo: (key: string) => SignedWorkspaceInfo | undefined
   resolveWorkspace: (input: { directory: ProjectDirectory }) => Promise<ResolvedWorkspaceInfo | undefined>
@@ -373,10 +373,10 @@ export function createSignedInventorySource(input: {
     ])
     const workspaces = [...cloudWorkspaces, ...userHostedWorkspaces]
     const sessionsByWorkspace = Object.fromEntries(await Promise.all(workspaces.flatMap((workspace) => {
-      const row = rec(workspace)
-      const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
+      const row = asRecord(workspace)
+      const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
       if (!workspaceId) return []
-      const directory = sessionRowDirectory({ workspaceId, hostDirectory: txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "" })
+      const directory = sessionRowDirectory({ workspaceId, hostDirectory: asString(row?.remote_directory) ?? asString(row?.remoteDirectory) ?? "" })
       return [fetchSignedWorkspaceSessions({
         workspaceId,
         directory,
@@ -453,7 +453,7 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
         if (directory) url.searchParams.set("directory", directory)
         const res = await (input.platformFetch() ?? globalThis.fetch)(url, { headers: { Accept: "application/json" } })
         if (!res.ok) return []
-        const body = rec(await res.json().catch(() => ({ sessions: [] })))
+        const body = asRecord(await res.json().catch(() => ({ sessions: [] })))
         const rows = Array.isArray(body?.sessions) ? body.sessions : []
         return rows.map(controlMetaToGlobalSession).filter((session) => !!session.id)
       },

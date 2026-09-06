@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import {
   createSessionWithLifecycle,
   type ClaxedoLifecycleListener,
@@ -36,9 +36,40 @@ describe("createSessionWithLifecycle", () => {
       draftId: "draft-a",
       events: listener,
       perform: async () => ({ id: "ses_http" }),
+      recoveryGraceMs: 0,
     })
     expect(result).toEqual({ id: "ses_http" })
     expect(size()).toBe(0)
+  })
+
+  test.each(["created", "failed"] as const)("releases the grace timer when a matching %s event settles the lost-response wait", async (phase) => {
+    const { listener, emit, size } = makeListener()
+    const nativeSetTimeout = globalThis.setTimeout
+    const timers: Array<ReturnType<typeof setTimeout>> = []
+    const schedule = spyOn(globalThis, "setTimeout").mockImplementation(((handler, delay, ...args) => {
+      const token = nativeSetTimeout(handler, delay, ...args)
+      timers.push(token)
+      return token
+    }) as typeof setTimeout)
+    const cancel = spyOn(globalThis, "clearTimeout")
+    try {
+      const pending = createSessionWithLifecycle({
+        draftId: "draft-timer", events: listener,
+        perform: async () => { throw new Error("lost response") },
+      })
+      await Promise.resolve()
+      expect(timers).toHaveLength(1)
+      const deadline = timers[0]
+      emit({ type: "session.lifecycle", phase, draftId: "draft-timer", sessionID: "ses_timer", directory: "/repo", ts: 1, message: "initialization failed" })
+      if (phase === "created") await expect(pending).resolves.toEqual({ id: "ses_timer" })
+      else await expect(pending).rejects.toThrow("initialization failed")
+      expect(cancel).toHaveBeenCalledWith(deadline)
+      expect(size()).toBe(0)
+    } finally {
+      for (const timer of timers) clearTimeout(timer)
+      schedule.mockRestore()
+      cancel.mockRestore()
+    }
   })
 
   test("recovers from a lost HTTP response using a matching lifecycle created event", async () => {
@@ -289,51 +320,23 @@ describe("createSessionWithLifecycle", () => {
     expect(result).toEqual({ id: "ses_t4_1_http" })
   })
 
-  test("rubric T4 (4): listener throw does not kill the wrapper", async () => {
-    // Simulate a downstream listener that throws. The makeListener helper
-    // runs handlers in a `for...of`; a thrown error inside our wrapper's
-    // own handler would surface as an unhandled rejection. The wrapper
-    // wraps its handler in try/catch via the event emitter's invocation,
-    // so a throw inside the wrapper-internal handler must not corrupt the
-    // promise chain.
-    const handlers = new Set<(event: ClaxedoLifecycleListenerEvent) => void>()
-    const listener: ClaxedoLifecycleListener = {
-      on(_type, handler) {
-        // Wrap to throw on every invocation — verifies the wrapper's own
-        // handler still runs to completion.
-        handlers.add(handler)
-        return () => handlers.delete(handler)
-      },
-    }
-    const emit = (event: ClaxedoLifecycleListenerEvent) => {
-      for (const handler of handlers) {
-        try {
-          handler(event)
-        } catch {
-          // swallow to mirror the production emitter's behavior
-        }
-      }
-    }
-    const result = await createSessionWithLifecycle({
-      draftId: "draft-t4-4",
+  test.each(["success", "failure"] as const)("a terminal lifecycle failure wins after created and HTTP %s", async (http) => {
+    const { listener, emit, size } = makeListener()
+    const draftId = `draft-created-then-failed-${http}`
+    const result = createSessionWithLifecycle({
+      draftId,
       events: listener,
       perform: async () => {
-        // Emit a created event while the wrapper handler is registered —
-        // the wrapper handler shouldn't itself throw, but verify the
-        // contract by emitting and then succeeding.
-        emit({
-          type: "session.lifecycle",
-          phase: "created",
-          directory: "/dir",
-          sessionID: "ses_t4_4_event",
-          draftId: "draft-t4-4",
-          ts: Date.now(),
-        })
-        return { id: "ses_t4_4_http" }
+        emit({ type: "session.lifecycle", phase: "created", directory: "/dir", sessionID: "ses_partial", draftId, ts: 1 })
+        emit({ type: "session.lifecycle", phase: "failed", directory: "/dir", draftId, message: "initialization failed", ts: 2 })
+        if (http === "failure") throw new Error("response lost")
+        return { id: "ses_partial" }
       },
-      recoveryGraceMs: 30,
+      recoveryGraceMs: 5,
     })
-    expect(result.id).toBe("ses_t4_4_http")
+    await expect(result).rejects.toThrow("initialization failed")
+    expect(wasRolledBackDraft(draftId)).toBe(true)
+    expect(size()).toBe(0)
   })
 
   test("rubric T4 (5): external unsubscribe mid-flight does not break recovery", async () => {

@@ -1,4 +1,5 @@
-// Dedicated dev-server launcher for `live-user-hosted-relay.spec.ts` ONLY. Reuses the
+// Forwarded-for API proxy for the desktop signed lane (`e2e/helpers/desktop-signed-server.ts`).
+// The browser lanes serve a built bundle through `fixture-web-preview.mjs` instead. Reuses the
 // real `vite.cloud.config.ts` (same plugins, aliases, proxy route list) but layers one
 // additive change: every proxied request gets a real, non-loopback `X-Forwarded-For`
 // header.

@@ -4,12 +4,12 @@ import { createConnectionsService } from "./service.js"
 import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
 import { connectionProviderId, type DevicePoll, type IntegrationDeclaration, type IntegrationImpl } from "./types.js"
+import { workSourcePort } from "./ports/index.js"
 
 const DEVICE_DECL: IntegrationDeclaration = {
   id: "github",
   name: "GitHub",
   methods: ["oauth", "key"],
-  capabilities: ["code-host", "work-source"],
   keyTokenType: "bearer",
   prompts: [{ id: "token", label: "Token", secret: true }],
 }
@@ -19,20 +19,26 @@ function harness(polls: DevicePoll[], options: { verifyLabel?: string } = {}) {
   const started: number[] = []
   let pollIndex = 0
   const impl: IntegrationImpl = {
-    verify: async () => ({ ok: true, ...(options.verifyLabel ? { accountLabel: options.verifyLabel } : {}) }),
-    device: {
-      async start() {
-        started.push(1)
-        return {
-          deviceCode: "device-abc",
-          userCode: "WDJB-MJHT",
-          verificationUri: "https://github.com/login/device",
-          intervalMs: 10,
-          expiresAt: Date.now() + 900_000,
-        }
-      },
-      async poll() {
-        return polls[Math.min(pollIndex++, polls.length - 1)]
+    actions: {
+      "code-host": { capability: "code-host", listRepositories: async () => [] },
+      "work-source": workSourcePort,
+    },
+    auth: {
+      verify: async () => ({ ok: true, ...(options.verifyLabel ? { accountLabel: options.verifyLabel } : {}) }),
+      device: {
+        async start() {
+          started.push(1)
+          return {
+            deviceCode: "device-abc",
+            userCode: "WDJB-MJHT",
+            verificationUri: "https://github.com/login/device",
+            intervalMs: 10,
+            expiresAt: Date.now() + 900_000,
+          }
+        },
+        async poll() {
+          return polls[Math.min(pollIndex++, polls.length - 1)]
+        },
       },
     },
   }
@@ -180,7 +186,13 @@ describe("device-flow connect", () => {
 
   test("an integration with neither redirect nor device oauth is unknown to connectOAuth", async () => {
     const registry = createIntegrationRegistry()
-    registry.register({ ...DEVICE_DECL, methods: ["oauth"] }, { verify: async () => ({ ok: true }) })
+    registry.register({ ...DEVICE_DECL, methods: ["oauth"] }, {
+      actions: {
+        "code-host": { capability: "code-host", listRepositories: async () => [] },
+        "work-source": workSourcePort,
+      },
+      auth: { verify: async () => ({ ok: true }) },
+    })
     const service = createConnectionsService({
       registry,
       credentials: createMemoryCredentialStore(),

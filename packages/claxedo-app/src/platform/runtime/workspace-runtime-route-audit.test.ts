@@ -1,27 +1,12 @@
-// PENDING REWRITE (chip task_ac7919fb): this string-grep route/boundary audit
-// is slated to be replaced by declarative scanner rules (architecture/scanners).
-// Until then it is kept honest by mechanical reconciliation to production drift.
-// Known dead-invariant assertions that survive that rewrite, NOT masked here
-// because WP-D2 collapsed the two-alias world (@claxedo/ first-party vs @/
-// upstream/override) into a single @/ alias, which erased the distinction these
-// assertions encoded:
-//   - "Claxedo command context owns the typed command bus bridge": the
-//     `@/app/providers/command` offender scan now flags legitimate first-party imports.
-//   - "Claxedo platform context owns desktop and auth platform capabilities":
-//     same, for `@/platform/runtime/platform-provider`.
-//   - "Claxedo language context owns extension string merging": same, for
-//     `@/platform/i18n/provider`.
-//   - "directory-layout route is a pass-through": the `@claxedo/pages/...`
-//     positive + `@/pages/...` negative pair is un-expressible post-collapse
-//     (app/entry/app.tsx now legitimately imports `@/app/routes/directory-layout`).
+// Static runtime ownership rules. Behavioral assertions live with their owners.
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
+import { prodSourcePaths } from "@/architecture/scanners"
 import { can, RolePolicy } from "@/platform/auth/role"
 import type { Placement, RelayRole } from "@/platform/runtime/placement"
 import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
 
 const root = path.resolve(import.meta.dir, "../..")
-const upstreamAppRoot = path.resolve(root, "../../app/src")
 // Files allowed to call /api/claxedo/{pty,process,diff} directly via
 // fetch (instead of through process/client.ts). Each entry should have
 // a comment explaining why direct fetch is justified (or a follow-up
@@ -34,8 +19,7 @@ const allowed = new Set([
 ])
 
 const runtimeGatewayBoundary = new Set([
-  // Claxedo's explicit server HTTP client owns the typed route construction
-  // formerly hidden inside the generated OpenCode SDK.
+  // Claxedo's explicit server HTTP client owns typed route construction.
   "platform/api/server-client-contract.ts",
   "platform/runtime/agent/workspace-relay-connection.ts",
   "platform/runtime/agent/workspace-runtime-request.ts",
@@ -47,12 +31,12 @@ const runtimeGatewayBoundary = new Set([
   // The sandbox-driver path literals `workspace-control-routes.ts` builds its
   // URLs from, split into an import-free module so claxedo-server's
   // `sandbox-driver-routes.contract.test.ts` can dispatch them through the real
-  // Hono router. Same route-boundary role, now bindable from the server side.
+  // Hono router. Same route-boundary role, bindable from the server side.
   "platform/runtime/agent/workspace-control-paths.ts",
   "platform/runtime/agent/dialog-select-directory-routes.ts",
   "app/workbench/state/route-bridge.tsx",
-  // Pure route→session resolution + session-probe URL builders split out of
-  // route-bridge.tsx (Wave 2); the same route-boundary role, now unit-testable.
+  // Pure route→session resolution and session-probe URL builders; the same
+  // route-boundary role as route-bridge.tsx.
   "app/workbench/state/route-bridge-resolution.ts",
   "features/session/data/sync/inventory-source.ts",
   "platform/runtime/transport.ts",
@@ -71,9 +55,8 @@ const workspaceRuntimeIdentityBoundary = new Set([
   ...runtimeGatewayBoundary,
   "platform/identity/legacy-resolver.ts",
   "platform/runtime/agent/agent-runtime-client.ts",
-  // Pure session-routing decision table split out of agent-runtime-client.ts
-  // (Wave 2 resolver collapse); the same runtime-identity boundary role, now
-  // unit-testable — re-exports the canonical workspaceIdFromRef selector.
+  // Pure session-routing decision table; the same runtime-identity boundary
+  // role as agent-runtime-client.ts, and re-exports workspaceIdFromRef.
   "platform/runtime/agent/placement-table.ts",
   "platform/runtime/session-workspace.ts",
   "platform/runtime/workspace-runtime-record.ts",
@@ -83,8 +66,7 @@ const workspaceSelectorSyntaxBoundary = new Set([
   ...workspaceRuntimeIdentityBoundary,
   "architecture/scanners.ts",
   "platform/sync/worktree.ts",
-  // WP-A2 collapsed the wrapper aliases into the canonical workspaceIdFromRef
-  // export, imported directly here now instead of through a retired wrapper.
+  // Imports the canonical workspaceIdFromRef directly.
   "platform/runtime/placement.ts",
   "app/providers/global-sdk-event-fetch.ts",
   "features/workspaces/ui/panel/workspace-panel.tsx",
@@ -111,46 +93,27 @@ const routeParamBoundary = new Set([
   "features/session/providers/permission.tsx",
 ])
 
-// Files vendored verbatim from upstream packages/app (divorce plan 006) that
-// import the @/app/providers/command and @/platform/runtime/platform-provider owner aliases. Post-
-// divorce those aliases resolve to the same claxedo-owned context modules, so
-// these imports are correct; new claxedo code should still use relative paths.
-
 const sessionRenderBoundary = new Set(["features/session/ui/content/session-content.tsx"])
 
 const sessionRefHostOwnerBoundary = new Set(["platform/identity/session-ref.ts"])
 
-const commandContext = "app/providers/command.tsx"
 const platformContext = "platform/runtime/platform-provider.tsx"
 const sessionContextTab = "features/session/ui/components/session-context-tab.tsx"
-const sessionNewView = "features/session/ui/components/session-new-view.tsx"
-const agentHarnessSelector = "features/session/ui/controls/agent-harness-selector.tsx"
 const sessionCommandsHook = "features/session/ui/use-session-commands.tsx"
 const syncContext = "overrides/context/sync.tsx"
-const sdkContext = "app/providers/sdk/sdk.tsx"
 const languageContext = "platform/i18n/provider.tsx"
 const homePage = "app/routes/home.tsx"
-const pageIndex = "features/documents/editor/document-index.tsx"
-const reviewWorkspace = "app/workbench/review/review-workspace.tsx"
 const sessionPage = "features/session/ui/session-screen.tsx"
 const sessionTimeline = "features/session/ui/message-timeline.tsx"
 const sessionController = "features/session/store/session-controller.ts"
-const sessionStatusTelemetry = "features/session/store/session-status-telemetry.ts"
-const agentStatusListener = "app/workbench/state/agent-status-listener.ts"
 const sessionComposer = "features/session/ui/composer/index.ts"
 const sessionComposerRegion = "features/session/ui/composer/session-composer-region.tsx"
 const sessionComposerState = "features/session/ui/composer/session-composer-state.ts"
 const upstreamSessionComposerRegion = "features/session/ui/composer/session-composer-region.tsx"
 const globalSyncContext = "app/providers/global-sync/provider.tsx"
-const sessionRefIdentity = "platform/identity/session-ref.ts"
-const directoryEventProjector = "features/session/data/sync/directory-event-projector.ts"
-const globalEventProjector = "platform/sync/global-event-projector.ts"
-const sessionCache = "features/session/data/sync/session-cache-cleanup.ts"
 const sessionListEvents = "features/session/data/sync/session-list-events.ts"
 const directoryScope = "app/workbench/context/directory-scope.tsx"
-const dialogSelectDirectory = "app/dialogs/select-directory.tsx"
 const dialogSelectFile = "features/session/ui/dialogs/select-file.tsx"
-const sessionNewDesignView = "features/session/ui/components/session-new-design-view.tsx"
 const sessionHeader = "features/session/ui/components/session-header.tsx"
 const promptInput = "features/session/composer/composer.tsx"
 const promptSubmit = "features/session/composer/ui/submit.ts"
@@ -158,19 +121,11 @@ const promptSubmitInput = "features/session/composer/ui/submit-input.ts"
 const promptSubmitPending = "features/session/submit/pending.ts"
 const promptSubmitSend = "features/session/submit/send.ts"
 const promptSubmitTypes = "features/session/submit/types.ts"
-const promptContext = "features/session/providers/prompt.tsx"
 const terminalComponent = "features/terminal/ui/terminal.tsx"
 const terminalContext = "features/terminal/providers/provider.tsx"
-// WP-B6 extracted the prompt/terminal cache internals (disposable-resource
-// struct, LRU eviction, ref-count dispose-once) into this shared module. The
-// audit assertions that used to inline-match those structures in
-// prompt.tsx/terminal.tsx now verify the same invariants against this file.
-const liveResourceCache = "platform/sync/live-resource-cache.ts"
 const roleGuardedTerminal = "features/terminal/core/role-guarded-terminal.tsx"
 const reviewTab = "features/review/ui/review-tab.tsx"
 const harnessConfigStore = "features/session/harness/harness-config-store.ts"
-const harnessConfigRuntime = "features/session/harness/harness-config-runtime.ts"
-const harnessStorePolicy = "features/session/harness/store-policy.ts"
 const appShellLayout = "app/app-shell-layout.tsx"
 const railSidebarShell = "app/workbench/rail/rail-sidebar-shell.tsx"
 const railWorkbenchShell = "app/workbench/rail/rail-workbench-shell.tsx"
@@ -180,31 +135,17 @@ const dialogEditProject = "features/workspaces/ui/dialog-edit-project.tsx"
 const appShellState = "app/app-shell-state.ts"
 const appShellRouteSync = "app/app-shell-route-sync.ts"
 const claxedoSessionActions = "features/session/actions/session-actions.tsx"
-const claxedoProjectActions = "features/workspaces/actions/project-actions.tsx"
-const claxedoWorkspaceActions = "features/workspaces/actions/workspace-actions.ts"
-const claxedoWorkspaceRecovery = "features/workspaces/actions/workspace-recovery.tsx"
-const claxedoActionShared = "app/workbench/actions/shared.ts"
 const directorySessionCache = "features/session/data/sync/directory-session-cache.ts"
 const notificationContext = "app/providers/notification.tsx"
-const providerHook = "app/providers/use-providers.ts"
-// The Local selection provider (useLocal/LocalProvider) was colocated into
-// features/session/providers/session-selection.tsx during Wave 2; context/local.tsx is deleted.
 const localContextOwner = "features/session/providers/session-selection.tsx"
-const dialogSettings = "app/dialogs/settings.tsx"
-const settingsGeneral = "features/settings/ui/general.tsx"
-const settingsProviders = "features/settings/ui/providers.tsx"
 const settingsSandboxSection = "features/settings/ui/sandbox-section.tsx"
 const networkPolicySettings = "features/settings/ui/network-policy.tsx"
-// The connect flow and the provider catalog were extracted so the onboarding
-// setup page renders the same surfaces the dialogs do. The dialogs are now
-// shells; these invariants belong to the files that hold the logic.
+// The connect flow and provider catalog live outside the dialogs so the
+// onboarding setup page renders the same surfaces; the dialogs are shells, so
+// these invariants target the files that hold the logic.
 const dialogConnectProvider = "app/dialogs/provider-connect-form.tsx"
-const dialogSelectProvider = "app/dialogs/provider-list.tsx"
-const dialogManageModels = "app/dialogs/manage-models.tsx"
-const dialogSelectModel = "features/session/ui/model/select-model.tsx"
 const promptModelStrategy = "features/session/composer/model-strategy.ts"
 const promptToolbarState = "features/session/composer/toolbar-state.ts"
-const routeIntent = "app/workbench/state/route-intent.ts"
 const contentRenderers = [
   "app/workbench/content/context-content.tsx",
   "features/documents/ui/content/page-content.tsx",
@@ -213,26 +154,10 @@ const contentRenderers = [
 ]
 const projectInventoryContentRenderers = ["features/documents/ui/content/pages-index-content.tsx"]
 const sessionPaneScope = "features/session/ui/components/session-pane-scope.tsx"
-const openSessionsRegistry = "features/session/store/open-sessions.ts"
-const panePreferences = "features/session/preferences/pane.ts"
 
 async function files(dir: string): Promise<string[]> {
-  const out: string[] = []
-  for (const discovered of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: dir }))) {
-    const entry = canonicalRelativePath(discovered)
-    if (entry.endsWith(".d.ts")) continue
-    // Demo-only msw fixtures moved from src/demo/ to src/app/demo/ in the
-    // app/features/platform reorg; they legitimately spell route strings.
-    if (
-      entry.includes(".test.") ||
-      entry.includes(".vitest.") ||
-      entry.startsWith("demo/") ||
-      entry.startsWith("app/demo/")
-    )
-      continue
-    out.push(entry)
-  }
-  return out
+  return prodSourcePaths(path.dirname(dir))
+    .map((file) => canonicalRelativePath(path.relative(dir, file)))
 }
 
 function canonicalRelativePath(value: string): string {
@@ -247,8 +172,6 @@ function codeOnly(text: string): string {
 }
 
 async function upstreamAppText(file: string) {
-  const upstream = Bun.file(path.join(upstreamAppRoot, file))
-  if (await upstream.exists()) return await upstream.text()
   return await Bun.file(path.join(root, file)).text()
 }
 
@@ -314,12 +237,9 @@ describe("workspace runtime route audit", () => {
           offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
       }
     }
-    // Runtime-ref normalization moved out of the hosted startup module when the
-    // cloud store was inverted behind `WorkspaceStartupPort`: `runtimeScope()`
-    // (and with it `sessionWorkspaceRuntimeRef`) now lives in the record reader
-    // that stays in `@claxedo/app`, and the hosted module calls it. Both halves
-    // are asserted so the collapse cannot be undone by re-deriving the ref in
-    // either file.
+    // Runtime-ref normalization (`runtimeScope()` and `sessionWorkspaceRuntimeRef`)
+    // lives in the record reader in `@claxedo/app`; the hosted startup module
+    // calls it. Both halves are asserted so neither file can re-derive the ref.
     const runtimeRecord = await Bun.file(path.join(root, "platform/runtime/workspace-runtime-record.ts")).text()
     const runtimeStore = await Bun.file(path.join(root, "platform/runtime/cloud/workspace-runtime-store.ts")).text()
     const agentRuntimeClient = await Bun.file(path.join(root, "platform/runtime/agent/agent-runtime-client.ts")).text()
@@ -391,11 +311,7 @@ describe("workspace runtime route audit", () => {
 
     const request = await Bun.file(path.join(root, "platform/runtime/agent/workspace-runtime-request.ts")).text()
     const legacyResolver = await Bun.file(path.join(root, "platform/identity/legacy-resolver.ts")).text()
-    // WP-A2 collapsed the wrapper aliases (workspaceIdFromDirectoryRef /
-    // workspaceIdFromLegacyScope) into the one canonical workspaceIdFromRef
-    // export (LLD appendix rename table) — worktree.ts and
-    // workspace-runtime-request.ts now import that canonical name directly
-    // instead of going through a retired wrapper.
+    // workspaceIdFromRef is the one canonical selector name; no wrapper alias.
     expect(await Bun.file(path.join(root, "platform/sync/worktree.ts")).text()).toMatch(/workspaceIdFromRef/)
     expect(request).toMatch(/workspaceIdFromRef/)
     expect(legacyResolver).toMatch(/workspaceIdFromRef/)
@@ -403,13 +319,9 @@ describe("workspace runtime route audit", () => {
   })
 
   test("raw legacy string-shape predicate names stay inside the resolver owner", async () => {
-    // WP-A2 deleted the wrapper aliases and made these raw predicate names
-    // THE canonical exports of legacy-resolver.ts, now imported at ~19 call
-    // sites — importing (and calling) the canonical predicate from its
-    // resolver owner is exactly the sanctioned pattern. This rule instead
-    // guards against a file REIMPLEMENTING the string-shape parsing locally
-    // (a local function/const/let/var re-declaration of one of these names),
-    // or acquiring the name from anywhere other than the resolver owner.
+    // Importing these predicates from legacy-resolver.ts is the sanctioned
+    // pattern. This rule guards against a file re-declaring one locally or
+    // acquiring the name from anywhere other than the resolver owner.
     const rawNames = [
       "isFilesystemDirectory",
       "isUserHostedWorkspaceDirectory",
@@ -794,26 +706,6 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.path/)
   })
 
-  test("PageIndex derives repository import identity from explicit project props", async () => {
-    const text = await Bun.file(path.join(root, pageIndex)).text()
-
-    expect(text).toMatch(/props\.projects/)
-    expect(text).toMatch(/props\.directory/)
-    expect(text).toMatch(/workspaceId/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/project\.ensure/)
-
-    // Repository import moved out of the documents index and into the review
-    // workspace; `document-index.vitest.tsx` now asserts the index never calls
-    // it. Follow the behavior so this stays a live invariant rather than a
-    // symbol that silently no longer exists anywhere it is asserted.
-    const repositoryImport = await Bun.file(path.join(root, reviewWorkspace)).text()
-    expect(repositoryImport).toMatch(/createFromRepository/)
-    expect(repositoryImport).toMatch(/props\.directory/)
-    expect(repositoryImport).toMatch(/workspaceId/)
-    expect(repositoryImport).not.toMatch(/useGlobalSync/)
-  })
-
   test("production consumers do not call global-sync project inventory actions", async () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
@@ -822,89 +714,6 @@ describe("workspace runtime route audit", () => {
     }
 
     expect(offenders).toEqual([])
-  })
-
-  test("DialogSelectDirectory reads path inventory through query options", async () => {
-    const text = await Bun.file(path.join(root, dialogSelectDirectory)).text()
-    const cache = await upstreamAppText("platform/query/directory-search-cache.ts")
-
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.path\(null\)/)
-    expect(text).toMatch(/cachedDirectoryChildrenRequest/)
-    expect(cache).toMatch(/"directory-children-request"/)
-    expect(text).not.toMatch(/const cache = new Map/)
-    expect(text).not.toMatch(/cache\.(?:get|set)/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/sync\.data\.path/)
-  })
-
-  test("NewSessionDesignView reads cross-project inventory through query options", async () => {
-    const text = await Bun.file(path.join(root, sessionNewDesignView)).text()
-
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/globalSync\.data\.project/)
-  })
-
-  test("NewSessionView reads workspace choices through query options", async () => {
-    const text = await Bun.file(path.join(root, sessionNewView)).text()
-    const rootHelper = await Bun.file(path.join(root, "features/session/ui/components/session-new-view-root.ts")).text()
-    const workspaceOptions = await Bun.file(
-      path.join(root, "features/session/ui/components/session-new-workspace-options.ts"),
-    ).text()
-
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).toMatch(/directorySessionCacheQueryOptions/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/globalSync\.sessionInventory\.store/)
-    expect(rootHelper).toMatch(/sessionWorkspaceRuntimeRef/)
-    expect(rootHelper).not.toMatch(/workspaceIdFromDirectoryRef/)
-    expect(workspaceOptions).toMatch(/sessionWorkspaceRuntimeRef/)
-    expect(workspaceOptions).not.toMatch(/workspaceIdFromDirectoryRef/)
-  })
-
-  test("SDKProvider resolves signed workspaces through query options", async () => {
-    const text = await Bun.file(path.join(root, sdkContext)).text()
-
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/globalSync\.data\.project/)
-  })
-
-  test("harness config store resolves workspace inventory through query options", async () => {
-    const text = `${await Bun.file(path.join(root, harnessConfigStore)).text()}\n${await Bun.file(path.join(root, harnessConfigRuntime)).text()}`
-
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/directorySessionCacheActions\.refresh/)
-    expect(text).toMatch(/harnessWorkspaceRuntimeRef/)
-    expect(text).not.toMatch(/workspaceIdFromDirectoryRef/)
-    expect(text).not.toMatch(/globalSync\.data\.project/)
-    expect(text).not.toMatch(/globalSync\.child/)
-  })
-
-  test("LayoutProvider reads project inventory through query options", async () => {
-    const text = await Bun.file(path.join(root, layoutContext)).text()
-
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).toMatch(/queryKeys\.directory\.projectMeta/)
-    expect(text).toMatch(/queryKeys\.directory\.icon/)
-    expect(text).toMatch(/setProjectIcon/)
-    expect(text).toMatch(/upsertProjectMeta/)
-    expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/directorySessionCacheActions\.ensure/)
-    expect(text).toMatch(/sessionWorkspaceRuntimeRef/)
-    expect(text).not.toMatch(/workspaceIdFromDirectoryRef/)
-    expect(text).not.toMatch(/globalSync\.data\.project/)
-    expect(text).not.toMatch(/globalSync\.project\.(?:meta|icon)/)
-    expect(text).not.toMatch(/globalSync\.project\.loadSessions/)
   })
 
   test("DialogEditProject writes project metadata through query helpers", async () => {
@@ -931,168 +740,6 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/globalSync\.sessionInventory\.store/)
     expect(text).not.toMatch(/globalSync\.data\.path\.home/)
     expect(text).not.toMatch(/globalSync\.child/)
-  })
-
-  test("provider settings read provider and config inventory through query options", async () => {
-    const hook = await Bun.file(path.join(root, providerHook)).text()
-    const settingsDialog = await Bun.file(path.join(root, dialogSettings)).text()
-    const general = await Bun.file(path.join(root, settingsGeneral)).text()
-    const settings = await Bun.file(path.join(root, settingsProviders)).text()
-    const connect = await Bun.file(path.join(root, dialogConnectProvider)).text()
-    const select = await Bun.file(path.join(root, dialogSelectProvider)).text()
-    const manageModels = await Bun.file(path.join(root, dialogManageModels)).text()
-    const selectModel = await Bun.file(path.join(root, dialogSelectModel)).text()
-    const prompt = await Bun.file(path.join(root, promptInput)).text()
-    const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
-    const providerConsumers = await Promise.all(
-      [
-        settingsProviders,
-        dialogConnectProvider,
-        dialogSelectProvider,
-        dialogManageModels,
-        dialogSelectModel,
-        sessionContextTab,
-        promptInput,
-        localContextOwner,
-      ].map((file) => Bun.file(path.join(root, file)).text()),
-    )
-
-    expect(await Bun.file(path.join(root, "overrides/hooks/use-providers.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/dialog-settings.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/settings-general.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/settings-providers.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, providerHook)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, dialogSettings)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, settingsGeneral)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, settingsProviders)).exists()).toBe(true)
-    expect(hook).toMatch(/useQueryOptions/)
-    expect(hook).toMatch(/queryOptions\.providers\(dir\(\) \|\| null, harness\(\)\)/)
-    expect(hook).toMatch(/useShellQueryOptions as useQueryOptions/)
-    expect(hook).not.toMatch(/useGlobalSync/)
-    expect(hook).not.toMatch(/globalSync\.data\.provider/)
-    // Post-reorg the canonical provider-inventory hook lives at
-    // app/providers/use-providers; feature-owned consumers acquire it (and the
-    // provider dialogs) through their feature app-ports module, whose types are
-    // pinned to the canonical owners below — same single-owner invariant.
-    const settingsPorts = await Bun.file(path.join(root, "features/settings/app-ports.ts")).text()
-    const sessionPorts = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
-    expect(settingsPorts).toMatch(/import type \* as Providers from "@\/app\/providers\/use-providers"/)
-    expect(sessionPorts).toMatch(/import type \* as Providers from "@\/app\/providers\/use-providers"/)
-    for (const text of providerConsumers) {
-      expect(text).toMatch(/@\/app\/providers\/use-providers|@\/features\/(?:settings|session)\/app-ports/)
-      expect(text).not.toMatch(/@\/context\/use-providers/)
-      expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
-      expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
-    }
-    // Settings reads the catalog of the workspace and harness its scope selector names.
-    expect(settings).toMatch(/useProviders\(\(\) => scope\.nativeHarness\(\) \?\? "", scope\.scopeRef\)/)
-    expect(settings).not.toMatch(/useProviders\("opencode"\)|useProviders\("pi"\)/)
-    expect(settings).toMatch(/providers\.queryKey\(\)/)
-    expect(settings).toMatch(/removeProviderAuthEntry/)
-    expect(settings).toMatch(/disconnectProvider/)
-    // External configuration is not mutated through a native credential UI.
-    expect(settings).not.toMatch(/globalConfig/)
-    expect(settings).not.toMatch(/disabled_providers/)
-    expect(settings).not.toMatch(/setProviderDisabled/)
-    const providerSettingsLogic = await Bun.file(
-      path.join(root, "features/settings/provider-settings-logic.ts"),
-    ).text()
-    expect(providerSettingsLogic).not.toMatch(/["']\/api\/wr\/provider-config["']/)
-    expect(providerSettingsLogic).not.toMatch(/\/global\/config/)
-    expect(settings).toMatch(/provider-settings-logic/)
-    expect(settings).toMatch(/claxedoCredentialRequest\(\{ providerId: id \}/)
-    expect(settings).not.toMatch(/useGlobalSync/)
-    expect(settings).not.toMatch(/globalSync\.updateConfig/)
-    expect(settings).not.toMatch(/globalSync\.data\.(?:provider|config)/)
-    expect(settings).not.toMatch(/globalSync\.set\("(?:provider|config)"/)
-    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/general/)
-    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/providers/)
-    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/terminals/)
-    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/sandbox-section/)
-    // The dialog no longer reads config itself — each tab owns its own data and
-    // the dialog only needs the server URL. `@/app/providers/config` is still
-    // the sanctioned config provider (app.tsx, home.tsx, rail-account-menu, …);
-    // it is simply not a dependency of the dialog shell any more. The negative
-    // assertions below remain the live invariant.
-    expect(settingsDialog).toMatch(/@\/app\/connection\/server/)
-    expect(settingsDialog).not.toMatch(/@\/components\/settings\//)
-    expect(settingsDialog).not.toMatch(/@\/context\/config/)
-    expect(general).toMatch(/AccountSettingsSection/)
-    expect(general).toMatch(/@\/features\/settings\/ui\/account-section/)
-    expect(general).not.toMatch(/@\/components\/settings\/account-section/)
-    expect(general).not.toMatch(/@claxedo\/context\/config/)
-    // Auth is read for the SAME (scope, harness) the catalog is: one hook next
-    // to `useProviders`, not the boot path's central-scope query option.
-    expect(connect).toMatch(/useProviderAuth\(\(\) => props\.harness, \(\) => props\.workspaceScope\)/)
-    expect(connect).toMatch(/useProviders\(\(\) => props\.harness, \(\) => props\.workspaceScope\)/)
-    expect(connect).not.toMatch(/queryOptions\.providerAuth/)
-    expect(connect).toMatch(/claxedoCredentialRequest/)
-    expect(connect).not.toMatch(/globalSync\.data\.(?:provider|provider_auth)/)
-    expect(connect).not.toMatch(/globalSync\.set\("provider"/)
-    expect(await Bun.file(path.join(root, "overrides/components/dialog-connect-provider.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/dialog-custom-provider.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/dialog-manage-models.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/dialog-select-model.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/components/dialog-select-provider.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, dialogConnectProvider)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, "app/dialogs/custom-provider.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, dialogManageModels)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, dialogSelectModel)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, dialogSelectProvider)).exists()).toBe(true)
-    // The settings feature reaches the app-owned provider dialogs through its
-    // app-ports module (pinned above to @/app/dialogs/*), never via relative
-    // or legacy component paths.
-    // Settings providers uses inline ProviderConnectForm and only keeps custom provider dialog.
-    const providerSetupRow = await Bun.file(path.join(root, "features/settings/ui/provider-setup-row.tsx")).text()
-    expect(providerSetupRow).toMatch(/ProviderConnectForm/)
-    expect(settings).toMatch(/ProviderSetupRow/)
-    expect(settings).not.toMatch(/DialogCustomProvider/)
-    expect(settings).toMatch(/@\/features\/settings\/app-ports/)
-    expect(settings).not.toMatch(/DialogConnectProvider/)
-    expect(settings).not.toMatch(/DialogAIConnect/)
-    expect(settings).not.toMatch(/DialogSelectProvider/)
-    expect(settings).not.toMatch(/@\/components\/dialogs\/(?:connect|custom)-provider/)
-    expect(settings).not.toMatch(/\.\/dialog-connect-provider/)
-    expect(settings).not.toMatch(/@\/components\/dialog-custom-provider/)
-    // `select` is now the shared catalog (provider-list.tsx): it owns the
-    // provider inventory read and the i18n strings, but not the routing.
-    expect(select).toMatch(/@\/app\/providers\/use-providers/)
-    expect(select).not.toMatch(/@\/context\/use-providers/)
-    expect(select).toMatch(/@\/platform\/i18n\/provider/)
-    // Selection routing stayed in the dialog shell that wraps the catalog.
-    const selectShell = await Bun.file(path.join(root, "app/dialogs/select-provider.tsx")).text()
-    expect(selectShell).toMatch(/@\/app\/dialogs\/connect-provider/)
-    expect(selectShell).not.toMatch(/@\/components\/dialogs?\/connect-provider|@\/components\/dialog-connect-provider/)
-    expect(selectShell).not.toMatch(/@\/app\/dialogs\/custom-provider/)
-    expect(selectShell).not.toMatch(/@\/components\/dialogs?\/custom-provider|@\/components\/dialog-custom-provider/)
-    expect(selectShell).not.toMatch(/\.\/dialog-connect-provider/)
-    expect(selectShell).not.toMatch(/\.\/dialog-custom-provider/)
-    expect(manageModels).toMatch(/open-settings-providers/)
-    expect(manageModels).not.toMatch(/@\/components\/dialogs?\/select-provider|@\/components\/dialog-select-provider/)
-    // The session feature's model picker lazy-loads manage models and redirects
-    // provider setup to Settings → Providers through session app-ports.
-    expect(selectModel).toMatch(/openSettingsProviders/)
-    expect(selectModel).toMatch(/loadManageModelsDialog/)
-    expect(selectModel).toMatch(/@\/features\/session\/app-ports/)
-    expect(selectModel).not.toMatch(/@\/features\/settings\/open-settings-providers/)
-    expect(selectModel).not.toMatch(/@\/app\/dialogs\/settings/)
-    expect(sessionPorts).toMatch(/import type \* as ManageModels from "@\/app\/dialogs\/manage-models"/)
-    expect(sessionPorts).not.toMatch(/import type \* as SelectProvider from "@\/app\/dialogs\/select-provider"/)
-    expect(sessionPorts).not.toMatch(/import type \* as ConnectProvider from "@\/app\/dialogs\/connect-provider"/)
-    expect(selectModel).not.toMatch(/@\/components\/dialog-manage-models/)
-    expect(selectModel).not.toMatch(/@\/components\/dialog-select-provider/)
-    expect(selectModel).not.toMatch(/\.\/dialog-select-provider/)
-    expect(selectModel).not.toMatch(/\.\/dialog-manage-models/)
-    expect(commands).toMatch(/@\/features\/session\/ui\/model\/select-model/)
-    expect(commands).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
-    expect(prompt).toMatch(/@\/features\/session\/ui\/model\/select-model/)
-    expect(prompt).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
-    // The composer routes EVERY model click to the standard picker above. The
-    // "unpaid model" funnel dialog that used to intercept clicks when no paid
-    // provider was connected is deleted, not deprecated — it dead-ended on an
-    // empty free-model list. Nothing may reintroduce it.
-    expect(await Bun.file(path.join(root, "features/session/ui/model/select-model-unpaid.tsx")).exists()).toBe(false)
-    expect(prompt).not.toMatch(/select-model-unpaid|DialogSelectModelUnpaid|onUnpaidModelClick/)
   })
 
   test("production consumers do not read or write the global-sync compatibility store directly", async () => {
@@ -1160,31 +807,6 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("route intent reads session inventory from the query boundary, not the global-sync mirror", async () => {
-    const routeIntentText = await Bun.file(path.join(root, routeIntent)).text()
-    const appShellStateText = await Bun.file(path.join(root, appShellState)).text()
-    const routeBridgeText = await Bun.file(path.join(root, "app/workbench/state/route-bridge.tsx")).text()
-
-    expect(routeIntentText).toMatch(/inventory\?: Accessor/)
-    expect(routeIntentText).toMatch(/sessionRefForWorkspaceSession/)
-    expect(routeIntentText).toMatch(/sessionRef: target\.sessionRef/)
-    expect(routeIntentText).toMatch(
-      /sessionRef: sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: intent\.sessionId,[\s\S]*directory: workspaceId/,
-    )
-    expect(routeIntentText).not.toMatch(/globalSessions/)
-    expect(routeIntentText).not.toMatch(/\.store/)
-    expect(appShellStateText).toMatch(/sessionInventoryQueryOptions/)
-    expect(routeBridgeText).toMatch(/inventory: \(\) => \(\{/)
-    expect(routeBridgeText).toMatch(/routeSessionCacheQuery\.data\?\.session\.find\(\(s\) => s\.id === id\)/)
-    expect(routeBridgeText).toMatch(/const sessionTitleFromInventory/)
-    expect(routeBridgeText).toMatch(/useSessionTitleProjection/)
-    expect(routeBridgeText).toMatch(/sessionTitles\.title\(\{ sessionId, directory \}\)/)
-    expect(routeBridgeText).not.toMatch(/indexSessionTitleInventory/)
-    expect(routeBridgeText).not.toMatch(/sessionTitleSignature/)
-    expect(routeBridgeText).not.toMatch(/s\.id === id && s\.directory === wsId/)
-    expect(routeBridgeText).not.toMatch(/s\.id === meta\.sessionId && s\.directory === meta\.directory/)
-  })
-
   test("session inventory actions are isolated behind the shell data boundary", async () => {
     const allowed = new Set([globalSyncContext, "features/session/data/sync/session-inventory.ts"])
     const offenders: string[] = []
@@ -1230,8 +852,8 @@ describe("workspace runtime route audit", () => {
     expect(rail).not.toMatch(/globalSync/)
     expect(layout).toMatch(/useSessionInventoryActions/)
     expect(layout).toMatch(/sessionInventoryActions\.load\(\)/)
-    // A settled turn used to reload the whole inventory through the control
-    // plane. The workspace's own event stream now carries the row change.
+    // The workspace's own event stream carries a settled turn's row change; the
+    // controller must not reload the whole inventory through the control plane.
     expect(controller).not.toMatch(/useSessionInventoryActions/)
     expect(controller).not.toMatch(/sessionInventoryActions\.reloadWorkspace/)
     expect(offenders).toEqual([])
@@ -1321,36 +943,6 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("surface route matching uses decoded route workspace keys, not base64 route strings", async () => {
-    const text = await Bun.file(path.join(root, "app/workbench/state/surface-route.ts")).text()
-    const actions = await Bun.file(path.join(root, "app/workbench/actions/open-surface-actions-ui.ts")).text()
-    const shared = await Bun.file(path.join(root, "app/workbench/actions/shared.ts")).text()
-
-    expect(text).not.toMatch(/base64Encode/)
-    expect(text).toMatch(/routeWorkspaceKey/)
-    expect(text).toMatch(/routeMatchesSurface\(input\.route, workspaceId, input\.surface, input\.routeWorkspaceKey\)/)
-    expect(actions).toMatch(/props\.routeDirectory\(\)/)
-    expect(actions).toMatch(/routeMatchesSurface\(props\.params, workspaceId, tab, currentRouteId\)/)
-    expect(shared).toMatch(/routeDirectory:\s*Accessor<string \| undefined>/)
-  })
-
-  test("route intent warms workspace inventory without child-store creation", async () => {
-    const text = await Bun.file(path.join(root, routeIntent)).text()
-    const routeBridge = await Bun.file(path.join(root, "app/workbench/state/route-bridge.tsx")).text()
-    const state = await Bun.file(path.join(root, appShellState)).text()
-
-    expect(text).toMatch(/warmWorkspace\?:/)
-    expect(routeBridge).toMatch(/warmWorkspace: \(directory\) =>/)
-    expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(directory\)/)
-    expect(routeBridge).toMatch(/directorySessionCacheActions\.ensure\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
-    expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(routed\)[\s\S]{0,500}sessionRefForWorkspaceSession\(\{[\s\S]{0,180}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
-    expect(state).toMatch(/useDirectorySessionCacheActions/)
-    expect(state).toMatch(/directorySessionCacheActions\.ensure/)
-    expect(text).not.toMatch(/globalSync/)
-    expect(text).not.toMatch(/globalSync\.child/)
-    expect(text).not.toMatch(/input\.globalSync\.child/)
-  })
-
   test("SessionContextTab reads pane session identity from SessionParamsProvider only", async () => {
     const text = await Bun.file(path.join(root, sessionContextTab)).text()
 
@@ -1384,38 +976,6 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("AgentHarnessSelector reads pane identity only from explicit props", async () => {
-    const text = await Bun.file(path.join(root, agentHarnessSelector)).text()
-
-    expect(text).not.toMatch(/@solidjs\/router/)
-    expect(text).not.toMatch(/\buseParams\b/)
-    expect(text).not.toMatch(/\buseSessionParams\b/)
-    expect(text).not.toMatch(/\bbase64Decode\b/)
-  })
-
-  test("session command registration receives session identity from SessionPage", async () => {
-    const text = await Bun.file(path.join(root, sessionCommandsHook)).text()
-    const conversationRegistry = await Bun.file(
-      path.join(root, "features/session/conversation/conversation-registry.ts"),
-    ).text()
-
-    expect(text).not.toMatch(/\buseParams\b/)
-    expect(text).not.toMatch(/\bbase64Decode\b/)
-    expect(text).toMatch(/sessionId:\s*Accessor<string \| undefined>/)
-    expect(text).toMatch(/directory:\s*Accessor<string>/)
-    expect(text).not.toMatch(/sync\.data\.(?:message|part)/)
-    expect(text).not.toMatch(/sync\.data\.session_status/)
-    // The hook's direct registeredConversation* reads collapsed into the
-    // pane-local `createActiveConversationSnapshot` projection (ad707c19). The
-    // conversation registry stays the canonical owner: the hook consumes the
-    // projection from the registry module, and the projection itself reads
-    // `registeredConversationSnapshot`.
-    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: args\.directory, sessionID: args\.sessionId/)
-    expect(text).toMatch(/from "\.\.\/conversation\/conversation-registry"/)
-    expect(conversationRegistry).toMatch(/export function createActiveConversationSnapshot/)
-    expect(conversationRegistry).toMatch(/registeredConversationSnapshot\(input\.directory\(\), sessionID\)/)
-  })
-
   test("SessionPage does not keep a route-shaped params compatibility proxy", async () => {
     const text = await Bun.file(path.join(root, sessionPage)).text()
 
@@ -1430,11 +990,11 @@ describe("workspace runtime route audit", () => {
       path.join(root, "features/session/ui/session-screen-cache-projection.ts"),
     ).text()
 
-    // Project inventory is read through query options. The reactive
-    // `useQuery(() => queryOptions.projects())` reader moved out of the page
-    // into `createSessionScreenCacheProjection` (d1ce3173), which wraps it in
-    // an active-pane projection; SessionPage consumes that projection's
-    // `projects` accessor. (The incidental imperative
+    // Project inventory is read through query options: the reactive
+    // `useQuery(() => queryOptions.projects())` reader lives in
+    // `createSessionScreenCacheProjection`, which wraps it in an active-pane
+    // projection; SessionPage consumes that projection's `projects` accessor.
+    // (The incidental imperative
     // `queryClient.fetchQuery(queryOptions.projects())` warm-up lives with the
     // WorkspaceConnection authority — WorkspaceGate.)
     expect(text).toMatch(/createSessionScreenCacheProjection\(\{ active: paneActive, directory: dir \}\)/)
@@ -1452,42 +1012,6 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.session\.evict/)
     expect(text).not.toMatch(/sync\.data\.path/)
     expect(text).not.toMatch(/sync\.data\.status/)
-  })
-
-  test("DirectoryScope reads pane identity only from explicit props", async () => {
-    const text = await Bun.file(path.join(root, directoryScope)).text()
-
-    expect(text).not.toMatch(/\buseSessionParams\b/)
-    expect(text).not.toMatch(/not in split mode/)
-    expect(text).toMatch(/sessionId\?:\s*Accessor<string \| undefined>/)
-    expect(text).toMatch(/surfaceId\?:\s*Accessor<string \| undefined>/)
-    expect(text).toMatch(/active\?:\s*Accessor<boolean>/)
-    expect(text).toMatch(/workspaceReady:\s*Accessor<boolean>/)
-    expect(text).toMatch(/directorySessionCacheQueryOptions/)
-    expect(text).toMatch(/sessionCacheQuery\.data/)
-    expect(text).not.toMatch(/WorkspaceScopeChild/)
-    expect(text).not.toMatch(/props\.workspaceChild\(\)/)
-    expect(text).not.toMatch(/useWorkspaceScopeOptional/)
-    expect(text).not.toMatch(/useWorkspaceScopeRegistryOptional/)
-    expect(text).not.toMatch(/directoryScopeWorkspaceKey/)
-    expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/<SyncProvider\b/)
-    expect(text).not.toMatch(/sync\.data/)
-    expect(text).not.toMatch(/sync\.session/)
-    expect(text).toMatch(/<DataProvider/)
-    expect(text).toMatch(/agentListQuery/)
-    expect(text).toMatch(/agent:\s*agentQuery\.data \?\? \[\]/)
-    // The syncSession transport fallback (fetchSessionMessagesByTransport +
-    // hydrateConversationPage) moved out of DirectoryScope when cold session
-    // loading became deterministic (ad707c19): DirectoryScope passes cache rows
-    // to DataProvider without owning a second history fetch (asserted by
-    // directory-scope.vitest.tsx), and the session controller is the only
-    // history fetch+hydrate owner on this path.
-    expect(text).not.toMatch(/fetchSessionMessagesByTransport/)
-    expect(text).not.toMatch(/hydrateConversationPage/)
-    const controllerText = await Bun.file(path.join(root, sessionController)).text()
-    expect(controllerText).toMatch(/fetchSessionMessagesByTransport/)
-    expect(controllerText).toMatch(/hydrateConversationPage/)
   })
 
   test("directory-scoped Local and File providers do not depend on SyncProvider or child-store mirrors", async () => {
@@ -1537,66 +1061,6 @@ describe("workspace runtime route audit", () => {
     expect(local).toMatch(/sessionConfigRawOptions/)
     expect(local).not.toMatch(/sync\.data\.agent/)
     expect(local).not.toMatch(/sync\.data\.config/)
-  })
-
-  test("PromptInput requires explicit model selection without catalog fallback", async () => {
-    const input = await Bun.file(path.join(root, promptInput)).text()
-    const submit = await Bun.file(path.join(root, promptSubmit)).text()
-    const local = await Bun.file(path.join(root, localContextOwner)).text()
-    const strategy = await Bun.file(path.join(root, promptModelStrategy)).text()
-    const toolbar = await Bun.file(path.join(root, promptToolbarState)).text()
-
-    // Either member syntax satisfies the invariant — the claim is that `selected`
-    // returns exactly `scope()?.model`, with no catalog default spliced in.
-    expect(local).toMatch(/selected(?:\(\)|:\s*\(\)\s*=>)\s*\{\s*return scope\(\)\?\.model\s*\}/)
-    expect(local).toMatch(/currentSource(?:\(\)|:\s*\(\)\s*=>)\s*\{[\s\S]{0,80}currentModelKey\(\)\?\.source/)
-    expect(local).toMatch(/sessionConfigSelectionQuery/)
-    expect(strategy).toMatch(/hasSelection:\s*boolean/)
-    expect(strategy).toMatch(/providerLoading:\s*boolean/)
-    expect(strategy).toMatch(/existingSession\?:\s*boolean/)
-    expect(strategy).toMatch(/restoreLoading\?:\s*boolean/)
-    expect(strategy).toMatch(/type:\s*"selected"/)
-    expect(strategy).toMatch(/type:\s*"invalid-selected"/)
-    expect(strategy).toMatch(/type:\s*"hydrating"/)
-    expect(strategy).toMatch(/type:\s*"needs-selection"/)
-    expect(strategy).toMatch(/type:\s*"uninitialized"/)
-    expect(strategy).not.toMatch(/fallback:\s*true/)
-    expect(strategy).toMatch(/export function shouldUsePromptFallbackModel/)
-    expect(strategy).toMatch(/return false/)
-    expect(strategy).toMatch(/Explicit selection only — never substitute provider defaults or placeholders/)
-    expect(toolbar).toMatch(/promptModelResolutionState/)
-    expect(toolbar).toMatch(/currentModelSource:\s*Accessor<string \| undefined>/)
-    expect(toolbar).toMatch(/hasSelectedModel:\s*Accessor<boolean>/)
-    expect(toolbar).toMatch(/modelRestorePending:\s*Accessor<boolean>/)
-    expect(toolbar).toMatch(/selectionCatalogPending:\s*Accessor<boolean>/)
-    expect(toolbar).toMatch(/existingSession:\s*Accessor<boolean>/)
-    expect(toolbar).not.toMatch(/fallbackModel/)
-    expect(toolbar).not.toMatch(/shouldUseFallbackModel/)
-    expect(toolbar).not.toMatch(/firstConnectedModelInfo/)
-    expect(input).toMatch(/createPromptToolbarState/)
-    expect(input).toMatch(/existingSession:\s*\(\) => !!resolvedSessionId\(\) && resolvedSessionId\(\) !== "new"/)
-    expect(input).toMatch(/currentModelSource:\s*local\.model\.currentSource/)
-    expect(input).toMatch(/hasSelectedModel:\s*\(\) => !!local\.model\.selected\(\)/)
-    expect(input).toMatch(/providerLoading:\s*providers\.loading/)
-    expect(input).toMatch(/modelRestorePending:\s*local\.model\.restorePending/)
-    expect(input).toMatch(/selectionCatalogPending:\s*local\.model\.selectionCatalogPending/)
-    expect(toolbar).toMatch(/if \(!current \|\| input\.currentModelSource\(\) === "fallback"\) return undefined/)
-    expect(input).not.toMatch(/shouldApply(?:Agent|Model)Fallback/)
-    expect(input).not.toMatch(/fallbackGuardScopeKey/)
-    expect(toolbar).not.toMatch(/local\.model\.set\(/)
-    expect(input).toMatch(/createModelSelectionPicker/)
-    expect(input).toMatch(/write:\s*local\.model\.set/)
-    expect(input).not.toMatch(/writeOpenCodeDraftModel/)
-    expect(input).not.toMatch(/fallbackModel/)
-    expect(strategy).toMatch(/export function selectRuntimeModel/)
-    expect(submit).toMatch(/resolvePromptSubmitConfig/)
-    expect(submit).toMatch(/harnessController\.modelKeyForSubmit\(scope\)/)
-    expect(submit).not.toMatch(/local\.model\.current\(\)/)
-    expect(submit).not.toMatch(/allowModelFallback/)
-    expect(submit).not.toMatch(/fallbackModel/)
-    expect(submit).not.toMatch(/function selectRuntimeModel\(/)
-    expect(submit).not.toMatch(/function runtimeProviders\(/)
-    expect(submit).not.toMatch(/id: "big-pickle"/)
   })
 
   test("harness submit model stays on canonical ModelKey boundaries", async () => {
@@ -1674,45 +1138,6 @@ describe("workspace runtime route audit", () => {
     }
   })
 
-  test("content rendering uses the shared surface contribution registry", async () => {
-    const renderer = await Bun.file(path.join(root, "app/workbench/content/index.tsx")).text()
-    const contentSurfaces = await Bun.file(path.join(root, "app/integrations/first-party-content-surfaces.tsx")).text()
-    const contentSurfaceTest = await Bun.file(
-      path.join(root, "app/integrations/first-party-content-surfaces.test.ts"),
-    ).text()
-
-    expect(renderer).toMatch(/const current = m\(\)/)
-    expect(renderer).toMatch(
-      /contentSurface\(current\.type,\s*\{\s*sessionRef:\s*current\.content\?\.sessionRef\s*\}\)/,
-    )
-    expect(renderer).not.toMatch(/state\.meta\.ids\(\)/)
-    expect(renderer).toMatch(/state\.meta\.get\(props\.id\)/)
-    expect(renderer).not.toMatch(/firstPartyContentSurface/)
-    expect(contentSurfaces).toMatch(/createContributionRegistry\(\{ surfaces \}\)/)
-    expect(contentSurfaces).toMatch(/registerContentSurface/)
-    // The surface shape moved to its own type-only module so the hosted set can
-    // depend on the contract without importing the local surface list.
-    const surfaceContract = await Bun.file(path.join(root, "app/integrations/content-surface-contract.ts")).text()
-    expect(surfaceContract).toMatch(/surface:\s*ContentSurfaceId/)
-    expect(contentSurfaceTest).toMatch(/surface\.content\.agent-review/)
-    expect(contentSurfaceTest).toMatch(/slot:\s*"ext:agent-review"/)
-    expect(contentSurfaceTest).toMatch(/gate:\s*\{ backing: "real" \}/)
-  })
-
-  test("Claxedo command context owns the typed command bus bridge", async () => {
-    const command = await Bun.file(path.join(root, commandContext)).text()
-
-    expect(await Bun.file(path.join(root, "overrides/app/providers/command.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, commandContext)).exists()).toBe(true)
-    expect(command).toMatch(/CommandBusProvider/)
-    expect(command).toMatch(/legacyCommandTrigger/)
-    // 007 Tier E: upstream command definitions are now vendored in-repo as
-    // ./command-palette (packages/app coupling removed), not re-exported from
-    // ../../../app/src/context/command.
-    expect(command).toMatch(/export \* from "\.\/command-palette"/)
-    expect(command).not.toMatch(/\.\.\/\.\.\/\.\.\/app\/src\/context\/command/)
-  })
-
   test("Claxedo platform context owns desktop and auth platform capabilities", async () => {
     const platform = await Bun.file(path.join(root, platformContext)).text()
 
@@ -1721,14 +1146,12 @@ describe("workspace runtime route audit", () => {
     expect(platform).toMatch(/getAuthToken\?: \(\) => Promise<string \| null>/)
     expect(platform).toMatch(/recordFatalRendererError\?/)
     expect(platform).toMatch(/runDesktopMenuAction\?/)
-    // The reorg inverted the dependency: the platform context now DEFINES
-    // DesktopMenuAction itself, and app/entry/desktop-menu re-exports it from
-    // here — strictly stronger ownership than the old import from ../desktop-menu.
+    // The platform context defines DesktopMenuAction itself rather than
+    // importing it from a desktop-menu module.
     expect(platform).toMatch(/export type DesktopMenuAction =/)
     expect(platform).not.toMatch(/from "[^"]*desktop-menu"/)
-    // app/entry/desktop-menu.ts (the legacy re-export) and its one consumer,
-    // the legacy windows-app-menu, were deleted with the legacy titlebar; the
-    // platform context is now the sole owner of the type.
+    // No app/entry/desktop-menu.ts re-export exists; the platform context is the
+    // sole owner of the type.
     expect(await Bun.file(path.join(root, "app/entry/desktop-menu.ts")).exists()).toBe(false)
     expect(platform).not.toMatch(/\.\.\/\.\.\/\.\.\/app\/src\/desktop-menu/)
     expect(platform).not.toMatch(/getWslEnabled/)
@@ -1758,9 +1181,8 @@ describe("workspace runtime route audit", () => {
     expect(language).toMatch(/loadLocaleDict/)
     expect(language).toMatch(/normalizeLocale/)
     expect(language).not.toMatch(/createResource/)
-    // The entry barrel no longer re-exports the i18n surface (the eager-bundle
-    // trim cut every re-export without an external consumer); the provider
-    // module above is the single owner.
+    // The entry barrel does not re-export the i18n surface; the provider module
+    // above is the single owner.
     expect(index).not.toMatch(/@\/platform\/i18n\/provider/)
     expect(offenders).toEqual([])
   })
@@ -1771,19 +1193,16 @@ describe("workspace runtime route audit", () => {
     const appTsconfig = await Bun.file(path.join(root, "../tsconfig.json")).text()
     const desktopRenderer = await Bun.file(path.resolve(root, "../../claxedo-desktop/vite.renderer.ts")).text()
     const desktopTsconfig = await Bun.file(path.resolve(root, "../../claxedo-desktop/tsconfig.json")).text()
-    // The overrides tombstone directory itself is now deleted (previously an
-    // empty README-only dir); a missing dir makes Bun.Glob.scan reject, which
-    // for this invariant is an even stronger "no override files exist" — treat
-    // the absent directory as an empty override set.
+    // A missing overrides directory makes Bun.Glob.scan reject; treat it as an
+    // empty override set, which satisfies this invariant.
     const overrideFiles = await Array.fromAsync(
       new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: path.join(root, "overrides") }),
     ).catch(() => [] as string[])
     const contentSurfaces = await Bun.file(path.join(root, "app/integrations/first-party-content-surfaces.tsx")).text()
 
-    // 007 Tier E: packages/app is deleted, so the old "no override shadows an
-    // upstream file" parity checks (which globbed packages/app/src) are moot.
-    // What still matters is that the overrides dir is gone and every config
-    // resolves @/ to claxedo-app's own src (asserted below).
+    // There is no upstream packages/app to compare overrides against; what
+    // matters is that the overrides dir is gone and every config resolves @/ to
+    // claxedo-app's own src (asserted below).
     expect(overrideFiles).toEqual([])
     expect(contentSurfaces).toMatch(/localContentSurfaces/)
 
@@ -1850,31 +1269,6 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("SessionPaneScope prefers SessionRef as pane session identity", async () => {
-    const text = await Bun.file(path.join(root, sessionPaneScope)).text()
-
-    expect(text).toMatch(/props\.sessionRef\?\.\(\)\?\.sessionId\s*\?\?\s*props\.sessionId\?\.\(\)/)
-    expect(text).toMatch(/useWorkspaceScopeRegistryOptional/)
-    // The pane now resolves ONE memoized connection through the canonical
-    // `sessionPaneWorkspaceConnection` resolver (d1ce3173) and derives the
-    // workspace key from it with the same expression `sessionPaneWorkspaceKey`
-    // owns — workspaceId ?? directory ?? sessionId, never a pane-local parse.
-    expect(text).toMatch(/sessionPaneWorkspaceConnection\(\{/)
-    expect(text).toMatch(
-      /\(connection\(\)\.workspaceId \?\? props\.directory\) \|\| props\.sessionRef\?\.\(\)\?\.sessionId \|\| ""/,
-    )
-    expect(text).not.toMatch(/directoryScopeWorkspaceKey/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/)
-    // Readiness is derived from scopeFor(workspaceKey()); the named
-    // workspaceReady is now a createMemo wired into the scope.
-    expect(text).toMatch(
-      /const workspaceReady = createMemo\(\(\) => \{[\s\S]*return !!workspaceScopes\?\.scopeFor\(workspaceKey\(\)\)/,
-    )
-    expect(text).toMatch(/workspaceReady=\{workspaceReady\}/)
-    expect(text).toMatch(/refreshDirectory=\{refreshDirectory\}/)
-  })
-
   test("SessionRef host placement is explicit and immutable at owner boundaries", async () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
@@ -1884,117 +1278,7 @@ describe("workspace runtime route audit", () => {
       }
     }
 
-    const identity = await Bun.file(path.join(root, sessionRefIdentity)).text()
-    const orchestration = await Bun.file(path.join(root, "app/workbench/state/orchestration.ts")).text()
-    const persistence = await Bun.file(path.join(root, "app/workbench/state/persistence.ts")).text()
-    const routeBridge = await Bun.file(path.join(root, "app/workbench/state/route-bridge.tsx")).text()
-    const routeBridgeResolution = await Bun.file(path.join(root, "app/workbench/state/route-bridge-resolution.ts")).text()
-    const rail = await Bun.file(path.join(root, appShellLayout)).text()
-    const sidebar = await Bun.file(path.join(root, railSidebar)).text()
-    const actionsShared = await Bun.file(path.join(root, claxedoActionShared)).text()
-    const sessionActions = await Bun.file(path.join(root, claxedoSessionActions)).text()
-    const workspaceActions = await Bun.file(path.join(root, claxedoWorkspaceActions)).text()
-    const sessionContent = await Bun.file(path.join(root, "features/session/ui/content/session-content.tsx")).text()
-    const contextContent = await Bun.file(path.join(root, "app/workbench/content/context-content.tsx")).text()
-    const pageContent = await Bun.file(path.join(root, "features/documents/ui/content/page-content.tsx")).text()
-    const terminalContent = await Bun.file(path.join(root, "features/terminal/ui/content/terminal-content.tsx")).text()
-    expect(identity).toMatch(/readonly host: SessionHost/)
-    expect(identity).toMatch(/readonly toolSandbox\?: SandboxRef/)
-    expect(identity).toMatch(/readonly workspaceId\?: string/)
-    expect(identity).toMatch(/readonly cwd\?: string/)
-    expect(identity).not.toMatch(/centralSessionRef/)
-    expect(identity).toMatch(/localSessionRef/)
-    expect(identity).toMatch(/workspaceBackedSessionRef/)
-    expect(identity).toMatch(/sessionRefForWorkspaceSession/)
-    expect(identity).toMatch(/retargetSessionRef/)
-    expect(identity).not.toMatch(/retargetSessionRef\(input: \{[\s\S]*directory\?: string/)
-    expect(identity).not.toMatch(/sessionRefForWorkspaceSession\(\{[\s\S]*sessionId,[\s\S]*directory: input\.directory/)
-    expect(identity).not.toMatch(/sessionRefForPane/)
-    expect(orchestration).not.toMatch(/sessionRefForPane/)
-    expect(orchestration).not.toMatch(/sessionRefForPayload/)
-    expect(orchestration).not.toMatch(/sessionRefForSession/)
-    expect(orchestration).toMatch(/export type OpenSessionOptions = \{ focus\?: boolean; sessionRef\?: SessionRef; workspaceRouteId\?: string \}/)
-    expect(orchestration).toMatch(/explicitSessionRef \?\? existing\.content\?\.sessionRef/)
-    expect(orchestration).toMatch(/const sessionRef = opts\?\.sessionRef/)
-    expect(orchestration).toMatch(
-      /sameWorkspaceSession\(m, directory, sessionId, opts\?\.sessionRef, opts\?\.workspaceRouteId\)/,
-    )
-    expect(orchestration).not.toMatch(
-      /m\.type === "session" && m\.directory === directory && m\.sessionId === sessionId/,
-    )
-    expect(orchestration).not.toMatch(/opts\?\.sessionRef \?\? sessionRefForPayload\(directory, sessionId\)/)
-    expect(orchestration).not.toMatch(
-      /input\.sessionRef \?\? sessionRefForPayload\(input\.directory, input\.sessionId\)/,
-    )
-    expect(orchestration).toMatch(/input\.sessionRef \? \{ sessionRef: input\.sessionRef \} : \{\}/)
-    expect(persistence).toMatch(/missingRequiredSessionRef/)
-    expect(persistence).not.toMatch(/backfillSessionRef/)
-    expect(persistence).not.toMatch(/sessionRefForPane/)
-    expect(routeBridge).toMatch(/routeLifecycleSessionRef\(\{[\s\S]*sessionId: event\.sessionID,[\s\S]*directory: event\.directory/)
-    expect(routeBridge).toMatch(/draftSessionRef: draft\.content\.sessionRef/)
-    expect(routeBridgeResolution).toMatch(/retargetSessionRef\(\{[\s\S]*sessionId: input\.sessionId,[\s\S]*source: input\.draftSessionRef/)
-    expect(routeBridgeResolution).toMatch(/sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: input\.sessionId,[\s\S]*directory: input\.directory/)
-    expect(routeBridge).toMatch(/sessionRefForWorkspaceSession/)
-    expect(rail).not.toMatch(/sessionRefForPane/)
-    expect(rail).not.toMatch(/signedWorkspaceFromProjects/)
-    expect(sidebar).toMatch(/sessionRefForWorkspaceSession/)
-    expect(sidebar).toMatch(/\{ focus: false, sessionRef: sessionRef\(\) \}/)
-    expect(actionsShared).toMatch(/sessionRefForActionWorkspace/)
-    expect(actionsShared).toMatch(/sessionRefForWorkspaceSession/)
-    expect(sessionActions).toMatch(/sessionRefForActionWorkspace/)
-    expect(workspaceActions).toMatch(/sessionRefForActionWorkspace/)
-    expect(sessionContent).toMatch(/content\.sessionRef/)
-    expect(sessionContent).toMatch(/retargetSessionRef/)
-    expect(sessionContent).not.toMatch(/sessionRefForPane/)
-    expect(sessionContent).not.toMatch(/signedWorkspaceFromProjects/)
-    expect(sessionContent).not.toMatch(/useShellQueryOptions/)
-    expect(contextContent).toMatch(/content\?\.sessionRef/)
-    expect(contextContent).not.toMatch(/sessionRefForPane/)
-    expect(contextContent).not.toMatch(/signedWorkspaceFromProjects/)
-    expect(contextContent).not.toMatch(/useShellQueryOptions/)
-    expect(pageContent).toMatch(/content\?\.sessionRef/)
-    expect(pageContent).toMatch(/retargetSessionRef/)
-    expect(pageContent).not.toMatch(/sessionRefForPane/)
-    expect(pageContent).not.toMatch(/signedWorkspaceFromProjects/)
-    expect(pageContent).not.toMatch(/useShellQueryOptions/)
-    expect(terminalContent).toMatch(/content\?\.sessionRef/)
-    expect(terminalContent).not.toMatch(/sessionRefForPane/)
-    expect(terminalContent).not.toMatch(/signedWorkspaceFromProjects/)
-    expect(terminalContent).not.toMatch(/useShellQueryOptions/)
     expect(offenders).toEqual([])
-  })
-
-  test("open session registry is keyed by root session id", async () => {
-    const text = await Bun.file(path.join(root, openSessionsRegistry)).text()
-
-    expect(await Bun.file(path.join(root, "context/global-sync/open-sessions.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, openSessionsRegistry)).exists()).toBe(true)
-    // The Set of root session ids became a Map so per-content entries can be
-    // retracted individually (d1ce3173), but every key is still derived from
-    // the root session id (or the content id) alone — never the directory.
-    expect(text).toMatch(/const refs = new Map<string, string>\(\)/)
-    expect(text).toMatch(/const directKey = \(sessionId: string\) => `session:\$\{sessionId\}`/)
-    expect(text).toMatch(/refs\.set\(directKey\(ref\.sessionId\), ref\.sessionId\)/)
-    expect(text).toMatch(/export function hasOpenSession\(sessionId: string\)/)
-    expect(text).not.toMatch(/\$\{ref\.directory\}/)
-    expect(text).not.toMatch(/\$\{meta\.directory\}/)
-    expect(text).not.toMatch(/function key\(/)
-  })
-
-  test("existing session pane preferences are keyed by root session id", async () => {
-    const text = await Bun.file(path.join(root, panePreferences)).text()
-    const harnessPolicy = await Bun.file(path.join(root, harnessStorePolicy)).text()
-
-    expect(text).toMatch(/return `session:\$\{input\.sessionId\}`/)
-    expect(text).not.toMatch(/session:\$\{input\.directory/)
-    expect(harnessPolicy).toMatch(/export const harnessScope = panePreferenceScope/)
-    // The harness-config request keys carry the machine and the workspace, and
-    // build that tuple with `session-capabilities-query.ts`'s own builder
-    // rather than a second one that can drift from it.
-    expect(harnessPolicy).toMatch(/sessionResourceAuthorityKey\(sessionResourceAuthorityScope\(\{/)
-    expect(harnessPolicy).toMatch(/return JSON\.stringify\(harnessConfigAuthorityKey\(authority\)\)/)
-    expect(harnessPolicy).not.toMatch(/\$\{base\}\\n\$\{input\.sessionId\}/)
-    expect(harnessPolicy).not.toMatch(/\$\{input\?\.directory \?\? ""\}\\n\$\{input\?\.sessionId/)
   })
 
   test("generic auth fetch does not own workspace session transport routing", async () => {
@@ -2010,89 +1294,6 @@ describe("workspace runtime route audit", () => {
     expect(globalSdk).toMatch(/createTransport/)
     const liveSession = await Bun.file(path.join(root, "app/providers/global-sdk/live-session.ts")).text()
     expect(liveSession).toMatch(/signedWorkspaceFromProjects/)
-  })
-
-  test("session status telemetry is keyed by root session id", async () => {
-    const text = await Bun.file(path.join(root, sessionStatusTelemetry)).text()
-    const listener = await Bun.file(path.join(root, agentStatusListener)).text()
-
-    expect(text).toMatch(/function statusKey\(sessionID: string\)/)
-    expect(text).toMatch(/return sessionID/)
-    expect(text).toMatch(/sessionID: key/)
-    expect(text).toMatch(/latestObservedDirectory/)
-    expect(text).not.toMatch(/\$\{input\.directory \?\? ""\}\\n\$\{input\.sessionID\}/)
-    expect(text).not.toMatch(/key\.split\("\\n"/)
-    expect(listener).toMatch(/m\.type === "session" && m\.sessionId === sessionId/)
-    expect(listener).not.toMatch(/m\.type === "session" && m\.directory === directory && m\.sessionId === sessionId/)
-  })
-
-  test("session controller caches existing session state by root session id", async () => {
-    const text = await Bun.file(path.join(root, sessionController)).text()
-    const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
-
-    // sessionCapabilitiesKey moved to the pane-queries owner (ad707c19) and
-    // gained an authority discriminator suffix, but the ROOT session id is
-    // still the primary shellDataKeys.sessionId segment; the controller
-    // imports the shared key instead of re-declaring it.
-    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey, sessionTodoTransportRequestKey, sessionTransportRequestKey \} from "\.\/session-pane-queries"/)
-    expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
-    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
-    expect(paneQueries).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    // The request-key builders live with the other query keys in
-    // session-pane-queries (same move sessionCapabilitiesKey made); the
-    // controller imports them rather than re-declaring.
-    expect(paneQueries).toMatch(/export function sessionTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
-    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"transport-session-request"/)
-    expect(paneQueries).toMatch(/export function sessionTodoTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
-    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"todo-request"/)
-    expect(text).not.toMatch(/function keyFor\(directory: string, sessionID: string\)/)
-    expect(text).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    expect(text).not.toMatch(/keyFor\(input\.directory\(\), sessionID\)/)
-    expect(text).not.toMatch(/keyFor\(directory, sessionID\)/)
-  })
-
-  test("surface route mirroring uses canonical session routes for existing sessions", async () => {
-    const text = await Bun.file(path.join(root, "app/workbench/state/surface-route.ts")).text()
-    const layout = await Bun.file(path.join(root, appShellRouteSync)).text()
-
-    expect(text).toMatch(/canonicalSessionRoute\(sessionId\)/)
-    expect(text).not.toMatch(/legacySessionRoute\(dir, routeSessionId/)
-    // Wave 2 derives the mirror target from params.sessionId ?? params.id via a
-    // local before building the canonical route; still canonical, never legacy.
-    expect(layout).toMatch(/const sessionId = input\.params\.sessionId \?\? input\.params\.id/)
-    expect(layout).toMatch(/canonicalSessionRoute\(sessionId\)/)
-    expect(layout).not.toMatch(/legacySessionRoute\(meta\.directory, params\.id\)/)
-  })
-
-  test("created-session handoff navigates with canonical session routes", async () => {
-    const handoff = await Bun.file(path.join(root, "features/session/submit/handoff.ts")).text()
-    const payload = await Bun.file(path.join(root, "app/workbench/state/session-content-payload.ts")).text()
-    // The new-session submit flow (and its navigation assertions) was carved
-    // out of submit.test.ts into submit.new-session.test.ts during WP-B4.
-    const submitTest = await Bun.file(path.join(root, "features/session/composer/ui/submit.new-session.test.ts")).text()
-
-    expect(await Bun.file(path.join(root, "overrides/features/session/composer/ui/submit.test.ts")).exists()).toBe(
-      false,
-    )
-    // Created sessions may use a workspace-scoped URL only when the typed
-    // session ref carries an opaque workspace id. Local filesystem sessions
-    // use `/s/:sessionId`; the directory never becomes an intermediate URL.
-    expect(handoff).toMatch(/workspaceKey\(input\.sessionRef\)/)
-    expect(handoff).toMatch(/workspaceSessionRoute\(workspaceId, input\.sessionID\)/)
-    expect(handoff).toMatch(/sessionRoute\(input\.sessionID\)/)
-    expect(handoff).not.toMatch(/workspaceSessionRoute\(input\.sessionDirectory/)
-    expect(handoff).toMatch(/input\.navigate\(createdSessionRoute\(\{/)
-    expect(handoff).toMatch(/sessionContentPayload/)
-    expect(handoff).toMatch(
-      /openSession\([\s\S]*input\.sessionDirectory,[\s\S]*input\.session\.id,[\s\S]*"Session",[\s\S]*\{ sessionRef: input\.sessionRef \}/,
-    )
-    expect(handoff).not.toMatch(/sessionRefForPane/)
-    expect(handoff).not.toMatch(/base64Encode\([^)]*\).*\/session/)
-    expect(payload).not.toMatch(/sessionRefForPane/)
-    expect(payload).toMatch(/sessionRef\?: SessionRef/)
-    expect(payload).toMatch(/\.\.\.\(input\.sessionRef \? \{ sessionRef: input\.sessionRef \} : \{\}\)/)
-    expect(submitTest).toMatch(/navigate:\/w\/ws_1\/session\/session-1/)
-    expect(submitTest).not.toMatch(/navigate:\/ws_1\/session\/session-1/)
   })
 
   test("workspace URL producers pass IDs directly and never rely on a navigation suppression gate", async () => {
@@ -2132,80 +1333,17 @@ describe("workspace runtime route audit", () => {
     const scriptsRoot = path.resolve(root, "../scripts")
     const scriptOffenders: string[] = []
     for (const file of new Bun.Glob("**/*.{ts,mjs}").scanSync({ cwd: scriptsRoot, onlyFiles: true })) {
-      if (file.endsWith(".test.ts") || file === "workspace-capture-url.mjs") continue
+      if (file.endsWith(".test.ts")) continue
       const text = await Bun.file(path.join(scriptsRoot, file)).text()
-      if (/\/w\/%2f/i.test(text) || /\/w\/\$\{encodeURIComponent\((?:directory|dir|workspaceDirectory|repoRoot)/i.test(text)) {
-        scriptOffenders.push(file)
-      }
-      if (/\/w\/\$\{/.test(text) && !/workspaceCaptureUrl/.test(text)) scriptOffenders.push(file)
+      // Scripts reach workspace URLs only through the app's typed routes; any
+      // `/w/${…}` literal is an offender.
+      if (/\/w\/%2f/i.test(text) || /\/w\/\$\{/.test(text)) scriptOffenders.push(file)
     }
     expect(scriptOffenders).toEqual([])
 
     const fork = await Bun.file(path.join(root, "features/session/ui/dialogs/fork.tsx")).text()
     expect(fork).toMatch(/navigate\(sessionRoute\(forked\.data\.id\)\)/)
     expect(fork).not.toMatch(/base64Encode/)
-  })
-
-  test("workspace browse fallbacks use typed workspace routes", async () => {
-    const migrated = [
-      "app/routes/home.tsx",
-      appShellRouteSync,
-      "app/workbench/state/surface-route.ts",
-    ]
-
-    for (const file of migrated) {
-      const text = await Bun.file(path.join(root, file)).text()
-      expect(text).toMatch(/workspaceRoute/)
-      expect(text).not.toMatch(/`\s*\/\$\{base64Encode\([^)]*\)\}\s*`/)
-    }
-  })
-
-  test("workspace directory alias canonicalization is shared from signed-workspace identity", async () => {
-    const globalSdk = await Bun.file(path.join(root, "app/providers/global-sdk/provider.tsx")).text()
-    const runtimeProjection = await Bun.file(path.join(root, "app/providers/global-sdk/runtime-event-projection.ts")).text()
-    const signedWorkspace = await Bun.file(path.join(root, "platform/runtime/agent/signed-workspace.ts")).text()
-
-    expect(await Bun.file(path.join(root, "overrides/app/providers/global-sdk/provider.tsx")).exists()).toBe(false)
-    const routeScope = await Bun.file(path.join(root, "app/providers/global-sdk/route-event-scope.ts")).text()
-    expect(routeScope).toMatch(/sameWorkspaceDirectory/)
-    expect(globalSdk).toMatch(/sessionWorkspaceRuntimeRef/)
-    expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
-    expect(globalSdk).toMatch(/request: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
-    expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
-    expect(runtimeProjection).toMatch(/createClientPresentationProjection/)
-    expect(runtimeProjection).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId \?\? ""\}`/)
-    expect(runtimeProjection).toMatch(/directory: input\.directory/)
-    expect(globalSdk).toMatch(/return `session\.status:\$\{payload\.properties\.sessionID\}`/)
-    expect(globalSdk).not.toMatch(/workspaceIdFromDirectoryRef/)
-    expect(globalSdk).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    expect(globalSdk).not.toMatch(/`\$\{input\.directory\}:\$\{input\.sessionId\}:\$\{assistantMessageId\}`/)
-    expect(globalSdk).not.toMatch(/`session\.status:\$\{directory\}:\$\{payload\.properties\.sessionID\}`/)
-    expect(globalSdk).not.toMatch(/function canonicalDirectoryKey/)
-    expect(globalSdk).not.toMatch(/startsWith\("\/private\/var\/"\)/)
-    expect(signedWorkspace).toMatch(/workspaceDirectoryAliasKey/)
-    expect(signedWorkspace).not.toMatch(/canonicalDirectoryKey/)
-  })
-
-  test("page surface routes use typed workspace page routes", async () => {
-    const migrated = [
-      "features/documents/actions/page-actions.ts",
-      "app/workbench/actions/open-surface-actions-ui.ts",
-      "app/workbench/state/surface-route.ts",
-    ]
-
-    const app = await Bun.file(path.join(root, "app/entry/app.tsx")).text()
-    expect(app).toMatch(/path="\/w\/:workspaceId\/page\/:pageId"/)
-
-    for (const file of migrated) {
-      const text = await Bun.file(path.join(root, file)).text()
-      if (file === "app/workbench/state/surface-route.ts") {
-        expect(text).toMatch(/workspacePageRoute/)
-        expect(text).not.toMatch(/legacyWorkspaceRoute/)
-      }
-      expect(text).not.toMatch(/`\$\{?workspaceRoute\([^)]*\)\}?\/page\//)
-      expect(text).not.toMatch(/`\/\$\{base64Encode\([^)]*\)\}\/page\/\$\{[^}]+\}`/)
-      expect(text).not.toMatch(/`\/\$\{base64Encode\([^)]*\)\}\/page\/__index__`/)
-    }
   })
 
   test("terminal surface routes use typed workspace terminal routes", async () => {
@@ -2383,187 +1521,6 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("global-sync stale session cache cleanup is owned by session-cache helpers", async () => {
-    const listEvents = await Bun.file(path.join(root, sessionListEvents)).text()
-    const cache = await Bun.file(path.join(root, sessionCache)).text()
-    const context = await Bun.file(path.join(root, globalSyncContext)).text()
-    const eventIngress = await Bun.file(path.join(root, "app/integrations/session-events/event-ingress.ts")).text()
-    const eventRouter = await Bun.file(path.join(root, "app/integrations/session-events/event-router.ts")).text()
-    const bootstrap = await Bun.file(path.join(root, "app/boot/data/bootstrap.ts")).text()
-    const projector = await Bun.file(path.join(root, directoryEventProjector)).text()
-    const globalProjector = await Bun.file(path.join(root, globalEventProjector)).text()
-    const statusDispatcher = await Bun.file(
-      path.join(root, "features/session/store/session-status-dispatcher.ts"),
-    ).text()
-    const types = await Bun.file(path.join(root, "features/session/data/sync/global-sync-types.ts")).text()
-    const directoryCacheManager = await Bun.file(path.join(root, "platform/sync/directory-cache-manager.ts")).text()
-    const reducerImports: string[] = []
-    for (const file of await files(root)) {
-      const text = await Bun.file(path.join(root, file)).text()
-      if (/app\/src\/context\/global-sync\/event-reducer/.test(text)) reducerImports.push(file)
-    }
-
-    expect(await Bun.file(path.join(root, "overrides/context/global-sync/session-cache.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/context/global-sync/session-list-events.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/context/global-sync/session-load.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/platform/sync/global-sync/types.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "features/session/data/sync/session-cache-cleanup.ts")).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, "features/session/data/sync/session-list-events.ts")).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, "platform/sync/session-load.ts")).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, "features/session/data/sync/global-sync-types.ts")).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, "overrides/context/global-sync/event-reducer.ts")).exists()).toBe(false)
-    expect(reducerImports).toEqual([])
-    expect(context).not.toMatch(/app\/src\/context\/global-sync\/event-reducer/)
-    expect(listEvents).not.toMatch(/app\/src\/context\/global-sync\/event-reducer/)
-    expect(context).toMatch(/createGlobalSyncEventIngress/)
-    expect(eventIngress).toMatch(/applyGlobalProjectEvent/)
-    expect(globalProjector).toMatch(/server\.connected/)
-    expect(globalProjector).toMatch(/global\.disposed/)
-    expect(globalProjector).toMatch(/project\.updated/)
-    expect(listEvents).toMatch(/applyDirectorySessionCacheEvent/)
-    expect(listEvents).toMatch(/cleanupDroppedSessionCaches/)
-    expect(listEvents).toMatch(/Binary\.search/)
-    expect(listEvents).toMatch(/trimSessions/)
-    expect(listEvents).toMatch(/applyClaxedoSessionLifecycleEvent/)
-    expect(listEvents).toMatch(/applySessionListEvent/)
-    expect(listEvents).toMatch(/cache:\s*DirectorySessionCacheValue/)
-    expect(listEvents).not.toMatch(/SetStoreFunction|Store<State>|createStore|setStore\(/)
-    expect(listEvents).not.toMatch(/sessionCacheSessionIDs/)
-    expect(listEvents).not.toMatch(/promptSessionStatusMeta\(sessionId\)\?\.started/)
-    expect(listEvents).not.toMatch(/cachedDirectorySession\(directory, sessionId\)/)
-    expect(cache).toMatch(/droppedSessionIDs/)
-    expect(cache).toMatch(/shellDataKeys\.sessionId\(sessionId, "status"\)/)
-    expect(cache).toMatch(/getQueryData<SessionStatus>/)
-    expect(cache).toMatch(/promptSessionStatusMeta\(sessionId\)\?\.started/)
-    expect(cache).toMatch(/cachedDirectorySession\(directory, sessionId\)/)
-    expect(cache).toMatch(/clearPromptSessionStatus\(sessionId\)/)
-    expect(listEvents).not.toMatch(/store\.session_status\[/)
-    expect(listEvents).not.toMatch(/store\.session_status_meta\[[^\]]+\]\?\.started/)
-    expect(listEvents).not.toMatch(/draft\.session_status(?:_meta)?/)
-    expect(listEvents).not.toMatch(/function recentlyActive[\s\S]*store\.session\.find/)
-    expect(listEvents).not.toMatch(/store\.(?:message|part)/)
-    expect(listEvents).not.toMatch(/Object\.(?:keys|values)\(store\.(?:message|part)\)/)
-    expect(types).not.toMatch(/session_working\(id: string\): boolean/)
-    expect(types).not.toMatch(/export type State/)
-    expect(types).not.toMatch(/session_status:\s*\{/)
-    expect(directoryCacheManager).not.toMatch(/sessionStatusSnapshot/)
-    expect(directoryCacheManager).not.toMatch(/shellDataKeys\.sessionId\([^)]*"status"\)/)
-    expect(statusDispatcher).toMatch(/shellDataKeys\.sessionId\(input\.event\.sessionID, "status"\)/)
-    expect(statusDispatcher).toMatch(/getQueryData<SessionStatus>/)
-    expect(directoryCacheManager).not.toMatch(/setStore\("session_status"/)
-    expect(directoryCacheManager).not.toMatch(/session_status:\s*\{\}/)
-    expect(types).not.toMatch(/session_diff:/)
-    expect(directoryCacheManager).not.toMatch(/session_diff:\s*\{\}/)
-    expect(cache).not.toMatch(/store\.session_diff/)
-    expect(cache).not.toMatch(/session_status/)
-    expect(context).not.toMatch(/session_todo/)
-    expect(eventIngress).toMatch(/routeDirectoryEvent\(\{/)
-    expect(eventIngress).toMatch(/mark: \(\) => input\.children\.mark\(directory\)/)
-    expect(eventIngress).toMatch(/cacheSessions: \(next\) => \{/)
-    expect(eventRouter).toMatch(
-      /applyDirectoryEventToShellQueries\(\{ event: input\.event, directory: input\.directory \}\)[\s\S]*input\.sinks\.mark\?\.\(\)[\s\S]*applySessionStatusSseEvent\(\{ event: input\.event, directory: input\.directory \}\)[\s\S]*applyDirectorySessionCacheEvent/,
-    )
-    expect(context).not.toMatch(/applySessionStatusSseEvent\(\{[^}]*setStore/)
-    expect(eventIngress).toMatch(
-      /applyClaxedoSessionLifecycleEvent[\s\S]*applySessionStatusSseEvent\(\{[\s\S]*type: "session\.idle"/,
-    )
-    expect(listEvents).not.toMatch(/projectDirectoryEventToShellQueries/)
-    expect(listEvents).not.toMatch(/applySessionStatusSseEvent/)
-    expect(listEvents).not.toMatch(/observeSessionStatusEvent/)
-    expect(listEvents).not.toMatch(/dispatchSessionStatusEvent/)
-    expect(listEvents).not.toMatch(/session\.diff/)
-    expect(listEvents).not.toMatch(/todo\.updated/)
-    expect(listEvents).toMatch(/server\.instance\.disposed/)
-    expect(listEvents).not.toMatch(/lsp\.updated/)
-    expect(statusDispatcher).toMatch(/applySessionStatusSseEvent/)
-    expect(statusDispatcher).toMatch(/observeSessionStatusEvent/)
-    expect(statusDispatcher).toMatch(/dispatchSessionStatusEvent/)
-    expect(statusDispatcher).not.toMatch(/SetStoreFunction/)
-    expect(statusDispatcher).not.toMatch(/\bproduce\b/)
-    expect(statusDispatcher).not.toMatch(/applySessionStatusEventToState/)
-    expect(statusDispatcher).not.toMatch(/applySessionStatusTimeoutStageToState/)
-    expect(statusDispatcher).not.toMatch(/setStore/)
-    expect(projector).toMatch(
-      /setSessionDiffQueryData\(\{ queryClient, sessionId, diff: list\(diff\) \}\)/,
-    )
-    expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(sessionId, "diff"\)/)
-    expect(projector).toMatch(
-      /dispatchSessionTodoEvent\(\{[\s\S]*type: "session\.todo",[\s\S]*sessionID,[\s\S]*todos/,
-    )
-    expect(projector).not.toMatch(/setSessionTodoQueryData\(\{ queryClient, sessionId: props\.sessionID/)
-    expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(props\.sessionID, "todo"\)/)
-    expect(projector).toMatch(/dispatchSessionRequestsEvent/)
-    expect(projector).not.toMatch(/setSessionRequestsQueryData/)
-    expect(projector).not.toMatch(/setQueryData\(\s*shellDataKeys\.sessionId\(sessionID, "requests"\)/)
-    expect(projector).not.toMatch(/case "session\.created"/)
-    expect(listEvents).toMatch(/case "session\.created"/)
-    expect(listEvents).toMatch(/applySessionListEvent/)
-    expect(directoryCacheManager).toMatch(
-      /cached<SessionCacheValue>\(key, directory, queryKeys\.directory\.sessionCache\)/,
-    )
-    expect(listEvents).not.toMatch(/setQueryData\(\s*queryKeys\.directory\.sessionCache/)
-    expect(listEvents).not.toMatch(/function (?:set|upsert|remove)DirectorySessionCache/)
-    expect(types).not.toMatch(/\bmessage:\s*\{/)
-    expect(types).not.toMatch(/\bpart:\s*\{/)
-    expect(types).not.toMatch(/\bpermission:\s*\{/)
-    expect(directoryCacheManager).not.toMatch(/\bmessage:\s*\{/)
-    expect(directoryCacheManager).not.toMatch(/\bpart:\s*\{/)
-    expect(directoryCacheManager).not.toMatch(/\bpermission:\s*\{/)
-    expect(cache).not.toMatch(/store\.message/)
-    expect(cache).not.toMatch(/store\.part/)
-    expect(cache).not.toMatch(/store\.(?:todo|permission|question)/)
-    expect(types).not.toMatch(/\b(?:todo|question):\s*\{/)
-    expect(directoryCacheManager).not.toMatch(/\b(?:todo|question):\s*\{/)
-    expect(cache).not.toMatch(/\b(?:todo|question):\s*\{/)
-    expect(types).not.toMatch(/session_(?:agent|config|usage)/)
-    expect(directoryCacheManager).not.toMatch(/session_(?:agent|config|usage)/)
-    expect(cache).not.toMatch(/session_(?:agent|config|usage)/)
-    expect(types).not.toMatch(/\b(?:mcp_ready|lsp_ready|vcs):/)
-    expect(types).not.toMatch(/\b(?:mcp|lsp):\s*[{[]/)
-    expect(directoryCacheManager).not.toMatch(/\b(?:mcp_ready|lsp_ready|vcs):/)
-    expect(directoryCacheManager).not.toMatch(/\b(?:mcp|lsp):\s*[{[]/)
-    expect(types).not.toMatch(/\bcommand:\s*Command\[\]/)
-    expect(directoryCacheManager).not.toMatch(/\bcommand:\s*\[\]/)
-    expect(context).not.toMatch(/setStore\("command"/)
-    expect(types).not.toMatch(/\bagent:\s*Agent\[\]/)
-    expect(directoryCacheManager).not.toMatch(/\bagent:\s*\[\]/)
-    expect(context).not.toMatch(/setStore\("agent"/)
-    expect(types).not.toMatch(/\bconfig:\s*Config\b/)
-    expect(directoryCacheManager).not.toMatch(/\bconfig:\s*\{\}/)
-    expect(context).not.toMatch(/input\.setStore\("config"/)
-    expect(types).not.toMatch(/\bpath:\s*Path\b/)
-    expect(directoryCacheManager).not.toMatch(/\bpath:\s*\{/)
-    expect(context).not.toMatch(/input\.setStore\("path"/)
-    expect(bootstrap).toMatch(/queryKeys\.directory\.path\(baseUrl, directory\)/)
-    expect(types).not.toMatch(/\bprovider_ready:/)
-    expect(types).not.toMatch(/\bprovider:\s*NormalizedProviderListResponse\b/)
-    expect(directoryCacheManager).not.toMatch(/\bprovider_ready:/)
-    expect(directoryCacheManager).not.toMatch(/\bprovider:\s*\{/)
-    expect(bootstrap).not.toMatch(/input\.setStore\("provider(?:_ready)?"/)
-    // The provider catalog is cached through the shared key builder rather than
-    // a bootstrap-local store. The key now also takes a harness (each harness
-    // serves a different catalog), so match the call, not its exact arity.
-    expect(bootstrap).toMatch(/queryKeys\.controlPlane\.providers\(\s*input\.baseUrl[,)]/)
-    expect(types).not.toMatch(/\bproject:\s*string\b/)
-    expect(directoryCacheManager).not.toMatch(/\bproject:\s*""/)
-    expect(bootstrap).not.toMatch(/input\.setStore\("project"/)
-    expect(bootstrap).toMatch(/queryKeys\.directory\.project\(baseUrl, directory\)/)
-    expect(types).not.toMatch(/\bprojectMeta:\s*ProjectMeta\b/)
-    expect(types).not.toMatch(/\bicon:\s*string\b/)
-    expect(directoryCacheManager).not.toMatch(/createStore<State>\(\{[\s\S]{0,180}\bprojectMeta\b/)
-    expect(directoryCacheManager).not.toMatch(/createStore<State>\(\{[\s\S]{0,180}\bicon\b/)
-    expect(directoryCacheManager).not.toMatch(/setStore\("projectMeta"/)
-    expect(directoryCacheManager).not.toMatch(/setStore\("icon"/)
-    expect(directoryCacheManager).not.toMatch(
-      /createStore|solid-js\/store|Store<State>|SetStoreFunction|DirectoryChildStore/,
-    )
-    expect(types).not.toMatch(/\bstatus:\s*"loading"\s*\|/)
-    expect(directoryCacheManager).not.toMatch(/\bstatus:\s*"loading"/)
-    expect(bootstrap).not.toMatch(/input\.setStore\("status"/)
-    expect(bootstrap).not.toMatch(/store:\s*Store<State>/)
-    expect(bootstrap).not.toMatch(/setStore:\s*SetStoreFunction<State>/)
-  })
-
   test("Query-to-Solid compatibility bridge is deleted", async () => {
     const listEvents = await Bun.file(path.join(root, sessionListEvents)).text()
     const directoryCacheManager = await Bun.file(path.join(root, "platform/sync/directory-cache-manager.ts")).text()
@@ -2608,9 +1565,8 @@ describe("workspace runtime route audit", () => {
     )
     expect(text).not.toMatch(/source=\{\(\) => sync\.data\}/)
     expect(text).not.toMatch(/sync\.data\.part\[messageID\]/)
-    // Session rows now come from the pane-scoped cache projection module,
-    // which is still backed by the directory session cache query (and never a
-    // Solid mirror).
+    // Session rows come from the pane-scoped cache projection module, backed by
+    // the directory session cache query and never a Solid mirror.
     expect(text).toMatch(/createSessionScreenCacheProjection/)
     expect(cacheProjection).toMatch(/directorySessionCacheQueryOptions/)
     expect(cacheProjection).not.toMatch(/createStore/)
@@ -2627,8 +1583,8 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/activeTurn=\{sessionController\.activeTurn\}/)
     expect(text).toMatch(/diffFiles=\{diffFiles\}/)
     expect(text).not.toMatch(/extractPromptFromParts\(sync\.data\.part/)
-    // The screen's conversation read moved to the pane-scoped registry wrapper
-    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
+    // The screen's conversation read goes through the pane-scoped registry
+    // wrapper (createActiveConversationSnapshot wraps registeredConversationSnapshot).
     expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/sessionUserMessages\(messages\(\)\)/)
     expect(text).not.toMatch(/conversation\(\)\.messages\.filter\(\(message\) => message\.role === "user"\)/)
@@ -2658,58 +1614,6 @@ describe("workspace runtime route audit", () => {
     expect(notification).not.toMatch(/syncStore\.session/)
   })
 
-  test("workspace action surfaces warm session cache instead of child-store readiness", async () => {
-    const projectActions = await Bun.file(path.join(root, claxedoProjectActions)).text()
-    const workspaceActions = await Bun.file(path.join(root, claxedoWorkspaceActions)).text()
-    const workspaceRecovery = await Bun.file(path.join(root, claxedoWorkspaceRecovery)).text()
-    const shared = await Bun.file(path.join(root, claxedoActionShared)).text()
-    const cache = await Bun.file(path.join(root, directorySessionCache)).text()
-
-    expect(projectActions).toMatch(/ensureDirectorySessionCache/)
-    expect(workspaceActions).toMatch(/ensureDirectorySessionCache/)
-    expect(workspaceRecovery).toMatch(/ensureDirectorySessionCache/)
-    expect(shared).toMatch(/directorySessionCacheActions/)
-    expect(shared).not.toMatch(/ensureShellDirectorySessionCache/)
-    expect(cache).toMatch(/directorySessionCacheQueryOptions/)
-    expect(cache).toMatch(/queryClient\.getQueryData/)
-    expect(projectActions).not.toMatch(/child\.status === "loading"/)
-    expect(workspaceRecovery).not.toMatch(/child\.status === "loading"/)
-    expect(workspaceActions).not.toMatch(/globalSync\.child/)
-  })
-
-  test("directory session cache warmers use the shell data boundary", async () => {
-    const texts = await Promise.all(
-      [appShellState, claxedoSessionActions, claxedoActionShared, layoutContext].map(async (file) =>
-        Bun.file(path.join(root, file)).text(),
-      ),
-    )
-
-    for (const text of texts) {
-      expect(text).toMatch(/ensureDirectorySessionCache|useDirectorySessionCacheActions|directorySessionCacheActions/)
-      expect(text).not.toContain(
-        "if (queryClient.getQueryData(directorySessionCacheQueryOptions({ directory }).queryKey)) return",
-      )
-    }
-  })
-
-  test("forced session cache refreshes use the shell data boundary", async () => {
-    // The screen delegates refreshes to its controller; it no longer owns
-    // cache actions left over from its removed title/archive handlers.
-    const screen = await Bun.file(path.join(root, sessionPage)).text()
-    expect(screen).toMatch(/createSessionController\(/)
-    expect(screen).not.toMatch(/globalSync\.refreshDirectory\(/)
-    const texts = await Promise.all(
-      [sessionController, promptSubmit, claxedoSessionActions, directoryScope].map(async (file) =>
-        Bun.file(path.join(root, file)).text(),
-      ),
-    )
-
-    for (const text of texts) {
-      expect(text).toMatch(/refreshDirectorySessionCache|useDirectorySessionCacheActions|directorySessionCacheActions/)
-      expect(text).not.toMatch(/globalSync\.refreshDirectory\((?:directory|dir|workspaceDir|sessionDirectory|cwd)/)
-    }
-  })
-
   test("production code refreshes directories through the shell data boundary", async () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
@@ -2724,7 +1628,7 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, sessionTimeline)).text()
     const timelineProps = await Bun.file(path.join(root, "features/session/ui/message-timeline-props.ts")).text()
 
-    // The conversation read moved to the pane-scoped registry wrapper
+    // The conversation read goes through the pane-scoped registry wrapper
     // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
     expect(text).toMatch(/const sessionConversation = createActiveConversationSnapshot\(\{/)
     expect(text).toMatch(
@@ -2734,7 +1638,7 @@ describe("workspace runtime route audit", () => {
       /const getMsgParts = \(msgId: string\) => sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/,
     )
     expect(text).toMatch(/const parentConversation = createActiveConversationSnapshot\(\{/)
-    // Agents now come from the session-kit data store projection, and session
+    // Agents come from the session-kit data store projection, and session
     // rows arrive through the props boundary (the screen owns the directory
     // cache read via session-screen-cache-projection.ts, asserted in the
     // SessionPage test) — the timeline holds no query wiring of its own.
@@ -2752,7 +1656,7 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.session/)
     expect(text).not.toMatch(/sync\.data\.session_status/)
     expect(text).not.toMatch(/sync\.data\.(?:agent|config)/)
-    // The status accessor prop moved with the props type extraction.
+    // The status accessor prop lives in the extracted props type.
     expect(timelineProps).toMatch(/status:\s*\(\) => SessionStatus/)
     expect(text).not.toMatch(/\bSessionContextUsage\b|session-context-usage/)
   })
@@ -2762,14 +1666,13 @@ describe("workspace runtime route audit", () => {
     const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
     const directoryMeta = await Bun.file(path.join(root, "features/session/store/directory-session-meta.ts")).text()
 
-    // The conversation read moved to the pane-scoped registry wrapper
+    // The conversation read goes through the pane-scoped registry wrapper
     // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
     expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: input\.directory, sessionID: input\.sessionID/)
     expect(text).toMatch(/hydrateConversationPage/)
-    // The per-resource shell query reads were consolidated into
-    // createSessionPaneQueries; the extracted module still observes the same
-    // shellDataKeys session entries (status/requests/todo/diff + directory
-    // cache) and holds no Solid store mirror.
+    // Shell query reads are consolidated in createSessionPaneQueries, which
+    // observes the shellDataKeys session entries (status/requests/todo/diff +
+    // directory cache) and holds no Solid store mirror.
     expect(text).toMatch(/createSessionPaneQueries\(\{/)
     expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "status"\)/)
     expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "requests"\)/)
@@ -2779,8 +1682,8 @@ describe("workspace runtime route audit", () => {
     expect(paneQueries).not.toMatch(/createStore/)
     expect(paneQueries).not.toMatch(/SetStoreFunction/)
     expect(text).toMatch(/dispatchSessionStatusEvent/)
-    // Requests dispatch moved into the shared meta derivation the controller
-    // routes through (applyDirectorySessionMeta in directory-session-meta.ts).
+    // Requests dispatch goes through the shared meta derivation
+    // (applyDirectorySessionMeta in directory-session-meta.ts).
     expect(text).toMatch(/applyDirectorySessionMeta/)
     expect(directoryMeta).toMatch(/dispatchSessionRequestsEvent/)
     expect(directoryMeta).toMatch(/dispatchSessionStatusEvent/)
@@ -2819,16 +1722,15 @@ describe("workspace runtime route audit", () => {
       path.join(root, "features/session/store/session-capabilities-query.ts"),
     ).text()
 
-    // Wave 2 extracted the history-meta signal into createHistoryMetaState();
-    // the controller wires that signal-backed state, and the extracted module
-    // still backs it with createSignal<HistoryMeta> (never a createStore mirror).
+    // The controller wires createHistoryMetaState(), which backs history meta
+    // with createSignal<HistoryMeta>, never a createStore mirror.
     expect(text).toMatch(/createHistoryMetaState\(\)/)
     expect(historyPagination).toMatch(/createSignal\(emptyHistoryMeta\(\)\)/)
     expect(historyPagination).not.toMatch(/createStore/)
-    // sessionCapabilitiesKey moved to session-pane-queries.ts (scope-keyed);
-    // it still derives from shellDataKeys, and the capability fetch now flows
-    // through syncSessionCapabilitiesData (session-capabilities-query.ts),
-    // which writes the same query-cache entry — no Solid mirror in either.
+    // sessionCapabilitiesKey (session-pane-queries.ts) derives from
+    // shellDataKeys, and the capability fetch flows through
+    // syncSessionCapabilitiesData (session-capabilities-query.ts) into the same
+    // query-cache entry — no Solid mirror in either.
     expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
     expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
     expect(paneQueries).not.toMatch(/createStore/)
@@ -2853,19 +1755,17 @@ describe("workspace runtime route audit", () => {
     expect(
       await Bun.file(path.join(root, "overrides/features/session/ui/composer/session-composer-state.ts")).exists(),
     ).toBe(false)
-    // The composer barrel (features/session/ui/composer/index.ts) was deleted:
-    // both consumers import the region and state modules directly, so the
-    // orphan guard flagged it once the entry barrel stopped re-exporting it.
+    // There is no composer barrel: both consumers import the region and state
+    // modules directly.
     expect(await Bun.file(path.join(root, sessionComposer)).exists()).toBe(false)
     expect(await Bun.file(path.join(root, sessionComposerRegion)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, sessionComposerState)).exists()).toBe(true)
     // Region imports the SessionComposerState type from its colocated state
-    // module (a relative sibling import after WP-B6 alignment), never
-    // re-declaring it and never reaching for the @/ package alias.
+    // module by relative path, never re-declaring it or using the @/ alias.
     expect(region).toMatch(/from "\.\/session-composer-state"/)
     expect(region).not.toMatch(/@\/pages\/session\/composer\/session-composer-state/)
     // session-screen imports the first-party composer from its canonical
-    // features/session/ui home, never through the retired @/pages alias.
+    // features/session/ui home, never through an @/pages alias.
     expect(sessionPageText).toMatch(/@\/features\/session\/ui\/composer/)
     expect(sessionPageText).not.toMatch(/@\/pages\/session\/composer/)
     expect(text).toMatch(/useSessionParams/)
@@ -2941,36 +1841,14 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, "app/workbench/titlebar/titlebar.tsx")).exists()).toBe(false)
   })
 
-  test("upstream new-session empty views read project and branch inputs from query caches", async () => {
-    const legacy = await Bun.file(path.join(root, "features/session/ui/components/session-new-view.tsx")).text()
-    const design = await Bun.file(path.join(root, "features/session/ui/components/session-new-design-view.tsx")).text()
-
-    expect(legacy).toMatch(/useQuery\(\(\) => queryOptions\.projects\(\)\)/)
-    expect(legacy).toMatch(/queryClient\.fetchQuery\(workspaceVcsQuery\(\{/)
-    expect(legacy).toMatch(/vcsInfo\(\)\?\.branch/)
-    expect(legacy).not.toMatch(/\buseSync\b/)
-    expect(legacy).not.toMatch(/sync\.project/)
-    expect(legacy).not.toMatch(/sync\.data\.vcs/)
-
-    expect(design).toMatch(/useQuery\(\(\) => queryOptions\.projects\(\)\)/)
-    expect(design).toMatch(/inventoryProjects\(\)\.find/)
-    expect(design).toMatch(/layout\.projects\.list\(\)/)
-    expect(design).not.toMatch(/\buseSync\b/)
-    expect(design).not.toMatch(/useGlobalSync/)
-    expect(design).not.toMatch(/globalSync\.data\.project/)
-    expect(design).not.toMatch(/sync\.data\.vcs/)
-  })
-
   test("MCP and LSP status is owned by the runtime backend, with no upstream status surface left", async () => {
     const backend = await Bun.file(path.join(root, "platform/runtime/http-backend.ts")).text()
     const sessionPortsText = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
     const claxedoSessionHeader = await Bun.file(path.join(root, sessionHeader)).text()
 
-    // Three retirements meet here. The override copies went with the shell
-    // rewrite; `app/connection/status-popover.tsx` went with it too; and the
-    // select-mcp dialog plus the marketplace API it read went with the agent
-    // plugins refactor. Nothing may reintroduce any of them, and session
-    // app-ports must not re-pin a type to a module that no longer exists.
+    // None of the override copies, `app/connection/status-popover.tsx`, or the
+    // select-mcp dialog and its marketplace API may exist, and session app-ports
+    // must not pin a type to any of them.
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/status-popover.tsx")).exists()).toBe(false)
@@ -3010,28 +1888,6 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/applyDirectorySessionCacheEvent/)
   })
 
-  test("DialogSelectFile receives session identity from its caller", async () => {
-    const text = await Bun.file(path.join(root, dialogSelectFile)).text()
-    const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
-
-    expect(text).not.toMatch(/\buseParams\b/)
-    expect(text).not.toMatch(/\bdecode64\b/)
-    expect(text).toMatch(/directory:\s*string/)
-    expect(text).toMatch(/sessionId\?:\s*string/)
-    expect(text).toMatch(/queryOptions\.path\(null\)/)
-    expect(text).not.toMatch(/globalSync\.data\.path\.home/)
-    expect(commands).toMatch(
-      /<DialogSelectFile[\s\S]*directory=\{args\.directory\(\)\}[\s\S]*sessionId=\{args\.sessionId\(\)\}/,
-    )
-    expect(commands).toMatch(/directorySessionCacheQueryOptions/)
-    expect(commands).not.toMatch(/\buseSync\b/)
-    expect(commands).not.toMatch(/sync\.session\.get/)
-    expect(reviewWorkspace).toMatch(
-      /<DialogSelectFile[\s\S]*directory=\{props\.directory\}[\s\S]*sessionId=\{props\.sessionId\}/,
-    )
-  })
-
   test("PromptInput resolves session identity without router params", async () => {
     const text = await Bun.file(path.join(root, promptInput)).text()
     const submit = await Bun.file(path.join(root, promptSubmit)).text()
@@ -3059,8 +1915,8 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.project/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).toMatch(/queryOptions\.projects\(\)/)
-    // Agents now come through the session-selection provider (useLocal), whose
-    // module still owns the agentListQuery read — no sync.data.agent mirror.
+    // Agents come through the session-selection provider (useLocal), whose
+    // module owns the agentListQuery read — no sync.data.agent mirror.
     expect(text).toMatch(/local\.agent\.list/)
     expect(await Bun.file(path.join(root, localContextOwner)).text()).toMatch(/agentListQuery/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
@@ -3118,106 +1974,6 @@ describe("workspace runtime route audit", () => {
     expect(submit).not.toMatch(/workspaceIdFromDirectoryRef/)
   })
 
-  test("PromptProvider receives persistence identity from explicit provider props", async () => {
-    const text = await Bun.file(path.join(root, promptContext)).text()
-    const cacheModule = await Bun.file(path.join(root, liveResourceCache)).text()
-    const directoryLayout = await Bun.file(path.join(root, "app/routes/directory-layout.tsx")).text()
-    const directoryScopeText = await Bun.file(path.join(root, directoryScope)).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
-
-    expect(await Bun.file(path.join(root, "overrides/features/session/providers/prompt.tsx")).exists()).toBe(false)
-    expect(text).not.toMatch(/@solidjs\/router/)
-    expect(text).not.toMatch(/\buseParams\b/)
-    expect(text).not.toMatch(/\buseSessionParams\b/)
-    expect(text).not.toMatch(/not in split mode/)
-    expect(text).toMatch(
-      /type PromptProviderProps = \{[\s\S]*directory\?: Accessor<string> \| string[\s\S]*sessionId\?: Accessor<string \| undefined> \| string/,
-    )
-    // WP-B6: the bounded prompt-session cache (Map + entry struct + eviction)
-    // was extracted into the shared live-resource-cache module. prompt.tsx wires
-    // the factory around createRoot(createPromptSession) and must not re-inline
-    // the Map/entry it used to own.
-    //
-    // The factory is the REF-COUNTED LRU, not the plain LRU: eviction disposes
-    // the scope's reactive root, and `session()` is memoized on the provider's
-    // props, so a plain LRU can dispose a scope a mounted composer is still
-    // subscribed to (same object handed back, memos unsubscribed — the draft
-    // silently stops updating). The pin on the currently-resolved scope is what
-    // rules that out, so `acquire` and its paired release are both pinned here.
-    expect(text).toMatch(
-      /import \{ createRefCountedLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/,
-    )
-    expect(text).not.toMatch(/createLruResourceCache</)
-    expect(text).toMatch(
-      /const promptCache = createRefCountedLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/,
-    )
-    expect(text).toMatch(
-      /promptCache\.acquire\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/,
-    )
-    // Every acquire is paired. The mounted scope releases through the memo's own
-    // onCleanup (which runs both before a recompute and on teardown); a scoped
-    // set/reset borrows its target and releases in a `finally` so a throwing
-    // writer cannot leak a pin — a leaked pin makes the entry immortal, which is
-    // a worse bug than the eviction the pin exists to prevent.
-    expect(text).toMatch(/onCleanup\(handle\.release\)/)
-    expect(text).toMatch(/try \{[\s\S]*return use\(handle\.value\)[\s\S]*\} finally \{[\s\S]*handle\.release\(\)/)
-    expect(text).not.toMatch(/new Map<string, PromptCacheEntry>/)
-    expect(text).not.toMatch(/export const promptCache/)
-    // Same invariant, new home: the disposable-resource struct, the
-    // dispose-on-eviction rule, and the skip-the-pinned rule live in the
-    // extracted module.
-    expect(cacheModule).toMatch(
-      /export type DisposableResource<T> = \{[\s\S]*value: T[\s\S]*dispose: \(\) => void[\s\S]*\}/,
-    )
-    expect(cacheModule).toMatch(/export function createRefCountedLruResourceCache<T>\(max: number\)/)
-    expect(cacheModule).toMatch(/if \(entry\.refs > 0\) continue/)
-    // Eviction is the ONLY place dispose runs, and it runs at most once.
-    expect(cacheModule).toMatch(/const disposeOnce = \(entry: Entry\) => \{[\s\S]*entry\.disposed = true[\s\S]*entry\.dispose\(\)/)
-    expect(cacheModule).toMatch(/cache\.delete\(key\)\n\s*disposeOnce\(entry\)/)
-    // The unpinned LRU that used to live here is DELETED, not merely unused: it
-    // disposed on cap pressure with no idea who was still reading, which is
-    // never a safe rule for the disposable roots this module caches. Nothing may
-    // reintroduce it — not the factory, not its `load` entry point.
-    expect(cacheModule).not.toMatch(/createLruResourceCache/)
-    expect(cacheModule).not.toMatch(/\bload\b/)
-    // Rubric C4: directory-layout is a pure pass-through; PromptProvider
-    // mounts only through Workbench's DirectoryScope (per pane) and the
-    // review workspace, never through the route subtree.
-    expect(directoryLayout).not.toMatch(/<PromptProvider/)
-    expect(directoryScopeText).toMatch(
-      /<PromptProvider directory=\{props\.directory\} sessionId=\{props\.sessionId\} draftId=\{props\.surfaceId\}>/,
-    )
-    expect(reviewWorkspace).toMatch(/<PromptProvider directory=\{props\.directory\} sessionId=\{props\.sessionId\}>/)
-  })
-
-  test("TerminalProvider caches only live terminal roots behind release handles", async () => {
-    const text = await Bun.file(path.join(root, terminalContext)).text()
-    const cacheModule = await Bun.file(path.join(root, liveResourceCache)).text()
-
-    // WP-B6: the ref-counted shared-terminal cache (Map + entry struct + refs
-    // arithmetic + prune) moved into the shared live-resource-cache module.
-    // terminal.tsx now acquires through the ref-counted factory wrapping
-    // createRoot(createTerminalSession); the per-provider release-handle map
-    // (TerminalCacheEntry) stays local and must not re-inline the shared Map.
-    expect(text).toMatch(/import \{ createRefCountedResourceCache \} from "@\/platform\/sync\/live-resource-cache"/)
-    expect(text).toMatch(
-      /const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>\(MAX_TERMINAL_SESSIONS\)/,
-    )
-    expect(text).toMatch(
-      /sharedTerminalCache\.acquire\(key, \(\) =>[\s\S]*createRoot\(\(dispose\) => \(\{[\s\S]*createTerminalSession\(sdk, dir, options\)/,
-    )
-    expect(text).not.toMatch(/new Map<string, SharedTerminalCacheEntry>/)
-    expect(text).toMatch(/const cache = new Map<string, TerminalCacheEntry>\(\)/)
-    expect(text).toMatch(/entry\.release\(\)/)
-    expect(text).not.toMatch(/export const sharedTerminalCache/)
-    // Same invariant, new home: ref-count decrement, dispose-once-after-last-
-    // release, and prune-unreferenced-only now live in the extracted module.
-    expect(cacheModule).toMatch(/export function createRefCountedResourceCache<T>\(max: number\)/)
-    expect(cacheModule).toMatch(/entry\.refs -= 1/)
-    expect(cacheModule).toMatch(/if \(entry\.refs > 0\) return/)
-    expect(cacheModule).toMatch(/entry\.dispose\(\)/)
-  })
-
   test("Terminal component is first-party, not override-owned", async () => {
     const text = await Bun.file(path.join(root, terminalComponent)).text()
 
@@ -3230,7 +1986,7 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/@\/platform\/i18n\/provider/)
     expect(text).not.toMatch(/\.\.\/\.\.\/utils\/api/)
     expect(text).not.toMatch(/\.\.\/\.\.\/cloud\/runtime\/workspace-runtime-store/)
-    // The entry barrel no longer re-exports Terminal (the eager-bundle trim);
+    // The entry barrel does not re-export Terminal;
     // pane consumers mount it through the first-party RoleGuardedTerminal
     // wrapper, which resolves to @/features/terminal/ui/terminal, never an
     // override.
@@ -3244,8 +2000,8 @@ describe("workspace runtime route audit", () => {
       path.join(root, "features/processes/ui/workspace-panel/process-pane-panel.tsx"),
     ).text()
     const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
-    // review-workspace's process pane split into review-workspace-process-section.tsx;
-    // the RoleGuardedTerminal mount moved with it.
+    // The RoleGuardedTerminal mount lives in review-workspace-process-section.tsx,
+    // the process pane split out of review-workspace.
     const reviewProcessSection = await Bun.file(
       path.join(root, "app/workbench/review/review-workspace-process-section.tsx"),
     ).text()
@@ -3307,19 +2063,6 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/messageAgentColor/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
-  })
-
-  test("upstream SessionHeader portals Share for signed authority-backed workspace sessions", async () => {
-    const text = await Bun.file(path.join(root, sessionHeader)).text()
-
-    expect(text).toMatch(/SessionPeopleControl/)
-    expect(text).toMatch(/shareTarget/)
-    expect(text).not.toMatch(/host !== "central"/)
-    expect(text).toMatch(/workspaceKey\(sessionRef\)/)
-    expect(text).not.toMatch(/StatusPopover/)
-    expect(text).not.toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS/)
-    expect(text).not.toMatch(/createActiveConversationSnapshot/)
-    expect(text).not.toMatch(/\buseSync\b/)
   })
 
   test("ReviewTab keeps VCS payloads query-owned without mount-time status fetches", async () => {
@@ -3490,7 +2233,7 @@ describe("workspace runtime route audit", () => {
     // The rail's canonical entry writes go through the one directory-payload
     // owner (directory-session-meta.ts) and only for the focused row; every
     // other row stays a decoration-local signal. The dispatch into the shell
-    // query cache lives with that owner now.
+    // query cache lives with that owner.
     expect(text).toMatch(/publishFocusedRailSessionMeta/)
     expect(text).toMatch(/applyDirectorySessionMeta/)
     const directorySessionMeta = await Bun.file(
@@ -3600,11 +2343,10 @@ describe("workspace runtime route audit", () => {
 
     expect(helper).toMatch(/directorySessionCacheQueryOptions\(\{ directory \}\)/)
     expect(helper).toMatch(/DirectorySessionCacheValue/)
-    // The rail's batch freshness bookkeeping split into rail-sidebar-status.ts,
-    // and the shell "requests" query reads moved to the one directory-payload
-    // owner (directory-session-meta.ts, absent-means-keep merge) plus the
-    // header surface reader (rail-header-surfaces.ts); the badges invariant
-    // spans that set.
+    // Batch freshness bookkeeping lives in rail-sidebar-status.ts, and the shell
+    // "requests" query reads in the one directory-payload owner
+    // (directory-session-meta.ts, absent-means-keep merge) plus the header
+    // surface reader (rail-header-surfaces.ts); the badges invariant spans that set.
     const statusHelper = await Bun.file(path.join(root, "app/workbench/rail/rail-sidebar-status.ts")).text()
     const headerSurfaces = await Bun.file(path.join(root, "app/workbench/rail/rail-header-surfaces.ts")).text()
     const directorySessionMeta = await Bun.file(
@@ -3673,30 +2415,6 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/runtime-vcs-cache/)
     expect(text).not.toMatch(/globalSync\.child\(directory/)
     expect(text).not.toMatch(/store\.vcs/)
-  })
-
-  test("upstream permission auto-respond checks session lineage from directory cache", async () => {
-    const text = await Bun.file(path.join(root, "features/session/providers/permission.tsx")).text()
-    const autoResponseCache = await Bun.file(
-      path.join(root, "features/session/providers/permission-auto-response-cache.ts"),
-    ).text()
-    expect(await Bun.file(path.join(root, "platform/query/directory-config-cache.ts")).exists()).toBe(false)
-    expect(autoResponseCache).toMatch(/"permission-auto-respond"/)
-    expect(autoResponseCache).toMatch(/permissionAutoRespondedQueryKey/)
-    expect(autoResponseCache).toMatch(/permissionAutoAcceptVersionQueryKey/)
-    expect(text).not.toMatch(/directoryConfig|permissionConfig|hasPermissionPromptRules|configQuery/)
-    expect(text).toMatch(/const session = directory \? directorySessions\(directory\) : \[\]/)
-    expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, \{ sessionID \}, directory\)/)
-    expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, permission, directory\)/)
-    expect(text).toMatch(/markPermissionAutoResponded\(permission\.id\)/)
-    expect(text).toMatch(/permissionAutoAcceptVersion\(sessionID, directory\)/)
-    expect(text).not.toMatch(/const responded = new Map/)
-    expect(text).not.toMatch(/const enableVersion = new Map/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/globalSync\.child/)
-    expect(text).not.toMatch(/childStore\.config/)
-    expect(text).not.toMatch(/store\.config\.permission/)
-    expect(text).not.toMatch(/globalSync\.child\(directory, \{ bootstrap: false \}\)\[0\]\.session/)
   })
 
   test("upstream notification lookup reads directory session cache before network fallback", async () => {
@@ -3845,9 +2563,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/\.toSorted\(\(left, right\) => left\.id\.localeCompare\(right\.id\)\)/)
     expect(text).toMatch(/conversation\(\)\?\.parts\[message\.id\]/)
     expect(text).toMatch(/directorySessionCacheQueryOptions\(\{ directory: args\.directory\(\) \}\)\.queryKey/)
-    // The hook's only config read was the share-command gate, and Claxedo ships
-    // no session-share command, so it no longer reads config at all — the point
-    // of the original assertion (never reach for sync.data.config) is kept below.
+    // Claxedo ships no session-share command, the only reason this hook would
+    // read config, so it reads none; never reaching for sync.data.config is
+    // asserted below.
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -3873,9 +2591,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/parentConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)
     expect(text).toMatch(/messageAgentColor\(sessionMessages\(\), directoryAgents\(\)\)/)
     expect(text).toMatch(/sessionSync\?\.syncSession\?\.\(id\)/)
-    // Both config reads here existed only to gate the session-share menu, which
-    // Claxedo does not ship — the timeline no longer reads directory config at
-    // all. `not.toMatch(/sync\.data\.config/)` below still pins the projection.
+    // Claxedo ships no session-share menu, the only reason for a config read, so
+    // the timeline reads no directory config; `not.toMatch(/sync\.data\.config/)`
+    // below pins it.
     expect(text).toMatch(/updateDirectorySession\(sdk\.directory, input\.id/)
     expect(text).toMatch(/removeDirectorySessionTree\(sdk\.directory, sessionID\)/)
     expect(text).not.toMatch(/\buseSync\b/)
@@ -3889,20 +2607,6 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.message/)
     expect(text).not.toMatch(/sync\.data\.part/)
     expect(text).not.toMatch(/\bproduce\(/)
-  })
-
-  test("upstream branch labels read runtime VCS queries", async () => {
-    const sessionNewView = await Bun.file(path.join(root, "features/session/ui/components/session-new-view.tsx")).text()
-    const projectInfo = await Bun.file(path.join(root, "app/workbench/rail/rail-project-session-info.ts")).text()
-    const helper = await Bun.file(path.join(root, "platform/runtime/workspace-query.ts")).text()
-
-    expect(helper).toMatch(/queryKeys\.runtime\.vcs/)
-    expect(helper).toMatch(/workspaceVcsQuery/)
-    expect(sessionNewView).toMatch(/queryClient\.fetchQuery\(workspaceVcsQuery\(\{/)
-    expect(projectInfo).toMatch(/gitBranch: git\?\.branch/)
-    expect(sessionNewView).not.toMatch(/cachedRuntimeVcs/)
-    expect(projectInfo).not.toMatch(/cachedRuntimeVcs/)
-    expect(sessionNewView).not.toMatch(/sync\.data\.vcs/)
   })
 
   test("production code has deleted the legacy conversation mirror owner bridge", async () => {

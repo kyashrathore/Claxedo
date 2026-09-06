@@ -1,8 +1,8 @@
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, isAgentRuntimeEventType, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
 import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@claxedo/helpers/guards"
 import { eventDirectoryForLiveSession } from "./live-session"
 import type { LiveSession } from "../global-sdk-event-fetch"
-import { asRecord } from "@/lib/record"
 
 type EventDirectory = string
 

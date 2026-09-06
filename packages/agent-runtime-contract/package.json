@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-runtime-contract",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events",
   "license": "MIT",
@@ -20,6 +20,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
@@ -44,5 +46,8 @@
     "@tsconfig/bun": "1.0.9",
     "@types/bun": "1.3.13",
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*"
   }
 }

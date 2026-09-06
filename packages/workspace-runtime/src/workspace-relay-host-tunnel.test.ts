@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { generateKeyPair } from "jose"
-import {
-  createWorkspaceRelayBun,
-  createWorkspaceRelayDirectory,
-  mintHostTunnelToken,
-  mintRuntimeAccessToken,
-  verifyRelayHostToken,
-  type WorkspaceRelayDirectory,
-} from "@claxedo/workspace-relay"
+import { createWorkspaceRelayDirectory, mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken, type WorkspaceRelayDirectory } from "@claxedo/workspace-relay"
+import { createWorkspaceRelayBun } from "@claxedo/workspace-relay/bun"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelEvent } from "./workspace-relay-host-tunnel"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
 import { fetchUrl } from "./test-support/fetch-double"
@@ -629,10 +623,8 @@ describe("workspace relay host tunnel client", () => {
     }))
     const upstream = sockets[1]
 
-    // 200 keystroke-sized frames while the upstream is still CONNECTING. The
-    // frame-count bound alone used to close the channel at 65 and deliver
-    // nothing: a startup race between a pipelining client and the upstream
-    // socket, which is a client-visible defect on its own terms.
+    // 200 keystroke-sized frames while the upstream is still CONNECTING; a
+    // frame-count bound alone closed the channel at 65 and delivered nothing.
     const frames = Array.from({ length: 200 }, (_, index) => `key-${index}`)
     for (const frame of frames) {
       socket.receive(JSON.stringify({
@@ -1047,8 +1039,8 @@ describe("workspace relay host tunnel client", () => {
     })
 
     await flush()
-    // The reconnect timer invokes connect() directly — a synchronous throw
-    // here used to escape as an uncaught exception and crash the process.
+    // The reconnect timer invokes connect() directly; a synchronous throw here
+    // must not escape as an uncaught exception.
     expect(() => timers.fireNext()).not.toThrow()
     await flush()
 
@@ -1623,28 +1615,17 @@ describe("workspace relay host tunnel region hint", () => {
 })
 
 /**
- * U8 Unit 1 characterization — the two registration behaviours Unit 6 changes.
- *
- * The host tunnel is the canonical transport and the split deliberately does
- * not rewrite it. But Unit 6 makes exactly two changes here, and both are the
- * kind that a reader would assume already work. Recording today's behaviour is
- * what turns "we changed it" into something a diff can show.
- *
- * These tests assert the CURRENT contract and are expected to be inverted by
- * Unit 6, not deleted.
+ * Pins current registration behaviour that inventory-driven registration is
+ * expected to invert; update these assertions with that change, do not delete
+ * them.
  */
-describe("U8 registration characterization", () => {
+describe("host tunnel registration characterization", () => {
   test("reconnect still upgrades with the ORIGINAL workspace set, not the updated one", async () => {
-    // The bug this records: `tunnelUrl()` reads `options.workspaceIds`, which is
-    // fixed at construction, while `updateRegistration` only stores a frame to
-    // replay after `onopen`. So a machine that removed a workspace reconnects
-    // with the removed workspace still in its upgrade URL and token scope, and
-    // it reappears in Relay presence for the window between upgrade and the
-    // replayed update frame.
-    //
-    // U8-R20 makes the set accepted by `updateRegistration` authoritative for
-    // the next reconnect URL. When that lands, the first assertion below flips
-    // to `["ws_a"]` and the comment above becomes the changelog entry.
+    // `tunnelUrl()` reads `options.workspaceIds`, fixed at construction, while
+    // `updateRegistration` only stores a frame to replay after `onopen`, so a
+    // removed workspace reappears in relay presence between the reconnect
+    // upgrade and the replayed update. Once the accepted set drives the
+    // reconnect URL, the first assertion below flips to `["ws_a"]`.
     const sockets: FakeWebSocket[] = []
     const timers = fakeTimers()
     const tunnel = startWorkspaceRelayHostTunnel({
@@ -1678,8 +1659,7 @@ describe("U8 registration characterization", () => {
     const reconnectUrl = new URL(sockets.at(-1)!.url.replace(/^ws/, "http"))
     expect(reconnectUrl.searchParams.getAll("workspaceId")).toEqual(["ws_a", "ws_b"])
 
-    // The replayed update frame does carry the correct set — which is why the
-    // window is transient rather than permanent, and why it is easy to miss.
+    // The replayed update frame carries the correct set, so the window is transient.
     sockets.at(-1)!.open()
     const replayed = await waitForSent(sockets.at(-1)!, "host.registration.update")
     expect((replayed as unknown as { workspace_ids: string[] }).workspace_ids).toEqual(["ws_a"])
@@ -1688,12 +1668,9 @@ describe("U8 registration characterization", () => {
   })
 
   test("an empty workspace set is currently rejected", async () => {
-    // A machine with zero local workspaces is a VALID enrollment under U8-R17:
-    // "Ready — waiting for first workspace". Today `updateRegistration` throws
-    // on an empty set, so the valid-empty case has no representation in the
-    // transport at all. Unit 6 must either accept it here or keep the tunnel
-    // closed until the first workspace appears — but it cannot silently send
-    // an empty registration through this path.
+    // A machine with zero local workspaces is a valid enrollment, but the
+    // transport has no representation for it: a caller must keep the tunnel
+    // closed until the first workspace appears rather than send an empty set.
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({
       relayUrl: "http://relay.invalid",
@@ -1717,9 +1694,8 @@ describe("U8 registration characterization", () => {
   })
 
   test("deduplicates a repeated workspace id in one registration", async () => {
-    // Unit 6 submits a reconciled full set on every inventory change. Recording
-    // that the transport already normalizes duplicates means the reconciler does
-    // not have to, and a future change that removes this would be visible.
+    // The transport normalizes duplicates, so a reconciler submitting a full
+    // set does not have to.
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({
       relayUrl: "http://relay.invalid",

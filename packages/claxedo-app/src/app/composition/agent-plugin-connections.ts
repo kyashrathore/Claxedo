@@ -39,6 +39,12 @@ async function failure(response: Response, label: string) {
   return new Error(`${label} (${response.status}${detail ? `: ${detail}` : ""})`)
 }
 
+/**
+ * The marketplace's connection port over the single integrations request the
+ * app has (`createIntegrationsRequest`): signed desktop → named account
+ * operations, browser / unsigned → authenticated fetch. Both answer with a
+ * `Response`, so the port never has to know which path served it.
+ */
 export function agentPluginConnectionPort(input: {
   request: ConnectionsRequest
   open: AgentPluginConnectionPort["open"]

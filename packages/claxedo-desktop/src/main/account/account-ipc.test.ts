@@ -73,7 +73,7 @@ async function flushStreamSettlement() {
 }
 
 describe("registered channels", () => {
-  test("exposes exactly one channel per operation, plus the account protocol", () => {
+  test("exposes one channel per operation and nothing else, plus the account protocol", () => {
     // Both directions. An extra channel is the failure that matters, and only
     // an equality check finds it.
     const h = harness()
@@ -273,13 +273,9 @@ describe("operation channels", () => {
 
 describe("operations whose result is a credential", () => {
   /**
-   * The real body of `POST /api/auth/cli/exchange`.
-   *
-   * Copied from `mintCliSessionTokens` in
-   * `@claxedo/server-core/platform/auth/cli-session-token`, spellings included,
-   * because the point of the fixture is that these are the bytes that used to
-   * cross the IPC boundary. A made-up `{ token: "x" }` would exercise the
-   * handler without demonstrating what was at stake.
+   * The real body shape of `POST /api/auth/cli/exchange` (`mintCliSessionTokens`
+   * in `@claxedo/server-core/platform/auth/cli-session-token`), so the value
+   * scan below checks the actual field names.
    */
   const CLI_TOKEN_PAIR = {
     access_token: "cli_at_live_1",
@@ -291,13 +287,9 @@ describe("operations whose result is a credential", () => {
   const cliChannel = hostedOperationChannel("account.cliExchange")
 
   /**
-   * A service that mints, and RECORDS that it was asked to.
-   *
-   * The recording is deliberately rebuilt here rather than left to `harness`.
-   * Overriding `run` replaces the harness's own recorder, so an earlier draft
-   * of this block asserted `h.calls` was empty against a service that could
-   * never have filled it — the assertion passed with the withhold reverted,
-   * which is precisely the false green these tests exist to refuse.
+   * A service that mints and records the call. Overriding `run` replaces the
+   * harness's own recorder, so `h.calls` stays empty whatever happens; assert
+   * on `ran`.
    */
   const minting = () => {
     const ran: Array<{ name: string; input: unknown }> = []
@@ -327,10 +319,6 @@ describe("operations whose result is a credential", () => {
   })
 
   test("invoking it never resolves the token pair", async () => {
-    // The defect, stated as the renderer sees it: `account.cliExchange`
-    // answers with a long-lived CLI access + refresh pair, and the generated
-    // operation loop returned that body verbatim over IPC — breaking U8-R7,
-    // which `signIn` in this same file was already written to uphold.
     const h = minting()
 
     let resolved: unknown = "<never settled>"
@@ -342,7 +330,7 @@ describe("operations whose result is a credential", () => {
     }
 
     expect(rejected).toBeInstanceOf(Error)
-    // Scanned as a VALUE, not asserted by shape: whatever crossed the boundary
+    // Scanned as a value, not asserted by shape: whatever crossed the boundary
     // must not contain the credential anywhere in it.
     const crossed = JSON.stringify(resolved === "<never settled>" ? null : (resolved ?? null))
     expect(crossed).not.toContain("cli_at_live_1")
@@ -387,20 +375,11 @@ describe("operations whose result is a credential", () => {
 
 describe("operations whose parameters are a machine identity", () => {
   /**
-   * The enrollment handshake, as an ATTACKER's renderer would send it.
-   *
-   * `host.enrollCurrentMachine` declares `publicKey` and `signature` as body
-   * fields filled from the caller, and `routes/hosted/host-enrollment.ts`
-   * stores whatever public key it is handed. So a renderer holding this channel
-   * generates a keypair, takes a nonce from `host.enrollmentNonce` — also on a
-   * channel — signs it, and enrolls a machine whose private half Electron main
-   * has never seen, on main's bearer and under the owner's account. Sending the
-   * REAL `hostId` is worse still: `enrollForUser` patches the existing row,
-   * overwriting `public_key` and clearing `revoked_at`, so the same call takes
-   * over an honest machine and un-revokes one the user revoked.
-   *
-   * These are real field names and a real key shape, not `{ x: 1 }`: the point
-   * of the fixture is that this is the message that used to reach the route.
+   * The enrollment handshake as an attacker's renderer would send it: its own
+   * public key and signature under a real `hostId`, which `enrollForUser` would
+   * patch onto the existing row (overwriting `public_key`, clearing
+   * `revoked_at`). Real field names, so the value scan below checks what the
+   * route reads.
    */
   const ATTACKER_ENROLLMENT = {
     hostId: "host_stolen_1",
@@ -416,7 +395,7 @@ describe("operations whose parameters are a machine identity", () => {
     "host.enrollmentHeartbeat",
   ] as const
 
-  /** A service that ANSWERS, and records what it was asked. See `minting`. */
+  /** A service that answers and records the call; same recorder caveat as `minting`. */
   const enrolling = () => {
     const ran: Array<{ name: string; input: unknown }> = []
     const h = harness({
@@ -449,7 +428,7 @@ describe("operations whose parameters are a machine identity", () => {
 
     expect(rejected).toBeInstanceOf(Error)
     expect(h.ran).toEqual([])
-    // Scanned as a VALUE rather than asserted by shape: no part of the
+    // Scanned as a value rather than asserted by shape: no part of the
     // attacker's key material may appear in anything the service was handed.
     expect(JSON.stringify(h.ran)).not.toContain("ATTACKER_PUBLIC_X")
     expect(JSON.stringify(h.ran)).not.toContain("ATTACKER_SIGNATURE")

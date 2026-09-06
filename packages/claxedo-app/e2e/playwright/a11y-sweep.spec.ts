@@ -1,67 +1,5 @@
-/**
- * SPEC: Accessibility (axe-core) sweep across the highest-traffic surfaces
- *
- * PURPOSE — per the a11y audit (health 4/10, test spec-grade 2/10): "There is zero
- * automated accessibility testing
- * (no axe-core/jest-axe anywhere, only one Escape-key assertion across 28 Playwright
- * specs), so nothing currently prevents regressions as many external contributors touch
- * this code." This spec is that first automated net: it runs axe-core
- * (`@axe-core/playwright`) over the app's five highest-traffic surfaces and fails on any
- * NEW violation rule that isn't already tracked in the shrink-only baseline
- * (`a11y-baseline.json`). It does not attempt to fix any of the app's real,
- * already-documented a11y gaps (prompt-input popover ARIA, terminal screen-reader
- * support, keyboard-only resize, etc.); it only prevents the currently-known violation set from growing, and forces
- * the baseline itself to shrink the moment a tracked violation is actually fixed.
- *
- * STATE MODEL — `a11y-baseline.json` maps each surface name below to the sorted, unique
- * list of axe violation rule `id`s currently present on that surface (seeded directly
- * from a real run against this tree — see the "Refactor steps" entry this spec
- * implements: "Add @axe-core/playwright as a devDependency, and inject an axe scan into
- * 3-4 of the highest-traffic existing e2e specs... asserting zero critical/serious
- * violations"; this spec generalizes that to a shrink-only baseline covering ALL
- * violations, not just critical/serious, since even a "minor" tracked violation must not
- * silently gain a sibling). The comparison is symmetric-difference, not a max-count
- * ratchet (matching `src/architecture/debt-ratchet.test.ts`'s exact-pin style, but
- * keyed by rule id instead of a raw count): any rule id axe reports on a surface that
- * ISN'T already in that surface's baseline array is a new regression and fails the test;
- * any rule id still listed in the baseline that axe no longer reports on that surface is
- * stale debt that must be pruned from `a11y-baseline.json` before the test can pass
- * again — this is what keeps the baseline honest (it can shrink as violations get fixed,
- * it can never silently grow).
- *
- * ANATOMY — five surfaces, one `test()` each:
- *   1. `home` — `/` with zero projects registered (the real reachable empty state per
- *      `core-boot-deep-links-home.spec.ts`'s ANATOMY finding — `pages/home.tsx` itself
- *      is permanently `display:none` and unreachable, so this scans the actual
- *      `RailWorkbenchCanvas` empty-state fallback a user sees).
- *   2. `session-page` — a real, settled session pane after one oracle-proven turn
- *      (`[data-testid="session-content"]`), the single most-visited surface in the app.
- *   3. `settings-dialog` — `DialogSettings` open on top of the session page (opened the
- *      same way `core-settings-auth.spec.ts` does — the sidebar "Settings" button).
- *   4. `command-palette` — the command palette (`[data-testid="command-palette"]`) open
- *      on top of the session page, opened the same way
- *      `core-panes-split-tabs.spec.ts`'s behavior-17 test does (mod+shift+P).
- *   5. `prompt-input-focused` — the session page with the composer's contenteditable
- *      `role="textbox"` actually focused (not just present), since the a11y appendix's
- *      top "[critical]" finding is specifically about this widget's popover ARIA once a
- *      user is typing.
- *
- * BEHAVIORS —
- *   1. Each surface's axe violation rule-id set exactly equals its `a11y-baseline.json`
- *      entry — no new rule ids, no stale/already-fixed rule ids left behind.
- *
- * INVARIANTS — none beyond the shared oracle/turn-settling invariants in
- *   `e2e/INVARIANTS.md`, reused unchanged for the `session-page`/`settings-dialog`/
- *   `command-palette`/`prompt-input-focused` surfaces' underlying turn.
- *
- * HARNESS NOTES — every scenario uses the default `opencode` harness from
- *   `installMockRuntime`; harness selection itself is out of scope.
- *
- * OUT OF SCOPE — fixing any individual violation (tracked separately per the appendix's
- *   own refactor steps); a11y at the mobile viewport (`mobile-smoke.spec.ts` covers
- *   viewport-narrow behavior, not accessibility scanning); keyboard-operability/focus-
- *   trap behavioral tests beyond what axe's static analysis catches (those need
- *   dedicated interaction tests per the appendix's "Tests" gaps list, not this spec).
+/** Real axe scans of five mounted surfaces, with a shrinking set of known rule IDs.
+ * This rule-level baseline cannot detect additional nodes failing an already tracked rule.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { AxeBuilder } from "@axe-core/playwright"
@@ -214,7 +152,8 @@ function describeNew(ids: string[], results: AxeResults) {
 async function assertMatchesBaseline(page: Page, surface: string) {
   const results = await new AxeBuilder({ page }).analyze()
   const current = [...new Set(results.violations.map((violation) => violation.id))].sort()
-  const expected = baseline[surface] ?? []
+  expect(baseline, `missing accessibility baseline for ${surface}`).toHaveProperty(surface)
+  const expected = baseline[surface]
   const newIds = current.filter((id) => !expected.includes(id))
   const staleIds = expected.filter((id) => !current.includes(id))
 
@@ -236,14 +175,11 @@ async function assertMatchesBaseline(page: Page, surface: string) {
   ).toEqual([])
 }
 
-// `@core`, not `@happy`: this is a Tier M spec (every route mocked via
-// `installMockRuntime`, zero real network — e2e/INVARIANTS.md rule 6) and its whole
-// purpose is to be a CI regression net. It was tagged `@happy`, a dead
-// pre-consolidation lane that no npm script and no CI job selects, so the sweep never
-// once ran in the lane it was written to guard. See the suite lane registry in
-// `playwright.config.ts`.
+// `@core`, not `@happy`: every route is mocked through `installMockRuntime` with no
+// real network, so this is a Tier M spec, and `@core` is the lane CI selects.
+// `playwright.config.ts` holds the lane registry; a tag outside it runs nothing, silently.
 test.describe("a11y sweep @core", () => {
-  test("home (zero-project empty state) has no new axe violations — behavior 1", async ({ page }) => {
+  test("home (zero-project empty state) has no new axe violations", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await mockEmptyBootstrap(page)
     await seedNoProjects(page)
@@ -254,24 +190,24 @@ test.describe("a11y sweep @core", () => {
     await assertMatchesBaseline(page, "home")
   })
 
-  test("session page (settled turn) has no new axe violations — behavior 1", async ({ page }) => {
+  test("session page (settled turn) has no new axe violations", async ({ page }) => {
     await settleOneTurn(page, DIR)
     await assertMatchesBaseline(page, "session-page")
   })
 
-  test("settings dialog (open) has no new axe violations — behavior 1", async ({ page }) => {
+  test("settings dialog (open) has no new axe violations", async ({ page }) => {
     await settleOneTurn(page, DIR)
     await openSettings(page)
     await assertMatchesBaseline(page, "settings-dialog")
   })
 
-  test("command palette (open) has no new axe violations — behavior 1", async ({ page }) => {
+  test("command palette (open) has no new axe violations", async ({ page }) => {
     await settleOneTurn(page, DIR)
     await openCommandPalette(page)
     await assertMatchesBaseline(page, "command-palette")
   })
 
-  test("prompt input (focused) has no new axe violations — behavior 1", async ({ page }) => {
+  test("prompt input (focused) has no new axe violations", async ({ page }) => {
     await settleOneTurn(page, DIR)
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await input.click()

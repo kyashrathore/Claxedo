@@ -1,7 +1,7 @@
 /**
  * Derives the git remote a local folder would be cloned from, so setup can
  * satisfy the cloud path from the folder the user already picked instead of
- * asking a second question (plan 2026-07-31-001 §4.2).
+ * asking a second question.
  *
  * Local-only by construction: it reads the caller's filesystem, which is
  * meaningful on the machine the desktop app runs on and meaningless through

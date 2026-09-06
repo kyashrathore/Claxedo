@@ -68,11 +68,7 @@ export function extractPromptFromParts(parts: Part[], opts?: { directory?: strin
     const prefix = directory.endsWith("/") ? directory : directory + "/"
     if (path.startsWith(prefix)) return path.slice(prefix.length)
 
-    if (path.startsWith(directory)) {
-      const next = path.slice(directory.length)
-      if (next.startsWith("/")) return next.slice(1)
-      return next
-    }
+    if (path === directory) return ""
 
     return path
   }

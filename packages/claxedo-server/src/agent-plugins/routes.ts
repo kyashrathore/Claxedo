@@ -29,12 +29,13 @@ import {
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { asRecord, isRecord, readJsonRecord, stringField } from "../platform/json/index"
+import { asRecord, readJsonRecord, stringField } from "../platform/json/index"
 import { signedOrError } from "../workspace/route-support"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
 import { createRequestTiming } from "./request-timing"
 import type { HostedMcpClientMetadata } from "./mcp/client-metadata"
 import type { AgentPluginSelfRuntimeReader } from "./runtime/self-runtime"
+import { isRecord } from "@claxedo/helpers/guards"
 
 type SignedSources = (auth: SignedControlPlaneAuth) => CatalogSourceProvider
 

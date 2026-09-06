@@ -62,12 +62,12 @@ export function createTokenService(deps: TokenDeps) {
 
   async function refreshOnce(integrationId: string, providerId: string, refreshToken: string): Promise<void> {
     const impl = deps.registry.byId(integrationId)?.impl
-    if (!impl?.refresh) {
+    if (!impl?.auth?.refresh) {
       await deps.credentials.setStatus(providerId, "error", "refresh_failed")
       throw new ConnectionTokenError(409, "connection_not_available", "error")
     }
     try {
-      const tokens = await impl.refresh(refreshToken)
+      const tokens = await impl.auth.refresh(refreshToken)
       await deps.credentials.put({
         providerId,
         kind: "oauth_token",

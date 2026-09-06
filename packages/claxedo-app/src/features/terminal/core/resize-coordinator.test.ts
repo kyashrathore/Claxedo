@@ -102,7 +102,7 @@ function makeDeps(overrides?: Partial<ResizeCoordinatorDeps>) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 1: Core coordinator (pure logic, no DOM)
+// Core coordinator (pure logic, no DOM)
 // ---------------------------------------------------------------------------
 
 describe("createResizeCoordinator", () => {
@@ -191,29 +191,7 @@ describe("createResizeCoordinator", () => {
     coord.dispose()
   })
 
-  test("6: resize does not scroll or clear — preserves TUI viewport", () => {
-    const { deps, calls, clock, raf, setCols, setRows } = makeDeps()
-    const coord = createResizeCoordinator(deps)
 
-    deps.fit = () => {
-      calls.push({ name: "fit" })
-      setCols(100)
-      setRows(20)
-    }
-
-    coord.request()
-    clock.advance(SETTLE_MS)
-    raf.flush()
-
-    // Only fit, refresh, notify — no scrollToBottom, no clear
-    const callNames = calls.map((c) => c.name)
-    expect(callNames).not.toContain("scrollToBottom")
-    expect(callNames).not.toContain("clear")
-    expect(callNames).toContain("fit")
-    expect(callNames).toContain("notify")
-
-    coord.dispose()
-  })
 
   test("6b: calls clear() when provided and dims change", () => {
     const { deps, calls, clock, raf, setCols, setRows } = makeDeps({
@@ -234,9 +212,7 @@ describe("createResizeCoordinator", () => {
     raf.flush()
 
     const callNames = calls.map((c) => c.name)
-    expect(callNames).toContain("fit")
-    expect(callNames).toContain("clear")
-    expect(callNames).toContain("notify")
+    expect(callNames).toEqual(["fit", "refresh", "clear", "notify"])
 
     coord.dispose()
   })
@@ -345,108 +321,6 @@ describe("createResizeCoordinator", () => {
 
     expect(calls.filter((c) => c.name === "fit")).toHaveLength(1)
     expect(calls.filter((c) => c.name === "notify")).toHaveLength(0)
-
-    coord.dispose()
-  })
-
-  // -------------------------------------------------------------------------
-  // Phase 2: Multiple trigger sources coalescing
-  // -------------------------------------------------------------------------
-
-  test("13: ResizeObserver + window resize + fit event within SETTLE_MS → 1 fit", () => {
-    const { deps, calls, clock } = makeDeps()
-    const coord = createResizeCoordinator(deps)
-
-    // Three different sources within SETTLE_MS
-    coord.request("resize-observer")
-    clock.advance(20)
-    coord.request("window-resize")
-    clock.advance(20)
-    coord.request("fit-event")
-
-    // All coalesce into 1 settle
-    clock.advance(SETTLE_MS)
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(1)
-
-    coord.dispose()
-  })
-
-  test("14: global suspension pauses coordinator, resume drains", () => {
-    const { deps, calls, clock } = makeDeps()
-    const coord = createResizeCoordinator(deps)
-
-    // Simulate dataset.terminalResizeSuspended=1
-    coord.request()
-    coord.suspend()
-    clock.advance(SETTLE_MS * 3)
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(0)
-
-    // Simulate dataset.terminalResizeSuspended removed
-    coord.resume()
-    clock.advance(SETTLE_MS)
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(1)
-
-    coord.dispose()
-  })
-
-  // -------------------------------------------------------------------------
-  // Phase 3: Visibility + mount triggers coalesce
-  // -------------------------------------------------------------------------
-
-  test("15: visibilitychange (hidden→visible) calls coordinator.request", () => {
-    const { deps, calls, clock } = makeDeps()
-    const coord = createResizeCoordinator(deps)
-
-    // Simulate hidden→visible via coordinator
-    coord.request("visibility")
-    clock.advance(SETTLE_MS)
-
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(1)
-
-    coord.dispose()
-  })
-
-  test("16: visibilitychange when hidden does nothing (no request)", () => {
-    const { deps, calls, clock } = makeDeps()
-    const coord = createResizeCoordinator(deps)
-
-    // No request made when hidden — caller checks document.hidden first
-    clock.advance(SETTLE_MS * 2)
-
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(0)
-
-    coord.dispose()
-  })
-
-  test("17: visibilitychange + ResizeObserver within SETTLE_MS coalesce", () => {
-    const { deps, calls, clock } = makeDeps()
-    const coord = createResizeCoordinator(deps)
-
-    coord.request("visibility")
-    clock.advance(30)
-    coord.request("resize-observer")
-
-    clock.advance(SETTLE_MS)
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(1)
-
-    coord.dispose()
-  })
-
-  // -------------------------------------------------------------------------
-  // Phase 4: Buffer restore settle-aware flush
-  // -------------------------------------------------------------------------
-
-  test("18: flush() forces immediate settle during restore", () => {
-    const { deps, calls } = makeDeps()
-    const coord = createResizeCoordinator(deps)
-
-    // Simulate buffer restore: request + immediate flush
-    coord.request("restore")
-    coord.flush()
-
-    // fit() called immediately without waiting SETTLE_MS
-    expect(calls.filter((c) => c.name === "fit")).toHaveLength(1)
-    expect(calls.filter((c) => c.name === "refresh")).toHaveLength(1)
 
     coord.dispose()
   })

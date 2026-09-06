@@ -58,10 +58,9 @@ function ToastTitle(props: ToastTitleProps & ComponentProps<"div">) {
 /**
  * Heading line, optionally led by a monochrome severity glyph.
  *
- * Severity used to live in the card's border colour. A single red hairline on an
- * otherwise neutral card reads as decoration rather than meaning, and it was the
- * only chroma on screen; a glyph beside the title says the same thing in the
- * surface's own ink.
+ * A border-colour hairline reads as decoration rather than meaning, and it
+ * would be the only chroma on an otherwise neutral card; a monochrome glyph
+ * beside the title carries the same signal in the surface's own ink.
  */
 function ToastTitleRow(props: { icon?: IconProps["name"]; children: JSX.Element }) {
   return (

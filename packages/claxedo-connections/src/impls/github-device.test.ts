@@ -35,16 +35,16 @@ describe("github device flow declaration", () => {
   test("without a client id the integration offers the pasted key only", () => {
     const decl = githubIntegration().decl
     expect(decl.methods).toEqual(["key"])
-    expect(githubIntegration().impl.device).toBeUndefined()
-    expect(githubIntegration().impl.refresh).toBeUndefined()
+    expect(githubIntegration().impl.auth!.device).toBeUndefined()
+    expect(githubIntegration().impl.auth!.refresh).toBeUndefined()
   })
 
   test("a configured client id adds oauth ahead of the key fallback", () => {
     const integration = githubIntegration({ clientId: "Iv1.client" })
     expect(integration.decl.methods).toEqual(["oauth", "key"])
-    expect(integration.impl.device).toBeDefined()
-    expect(integration.impl.refresh).toBeDefined()
-    expect(integration.impl.verify).toBeDefined()
+    expect(integration.impl.auth!.device).toBeDefined()
+    expect(integration.impl.auth!.refresh).toBeDefined()
+    expect(integration.impl.auth!.verify).toBeDefined()
   })
 
   test("a blank client id reads as unconfigured, not as an empty-string client", () => {
@@ -57,7 +57,7 @@ describe("github device grant", () => {
     const { calls, fetchImpl } = recording([{ body: GRANT }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl, now: () => 1_000 })
 
-    const grant = await integration.impl.device!.start()
+    const grant = await integration.impl.auth!.device!.start()
 
     expect(grant).toEqual({
       deviceCode: "device-abc",
@@ -74,7 +74,7 @@ describe("github device grant", () => {
 
   test("start never sends the client secret — the device leg is public", async () => {
     const { calls, fetchImpl } = recording([{ body: GRANT }])
-    await githubIntegration({ clientId: "Iv1.client", clientSecret: "shh", fetchImpl }).impl.device!.start()
+    await githubIntegration({ clientId: "Iv1.client", clientSecret: "shh", fetchImpl }).impl.auth!.device!.start()
 
     expect(calls[0].body.get("client_secret")).toBeNull()
   })
@@ -83,7 +83,7 @@ describe("github device grant", () => {
     const { fetchImpl } = recording([{ body: { error: "device_flow_disabled" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    await expect(integration.impl.device!.start()).rejects.toThrow("github_device_start_failed")
+    await expect(integration.impl.auth!.device!.start()).rejects.toThrow("github_device_start_failed")
   })
 })
 
@@ -92,7 +92,7 @@ describe("github device poll", () => {
     const { calls, fetchImpl } = recording([{ body: { error: "authorization_pending" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({ status: "pending" })
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({ status: "pending" })
     expect(calls[0].url).toBe("https://github.com/login/oauth/access_token")
     expect(calls[0].body.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code")
     expect(calls[0].body.get("device_code")).toBe("device-abc")
@@ -103,7 +103,7 @@ describe("github device poll", () => {
     const { fetchImpl } = recording([{ body: { error: "slow_down", interval: 10 } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({ status: "pending", intervalMs: 10_000 })
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({ status: "pending", intervalMs: 10_000 })
   })
 
   test("an authorized grant returns the access and refresh tokens with an absolute expiry", async () => {
@@ -118,7 +118,7 @@ describe("github device poll", () => {
     }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl, now: () => 5_000 })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({
       status: "complete",
       tokens: { accessToken: "ghu_access", refreshToken: "ghr_refresh", expiresAt: 5_000 + 28_800_000 },
     })
@@ -128,7 +128,7 @@ describe("github device poll", () => {
     const { fetchImpl } = recording([{ body: { access_token: "ghu_access", token_type: "bearer" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({
       status: "complete",
       tokens: { accessToken: "ghu_access" },
     })
@@ -138,21 +138,21 @@ describe("github device poll", () => {
     const { fetchImpl } = recording([{ body: { error: "access_denied" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({ status: "denied" })
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({ status: "denied" })
   })
 
   test("a lapsed device code is expired so the caller restarts instead of polling on", async () => {
     const { fetchImpl } = recording([{ body: { error: "expired_token" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({ status: "expired" })
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({ status: "expired" })
   })
 
   test("a misconfigured app is terminal — polling it forever would never succeed", async () => {
     for (const error of ["device_flow_disabled", "incorrect_client_credentials", "unsupported_grant_type", "incorrect_device_code"]) {
       const { fetchImpl } = recording([{ body: { error } }])
       const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
-      const result = await integration.impl.device!.poll("device-abc")
+      const result = await integration.impl.auth!.device!.poll("device-abc")
       expect(result.status === "denied" || result.status === "expired").toBe(true)
     }
   })
@@ -161,7 +161,7 @@ describe("github device poll", () => {
     const { fetchImpl } = recording([{ status: 502, body: {} }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect(await integration.impl.device!.poll("device-abc")).toEqual({ status: "pending" })
+    expect(await integration.impl.auth!.device!.poll("device-abc")).toEqual({ status: "pending" })
   })
 })
 
@@ -177,7 +177,7 @@ describe("github token refresh", () => {
       now: () => 9_000,
     })
 
-    expect(await integration.impl.refresh!("ghr_old")).toEqual({
+    expect(await integration.impl.auth!.refresh!("ghr_old")).toEqual({
       accessToken: "ghu_new",
       refreshToken: "ghr_new",
       expiresAt: 9_000 + 28_800_000,
@@ -191,7 +191,7 @@ describe("github token refresh", () => {
     const { calls, fetchImpl } = recording([{ body: { access_token: "ghu_new", refresh_token: "ghr_new" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    expect((await integration.impl.refresh!("ghr_old")).accessToken).toBe("ghu_new")
+    expect((await integration.impl.auth!.refresh!("ghr_old")).accessToken).toBe("ghu_new")
     expect(calls[0].body.get("client_secret")).toBeNull()
   })
 
@@ -199,7 +199,7 @@ describe("github token refresh", () => {
     const { fetchImpl } = recording([{ body: { error: "bad_refresh_token" } }])
     const integration = githubIntegration({ clientId: "Iv1.client", fetchImpl })
 
-    await expect(integration.impl.refresh!("ghr_old")).rejects.toBeInstanceOf(DefinitiveRefreshError)
+    await expect(integration.impl.auth!.refresh!("ghr_old")).rejects.toBeInstanceOf(DefinitiveRefreshError)
   })
 
   test("github being unreachable is transient, so the next call retries", async () => {
@@ -210,7 +210,7 @@ describe("github token refresh", () => {
       }) as unknown as typeof fetch,
     })
 
-    const thrown = await integration.impl.refresh!("ghr_old").catch((error: unknown) => error)
+    const thrown = await integration.impl.auth!.refresh!("ghr_old").catch((error: unknown) => error)
     expect(thrown).toBeInstanceOf(Error)
     expect(thrown).not.toBeInstanceOf(DefinitiveRefreshError)
   })

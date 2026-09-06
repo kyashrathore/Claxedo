@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { CDPSession, Page } from "playwright-core"
 import {
@@ -13,6 +13,12 @@ import {
 
 beforeAll(() => GlobalRegistrator.register())
 afterAll(() => GlobalRegistrator.unregister())
+afterEach(() => {
+  const rec = (window as unknown as { __perfFrames?: Recorder }).__perfFrames
+  rec?.stop()
+  performance.clearMarks("frame-sampler-reset-test")
+  document.body.replaceChildren()
+})
 
 type Recorder = {
   frames: Array<{ startTime: number; duration: number }>

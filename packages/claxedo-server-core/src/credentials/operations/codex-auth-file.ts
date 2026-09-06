@@ -79,7 +79,12 @@ export function codexAuthFileCandidates(homeDir = home()) {
 export function mirrorCodexTokens(next: RenewedCodexTokens, homeDir = home()): string[] {
   const written: string[] = []
   for (const file of codexAuthFileCandidates(homeDir)) {
-    const current = readJsonFile(file)
+    let current: JsonRecord | undefined
+    try {
+      current = parseJsonRecord(fs.readFileSync(file, "utf8"))
+    } catch {
+      current = undefined
+    }
     if (!current) continue
     const tokens = jsonRecord(current.tokens)
     if (jsonString(tokens?.account_id) !== next.accountId) continue
@@ -117,14 +122,6 @@ function writeAtomic(file: string, contents: string) {
   } catch (err) {
     fs.rmSync(temporary, { force: true })
     throw err
-  }
-}
-
-function readJsonFile(file: string): JsonRecord | undefined {
-  try {
-    return parseJsonRecord(fs.readFileSync(file, "utf8"))
-  } catch {
-    return undefined
   }
 }
 

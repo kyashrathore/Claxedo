@@ -1,3 +1,4 @@
+import { escapeRegExp } from "@claxedo/helpers/string"
 import type { fixtureFor, sessionRenderer } from "../fixtures"
 import { sessionPath } from "../state"
 import {
@@ -7,7 +8,6 @@ import {
   waitForAnimationFrame,
   settleForVideo,
   waitForUsefulScreen,
-  escapeRegExp,
 } from "./common"
 import type { Page } from "playwright-core"
 

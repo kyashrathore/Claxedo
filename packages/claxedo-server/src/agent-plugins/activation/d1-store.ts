@@ -17,8 +17,9 @@ import {
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
-import { isRecord, stringField } from "../../platform/json/index"
+import { stringField } from "../../platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
+import { isRecord } from "@claxedo/helpers/guards"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"

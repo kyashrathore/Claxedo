@@ -20,49 +20,6 @@ type VariantInput = {
   configured: string | undefined
 }
 
-export type ProviderModel = { id: string; name?: string }
-export type ProviderItem = {
-  id: string
-  models?: Record<string, ProviderModel>
-}
-export type ProviderModelInfo = ProviderModel & { provider: ProviderItem }
-export type SubmitModelInfo = { id: string; name?: string; provider: { id: string } }
-
-// Keep the familiar first-party providers near the top without granting any
-// provider a fallback/default role. Unknown providers retain their input order.
-const preferredProviderOrder = ["anthropic", "openai", "google"]
-
-export function firstConnectedModel(input: {
-  connected: ProviderItem[]
-  defaults: Record<string, string | undefined>
-}): ModelKey | undefined {
-  const model = firstConnectedModelInfo(input)
-  if (!model) return undefined
-  return { providerID: model.provider.id, modelID: model.id }
-}
-
-export function firstConnectedModelInfo(input: {
-  connected: ProviderItem[]
-  defaults: Record<string, string | undefined>
-}): ProviderModelInfo | undefined {
-  return sortedConnectedProviders(input.connected)
-    .map((provider) => {
-      const configured = input.defaults[provider.id]
-      const models = Object.values(provider.models ?? {})
-      const model = configured && provider.models?.[configured]
-        ? provider.models[configured]
-        : models[0]
-      if (!model) return undefined
-      return { ...model, provider }
-    })
-    .find((model): model is ProviderModelInfo => !!model)
-}
-
-/** Explicit selection only — never substitute provider defaults or placeholders. */
-export function selectRuntimeModel(_input: unknown, selected: SubmitModelInfo | undefined): SubmitModelInfo | undefined {
-  return selected
-}
-
 /**
  * The provider whose full detail must load before a saved selection can be
  * validated — or `undefined` when nothing is missing.
@@ -96,17 +53,6 @@ export function firstValidSelectionModel(input: {
     if (input.valid(model)) return model
   }
   return undefined
-}
-
-function sortedConnectedProviders(providers: ProviderItem[]) {
-  return providers.slice().sort((left, right) =>
-    providerRank(left.id) - providerRank(right.id)
-  )
-}
-
-function providerRank(id: string) {
-  const index = preferredProviderOrder.indexOf(id)
-  return index === -1 ? preferredProviderOrder.length : index
 }
 
 export function getConfiguredAgentVariant(input: { agent: Agent | undefined; model: Model | undefined }) {
@@ -183,7 +129,7 @@ export function promptModelState(input: PromptModelStateInput) {
   }
 }
 
-export type PromptModelFallbackInput = {
+export type PromptModelResolutionInput = {
   harnessMode: boolean
   existingSession?: boolean
   hasCurrentModel: boolean
@@ -203,7 +149,7 @@ export type PromptModelResolutionState =
   | { type: "needs-selection" }
   | { type: "uninitialized" }
 
-export function promptModelResolutionState(input: PromptModelFallbackInput): PromptModelResolutionState {
+export function promptModelResolutionState(input: PromptModelResolutionInput): PromptModelResolutionState {
   if (input.harnessMode) return { type: "harness-owned" }
   if (input.hasCurrentModel) return { type: "resolved" }
   if (input.hasSelection && (input.providerLoading || input.restoreLoading || input.selectionCatalogPending)) {
@@ -215,12 +161,4 @@ export function promptModelResolutionState(input: PromptModelFallbackInput): Pro
   if (input.hasSelection) return { type: "invalid-selected" }
   if (input.existingSession) return { type: "needs-selection" }
   return { type: "uninitialized" }
-}
-
-/** @deprecated Use {@link promptModelResolutionState}. Fallback models are never applied. */
-export const promptModelFallbackState = promptModelResolutionState
-
-/** @deprecated Composer model selection never falls back to catalog defaults. */
-export function shouldUsePromptFallbackModel(_input: PromptModelFallbackInput) {
-  return false
 }

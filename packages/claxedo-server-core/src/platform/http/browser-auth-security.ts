@@ -3,21 +3,18 @@ import type { Context, MiddlewareHandler } from "hono"
 import type { BrowserAuthDescriptor } from "../auth/authentication"
 
 /**
- * Request headers a browser on a DIFFERENT origin may send to this server.
+ * Request headers a browser on a different origin may send to this server.
  *
  * A cross-origin request carrying a header that is not named here is never
- * sent: the browser asks first, compares the answer, and drops the request
- * itself. Nothing reaches this server, so nothing is logged, and the server
- * looks perfectly healthy while the app is dead — which is exactly how the
- * omission below survived. The hosted app showed "Workspace host is offline"
- * with a fully working relay, a live host tunnel, and a laptop answering every
- * request that was actually delivered to it.
+ * sent: the browser checks first, compares the answer, and drops the request
+ * itself before it reaches this server. Nothing is logged, so a missing entry
+ * here looks like a healthy server and a broken client rather than a CORS
+ * misconfiguration.
  *
- * `last-event-id` is what made that concrete. `EventSource`, and every SSE
- * client that resumes a stream, sends it on RECONNECT — so the first
- * connection succeeded and every recovery after it was refused by the browser.
- * A list that omits it does not break the event stream, it breaks the event
- * stream's ability to heal, which is far harder to see.
+ * `last-event-id` is the sharpest case: `EventSource`, and any SSE client
+ * that resumes a stream, sends it only on reconnect. Omitting it does not
+ * break the initial connection — it breaks the stream's ability to recover
+ * after one, which is much harder to notice.
  *
  * Add a header here when a browser client starts sending it. The pin in
  * `browser-auth-security.test.ts` states what the client sends today.
@@ -25,7 +22,7 @@ import type { BrowserAuthDescriptor } from "../auth/authentication"
 export const BROWSER_ALLOWED_REQUEST_HEADERS = [
   "content-type",
   "last-event-id",
-  // W3C Trace Context. Named here BEFORE anything sends it: a trace header the
+  // W3C Trace Context. Named here before anything sends it: a trace header the
   // preflight omits does not degrade tracing, it kills the request carrying it,
   // so instrumentation would take the product down. `@claxedo/telemetry`
   // explains the propagation these two carry.
@@ -54,7 +51,7 @@ function stampCredentialedCors(context: Context, origin: string) {
   context.header("access-control-allow-credentials", "true")
   // Lets the app read this response's resource timing (connect, TLS,
   // request, response, protocol) instead of a single masked duration — the
-  // evidence that says WHERE a slow or hung request spent its time.
+  // evidence that shows where a slow or hung request spent its time.
   context.header("timing-allow-origin", origin)
   appendVaryOrigin(context)
 }

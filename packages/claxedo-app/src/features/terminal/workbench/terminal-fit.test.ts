@@ -22,21 +22,21 @@ describe("terminal-fit", () => {
     }
   })
 
-  test("requestTerminalFitOnPaneChange dispatches immediately, then again after the delay", async () => {
-    let received = 0
-    const listener = () => {
-      received += 1
+  test("requestTerminalFitOnPaneChange dispatches now and schedules the deferred fit", () => {
+    const events: Event[] = []
+    const scheduled: Array<{ run: () => void; delay: number | undefined }> = []
+    const target = {
+      dispatchEvent: (event: Event) => { events.push(event); return true },
+      setTimeout: ((run: () => void, delay?: number) => {
+        scheduled.push({ run, delay })
+        return 1
+      }) as Window["setTimeout"],
     }
-    window.addEventListener(FIT_EVENT, listener)
-
-    try {
-      requestTerminalFitOnPaneChange({ delay: 5 })
-      expect(received).toBe(1)
-
-      await new Promise((resolve) => setTimeout(resolve, 30))
-      expect(received).toBe(2)
-    } finally {
-      window.removeEventListener(FIT_EVENT, listener)
-    }
+    requestTerminalFitOnPaneChange({ delay: 5, target })
+    expect(events.map((event) => event.type)).toEqual([FIT_EVENT])
+    expect(scheduled).toHaveLength(1)
+    expect(scheduled[0].delay).toBe(5)
+    scheduled[0].run()
+    expect(events.map((event) => event.type)).toEqual([FIT_EVENT, FIT_EVENT])
   })
 })

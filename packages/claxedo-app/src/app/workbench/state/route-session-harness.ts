@@ -1,7 +1,7 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { pickHarness } from "../../../features/session/harness/profile"
 import { isHarnessSelection } from "@/platform/identity/harness-selection"
 import type { HarnessRef } from "@/platform/identity/session-ref"
-import { asRecord } from "@/lib/record"
 
 export function routeSessionHarness(input: unknown): HarnessRef | undefined {
   const row = asRecord(input)

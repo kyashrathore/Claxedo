@@ -82,7 +82,8 @@ export type ProductBoundaryBreach = {
  * Bare package specifiers are CHECKED but never followed — `better-auth`
  * is a boundary breach wherever it appears, and its own internals are not this
  * package's graph. Type-only imports are excluded because the bundler erases
- * them; an emitted-artifact gate (Unit 12) covers what source scanning cannot.
+ * them; `local-bundle-identity.ts` checks the emitted `dist-local` for what
+ * source scanning cannot see.
  */
 export function shortestForbiddenImportChain(options: {
   appRoot: string

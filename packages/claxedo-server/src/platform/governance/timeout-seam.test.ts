@@ -1,11 +1,9 @@
 /**
- * The generic timeout helpers have ONE home: `platform/runtime/timeout.ts`.
+ * The generic timeout helpers have one home: `platform/runtime/timeout.ts`.
  *
- * `withTimeout` and `ControlPlaneRequestTimeoutError` are transport-generic.
- * A retired authority adapter used to re-export them for its own callers'
- * convenience; that back door is gone with the adapter. This test keeps the
- * rule: no adapter-scoped `timeout` import path may reappear, so a future adapter
- * cannot silently reintroduce a second home for the generic symbols.
+ * `withTimeout` and `ControlPlaneRequestTimeoutError` are transport-generic, so
+ * no authority adapter may re-export them from its own `timeout` module —
+ * doing so would give the generic symbols a second, adapter-scoped home.
  */
 
 import fs from "node:fs"

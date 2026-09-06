@@ -1,14 +1,11 @@
 import { fileURLToPath } from "node:url"
 import path from "node:path"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 type SmokeResult = {
   name: string
   ok: boolean
   message: string
-}
-
-function clean(value: string | undefined) {
-  return value?.trim() || undefined
 }
 
 function route(base: string, pathname: string) {
@@ -17,10 +14,10 @@ function route(base: string, pathname: string) {
 }
 
 function runtimeBase(env: NodeJS.ProcessEnv) {
-  const direct = clean(env.CLAXEDO_RUNTIME_URL)
+  const direct = trimToUndefined(env.CLAXEDO_RUNTIME_URL)
   if (direct) return direct
-  const relay = clean(env.CLAXEDO_RELAY_URL)
-  const workspace = clean(env.CLAXEDO_SMOKE_WORKSPACE_ID)
+  const relay = trimToUndefined(env.CLAXEDO_RELAY_URL)
+  const workspace = trimToUndefined(env.CLAXEDO_SMOKE_WORKSPACE_ID)
   if (relay && workspace) return route(relay, `/workspaces/${encodeURIComponent(workspace)}`)
   throw new Error("Set CLAXEDO_RUNTIME_URL or CLAXEDO_RELAY_URL plus CLAXEDO_SMOKE_WORKSPACE_ID")
 }
@@ -79,8 +76,8 @@ async function ptyProbe(base: string, headers: Record<string, string> | undefine
 
 export async function runtimeSmoke(env: NodeJS.ProcessEnv = process.env) {
   const base = runtimeBase(env)
-  const token = clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN)
-    ?? clean(env.CLAXEDO_SMOKE_RUNTIME_ACCESS_TOKEN)
+  const token = trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN)
+    ?? trimToUndefined(env.CLAXEDO_SMOKE_RUNTIME_ACCESS_TOKEN)
   const headers = token ? { authorization: `Bearer ${token}` } : undefined
   return [
     await probe("runtime.health", route(base, "/api/wr/health"), { headers }),

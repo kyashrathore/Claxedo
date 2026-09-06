@@ -367,47 +367,28 @@ if (access === "cloud") {
   injectRuntime(effectiveWorkspace, cloudRuntime.url)
 }
 
-// --- REAL control-plane auth + authority (2026-08-06 plan Phase 3) ---------
+// --- Real control-plane auth + authority ----------------------------------
 //
-// Owner decision 1 (docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md):
-// "no only thing that needs to be stubbed is harness called ai endpoint
-// nothing else stubbed." Before this change, this fixture declared local
-// `authConfig`/`verifier` consts right here that accepted ANY bearer string
-// and echoed it back as the verified subject — zero cryptographic
-// verification — and `services.authority` (assigned by mutation further
-// down, now deleted) was a hand-rolled object literal that answered every
-// call with a canned `workspaceRow`, never touching a real store. Neither
-// exercised the code every real deployment runs.
+// The only thing this fixture stubs is the harness-called AI endpoint. Auth
+// and authority are the code every real deployment runs:
+//   - `startLocalJwksIssuer()` (`./e2e-local-jwks-issuer.mjs`) serves a real
+//     HTTP JWKS endpoint backed by a real EdDSA keypair.
+//   - `controlPlaneVerifier` below does `jose.jwtVerify()` against it — the
+//     same shape `tokenVerifier`/`betterAuthAdapter` use in production
+//     (`platform/auth/auth.ts`), pointed at this issuer.
+//   - `customVerifierAuthAdapter` wires the two into `services.auth`; it is
+//     the first-class adapter a self-hoster uses for Auth0/Ory/any OIDC issuer.
+//   - `createSqliteWorkspaceAuthority()` is the same self-host
+//     `WorkspaceAuthority` `createDefaultLocalControlPlaneServices` composes
+//     without `CLAXEDO_WORKSPACE_AUTHORITY_URL`, backed by a SQLite file under
+//     this fixture's own `CLAXEDO_DATA_DIR`, so it is deleted with the
+//     `mkdtemp` root.
 //
-// What replaces them:
-//   - `startLocalJwksIssuer()` (`./e2e-local-jwks-issuer.mjs`) runs a REAL
-//     HTTP JWKS endpoint backed by a REAL EdDSA keypair (`node:crypto`
-//     webcrypto via `jose`, already a dependency — no new one added).
-//   - `controlPlaneVerifier` below does REAL `jose.jwtVerify()` against that
-//     endpoint — the same shape `tokenVerifier`/`betterAuthAdapter`
-//     use in production (`platform/auth/auth.ts`), just pointed at this
-//     issuer instead of the identity provider.
-//   - `customVerifierAuthAdapter` (`platform/auth/auth.ts:179`) wires the two
-//     into `services.auth` — this is a documented, first-class adapter,
-//     not a test-only seam; it is how a self-hoster plugs in Auth0/Ory/any
-//     OIDC-shaped issuer instead of the identity provider.
-//   - `createSqliteWorkspaceAuthority()` (`authority/adapters/sqlite/
-//     workspace-authority.ts`) is the SAME self-host `WorkspaceAuthority`
-//     `deployments/self-hosted-node/app.ts:948`'s `createDefaultLocalControlPlaneServices`
-//     composes when no `CLAXEDO_WORKSPACE_AUTHORITY_URL` (the authority) is set —
-//     full role/session/sharing model, mirrored 1:1 from the hosted backend,
-//     backed by a real SQLite file under this fixture's own
-//     `CLAXEDO_DATA_DIR` (set above, so it lands in the same hermetic
-//     `mkdtemp` root as `createSqliteCentralStore` and is deleted with it).
-//
-// LIMIT, stated verbatim per the plan: a local JWKS issuer is a SUPPORTED
-// SELF-HOST MODE, not a stub — same middleware, same real crypto — but
-// provider-specific behaviour (its actual token shape, its JWKS rotation
-// cadence, its session-claim vocabulary) is covered only by the nightly
-// credentialed `live-*` lane (`e2e/INVARIANTS.md`), which runs against a real
-// the identity provider test tenant. Nothing here proves this fixture matches the identity provider's wire
-// format — only that the CONTROL PLANE's own auth/authority code, exercised
-// with a real signed token, behaves correctly.
+// Limit: a local JWKS issuer is a supported self-host mode, not a stub, but
+// provider-specific behaviour (token shape, JWKS rotation cadence,
+// session-claim vocabulary) is covered only by the nightly credentialed
+// `live-*` lane. This proves the control plane's own auth/authority code
+// against a real signed token, not the identity provider's wire format.
 const jwksIssuer = await startLocalJwksIssuer()
 const controlPlaneAudience = "claxedo-e2e-relay-fixture"
 const controlPlaneJwks = createRemoteJWKSet(new URL(jwksIssuer.jwksUrl))
@@ -458,17 +439,9 @@ if (scriptedModelUrl) {
     browserAuth.user.subject,
   )
 }
-// A real, signed control-plane bearer token for that identity — printed in
-// this fixture's stdout JSON (below) as `controlPlaneToken` so a spec can
-// authenticate as `browserSubject` for real. NOTE: as of 2026-08-06 neither
-// `real-cloud-relay.spec.ts` nor `live-user-hosted-relay.spec.ts` read this
-// field yet — both still seed `window.__CLAXEDO_TEST_AUTH_TOKEN__` with a
-// hardcoded literal (`real-cloud-relay.spec.ts:176`,
-// `live-user-hosted-relay.spec.ts:536`), which `controlPlaneVerifier` above
-// now REJECTS with 401 `invalid_bearer_token` (`platform/auth/auth.ts:335`)
-// because it is not a JWT. That is a real, load-bearing gap this fixture
-// alone cannot close — see the Phase 3 completion note at the bottom of this
-// file for the exact fix required in those spec files.
+// Printed in the stdout JSON as `controlPlaneToken`. A spec must send this as
+// its bearer: a hardcoded non-JWT literal is rejected by `controlPlaneVerifier`
+// with 401 `invalid_bearer_token`.
 const browserControlPlaneToken = await jwksIssuer.mint({
   subject: browserSubject,
   audience: controlPlaneAudience,
@@ -678,14 +651,9 @@ const services = createControlPlaneServices(
       jwksUrl: jwksIssuer.jwksUrl,
       verifier: controlPlaneVerifier,
     }),
-    // Real self-host `WorkspaceAuthority`, injected at the composition site —
-    // exactly the seam `authority/services.ts:220` documents ("the authority is
-    // always injected by the composition site; the generic services never
-    // construct one") and the same object `deployments/self-hosted-node/app.ts:948`
-    // composes for production self-host. Replaces the hand-rolled
-    // `services.authority = {...}` object literal that used to sit after
-    // `createSelfHostedApp(services)` below — every method there returned a canned value
-    // and touched no store.
+    // The real self-host `WorkspaceAuthority`, injected here the way the
+    // production self-host composition injects its own — never assigned onto
+    // `services` by mutation after `createSelfHostedApp`.
     authority,
     relay: {
       relayUrl: publicRelayUrl,
@@ -974,14 +942,10 @@ built.app.get("/__fixture/mint", async (c) => {
   )
   return c.json({ role, runtimeAccessToken: token, relayUrl, tokenExpiresAt: now + tokenTtlSeconds * 1_000 })
 })
-// Phase 3 checklist item: "'Shared/teammate' for user-hosted is a second
-// identity minted by the same issuer" (2026-08-06 plan). Mints a REAL
-// control-plane JWT for a distinct `sub` — the sqlite authority's `user()`
-// upserts a distinct row per `token_identifier`
-// (`workspace-authority.ts:205-213`) — and grants it a real share on this
-// fixture's workspace via `grantWorkspaceShare` (same file, :555-579), the
-// exact method the product's own "invite a teammate" flow calls. This is a
-// same-mechanism variant of the owner identity above, not new plumbing.
+// A teammate identity: a second control-plane JWT from the same issuer for a
+// distinct `sub` (the sqlite authority upserts one row per `token_identifier`),
+// granted a share on this fixture's workspace through `grantWorkspaceShare`,
+// the method the product's own invite flow calls.
 built.app.get("/__fixture/authority-identity", async (c) => {
   const subject = c.req.query("subject")
   const role = c.req.query("role")

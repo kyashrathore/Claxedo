@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { principalHasSignedAccess } from "./identity-provider"
+import { principalDataScope, principalHasSignedAccess } from "./identity-provider"
 
 describe("principalHasSignedAccess", () => {
   test("allows local, signed, and org-member principals", () => {
@@ -11,6 +11,11 @@ describe("principalHasSignedAccess", () => {
       orgId: "org_1",
       memberships: []
     })).toBe(true)
+  })
+
+  test("keeps credential-backed access without inventing a durable subject", () => {
+    expect(principalHasSignedAccess({ kind: "signed-unresolved" })).toBe(true)
+    expect(principalDataScope({ kind: "signed-unresolved" })).toBeNull()
   })
 
   test("blocks anonymous principals", () => {

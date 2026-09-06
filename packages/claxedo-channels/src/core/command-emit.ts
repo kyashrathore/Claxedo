@@ -448,9 +448,9 @@ export function createChannelCore(input: {
       if (!approvals) return { ok: false, message: "Approval bridge is not configured" }
       // The decision's threadKey (set by the transport from the thread the
       // button was clicked in) rides all the way through to `decide` and
-      // `resolveToken`, which is what makes their thread checks real. Dropping
-      // it here — as this used to — left those guards comparing against
-      // undefined, so a press from any thread resolved any pending prompt.
+      // `resolveToken`, which is what makes their thread checks real. Drop it
+      // here and those guards compare against undefined, letting a press from
+      // any thread resolve any pending prompt.
       if (decision.callId) return approvals.decide({ ...decision, callId: decision.callId })
       if (!decision.token) return { ok: false, message: "Approval response is missing a prompt token." }
       const resolved = await approvals.resolveToken({

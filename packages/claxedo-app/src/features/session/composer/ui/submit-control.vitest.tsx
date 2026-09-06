@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { createSignal, type Accessor } from "solid-js"
 import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
 
 vi.mock("@opencode-ai/ui/tooltip", () => ({
@@ -19,18 +20,18 @@ const block = (reason: SubmitBlock["reason"], copy: string): SubmitBlock => ({
 
 function renderControl(input: {
   block?: SubmitBlock | null
-  booting?: boolean
+  booting?: boolean | Accessor<boolean>
   onChooseModel?: () => void
 }) {
   const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
   const view = render(() => (
-    <form onSubmit={submit}>
+    <DockShellForm onSubmit={submit}>
       <PromptSubmitControl
         stage={() => undefined}
         busy={() => false}
         onCancel={() => {}}
         onRetry={() => undefined}
-        booting={() => input.booting ?? false}
+        booting={() => typeof input.booting === "function" ? input.booting() : input.booting ?? false}
         working={() => false}
         blank={() => false}
         tip={() => "Send"}
@@ -45,23 +46,18 @@ function renderControl(input: {
         stopLabel="Stop"
         readOnlyLabel="Read-only"
       />
-    </form>
+    </DockShellForm>
   ))
   return { ...view, submit }
 }
 
 describe("PromptSubmitControl", () => {
-  test("submits through the shared dock form", () => {
-    const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
-    const view = render(() => (
-      <DockShellForm onSubmit={submit}>
-        <button type="submit">Send through dock</button>
-      </DockShellForm>
-    ))
+  test("submits the real control through the shared dock form", () => {
+    const view = renderControl({})
 
-    fireEvent.click(view.getByRole("button", { name: "Send through dock" }))
+    fireEvent.click(view.getByRole("button", { name: "Send" }))
 
-    expect(submit).toHaveBeenCalledOnce()
+    expect(view.submit).toHaveBeenCalledOnce()
   })
 
   test("opens the model picker directly when the missing-model block is actionable", () => {
@@ -104,10 +100,17 @@ describe("PromptSubmitControl", () => {
   })
 
   test("the spinner leaves and the arrow returns once boot completes", () => {
-    const view = renderControl({ booting: false })
-    const submit = view.getByRole("button", { name: "Send" })
+    const [booting, setBooting] = createSignal(true)
+    const view = renderControl({ booting })
+    const submit = view.getByRole("button", { name: "Starting" })
+    const spinner = () => submit.parentElement?.querySelector('[data-component="spinner"], svg.animate-spin, [class*="animate"]')
+    expect(spinner()).toBeTruthy()
 
+    setBooting(false)
+
+    expect(view.getByRole("button", { name: "Send" })).toBe(submit)
     expect(submit).not.toHaveAttribute("data-booting")
-    expect(view.queryByText("Starting")).toBeNull()
+    expect(spinner()).toBeNull()
+    expect(submit.querySelector('[data-icon="send"] use')).toHaveAttribute("href", "#claxedo-icon-send")
   })
 })

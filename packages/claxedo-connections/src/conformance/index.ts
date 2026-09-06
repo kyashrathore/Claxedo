@@ -6,8 +6,11 @@ export {
   CONNECTION_STORE_CONFORMANCE_SCOPE,
   CONNECTION_STORE_CONFORMANCE_VERSION,
   connectionStoreConformance,
+  connectionStoreCoreConformance,
+  connectionStorePartitionConformance,
   type ConnectionStoreConformanceCase,
   type ConnectionStoreConformanceFactory,
+  type ConnectionStoreCoreConformanceFactory,
 } from "./connection-store.js"
 export {
   CREDENTIAL_STORE_CONFORMANCE_SCOPE,

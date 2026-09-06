@@ -2383,23 +2383,21 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   /**
-   * The silent-drop family (W6.1).
-   *
-   * `socketFrame`/`socketPayload` returned `undefined` for anything that was not
-   * a string, ArrayBuffer, or Uint8Array, and every caller treats `undefined` as
-   * "nothing to forward" — so an unrecognised frame vanished with no throw and
+   * `socketFrame`/`socketPayload` return `undefined` for anything that is not a
+   * string, ArrayBuffer, or Uint8Array, and every caller treats `undefined` as
+   * "nothing to forward" — so an unrecognised frame vanishes with no throw and
    * no log. Two shapes hit that path:
    *
    *  - `Blob`, which is what Cloudflare makes the server-side WebSocket default
    *    at `compatibility_date >= 2026-03-17`. The only thing standing between
-   *    production and every binary frame disappearing was the pinned date in
+   *    production and every binary frame disappearing is the pinned date in
    *    wrangler.toml.
    *  - `DataView` (and non-Uint8Array typed arrays), which `socketPayload`
-   *    already handled but `socketFrame` did not — a real asymmetry today,
-   *    independent of the compatibility date.
+   *    handles but `socketFrame` does not — a real asymmetry, independent of
+   *    the compatibility date.
    *
-   * These assert bytes ARRIVE, so they fail against the pre-fix implementation
-   * rather than just exercising the new branch.
+   * These assert the bytes arrive, so they fail if either branch regresses to
+   * dropping the frame.
    */
   describe("binary frame shapes that used to be dropped silently", () => {
     const bytes = new Uint8Array([0, 1, 0x7f, 0x80, 0xfe, 0xff])
@@ -2553,11 +2551,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 })
 
 /**
- * W6.2 / W6b.2 — failure semantics on established connections.
- *
- * Each test here asserts an explicit CLIENT EXPERIENCE (a close code, a status,
- * a settled promise) rather than an internal state transition, because the
- * defect class being fixed is precisely "the client is left with no signal".
+ * Each test here asserts an explicit client-visible outcome (a close code, a
+ * status, a settled promise) rather than an internal state transition —
+ * leaving the client with no signal at all is the failure mode these guard
+ * against.
  */
 describe("workspace relay failure semantics", () => {
   async function userHostedChannel(input: Parameters<typeof roomHarness>[0] = {}) {
@@ -2583,9 +2580,9 @@ describe("workspace relay failure semantics", () => {
   }
 
   test("closes the client 1013 and tells the host when a host->client frame cannot be delivered", async () => {
-    // The unchecked send at the ws.frame handler. A browser socket that rejects
-    // sends used to be kept in `tunnel.channels` forever, with the host happily
-    // producing frames into it.
+    // A browser socket whose send() throws must be dropped from
+    // `tunnel.channels` immediately, or the host keeps producing frames into a
+    // channel that can never deliver them.
     class RejectingSocket extends FakeSocket {
       send(): void {
         throw new Error("socket is gone")
@@ -2753,15 +2750,12 @@ describe("workspace relay failure semantics", () => {
 })
 
 /**
- * W6b.2 — revocation under hibernation.
- *
- * On the hibernating path `admitUserHostedClient` installs NO watchers, because
- * `setInterval` does not survive DO eviction. That left the per-frame cached
- * check as the only enforcement, which never fires for an IDLE connection — so a
- * revoked token could hold a hibernated socket open indefinitely. DO alarms DO
- * survive hibernation, so they carry the periodic re-check.
- *
- * The per-frame check is retained; these tests assert the alarm is ADDITIVE.
+ * On the hibernating path `admitUserHostedClient` installs no watchers, because
+ * `setInterval` does not survive DO eviction. That leaves the per-frame cached
+ * check as the only enforcement, which never fires for an idle connection — so
+ * without the alarm a revoked token could hold a hibernated socket open
+ * indefinitely. DO alarms do survive hibernation, so they carry the periodic
+ * re-check; the per-frame check stays in place alongside it.
  */
 describe("workspace relay hibernated revocation alarm", () => {
   /**
@@ -2833,8 +2827,8 @@ describe("workspace relay hibernated revocation alarm", () => {
   })
 
   test("closes an IDLE hibernated connection whose token was revoked", async () => {
-    // THE W6b.2 positive control: no frames are ever sent on this socket, so the
-    // per-frame cached check cannot fire. Only the alarm can close it.
+    // No frames are ever sent on this socket, so the per-frame cached check
+    // cannot fire. Only the alarm can close it.
     let established = false
     const { harness, clientSocket, hostSocket, channelId } = await hibernatedClient({
       isRuntimeAccessTokenActive: () => established
@@ -2947,13 +2941,11 @@ describe("workspace relay hibernated revocation alarm", () => {
 })
 
 /**
- * W6b.3 — per-workspace Durable Object placement.
- *
- * A DO's location is fixed at FIRST CREATION and never migrates, so the hint
+ * A DO's location is fixed at first creation and never migrates, so the hint
  * chosen on the very first request is permanent for that workspace's whole life.
  * One deployment-wide constant therefore means every non-APAC user crosses an
- * ocean twice per frame forever. These assert the hint AT THE `idFromName` CALL
- * SITE, which is the only place the decision has any effect.
+ * ocean twice per frame forever. These assert the hint at the `idFromName` call
+ * site, which is the only place the decision has any effect.
  */
 describe("workspace relay Durable Object location hint", () => {
   async function routeWith(input: {

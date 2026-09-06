@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { lineCounts, metricCounts, walkProdSources, walkTestSources } from "../src/architecture/scanners"
+import { asAnyCastFindings, lineCounts, metricCounts, walkProdSources, walkTestSources } from "../src/architecture/scanners"
 import { orphanModules } from "../src/architecture/import-graph"
 import productionSetIntervalAllowlist from "../src/architecture/production-set-interval-allowlist.json"
 
@@ -10,10 +10,7 @@ const sizeBaselinePath = path.join(appRoot, "src/architecture/size-baseline.json
 const orphanBaselinePath = path.join(appRoot, "src/architecture/orphan-baseline.json")
 const counts = {
   ...metricCounts(walkProdSources(appRoot)),
-  asAnyCastsTest: walkTestSources(appRoot).reduce(
-    (count, file) => count + (file.text.match(/as any|as unknown as/g)?.length ?? 0),
-    0,
-  ),
+  asAnyCastsTest: asAnyCastFindings(walkTestSources(appRoot)).length,
   productionTimerAllowlistTimers: productionSetIntervalAllowlist.reduce((sum, entry) => sum + entry.count, 0),
 }
 

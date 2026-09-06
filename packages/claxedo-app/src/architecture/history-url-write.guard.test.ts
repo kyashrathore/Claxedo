@@ -13,7 +13,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 // meaningful only on an http(s) document, so they must be gated on
 // `urlRoutingEnabled()`.
 describe("history URL write guard", () => {
-  test("no prod source writes history state without the urlRoutingEnabled guard", () => {
+  test("only the canonical browser-history owner writes document history", () => {
     expect(unguardedHistoryUrlWrites(walkProdSources(appRoot))).toEqual([])
   })
 
@@ -37,7 +37,7 @@ describe("history URL write guard", () => {
     ])
   })
 
-  test("accepts a history write in a file that consults the guard", () => {
+  test("a predicate mention cannot exempt another writer", () => {
     const guarded = [
       "import { urlRoutingEnabled } from \"@/lib/runtime-mode\"",
       "function replaceSessionUrl(id: string) {",
@@ -46,6 +46,9 @@ describe("history URL write guard", () => {
       "}",
     ].join("\n")
 
-    expect(unguardedHistoryUrlWrites([{ path: "features/session/guarded.ts", text: guarded }])).toEqual([])
+    expect(unguardedHistoryUrlWrites([{ path: "features/session/guarded.ts", text: guarded }])).toEqual([
+      { file: "features/session/guarded.ts", line: 4, match: "history.replaceState(" },
+    ])
+    expect(unguardedHistoryUrlWrites([{ path: "lib/browser-history.ts", text: guarded }])).toEqual([])
   })
 })

@@ -8,32 +8,21 @@ import type { Miniflare } from "miniflare"
 import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
 
 /**
- * The REAL-workerd binary round-trip the plan requires before any
- * `compatibility_date` bump (W6.1).
+ * Real-workerd binary-frame round-trip; must pass before any
+ * `compatibility_date` bump.
  *
- * Every other test in this package drives hand-rolled socket doubles, which
- * hand the room whatever the test chose to hand it — so they cannot observe the
- * thing that actually breaks: what *workerd* delivers as `event.data` for a
- * binary frame changes with the compatibility date. This boots the real runtime
- * and asserts the decoders survive both shapes.
- *
- * MEASURED HERE (miniflare 4.20260722.0 / workerd 1.20260722.1, this file's own
- * assertions), and it CORRECTS the comment in wrangler.toml:
+ * Every other test in this package drives socket doubles, so none can observe
+ * what workerd delivers as `event.data` for a binary frame — and that changes
+ * with the compatibility date (miniflare 4.20260722.0 / workerd 1.20260722.1):
  *
  *   | delivery path                  | 2026-03-16  | 2026-03-17+ |
  *   | addEventListener("message")    | ArrayBuffer | Blob        |
  *   | webSocketMessage (hibernation) | ArrayBuffer | ArrayBuffer |
  *
- * The flip is real and lands exactly at 2026-03-17 — but ONLY on the
- * `addEventListener` path. The hibernation `webSocketMessage` path still
- * delivers an ArrayBuffer at every date tested, including 2026-07-22. The
- * wrangler.toml comment claims the hibernatable DO socket flips too; that is not
- * what the runtime does. This matters because production user-hosted channels
- * run the hibernation path, and the cloud client/upstream sockets run the
- * listener path — so the exposure was the CLOUD path, not the hibernating one.
- *
- * `compatibility_date` is deliberately NOT bumped by this change. This test is
- * the evidence that would let someone bump it later.
+ * Only the listener path flips. Production user-hosted channels run the
+ * hibernation path and cloud client/upstream sockets run the listener path, so
+ * the exposure is the cloud path. This boots the real runtime and asserts the
+ * decoders survive both shapes.
  */
 
 const COMPAT_BEFORE_FLIP = "2026-03-16"
@@ -171,9 +160,8 @@ describe("real workerd binary frame round-trip", () => {
   }, 180_000)
 
   test("decodes a Blob binary frame on the listener path after the flip", async () => {
-    // THE positive control for W6.1. Against pre-fix `socketFrame`/`socketPayload`
-    // this reports frameDropped/payloadDropped true — the silent drop, on real
-    // workerd, at the date Cloudflare will eventually force.
+    // Positive control: a decoder that ignores Blob reports
+    // frameDropped/payloadDropped true here.
     const report = await sendBinaryFrame({ compatibilityDate: COMPAT_AFTER_FLIP, mode: "listener" })
 
     expect(report.runtimeType).toBe("Blob")
@@ -195,11 +183,9 @@ describe("real workerd binary frame round-trip", () => {
   }, 180_000)
 
   test("hibernation delivery stays an ArrayBuffer across the flip", async () => {
-    // Pins the correction to the wrangler.toml comment. If a future workerd DOES
-    // flip the hibernation path to Blob, this test fails and the person reading
-    // it learns the exposure moved to the user-hosted channels — which is
-    // information the fix already covers, but the comment would then be wrong
-    // in the other direction.
+    // If a future workerd flips the hibernation path to Blob too, the exposure
+    // extends to the user-hosted channels; the decoders already handle Blob,
+    // but wrangler.toml's comment would need updating.
     for (const compatibilityDate of [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_CURRENT]) {
       const report = await sendBinaryFrame({ compatibilityDate, mode: "hibernate" })
       expect(report.runtimeType, `hibernation delivery at ${compatibilityDate}`).toBe("ArrayBuffer")
@@ -209,9 +195,7 @@ describe("real workerd binary frame round-trip", () => {
   }, 240_000)
 
   test("the deployed compatibility_date is still the pinned pre-flip value", async () => {
-    // Guards the plan's hard constraint: the Blob fix lands WITHOUT a date bump.
-    // Both configs are checked; wrangler-h2.toml pins the same date and was
-    // previously outside every drift guard.
+    // wrangler-h2.toml pins the same date and is checked too.
     for (const config of ["../wrangler.toml", "../wrangler-h2.toml"]) {
       const source = await readFile(new URL(config, import.meta.url), "utf8")
       const declared = source.match(/^compatibility_date = "([\d-]+)"$/m)?.[1]

@@ -395,7 +395,7 @@ export default {
         return json({ error: "method not allowed" }, 405)
       }
 
-      const body = asRecord(await request.json().catch(() => undefined)) ?? {}
+      const body = asWorkerRecord(await request.json().catch(() => undefined)) ?? {}
 
       switch (action) {
         // Idempotent runtime bring-up that SandboxDriver.ensureHost() calls:
@@ -491,7 +491,7 @@ function singleDirectory(input: unknown) {
 }
 
 function directoryRestore(input: unknown) {
-  const restore = asRecord(input)
+  const restore = asWorkerRecord(input)
   if (!restore) return undefined
   const directory = singleDirectory(restore.directories)
   if (!directory || typeof restore.backupId !== "string" || !restore.backupId) return undefined
@@ -500,15 +500,16 @@ function directoryRestore(input: unknown) {
 
 
 // ── Boundary narrowing ───────────────────────────────────────────────────────
-// This Worker is its own deployable package and cannot reach the control
-// plane's shared `platform/json` guards, so the same three checks live here.
+// This Worker is deployed with `npm ci && wrangler deploy` from its own
+// package.json, which declares no workspace dependency, so it cannot import
+// `@claxedo/helpers/guards`. The two object checks are scoped to the Worker.
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isWorkerRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
+function asWorkerRecord(value: unknown): Record<string, unknown> | undefined {
+  return isWorkerRecord(value) ? value : undefined
 }
 
 function parseJsonValue(text: string): unknown {
@@ -518,7 +519,7 @@ function parseJsonValue(text: string): unknown {
 
 /** Only the string entries of an object; a non-string env or label value is not one. */
 function stringMap(value: unknown): Record<string, string> {
-  const record = asRecord(value)
+  const record = asWorkerRecord(value)
   if (!record) return {}
   return Object.fromEntries(
     Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -529,7 +530,7 @@ function stringMap(value: unknown): Record<string, string> {
 function egressRegistrations(value: unknown): EgressRegistration[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
-    const record = asRecord(entry)
+    const record = asWorkerRecord(entry)
     const hosts = record?.hosts
     if (
       !record ||

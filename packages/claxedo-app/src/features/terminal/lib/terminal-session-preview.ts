@@ -1,18 +1,18 @@
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
-import { asRecord } from "@/lib/record"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { resolveRecovery, rememberRecovery } from "../workbench/pane-terminal-recovery"
 import { createTransport } from "@/platform/runtime/transport"
 import {
   loadCachedEntry,
-  normalizeText,
   originOf,
   readCachedEntry,
   terminalScopedPlacement,
   type CacheKey,
   type CacheTtl,
 } from "./terminal-scoped-cache"
+import { trimToEmpty } from "@claxedo/helpers/string"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export type TerminalSessionPreview = {
   terminalId: string
@@ -36,7 +36,7 @@ const ALIAS_TTL_MS = 30_000
 
 const alias = new Map<string, { id: string; at: number }>()
 
-const text = normalizeText
+const text = trimToEmpty
 
 const optional = (value: unknown) => {
   const next = text(value)

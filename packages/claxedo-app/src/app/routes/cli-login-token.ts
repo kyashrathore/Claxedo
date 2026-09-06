@@ -3,6 +3,8 @@
 // exchange, and the form construction can be tested directly.
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { asRecord, readField } from "@/lib/record"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { asFiniteNumber } from "@claxedo/helpers/guards"
 
 /**
  * Return a normalized callback URL only when it is an `http:` loopback
@@ -32,14 +34,6 @@ export function userIdentity(input: unknown): string {
   return user.primaryEmailAddress?.emailAddress ?? user.fullName ?? user.id ?? "browser-session"
 }
 
-export function text(input: unknown): string | undefined {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
-
-export function number(input: unknown): number | undefined {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
 export type CliTokenResult = {
   accessToken: string
   refreshToken?: string
@@ -62,17 +56,17 @@ export async function cliToken(browserToken: string): Promise<CliTokenResult> {
   })
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    throw new Error(text(readField(readField(body, "error"), "message")) ?? "CLI token exchange failed.")
+    throw new Error(trimToUndefined(readField(readField(body, "error"), "message")) ?? "CLI token exchange failed.")
   }
   const row = asRecord(body)
   if (!row) throw new Error("CLI token exchange returned an invalid response.")
-  const accessToken = text(row.access_token) ?? text(row.accessToken)
+  const accessToken = trimToUndefined(row.access_token) ?? trimToUndefined(row.accessToken)
   if (!accessToken) throw new Error("CLI token exchange did not return an access token.")
   return {
     accessToken,
-    refreshToken: text(row.refresh_token) ?? text(row.refreshToken),
-    tokenType: text(row.token_type) ?? text(row.tokenType),
-    expiresIn: number(row.expires_in) ?? number(row.expiresIn),
+    refreshToken: trimToUndefined(row.refresh_token) ?? trimToUndefined(row.refreshToken),
+    tokenType: trimToUndefined(row.token_type) ?? trimToUndefined(row.tokenType),
+    expiresIn: asFiniteNumber(row.expires_in) ?? asFiniteNumber(row.expiresIn),
   }
 }
 

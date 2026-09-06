@@ -21,12 +21,8 @@ export function createRailKeyboardCommands(
 ): CommandOption[] {
   return [
     {
-      // Keybind intentionally omitted: the workbench's own window keydown
-      // listener (workbench/keyboard.ts, keyMap.closePane === "mod+w") is the
-      // single dispatch owner of this chord. Binding it here too made a single
-      // mod+w fire two diverging handlers. The palette entry stays invokable
-      // (and retains the desktop last-pane Quit affordance in closeFocusedPane).
-      // Full registry consolidation of these two systems is WP-C2.
+      // No keybind: workbench/keyboard.ts owns mod+w; binding it here too makes
+      // one chord fire two diverging handlers. The palette entry stays invokable.
       id: "claxedo.pane.close",
       title: "Close Pane",
       category: "View",

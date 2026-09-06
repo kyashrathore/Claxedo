@@ -481,6 +481,7 @@ describe("a project's list", () => {
       "https://relay.test/workspaces/ws_1/session": () => Response.json([
         { id: "ses_host_a", title: "a", directory: HOST_DIR, time: { created: 1, updated: 40 } },
         { id: "ses_host_b", title: "b", directory: HOST_DIR, time: { created: 1, updated: 30 } },
+        { id: "ses_host_c", title: "c", directory: HOST_DIR, time: { created: 1, updated: 10 } },
       ]),
     })
     const source = projectSessionSource({ local: false, projectId: "prj_1", workspaces: catalog })
@@ -497,8 +498,14 @@ describe("a project's list", () => {
     }).queryFn!({} as never) as SessionListResponse
 
     expect(second.items?.map((item) => item.sessionId)).toEqual(["ses_host_b", "ses_local_2"])
-    expect(second.nextCursor).toBeUndefined()
-    // The runtime answered both pages from the one list it already handed over.
+    expect(second.nextCursor).toBeDefined()
+    const third = await sessionSourceQueryOptions({
+      baseUrl: CONTROL, source, query: projectQuery({ limit: 1, cursor: second.nextCursor }), request,
+    }).queryFn!({} as never) as SessionListResponse
+    expect(third.items?.map((item) => item.sessionId)).toEqual(["ses_host_c"])
+    expect(third.nextCursor).toBeUndefined()
+    expect(centralPages).toBe(2)
+    // The runtime answered all three pages from the one list it already handed over.
     expect(requested.filter((url) => url.startsWith("https://relay.test/workspaces"))).toHaveLength(1)
     expect(requested.filter((url) => url.includes("cursor=central-2"))).toHaveLength(1)
   })

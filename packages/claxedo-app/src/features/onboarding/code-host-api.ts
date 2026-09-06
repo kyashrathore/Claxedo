@@ -7,7 +7,6 @@
  * `/api/claxedo/integrations` routes the Connections screen uses; onboarding
  * cannot import that feature, so the two share the wire format rather than code.
  */
-
 import { asRecord, readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 
 /** Path is relative to the `/api/claxedo/integrations` mount ("" is the root list). */

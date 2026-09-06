@@ -2,13 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { configureAuthSession, useAuthSession, type ExternalAuthSource } from "./auth-session"
 
 /**
- * The identity provider is BOUND here, not mocked.
+ * The identity provider is bound here, not mocked.
  *
- * This file used to `mock.module("@/platform/auth/auth-client")`, which only
- * worked because `auth-session.ts` imported that module for real — the same
- * static edge that put the identity provider in the local bundle. The seam is now a binder, so
- * the test supplies a provider the same way `app/entry/main.tsx` does, and the
- * UNBOUND case (what `app/entry/local.tsx` produces) is reachable at all.
+ * The test supplies a provider the same way `app/entry/main.tsx` does, through
+ * `configureAuthSession`, so the unbound case — what `app/entry/local.tsx`
+ * produces — is reachable too.
  */
 
 let loading = false
@@ -97,7 +95,7 @@ describe("useAuthSession with no identity provider bound", () => {
   })
 
   test("does not throw when the shell's provider tree calls it during render", () => {
-    // `app/entry/app.tsx` calls this unconditionally and BOTH products render
+    // `app/entry/app.tsx` calls this unconditionally and both products render
     // that shell, so construction itself must be safe with nothing bound.
     expect(() => useAuthSession()).not.toThrow()
   })
@@ -131,7 +129,7 @@ describe("useAuthSession with an identity provider bound", () => {
     expect(session.organization()).toEqual({ id: "org_1" })
     expect(session.methods()).toEqual(["email-password"])
     await expect(session.getToken()).resolves.toBe("token")
-    // Forwarded by reference, not re-wrapped: the accessor callers read IS the
+    // Forwarded by reference, not re-wrapped: the accessor callers read is the
     // provider's, so a Solid effect over it tracks the provider's own signal.
     expect(session.session).toBe(provider.session)
     expect(session.user).toBe(provider.user)

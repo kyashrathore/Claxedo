@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "vitest"
+import { beforeAll, describe, expect, test } from "bun:test"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import { readSandboxProviderStatus } from "./sandbox-provider-query"
 

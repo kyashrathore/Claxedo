@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { forkSessionWithReservation, reservePrivateSession } from "./private-session-reservation"
 import { requestBodyText, requestUrl } from "@/lib/url"
 
@@ -62,6 +62,7 @@ describe("private session reservation", () => {
 
   test("reserves a fork and forwards the exact child id and operation to the runtime", async () => {
     const runtime: unknown[] = []
+    let reservedOperationId: string | undefined
     const result = await forkSessionWithReservation({
       managed: true,
       workspaceId: "ws_1",
@@ -74,6 +75,7 @@ describe("private session reservation", () => {
           sessionId: string
           workspaceId: string
         }
+        reservedOperationId = body.operationId
         expect(body).toMatchObject({
           workspaceId: "ws_1",
           kind: "fork",
@@ -97,7 +99,7 @@ describe("private session reservation", () => {
       },
       options: {
         headers: {
-          "x-claxedo-session-registration-operation": expect.stringMatching(/^session_registration_/),
+          "x-claxedo-session-registration-operation": reservedOperationId,
         },
       },
     }])

@@ -7,8 +7,7 @@ import missingKeysBaseline from "./missing-keys-baseline.json"
 // This suite is the net that catches translation drift: a non-English locale
 // silently missing a key (falls back to English with no warning), a
 // mistranslated {{placeholder}}, or the locale manifest pointing at a file
-// that no longer exists in this package or in @/ui. None of that used
-// to be tested.
+// that does not exist in this package or in @/ui.
 
 const NON_EN_ENTRIES = LOCALE_ENTRIES.filter((entry) => entry.code !== "en")
 const BASELINE = missingKeysBaseline as Record<string, string[]>
@@ -90,12 +89,11 @@ describe("locale-parity: manifest/file drift", () => {
 
 describe("locale-parity: LocaleEntry.matches navigator-language resolution", () => {
   // detectLocale() in src/platform/i18n/provider.tsx lowercases each
-  // navigator.languages entry and picks the FIRST manifest entry whose
-  // matches() returns true, falling back to "en" when none match. Matchers
-  // are documented as mutually exclusive (locales.ts, LocaleEntry.matches),
-  // so asserting toEqual([expected]) below pins BOTH the resolved code AND
-  // that exactly one matcher fires — which is what makes resolution
-  // independent of manifest order (the zh/zht invariant WP-A6 introduced).
+  // navigator.languages entry and picks the first manifest entry whose
+  // matches() returns true, falling back to "en". Matchers are mutually
+  // exclusive (locales.ts, LocaleEntry.matches), so toEqual([expected]) pins
+  // both the resolved code and that exactly one matcher fires — which is what
+  // makes resolution independent of manifest order.
 
   function matchingCodes(navigatorLanguage: string): LocaleCode[] {
     const normalized = navigatorLanguage.toLowerCase()
@@ -163,16 +161,14 @@ describe("locale-parity: LocaleEntry.matches navigator-language resolution", () 
   })
 
   test('"zh-TW", "zh-HK", "zh-MO" (Traditional-default regions, no script subtag) resolve to "zht"', () => {
-    // Bug fixed 2026-07-11: the zh/zht split previously keyed on the "hant"
-    // script token only, silently serving Simplified to Taiwan/Hong Kong/
-    // Macau users. Region subtags whose default script is Traditional now
-    // imply zht.
+    // Region subtags whose default script is Traditional imply zht even without
+    // a "hant" script token.
     expect(matchingCodes("zh-TW")).toEqual(["zht"])
     expect(matchingCodes("zh-HK")).toEqual(["zht"])
     expect(matchingCodes("zh-MO")).toEqual(["zht"])
   })
 
-  test('"zh-CN", "zh-SG", and bare "zh" still resolve to Simplified "zh" after the Traditional-region fix', () => {
+  test('"zh-CN", "zh-SG", and bare "zh" resolve to Simplified "zh"', () => {
     expect(matchingCodes("zh-CN")).toEqual(["zh"])
     expect(matchingCodes("zh-SG")).toEqual(["zh"])
     expect(matchingCodes("zh")).toEqual(["zh"])

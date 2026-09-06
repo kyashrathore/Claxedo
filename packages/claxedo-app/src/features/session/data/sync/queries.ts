@@ -3,12 +3,10 @@ import type {
   AgentPermission as PermissionRequest,
   AgentQuestion as QuestionRequest,
   AgentRuntimeStatus as SessionStatus,
-  AgentSnapshotFileDiff as SnapshotFileDiff,
   AgentTodo as Todo,
 } from "@claxedo/agent-runtime-contract"
 import { queryKeys } from "@/platform/query/keys"
-import { shellDataKeys, type SessionScopedQueryKey, type WorkspaceScopedQueryKey } from "@/platform/sync/keys"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import { shellDataKeys } from "@/platform/sync/keys"
 import type { ClaxedoSession } from "../session-types"
 import type { SessionInventoryRow } from "../query/types"
 import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
@@ -28,36 +26,9 @@ export {
   type ShellQueryDataWriter,
 } from "./writers"
 
-type SessionStatusClient = {
-  session: {
-    status: () => Promise<{ data?: Record<string, SessionStatus> }>
-  }
-}
-
-type SessionRequestsClient = {
-  permission: {
-    list: () => Promise<{ data?: PermissionRequest[] }>
-  }
-  question: {
-    list: () => Promise<{ data?: QuestionRequest[] }>
-  }
-}
-
 export type SessionRequestsQueryData = {
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
-}
-
-type SessionTodoClient = {
-  session: {
-    todo: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
-  }
-}
-
-type SessionDiffClient = {
-  session: {
-    diff: (input: { sessionID: string }) => Promise<{ data?: SnapshotFileDiff[] }>
-  }
 }
 
 export type DirectorySessionCacheValue = {
@@ -186,7 +157,12 @@ export function deriveSessionInventoryIndexes(
   },
 ) {
   const sessions = dedupeSessions(input.sessions)
-  const sessionById = new Map(sessions.map((session) => [session.id, session] as const))
+  const sessionsById = new Map<string, SessionInventoryRow[]>()
+  for (const session of sessions) {
+    const matches = sessionsById.get(session.id)
+    if (matches) matches.push(session)
+    else sessionsById.set(session.id, [session])
+  }
   const global = sessions.filter(sessionShouldShowInGlobalChat)
   const byProject: Record<string, SessionInventoryRow[]> = {}
   const byWorkspace: Record<string, SessionInventoryWorkspaceGroup> = {}
@@ -224,7 +200,7 @@ export function deriveSessionInventoryIndexes(
     const state = input.workspaceState[workspaceKey]
     const meta = workspaceMeta[workspaceKey] ?? previous
     const page = dedupeSessions(previous.sessions.flatMap((session) => {
-      const canonical = sessionById.get(session.id)
+      const canonical = sessionsById.get(session.id)?.find((item) => sameSessionIdentity(item, session))
       return canonical ? [canonical] : []
     }))
     const sessions = input.workspaceMeta?.[workspaceKey] && byWorkspace[workspaceKey]
@@ -375,64 +351,12 @@ export function sessionInventoryQueryOptions(input: {
   })
 }
 
-export function sessionQueryOptions<T>(input: {
-  ref: SessionRef
-  resource: string
-  params?: ReadonlyArray<unknown>
-  queryFn: () => Promise<T>
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: shellDataKeys.session(input.ref, input.resource, ...(input.params ?? [])),
-    queryFn: input.queryFn,
-    ...(input.staleTime === undefined ? {} : { staleTime: input.staleTime }),
-  })
-}
-
-export function workspaceQueryOptions<T>(input: {
-  workspaceId: string
-  resource: string
-  params?: ReadonlyArray<unknown>
-  queryFn: () => Promise<T>
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: shellDataKeys.workspace(input.workspaceId, input.resource, ...(input.params ?? [])),
-    queryFn: input.queryFn,
-    ...(input.staleTime === undefined ? {} : { staleTime: input.staleTime }),
-  })
-}
-
 export function directorySessionCacheQueryOptions(input: {
   directory: string
 }) {
   return queryOptions<DirectorySessionCacheValue>({
     queryKey: queryKeys.directory.sessionCache(input.directory),
     queryFn: skipToken,
-  })
-}
-
-export function dbReadyQuery<T>(input: {
-  queryKey: SessionScopedQueryKey | WorkspaceScopedQueryKey
-  queryFn: () => Promise<T>
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: input.queryKey,
-    queryFn: input.queryFn,
-    ...(input.staleTime === undefined ? {} : { staleTime: input.staleTime }),
-  })
-}
-
-export function sessionStatusQueryOptions(input: {
-  sessionId: string
-  client: SessionStatusClient
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: shellDataKeys.sessionId(input.sessionId, "status"),
-    queryFn: async () => (await input.client.session.status()).data?.[input.sessionId] ?? { type: "idle" as const },
-    staleTime: input.staleTime ?? 5_000,
   })
 }
 
@@ -449,27 +373,6 @@ export function sessionStatusCacheQueryOptions(input: { sessionId: string }) {
   })
 }
 
-export function sessionRequestsQueryOptions(input: {
-  sessionId: string
-  client: SessionRequestsClient
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: shellDataKeys.sessionId(input.sessionId, "requests"),
-    queryFn: async () => {
-      const [permissions, questions] = await Promise.all([
-        input.client.permission.list().then((result) => result.data ?? []).catch((): PermissionRequest[] => []),
-        input.client.question.list().then((result) => result.data ?? []).catch((): QuestionRequest[] => []),
-      ])
-      return {
-        permissions: permissions.filter((item) => item.sessionID === input.sessionId),
-        questions: questions.filter((item) => item.sessionID === input.sessionId),
-      } satisfies SessionRequestsQueryData
-    },
-    staleTime: input.staleTime ?? 5_000,
-  })
-}
-
 /** Cache-only observer for push-owned permission/question projection data. */
 export function sessionRequestsCacheQueryOptions(input: { sessionId: string }) {
   return queryOptions<SessionRequestsQueryData>({
@@ -479,35 +382,11 @@ export function sessionRequestsCacheQueryOptions(input: { sessionId: string }) {
   })
 }
 
-export function sessionTodoQueryOptions(input: {
-  sessionId: string
-  client: SessionTodoClient
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
-    queryFn: async () => (await input.client.session.todo({ sessionID: input.sessionId })).data ?? [],
-    staleTime: input.staleTime ?? 30_000,
-  })
-}
-
 /** Cache-only observer for todo data written by the session event projector. */
 export function sessionTodoCacheQueryOptions(input: { sessionId: string }) {
   return queryOptions<Todo[]>({
     queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
     queryFn: skipToken,
     enabled: false,
-  })
-}
-
-export function sessionDiffQueryOptions(input: {
-  sessionId: string
-  client: SessionDiffClient
-  staleTime?: number
-}) {
-  return queryOptions({
-    queryKey: shellDataKeys.sessionId(input.sessionId, "diff"),
-    queryFn: async () => (await input.client.session.diff({ sessionID: input.sessionId })).data ?? [],
-    staleTime: input.staleTime ?? 30_000,
   })
 }

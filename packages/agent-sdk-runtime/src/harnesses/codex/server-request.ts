@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto"
 import type { AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { JsonRecord, SdkRuntimeDriverHost } from "../shared/sdk-runtime-driver"
-import { record, text } from "../shared/sdk-runtime-values"
+import { asRecord } from "@claxedo/helpers/guards"
+import { text } from "../shared/sdk-runtime-values"
 import type { CodexActiveThread } from "./active-thread"
 import { spawnDynamicCodexAgent } from "./dynamic-agent"
 import { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"
@@ -17,7 +18,7 @@ export async function handleCodexServerRequest(input: {
   refreshTokens(): Promise<RefreshedTokens>
 }) {
   const method = text(input.message.method) ?? "request"
-  const params = record(input.message.params) ?? {}
+  const params = asRecord(input.message.params) ?? {}
   const requestId = text(input.message.id) ?? numberText(input.message.id) ?? randomUUID()
   const threadId = text(params.threadId) ?? text(params.conversationId)
   const active = threadId ? input.activeThreads.get(threadId) : undefined
@@ -122,7 +123,7 @@ const APPROVAL_METHODS = new Set([
 
 function questionIds(params: JsonRecord) {
   const list = Array.isArray(params.questions) ? params.questions : []
-  return list.flatMap((question) => text(record(question)?.id) ?? [])
+  return list.flatMap((question) => text(asRecord(question)?.id) ?? [])
 }
 
 function permissionResponse(
@@ -137,7 +138,7 @@ function permissionResponse(
   }
   if (method === "item/permissions/requestApproval") {
     return {
-      permissions: allow ? (record(params.permissions) ?? {}) : {},
+      permissions: allow ? (asRecord(params.permissions) ?? {}) : {},
       scope: session ? "session" : "turn",
     }
   }

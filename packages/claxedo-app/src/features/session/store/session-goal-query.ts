@@ -30,9 +30,9 @@ import {
 
 export { sessionGoalKey, setSessionGoalData, type SessionGoalData } from "./session-goal-cache"
 
-// Goal START is not a query-cache mutation: the composer provisions and starts
+// Goal start is not a query-cache mutation: the composer provisions and starts
 // Goals through submit-goal.ts and the runtime client, which owns the
-// provisioning semantics. This union covers only mutations on an EXISTING Goal.
+// provisioning semantics. This union covers only mutations on an existing Goal.
 export type SessionGoalMutation = "pause" | "resume" | "stop" | "delete"
 
 /**
@@ -71,11 +71,11 @@ function requestScope(input: SessionGoalTransportScope) {
 }
 
 /**
- * ONE round-trip per activation.
+ * One round-trip per activation.
  *
  * The runtime has to derive the Goal capabilities to answer either read, so
- * `/session/:id/goal/state` composes both server-side — including the "no Goal
- * when the harness doesn't implement Goals" rule this used to apply here.
+ * `/session/:id/goal/state` composes both server-side, including whether the
+ * harness implements Goals at all — the client does not re-derive that rule.
  */
 function readSessionGoal(input: SessionGoalTransportScope, signal?: AbortSignal): Promise<SessionGoalData> {
   return fetchSessionGoalStateByTransport({ ...input, signal })
@@ -177,7 +177,7 @@ export function invalidateSessionGoalData(scope: SessionResourceAuthorityScope) 
 /**
  * Call `onInvalidate` whenever this Goal authority's cache entry is invalidated.
  *
- * The pane's Goal query is a cache MIRROR (`skipToken` + `enabled: false`) fed by
+ * The pane's Goal query is a cache mirror (`skipToken` + `enabled: false`) fed by
  * `syncSessionGoalData`, so `invalidateQueries` can never refetch it on its own:
  * the invalidation only marks the entry stale. The mounted controller turns that
  * mark into a real re-read; an unmounted one leaves the mark for the next

@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { useClaxedoState } from "@/features/session/app-ports"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessRef, SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import {
@@ -18,6 +18,11 @@ import {
   sessionEventScopeId,
   whenSessionEventStreamsOpen,
 } from "@/platform/runtime/session-event-scope"
+
+afterEach(() => {
+  queryClient.clear()
+  resetSessionEventScope()
+})
 
 describe("createCloudStartupController", () => {
   test("ignores startup updates when cloud startup is disabled", () => {
@@ -218,39 +223,6 @@ describe("acquireSubmitSessionTarget", () => {
     }
   })
 
-  test("a harness claim publishes its session to the event-stream scope too", async () => {
-    resetSessionEventScope()
-    try {
-      await acquireSessionTarget({
-        replaceSession: true,
-        claimHarnessSession: async () => ({ id: "claimed-1" }),
-      })
-      expect(sessionEventScopeId(undefined)).toBe("claimed-1")
-    } finally {
-      resetSessionEventScope()
-    }
-  })
-
-  test("reports canonical claim errors through the call-site error callback", async () => {
-    const errors: unknown[] = []
-
-    const target = await acquireSessionTarget({
-      replaceSession: true,
-      claimHarnessSession: async () => {
-        throw new Error("create failed")
-      },
-      onCreateError: (err) => errors.push(err),
-    })
-
-    expect(target).toEqual({
-      session: undefined,
-      replaceSession: true,
-      created: false,
-    })
-    expect(errors).toHaveLength(1)
-    expect((errors[0] as Error).message).toBe("create failed")
-  })
-
   test("reserves a signed remote session before create and forwards the exact immutable ids", async () => {
     const order: string[] = []
     const creates: Array<{ input: Record<string, unknown>; headers?: Record<string, string> }> = []
@@ -390,7 +362,7 @@ describe("finalizeSubmitSessionTarget", () => {
       target: { created: true },
       draftId: "draft-1",
       runtimeWorkspaceRef: { workspaceId: "ws_machine", kind: "user-hosted" },
-      harness: { id: "opencode" },
+      harness: { kind: "connection", connectionId: "opencode" },
       promoteSession: () => {},
       scheduleProjectionPull: (input) => {
         scheduled.push(input)

@@ -44,7 +44,8 @@ export function projectWorkspaceDirectories(project: WorkspaceDisplayProject) {
 export function projectWorkspaceForRef<
   TWorkspace extends { id?: string; workspaceId?: string; directory?: string },
 >(workspaces: Record<string, TWorkspace> | undefined, ref: string | undefined): TWorkspace | undefined {
-  const keyed = ref === undefined ? undefined : workspaces?.[ref]
+  if (ref === undefined) return undefined
+  const keyed = workspaces?.[ref]
   if (keyed) return keyed
   const workspaceId = ref?.startsWith(WORKSPACE_REF_PREFIX) ? ref.slice(WORKSPACE_REF_PREFIX.length) : undefined
   return Object.values(workspaces ?? {}).find((workspace) =>

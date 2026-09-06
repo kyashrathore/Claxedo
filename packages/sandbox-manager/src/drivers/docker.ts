@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
+import { trimToUndefined } from "@claxedo/helpers/string"
 import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
@@ -57,12 +58,12 @@ export function dockerSandboxSyncLocalAuth(env: SandboxEnv = process.env) {
 }
 
 export function dockerSandboxAuthHome(env: SandboxEnv = process.env) {
-  return clean(env.CLAXEDO_DOCKER_SANDBOX_AUTH_HOME) ?? clean(env.HOME) ?? os.homedir()
+  return trimToUndefined(env.CLAXEDO_DOCKER_SANDBOX_AUTH_HOME) ?? trimToUndefined(env.HOME) ?? os.homedir()
 }
 
 export function dockerSandboxImageFromEnv(env: SandboxEnv = process.env) {
-  return clean(env.CLAXEDO_DOCKER_SANDBOX_IMAGE)
-    ?? clean(env.CLAXEDO_SANDBOX_IMAGE)
+  return trimToUndefined(env.CLAXEDO_DOCKER_SANDBOX_IMAGE)
+    ?? trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
     ?? SANDBOX_IMAGE
 }
 
@@ -95,11 +96,6 @@ export function dockerLocalAuthCandidates(home: string) {
       target: "/root/.claude.json",
     },
   ]
-}
-
-function clean(input: string | undefined) {
-  const txt = input?.trim()
-  return txt ? txt : undefined
 }
 
 function enabledFlag(input: string | undefined) {

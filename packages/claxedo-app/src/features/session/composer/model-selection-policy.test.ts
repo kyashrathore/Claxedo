@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { createPromptToolbarState } from "./toolbar-state"
-import {
-  promptModelResolutionState,
-  selectRuntimeModel,
-  shouldUsePromptFallbackModel,
-} from "./model-strategy"
 import { resolveSubmittedConfig } from "@/features/session/submit/resolve"
 import { submitBlockReason } from "./submit-block-reason"
 const sonnet = { id: "sonnet", name: "Claude Sonnet", provider: { id: "anthropic" } }
@@ -31,49 +26,6 @@ function toolbar(input: Partial<Parameters<typeof createPromptToolbarState>[0]> 
 }
 
 describe("model selection policy", () => {
-  test("selectRuntimeModel never substitutes provider catalog defaults", () => {
-    expect(
-      selectRuntimeModel(
-        {
-          all: [{ id: "openai", models: { "gpt-5.3-chat-latest": { name: "GPT 5.3 Chat" } } }],
-          connected: ["openai"],
-          default: { openai: "gpt-5.3-chat-latest" },
-        },
-        undefined,
-      ),
-    ).toBeUndefined()
-  })
-
-  test("shouldUsePromptFallbackModel is permanently disabled", () => {
-    expect(
-      shouldUsePromptFallbackModel({
-        harnessMode: false,
-        hasCurrentModel: false,
-        hasSelection: false,
-        providerLoading: false,
-      }),
-    ).toBe(false)
-    expect(
-      shouldUsePromptFallbackModel({
-        harnessMode: false,
-        hasCurrentModel: false,
-        hasSelection: true,
-        providerLoading: false,
-      }),
-    ).toBe(false)
-  })
-
-  test("prompt model resolution never exposes a fallback flag", () => {
-    const state = promptModelResolutionState({
-      harnessMode: false,
-      hasCurrentModel: false,
-      hasSelection: false,
-      providerLoading: false,
-    })
-    expect(state).toEqual({ type: "uninitialized" })
-    expect("fallback" in state).toBe(false)
-  })
-
   test("toolbar blocks submit until an explicit model is resolved", () => {
     const blocked = toolbar()
     expect(blocked.currentModel()).toBeUndefined()

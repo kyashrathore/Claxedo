@@ -80,6 +80,7 @@
     "vite-plugin-solid": "catalog:"
   },
   "dependencies": {
+    "@claxedo/helpers": "workspace:*",
     "@kobalte/core": "catalog:",
     "@pierre/diffs": "catalog:",
     "@solid-primitives/event-listener": "2.4.6",

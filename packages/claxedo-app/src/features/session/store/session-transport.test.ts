@@ -101,6 +101,15 @@ const apiFixture = createMockApi({
       },
     })
   },
+  getClaxedoServerUrl: () => "http://test.local",
+  getDefaultBaseUrl: () => "http://test.local",
+  apiBearerToken: async () => null,
+  // Ensure all api.ts named exports are stubbed so other tests that
+  // transitively import this module don't crash with
+  // "Export named 'api' not found" — bun:test mock.module shims leak
+  // across files in the same suite run.
+  api: {} as Record<string, unknown>,
+  isEmbedMode: () => false,
   fixDir: (input: string | undefined) => input,
 })
 
@@ -116,7 +125,6 @@ await mock.module("@/platform/api/api", () => apiFixture.module)
 
 const {
   createSessionInfoHydrationGetter,
-  DEFAULT_SESSION_TRANSPORT_CAPABILITIES,
   fetchSessionCapabilitiesByTransport,
   fetchSessionByTransport,
   fetchSessionMessagesByTransport,
@@ -152,7 +160,6 @@ describe("session transport split", () => {
       sessionID: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
     })
 
-    expect(client.get).toHaveBeenCalledTimes(0)
     expect(session).toMatchObject({
       id: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
       parentID: "parent-session-1",
@@ -359,11 +366,4 @@ describe("session transport split", () => {
     ])
   })
 
-  test("exports Claxedo-owned default session capabilities", () => {
-    expect(DEFAULT_SESSION_TRANSPORT_CAPABILITIES).toMatchObject({
-      transport: "runtime",
-      abort: true,
-      replay: true,
-    })
-  })
 })

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 
 import { runBunBuild } from "../../../script/bun-build"
 
@@ -42,6 +43,7 @@ export async function bundleHostConnector(input: { entry?: string; outputDir?: s
     // Safe to flip: the sha256 manifest below is computed from the emitted
     // file, so it self-heals, and no test pins a literal digest.
     minify: true,
+    plugins: [publishedExportsPlugin()],
   })
   if (!existsSync(output)) throw new Error(`Host Connector child bundle emitted no ${output}`)
 

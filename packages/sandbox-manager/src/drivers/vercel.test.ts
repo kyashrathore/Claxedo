@@ -114,9 +114,9 @@ describe("VercelSandboxDriver", () => {
   })
 
   test("an unrestricted base merges to allow-all-plus-brokered, a deny-all base to brokered-only", async () => {
-    // The base is a required argument precisely because these two differ: the
-    // function's no-base behaviour used to be deny-all-except-brokered, so an
-    // optional parameter would let a caller keep compiling while widening.
+    // The base is a required argument precisely because these two differ: an
+    // optional parameter defaulting to deny-all-except-brokered would let a
+    // caller keep compiling while its egress silently widens.
     expect(vercelBrokeredNetworkPolicy(
       [{ name: "A", value: "v", hosts: ["api.a.test"], header: "x-key" }],
       undefined,
@@ -282,10 +282,10 @@ describe("VercelSandboxDriver", () => {
   })
 
   test("the runtime version is resolved per build, not frozen at module import", async () => {
-    // `EXPECTED_RUNTIME_VERSION` used to be a module-level const, so a host that
-    // loads its config after importing this driver could never override the
-    // version — the snapshot installed the wrong runtime and the build-time
-    // assertion checked against the wrong expectation.
+    // A module-level const would freeze `EXPECTED_RUNTIME_VERSION` at import time,
+    // so a host that loads its config after importing this driver could never
+    // override the version — the snapshot would install the wrong runtime and
+    // the build-time assertion would check against the wrong expectation.
     const original = process.env.WORKSPACE_RUNTIME_VERSION
     process.env.WORKSPACE_RUNTIME_VERSION = "9.9.9-late"
     try {

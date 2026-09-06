@@ -44,19 +44,14 @@ type IndexState = {
 }
 
 /**
- * Documents index live sync.
- *
- * This controller used to own a dedicated `GET /documents/events` SSE purely to
- * learn "something changed" — a held local-origin socket per index surface, and
- * one of the connections in the 6-per-origin budget that stalled ordinary
- * fetches for 25–35s. It now listens for the `document.changed` doorbell on the
+ * Documents index live sync: listens for the `document.changed` doorbell on the
  * already-open central events stream and re-reads the list. No socket of its
- * own; the reconnect/backoff ladder it used to run belongs to that shared
- * stream now.
+ * own — a per-surface SSE would hold one of the browser's six per-origin
+ * connections and stall ordinary fetches.
  *
- * The doorbell is a HINT, never a source of truth: every field rendered here
- * comes from `api.list`. A missed nudge costs freshness until the next
- * reconnect or focus, never correctness.
+ * The doorbell is a hint, never a source of truth: every rendered field comes
+ * from `api.list`. A missed nudge costs freshness until the next reconnect or
+ * focus, never correctness.
  */
 export function createDocumentIndexController(input: {
   /**
@@ -68,18 +63,16 @@ export function createDocumentIndexController(input: {
    */
   queries: DocumentQuery[]
   api: DocumentsApi
-  // NOTE: the old `schedule` input is gone with the reconnect backoff ladder —
-  // the central stream owns reconnection now.
   /**
-   * `document.changed` from the central bus. Absent until Wave 3 wires the
-   * events port (see `app-ports.ts`), in which case the index loads on open and
-   * refreshes on reconnect but does not live-update.
+   * `document.changed` from the central bus, supplied through the events port
+   * (see `app-ports.ts`). Absent only when the surface renders outside a
+   * `ClaxedoEventsProvider`, in which case the index loads on open and
+   * refreshes on reconnect but does not live-update (and `connect` warns once).
    */
   subscribe?: (handler: (event: DocumentChangedEvent) => void) => () => void
   /**
-   * Central-stream connectivity. `false → true` is the revalidation edge: it
-   * covers every nudge missed while the stream was down, which is what keeps R4
-   * ("never silently stale") true without a per-surface socket.
+   * Central-stream connectivity. `false → true` is the revalidation edge that
+   * covers every nudge missed while the stream was down.
    */
   subscribeConnected?: (handler: (connected: boolean) => void) => () => void
   onChange: (state: IndexState) => void
@@ -170,9 +163,8 @@ export function createDocumentIndexController(input: {
    * inventory id we sent, so the two match. A loopback request resolves the
    * project from `directory` instead and answers with the `project_<uuid>` that
    * `resolveLocalProjectId` mints per canonical directory, which matches nothing
-   * we asked for. Comparing only against `input.queries` therefore discarded
-   * every LOCAL nudge and quietly froze the index — the silent staleness (R4)
-   * this controller exists to prevent.
+   * we asked for. Comparing only against `input.queries` would discard every
+   * local nudge and freeze the index.
    *
    * So both spaces are checked, and the local one is learned from the documents
    * themselves. When a project we asked for has no documents yet, its server-side
@@ -199,16 +191,14 @@ export function createDocumentIndexController(input: {
   const connect = () => {
     if (stopped) return
     if (!input.subscribe) {
-      // Loud on purpose: silently degrading to a non-live index is the failure
-      // mode this whole change is supposed to make impossible to ship.
+      // Loud on purpose: a silently non-live index must not ship unnoticed.
       console.warn(
         "[documents] central events port unavailable — the Documents index will not live-update.",
       )
     }
     unsubscribe = input.subscribe?.((event) => {
       if (stopped) return
-      // The central stream carries every project's documents; the legacy SSE got
-      // this scoping from its per-connection subscription. Server-side org
+      // The central stream carries every project's documents. Server-side org
       // filtering in `routes/events.ts` is the authorization boundary — this is
       // only routing.
       if (!concernsUs(event.projectId)) return
@@ -339,9 +329,8 @@ export function PageIndex(props: PageIndexProps) {
    * One authorized query per project in view.
    *
    * `project` scope pins the open directory's project. The standalone index
-   * (`all`/`global`) spans every project in the inventory — it used to send a
-   * single query for `projects[0]` alone, which presented one arbitrary
-   * project's documents as though they were all of them.
+   * (`all`/`global`) spans every project in the inventory, not `projects[0]`
+   * alone.
    *
    * Both keys travel on every query, because the two deployment modes read
    * different ones and each ignores the other: a loopback request resolves the

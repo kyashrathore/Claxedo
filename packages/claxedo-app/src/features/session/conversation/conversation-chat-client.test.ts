@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { UIMessage } from "@tanstack/ai"
+import { setConversationPersistencePrincipal, setConversationPersistenceStorageForTest } from "./conversation-persistence"
 import { queryClient } from "@/platform/query/query-client"
 import {
   conversationSnapshotKey,
@@ -15,6 +16,8 @@ function uiMessage(id: string, content: string): UIMessage {
 }
 
 afterEach(() => {
+  setConversationPersistencePrincipal(undefined)
+  setConversationPersistenceStorageForTest(undefined)
   queryClient.removeQueries({ queryKey: ["shell", "session"] })
 })
 
@@ -90,6 +93,42 @@ describe("createConversationChatClient", () => {
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_2"])
     expect(readConversationSnapshot(scope("ses_set"))?.map((m) => m.id)).toEqual(["msg_2"])
     expect(entry.version()).toBeGreaterThan(before)
+  })
+
+  test("an unresolved signed client stays in memory without reading or writing durable messages", async () => {
+    const operations: string[] = []
+    setConversationPersistenceStorageForTest({
+      get: async () => { operations.push("get"); return [] },
+      set: async () => { operations.push("set") },
+      delete: async () => { operations.push("delete") },
+      keys: async () => [],
+    })
+    setConversationPersistencePrincipal(null)
+    const entry = createConversationChatClient(scope("ses_unresolved"))
+    await entry.ready
+    entry.handle.setMessages([uiMessage("msg_1", "in memory")])
+    expect(entry.handle.messages().map((message) => message.id)).toEqual(["msg_1"])
+    expect(operations).toEqual([])
+  })
+
+  test("a stale lazy client cannot publish after identity changes away and back", async () => {
+    setConversationPersistencePrincipal("signed:user_a")
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const entry = createConversationChatClient(scope("ses_late"), {
+      loadRuntime: async () => {
+        await gate
+        const [client, events] = await Promise.all([import("@tanstack/ai-client"), import("@tanstack/ai/client")])
+        return { ChatClient: client.ChatClient, EventType: events.EventType }
+      },
+    })
+    setConversationPersistencePrincipal(null)
+    setConversationPersistencePrincipal("signed:user_a")
+    queryClient.setQueryData(conversationSnapshotKey(scope("ses_late")), [uiMessage("current", "new generation")])
+    release()
+    await entry.ready
+    entry.handle.setMessages([uiMessage("stale", "old generation")])
+    expect(readConversationSnapshot(scope("ses_late"))?.map((message) => message.id)).toEqual(["current"])
   })
 
   test("each session gets an isolated version signal", () => {

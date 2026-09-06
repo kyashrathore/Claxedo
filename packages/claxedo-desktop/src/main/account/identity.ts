@@ -7,6 +7,7 @@
  */
 
 import type { AccountIdentity } from "./account-service"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /** Derive OIDC userinfo from the registered token endpoint. */
 export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
@@ -29,25 +30,26 @@ export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
  * Map a userinfo JSON body to the sanitized identity the renderer may see.
  *
  * Accepts the common OIDC claim names plus the occasional provider `username`.
- * Unknown shapes still produce a usable `{ userId }` so sign-in is not blocked
- * by a profile that is merely incomplete.
+ * The subject is required; display claims are optional. A response without a
+ * subject is a failed identity lookup, so the account owner can retry it.
  */
 
 import { asRecord } from "../../shared/json-read"
 
 export function identityFromUserInfo(body: unknown): AccountIdentity {
   const record = asRecord(body)
-  if (!record) return { userId: "" }
-  const userId = stringClaim(record.sub) ?? stringClaim(record.user_id) ?? ""
-  const fromParts = [stringClaim(record.given_name), stringClaim(record.family_name)]
+  if (!record) throw new Error("userinfo omitted its subject")
+  const userId = trimToUndefined(record.sub) ?? trimToUndefined(record.user_id)
+  if (!userId) throw new Error("userinfo omitted its subject")
+  const fromParts = [trimToUndefined(record.given_name), trimToUndefined(record.family_name)]
     .filter((part): part is string => !!part)
     .join(" ")
   const displayName =
-    stringClaim(record.name) ??
-    stringClaim(record.preferred_username) ??
-    stringClaim(record.username) ??
+    trimToUndefined(record.name) ??
+    trimToUndefined(record.preferred_username) ??
+    trimToUndefined(record.username) ??
     (fromParts || undefined)
-  const email = stringClaim(record.email)
+  const email = trimToUndefined(record.email)
   return {
     userId,
     ...(displayName ? { displayName } : {}),
@@ -71,7 +73,7 @@ export type ResolveIdentity = (accessToken: string) => Promise<AccountIdentity>
  */
 const USERINFO_TIMEOUT_MS = 20_000
 
-/** GET userinfo with the access token; never throws — empty identity on failure. */
+/** GET canonical userinfo; rejection lets the account owner apply its retry policy. */
 export function createIdentityResolver(input: {
   userInfoUrl: string
   fetch: typeof fetch
@@ -84,11 +86,15 @@ export function createIdentityResolver(input: {
     const timeoutMs = Math.max(1, input.timeoutMs ?? USERINFO_TIMEOUT_MS)
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
-      const response = await Promise.race([
-        input.fetch(input.userInfoUrl, {
-          headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
-          signal: controller.signal,
-        }),
+      return await Promise.race([
+        (async () => {
+          const response = await input.fetch(input.userInfoUrl, {
+            headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
+            signal: controller.signal,
+          })
+          if (!response.ok) throw new Error(`userinfo failed: ${response.status}`)
+          return identityFromUserInfo(await response.json())
+        })(),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(() => {
             const error = new Error("userinfo timed out")
@@ -97,19 +103,12 @@ export function createIdentityResolver(input: {
           }, timeoutMs)
         }),
       ])
-      if (!response.ok) throw new Error(`userinfo failed: ${response.status}`)
-      return identityFromUserInfo(await response.json())
     } catch (error) {
       input.onError?.(error)
-      return { userId: "" }
+      throw error
     } finally {
       if (timeout) clearTimeout(timeout)
     }
   }
 }
 
-function stringClaim(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined
-  const trimmed = value.trim()
-  return trimmed || undefined
-}

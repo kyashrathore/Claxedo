@@ -69,6 +69,10 @@ describe("railProjectCaptionFromName", () => {
 })
 
 describe("shouldAutoOpenWorkspaceSection", () => {
+  test("opens for an existing terminal before the session inventory arrives", () => {
+    expect(shouldAutoOpenWorkspaceSection({ rows: 0, terminals: 1, autoOpened: false, manuallyToggled: false })).toBe(true)
+  })
+
   test("opens when there are rows and it was neither auto-opened nor toggled", () => {
     expect(shouldAutoOpenWorkspaceSection({ rows: 2, autoOpened: false, manuallyToggled: false })).toBe(true)
   })
@@ -246,16 +250,66 @@ describe("shouldHydrateSidebarRuntime", () => {
 })
 
 describe("workspaceInventoryGroupFor", () => {
-  test("resolves a group by workspaceId alias when the directory key misses", () => {
-    const groups = {
-      "ws_1": { key: "ws_1", workspaceId: "ws_1", sessions: [1] },
-    }
-    const hit = workspaceInventoryGroupFor({
-      groups,
-      workspaceDir: "/some/dir",
-      workspace: { workspaceId: "ws_1" },
+  test("prefers a direct directory-keyed inventory group", () => {
+    const group = workspaceInventoryGroupFor({
+      groups: {
+        "/repo/main": {
+          key: "/repo/main",
+          directory: "/repo/main",
+          sessions: [{ id: "ses_main" }],
+        },
+        ws_main: {
+          key: "ws_main",
+          directory: "/repo/main",
+          workspaceId: "ws_main",
+          sessions: [{ id: "ses_workspace" }],
+        },
+      },
+      workspaceDir: "/repo/main",
+      workspace: {
+        directory: "/repo/main",
+        workspaceId: "ws_main",
+      },
     })
-    expect(hit).toBe(groups["ws_1"])
+
+    expect(group?.sessions.map((session) => session.id)).toEqual(["ses_main"])
+  })
+
+  test("resolves workspace-id keyed inventory for a directory section", () => {
+    const group = workspaceInventoryGroupFor({
+      groups: {
+        ws_feature: {
+          key: "ws_feature",
+          directory: "/repo/feature",
+          workspaceId: "ws_feature",
+          sessions: [{ id: "ses_feature" }],
+        },
+      },
+      workspaceDir: "/repo/feature",
+      workspace: {
+        directory: "/repo/feature",
+        id: "workspace-row-id",
+        workspaceId: "ws_feature",
+      },
+    })
+
+    expect(group?.sessions.map((session) => session.id)).toEqual(["ses_feature"])
+  })
+
+  test("falls back to stored group metadata when the project workspace alias is missing", () => {
+    const group = workspaceInventoryGroupFor({
+      groups: {
+        ws_cached: {
+          key: "ws_cached",
+          directory: "/repo/cached",
+          workspaceId: "ws_cached",
+          sessions: [{ id: "ses_cached" }],
+        },
+      },
+      workspaceDir: "/repo/cached",
+    })
+
+    expect(group?.sessions.map((session) => session.id)).toEqual(["ses_cached"])
   })
 })
 

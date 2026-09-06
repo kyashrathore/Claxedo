@@ -25,10 +25,10 @@ import {
   PermissionModeSelection,
   cursorPermissionOptions,
 } from "../shared/permission-modes"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
   extractTextFromParts,
-  record,
   text,
   type SdkRuntimeAuth,
   type SdkRuntimeDriver,
@@ -58,7 +58,7 @@ type CursorEntry = {
  * source, so the driver only has to name the roots and turn the source on.
  */
 export function cursorPluginRoots(launch: unknown) {
-  const roots = record(record(launch)?.config)?.pluginRoots ?? record(launch)?.pluginRoots
+  const roots = asRecord(asRecord(launch)?.config)?.pluginRoots ?? asRecord(launch)?.pluginRoots
   if (roots === undefined) return []
   if (!Array.isArray(roots)) {
     throw new Error("Cursor Agent Plugins launch config requires pluginRoots to be an array of non-empty paths")
@@ -524,7 +524,7 @@ export async function ingestCursorSdkMessage(
   message: SDKMessage,
   transcriptRegistrar?: SdkRuntimeTranscriptRegistrar,
 ) {
-  const sdkSessionId = text(record(message)?.agent_id)
+  const sdkSessionId = text(asRecord(message)?.agent_id)
   if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
   const frame = cursorRuntimeMessage(message)
   const observations = cursorSubagentObservations(message)
@@ -573,9 +573,9 @@ function cursorTranscript(
 
 function cursorTaskTranscriptPath(message: SDKMessage) {
   if (message.type !== "tool_call" || message.name.toLowerCase() !== "task" || message.status !== "completed") return undefined
-  const result = record(message.result)
+  const result = asRecord(message.result)
   if (result?.status !== "success") return undefined
-  return text(record(result.value)?.transcriptPath)
+  return text(asRecord(result.value)?.transcriptPath)
 }
 
 function cursorMcpServers(input: Record<string, ResolvedMcpServer>): Record<string, CursorMcpServerConfig> {

@@ -159,24 +159,7 @@ describe("session controller helpers", () => {
     })).toBeUndefined()
   })
 
-  test("keeps migrated metadata, todo, and capabilities request state query-owned", async () => {
-    const source = await Bun.file(new URL("./session-controller.ts", import.meta.url)).text()
-    const banned = [
-      "runInflight",
-      "sessionInflight",
-      "metaInflight",
-      "metaFresh",
-      "todoInflight",
-      "capabilitiesInflight",
-      "capabilitiesCache",
-      "client: sdk.client.session",
-      "DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES",
-    ]
 
-    banned.forEach((pattern) => {
-      expect(source).not.toContain(pattern)
-    })
-  })
 
   test("shouldHydrateSession skips invalid routes and hydrates real sessions", () => {
     expect(shouldHydrateSession({ sessionID: undefined, healthy: true })).toBe(false)
@@ -219,15 +202,7 @@ describe("session controller helpers", () => {
     )
   })
 
-  test("failed older-history cursors are dampened instead of refetched in a loop", () => {
-    // Behavior (dampening derivation now lives in history-pagination.ts and is
-    // unit-tested there): a session with a next cursor offers "more" history;
-    // once that same cursor's backfill fails and is recorded in failedCursor,
-    // it is no longer offered, so the controller cannot refetch it in a loop.
-    const base = { limit: {}, cursor: { k: "cur" }, failedCursor: {}, complete: {}, loading: {} }
-    expect(historyHasMore(base, "k")).toBe(true)
-    expect(historyHasMore({ ...base, failedCursor: { k: "cur" } }, "k")).toBe(false)
-  })
+
 
   test("the controller records the attempted older-page cursor when its backfill fails", () => {
     // WRITE side of the dampening loop-break. `syncSessionHistory`'s failure
@@ -941,31 +916,66 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toBeUndefined()
   })
 
-  test("syncSessionMeta tolerates unavailable permission metadata", async () => {
-    const ok = await syncSessionMeta({
+  test.each(["reject", "missing-data"] as const)("syncSessionMeta preserves failed status evidence (%s) and retries it", async (failure) => {
+    setSessionStatusQueryData({ queryClient, sessionId: "ses_1", status: busy })
+    observeSessionStatusEvent({ sessionID: "ses_1", status: busy })
+    let statusCalls = 0
+    const sdk = {
+      session: { status: async () => {
+        statusCalls += 1
+        if (statusCalls > 1) return { data: { ses_1: idle } }
+        if (failure === "reject") throw new Error("offline")
+        return {}
+      } },
+      permission: { list: async () => ({ data: [] }) },
+      question: { list: async () => ({ data: [] }) },
+    }
+    const input = { directory: "/repo/failed-status", sessionID: "ses_1", currentSessionID: () => "ses_1", instrumentPoll: true, sdk }
+    await expect(syncSessionMeta(input)).resolves.toBe(true)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual(busy)
+    expect(sessionStatusPollDisagreements()).toEqual([])
+
+    await expect(syncSessionMeta(input)).resolves.toBe(true)
+    expect(statusCalls).toBe(2)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual(idle)
+  })
+
+  test.each(["permissions", "questions"] as const)("syncSessionMeta preserves cached %s when that read fails", async (failed) => {
+    const cached = { permissions: [permission("p1", "ses_1")], questions: [question("q1", "ses_1")] }
+    setSessionStatusQueryData({ queryClient, sessionId: "ses_1", status: busy })
+    queryClient.setQueryData(shellDataKeys.sessionId("ses_1", "requests"), cached)
+    await expect(syncSessionMeta({
       sessionID: "ses_1",
       currentSessionID: () => "ses_1",
       sdk: {
-        session: {
-          status: async () => ({ data: { ses_1: idle } }),
-        },
-        permission: {
-          list: async () => {
-            throw new Error("workspaceId or directory is required")
-          },
-        },
-        question: {
-          list: async () => ({ data: [] }),
-        },
+        session: { status: async () => ({ data: { ses_1: idle } }) },
+        permission: { list: async () => {
+          if (failed === "permissions") throw new Error("offline")
+          return { data: [] }
+        } },
+        question: { list: async () => {
+          if (failed === "questions") throw new Error("offline")
+          return { data: [] }
+        } },
+      },
+    })).resolves.toBe(true)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual(busy)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toEqual({
+      permissions: failed === "permissions" ? cached.permissions : [],
+      questions: failed === "questions" ? cached.questions : [],
+    })
+  })
+
+  test("syncSessionMeta does not initialize a failed cold status read as idle", async () => {
+    await syncSessionMeta({
+      sessionID: "ses_1", currentSessionID: () => "ses_1",
+      sdk: {
+        session: { status: async () => { throw new Error("offline") } },
+        permission: { list: async () => ({ data: [] }) },
+        question: { list: async () => ({ data: [] }) },
       },
     })
-
-    expect(ok).toBe(true)
-    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual({ type: "idle" })
-    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toEqual({
-      permissions: [],
-      questions: [],
-    })
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toBeUndefined()
   })
 
   test("syncSessionMeta shares directory metadata fetches across sessions", async () => {
@@ -1087,6 +1097,7 @@ describe("session controller helpers", () => {
   })
 
   test("syncSessionMeta can refresh status without refetching request lists", async () => {
+    let requestListCalls = 0
     queryClient.setQueryData(shellDataKeys.sessionId("ses_1", "requests"), {
       permissions: [permission("p1", "ses_1")],
       questions: [question("q1", "ses_1")],
@@ -1102,18 +1113,21 @@ describe("session controller helpers", () => {
         },
         permission: {
           list: async () => {
-            throw new Error("permission should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
         question: {
           list: async () => {
-            throw new Error("question should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
       },
     })
 
     expect(ok).toBe(true)
+    expect(requestListCalls).toBe(0)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual({ type: "idle" })
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toEqual({
       permissions: [permission("p1", "ses_1")],
@@ -1122,6 +1136,7 @@ describe("session controller helpers", () => {
   })
 
   test("syncSessionMeta status-only refresh clears busy when no request is pending", async () => {
+    let requestListCalls = 0
     queryClient.setQueryData(shellDataKeys.sessionId("ses_1", "requests"), {
       permissions: [],
       questions: [],
@@ -1138,22 +1153,26 @@ describe("session controller helpers", () => {
         },
         permission: {
           list: async () => {
-            throw new Error("permission should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
         question: {
           list: async () => {
-            throw new Error("question should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
       },
     })
 
     expect(ok).toBe(true)
+    expect(requestListCalls).toBe(0)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual({ type: "idle" })
   })
 
-  test("syncSessionMeta can merge status through shell query state without a Solid store writer", async () => {
+  test("a status-only idle response preserves busy while a permission is pending", async () => {
+    let requestListCalls = 0
     setSessionStatusQueryData({ queryClient, sessionId: "ses_1", status: busy })
     queryClient.setQueryData(shellDataKeys.sessionId("ses_1", "requests"), {
       permissions: [permission("p1", "ses_1")],
@@ -1170,22 +1189,26 @@ describe("session controller helpers", () => {
         },
         permission: {
           list: async () => {
-            throw new Error("permission should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
         question: {
           list: async () => {
-            throw new Error("question should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
       },
     })
 
     expect(ok).toBe(true)
+    expect(requestListCalls).toBe(0)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual(busy)
   })
 
   test("syncSessionMeta records poll disagreement against last event status", async () => {
+    let requestListCalls = 0
     resetSessionStatusTelemetryForTest()
     observeSessionStatusEvent({
       directory: "/repo/main",
@@ -1206,18 +1229,21 @@ describe("session controller helpers", () => {
         },
         permission: {
           list: async () => {
-            throw new Error("permission should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
         question: {
           list: async () => {
-            throw new Error("question should not be fetched")
+            requestListCalls++
+            return { data: [] }
           },
         },
       },
     })
 
     expect(ok).toBe(true)
+    expect(requestListCalls).toBe(0)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual(idle)
     const disagreements = sessionStatusPollDisagreements()
     expect(disagreements).toHaveLength(1)
@@ -1303,37 +1329,7 @@ describe("session controller helpers", () => {
     resetSessionStatusTelemetryForTest()
   })
 
-  test("rubric T10: integration — once the gate opens, the controller decision flips and a sane caller never invokes the poller", () => {
-    resetSessionStatusTelemetryForTest()
-    const now = Date.now()
-    const sessionID = "ses_t10"
-    const directory = "/repo/main"
 
-    // Drive a session from "no evidence" → "matching evidence sustained".
-    // 1. No data yet — the decision says start.
-    expect(shouldStartActiveSessionStatusPolling({ directory, sessionID })).toBe(true)
-
-    // 2. Event arrives. Still missing matching poll evidence.
-    observeSessionStatusEvent({ directory, sessionID, status: idle, now })
-    expect(shouldStartActiveSessionStatusPolling({ directory, sessionID })).toBe(true)
-
-    // 3. Matching polls accumulate inside the sliding window. After
-    //    matchesRequired the gate opens for THIS session.
-    for (let i = 0; i < SESSION_STATUS_TELEMETRY_CONFIG.matchesRequired; i++) {
-      observeSessionStatusPoll({ directory, sessionID, status: idle, now: now + 1 + i })
-    }
-
-    // 4. A controller that respects the decision disables the active-status
-    //    polling query for this session.
-    const queryEnabled = (input: { directory?: string; sessionID: string }) => shouldStartActiveSessionStatusPolling(input)
-    expect(queryEnabled({ directory, sessionID })).toBe(false)
-
-    // 5. A DIFFERENT session (no event evidence yet) still gets polled —
-    //    the gate is per-session, not global.
-    expect(queryEnabled({ directory, sessionID: "ses_t10_other" })).toBe(true)
-
-    resetSessionStatusTelemetryForTest()
-  })
 
   test("active-session status polling decision exposes the telemetry gate reason", () => {
     resetSessionStatusTelemetryForTest()

@@ -42,9 +42,9 @@ export interface ImageAttachmentPart {
   id: string
   filename: string
   /**
-   * ABSOLUTE LOCAL FILESYSTEM PATH of the file this attachment was made from —
-   * not a URL, and not the `@`-mention path a `FileAttachmentPart` carries (the
-   * bytes already travel in `dataUrl`; this is only provenance).
+   * The absolute local filesystem path of the file this attachment was made
+   * from — not a URL, and not the `@`-mention path a `FileAttachmentPart`
+   * carries (the bytes already travel in `dataUrl`; this is only provenance).
    *
    * Optional because only a host that can resolve a `File` back to a path
    * supplies one: the vendored v2 attachment writer
@@ -55,9 +55,9 @@ export interface ImageAttachmentPart {
    * clipboard image, and from Claxedo's own `composer/ui/attachments.ts`, there is
    * no path and the field is absent — the writer normalizes `""` to `undefined`.
    *
-   * DEAD ON READ TODAY: nothing in this repo consumes it. It is declared because
-   * the writer is the contract — an undeclared field survives only by structural
-   * accident and is dropped the moment a part is built through this type.
+   * Nothing in this repo reads it yet. It is still declared because the writer
+   * is the contract — an undeclared field survives only by structural accident
+   * and is dropped the moment a part is built through this type.
    */
   sourcePath?: string
   mime: string
@@ -73,8 +73,8 @@ type UpstreamImageAttachment = Extract<PromptInputV2Prompt[number], { type: "ima
 
 /**
  * Tripwire for the divergence that let `sourcePath` be written but not declared:
- * mutual assignability does NOT catch a field we forgot, because an object type
- * missing an OPTIONAL property is still assignable both ways. Key coverage does.
+ * mutual assignability does not catch a field we forgot, because an object type
+ * missing an optional property is still assignable both ways. Key coverage does.
  * Adding a field to upstream's attachment without mirroring it here fails to
  * compile right on this line instead of surviving as an undeclared runtime field.
  */
@@ -164,7 +164,7 @@ const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "tr
 
 type PromptSession = ReturnType<typeof createPromptSession>
 
-// Ref-counted LRU over directory/session scopes. Eviction DISPOSES the scope's
+// Ref-counted LRU over directory/session scopes. Eviction disposes the scope's
 // reactive root, so a plain LRU could dispose a scope a mounted composer is still
 // subscribed to: `session()` is memoized on the provider's props, so it keeps
 // handing out the same PromptSession object while its memos have been unsubscribed
@@ -199,16 +199,16 @@ function value<T extends string | undefined>(input: Accessor<T> | T): T {
 }
 
 // ---------------------------------------------------------------------------
-// T2.1 (plan 2026-07-25-005): raw per-scope draft tuple + scope identity.
+// Raw per-scope draft tuple + scope identity.
 //
-// Everything below is ADDITIVE. `usePrompt()`'s pre-existing wrapped API is
+// Everything below is additive: `usePrompt()`'s pre-existing wrapped API is
 // untouched; these exports sit beside it so upstream's v2 prompt-input
 // controller (`createPromptInputV2Controller`) can bind its two structural
 // inputs — `store` (an accessor returning a `[store, setStore]` Solid tuple)
 // and `identity` (a value whose change reconciles the interaction machine back
 // to its initial state) — without the composer reaching into module internals.
 //
-// This lives HERE rather than in `composer/v2/` because the app's orphan guard
+// This lives here rather than in `composer/v2/` because the app's orphan guard
 // (`src/architecture/import-graph.guard.test.ts`) rejects production modules
 // with no production consumer, and nothing wires the v2 controller yet. The
 // bridge belongs to the draft-state owner anyway.
@@ -224,7 +224,7 @@ export type PromptDraftState = {
 }
 
 /**
- * `[accessor, setter]` in exactly the shape `createPromptInputV2Store` consumes
+ * `[accessor, setter]` in the shape `createPromptInputV2Store` consumes
  * (upstream accepts `Store<T> | Accessor<Store<T>>` as element 0; we always
  * hand it the accessor form so reads stay reactive through the LRU).
  */
@@ -232,7 +232,7 @@ export type PromptDraftStoreTuple = [Accessor<PromptDraftState>, SetStoreFunctio
 
 /**
  * The stable per-scope handle. One object per prompt-cache entry, so its
- * reference identity IS the scope identity: it changes when (and only when) the
+ * reference identity is the scope identity: it changes when (and only when) the
  * resolved scope changes, never when the draft inside it is edited. Mirrors
  * upstream's `prompt.capture()` (`upstream:packages/app/src/context/prompt-state.ts`).
  */
@@ -240,14 +240,14 @@ export type PromptDraftCapture = {
   readonly store: PromptDraftStoreTuple
 }
 
-/** The `Scope` accepted by `set`/`reset`/`capture`: RAW directory + RAW session id. */
+/** The `Scope` accepted by `set`/`reset`/`capture`: raw directory + raw session id. */
 export type PromptDraftScope = Scope
 
 type Assert<T extends true> = T
 
 /**
  * Machine-checked half of the shape reconciliation with upstream's view model:
- * our persisted draft is READ-compatible with `PromptInputV2PersistedState`.
+ * our persisted draft is read-compatible with `PromptInputV2PersistedState`.
  * If this ever stops holding, `Assert<false>` fails to compile right here.
  */
 export type PromptDraftStateIsUpstreamReadable = Assert<
@@ -257,7 +257,7 @@ export type PromptDraftStateIsUpstreamReadable = Assert<
 /**
  * Widen a Claxedo draft tuple to the tuple upstream's controller consumes.
  *
- * NO CAST — the assignment is fully checked (tripwired: making `PromptDraftState`
+ * No cast: the assignment is fully checked (tripwired — making `PromptDraftState`
  * diverge produces TS2322 right on this return). Our draft is a strict subset of
  * `PromptInputV2PersistedState`; upstream declares optional fields we do not:
  *   - `model` — never written by `interaction.ts`/`machine.ts` (they only read
@@ -266,10 +266,9 @@ export type PromptDraftStateIsUpstreamReadable = Assert<
  *   - file-part `mime` / `filename` / `url` / `source` — not written by the
  *     controller either.
  *
- * Image-part `sourcePath` USED to be listed here as an upstream-only field. It is
- * not: it is written (see `ImageAttachmentPart#sourcePath`) and is now declared on
- * our side too, with `ImagePartDeclaresEveryUpstreamAttachmentField` keeping the
- * two key sets from drifting apart again.
+ * Image-part `sourcePath` is written (see `ImageAttachmentPart#sourcePath`) and
+ * declared on our side too; `ImagePartDeclaresEveryUpstreamAttachmentField` keeps
+ * the two key sets from drifting apart.
  */
 export function promptDraftStoreTuple(capture: PromptDraftCapture): PromptInputV2StoreTuple {
   return capture.store
@@ -278,10 +277,10 @@ export function promptDraftStoreTuple(capture: PromptDraftCapture): PromptInputV
 /**
  * The two controller inputs for one scope, derived from a single `capture`
  * accessor so `store` and `identity` can never disagree about which scope they
- * describe. `identity` is the capture object itself, exactly as upstream wires
+ * describe. `identity` is the capture object itself, the same way upstream wires
  * `identity: () => prompt.capture()`.
  *
- * The return type is annotated with upstream's OWN input types, so `tsgo` checks
+ * The return type is annotated with upstream's own input types, so `tsgo` checks
  * this against `PromptInputV2ControllerInput` rather than us asserting it.
  */
 export function promptDraftControllerInput(capture: Accessor<PromptDraftCapture>): {
@@ -327,7 +326,7 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
     return `${key}:c=${digest.slice(0, 8)}`
   }
 
-  // The raw tuple, accessor-wrapped, created ONCE per scope so its reference
+  // The raw tuple, accessor-wrapped, created once per scope so its reference
   // identity is stable for the life of this session. Additive: nothing that
   // already reads this session goes through it.
   const draftStore: PromptDraftStoreTuple = [() => store, setStore]
@@ -410,8 +409,8 @@ const promptContextInput = {
       )
     }
 
-    // The MOUNTED scope's pin, and the ONLY long-lived one. `onCleanup` inside a
-    // memo runs before every recompute AND on owner disposal, so the pin is
+    // The mounted scope's pin, and the only long-lived one. `onCleanup` inside a
+    // memo runs before every recompute and on owner disposal, so the pin is
     // released on both ways out — a scope switch and provider teardown — with no
     // second bookkeeping structure to fall out of sync. Registered on the line
     // right after the acquire so no statement can throw in between; if `create()`
@@ -429,17 +428,17 @@ const promptContextInput = {
       onCleanup(handle.release)
       return handle.value
     })
-    // A cross-session scope must resolve to the SAME prompt-cache/persist entry
+    // A cross-session scope must resolve to the same prompt-cache/persist entry
     // the composer reads through `session()` — otherwise a scoped `set`/`reset`
     // (e.g. DialogFork restoring the forked message's draft into the new
     // session, or the submit path clearing the composer after send) writes to an
-    // orphan entry the composer never mounts. BOTH `session()` and `withScope`
+    // orphan entry the composer never mounts. Both `session()` and `withScope`
     // derive their key through the one canonical `promptScopeKey`, which applies
-    // `sessionViewKey` exactly once. A `Scope` therefore carries the RAW
+    // `sessionViewKey` exactly once. A `Scope` therefore carries the raw
     // directory, session id, and draft id (mirroring `PromptProviderProps`); a
     // scope producer must never pre-compute the key or it double-wraps here.
     //
-    // An explicit scope is BORROWED for the duration of the call only: pinning it
+    // An explicit scope is borrowed for the duration of the call only: pinning it
     // past that would make the entry immortal, and a leaked pin is worse than the
     // eviction this replaces. `finally` so a throwing writer cannot leak one. The
     // release does not dispose, so the write is still there when the composer
@@ -456,7 +455,7 @@ const promptContextInput = {
 
     return {
       ready: () => session().ready(),
-      // T2.1: the raw per-scope handle. Resolves through the SAME `withScope` the
+      // The raw per-scope handle. Resolves through the same `withScope` the
       // scoped `set`/`reset` use, so a controller bound here and a scoped clear
       // can never target different prompt-cache entries. Reference-stable per
       // scope (one object per cache entry), which is what makes it usable as

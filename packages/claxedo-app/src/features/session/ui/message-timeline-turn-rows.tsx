@@ -47,7 +47,6 @@ export function TurnFoldRow(props: {
   showTokens?: boolean
   running?: boolean
 }) {
-  // D§3.6: present tense while the turn is still working, past tense once it settles.
   const label = () => {
     const verb = props.running ? "Working" : "Worked"
     return typeof props.durationMs === "number" ? `${verb} for ${formatDuration(props.durationMs)}` : verb
@@ -98,7 +97,6 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
   const overflow = createMemo(() => Math.max(0, props.diffs.length - maxFiles))
   const visible = createMemo(() => (showAll() ? props.diffs : props.diffs.slice(0, maxFiles)))
 
-  // Undo the whole turn's edits via the git-snapshot revert (T9, D§3.9).
   const undo = () => {
     if (!props.onUndo || state.undoing) return
     setState("undoing", true)
@@ -205,7 +203,6 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
   )
 }
 
-// Hover diff popover (T10, D§3.10): 800ms hover on a file row floats a diff preview.
 function DiffHoverCard(props: { diff: SummaryDiff; children: JSX.Element }) {
   return (
     <KobalteTooltip openDelay={800} closeDelay={100} placement="top" gutter={8}>

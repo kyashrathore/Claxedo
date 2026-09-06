@@ -3,6 +3,7 @@ import type { RelayTargetLookup } from "../deployments/shared-routes/internal-re
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
 import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /**
  * Neutral resolver contract for a workspace's current user-hosted host. The
@@ -14,11 +15,6 @@ export type UserHostedTargetResult =
   | { active: false }
 
 export type UserHostedTargetResolver = (workspaceId: string) => Promise<UserHostedTargetResult>
-
-function clean(value: string | undefined) {
-  const v = value?.trim()
-  return v ? v : undefined
-}
 
 /**
  * The single SandboxManager-backed relay target lookup, consumed by hosted
@@ -97,7 +93,7 @@ export function sandboxRelayTargetLookup(input: {
     }
   }
   const upstreamHeaders = (target: SandboxTarget) => {
-    const daytonaPreviewToken = clean(target.labels?.["daytona.previewToken"])
+    const daytonaPreviewToken = trimToUndefined(target.labels?.["daytona.previewToken"])
     if (!daytonaPreviewToken) return undefined
     return { "x-daytona-preview-token": daytonaPreviewToken }
   }

@@ -10,6 +10,7 @@ import {
   type JWTVerifyGetKey,
 } from "jose"
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   privateSessionRuntimeProof,
   type PrivateSessionAuthority,
@@ -23,7 +24,7 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "../platform/json/index"
-import { asRecord } from "../platform/json/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const bodyLimitBytes = 16 * 1024
 const streamLeaseIssuer = "claxedo-control-plane"
@@ -134,8 +135,8 @@ async function runtimeAccessTokenDenial(
   }))
   if (active?.active === true) return undefined
   return {
-    code: text(active?.code) ?? "runtime_access_token_inactive",
-    message: text(active?.reason) ?? "Runtime Access Token is inactive",
+    code: trimToUndefined(active?.code) ?? "runtime_access_token_inactive",
+    message: trimToUndefined(active?.reason) ?? "Runtime Access Token is inactive",
   }
 }
 
@@ -223,8 +224,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       return context.json(
         {
           error: {
-            code: text(active?.code) ?? "runtime_access_token_inactive",
-            message: text(active?.reason) ?? "Runtime Access Token is inactive",
+            code: trimToUndefined(active?.code) ?? "runtime_access_token_inactive",
+            message: trimToUndefined(active?.reason) ?? "Runtime Access Token is inactive",
           },
         },
         401,
@@ -486,15 +487,15 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
 }
 
 function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined) {
-  const sessionId = text(body?.sessionId)
+  const sessionId = trimToUndefined(body?.sessionId)
   const action = body?.action
-  const operationId = text(body?.operationId)
+  const operationId = trimToUndefined(body?.operationId)
   const reason = optionalText(body?.reason)
   const title = optionalText(body?.title)
   const stream = body?.stream === true
-  const lease = text(body?.lease)
-  const turnId = text(body?.turnId)
-  const turnLeaseId = text(body?.leaseId)
+  const lease = trimToUndefined(body?.lease)
+  const turnId = trimToUndefined(body?.turnId)
+  const turnLeaseId = trimToUndefined(body?.leaseId)
   const fencingToken = positiveInteger(body?.fencingToken)
   if (!sessionId || !isAuthorityAction(action)) return undefined
   if (
@@ -610,12 +611,12 @@ function streamLeaseVerifier(env: Record<string, string | undefined>) {
       || (principalKind === "user" && actorKind !== "human")
       || (principalKind === "service" && actorKind !== "agent")
     ) throw new Error("Stream lease principal is invalid")
-    const actorId = text(payload.actor_id)
-    const orgId = text(payload.org_id)
-    const workspaceId = text(payload.workspace_id)
-    const hostId = text(payload.host_id)
-    const parentRuntimeAccessTokenJti = text(payload.parent_jti)
-    const sessionId = text(payload.session_id)
+    const actorId = trimToUndefined(payload.actor_id)
+    const orgId = trimToUndefined(payload.org_id)
+    const workspaceId = trimToUndefined(payload.workspace_id)
+    const hostId = trimToUndefined(payload.host_id)
+    const parentRuntimeAccessTokenJti = trimToUndefined(payload.parent_jti)
+    const sessionId = trimToUndefined(payload.session_id)
     const action = payload.action
     const transport = payload.transport
     if (!actorId || !orgId || !workspaceId || !sessionId
@@ -690,14 +691,14 @@ function turnLeaseVerifier(env: Record<string, string | undefined>) {
       || (principalKind === "user" && actorKind !== "human")
       || (principalKind === "service" && actorKind !== "agent")
     ) throw new Error("Turn lease principal is invalid")
-    const actorId = text(payload.actor_id)
-    const orgId = text(payload.org_id)
-    const workspaceId = text(payload.workspace_id)
-    const hostId = text(payload.host_id)
-    const parentRuntimeAccessTokenJti = text(payload.parent_jti)
-    const sessionId = text(payload.session_id)
-    const turnId = text(payload.turn_id)
-    const authorityLeaseId = text(payload.authority_lease_id)
+    const actorId = trimToUndefined(payload.actor_id)
+    const orgId = trimToUndefined(payload.org_id)
+    const workspaceId = trimToUndefined(payload.workspace_id)
+    const hostId = trimToUndefined(payload.host_id)
+    const parentRuntimeAccessTokenJti = trimToUndefined(payload.parent_jti)
+    const sessionId = trimToUndefined(payload.session_id)
+    const turnId = trimToUndefined(payload.turn_id)
+    const authorityLeaseId = trimToUndefined(payload.authority_lease_id)
     const fencingToken = positiveInteger(payload.fencing_token)
     const acquiredAt = finiteTimestamp(payload.acquired_at)
     const expiresAt = finiteTimestamp(payload.authority_expires_at)
@@ -742,12 +743,12 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
     const role = payload.role
     const access = payload.access
     const backing = payload.backing
-    const actorId = text(payload.actor_id)
-    const orgId = text(payload.org_id)
-    const workspaceId = text(payload.workspace_id)
-    const hostId = text(payload.host_id)
-    const jti = text(payload.jti)
-    const parentJti = text(payload.parent_jti)
+    const actorId = trimToUndefined(payload.actor_id)
+    const orgId = trimToUndefined(payload.org_id)
+    const workspaceId = trimToUndefined(payload.workspace_id)
+    const hostId = trimToUndefined(payload.host_id)
+    const jti = trimToUndefined(payload.jti)
+    const parentJti = trimToUndefined(payload.parent_jti)
     if (
       (principalKind !== "user" && principalKind !== "service")
       || (actorKind !== "human" && actorKind !== "agent")
@@ -783,11 +784,11 @@ function roleRank(role: "viewer" | "editor" | "admin" | "owner") {
 }
 
 function relayProofKey(env: Record<string, string | undefined>): RelayProofKey | Promise<RelayProofKey> {
-  const jwksUrl = text(env.CLAXEDO_RELAY_JWKS_URL)
+  const jwksUrl = trimToUndefined(env.CLAXEDO_RELAY_JWKS_URL)
   if (jwksUrl) return cachedKey(`jwks:${jwksUrl}`, () => createRemoteJWKSet(new URL(jwksUrl)))
   const pem = keyPem(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)
   if (pem) return cachedKey(`pem:${pem}`, () => async () => await importSPKI(pem, "EdDSA"))
-  const jwk = text(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK)
+  const jwk = trimToUndefined(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK)
   if (jwk) return cachedKey(`jwk:${jwk}`, () => async () => await importJWK(JSON.parse(jwk), "EdDSA"))
   throw new Error("Relay proof verification is not configured")
 }
@@ -800,13 +801,9 @@ function cachedKey(key: string, create: () => RelayProofKey | Promise<RelayProof
   return value
 }
 
-function text(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
-}
-
 function optionalText(value: unknown) {
   if (value === undefined) return ""
-  return text(value)
+  return trimToUndefined(value)
 }
 
 function positiveInteger(value: unknown) {
@@ -818,7 +815,7 @@ function finiteTimestamp(value: unknown) {
 }
 
 function keyPem(value: string | undefined) {
-  return text(value)?.replaceAll("\\n", "\n")
+  return trimToUndefined(value)?.replaceAll("\\n", "\n")
 }
 
 

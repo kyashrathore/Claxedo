@@ -67,10 +67,9 @@ describe("cleanupOrphanedHistory", () => {
   })
 
   test("NEVER deletes the bucket of a live session that has not flushed yet", async () => {
-    // Regression: the sweep used to rmdir empty buckets. A session creates its
-    // bucket at startup and writes ~8ms later on the first flush; a sweep in
-    // that window deleted the directory out from under a LIVE terminal and
-    // every subsequent append failed with ENOENT.
+    // A sweep landing in the gap between a session creating its bucket and its
+    // first flush (~8ms later) would delete the directory out from under a
+    // live terminal, and every subsequent append would fail with ENOENT.
     const directory = path.join(root, "live-project")
     const history = await createDiskHistory({ directory, id: "pty_live", limit: 1024 * 1024 })
 

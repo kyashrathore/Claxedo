@@ -3,7 +3,6 @@ import {
   isDefinitiveTerminalCreateFailure,
   pickAdoptedPty,
   shouldMountTerminalPane,
-  startSingleFlightPoll,
 } from "./terminal-content-policy"
 
 describe("terminal content mount policy", () => {
@@ -58,57 +57,6 @@ describe("pickAdoptedPty", () => {
       ],
       "request-b",
     )?.id).toBe("pty_client_b")
-  })
-})
-
-describe("startSingleFlightPoll", () => {
-  test("does not overlap polls and stops scheduling after disposal", async () => {
-    let calls = 0
-    let active = 0
-    let maximumActive = 0
-    let releaseFirst!: () => void
-    const first = new Promise<void>((resolve) => {
-      releaseFirst = resolve
-    })
-    const poller = startSingleFlightPoll(async () => {
-      calls += 1
-      active += 1
-      maximumActive = Math.max(maximumActive, active)
-      if (calls === 1) await first
-      active -= 1
-    }, 1)
-
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(calls).toBe(1)
-    expect(maximumActive).toBe(1)
-
-    releaseFirst()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(calls).toBeGreaterThan(1)
-    expect(maximumActive).toBe(1)
-
-    poller.stop()
-    const stoppedAt = calls
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(calls).toBe(stoppedAt)
-  })
-
-  test("stops a stalled reconciliation at its deadline", async () => {
-    let calls = 0
-    let timedOut = 0
-    startSingleFlightPoll(async () => {
-      calls += 1
-      await new Promise<void>(() => {})
-    }, 1, {
-      timeoutMs: 10,
-      onTimeout: () => {
-        timedOut += 1
-      },
-    })
-
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(calls).toBe(1)
-    expect(timedOut).toBe(1)
   })
 })
 

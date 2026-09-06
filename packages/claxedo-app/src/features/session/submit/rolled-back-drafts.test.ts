@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, spyOn, describe, expect, test } from "bun:test"
 import {
   _resetRolledBackDraftsForTest,
   clearRolledBackDraft,
@@ -8,9 +8,17 @@ import {
 } from "./rolled-back-drafts"
 import { queryClient } from "@/platform/query/query-client"
 
+let now = 1_000_000
+let clock: ReturnType<typeof spyOn>
+beforeEach(() => {
+  now = 1_000_000
+  clock = spyOn(Date, "now").mockImplementation(() => now)
+})
+
 afterEach(() => {
   _resetRolledBackDraftsForTest()
   queryClient.clear()
+  clock.mockRestore()
 })
 
 describe("rolled-back-drafts", () => {
@@ -29,11 +37,7 @@ describe("rolled-back-drafts", () => {
     expect(wasRolledBackDraft("draft-x")).toBe(false)
   })
 
-  test("marked draft is registered", () => {
-    markRolledBackDraft("draft-a")
-    expect(wasRolledBackDraft("draft-a")).toBe(true)
-    expect(queryClient.getQueryData<number>(rolledBackDraftKey("draft-a"))).toBeGreaterThan(Date.now())
-  })
+
 
   test("clear removes a single entry", () => {
     markRolledBackDraft("draft-a")
@@ -43,10 +47,12 @@ describe("rolled-back-drafts", () => {
     expect(wasRolledBackDraft("draft-b")).toBe(true)
   })
 
-  test("entries expire after retention window", async () => {
+  test("entries expire exactly at the retention boundary", () => {
     markRolledBackDraft("draft-short", 10)
     expect(wasRolledBackDraft("draft-short")).toBe(true)
-    await new Promise((r) => setTimeout(r, 30))
+    now += 9
+    expect(wasRolledBackDraft("draft-short")).toBe(true)
+    now += 1
     expect(wasRolledBackDraft("draft-short")).toBe(false)
   })
 
@@ -55,6 +61,7 @@ describe("rolled-back-drafts", () => {
     // event arrives at T=50ms. With default retention (30s), the subscriber
     // still sees the rolled-back state and can skip the insertion.
     markRolledBackDraft("draft-late")
+    now += 50
     expect(wasRolledBackDraft("draft-late")).toBe(true)
   })
 

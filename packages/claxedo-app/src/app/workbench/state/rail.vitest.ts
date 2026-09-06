@@ -1,9 +1,9 @@
 // Rail slice behavior spec (vitest — needs fake timers + a reactive owner for
 // the hover/collapse timers and their onCleanup).
 //
-// The audit flagged the hover/hot-zone/mute/cooldown timer logic as the
-// riskiest untested state machine in this slice. These specs drive it through
-// the real exported `createRailSlice` against fake timers.
+// Drives the hover/hot-zone/mute/cooldown timer logic — the riskiest state
+// machine in this slice — through the real exported `createRailSlice` against
+// fake timers.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createRoot } from "solid-js"

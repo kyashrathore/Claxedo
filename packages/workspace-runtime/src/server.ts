@@ -1,3 +1,4 @@
+import { isLoopbackHostname } from "@claxedo/helpers"
 import { Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { serve } from "@hono/node-server"
@@ -123,13 +124,7 @@ export function workspaceRuntimeListenHostname(env: ListenPolicyEnv = process.en
   return hostname ? hostname : DEFAULT_WORKSPACE_RUNTIME_HOSTNAME
 }
 
-export function isLoopbackHostname(hostname: string) {
-  const value = hostname.trim().toLowerCase()
-  return value === "localhost"
-    || value === "127.0.0.1"
-    || value === "::1"
-    || value === "[::1]"
-}
+export { isLoopbackHostname }
 
 export function assertWorkspaceRuntimeListenPolicy(
   options: WorkspaceRuntimeServerOptions,

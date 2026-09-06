@@ -2,20 +2,13 @@
  * Narrowing for values that arrive from a boundary as `unknown` or `any`: JSON
  * request bodies, stored object blobs, database JSON columns, IPC payloads.
  *
- * Every such value used to be cast into its expected shape at the point of use,
- * which meant the question "did anyone actually check this was an object?" had a
- * different answer in each module. These guards are the single owner of that
- * check, so a boundary either narrows through them or is validated by a schema.
+ * The object check itself is `@claxedo/helpers/guards`; this module re-exports
+ * it so a boundary either narrows through one owner or is validated by a
+ * schema, and adds the JSON-text and Request/Response readers built on it.
  */
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-/** `undefined` unless the value is a plain object, so callers can `?.` straight through. */
-export function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
+export { asRecord, isRecord } from "@claxedo/helpers/guards"
 
 /** `JSON.parse` with an honest return type: the result of parsing is `unknown`, never `any`. */
 export function parseJson(text: string): unknown {

@@ -1,25 +1,24 @@
 /**
  * Shared API helpers for web and desktop.
  */
+import { isLoopbackHostname, isLoopbackHttpUrl } from "@claxedo/helpers"
 import { bypassFetchThrottle, isEventStreamPath, throttledFetch } from "@/lib/fetch-throttle";
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
-export { isDemoMode, isDemoPath, isEmbedMode } from "@/lib/runtime-mode"
-import { isDemoMode } from "@/lib/runtime-mode"
+export { isEmbedMode } from "@/lib/runtime-mode"
 
 /**
  * How a build hands this transport a bearer, without this transport knowing
  * who issues one.
  *
- * This module used to call `getAuthToken` from `@/platform/auth/better-auth-browser-auth`
- * directly. `better-auth-browser-auth.ts` is hosted; this file is shared. The transport
- * cannot import a credential source only the hosted build has.
- * `configureApiRuntime` installs the bearer from the composition root instead.
+ * `better-auth-browser-auth.ts` is hosted; this file is shared, so it cannot
+ * import a credential source only the hosted build has. `configureApiRuntime`
+ * installs the bearer from the composition root instead.
  *
- * Deliberately NOT a `*-port.ts` contract module in the shape of
+ * Deliberately not a `*-port.ts` contract module in the shape of
  * `platform/runtime/workspace-startup-port.ts`. That seam names three hosted
- * OPERATIONS a local build cannot perform, so `workspaceStartup()` throws when
+ * operations a local build cannot perform, so `workspaceStartup()` throws when
  * unbound — a local build reaching it is a wiring bug. A bearer is the
- * opposite: "there is no token" is the local product's NORMAL state (the local
+ * opposite: "there is no token" is the local product's normal state (the local
  * server authenticates by loopback, and `authFetch` already falls through to
  * the configured desktop basic-auth password). So it belongs with the
  * credential this module already owns, behind the binder it already has —
@@ -118,9 +117,9 @@ export function resetApiRuntime() {
  *
  * Two of them exist — `features/workspaces/actions/project-actions.tsx`
  * (destroying a cloud sandbox) and `platform/runtime/agent/agent-runtime-client.ts`
- * (the signed control-plane init) — and both used to import `getAuthToken` from
- * `@/platform/auth/better-auth-browser-auth` for one call each. That is the same edge this
- * module cut for itself above, and it put the auth vendor in the LOCAL bundle through two
+ * (the signed control-plane init) — and neither can import
+ * `@/platform/auth/better-auth-browser-auth` directly: that module is hosted-only, and
+ * pulling it in would put the auth vendor in the local bundle through two
  * modules the local shell genuinely needs.
  *
  * So the binder this module already owns answers for them too. Reading is
@@ -136,8 +135,8 @@ export async function apiBearerToken(options?: { skipCache?: boolean }): Promise
   return (await cfg.bearerToken?.(options)) ?? null
 }
 
-// Claxedo's own hosted app only. This used to also match `opencode.ai` and its
-// subdomains, which trusted upstream's hosted app as if it were ours.
+// Claxedo's own hosted app only — never opencode.ai or a subdomain of it,
+// which would treat upstream's hosted app as if it were ours.
 export function isHostedAppHostname(hostname: string | undefined) {
   const host = hostname?.toLowerCase()
   return host === "claxedo.com" || host?.endsWith(".claxedo.com") === true
@@ -157,11 +156,11 @@ export function fixDir(input: string | undefined): string | undefined {
   return txt
 }
 
-// Shared URL normalizer used by every Claxedo URL builder (rubric Q6).
-// Trim whitespace, strip trailing slashes, and treat falsy input as
-// "no URL". Callers layer their own fallbacks on top (the gateway falls
-// back to `getClaxedoServerUrl()`; the relay-connection helper requires
-// the URL upstream).
+// Shared URL normalizer used by every Claxedo URL builder. Trims whitespace,
+// strips trailing slashes, and treats falsy input as "no URL". Callers layer
+// their own fallbacks on top (the gateway falls back to
+// `getClaxedoServerUrl()`; the relay-connection helper requires the URL
+// upstream).
 export function normalizeUrl(url: string | undefined): string | undefined {
   const trimmed = url?.trim()
   if (!trimmed) return undefined
@@ -198,14 +197,13 @@ function configuredOwnOrigin(url: string | undefined): string | undefined {
 function sameOriginForRemoteLocalBackend(url: string | undefined): string | undefined {
   if (typeof window === "undefined") return undefined
   // Only a page actually served over http(s) can double as its own API origin.
-  // The packaged desktop renderer is loaded via `win.loadFile(...)`, so it is a
-  // file:// page — and Chromium reports its origin as the literal string
-  // "file://" with an empty hostname, which slipped past both guards below (the
-  // opaque-origin check only matches the origin spelled "null", and the
-  // loopback check reads the *hostname*). This then handed back "file://" as
-  // the API base, so every call resolved to `file:///session?...` /
-  // `file:///api/workspace/resolve?...` and failed with ERR_FILE_NOT_FOUND: no
-  // session would start and no harness would switch in the shipped app.
+  // The packaged desktop renderer is loaded via `win.loadFile(...)` and is a
+  // file:// page — Chromium reports its origin as the literal string
+  // "file://" with an empty hostname, which neither guard below catches on
+  // its own: the opaque-origin check only matches the origin spelled "null",
+  // and the loopback check reads the hostname. Treating "file://" as the API
+  // base would send every call to a malformed `file:///session` URL, so this
+  // protocol check has to run first.
   if (!/^https?:$/.test(window.location.protocol)) return undefined
   if (window.location.origin === "null") return undefined
   if (localHost(window.location.hostname)) return undefined
@@ -260,7 +258,7 @@ function apiFetchDebugEnabled(route: string) {
  * Whether this request may carry the control plane's session cookie.
  *
  * `browserCredentials` is `"include"` whenever the control plane authenticates
- * the browser with a cookie — but `authFetch` is also the egress for the RELAY,
+ * the browser with a cookie — but `authFetch` is also the egress for the relay,
  * a different origin that authenticates with a Runtime Access Token in the
  * `Authorization` header and has no session cookie of ours at all. Sending
  * credentials there is wrong twice over: it offers the control plane's cookie
@@ -304,8 +302,8 @@ function credentialsFor(url: string, requested: RequestCredentials | undefined):
   if (localUrl(url)) return sameOriginAsPage(url) ? cfg.browserCredentials : "omit"
   try {
     const target = new URL(url, typeof window === "undefined" ? undefined : window.location.origin)
-    // `getClaxedoServerUrl()`, NOT the page's own origin. On a hosted
-    // deployment the app and the control plane are DIFFERENT hosts
+    // `getClaxedoServerUrl()`, not the page's own origin. On a hosted
+    // deployment the app and the control plane are different hosts
     // (`app-…` and `cf-…`), and `configureApiRuntime` is not called with a
     // `baseUrl` there — so treating the page origin as the control plane
     // would withhold the cookie from the very service that needs it and every
@@ -410,10 +408,8 @@ function throttleInit(init: RequestInit | undefined, input: string | URL | Reque
 
 /**
  * Get the base URL for claxedo-server API calls (PTY, documents, events, etc.)
- * In demo mode returns the current origin so MSW service worker intercepts requests.
  */
 export function getClaxedoServerUrl(): string {
-  if (isDemoMode()) return normalized(window.location.origin) ?? window.location.origin
   // Electron main owns the desktop sidecar selection and binds its exact URL
   // after startup. That runtime fact must beat a build-time Vite value: local
   // ports are dynamic, and a stale compiled port can silently send session
@@ -421,7 +417,7 @@ export function getClaxedoServerUrl(): string {
   // actual sidecar.
   if (cfg.base) return cfg.base
   const envUrl = envString(import.meta.env.VITE_CLAXEDO_SERVER_URL)
-  // The page's own origin, configured as the server, IS the server: the dev
+  // The page's own origin, configured as the server, is the server: the dev
   // server proxies the API there (local signed web development runs one
   // HTTPS origin for both halves). Rewriting it to a loopback address below
   // would move the API to a second origin and lose the host-only session
@@ -453,9 +449,6 @@ export function getConfiguredClaxedoServerUrl(): string | undefined {
  * On desktop, reads the sidecar URL set during init.
  */
 export function getDefaultBaseUrl(): string {
-  // Demo mode: use current origin so MSW service worker intercepts all requests
-  if (isDemoMode()) return window.location.origin
-
   if (cfg.base) return cfg.base
 
   // Desktop: sidecar URL is set during init
@@ -474,14 +467,13 @@ export function getDefaultBaseUrl(): string {
     }
   }
 
-  // The default backend is the control plane (the Worker), NEVER the static app
+  // The default backend is the control plane (the Worker), never the static app
   // origin. On a Pages + Worker split, the app is served from Pages but the API
   // lives on the Worker; falling back to `window.location.origin` here pointed
   // control-plane calls (e.g. /api/workspace/resolve) at Pages, which answered
   // with the SPA index.html (HTTP 200) and broke session creation when the app
   // parsed HTML as JSON. `getClaxedoServerUrl()` resolves VITE_CLAXEDO_SERVER_URL
-  // / the desktop sidecar / the local server — and only returns the origin in
-  // demo mode, where same-origin MSW interception is intended.
+  // / the desktop sidecar / the local server.
   return getClaxedoServerUrl()
 }
 
@@ -596,7 +588,6 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
   const code = await responseErrorCode(firstResponse)
   if (code !== "invalid_bearer_token") return firstResponse
 
-  // Step 2: force-refresh the bearer token and retry.
   const retried = await buildRequest(true)
   const retriedRequest = retried.request
   const retriedResponse = retriedRequest instanceof Request
@@ -604,7 +595,7 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
     : await throttledFetch(() => fetch(retriedRequest, retried.init), throttleInit(retried.init, retriedRequest), retriedRequest)
   apiFetchDebug("retried-response", retriedResponse)
 
-  // If the force-refreshed token is STILL rejected (the auth
+  // If the force-refreshed token is still rejected (the auth
   // session is dead, JWKS rotated mid-flight, or the user's
   // instance and the server's are out of sync — common in local dev
   // when env vars drift), drop the Authorization header entirely and
@@ -677,27 +668,10 @@ export const api = {
   },
 }
 
-/** The loopback hostnames a URL parser can hand back, IPv6 bracketed or not. */
-export function isLoopbackHostname(hostname: string) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]"
-}
-
-function loopbackHttpUrl(input: string | undefined) {
-  if (!input) return false
-  try {
-    const url = new URL(input)
-    return (url.protocol === "http:" || url.protocol === "https:") && isLoopbackHostname(url.hostname)
-  } catch {
-    return false
-  }
-}
-
-export function isLoopbackHttpUrl(input: string | undefined) {
-  return loopbackHttpUrl(input)
-}
+export { isLoopbackHostname, isLoopbackHttpUrl }
 
 export function usesUnsignedLocalTransport(input: string | undefined) {
-  return loopbackHttpUrl(input)
+  return isLoopbackHttpUrl(input)
 }
 
 export function unsignedLocalFetch(input: string | URL | Request, init?: RequestInit) {

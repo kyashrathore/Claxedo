@@ -9,11 +9,10 @@ export function PagesIndexContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   return (
-    // Documents is a GLOBAL entry in the sidebar, above the project list, so it
-    // lists every project's documents grouped by project. It used to scope itself
-    // to `meta.directory` — the workspace that happens to host the tab — and so
-    // showed one project's documents under a heading that claimed to be all of
-    // them. The directory still decides where "New document" lands.
+    // Documents is a global sidebar entry, above the project list, so it lists
+    // every project's documents grouped by project rather than scoping to
+    // `meta.directory` — the workspace that happens to host the tab. The
+    // directory still decides where "New document" lands.
     <PageIndex
       scope="all"
       directory={props.meta.directory}

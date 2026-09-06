@@ -12,15 +12,14 @@ import { mergeProviderIndexWithDetails, normalizeProviderList } from "./provider
 import { requestUrl } from "@/lib/url"
 
 /**
- * A REAL `Provider`, not a type assertion.
+ * A real `Provider`, not a type assertion.
  *
- * These fixtures used to be object literals forced past `ProviderListResponse`,
- * which asserted on a shape the wire can never produce: `Provider` requires
- * `source`, `options` and complete `Model` values, while `normalizeProviderList`
- * reads `models[].status` and `mergeProviderIndexWithDetails` reads `source`.
- * Forcing the type meant these tests exercised a shape production never sees —
- * and the debt ratchet caught it. Building the real thing costs one helper and
- * makes the `status !== "deprecated"` filter reachable from here.
+ * `Provider` requires `source`, `options`, and complete `Model` values, and
+ * `normalizeProviderList` reads `models[].status` while
+ * `mergeProviderIndexWithDetails` reads `source` — a fixture built from a
+ * partial object forced past `ProviderListResponse` would exercise a shape the
+ * wire never produces. Building the real thing costs one helper and makes the
+ * `status !== "deprecated"` filter reachable from here.
  */
 function model(id: string, status: Model["status"] = "active"): Model {
   return {
@@ -286,7 +285,7 @@ describe("control-plane query helpers", () => {
 })
 
 describe("provider cache identity", () => {
-  // Every catalog names BOTH the scope it belongs to and the harness that
+  // Every catalog names both the scope it belongs to and the harness that
   // serves it. There is no unqualified entry to fall into: an unstated harness
   // is an unresolved question, not the OpenCode catalog.
 
@@ -312,13 +311,12 @@ describe("provider cache identity", () => {
 })
 
 describe("an empty provider catalog never replaces a populated one", () => {
-  // The rule used to be enforced by ONE writer (`setProviderQuery` in
-  // bootstrap.ts) while the merge that owns how catalogs combine did not know
-  // it. FOUR writers reach this key — `setBootstrapProviderQueries`, the
+  // Four call sites write this cache key — `setBootstrapProviderQueries`, the
   // directory bootstrap's provider fetch, the globalSync patch handler
   // (`provider.tsx`, which writes `patch.provider` straight in), and
-  // `providerListQuery`'s own `structuralSharing` — and only one was careful.
-  // These pin the rule at the merge, so it holds for every consumer.
+  // `providerListQuery`'s own `structuralSharing` — so the empty-catalog rule
+  // has to hold at the merge that combines them, not at any one call site.
+  // These pin the rule there, so it holds for every consumer.
   const populated = normalizeProviderList(catalog([provider("opencode", [model("gpt-5")])], ["opencode"]))
   const empty = normalizeProviderList(catalog([]))
 

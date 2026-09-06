@@ -1,12 +1,28 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import { createRoot } from "solid-js"
 import type { ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { createPromptEditorActions } from "./editor-actions"
 
+const editors: HTMLElement[] = []
+const owners: VoidFunction[] = []
+let frameSpy: ReturnType<typeof spyOn>
+const frames: FrameRequestCallback[] = []
+beforeEach(() => {
+  frameSpy = spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback))
+})
+afterEach(() => {
+  for (const dispose of owners.splice(0)) dispose()
+  for (const editor of editors.splice(0)) editor.remove()
+  document.getSelection()?.removeAllRanges()
+  frames.length = 0
+  frameSpy.mockRestore()
+})
+
 function createHarness() {
   const editor = document.createElement("div")
   document.body.appendChild(editor)
+  editors.push(editor)
 
   let promptValue: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
   let cursor: number | undefined = 0
@@ -76,6 +92,7 @@ function createHarness() {
 describe("prompt editor actions", () => {
   test("empty input resets dirty prompt to the default prompt", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
       harness.editor.textContent = "   "
       harness.actions.handleInput()
@@ -84,12 +101,12 @@ describe("prompt editor actions", () => {
       expect(harness.calls.popovers).toEqual([null])
       expect(harness.calls.resetHistory).toBe(1)
       expect(harness.calls.scroll).toBe(1)
-      dispose()
     })
   })
 
   test("input opens at and slash popovers only in normal mode", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
 
       harness.editor.textContent = "@agent"
@@ -110,12 +127,12 @@ describe("prompt editor actions", () => {
       harness.actions.handleInput()
       expect(harness.calls.atQueries).toEqual(["agent"])
       expect(harness.calls.popovers.at(-1)).toBe(null)
-      dispose()
     })
   })
 
   test("addPart replaces the active at-query with a pill and trailing space", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
       harness.editor.textContent = "ask @foo"
       harness.setPrompt([{ type: "text", content: "ask @foo", start: 0, end: 8 }], 8)
@@ -129,12 +146,12 @@ describe("prompt editor actions", () => {
         { type: "text", content: " ", start: 10, end: 11 },
       ])
       expect(harness.calls.popovers.at(-1)).toBe(null)
-      dispose()
     })
   })
 
   test("slash selection writes custom commands and triggers builtin commands", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
 
       harness.actions.handleSlashSelect({
@@ -157,12 +174,12 @@ describe("prompt editor actions", () => {
       expect(harness.editor.textContent).toBe("")
       expect(harness.prompt()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
       expect(harness.calls.slashTriggers).toEqual(["session.help"])
-      dispose()
     })
   })
 
   test("/docs opens the document picker and selecting a document delegates resolution", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
       harness.actions.handleSlashSelect({ id: "documents.open", trigger: "docs", title: "Documents", type: "builtin" })
       expect(harness.calls.documentPicker).toBe(1)
@@ -177,12 +194,12 @@ describe("prompt editor actions", () => {
         status: "draft",
       })
       expect(harness.calls.documentSelections).toEqual(["doc-1"])
-      dispose()
     })
   })
 
   test("blur and composition state close editor interaction loops", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
       harness.actions.handleCompositionStart()
       expect(harness.actions.composing()).toBe(true)
@@ -190,12 +207,12 @@ describe("prompt editor actions", () => {
       harness.actions.handleBlur()
       expect(harness.actions.composing()).toBe(false)
       expect(harness.calls.popovers).toEqual([null])
-      dispose()
     })
   })
 
   test("blur persists the caret into the prompt store", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
       harness.editor.textContent = "hello world"
       setCursorPosition(harness.editor, 6)
@@ -204,19 +221,18 @@ describe("prompt editor actions", () => {
 
       expect(harness.cursor()).toBe(6)
       expect(harness.prompt()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
-      dispose()
     })
   })
 
   test("blur without an editor selection leaves the stored caret alone", () => {
     createRoot((dispose) => {
+      owners.push(dispose)
       const harness = createHarness()
       harness.setPrompt([{ type: "text", content: "draft", start: 0, end: 5 }], 5)
 
       harness.actions.handleBlur()
 
       expect(harness.cursor()).toBe(5)
-      dispose()
     })
   })
 })

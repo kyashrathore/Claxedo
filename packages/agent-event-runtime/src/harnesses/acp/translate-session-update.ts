@@ -5,6 +5,7 @@
  * Exhaustiveness is enforced by `const _: never = update` in the default case.
  */
 
+import { asRecord } from "@claxedo/helpers/guards"
 import type {
   SessionUpdate,
   ToolCallContent,
@@ -88,7 +89,7 @@ function errorText(value: unknown, metadata?: Record<string, unknown>) {
   const direct = text(value)
   if (direct) return direct
 
-  const row = object(value)
+  const row = asRecord(value)
   const rowText = [text(row?.stderr), text(row?.stdout)].filter((item): item is string => !!item).join("\n")
   const fromRow =
     (rowText || undefined) ??
@@ -97,8 +98,8 @@ function errorText(value: unknown, metadata?: Record<string, unknown>) {
     text(row?.content)
   if (fromRow) return fromRow
 
-  const acp = object(metadata?.acp)
-  const raw = object(acp?.rawOutput)
+  const acp = asRecord(metadata?.acp)
+  const raw = asRecord(acp?.rawOutput)
   const rawText = [text(raw?.stderr), text(raw?.stdout)].filter((item): item is string => !!item).join("\n")
   const fromMeta =
     (rawText || undefined) ??
@@ -218,7 +219,7 @@ function safePlanEntries(value: unknown, diagnostics: AcpDiagnostics) {
     return []
   }
   return value.flatMap((item, i) => {
-    const row = object(item)
+    const row = asRecord(item)
     if (!row || typeof row.content !== "string" || typeof row.status !== "string") {
       diagnoseTranslation(diagnostics, "acp.malformed_plan", {
         reason: "entry_missing_content_or_status",
@@ -244,7 +245,7 @@ function decodeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): Confi
     return []
   }
   return value.flatMap((item): ConfigUpdateOption[] => {
-    const row = object(item)
+    const row = asRecord(item)
     if (!row || typeof row.id !== "string" || typeof row.name !== "string") {
       diagnoseTranslation(diagnostics, "acp.malformed_config_options", {
         reason: "option_missing_id_or_name",
@@ -427,7 +428,7 @@ export function translateSessionUpdate(
       }
 
       if (status === "completed") {
-        const acp = object(next.metadata.acp)
+        const acp = asRecord(next.metadata.acp)
         const output = safeOutput != null ? safeOutput : (acp?.rawOutput ?? safeItems ?? null)
         const chunks: AgentRuntimeEvent[] = [...statusChunks]
         if (emitInput("completed", next.input, safeInput, title, kind, safeItems)) {
@@ -490,7 +491,7 @@ export function translateSessionUpdate(
     }
 
     case "plan_update": {
-      const plan = object(update.plan)
+      const plan = asRecord(update.plan)
       if (plan?.type === "items") {
         const todos = safePlanEntries(plan.entries, ctx.diagnostics)
         if (todos.length === 0) return []

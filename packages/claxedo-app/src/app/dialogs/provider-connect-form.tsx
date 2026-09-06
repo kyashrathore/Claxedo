@@ -53,10 +53,10 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   // `useProviderAuth` reads it under the same (server, scope, harness) key the
   // catalog above uses, so a cloud workspace never shows the daemon's methods.
   const providerAuthQuery = useProviderAuth(() => props.harness, () => props.workspaceScope)
-  // The catalog holds MODEL providers; callers may pass an id it does not carry
-  // (an auth-only harness id, or a provider the list hasn't loaded
-  // yet). Every consumer below reads `.name`, so a miss used to throw and take
-  // the whole screen with it — fall back to the id rather than crash.
+  // The catalog holds model providers; callers may pass an id it does not carry
+  // (an auth-only harness id, or a provider list that hasn't loaded yet).
+  // Every consumer below reads `.name`, so this falls back to the id rather
+  // than crash.
   const provider = createMemo(() =>
     providers.all().get(props.provider)
       ?? { id: props.provider, name: props.provider, source: "custom" as const, env: [], options: {}, models: {} },

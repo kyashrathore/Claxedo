@@ -33,10 +33,10 @@ function sessionStatus(properties: unknown) {
  * droppable churn.
  *
  * `.git/` is mostly bookkeeping noise (object-store writes, `*.lock` files
- * around every command), but two path families are the AUTHORITATIVE record of
- * state the review reads and must NOT be dropped:
+ * around every command), but two path families are the authoritative record of
+ * state the review reads and must not be dropped:
  *
- * - `.git/index` is exactly what `git add` / `git reset` write. An index-only
+ * - `.git/index` is what `git add` / `git reset` write. An index-only
  *   change moves files between the staged and unstaged sets with no worktree
  *   event at all, and the review caches are infinite-stale, so dropping it
  *   would leave them wrong forever.
@@ -61,10 +61,9 @@ function watcherFileInvalidation(file: unknown): ReviewVcsInvalidation | undefin
 /**
  * What one runtime event makes stale for a review of `sessionId`.
  *
- * Pure, and separate from the subscription, because who owns the subscription
- * has changed: it used to live in ReviewTab, which now unmounts whenever
- * another workspace tab is active, and a review that stops watching goes
- * quietly stale instead of loudly wrong.
+ * Pure, and separate from the subscription: ReviewTab, which owns the
+ * subscription, unmounts whenever another workspace tab is active, so a
+ * review that stops watching must go quietly stale instead of loudly wrong.
  */
 export function reviewVcsInvalidationFromEvent(input: {
   event: ReviewVcsEvent
@@ -91,7 +90,7 @@ export function reviewVcsInvalidationFromEvent(input: {
  * the workspace, whichever session caused it?
  *
  * Unlike `reviewVcsInvalidationFromEvent` this tracks every session on the
- * stream, because the stream is already directory-scoped and ANY session's
+ * stream, because the stream is already directory-scoped and any session's
  * settled turn may have edited the worktree the review describes.
  *
  * It returns the same `{ diffs, branch }` pair rather than one boolean because

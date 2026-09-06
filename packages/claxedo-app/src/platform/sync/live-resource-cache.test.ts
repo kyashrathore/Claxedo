@@ -16,7 +16,7 @@ function fakeResource(log: string[], id: string) {
 describe("createRefCountedResourceCache", () => {
   test("two acquires of the same key share one value and only create it once", () => {
     const created: string[] = []
-    const cache = createRefCountedResourceCache<{ id: string }>(10)
+    const cache = createRefCountedResourceCache<{ id: string }>()
 
     const a = cache.acquire("k", () => {
       created.push("k")
@@ -34,7 +34,7 @@ describe("createRefCountedResourceCache", () => {
 
   test("resource is disposed exactly once, only after the last consumer releases", () => {
     const log: string[] = []
-    const cache = createRefCountedResourceCache<{ id: string }>(10)
+    const cache = createRefCountedResourceCache<{ id: string }>()
 
     const a = cache.acquire("k", () => fakeResource(log, "k"))
     const b = cache.acquire("k", () => fakeResource(log, "k"))
@@ -50,7 +50,7 @@ describe("createRefCountedResourceCache", () => {
 
   test("releasing more times than acquired disposes once and is then a no-op", () => {
     const log: string[] = []
-    const cache = createRefCountedResourceCache<{ id: string }>(10)
+    const cache = createRefCountedResourceCache<{ id: string }>()
 
     const a = cache.acquire("k", () => fakeResource(log, "k"))
     a.release()
@@ -59,14 +59,37 @@ describe("createRefCountedResourceCache", () => {
     expect(log).toEqual(["dispose:k"])
   })
 
-  test("prune evicts and disposes unreferenced entries oldest-first when over max", () => {
+  test("a double release cannot consume another live handle or a replacement entry", () => {
     const log: string[] = []
-    const cache = createRefCountedResourceCache<{ id: string }>(2)
+    const cache = createRefCountedResourceCache<{ id: string }>()
+    const first = cache.acquire("k", () => fakeResource(log, "first"))
+    const second = cache.acquire("k", () => fakeResource(log, "unused"))
+    first.release()
+    first.release()
+    expect(log).toEqual([])
+    expect(cache.has("k")).toBe(true)
+    second.release()
+    expect(log).toEqual(["dispose:first"])
+
+    const replacement = cache.acquire("k", () => fakeResource(log, "replacement"))
+    first.release()
+    second.release()
+    expect(log).toEqual(["dispose:first"])
+    expect(cache.has("k")).toBe(true)
+    replacement.release()
+    expect(log).toEqual(["dispose:first", "dispose:replacement"])
+  })
+
+  test("released entries are gone before more consumers acquire resources", () => {
+    const log: string[] = []
+    const cache = createRefCountedResourceCache<{ id: string }>()
 
     const a = cache.acquire("a", () => fakeResource(log, "a"))
-    a.release() // a is now unreferenced
+    a.release()
+    expect(log).toEqual(["dispose:a"])
+    expect(cache.has("a")).toBe(false)
     cache.acquire("b", () => fakeResource(log, "b")) // held
-    cache.acquire("c", () => fakeResource(log, "c")) // held → size 3 > max, prune
+    cache.acquire("c", () => fakeResource(log, "c")) // held
 
     expect(log).toEqual(["dispose:a"])
     expect(cache.has("a")).toBe(false)
@@ -74,12 +97,12 @@ describe("createRefCountedResourceCache", () => {
     expect(cache.has("c")).toBe(true)
   })
 
-  test("prune never evicts a still-referenced entry even when over max", () => {
+  test("does not dispose a resource while consumers still hold it", () => {
     const log: string[] = []
-    const cache = createRefCountedResourceCache<{ id: string }>(1)
+    const cache = createRefCountedResourceCache<{ id: string }>()
 
     cache.acquire("a", () => fakeResource(log, "a")) // held, refs=1
-    cache.acquire("b", () => fakeResource(log, "b")) // held, refs=1, over max
+    cache.acquire("b", () => fakeResource(log, "b")) // held, refs=1
 
     expect(log).toEqual([]) // both referenced → nothing disposed
     expect(cache.size()).toBe(2)

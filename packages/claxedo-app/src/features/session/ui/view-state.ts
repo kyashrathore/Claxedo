@@ -110,15 +110,15 @@ export function shouldRenderNewSessionComposer(input: {
   return input.workspaceReady
 }
 
-// A fresh DRAFT nav to `/w/:workspaceId/session` resolves its workspace kind in
+// A fresh draft nav to `/w/:workspaceId/session` resolves its workspace kind in
 // two steps: the signed-inventory lookup (`resolvedKind`, real cloud vs
 // user-hosted) and, when that hasn't landed yet (inventory/projects still
 // loading), a directory-ref fallback that only proves a `ws_`-shaped ref
-// EXISTS — it does not by itself distinguish cloud from user-hosted. The
-// fallback used to collapse ANY resolved ref into "cloud", which routed a
-// user-hosted (relay-backed, self-hosted) workspace into the cloud
-// sandbox-provisioning draft picker instead of the user-hosted gate. Carry the
-// fallback ref's OWN kind through instead of discarding it.
+// exists — it does not by itself distinguish cloud from user-hosted.
+// Collapsing that fallback into "cloud" would route a user-hosted
+// (relay-backed, self-hosted) workspace into the cloud sandbox-provisioning
+// draft picker instead of the user-hosted gate, so the fallback carries its
+// own kind through instead of being discarded.
 export function resolveDraftWorkspaceKind(input: {
   resolvedKind: "cloud" | "user-hosted" | undefined
   fallbackRefKind: "cloud" | "user-hosted" | undefined

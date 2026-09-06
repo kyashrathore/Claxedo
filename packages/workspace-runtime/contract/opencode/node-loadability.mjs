@@ -1,14 +1,10 @@
 /**
- * §2 gate: can plain Node import the pinned public SDK?
+ * Diagnostic: can plain Node import the unpatched pinned SDK?
  *
- * As of `@opencode-ai/sdk@0.0.0-beta-18684` the answer is NO. The published
- * `dist/` uses extensionless relative ESM specifiers (`export * as OpenCode
- * from "./opencode"`), which Node ESM rejects. Every shipped Claxedo
- * deployment is Node, so this blocks R2 until a supported build resolves it.
- *
- * This probe is expected to FAIL today. It exists so that the day the upstream
- * package (or our build) fixes it, CI tells us — and so nobody "fixes" it by
- * deep-importing `dist/internal/host`, which Decision 15 forbids.
+ * The published `dist/` uses extensionless relative ESM specifiers, which Node
+ * ESM rejects, so this reports KNOWN-BLOCKER today and exits 0 either way. The
+ * product runs the patched install instead; never work around this by
+ * deep-importing `dist/internal/host`, the unexported raw-fetch host.
  *
  *   node node-loadability.mjs
  */
@@ -20,15 +16,15 @@ const outcome = await import("@opencode-ai/sdk").then(
 if (outcome.ok) {
   console.log("PASS  §2  plain Node can import the pinned SDK")
   console.log(`INFO  §2  OpenCode.create present = ${outcome.hasCreate}`)
-  console.log("\nThe §2 release blocker is resolved. Update the contract doc and")
-  console.log("unblock Unit 2 checkpoint 2a.")
+  console.log("\nUpstream now loads under plain Node. Update the contract doc §2 and")
+  console.log("re-check whether the install patches are still needed.")
   process.exit(0)
 }
 
 console.log("KNOWN-BLOCKER  §2  plain Node cannot import the pinned SDK")
 console.log(`      code:    ${outcome.code}`)
 console.log(`      message: ${outcome.message}`)
-console.log("\nExpected today. Resolution path (contract doc §2): produce one")
-console.log("working Node bundle via the repo's existing Bun.build pipeline.")
-console.log("Do NOT resolve this by deep-importing dist/internal (Decision 15).")
+console.log("\nExpected today. The product ships the patched install described in")
+console.log("patches/README.opencode-node.md instead of the unpatched package.")
+console.log("Never resolve this by deep-importing dist/internal (the unexported raw-fetch host).")
 process.exit(0)

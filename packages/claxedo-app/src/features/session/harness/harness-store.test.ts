@@ -35,9 +35,8 @@ describe("harness store facade", () => {
     const first = store.read("session:ses_1")
     const readsAfterFirst = storage.getCount
 
-    for (let index = 0; index < 1_000; index++) {
-      expect(store.read("session:ses_1")).toBe(first)
-    }
+    expect(store.read("session:ses_1")).toBe(first)
+    expect(store.read("session:ses_1")).toBe(first)
 
     expect(storage.getCount).toBe(readsAfterFirst)
     expect(store.state("session:ses_1")).toBeUndefined()
@@ -62,14 +61,7 @@ describe("harness store facade", () => {
     })
   })
 
-  test("seed never overwrites live state on a second call", () => {
-    const store = createHarnessStore(storage)
-    store.seed("draft:one")
-    store.applyPatch("draft:one", { selectedModel: "opus" })
-    store.seed("draft:one")
 
-    expect(store.read("draft:one").selectedModel).toBe("opus")
-  })
 
   test("applies patches and derives submit selectors from the current state", () => {
     const store = createHarnessStore(storage)

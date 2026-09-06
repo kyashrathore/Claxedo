@@ -12,6 +12,8 @@ import {
   type CliSessionTokenRecord,
   type CliSessionTokenRegistry,
 } from "./cli-session-registry"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { numberClaim } from "@claxedo/helpers/guards"
 
 const REFRESH_PREFIX = "claxedo_cli_refresh:"
 const ACCESS_KIND = "claxedo_cli_access"
@@ -86,29 +88,24 @@ export type CliServiceUser = {
   image_url?: string
 }
 
-function clean(input?: string) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function pem(input?: string) {
-  return clean(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 function algorithm(env: Env): Algorithm {
-  const value = clean(env.CLAXEDO_CLI_TOKEN_ALGORITHM) ?? clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM)
+  const value = trimToUndefined(env.CLAXEDO_CLI_TOKEN_ALGORITHM) ?? trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM)
   if (value === "ES256" || value === "RS256") return value
   return "EdDSA"
 }
 
 function issuer(env: Env) {
-  return clean(env.CLAXEDO_CLI_TOKEN_ISSUER)
-    ?? clean(env.CLAXEDO_CONTROL_PLANE_URL)
+  return trimToUndefined(env.CLAXEDO_CLI_TOKEN_ISSUER)
+    ?? trimToUndefined(env.CLAXEDO_CONTROL_PLANE_URL)
     ?? "https://claxedo-control-plane.local"
 }
 
 function audience(env: Env) {
-  return clean(env.CLAXEDO_CLI_TOKEN_AUDIENCE) ?? "claxedo-control-plane"
+  return trimToUndefined(env.CLAXEDO_CLI_TOKEN_AUDIENCE) ?? "claxedo-control-plane"
 }
 
 /**
@@ -125,7 +122,7 @@ function boundedTtlSeconds(
   bounds: { readonly min: number; readonly max: number },
   fallback: number,
 ) {
-  const configured = clean(raw)
+  const configured = trimToUndefined(raw)
   if (configured === undefined) return fallback
   const value = Number(configured)
   if (!Number.isFinite(value) || Math.floor(value) < bounds.min || Math.floor(value) > bounds.max) {
@@ -187,11 +184,6 @@ function stringClaim(payload: JWTPayload, name: string) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
-function numberClaim(payload: JWTPayload, name: string) {
-  const value = payload[name]
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
-
 /** Map a wire token kind to the registry's coarse access/refresh split. */
 function registryKind(kind: typeof ACCESS_KIND | typeof REFRESH_KIND): CliSessionTokenKind {
   return kind === ACCESS_KIND ? "access" : "refresh"
@@ -245,7 +237,7 @@ async function signToken(env: Env, input: {
     [SESSION_ID_CLAIM]: input.sessionId,
     [SESSION_EXP_CLAIM]: input.sessionExpiresAt,
   })
-    .setProtectedHeader({ alg, typ: "JWT", kid: clean(env.CLAXEDO_CLI_TOKEN_KID) ?? await deriveKid(key) })
+    .setProtectedHeader({ alg, typ: "JWT", kid: trimToUndefined(env.CLAXEDO_CLI_TOKEN_KID) ?? await deriveKid(key) })
     .setIssuer(issuer(env))
     .setAudience(input.audience)
     .setSubject(input.user.subject ?? input.user.token_identifier)

@@ -19,28 +19,15 @@ import { createDaytonaSandboxDriver, type DaytonaClientLike } from "./drivers/da
 import { createFetchBridgeSandboxDriver } from "./drivers/fetch-bridge"
 
 /**
- * Security review 2026-07-27 §6.14 — sandbox egress containment.
- * Owner directive 2026-07-28 — "for egress in sandbox enforce where we can and
- * document where we cant."
+ * Sandbox egress containment: enforce where the driver can, document where it
+ * cannot.
  *
- * Round 1 reported that the `exe` driver cannot enforce host-based policy.
- * Round 2 found the larger hole: NOTHING upstream ever handed any driver a
- * restricted policy, so the hosted path provisioned every sandbox with the open
- * internet available to it. The first fix made the manager REFUSE a policy it
- * could not enforce — which fails closed, but takes the most likely production
- * driver (cloudflare, first in the hosted auto-selection order) offline
- * entirely.
- *
- * The contract these tests now pin:
- *   - a driver DECLARES whether it can contain egress (`egressControl`);
- *   - a capable driver receives the policy verbatim and enforces it;
- *   - an INCAPABLE driver provisions successfully but is handed NO policy —
- *     the drivers that throw on one therefore cannot throw, and the drivers
- *     that would silently drop one are no longer pretending;
- *   - the gap is LOUD. A silent degrade to unrestricted egress is the exact
- *     finding this whole workstream exists to close, so the warning is
- *     asserted, not assumed;
- *   - the operator-facing doc cannot drift away from the metadata.
+ *   - a driver declares whether it can contain egress (`egressControl`);
+ *   - a capable driver receives the policy unchanged and enforces it;
+ *   - an incapable driver provisions but is handed no policy, and the gap is
+ *     reported loudly — a silent degrade to unrestricted egress is the failure
+ *     these tests exist to rule out;
+ *   - the operator-facing doc cannot drift from the metadata.
  */
 
 function fakeDriver(
@@ -116,10 +103,7 @@ describe("sandboxEgressDisposition", () => {
   })
 
   test("a driver with no egress control has ANY restricted policy withheld, not refused", () => {
-    // Inverted 2026-07-28. This used to assert a `"sandbox_egress_uncontained"`
-    // refusal. The reason code survives — it is still the right name for the
-    // condition — but it now describes a documented gap rather than a create
-    // that never happens.
+    // The reason code names a documented gap, not a refused create.
     const withheld = { action: "withhold", reason: "sandbox_egress_uncontained" }
     expect(sandboxEgressDisposition("none", { mode: "restricted", hosts: ["github.com"] })).toEqual(withheld)
     expect(sandboxEgressDisposition("none", { mode: "restricted", cidrs: ["10.0.0.0/8"] })).toEqual(withheld)
@@ -192,9 +176,7 @@ describe("manager: enforce where we can", () => {
 
 describe("manager: document where we can't", () => {
   test("an incapable driver PROVISIONS, and is handed no policy at all", async () => {
-    // Inverted 2026-07-28. This used to assert `status: "unavailable"`,
-    // `ensureHost` never called, and no lease. Under the owner directive the
-    // create must proceed; what must not happen is the driver seeing a policy
+    // The create proceeds; what must not happen is the driver seeing a policy
     // it cannot honour.
     const store = createMemoryLeaseStore()
     let seen: SandboxDriverEnsureInput | undefined

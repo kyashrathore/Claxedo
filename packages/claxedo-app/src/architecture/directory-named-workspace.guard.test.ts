@@ -4,7 +4,7 @@ import { directoryNamedWorkspaceOffenders, scanForDirectoryNamedWorkspace } from
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 
-describe("directory-named-workspace guard (WP-D5)", () => {
+describe("directory-named-workspace guard", () => {
   test("flags a reintroduced conflation name, ignores the honest directory name", () => {
     expect(
       scanForDirectoryNamedWorkspace([
@@ -18,7 +18,7 @@ describe("directory-named-workspace guard (WP-D5)", () => {
   test("no production or test file uses a retired directory-named-workspace identifier", () => {
     const offenders = directoryNamedWorkspaceOffenders(appRoot).map(
       (file) =>
-        `${file}: reintroduces a retired WP-D5 conflation name -- a directory path must not be named ` +
+        `${file}: reintroduces a retired conflation name -- a directory path must not be named ` +
         `workspaceId; use activeDirectory / routeDirectory / resolveActiveDirectory / shellRouteDirectory ` +
         `(see src/VOCABULARY.md sense 1 and src/platform/identity/brand.ts)`,
     )

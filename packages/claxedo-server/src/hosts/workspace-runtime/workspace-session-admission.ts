@@ -5,6 +5,7 @@ import {
   WorkspaceRuntimeProtocolError,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export type WorkspaceSessionAdmission = {
   directory: string
@@ -39,8 +40,8 @@ export async function prepareWorkspaceRuntimeSession(input: {
   } catch (cause) {
     throw new WorkspaceRuntimeProtocolError("worktree admission", cause)
   }
-  const worktree = record(body) ? body.worktree : undefined
-  if (!record(worktree)) throw new WorkspaceRuntimeProtocolError("worktree admission")
+  const worktree = isRecord(body) ? body.worktree : undefined
+  if (!isRecord(worktree)) throw new WorkspaceRuntimeProtocolError("worktree admission")
   if (
     typeof worktree.path !== "string" ||
     typeof worktree.branch !== "string" ||
@@ -54,8 +55,4 @@ export async function prepareWorkspaceRuntimeSession(input: {
     baseCommit: worktree.baseCommit,
     leaseEpoch: generation?.leaseEpoch ?? 0,
   }
-}
-
-function record(input: unknown): input is Record<string, unknown> {
-  return typeof input === "object" && input !== null && !Array.isArray(input)
 }

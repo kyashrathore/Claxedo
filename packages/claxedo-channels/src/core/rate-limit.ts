@@ -1,15 +1,15 @@
 /**
- * Per-sender inbound rate limiting. A bounded GLOBAL queue cannot distinguish
+ * Per-sender inbound rate limiting. A bounded global queue cannot distinguish
  * per-sender traffic, so one flooding sender evicts legitimate messages; the
  * limiter is therefore keyed per sender rather than shared.
  *
  * Two properties this depends on:
- *   - Abuse accounting is keyed on STABLE PRINCIPALS ONLY — (channel, sender).
+ *   - Abuse accounting is keyed only on stable principals — (channel, sender).
  *     An attacker must not be able to reach a fresh bucket by changing the
  *     message type or forward semantics.
- *   - It runs AFTER the access gate (a blocked stranger never reaches here) but
- *     BEFORE dedup/session/LLM, so an ALLOWED-but-abusive sender still can't
- *     drive unbounded turns.
+ *   - It runs after the access gate (a blocked stranger never reaches here)
+ *     but before dedup/session/LLM, so an allowed-but-abusive sender still
+ *     can't drive unbounded turns.
  *
  * Sliding-window counter, in-memory, LRU-capped so the limiter itself can't be
  * used to exhaust server memory.

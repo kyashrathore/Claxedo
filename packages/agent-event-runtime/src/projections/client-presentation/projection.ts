@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentRuntimeEvent, ToolDisplay } from "../../contracts/agent-runtime-event"
 import { object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
@@ -435,8 +436,8 @@ function mergeMetadata(
   if (!left) return right ?? {}
   if (!right) return left
   const item = { ...left, ...right }
-  const lhs = object(left.acp)
-  const rhs = object(right.acp)
+  const lhs = asRecord(left.acp)
+  const rhs = asRecord(right.acp)
   if (lhs || rhs) item.acp = { ...lhs, ...rhs }
   return item
 }
@@ -467,9 +468,9 @@ function copyScalar(
 }
 
 function acpMetadataInput(metadata: Record<string, unknown>) {
-  const acp = object(metadata.acp)
+  const acp = asRecord(metadata.acp)
   if (!acp) return {}
-  const rawInput = object(acp.rawInput)
+  const rawInput = asRecord(acp.rawInput)
   const input: Record<string, unknown> = {}
 
   for (const key of ["intent", "kind", "mode", "summary", "description", "command", "filePath", "path", "pattern", "query", "url", "sourcePath", "targetPath", "subagentType", "agentId", "durationMs"]) {
@@ -507,7 +508,7 @@ function displayInput(display: ToolDisplay | undefined) {
 function diff(value: unknown) {
   if (!Array.isArray(value) || value.length === 0) return false
   return value.every((item) => {
-    const row = object(item)
+    const row = asRecord(item)
     if (!row) return false
     return "path" in row || "oldText" in row || "newText" in row
   })
@@ -518,7 +519,7 @@ function shell(
   metadata: Record<string, unknown>,
 ) {
   if (typeof input.intent === "string") return input.intent === "shell"
-  const acp = object(metadata.acp)
+  const acp = asRecord(metadata.acp)
   return acp?.intent === "shell"
 }
 
@@ -559,7 +560,7 @@ function output(
   if (typeof value === "string") return { value, issues: [] }
   if (value == null) return { value: "", issues: [] }
 
-  const row = object(value)
+  const row = asRecord(value)
   if (row && shell(input, metadata)) {
     const stdout = text(row.stdout)
     const stderr = text(row.stderr)
@@ -588,7 +589,7 @@ function arrayContentText(value: unknown): string | undefined {
   if (!Array.isArray(value)) return undefined
   const content = value.flatMap((item) => {
     if (typeof item === "string") return item
-    const row = object(item)
+    const row = asRecord(item)
     return text(row?.text) ?? text(row?.content) ?? []
   })
   if (content.length !== value.length) return undefined
@@ -602,7 +603,7 @@ function compatToolStatus(status: Extract<AgentRuntimeEvent, { type: "tool-statu
 
 function toolContentText(content: Extract<AgentRuntimeEvent, { type: "tool-content" }>["content"]) {
   if (content.type !== "content") return undefined
-  const row = object(content.content)
+  const row = asRecord(content.content)
   return text(row?.text)
 }
 
@@ -911,7 +912,7 @@ function normalizeLocationInput(
 function locationsFromList(value: unknown) {
   if (!Array.isArray(value)) return []
   return value.flatMap((item) => {
-    const row = object(item)
+    const row = asRecord(item)
     const path = text(row?.path)
     if (!path) return []
     return [{ path, ...(typeof row?.line === "number" ? { line: row.line } : {}) }]
@@ -919,7 +920,7 @@ function locationsFromList(value: unknown) {
 }
 
 function locationsFromMetadata(metadata: Record<string, unknown>) {
-  return locationsFromList(object(metadata.acp)?.locations)
+  return locationsFromList(asRecord(metadata.acp)?.locations)
 }
 
 function hydrateToolInput(
@@ -1153,7 +1154,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "tool-input": {
       split()
       const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
-      const raw = object(chunk.input) ?? { raw: chunk.input }
+      const raw = asRecord(chunk.input) ?? { raw: chunk.input }
       const next = Object.keys(raw).length > 0 ? normalizeInputKeys(raw) : undefined
       const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
       const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)

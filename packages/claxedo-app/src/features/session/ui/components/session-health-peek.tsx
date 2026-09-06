@@ -5,28 +5,25 @@ import { usePromptHarnessControllersOptional } from "@/features/session/composer
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 
 /**
- * Interval for the standing harness-health poll. The harness config route
- * (`GET /api/claxedo/agent-config/harness`, proxying `/api/wr/health`) is
- * otherwise fetched only at load / harness-switch and, for a slow harness, by
- * the bounded reprobe loop *while polling* — nothing re-checks a harness that
- * has already settled to "ready". Without a standing poll a harness that dies
- * after settling is invisible until the next send, so the "peek appears within
- * one poll interval" acceptance criterion (T4) depends on this.
+ * The harness config route (`GET /api/claxedo/agent-config/harness`, proxying
+ * `/api/wr/health`) is otherwise fetched only at load / harness-switch and by
+ * the bounded reprobe loop while polling; nothing re-checks a harness that has
+ * settled to "ready". Without this standing poll a harness that dies after
+ * settling stays invisible until the next send.
  */
 export const HARNESS_HEALTH_POLL_INTERVAL_MS = 20_000
 
 /**
- * A quiet advisory rendered in the composer `beforeInput` slot when the selected
- * harness is degraded (its process was lost / is recovering). It names the
- * condition above the composer *before* the user types and pairs with the Send
- * gate (`harnessReadyForSubmit` returns false on "degraded"). Muted anatomy
- * (§2): one line, no fill, no rail — a 16px `--icon-warning-base` glyph + text +
- * a small secondary button. Renders nothing (zero chrome / zero layout shift) on
- * a healthy session.
+ * A quiet advisory in the composer `beforeInput` slot when the selected harness
+ * is degraded (its process was lost / is recovering). It names the condition
+ * before the user types and pairs with the Send gate (`harnessReadyForSubmit`
+ * is false on "degraded"): one line, no fill, no rail — a 16px
+ * `--icon-warning-base` glyph, text, and a small secondary button. Renders
+ * nothing on a healthy session.
  *
- * Reactivity gotcha (§2 constraint 6): the `beforeInput` slot is a plain
- * `JSX.Element` evaluated once, so the health subscription and the standing poll
- * live *inside* this component, never in the caller's synchronous body.
+ * The `beforeInput` slot is a plain `JSX.Element` evaluated once, so the health
+ * subscription and the standing poll must live inside this component, not in
+ * the caller's synchronous body.
  */
 export function SessionHealthPeek(props: {
   directory: Accessor<string | undefined>
@@ -62,10 +59,9 @@ export function SessionHealthPeek(props: {
   // route directly (not `reprobe`, which short-circuits an existing session on
   // its stored config and never sees live degradation).
   //
-  // A hidden window skips the tick — polling a window nobody can see spends
-  // network and server CPU for a peek that cannot be read. The visibilitychange
-  // probe below re-checks the moment the window returns, so T4's "within one
-  // poll interval" holds for any visible window.
+  // A hidden window skips the tick: polling a window nobody can see spends
+  // network and server CPU for a peek nobody reads. The visibilitychange probe
+  // re-checks the moment the window returns.
   createEffect(() => {
     // Session panes are retained across switches. Only the pane that is actually
     // painted owns this observer pair; reading `active` before the scope also
@@ -77,7 +73,7 @@ export function SessionHealthPeek(props: {
     scope()
     props.directory()
     probe()
-    // Idle and historical sessions receive the catch-up probe above so stale
+    // Idle and past sessions receive the catch-up probe above so stale
     // availability is cleared, but they never own a standing liveness poll.
     // A process-loss diagnosis is meaningful only while this exact session has
     // an active turn to correlate it with.

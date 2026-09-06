@@ -1,28 +1,28 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
-import { configureWorkspaceStartup, workspaceStartup } from "./workspace-startup"
-import type { WorkspaceStartupPort } from "./workspace-startup-port"
 
 const appRoot = path.resolve(import.meta.dir, "../../..")
 
-function stubPort(label: string): WorkspaceStartupPort {
-  return {
-    prepareWorkspaceRuntime: async () => ({ ok: true, startup: false, workspace: { workspaceId: label } }),
-    prepareUserHostedRuntime: async () => ({ ok: true, status: label }),
-    prepareWorkspaceSessionWorktree: async () => ({ path: label, branch: label, baseCommit: label }),
-  }
-}
-
 describe("the workspace startup binding", () => {
   test("returns whatever composition installed, and the LAST installation wins", async () => {
-    configureWorkspaceStartup(stubPort("first"))
-    expect((await workspaceStartup().prepareUserHostedRuntime({ workspaceId: "ws" })).status).toBe("first")
-
-    // Rebinding is how a test harness substitutes the hosted implementation.
-    // Asserted rather than assumed, because "the second call is ignored" would
-    // make every harness silently exercise whichever module loaded first.
-    configureWorkspaceStartup(stubPort("second"))
-    expect((await workspaceStartup().prepareUserHostedRuntime({ workspaceId: "ws" })).status).toBe("second")
+    const probe = Bun.spawnSync({
+      cmd: ["bun", "-e", `
+        const { configureWorkspaceStartup, workspaceStartup } = await import("./src/platform/runtime/workspace-startup.ts")
+        const port = (status) => ({
+          prepareUserHostedRuntime: async () => ({ ok: true, status }),
+          prepareWorkspaceRuntime: async () => ({ ok: true, startup: false, workspace: { workspaceId: status } }),
+          prepareWorkspaceSessionWorktree: async () => ({ path: status, branch: status, baseCommit: status }),
+        })
+        configureWorkspaceStartup(port("first"))
+        const first = await workspaceStartup().prepareUserHostedRuntime({ workspaceId: "ws" })
+        configureWorkspaceStartup(port("second"))
+        const second = await workspaceStartup().prepareUserHostedRuntime({ workspaceId: "ws" })
+        console.log(JSON.stringify([first.status, second.status]))
+      `],
+      cwd: appRoot,
+    })
+    expect(probe.exitCode).toBe(0)
+    expect(JSON.parse(probe.stdout.toString())).toEqual(["first", "second"])
   })
 
   test("throws, naming itself, when this build bound nothing", async () => {
@@ -41,6 +41,7 @@ describe("the workspace startup binding", () => {
       cwd: appRoot,
     })
 
+    expect(probe.exitCode).toBe(0)
     const output = probe.stdout.toString().trim()
     expect(output).not.toBe("NO_THROW")
     expect(output).toContain("configureWorkspaceStartup")

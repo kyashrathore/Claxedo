@@ -163,9 +163,9 @@ export namespace Timeline {
       )
     }
 
-    // Turn fold (T5): when a turn is settled and produced ≥2 foldable rows (work/context
-    // groups + standalone tool parts), its work folds behind one "Worked for Xs" divider,
-    // leaving the prose visible. Auto-folds on completion; an explicit user toggle wins.
+    // A settled turn with ≥2 foldable rows folds its work behind one "Worked for
+    // Xs" divider, leaving the prose visible; an explicit user toggle beats the
+    // auto-fold.
     const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
     const isGroupFoldable = (group: PartGroup): boolean => {
       if (group.type === "context" || group.type === "work" || group.type === "agents") return true
@@ -197,7 +197,7 @@ export namespace Timeline {
     // standalone-tool/task-card contract. Collapse only multi-row work; grouped
     // runs still count as one row because they already own their own disclosure.
     const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
-    // T7: while a turn is still running, fold its *completed* phases (≥3 groups) behind the
+    // While a turn is still running, fold its *completed* phases (≥3 groups) behind the
     // summary but keep the latest live group visible so active work never disappears.
     const canFoldRunning = running && foldWhileRunning && foldableCount >= 3
     const userChoice = isFoldedChoice(userMessage.id)
@@ -221,9 +221,8 @@ export namespace Timeline {
     }
     const emittedCount = assistantItems.filter((item, i) => item.type === "part" && !shouldFold(item, i)).length
 
-    // The fold row is the turn's HEADER (D§3.6): "Worked for 2m 14s" + a hairline rule
-    // sits above the turn's content, not wherever the first tool happened to land. Folded
-    // hides the work beneath it; unfolded reveals it in place.
+    // The fold row is the turn's header: it sits above the turn's content, not
+    // wherever the first tool landed.
     if (canFoldSettled || canFoldRunning) {
       rows.push(
         TimelineRow.TurnFold({
@@ -522,8 +521,6 @@ function partRef(item: GroupablePart) {
   return { messageID: item.messageID, partID: item.part.id }
 }
 
-// Representative category for a work run's icon/summary (T3): edit wins if present,
-// else web, else run-command.
 const editToolNames = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
 const webToolNames = new Set(["webfetch", "websearch", "web_search"])
 
@@ -533,11 +530,9 @@ function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
   return "bash"
 }
 
-// Single greedy pass (T3): consecutive context tools (read/glob/grep/list) fold into a
-// context group; consecutive work tools (bash/edit/write/apply_patch/web) fold into a
-// work group *only* when the run has ≥2 members — a lone work tool stays a standalone
-// row. Any non-groupable part flushes both runs. Runs never cross since groupParts is
-// called per (sub)turn already.
+// Consecutive context tools fold into a context group; consecutive work tools
+// fold into a work group only when the run has ≥2 members — a lone work tool
+// stays a standalone row. Any non-groupable part flushes both runs.
 function groupParts(parts: GroupablePart[]) {
   const result: PartGroup[] = []
   let contextStart = -1
@@ -580,7 +575,7 @@ function groupParts(parts: GroupablePart[]) {
     workStart = -1
   }
 
-  // Consecutive subagent (task) calls fold into a chip row (T12); a lone task stays a card.
+  // Consecutive subagent (task) calls fold into a chip row; a lone task stays a card.
   const flushTask = (end: number) => {
     if (taskStart < 0) return
     const slice = parts.slice(taskStart, end + 1)

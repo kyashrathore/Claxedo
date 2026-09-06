@@ -63,12 +63,11 @@ async function seedProject(page: Page, dir: string = DIR) {
 }
 
 /**
- * Minimal standalone runtime mock for this spec's surface: bootstrap/project/session-
- * list/provider/config/global-event plumbing (same shapes `installMockRuntime` uses,
- * duplicated narrowly here because this spec's project record needs custom
- * `sandboxes`/`workspaces` fields the shared helper's fixture does not expose a knob
- * for — see findings). No prompt/turn flow is exercised in this spec, so the shared
- * turn-streaming machinery is intentionally not installed.
+ * Minimal standalone runtime mock for this spec's surface: bootstrap, project, session
+ * list, provider, config and event-stream plumbing in the same shapes `installMockRuntime`
+ * uses, duplicated here because this spec's project record needs custom
+ * `sandboxes`/`workspaces` fields the shared fixture exposes no knob for. No turn is ever
+ * sent, so the shared turn-streaming machinery is not installed.
  */
 async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   const proj = {
@@ -103,30 +102,24 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   }
   await page.route("**/project", handleProjectList)
   await page.route("**/project?**", handleProjectList)
-  // A PATCH to `/project/:id` fires unprompted on EVERY load (some "touch project"
-  // call unrelated to the Edit dialog — confirmed live: it fires even when a test
-  // never opens Edit at all), so this generic fallback lives here, not only in the
-  // Edit-rename test. Tests that assert on the PATCH body (Edit rename) register
-  // their OWN more specific `**/project/${PROJECT_ID}**` route AFTER this one runs,
-  // which — per Playwright's route-matching order (last-registered runs first) —
-  // correctly takes priority for those tests.
+  // A PATCH to `/project/:id` fires unprompted on every load, unrelated to the Edit dialog,
+  // so the fallback belongs here rather than only in the rename test. The rename test
+  // registers its own narrower `**/project/${PROJECT_ID}**` route afterwards, and
+  // Playwright runs the last-registered route first, so that one still wins there.
   await page.route("**/project/*", (r) => {
     if (!api(r.request())) return r.continue()
     if (r.request().method() !== "PATCH") return r.fallback()
     return json(r, proj)
   })
-  // `/project/current` — a DIFFERENT endpoint from the list above (SDK
-  // `Project.current()`), fired unprompted on load by something that reads the
-  // active project. Trailing `**` throughout this file matters: Playwright glob
-  // routes are fully anchored (`^...$`), so a pattern ending in the bare path
-  // segment does NOT match a URL with a trailing `?query` — confirmed live via a
-  // standalone probe against this exact dev server: unmocked, `/provider`,
-  // `/config`, and `/project/:id` (all called WITH query params in this real
-  // build) silently fell through to a real `http://127.0.0.1:3001` connection
-  // that refuses (nothing listens there in this environment) — `getClaxedoServerUrl()`
-  // in `src/utils/api.ts` hardcodes that host as its final fallback when no
-  // `VITE_CLAXEDO_SERVER_URL`/desktop-sidecar config is present, so anything
-  // this mock fails to intercept silently leaks onto real network I/O.
+  // `/project/current` is a different endpoint from the list above (SDK
+  // `Project.current()`), fired unprompted on load by whatever reads the active project.
+  //
+  // The trailing `**` throughout this file is load-bearing: Playwright glob routes are
+  // fully anchored, so a pattern ending at the bare path segment does not match a URL with
+  // a `?query` — and `/provider`, `/config` and `/project/:id` are all called with query
+  // params in this build. A miss does not fail loudly: `getClaxedoServerUrl()`
+  // (`src/utils/api.ts`) falls back to `http://127.0.0.1:3001`, where nothing listens, so
+  // an unintercepted request leaks onto real network I/O and dies quietly.
   await page.route("**/project/current**", (r) => (api(r.request()) ? json(r, proj) : r.continue()))
   await page.route("**/experimental/project", handleProjectList)
   await page.route("**/experimental/project?**", handleProjectList)
@@ -135,10 +128,10 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   // (`local-app.ts`), which is what lets the folder picker browse this
   // machine (`useDirectorySearch`'s gate).
   await page.route("**/health**", (r) => (api(r.request()) ? json(r, { healthy: true, localExecution: true }) : r.continue()))
-  // `DialogSelectDirectory`'s search box (behavior 1) fires an initial empty-query
-  // lookup against `/find/file` the instant it opens, before any typing — a
-  // DIFFERENT endpoint from `/file` (which only the "contains a path segment"
-  // branch of `useDirectorySearch` hits, mocked per-test where needed).
+  // `DialogSelectDirectory`'s search box fires an empty-query lookup against `/find/file`
+  // the instant it opens, before any typing. That is a different endpoint from `/file`,
+  // which only `useDirectorySearch`'s "contains a path segment" branch hits and which is
+  // mocked per-test where needed.
   await page.route("**/find/file**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
   await page.route("**/path**", (r) => {
     if (!api(r.request())) return r.continue()
@@ -171,22 +164,18 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/command**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/command" ? json(r, []) : r.continue()))
   await page.route("**/permission**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/permission" ? json(r, []) : r.continue()))
   await page.route("**/question**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/question" ? json(r, []) : r.continue()))
-  // Workspace resolve — BOTH twins. `workspaceResolveUrl`
-  // (src/platform/runtime/agent/workspace-control-routes.ts:33-50) rewrites the
-  // path to `/api/claxedo/workspace/resolve` whenever the server base URL is a
-  // loopback transport — which the default `http://127.0.0.1:3001` control-plane
-  // origin always is under this Playwright tier. Without the claxedo twin every
-  // resolve (workspace-connection's `prepareWorkspaceRuntime` drive loop,
-  // http-backend's vcs/mcp/lsp warmups) escapes onto the dead real network, so a
-  // cloud-backed workspace never reaches "ready", never mints its connection, and
-  // role-gated UI (the "Delete workspace" kebab item behind `canMutateWorkspace`,
-  // rail-sidebar.tsx:1558) never renders — the exact behavior-5 failure. The
-  // response mirrors the server's canonical projection (`workspaceResponse`,
-  // packages/claxedo-server-core/src/workspace/store/response.ts): workspaceId/
-  // projectId/directory/workspaceName/access/backing/kind/driver/status/git —
-  // derived from THIS fixture's seeded `workspaces` map so a project seeded with a
-  // cloud main workspace resolves as cloud (same twin-stub pattern as
-  // e2e/helpers/mock-runtime.ts:2014-2015, added in 9410092).
+  // Workspace resolve, both spellings. `workspaceResolveUrl`
+  // (`src/platform/runtime/agent/workspace-control-routes.ts`) rewrites the path to
+  // `/api/claxedo/workspace/resolve` whenever the server base URL is a loopback transport,
+  // which the default control-plane origin always is here. Without the claxedo twin every
+  // resolve escapes onto the dead network, so a cloud-backed workspace never reaches
+  // "ready", never mints a connection, and the role-gated "Delete workspace" kebab item
+  // behind `canMutateWorkspace` never renders at all.
+  //
+  // The response mirrors the server's own projection (`workspaceResponse`,
+  // packages/claxedo-server-core/src/workspace/store/response.ts) and is derived from this
+  // fixture's seeded `workspaces` map, so a project seeded with a cloud main workspace
+  // resolves as cloud.
   const resolveHandler = (r: import("@playwright/test").Route) => {
     if (!api(r.request())) return r.continue()
     const url = new URL(r.request().url())
@@ -221,20 +210,17 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
     if (!api(route.request())) return route.continue()
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
   }
-  // One stream, three spellings. Both real servers mount a SINGLE handler on
-  // `/global/event`, `/api/wr/events` and `/api/claxedo/events`
-  // (claxedo-local-server src/opencode/compat-routes/index.ts, claxedo-server
-  // src/routes/hosted/shell.ts), so every spelling the app may connect on has
-  // to answer here or the central stream falls through to the real, unreachable
-  // 127.0.0.1:3001.
+  // One stream, three spellings. Both real servers mount a single handler on
+  // `/global/event`, `/api/wr/events` and `/api/claxedo/events`, so every spelling the app
+  // might connect on has to answer here or the central stream falls through to the
+  // unreachable real origin.
   await page.route("**/global/event?**", eventStreamHandler)
   await page.route("**/event?**", eventStreamHandler)
   await page.route("**/api/wr/events**", eventStreamHandler)
   await page.route("**/api/claxedo/events**", eventStreamHandler)
-  // The rail's org/team switcher mounts with the header actions this spec
-  // drives, and its read was leaking onto the real (unreachable) backend as a
-  // vite proxy ECONNREFUSED. `[]` is the authority's own answer for a principal
-  // in no organization — see ../helpers/contracts/org-list.ts.
+  // The rail's org/team switcher mounts alongside the header actions this spec drives, and
+  // its read otherwise leaks onto the unreachable backend. `[]` is the authority's own
+  // answer for a principal in no organization.
   await page.route("**/api/control/orgs**", (r) => {
     if (!api(r.request())) return r.continue()
     if (!isOrgListPath(new URL(r.request().url()).pathname)) return r.fallback()
@@ -260,13 +246,10 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/session/*/capabilities**", (r) => (api(r.request()) ? json(r, { transport: "runtime" }) : r.continue()))
   await page.route("**/session/status**", (r) => (api(r.request()) ? json(r, {}) : r.continue()))
 
-  // The sidebar is docked/visible by default (`sidebarPinned()` in
-  // `src/shell/app-shell-layout.tsx` defaults true), so every ProjectBlock/
-  // WorkspaceBlock row mounts immediately and queries these two DISTINCT
-  // endpoints (`sessionListQueryOptions` in `src/shared/query/session-list.ts`
-  // always hits `/api/control/session-list`, signed or not; something else
-  // separately hits the plural `/api/control/sessions` — both confirmed live via
-  // the same standalone probe referenced above).
+  // The sidebar is docked by default (`sidebarPinned()` in `src/shell/app-shell-layout.tsx`),
+  // so every project and workspace row mounts immediately and queries two distinct
+  // endpoints: `sessionListQueryOptions` always hits `/api/control/session-list`, signed or
+  // not, and something else separately hits the plural `/api/control/sessions`.
   await page.route(sessionListRoute, (r) =>
     api(r.request())
       ? json(r, { view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 })
@@ -284,58 +267,39 @@ async function openApp(page: Page, dir: string = DIR) {
   await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
 }
 
-/** Switches the sidebar's "Group by" view option to "Workspace" so non-main workspace
- * rows (`[data-testid="workspace-header"]`) render — required to reach any secondary/
- * sandbox/missing workspace's hover actions or kebab menu.
+/** Switches the sidebar's "Group by" view option to "Workspace", the only mode in which
+ * non-main workspace rows (`[data-testid="workspace-header"]`) render at all.
  *
- * In this grouping mode each project renders as a collapsible
- * `[data-testid="workspace-project-header"]` folder (`WorkspaceGroupBlock`,
- * `rail-sidebar.tsx:2443`) that only auto-opens when the project is the
- * "active" one (`projectMatches()`, keyed off the route-derived
- * `activeProjectId`) OR at least one of its workspace sections already has
- * session rows (`group.items.some(item => item.rows.length > 0)`,
- * `rail-sidebar.tsx:2444`) — neither is true for this fixture (no sessions
- * seeded, and this spec's minimal mock does not thread a real active-project
- * match through route state), so the folder renders collapsed with zero
- * `workspace-header` children until explicitly expanded. Click its
- * "Expand project" disclosure toggle to reach them.
+ * In that mode each project is a collapsible `[data-testid="workspace-project-header"]`
+ * folder (`WorkspaceGroupBlock`) that auto-opens only when the project is the active one or
+ * one of its workspace sections already has session rows. Neither holds for this fixture,
+ * so the folder renders collapsed with no `workspace-header` children until its "Expand
+ * project" disclosure is clicked.
  */
 async function groupByWorkspace(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "View options" }).hover()
   await page.getByRole("menuitemradio", { name: "Workspace" }).click()
-  // Close the account menu DETERMINISTICALLY, then prove it closed. The radio
-  // item has `closeOnSelect={false}` (rail-sidebar.tsx FilterMenu), so the menu
-  // stays open by design — but a bare fire-and-forget double-Escape here loses a
-  // race 100% of the time on the prebuilt bundle: Kobalte's selectable-collection
-  // keydown handler (createSelectableCollection, `case "Escape": preventDefault()
-  // + clearSelection()`) consumes Escapes that land in the immediate post-click
-  // window, and the dismissable layer's own document listener skips dismissal for
-  // any already-`defaultPrevented` Escape — so BOTH menus stay open, Kobalte's
-  // hide-outside keeps the entire app `aria-hidden`, and every later
-  // `getByRole(...)` in the test resolves nothing while bare CSS locators still
-  // match (reproduced live: menu count stayed 2 after both Escapes; two LATER
-  // Escapes closed submenu then menu). Press-and-verify with a poll instead.
+  // The radio item has `closeOnSelect={false}`, so the menu stays open by design and has to
+  // be dismissed explicitly — with a poll, not a fire-and-forget double-Escape. Kobalte's
+  // selectable-collection keydown handler consumes Escapes landing in the window just after
+  // the click, and the dismissable layer skips any already-`defaultPrevented` Escape, so
+  // both menus survive. While they do, `hide-outside` leaves the whole app `aria-hidden`
+  // and every later `getByRole()` resolves nothing even though bare CSS locators still
+  // match.
   await expect
     .poll(async () => {
       await page.keyboard.press("Escape")
       return page.getByRole("menu").count()
     }, { timeout: 10_000 })
     .toBe(0)
-  // Wait for the workspace-grouped view to actually render first —
-  // `[data-testid="workspace-project-header"]` always renders once
-  // grouped-by-workspace (only its `workspace-header` CHILDREN are
-  // conditional on `open()`, rail-sidebar.tsx's `WorkspaceGroupBlock`).
+  // `[data-testid="workspace-project-header"]` always renders once grouped by workspace;
+  // only its `workspace-header` children are conditional on the folder being open.
   await expect(page.locator('[data-testid="workspace-project-header"]').first()).toBeVisible({ timeout: 10_000 })
-  // The outer header's disclosure caret is a `<span role="button"
-  // aria-label="Expand project"|"Collapse project">` that
-  // `page.getByRole("button", { name: "Expand project" })` never matches here
-  // — reproduced live: `.count()` reliably returns 0 for this exact element
-  // even though its own `aria-label` attribute reads exactly "Expand
-  // project" (a Playwright accessible-name computation quirk with this
-  // span's sibling icon children, not a real absence of the element/label).
-  // A direct `[role="button"]` CSS locator scoped to the header finds and
-  // clicks it correctly, so target it that way instead of via role/name.
+  // The disclosure caret is a `<span role="button" aria-label="Expand project">` that
+  // `getByRole("button", { name: "Expand project" })` never matches — the accessible name
+  // computed from this span's icon children is not its `aria-label`. A `[role="button"]`
+  // CSS locator scoped to the header finds it.
   const expandToggle = page.locator('[data-testid="workspace-project-header"] [role="button"]').first()
   if ((await expandToggle.getAttribute("aria-label")) === "Expand project") await expandToggle.click()
 }
@@ -354,7 +318,7 @@ test.describe("core workspace lifecycle @core", () => {
     })
   })
 
-  test("selecting an invalid resolved path shows a toast and creates nothing — behavior 1", async ({ page }) => {
+  test("selecting an invalid resolved path shows a toast and creates nothing", async ({ page }) => {
     await seedProject(page)
     await installLifecycleMock(page)
 
@@ -364,9 +328,9 @@ test.describe("core workspace lifecycle @core", () => {
       return json(r, [{ name: "workspace", absolute: "/workspace", type: "directory" }])
     })
 
-    // The server accepts the folder (this Tier M mock stands in for a server whose
-    // filesystem has it); what is under test is the APP's refusal of a checkout it
-    // can never open as a local worktree.
+    // The server accepts the folder — this mock stands in for one whose filesystem has it.
+    // What is under test is the app's refusal of a checkout it can never open as a local
+    // worktree.
     const createBodies: unknown[] = []
     await page.route("**/api/claxedo/projects**", (r) => {
       if (!api(r.request())) return r.continue()
@@ -395,23 +359,19 @@ test.describe("core workspace lifecycle @core", () => {
     await openApp(page)
 
     // "New Project" is an intent, not a dialog: the rail button raises
-    // `layout.projects.requestCreate()` and the mounted draft composer's Project
-    // chip answers by opening its "Create project…" panel (the same
-    // `ProjectCreateForm` the empty canvas hosts).
+    // `layout.projects.requestCreate()` and the draft composer's Project chip answers by
+    // opening its "Create project…" panel.
     await page.getByRole("button", { name: "New Project", exact: true }).click()
     const form = page.locator('[data-slot="project-create-form"]')
     await expect(form).toBeVisible({ timeout: 10_000 })
 
-    // The folder source opens the server's directory browser — `DialogSelectDirectory`,
-    // still titled by `command.project.open` ("New Project", see HARNESS NOTES).
+    // The folder source opens `DialogSelectDirectory`, titled by `command.project.open`,
+    // which the cloud string override renders as "New Project".
     await form.getByRole("button", { name: "Select project" }).click()
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("New Project")
 
-    // NOT `[data-slot="list-search-input"]` — `TextField`
-    // (packages/ui/src/components/text-field.tsx) silently overrides any caller-
-    // supplied `data-slot` with a hardcoded `"input-input"` on the real `<input>`
-    // (later JSX prop wins over the earlier `{...others}` spread); confirmed live,
-    // 100% reproducible — see ANATOMY and findings.
+    // Not `[data-slot="list-search-input"]`: `TextField` overrides any caller-supplied
+    // `data-slot` with a hardcoded `"input-input"` on the real `<input>`.
     const search = page.locator('[data-slot="list-search-container"] input')
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("/workspace")
@@ -430,23 +390,21 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(toastTitle(page)).toHaveText("Invalid project path", { timeout: 10_000 })
     await expect(page.getByText("/workspace", { exact: true }).last()).toBeVisible()
 
-    // Panel closed on the toast path? No — the composer refuses the checkout where the
-    // create lands and keeps its panel open so the user can pick again. Prove no
-    // session was ever created as a result of the bad selection.
+    // The composer refuses the checkout where the create lands and keeps its panel open so
+    // the user can pick again; nothing is created by the bad selection.
     await expect(form).toBeVisible()
     expect(createSessionCount).toBe(0)
   })
 
-  test("kebab Edit renames a project — behavior 3", async ({ page }) => {
+
+  test("kebab Edit renames a project", async ({ page }) => {
     await installLifecycleMock(page)
     await seedProject(page)
     await openApp(page)
 
     let patchBody: unknown
-    // Trailing `**` is required: `Project.update()` sends `directory` as a query
-    // param (`PATCH /project/:id?directory=...`), and Playwright glob routes are
-    // fully anchored (`^...$`) — a pattern ending in the bare projectID would NOT
-    // match a URL with a trailing `?query`, silently falling through to no mock.
+    // The trailing `**` is required: `Project.update()` sends `directory` as a query param,
+    // and a glob ending at the bare projectID would not match a URL carrying one.
     await page.route(`**/project/${PROJECT_ID}**`, async (r) => {
       if (!api(r.request())) return r.continue()
       if (r.request().method() !== "PATCH") return r.fallback()
@@ -454,14 +412,10 @@ test.describe("core workspace lifecycle @core", () => {
       return json(r, { id: PROJECT_ID, worktree: DIR, name: "renamed-lifecycle-project" })
     })
 
-    // The kebab's own aria-label uses the WORKSPACE label ("main" — the project's
-    // own worktree has no `workspaces[dir].workspace_name` override), not the
-    // project's display name shown in the row text (`workspaceDisplayName()` in
-    // `src/claxedo-ui/utils/workspace-display.ts`: `directory === project.worktree
-    // ? workspace?.workspace_name ?? "main" : ...`).
-    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
-    // header's action cluster — kebab included — is not in the DOM until the
-    // header itself is hovered/focused, so engage the header first.
+    // The kebab's aria-label is the workspace label — "main", since this worktree has no
+    // `workspace_name` override — not the project name shown in the row text. And the
+    // header's action cluster, kebab included, is not in the DOM until the header is
+    // hovered or focused (`rail-hover-engagement.ts`), so engage it first.
     await page.locator('[data-testid="project-header"]').hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Edit", exact: true }).click()
@@ -477,7 +431,7 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test("kebab Delete workspace on a non-main worktree: dirty check, cancel, disabled states, confirm — behavior 4", async ({ page }) => {
+  test("kebab Delete workspace on a non-main worktree: dirty check, cancel, disabled states, confirm", async ({ page }) => {
     const SECOND_DIR = "/tmp/e2e-core-lifecycle-second"
     const lifecycle = await installLifecycleMock(page, {
       sandboxes: [SECOND_DIR],
@@ -503,11 +457,9 @@ test.describe("core workspace lifecycle @core", () => {
       if (r.request().method() !== "DELETE") return r.fallback()
       removeBody = r.request().postDataJSON()
       await removeGate
-      // The real DELETE commits the Project row through `project.removeSandbox`
-      // before returning 200, so every later `/project` read and the emitted
-      // `project.updated` event agree that this workspace no longer exists.
-      // Keep this fixture's authoritative producer in the same state instead of
-      // allowing a late catalog read to resurrect the immutable seed under load.
+      // The real DELETE commits the project row through `project.removeSandbox` before
+      // returning 200, so every later `/project` read agrees the workspace is gone. Move
+      // this fixture's own state with it, or a late catalog read resurrects the seed.
       lifecycle.project.sandboxes = lifecycle.project.sandboxes.filter((directory) => directory !== SECOND_DIR)
       delete lifecycle.project.workspaces[SECOND_DIR]
       lifecycle.project.time.updated = Date.now()
@@ -519,8 +471,8 @@ test.describe("core workspace lifecycle @core", () => {
 
     const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + SECOND_DIR + '"]')
     await expect(row).toBeVisible({ timeout: 15_000 })
-    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
-    // kebab only mounts once its owning header is hovered/focused.
+    // The kebab only mounts once its owning header is hovered or focused
+    // (`rail-hover-engagement.ts`).
     await row.hover()
     await row.getByRole("button", { name: /^More options for /, exact: false }).click()
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
@@ -560,7 +512,7 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(row).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test("kebab Delete workspace on a cloud MAIN workspace renders Destroy Sandbox and destroys it — behavior 5", async ({ page }) => {
+  test("kebab Delete workspace on a cloud MAIN workspace renders Destroy Sandbox and destroys it", async ({ page }) => {
     await installLifecycleMock(page, {
       workspaces: { [DIR]: { kind: "cloud", available: true, directory: DIR, workspaceId: "wsid_main_cloud" } },
     })
@@ -574,21 +526,13 @@ test.describe("core workspace lifecycle @core", () => {
       return json(r, { ok: true })
     })
 
-    // The kebab's "Delete workspace"/"Destroy Sandbox" item is gated behind
-    // `canMutateWorkspace()` (rail-sidebar.tsx:1567), which for a cloud-backed
-    // workspace (non-empty `workspaceId`) requires `workspacePlacement()` to
-    // resolve a role — that only happens once `WorkspaceGate` (mounted around
-    // the session surface for this active cloud workspace) actually mints a
-    // connection via `GET /api/workspace/:id/connection`
-    // (`openWorkspaceConnection`, `src/utils/workspace-relay-connection.ts`)
-    // and the resulting `role` flows into `applyWorkspaceConnectionInfo`
-    // (`src/shell/workspace/workspace-connection.ts`). Without this mock the
-    // mint silently fails (nothing listens on the real backend), the
-    // connection never reaches "ready" with a role, and the whole "Delete
-    // workspace" menu item stays hidden — not a route this spec's shared
-    // `installLifecycleMock` needs generically (every OTHER test here is a
-    // local/no-workspaceId workspace, which short-circuits this gate via
-    // `!workspace.workspaceId`), so it is mocked spec-locally here.
+    // The kebab's delete item is gated behind `canMutateWorkspace()`, which for a
+    // cloud-backed workspace requires `workspacePlacement()` to resolve a role. That only
+    // happens once `WorkspaceGate` mints a connection via
+    // `GET /api/workspace/:id/connection` and the `role` flows into
+    // `applyWorkspaceConnectionInfo`. Unmocked, the mint fails silently and the menu item
+    // never appears. Every other test here uses a workspace with no `workspaceId`, which
+    // short-circuits the gate, so this route is mocked spec-locally rather than shared.
     await page.route("**/api/workspace/*/connection**", (r) =>
       api(r.request())
         ? json(r, {
@@ -607,16 +551,13 @@ test.describe("core workspace lifecycle @core", () => {
 
     await openApp(page)
 
-    // Same "main" label nuance as the Edit test above — the kebab's aria-label is
-    // workspace-scoped ("main"), not the project's display name. Hover the
-    // header first: the kebab mounts on engagement (rail-hover-engagement.ts).
+    // The kebab's aria-label is workspace-scoped ("main"), not the project's display name,
+    // and it mounts only once the header is engaged.
     await page.locator('[data-testid="project-header"]').hover()
     await page.getByRole("button", { name: "More options for main" }).click()
-    // The kebab menu item's own label is always "Delete workspace" — only the
-    // DIALOG it opens (title + confirm button) renders "Destroy Sandbox" for a
-    // cloud-backed main workspace (`HeaderActions`'s DropdownMenu.Item text is
-    // unconditional in rail-sidebar.tsx; only DialogDeleteWorkspace's
-    // `isCloudSandbox()` branch changes copy).
+    // The menu item's label is always "Delete workspace": `HeaderActions`'s text is
+    // unconditional, and only `DialogDeleteWorkspace`'s `isCloudSandbox()` branch renders
+    // "Destroy Sandbox".
     await expect(page.getByRole("menuitem", { name: "Delete workspace", exact: true })).toBeVisible({ timeout: 10_000 })
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
 
@@ -631,7 +572,7 @@ test.describe("core workspace lifecycle @core", () => {
       .toHaveText("Sandbox Destroyed", { timeout: 10_000 })
   })
 
-  test("kebab Remove project removes optimistically; forced server failure surfaces a toast without restoring it — behavior 6", async ({ page }) => {
+  test("kebab Remove project removes optimistically; forced server failure surfaces a toast without restoring it", async ({ page }) => {
     await installLifecycleMock(page)
     await seedProject(page)
 
@@ -648,7 +589,7 @@ test.describe("core workspace lifecycle @core", () => {
     const projectHeader = page.locator('[data-testid="project-header"]').filter({ hasText: PROJECT_NAME })
     await expect(projectHeader).toBeVisible({ timeout: 10_000 })
 
-    // Engage the header so its kebab mounts (rail-hover-engagement.ts).
+    // Engage the header so its kebab mounts.
     await projectHeader.hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Remove project", exact: true }).click()
@@ -658,9 +599,8 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(projectHeader).toHaveCount(0, { timeout: 5_000 })
 
     await expect.poll(() => deleteCalls, { timeout: 10_000 }).toBe(1)
-    // Background reconnect/reload failures may legitimately surface their own
-    // toast at the same time. Assert the removal contract by content instead
-    // of requiring this to be the only toast in the global stack.
+    // Background reconnect failures can raise their own toast at the same time, so assert
+    // on content rather than on this being the only toast in the stack.
     await expect(toastTitle(page).filter({ hasText: "Failed to remove project" }))
       .toHaveText("Failed to remove project", { timeout: 10_000 })
 
@@ -668,7 +608,7 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(projectHeader).toHaveCount(0)
   })
 
-  test("New session on a missing local workspace opens the recovery dialog and recreates it — behavior 7", async ({ page }) => {
+  test("New session on a missing local workspace opens the recovery dialog and recreates it", async ({ page }) => {
     const MISSING_DIR = "/tmp/e2e-core-lifecycle-missing"
     await installLifecycleMock(page, {
       sandboxes: [MISSING_DIR],
@@ -684,28 +624,17 @@ test.describe("core workspace lifecycle @core", () => {
       return json(r, { directory: MISSING_DIR, name: "recovered" })
     })
 
-    // `createLocalWorkspace` (workspace-recovery.tsx) waits for a `worktree.ready`
-    // event on the central Claxedo event stream. The documented injection point
-    // (`window.__claxedoEmitTestEvent`, `src/app/integrations/claxedo-events.tsx`)
-    // is gated behind `import.meta.env.DEV` — confirmed live against THIS server
-    // (not just this spec's mock) that the flag is false here: both
-    // `__claxedoEmitTestEvent` and the sibling DEV-only
-    // `__claxedoConnections.markReconnecting`/`markReconnected` are absent from
-    // `window` after a full app boot, so the hook does not exist to call. This
-    // spec instead drives the REAL delivery path: the central stream is a
-    // `GET /api/claxedo/events` SSE connection (`claxedoEventStreamTargets` ->
-    // `controlPlaneEventsUrl`, `src/app/integrations/claxedo-events.tsx`) — the
-    // same one handler both real servers also mount on `/global/event` and
-    // `/api/wr/events`, which is why every spelling is overridden below. It
-    // reconnects on a steady ~2s cadence
-    // whenever each HTTP-level connect succeeds (`state.failures` resets to 0 on
-    // every 200 OK before the delay is computed, so the backoff never actually
-    // grows here — only a network/HTTP failure would escalate it). Flipping
-    // `deliverWorktreeReady` makes the NEXT reconnect's response body carry a
-    // real `data: {...}\n\n` SSE frame instead of the heartbeat comment, which
-    // the provider parses and feeds into the exact same emitter
-    // `props.events.on("worktree.ready", ...)` subscribes to — equivalent to the
-    // DEV hook's effect, but reachable without it.
+    // `createLocalWorkspace` (workspace-recovery.tsx) waits for a `worktree.ready` event on
+    // the central Claxedo event stream. The `window.__claxedoEmitTestEvent` injection point
+    // is gated behind `import.meta.env.DEV`, which is false in this build, so the hook does
+    // not exist on `window` to call.
+    //
+    // The event is delivered over the real path instead. The central stream is a
+    // `GET /api/claxedo/events` SSE connection that reconnects on a steady ~2s cadence —
+    // `state.failures` resets on every 200 OK, so the backoff never grows while connects
+    // succeed. Flipping `deliverWorktreeReady` makes the next reconnect's body carry a real
+    // `data: {…}` frame instead of the heartbeat comment, which the provider parses into
+    // the same emitter `props.events.on("worktree.ready", …)` subscribes to.
     let deliverWorktreeReady = false
     const eventStreamOverride = async (route: import("@playwright/test").Route) => {
       if (!api(route.request())) return route.continue()
@@ -724,8 +653,8 @@ test.describe("core workspace lifecycle @core", () => {
 
     const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + MISSING_DIR + '"]')
     await expect(row).toBeVisible({ timeout: 15_000 })
-    // "New session in" is part of the header's engagement-mounted action
-    // cluster (rail-hover-engagement.ts) — hover the header to mount it.
+    // "New session in" is part of the engagement-mounted action cluster, so hover the
+    // header to mount it.
     await row.hover()
     await row.getByRole("button", { name: /^New session in /, exact: false }).click()
 

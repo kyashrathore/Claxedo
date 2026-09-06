@@ -205,11 +205,9 @@ describe("BrowserHandle state machine", () => {
     expect(methods).toContain("Runtime.enable")
     expect(methods).toContain("Page.enable")
     expect(methods).toContain("Log.enable")
-    // Overlay / DOM / CSS used to be enabled here to back the old CDP-driven
-    // element picker. The picker now runs in-page via react-grab loaded by
-    // the guest preload, so these domains are no longer needed and we
-    // explicitly verify they're *not* requested — saves a few CDP round-trips
-    // per navigation.
+    // The in-page picker (react-grab, loaded by the guest preload) needs none
+    // of Overlay/DOM/CSS, so this asserts they're never requested — saves a
+    // few CDP round-trips per navigation.
     expect(methods).not.toContain("Overlay.enable")
     expect(methods).not.toContain("DOM.enable")
     expect(methods).not.toContain("CSS.enable")

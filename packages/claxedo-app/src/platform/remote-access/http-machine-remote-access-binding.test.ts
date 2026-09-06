@@ -5,7 +5,7 @@ import { machineRemoteAccess, resetMachineRemoteAccess } from "./machine-remote-
 afterEach(() => resetMachineRemoteAccess())
 
 describe("HTTP machine remote-access binding", () => {
-  test("the HTTP root reaches the routes its own server serves", async () => {
+  test("the HTTP binding sends adapter operations to the declared route paths", async () => {
     const calls: string[] = []
     configureHttpMachineRemoteAccess(async (path, init) => {
       calls.push(`${init?.method ?? "GET"} ${path}`)

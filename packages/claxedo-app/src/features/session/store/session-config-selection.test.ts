@@ -96,7 +96,7 @@ describe("session config selection", () => {
         hosting: "user-hosted",
         hostId: "host_1",
       },
-      harness: { id: "codex-acp", binary: "/opt/codex" },
+      harness: { kind: "connection", connectionId: "codex-team" },
     } satisfies SessionRef
     const scope = {
       sessionID: "shared",
@@ -123,10 +123,10 @@ describe("session config selection", () => {
 
     expect(sessionConfigRawQueryKey({
       ...scope,
-      sessionRef: { ...baseRef, harness: { id: "codex-acp", binary: "/opt/codex-a" } },
+      sessionRef: { ...baseRef, harness: { kind: "connection", connectionId: "codex-team-a" } },
     })).not.toEqual(sessionConfigRawQueryKey({
       ...scope,
-      sessionRef: { ...baseRef, harness: { id: "codex-acp", binary: "/opt/codex-b" } },
+      sessionRef: { ...baseRef, harness: { kind: "connection", connectionId: "codex-team-b" } },
     }))
   })
 
@@ -182,7 +182,7 @@ describe("session config selection", () => {
     })
   })
 
-  test("only exposes the default model fallback for uninitialized drafts", () => {
+  test("exposes the default model only after restoration when no valid selection exists", () => {
     expect(shouldExposeDefaultLocalModelFallback({
       existingSession: false,
       hasSelection: false,

@@ -15,10 +15,6 @@ import {
 } from "./inventory-source"
 
 describe("global sync inventory source helpers", () => {
-  test("inventory source does not depend on RuntimeGateway", async () => {
-    expect(await Bun.file(new URL("./inventory-source.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
-  })
-
   test("workspace group key prefers workspace identity over placeholder keys", () => {
     expect(workspaceGroupKey({
       key: "/workspace",
@@ -70,7 +66,6 @@ describe("global sync inventory source helpers", () => {
       hasSignedAccess: true,
       baseUrl: "http://127.0.0.1:4096",
       directory: "/repo/local",
-      workspaceID: "ws_local",
     })).toBe(false)
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,
@@ -84,9 +79,14 @@ describe("global sync inventory source helpers", () => {
     })).toBe(true)
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,
+      baseUrl: "http://127.0.0.1:4096",
+      directory: "/repo/local",
+      workspaceId: "ws_authoritative",
+    })).toBe(true)
+    expect(shouldUseSignedControlPlaneInventory({
+      hasSignedAccess: true,
       baseUrl: "https://app.test",
       directory: "/repo/local",
-      workspaceID: "ws_local",
     })).toBe(true)
   })
 

@@ -1,196 +1,68 @@
 /**
- * Cloud workspace through the real relay: the app, claxedo-server, the relay
- * process, the tunnel, the workspace-runtime and the embedded OpenCode engine
- * are ALL real, and the ONLY fake is the model HTTP endpoint
- * (`e2e/helpers/scripted-model-server.ts`). No Cloudflare, no hosted identity
- * — the fixture stands in for the control plane with a SQLite store and a
- * stubbed authority/verifier, which is what makes the lane hermetic enough to
- * run on every PR. Runtime access tokens carry a real, finite TTL (120s by
- * default, `CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS`).
+ * The relay hop itself. `web-signed-cloud.spec.ts` proves the product journeys for a cloud
+ * workspace over the same fixture; this file proves what that lane cannot observe — that
+ * the relay is in the path (the fixture's forward counter and the scripted endpoint's
+ * counts agree), that nothing bypassed it to a bare runtime path, and that breaking the far
+ * side of the hop makes a turn fail loudly while resuming restores service without a fresh
+ * process.
  *
- * HARNESS NOTES —
- *   - `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS=cloud` makes
- *     `packages/claxedo-server/src/signed-browser-relay-fixture.mjs` start a
- *     second workspace-runtime in-process, register it as a ready sandbox
- *     lease, and flip the workspace row to `kind:"cloud"`, so the relay
- *     resolves this workspace to that runtime. It spawns the relay as a real
- *     child process with `bun`, so bun must be on PATH.
- *   - Cloud mode has no host tunnel, so the user-hosted `/__fixture/tunnel/
- *     pause` routes do not exist here; `/__fixture/cloud-runtime/{pause,
- *     resume,stats}` gate the far side of the relay hop instead.
- *   - This lane runs its own dedicated vite frontend rather than the shared dev
- *     server, because the backend origin is baked at build time and the shared
- *     server points at :3001. The launcher it reuses stamps `X-Forwarded-For`
- *     to force claxedo-server's SIGNED bootstrap path — without it a loopback
- *     peer gets the local unsigned bootstrap, whose project scan cannot express
- *     this workspace's real kind.
- *   - Transport, established empirically: on a LOOPBACK server URL the app does
- *     NOT address the minted `relayUrl` directly. `workspace-runtime-request`
- *     routes relay-backed traffic to `{serverUrl}/workspaces/:id/...` and lets
- *     claxedo-server's `localWorkspaceRelayProxy` forward to the runtime; the
- *     direct-relay branch is taken only when `preferRelayOnLoopback` is set,
- *     which is `signed` mode. The cloud-runtime forward counter therefore
- *     proves the hop to a runtime the page has no URL for; it does NOT prove
- *     the WebSocket relay tunnel carried it.
- *   - Remaining blocker, why this file is `test.fixme`: the cloud connect path
- *     (`workspace-connection` -> `prepareWorkspaceRuntime` ->
- *     `resolveWorkspaceRuntime`) fails for this workspace even though
- *     `GET /api/workspace/resolve?workspaceId=...` returns `status:"ready"` by
- *     id; the gate renders "Workspace startup failed".
+ * Real here: the built production web bundle served through the fixture gateway
+ * (`buildAndServeWebApp` in web-signed-relay-harness.ts), the `hosted-node` control plane on
+ * `customVerifierAuthAdapter`, a `@claxedo/workspace-relay` process, and the in-process
+ * cloud workspace-runtime (`startCloudRuntime` in signed-browser-relay-fixture.mjs). The
+ * model HTTP endpoint is the only fake.
+ *
+ * The browser authenticates by cookie, the way the product's better-auth adapter does; the
+ * fixture gateway (`fixture-web-preview.mjs`) turns that HttpOnly cookie into the bearer the
+ * control plane verifies and stamps the forwarded-client header the signed bootstrap
+ * requires. A frontend that does neither 401s every control-plane call and the gate reports
+ * the host offline, so this lane must ride the shared harness rather than a plain dev
+ * server.
+ *
+ * Backend and preview ports are fixed at 4547/4549 (env-overridable), distinct from the
+ * sibling signed lanes so all four can run serially in one job.
+ * `/__fixture/cloud-runtime/{stats,pause,resume}` are fixture-only backend routes reached
+ * from this process, never from the page.
+ *
+ * The forward counter proves the hop reached a runtime the page has no URL for. It does not
+ * prove the WebSocket relay tunnel carried it.
  */
 import { expect, test, type Page } from "@playwright/test"
-import { e2eAppViteEnvironment } from "../auth-mode"
-import { spawn, type ChildProcess } from "node:child_process"
 import path from "node:path"
-import {
-  claudeScriptedEnv,
-  startScriptedModelServer,
-  type ScriptedModelServer,
-} from "../helpers/scripted-model-server"
+import { startScriptedModelServer, type ScriptedModelServer } from "../helpers/scripted-model-server"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
-import { composeText, selectScriptedModel } from "../helpers/web-signed-relay-harness"
-import { freePort } from "../helpers/free-port"
+import {
+  APP_DIR,
+  buildAndServeWebApp,
+  composeText,
+  composerInput,
+  gateReachesReady,
+  seedWorkspace,
+  selectScriptedModel,
+  sendSubsequentMessage,
+  sessionRoute,
+  startSignedRelayFixture,
+  submitControl,
+  submitDraft,
+  type RunningRelayFixture,
+  type RunningWebApp,
+} from "../helpers/web-signed-relay-harness"
+import { watchForbiddenDirectRequests } from "../helpers/web-signed-relay-journeys"
 
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
-const APP_DIR = path.resolve(import.meta.dirname, "../..")
-const REPO_ROOT = path.resolve(APP_DIR, "../..")
-const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
-
-type FixtureInfo = {
-  backendUrl: string
-  relayUrl: string
-  workspaceId: string
-  hostId: string
-  runtimeAccessToken: string
-  directory: string
-  role: string
-  // Real signed control-plane bearer JWT for `browserSubject = "user_browser"`,
-  // minted by the fixture's own local JWKS issuer with the keypair
-  // `controlPlaneJwks` verifies against. A non-JWT literal here fails
-  // `jwtVerify` with 401 `invalid_bearer_token`, so every API call from the
-  // page 401s before the gate can reach "ready".
-  controlPlaneToken: string
-}
+const SPEC = "real-cloud-relay"
+const BACKEND_PORT = Number(process.env.CLAXEDO_REAL_CLOUD_RELAY_BACKEND_PORT ?? 4547)
+const PREVIEW_PORT = Number(process.env.CLAXEDO_REAL_CLOUD_RELAY_PREVIEW_PORT ?? 4549)
+const OUT_DIR = path.join(APP_DIR, "dist-e2e-real-cloud-relay")
 
 let scripted: ScriptedModelServer | undefined
-let fixture: ChildProcess | undefined
-let fixtureLog = ""
-let frontend: ChildProcess | undefined
-let frontendLog = ""
-let info: FixtureInfo | undefined
-let frontendUrl = ""
-
-async function startFixture(): Promise<FixtureInfo> {
-  const backendPort = await freePort()
-  scripted = await startScriptedModelServer()
-
-  fixture = spawn(
-    "node",
-    ["--conditions=development", "--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
-    {
-      cwd: SERVER_DIR,
-      env: {
-        ...process.env,
-        CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
-        CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud",
-        // The injection seam: these reach the harness because harnessSpawnEnv
-        // spreads process.env into every harness spawn.
-        ...scripted.piEnv,
-        CLAXEDO_E2E_SCRIPTED_MODEL_URL: scripted.v1Url,
-        ...claudeScriptedEnv(scripted.url, path.join(REPO_ROOT, "node_modules", ".cache", "real-cloud-relay-claude")),
-      },
-      // The fixture owns its lifetime through the stdin pipe: it resumes stdin
-      // and shuts down on EOF, so an ignored stdin hands it an immediate EOF
-      // and it tears itself down while this spec is still booting. Same
-      // contract as `e2e/helpers/web-signed-relay-harness.ts`.
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  )
-
-  return await new Promise<FixtureInfo>((resolve, reject) => {
-    let settled = false
-    let stdout = ""
-    const finish = (err: Error) => {
-      if (settled) return
-      settled = true
-      reject(err)
-    }
-    const timeout = setTimeout(() => {
-      finish(new Error(`GATING: cloud relay fixture did not start within 120s.\n${fixtureLog}`))
-    }, 120_000)
-    fixture?.stdout?.on("data", (chunk) => {
-      const text = chunk.toString()
-      fixtureLog += text
-      stdout += text
-      for (const line of stdout.split("\n")) {
-        if (settled || !line.trim()) continue
-        try {
-          const parsed = JSON.parse(line) as FixtureInfo
-          // `controlPlaneToken` is required here, not merely typed: without this
-          // check a fixture build that regresses and stops printing the field
-          // would resolve with `controlPlaneToken: undefined`, `seedWorkspace`
-          // would seed the literal string "undefined" as the bearer token, and
-          // every test would fail 60s later inside `gateReachesReady` with a
-          // confusing timeout instead of a clear boot-time GATING error.
-          if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.controlPlaneToken) continue
-          settled = true
-          clearTimeout(timeout)
-          resolve(parsed)
-        } catch {
-          continue
-        }
-      }
-    })
-    fixture?.stderr?.on("data", (chunk) => (fixtureLog += chunk.toString()))
-    fixture?.once("exit", (code, signal) => {
-      clearTimeout(timeout)
-      finish(new Error(`GATING: cloud relay fixture exited before starting (${code ?? signal}).\n${fixtureLog}`))
-    })
-    fixture?.once("error", finish)
-  })
-}
-
-async function startFrontend(backendUrl: string): Promise<string> {
-  const port = await freePort()
-  frontend = spawn("node", [path.join(APP_DIR, "e2e", "helpers", "live-user-hosted-relay-frontend-server.mjs")], {
-    cwd: APP_DIR,
-    env: { ...process.env, ...e2eAppViteEnvironment(), VITE_CLAXEDO_SERVER_URL: backendUrl, PORT: String(port) },
-    stdio: ["ignore", "pipe", "pipe"],
-  })
-  frontend.stdout?.on("data", (chunk) => (frontendLog += chunk.toString()))
-  frontend.stderr?.on("data", (chunk) => (frontendLog += chunk.toString()))
-
-  const url = `http://127.0.0.1:${port}`
-  const start = Date.now()
-  while (Date.now() - start < 90_000) {
-    if (frontend.exitCode !== null) {
-      throw new Error(`GATING: dedicated frontend exited before becoming healthy.\n${frontendLog}`)
-    }
-    const ok = await fetch(url, { signal: AbortSignal.timeout(3_000) }).then((r) => r.ok).catch(() => false)
-    if (ok) return url
-    await new Promise((resolve) => setTimeout(resolve, 300))
-  }
-  throw new Error(`GATING: dedicated frontend at ${url} did not become healthy within 90s.\n${frontendLog}`)
-}
-
-async function stopChild(child: ChildProcess | undefined) {
-  if (!child || child.exitCode !== null || child.signalCode) return
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL")
-      resolve()
-    }, 8_000)
-    child.once("exit", () => {
-      clearTimeout(timeout)
-      resolve()
-    })
-    child.kill("SIGTERM")
-  })
-}
+let fixture: RunningRelayFixture | undefined
+let webApp: RunningWebApp | undefined
+let forbiddenHits: string[] = []
 
 async function fixtureJson<T>(pathname: string, method: "GET" | "POST" = "GET"): Promise<T> {
-  const res = await fetch(`${info!.backendUrl}${pathname}`, { method })
+  const res = await fetch(`${fixture!.info.backendUrl}${pathname}`, { method })
   if (!res.ok) throw new Error(`GATING: ${method} ${pathname} failed: ${res.status} ${await res.text()}`)
   return (await res.json()) as T
 }
@@ -199,192 +71,112 @@ const cloudRuntimeStats = () => fixtureJson<{ forwarded: number; paused: boolean
 const pauseCloudRuntime = () => fixtureJson<{ paused: boolean }>("/__fixture/cloud-runtime/pause", "POST")
 const resumeCloudRuntime = () => fixtureJson<{ resumed: boolean }>("/__fixture/cloud-runtime/resume", "POST")
 
-/**
- * Seeds the browser so the workspace id resolves as a real relay-backed cloud
- * target. `sandboxes: [workspaceId]` is what `sessionWorkspaceRuntimeRef` reads;
- * the workspace-scoped route below is equally required (a directory route
- * resolves the composer's target to "Local" and bypasses the gate entirely —
- * the trap `live-user-hosted-relay` documents having hit).
- */
-async function seedWorkspace(page: Page, input: FixtureInfo) {
-  await page.addInitScript(
-    (seed: FixtureInfo) => {
-      localStorage.clear()
-      const w = window as typeof window & {
-        __CLAXEDO_TEST_AUTH_TOKEN__?: string
-        __CLAXEDO_TEST_AUTH_USER__?: { id: string }
-      }
-      w.__CLAXEDO_TEST_AUTH_TOKEN__ = seed.controlPlaneToken
-      w.__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }
-      // `worktree` is the WORKSPACE REF (`workspace:<id>`), not the filesystem
-      // path. Two reasons, both found empirically:
-      //   1. `placementFor` (`platform/runtime/placement.ts:71`) derives the
-      //      workspace id via `workspaceIdFromRef`, which only matches the
-      //      `workspace:`/`ws_` shapes. Given a plain path it returns a
-      //      `hosting:"central"` placement and the runtime calls never take the
-      //      workspace transport at all.
-      //   2. The fixture's workspace dir is under /var, which resolves through a
-      //      symlink to /private/var. The server stores the REAL path, so a
-      //      path-keyed `GET /api/workspace/resolve?directory=…` misses the row
-      //      and (worse) auto-creates a SECOND workspace with a different id.
-      //      Keying by ref sidesteps the alias entirely.
-      const ref = `workspace:${seed.workspaceId}`
-      localStorage.setItem(
-        "claxedo.global.dat:server",
-        JSON.stringify({
-          list: [],
-          projects: {
-            local: [{ worktree: ref, expanded: true, sandboxes: [seed.workspaceId] }],
-          },
-          lastProject: {},
-          workspaceServer: {},
-          closedProjects: {},
-        }),
-      )
-      localStorage.setItem(
-        "claxedo.global.dat:globalSync.project",
-        JSON.stringify({
-          value: [
-            {
-              id: "proj_real_cloud_relay",
-              name: "Real Cloud Relay",
-              worktree: ref,
-              sandboxes: [seed.workspaceId],
-              // Keyed by BOTH the ref and the filesystem path:
-              // `sessionWorkspaceRuntimeRef` reads the real `kind` off this
-              // inventory (`platform/runtime/session-workspace.ts`) and matches
-              // by either form. Without a hit it defaults to `"user-hosted"`,
-              // which sends the connection down the mint+health path instead of
-              // the cloud one.
-              workspaces: {
-                [ref]: {
-                  id: seed.workspaceId,
-                  kind: "cloud",
-                  workspace_name: "Real Cloud Relay",
-                  directory: seed.directory,
-                },
-                [seed.directory]: {
-                  id: seed.workspaceId,
-                  kind: "cloud",
-                  workspace_name: "Real Cloud Relay",
-                  directory: seed.directory,
-                },
-              },
-            },
-          ],
-        }),
-      )
-    },
-    input,
-  )
+function promptText(marker: string) {
+  return `Reply with exactly this one token and nothing else, no punctuation, no formatting: ${marker}`
 }
 
-async function gateReachesReady(page: Page, timeoutMs = 60_000) {
-  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: timeoutMs })
-  await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0, { timeout: timeoutMs })
-  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-  await expect(input).toBeVisible({ timeout: timeoutMs })
-  await expect(input).toHaveAttribute("contenteditable", "true")
-  return input
+/** Opens the workspace draft route through the connect gate; every scenario's entry point. */
+async function openReadyWorkspace(page: Page) {
+  await seedWorkspace(page, fixture!.info, "cloud")
+  await page.goto(`${webApp!.url}${sessionRoute(fixture!.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
+  await gateReachesReady(page)
 }
 
-async function sendPrompt(page: Page, marker: string) {
-  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-  const text = `Reply with exactly this one token and nothing else, no punctuation, no formatting: ${marker}`
-  await composeText(page, input, text)
-  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
-  if (await control.getAttribute("data-harness") !== "pi") await selectScriptedModel(page)
-  await expect(input).toContainText(marker, { timeout: 10_000 })
-  await page.locator(SELECTORS.submitControl).last().click()
+/** First send on a fresh draft: the scripted model is selected, and the authoritative 201 is awaited. */
+async function sendFirstPrompt(page: Page, marker: string) {
+  await composeText(page, composerInput(page), promptText(marker))
+  await selectScriptedModel(page)
+  return await submitDraft(page)
+}
+
+/** A later send inside the session the first prompt opened. */
+async function sendNextPrompt(page: Page, marker: string) {
+  await composeText(page, composerInput(page), promptText(marker))
+  await sendSubsequentMessage(page)
 }
 
 test.describe("real cloud relay @core @tier-real", () => {
   test.skip(
     !TIER_REAL,
     "Tier R: set CLAXEDO_TIER_REAL_E2E=1 to run real-cloud-relay against a real relay process, real EdDSA JWTs, a " +
-      "real host tunnel and a real workspace-runtime, with only the model endpoint scripted. This lane boots its " +
-      "own backend and its own frontend, so it cannot ride a sharded core run — it has its own CI job. Unset -> " +
-      "loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
+      "real in-process cloud workspace-runtime and a real built production web bundle, with only the model endpoint " +
+      "scripted. This lane boots its own backend and gateway, so it cannot ride a sharded core run. Unset -> loud, " +
+      "visible skip, never a silent no-op.",
   )
 
   test.beforeAll(async () => {
     if (!TIER_REAL) return
-    info = await startFixture()
-    frontendUrl = await startFrontend(info.backendUrl)
+    test.setTimeout(180_000)
+    scripted = await startScriptedModelServer()
+    fixture = await startSignedRelayFixture({
+      access: "cloud",
+      backendPort: BACKEND_PORT,
+      browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
+      scripted,
+      claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "real-cloud-relay-claude"),
+    })
+    webApp = await buildAndServeWebApp({
+      backendUrl: fixture.info.backendUrl,
+      relayUrl: fixture.info.relayUrl,
+      outDir: OUT_DIR,
+      previewPort: PREVIEW_PORT,
+    })
   })
 
   test.afterAll(async () => {
     if (!TIER_REAL) return
-    await stopChild(frontend)
-    await stopChild(fixture)
-    await scripted?.close()
-    frontend = undefined
-    fixture = undefined
-    scripted = undefined
+    try {
+      // Across the whole run: nothing addressed a bare runtime path at the backend origin,
+      // so every runtime request went through the relay.
+      expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
+    } finally {
+      await Promise.allSettled([webApp?.close(), fixture?.close(), scripted?.close()])
+    }
   })
 
-  test.beforeEach(async (_fixtures, testInfo) => {
-    // Real relay + real tunnel + real engine boot: the first turn of a scenario
-    // pays a genuine multi-second cost that a mocked lane never sees.
+  test.beforeEach(async ({ page }, testInfo) => {
+    if (!TIER_REAL) return
+    // Real relay + real engine boot: the first turn pays a genuine multi-second
+    // cost that a mocked lane never sees.
     testInfo.setTimeout(300_000)
+    scripted!.resetCounts()
+    watchForbiddenDirectRequests(page, new URL(fixture!.info.backendUrl).origin, forbiddenHits)
   })
 
-  test.fixme(
-    true,
-    "GATING: cloud connect gate reports 'Workspace startup failed' — prepareWorkspaceRuntime's resolve rejects an " +
-      "already-ready cloud workspace. See HARNESS NOTES 'remaining blocker'.",
-  )
+  // A client-side Playwright error cannot show why the fixture refused something, so the
+  // fixture's own log tail is surfaced on any non-green result.
+  test.afterEach(async () => {
+    const testInfo = test.info()
+    if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
+    console.log(
+      `\n[${SPEC}] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
+    )
+  })
 
-  test("a cloud workspace completes real turns across the relay and survives reload — behaviors 1,2,3,4,5", async ({
+  test("a cloud workspace completes real turns across the relay and survives reload", async ({
     page,
   }) => {
-    const fx = info!
-    scripted!.resetCounts()
-
-    // Behavior 5's observation surface, installed before the first navigation so
-    // nothing in the journey escapes it.
-    const bypassing: string[] = []
-    const backendOrigin = new URL(fx.backendUrl).origin
-    page.on("request", (request) => {
-      const url = new URL(request.url())
-      if (url.origin !== backendOrigin) return
-      if (/^\/(session|file|config|mcp|agent|command|permission|question|global)(\/|$)/.test(url.pathname)) {
-        bypassing.push(`${request.method()} ${url.pathname}`)
-      }
-    })
-
-    await seedWorkspace(page, fx)
-    await page.goto(`${frontendUrl}/w/${encodeURIComponent(fx.workspaceId)}/session`)
-    await gateReachesReady(page)
+    await openReadyWorkspace(page)
 
     const runId = `${Date.now()}`.slice(-6)
     const markers = [`CLOUD-${runId}-T1`, `CLOUD-${runId}-T2`]
 
-    await sendPrompt(page, markers[0])
-    await expectAssistantReplyVisible(page, new RegExp(markers[0]), {
-      spec: "real-cloud-relay",
-      scenario: "turn-1",
-    })
+    await sendFirstPrompt(page, markers[0])
+    await expectAssistantReplyVisible(page, new RegExp(markers[0]), { spec: SPEC, scenario: "turn-1" })
 
-    await sendPrompt(page, markers[1])
-    await expectAssistantReplyVisible(page, new RegExp(markers[1]), {
-      spec: "real-cloud-relay",
-      scenario: "turn-2",
-    })
+    await sendNextPrompt(page, markers[1])
+    await expectAssistantReplyVisible(page, new RegExp(markers[1]), { spec: SPEC, scenario: "turn-2" })
     await expectLiveUserRowCount(page, markers.length)
 
-    // Behavior 3: read back across the relay from the cloud runtime's own store.
+    // Read back across the relay from the cloud runtime's own store.
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 60_000 })
-    await expectAssistantReplyVisible(page, new RegExp(markers[1]), {
-      spec: "real-cloud-relay",
-      scenario: "reload",
-    })
+    await expectAssistantReplyVisible(page, new RegExp(markers[1]), { spec: SPEC, scenario: "reload" })
     await expectLiveTurnsSettledAfterReload(page, markers)
 
-    // Behavior 4, both halves. The forward counter proves the relay reached a
-    // runtime the page has no URL for; the scripted counts prove the model call
-    // happened behind it. Either alone could be satisfied by a lucky shortcut.
+    // Both halves matter: the forward counter proves the relay reached a runtime the page
+    // has no URL for, the scripted counts prove the model call happened behind it. Either
+    // alone could be satisfied by a shortcut.
     const stats = await cloudRuntimeStats()
     expect(
       stats.forwarded,
@@ -397,28 +189,20 @@ test.describe("real cloud relay @core @tier-real", () => {
       `expected the scripted endpoint to carry both turns from behind the relay, saw ${JSON.stringify(counts)}`,
     ).toBeGreaterThanOrEqual(markers.length)
 
-    expect(
-      bypassing,
-      "requests addressed a bare runtime path at the backend origin instead of /workspaces/:id/... — relay bypass",
-    ).toEqual([])
+    // Nothing addressed a bare runtime path at the backend origin instead of
+    // /workspaces/:id/… , which would be a relay bypass.
+    expect(forbiddenHits).toEqual([])
   })
 
-  test("pausing the far side of the relay hop makes a turn fail, and resuming restores it — behavior 6", async ({
+  test("pausing the far side of the relay hop makes a turn fail, and resuming restores it", async ({
     page,
   }) => {
-    const fx = info!
-    scripted!.resetCounts()
-    await seedWorkspace(page, fx)
-    await page.goto(`${frontendUrl}/w/${encodeURIComponent(fx.workspaceId)}/session`)
-    await gateReachesReady(page)
+    await openReadyWorkspace(page)
 
     const runId = `${Date.now()}`.slice(-6)
     const healthyMarker = `CLOUDOK-${runId}`
-    await sendPrompt(page, healthyMarker)
-    await expectAssistantReplyVisible(page, new RegExp(healthyMarker), {
-      spec: "real-cloud-relay",
-      scenario: "before-pause",
-    })
+    await sendFirstPrompt(page, healthyMarker)
+    await expectAssistantReplyVisible(page, new RegExp(healthyMarker), { spec: SPEC, scenario: "before-pause" })
 
     // Break the far side of the hop. Everything else — page, backend, relay
     // process, scripted endpoint — stays exactly as it was, so a failure after
@@ -427,34 +211,40 @@ test.describe("real cloud relay @core @tier-real", () => {
     expect((await cloudRuntimeStats()).paused).toBe(true)
 
     const beforePaused = scripted!.counts().responses
+    const forwardedBefore = (await cloudRuntimeStats()).forwarded
     const pausedMarker = `CLOUDDOWN-${runId}`
-    await sendPrompt(page, pausedMarker)
-
-    // The turn must NOT complete. Proven by the reply never rendering within a
-    // window that comfortably exceeds the healthy turn above, plus the model
-    // endpoint recording no new call — the request died at the broken hop
-    // rather than reaching the engine.
-    await expect(
-      page.locator(SELECTORS.assistantContent).filter({ hasText: pausedMarker }),
-      "a turn completed while the relay's far side was paused — the relay is not actually carrying this traffic, " +
-        "so every other assertion in this file proves less than it appears to",
-    ).toHaveCount(0, { timeout: 20_000 })
-    expect(
-      scripted!.counts().responses,
-      "the scripted model endpoint was reached while the relay hop was paused — traffic found another path",
-    ).toBe(beforePaused)
+    try {
+      // Await the actual failed dispatch before asserting absence of a reply.
+      // A zero-count locator succeeds immediately; its timeout is not a quiet window.
+      await composeText(page, composerInput(page), promptText(pausedMarker))
+      const submit = submitControl(page)
+      await expect(submit).toBeEnabled({ timeout: 10_000 })
+      const [response] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/prompt_async"),
+          { timeout: 20_000 },
+        ),
+        submit.click(),
+      ])
+      expect(response.status()).toBe(503)
+      expect(await response.json()).toMatchObject({ error: { code: "cloud_runtime_paused" } })
+      // The request reached the relay's far side and was refused there: the fixture counted
+      // the forward, and the model behind it was never called.
+      expect((await cloudRuntimeStats()).forwarded).toBeGreaterThan(forwardedBefore)
+      await expect(page.locator(SELECTORS.assistantContent).filter({ hasText: pausedMarker })).toHaveCount(0)
+      expect(scripted!.counts().responses).toBe(beforePaused)
+    } finally {
+      await resumeCloudRuntime()
+    }
 
     // Resume and prove the fixture still works, so the failure above was the
     // pause and not a one-way break.
-    await resumeCloudRuntime()
     expect((await cloudRuntimeStats()).paused).toBe(false)
     await page.reload({ waitUntil: "domcontentloaded" })
     await gateReachesReady(page)
     const recoveredMarker = `CLOUDBACK-${runId}`
-    await sendPrompt(page, recoveredMarker)
-    await expectAssistantReplyVisible(page, new RegExp(recoveredMarker), {
-      spec: "real-cloud-relay",
-      scenario: "after-resume",
-    })
+    await sendNextPrompt(page, recoveredMarker)
+    await expectAssistantReplyVisible(page, new RegExp(recoveredMarker), { spec: SPEC, scenario: "after-resume" })
   })
 })

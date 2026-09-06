@@ -388,7 +388,7 @@ describe("query persister", () => {
     expect(target.getItem(queryPersisterKey)).toBeNull()
   })
 
-  test("a principal change while IndexedDB restore is pending cannot hydrate the old snapshot", async () => {
+  test("a principal change away and back while IndexedDB restore is pending cannot hydrate the old snapshot", async () => {
     const target = storage()
     await installQueryPersister({
       storage: target,
@@ -405,6 +405,7 @@ describe("query persister", () => {
     let releaseRead: (() => void) | undefined
     const readReleased = new Promise<void>((resolve) => { releaseRead = resolve })
     let scope = "signed:user_a"
+    let generation = 0
     const restore = installQueryPersister({
       storage: {
         ...target,
@@ -417,12 +418,79 @@ describe("query persister", () => {
       buster: "build-a",
       throttleTime: 0,
       scope: () => scope,
+      generation: () => generation,
     })!.restore
     scope = "signed:user_b"
+    generation += 1
+    scope = "signed:user_a"
+    generation += 1
     releaseRead?.()
     await restore
 
     expect(queryClient.getQueryData(privateKey)).toBeUndefined()
+  })
+
+  test("queued snapshots cannot write after the principal changes away and back", async () => {
+    let scope: string | null = "signed:user_a"
+    let generation = 0
+    let entered!: () => void
+    const writeStarted = new Promise<void>((resolve) => { entered = resolve })
+    let release!: () => void
+    const writeReleased = new Promise<void>((resolve) => { release = resolve })
+    const written: string[] = []
+    await installQueryPersister({
+      storage: {
+        getItem: () => undefined,
+        removeItem: () => undefined,
+        async setItem(_key, value) {
+          written.push(value)
+          entered()
+          await writeReleased
+        },
+      },
+      scope: () => scope,
+      generation: () => generation,
+    })?.restore
+    const key = ["session", "default", "row", "/repo", "ses_1"]
+    queryClient.setQueryData(key, { id: "first" })
+    const first = flushQueryPersistence()
+    await writeStarted
+    queryClient.setQueryData(key, { id: "queued" })
+    const queued = flushQueryPersistence()
+    scope = null
+    generation += 1
+    scope = "signed:user_a"
+    generation += 1
+    release()
+    await Promise.all([first, queued])
+    expect(written).toHaveLength(1)
+    expect(JSON.parse(written[0]).clientState.queries[0].state.data).toEqual({ id: "first" })
+  })
+
+  test("suspends durable reads and writes until a canonical signed subject is available", async () => {
+    const target = storage()
+    target.setItem(queryPersisterKey, "previous-account-snapshot")
+    let scope: string | null = null
+    let reads = 0
+    await installQueryPersister({
+      storage: {
+        ...target,
+        getItem(key) { reads++; return target.getItem(key) },
+      },
+      buster: "build-a",
+      scope: () => scope,
+    })?.restore
+    expect(reads).toBe(0)
+    queryClient.setQueryData(["session", "default", "row", "/private", "ses_pending"], { id: "ses_pending" })
+    await flushQueryPersistence()
+    expect(target.getItem(queryPersisterKey)).toBe("previous-account-snapshot")
+    queryClient.clear()
+    scope = "signed:user_a"
+    queryClient.setQueryData(["session", "default", "row", "/private", "ses_named"], { id: "ses_named" })
+    await flushQueryPersistence()
+    const saved = JSON.parse(target.getItem(queryPersisterKey)!)
+    expect(saved.scope).toBe("signed:user_a")
+    expect(saved.clientState.queries.map((query: { state: { data: { id: string } } }) => query.state.data.id)).toEqual(["ses_named"])
   })
 
   test("missing localStorage does not throw", () => {

@@ -6,9 +6,9 @@ import {
 
 const SessionTitleProjectionContext = createContext<SessionTitleProjectionApi>()
 
-export function SessionTitleProjectionProvider(props: ParentProps<{ scope?: Accessor<string> }>): JSX.Element {
+export function SessionTitleProjectionProvider(props: ParentProps<{ scope?: Accessor<string | null> }>): JSX.Element {
   const projection = createSessionTitleProjection()
-  let previousScope: string | undefined
+  let previousScope: string | null | undefined
   createComputed(() => {
     const nextScope = props.scope?.()
     if (nextScope === undefined || previousScope === undefined) {

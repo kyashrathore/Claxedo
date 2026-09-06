@@ -1,4 +1,5 @@
 import { isRecord, readField, readString } from "@/lib/record"
+import { isString } from "@claxedo/helpers/guards"
 
 export const AGENT_PLUGIN_HARNESSES = ["opencode", "claude", "codex", "cursor"] as const
 export type AgentPluginHarness = (typeof AGENT_PLUGIN_HARNESSES)[number]
@@ -88,7 +89,7 @@ type MutationReceipt = { revision: number; reconciliation: { state: string; mess
 export type SkillDocument = { name: string; description: string; markdown: string }
 
 function optionalString(value: unknown) {
-  return value === undefined || value === null || typeof value === "string"
+  return value === undefined || value === null || isString(value)
 }
 
 function harness(value: unknown): value is AgentPluginHarness {

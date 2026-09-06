@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { importSpecifiers, resolveImport, shortestForbiddenImportChain } from "./import-graph"
+import { importSpecifiers, resolveImport, shortestForbiddenImportChain, stripComments } from "./import-graph"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const srcRoot = path.join(appRoot, "src")
@@ -16,23 +16,22 @@ const srcRoot = path.join(appRoot, "src")
  * modules. All four are cut; this file now asserts that rather than recording
  * it.
  *
- * It measures TWICE, and both measurements are load-bearing:
+ * It measures twice, and both measurements are load-bearing:
  *
  *  - The shortest chain names the tightest coupling — the one a reader would
  *    have to break next, and the fastest signal when one comes back.
- *  - `LOCAL_AUTH_CLIENT_IMPORTERS` names EVERY module in the local closure that
+ *  - `LOCAL_AUTH_CLIENT_IMPORTERS` names every module in the local closure that
  *    imports the identity provider's real modules — `browser-auth.ts` (the
  *    port, which also carries real values, not just types) and
- *    `better-auth-browser-auth.ts` (the vendor client). This file used to
- *    claim "the test fails if a
- *    SECOND chain appears"; it did not. A shortest-path walk reports one chain
- *    and hides the rest, and there were four the whole time. Cutting the
- *    shortest one only promoted the next, so the whole-closure check is the one
- *    that actually holds the line and the shortest-chain check is the diagnostic.
+ *    `better-auth-browser-auth.ts` (the vendor client). A shortest-path walk
+ *    reports one chain and hides the rest, and more than one can exist at
+ *    once; cutting the shortest only promotes the next. So the whole-closure
+ *    check is what actually holds the line, and the shortest-chain check is
+ *    only the diagnostic.
  *
  * A source closure is not an artifact, and this file cannot see the difference.
  * Rollup config can name a chunk for a dependency no module imports, so the
- * emitted-bundle check lives separately — a green result here means the SOURCE
+ * emitted-bundle check lives separately — a green result here means the source
  * graph is clean, nothing more.
  */
 
@@ -88,24 +87,20 @@ function importersOf(entry: string, target: string) {
 /**
  * The local closure's remaining routes to the identity provider, by the module that owns each.
  *
- * EMPTY, as of 2026-08-09. It was four, and each was cut separately:
- * `platform/api/api.ts` (the authenticated transport),
- * `platform/auth/auth-session.ts` (the shell's provider tree),
- * `platform/runtime/agent/agent-runtime-client.ts`, and
- * `features/workspaces/actions/project-actions.tsx`.
+ * Empty: `local.tsx` deliberately binds neither the token source nor the
+ * identity provider, so the hosted entry and the desktop renderer bind both
+ * ports and the identity provider is simply absent from the local bundle
+ * rather than present-but-unused.
  *
- * Every one of them was a module that NEEDS a token importing the thing that
- * MINTS one, and every one was fixed the same way — name the capability, let a
- * composition root bind it. The hosted entry and the desktop renderer bind
- * both ports; `local.tsx` deliberately binds neither, so the token source and
- * the identity provider is simply absent from the local bundle rather than
- * present-but-unused.
+ * This list is an invariant, not a recorded baseline: a module appearing here
+ * is a new route to the identity provider from local code, and the fix is a
+ * port, not an entry in this array. Every such route has the same shape — a
+ * module that needs a token importing the thing that mints one — and the same
+ * remedy: name the capability and let a composition root bind it.
  *
- * This list is not a baseline any more, it is an invariant. A module appearing
- * here is a new route to the identity provider from local code, and the fix is
- * a port, not an entry in this array. Note this measures VALUE imports only —
- * `auth-session.ts` still names `useAuth` as a `import type`, which the bundler
- * erases and which therefore correctly does not count.
+ * This measures value imports only — `auth-session.ts` still names `useAuth`
+ * as an `import type`, which the bundler erases and which therefore correctly
+ * does not count.
  */
 const LOCAL_AUTH_CLIENT_IMPORTERS: string[] = []
 
@@ -121,12 +116,12 @@ describe("the local entry", () => {
   test("imports no identity provider directly", () => {
     // What this entry itself controls. The transitive reach is measured below.
     //
-    // Scanned over IMPORT SPECIFIERS, not the whole file: the first version
-    // read the raw source and failed on this entry's own doc comment, which
-    // names the modules it deliberately avoids. A guard that cannot tell an
-    // import from a sentence about an import is not measuring the code.
+    // Scanned over import specifiers, not the whole file: matching raw source
+    // text would trip on this entry's own doc comment, which names the
+    // modules it deliberately avoids. A guard that cannot tell an import from
+    // a sentence about an import is not measuring the code.
     const source = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
-    const specifiers = [...source.matchAll(/from\s*["']([^"']+)["']/g)].map((match) => match[1])
+    const specifiers = importSpecifiers(source)
 
     for (const forbidden of ["auth-client", "better-auth", "platform/api/api"]) {
       expect(
@@ -137,40 +132,19 @@ describe("the local entry", () => {
   })
 
   test("does not reach the identity provider at all", () => {
-    // The goal state, reached 2026-08-09. This assertion used to be its
-    // inverse — `.not.toBeNull()` against a recorded baseline — because the
-    // chain was real and pretending otherwise would have been the lie. The
-    // history is worth keeping, because each hop was cut for a different
-    // reason and the shape of the last one is the shape of the next such fix:
-    //
-    //  1. `app/entry/index.tsx` re-exported the auth surface and started the provider
-    //     inside the shared `initClaxedo`. The surface moved to
-    //     `@claxedo/app/auth`, and starting the identity provider became the
-    //     hosted entry's job.
-    //  2. `platform/api/api.ts`, the authenticated transport, imported
-    //     `getAuthToken`. It now takes a bearer from
-    //     `configureApiRuntime({ bearerToken })` — only a build that HAS an
-    //     identity provider binds one.
-    //  3. `platform/auth/auth-session.ts` was reached from `app/entry/app.tsx`,
-    //     so the shared shell's provider tree pulled it into every build.
-    //     It now imports `useAuth` as a TYPE and takes the real one through
-    //     `configureAuthSession`; unbound, it returns an anonymous session,
-    //     which is what a local build genuinely is.
-    //  4. `agent-runtime-client.ts` and `project-actions.tsx` each called
-    //     `getAuthToken` directly. Both read the bound bearer instead.
-    //
-    // All four were the same defect: a module that NEEDS a token importing the
-    // thing that MINTS one. The remedy every time was to name the capability
-    // and let a composition root supply it.
+    // The local entry must not reach the identity provider through any chain.
+    // Every route back to it has the same shape — a module that needs a token
+    // importing the thing that mints one — and the same fix: name the
+    // capability and let a composition root supply it, never import the
+    // minter directly.
     expect(chainTo("app/entry/local.tsx"), "the local entry reached a forbidden package again").toBeNull()
   })
 
   test("records every remaining route to the identity provider, not just the shortest", () => {
     // Empty, and it must stay empty. A shortest-path walk reports one chain and
-    // hides the rest; this file once claimed it "fails if a SECOND chain
-    // appears" and it did not — there were four the whole time, and cutting the
-    // shortest only promoted the next. So the check that actually holds the
-    // line is this one, over the WHOLE closure, not the one above it.
+    // hides the rest, and more than one route can exist at once; cutting the
+    // shortest only promotes the next. So this checks the whole closure — the
+    // check above only holds the tightest coupling, not every route.
     //
     // Targets the identity provider's two real modules: `browser-auth.ts`
     // (the port — it also exports real values, `browserAuthUnavailable` and
@@ -201,7 +175,7 @@ describe("the local entry", () => {
   })
 
   test("the asymmetry that keeps the transport out of the chain is a call site, not a type", () => {
-    // WHY api.ts dropped off the chain above, and the one way it comes back.
+    // Why api.ts dropped off the chain above, and the one way it comes back.
     //
     // `platform/api/api.ts` takes its bearer from
     // `configureApiRuntime({ bearerToken })`. Nothing forces a build to bind
@@ -211,7 +185,7 @@ describe("the local entry", () => {
     // renders, and sends every hosted request with no Authorization header.
     // `app-ports-wiring.guard.test.ts` records the same failure shape costing
     // a hosted feature its entire live-sync doorbell with a green suite.
-    const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
+    const hosted = stripComments(readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8"))
 
     expect(hosted).toMatch(/bearerToken:\s*browserAuthAdapter\.transport === "bearer"/)
     expect(hosted).toMatch(/browserCredentials:\s*browserAuthAdapter\.transport === "cookie"/)
@@ -222,17 +196,17 @@ describe("the local entry", () => {
     // its `useAuth` from `configureAuthSession` instead of importing it, which
     // is what removed the shell's provider tree from the local closure. Delete
     // the binding and every signed-in build compiles, renders, and reports
-    // ANONYMOUS — account menu stuck on "Local workspace", with a green suite.
+    // anonymous — account menu stuck on "Local workspace", with a green suite.
     expect(hosted).toMatch(/configureAuthSession\s*\(\s*browserAuthAdapter\.useAuth\s*\)/)
 
     // The desktop is signed through Electron main, not a second renderer auth
     // provider. Its base and optional contribution chunk therefore bind neither
     // browser auth seam and receive no bearer.
-    const desktopBase = readFileSync(path.join(appRoot, "../claxedo-desktop/src/renderer/local.tsx"), "utf8")
-    const desktopHosted = readFileSync(
+    const desktopBase = stripComments(readFileSync(path.join(appRoot, "../claxedo-desktop/src/renderer/local.tsx"), "utf8"))
+    const desktopHosted = stripComments(readFileSync(
       path.join(appRoot, "../claxedo-desktop/src/renderer/hosted-contributions.ts"),
       "utf8",
-    )
+    ))
     for (const desktopRenderer of [desktopBase, desktopHosted]) {
       expect(desktopRenderer).not.toMatch(/^\s*configureAuthSession\s*\(/m)
       expect(desktopRenderer).not.toMatch(/^\s*configureApiRuntime\s*\(/m)
@@ -240,26 +214,25 @@ describe("the local entry", () => {
 
     // And the local entry cannot bind either one even by accident: it imports
     // neither the transport nor the provider (asserted above, over specifiers).
-    const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
+    const local = stripComments(readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8"))
     expect(local).not.toMatch(/configureApiRuntime\s*\(/)
     expect(local).not.toMatch(/configureAuthSession\s*\(/)
   })
 
   test("each root binds the machine remote access ITS product can perform", () => {
-    // A third seam with the same shape, and the one that already shipped
-    // broken: `/api/claxedo/remote-access/*` moved off the desktop's sidecar to
-    // the Host Connector, and shared app code kept calling the route. Every
-    // suite stayed green because the transport was hardcoded and unowned.
+    // A third seam with the same shape: each root must bind the remote-access
+    // implementation its product can actually reach, since a green suite
+    // alone cannot tell a hardcoded wrong transport from a bound right one.
     //
     // Three roots, three different correct answers, none of them a default.
-    const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
-    const desktopRenderer = readFileSync(
+    const hosted = stripComments(readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8"))
+    const desktopRenderer = stripComments(readFileSync(
       path.join(appRoot, "../claxedo-desktop/src/renderer/hosted-contributions.ts"),
       "utf8",
-    )
-    const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
+    ))
+    const local = stripComments(readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8"))
 
-    // The browser served BY the server that mounts those routes.
+    // The browser served by the server that mounts those routes.
     expect(hosted).toMatch(/configureHttpMachineRemoteAccess\s*\(/)
     expect(hosted).not.toMatch(/configureDesktopMachineRemoteAccess\s*\(/)
 
@@ -269,22 +242,22 @@ describe("the local entry", () => {
     expect(desktopRenderer).toMatch(/configureDesktopMachineRemoteAccess\s*\(/)
     expect(desktopRenderer).not.toMatch(/configureHttpMachineRemoteAccess\s*\(/)
 
-    // And the local browser product binds NOTHING: `@claxedo/local-server`
+    // And the local browser product binds nothing: `@claxedo/local-server`
     // serves no remote-access route and there is no main process under it, so
     // the panel reports a capability this build does not have.
     expect(local).not.toMatch(/configure(Http|Desktop)?MachineRemoteAccess\s*\(/)
   })
 
   test("the hosted entry delegates identity to the mandatory build-time selector", () => {
-    const hosted = readFileSync(path.join(srcRoot, "app/entry/main.tsx"), "utf8")
-    const selection = readFileSync(path.join(appRoot, "vite.browser-auth.ts"), "utf8")
+    const hosted = stripComments(readFileSync(path.join(srcRoot, "app/entry/main.tsx"), "utf8"))
+    const selection = stripComments(readFileSync(path.join(appRoot, "vite.browser-auth.ts"), "utf8"))
     expect(importSpecifiers(hosted)).toContain("#browser-auth-adapter")
     expect(selection).toContain("better-auth-browser-auth.ts")
   })
 
   test("the local vite config builds the local html, not the hosted one", () => {
     // The other way a "local build" silently becomes a hosted one.
-    const config = readFileSync(path.join(appRoot, "vite.local.config.ts"), "utf8")
+    const config = stripComments(readFileSync(path.join(appRoot, "vite.local.config.ts"), "utf8"))
 
     expect(config).toContain("index.local.html")
     // And writes somewhere else, so one build cannot overwrite the other's

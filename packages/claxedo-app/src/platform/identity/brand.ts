@@ -1,11 +1,11 @@
-// WP-D5 — nominal branded identifiers for the two "workspace" senses.
+// Nominal branded identifiers for the two "workspace" senses.
 //
 // These are zero-runtime-cost compile-time brands: a `DirectoryRef` / `WorkspaceId`
 // is still a plain `string` at runtime (the brand is erased), so wire shapes and
 // route params are byte-identical before and after branding. What the brands buy
 // is that the *compiler* rejects assigning a directory path where a control-plane
-// id is expected (and vice versa) — the sense-1/sense-2 conflation the app has
-// carried (see `VOCABULARY.md` "the five senses of workspace").
+// id is expected (and vice versa) — the sense-1/sense-2 conflation
+// (`VOCABULARY.md`, "the five senses of workspace").
 //
 // Because a brand is `string & {…}`, every branded value is assignable *into* a
 // plain `string` slot (widening is free); only the reverse — minting a brand from
@@ -13,7 +13,7 @@
 // legacy-string sniffers in `legacy-resolver.ts` and the route parser in
 // `route.ts` (route params). Everywhere else the brand is *received*, never made.
 
-/** Shared nominal-brand utility (promoted out of `platform/sync/keys.ts`). */
+/** Shared nominal-brand utility. */
 export type Brand<T, Name extends string> = T & { readonly __scope: Name }
 
 /**

@@ -1,27 +1,28 @@
 /**
- * requireEntitlement — the ONE entitlement predicate (ADR 014 §3/§5).
+ * requireEntitlement — the entitlement predicate for hosted capabilities.
  *
  * Entitlement is a pure function of the mirrored org row: no Polar call ever
- * happens at request time, so a Polar outage cannot lock
- * a paying customer out (ADR §3 "why not query-at-request-time").
+ * happens at request time, so a Polar outage cannot lock a paying customer
+ * out.
  *
- * Capabilities are the hosted deltas (free = self-host-equivalent, ADR §5):
+ * Capabilities are the hosted deltas (free tier is self-host-equivalent):
  * - "cloud-workspace":    hosted cloud workspace creation/orchestration
  * - "hosted-connections": the hosted connections credential surface
  *
- * Fail-closed (I-4): unknown org, absent fields, unknown status → free tier →
- * not entitled. `active` and `trialing` entitle; `past_due` entitles within
- * the grace window (CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS, default 7 — plan OQ-4),
- * anchored on the FIRST past_due transition (past_due_since) — not
- * re-anchored per dunning webhook.
+ * Fail-closed: unknown org, absent fields, or unknown status all resolve to
+ * free tier, not entitled. `active` and `trialing` entitle; `past_due`
+ * entitles within the grace window (CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS,
+ * default 7), anchored on the first past_due transition (past_due_since)
+ * rather than re-anchored per dunning webhook.
  *
- * Seat over-capacity: even an otherwise-entitling subscription does NOT
- * grant hosted access to an org that has MORE members than it has licensed
- * seats. The provider webhook mirror no longer hard-blocks a join (that 500'd the
- * whole Svix mirror), so this is where the seat ceiling is enforced: an
- * over-seat org is denied with the typed `seat_over_capacity` error carrying
- * the counts, and the owner is told to buy seats or remove members. A personal
- * org (member_count 1, seats_licensed 1 or absent) is never seat-limited.
+ * Seat over-capacity: even an otherwise-entitling subscription does not grant
+ * hosted access to an org with more members than licensed seats. The ceiling
+ * is enforced here rather than by blocking the join at webhook time, since
+ * failing a single membership webhook there would take down the whole
+ * mirror. An over-seat org is denied with the typed `seat_over_capacity`
+ * error carrying the counts, and the owner is told to buy seats or remove
+ * members. A personal org (member_count 1, seats_licensed 1 or absent) is
+ * never seat-limited.
  */
 
 import { reportPaymentError } from "../platform/telemetry/errors/report"
@@ -61,7 +62,7 @@ export type EntitlementDecision =
 /**
  * Pure decision over the mirrored state. Every hosted capability maps to
  * "the org pays" today (one flat plan); the capability parameter exists so a
- * future plan split changes THIS function only. The seat over-capacity gate
+ * future plan split changes only this function. The seat over-capacity gate
  * applies to every hosted capability identically.
  */
 export function entitlementDecision(
@@ -76,13 +77,13 @@ export function entitlementDecision(
     if (status === "active" || status === "trialing") return { entitled: true, status }
     if (status === "past_due") {
       const graceDays = options.graceDays ?? DEFAULT_PAST_DUE_GRACE_DAYS
-      // Grace anchors on the FIRST past_due transition (past_due_since),
-      // which applyPolarState stamps once and preserves across dunning retries —
-      // NOT on polar_state_modified_at / billing_synced_at, which each dunning
-      // webhook refreshes (that would re-extend grace for the whole dunning
-      // cycle). Fall back to the older anchors only for rows written before the
-      // field existed. Without any anchor, fail closed rather than granting an
-      // unbounded grace.
+      // Grace anchors on the first past_due transition (past_due_since),
+      // which applyPolarState stamps once and preserves across dunning
+      // retries, rather than on polar_state_modified_at / billing_synced_at,
+      // which each dunning webhook refreshes (that would re-extend grace for
+      // the whole dunning cycle). Falls back to the older anchors only for
+      // rows written before the field existed. Without any anchor, fails
+      // closed rather than granting an unbounded grace.
       const anchor = state.past_due_since ?? state.polar_state_modified_at ?? state.billing_synced_at
       if (anchor === undefined) return { entitled: false, reason: "grace_expired" }
       const now = options.now?.() ?? Date.now()
@@ -116,7 +117,7 @@ export function entitlementDecision(
 export type EntitlementReader = (ref: EntitlementStateRef) => Promise<EntitlementState>
 
 /**
- * THE predicate: resolve the org's mirrored state and throw the typed 402
+ * The predicate: resolve the org's mirrored state and throw the typed 402
  * when the capability is not paid for. Store/read failures propagate — an
  * unreachable mirror is an infrastructure 5xx for the caller to surface, not
  * a silent entitlement grant (and not a fake 402 either).
@@ -154,14 +155,14 @@ export type EntitlementDenial = {
 }
 
 /**
- * Launch posture (pricing decision 2026-07-12): LAUNCH FREE. The billing spine
- * ships built but DORMANT — enforcement is an explicit opt-in, so free→paid is
- * a config flip (set the flag + create Polar products), not engineering.
- * Anything other than exactly "1" leaves every org entitled.
+ * The billing spine ships built but dormant: enforcement is an explicit
+ * opt-in, so free→paid is a config flip (set the flag, create the Polar
+ * products), not engineering. Anything other than exactly "1" leaves every
+ * org entitled.
  *
- * This is deliberately a positive ENFORCE flag rather than a bypass flag: an
+ * This is deliberately a positive enforce flag rather than a bypass flag: an
  * unconfigured deployment (self-host, staging without billing vars) behaves
- * like the free launch, and turning billing ON is the deliberate act.
+ * like the free launch, and turning billing on is the deliberate act.
  */
 export function billingEnforced(env: EntitlementGateEnv): boolean {
   return env.CLAXEDO_BILLING_ENFORCE?.trim() === "1"
@@ -209,9 +210,9 @@ export function createEntitlementGate(input: {
       if (err instanceof BillingEntitlementError) {
         return { status: 402, body: { error: { code: err.code, message: err.message } } }
       }
-      // Mirror unreadable (missing config, storage error): fail CLOSED with a
-      // 503 — a billing hiccup must never open a paid capability (I-4). This
-      // is a paying-customer-facing failure → payment page class.
+      // Mirror unreadable (missing config, storage error): fail closed with a
+      // 503 — a billing hiccup must never open a paid capability. This is a
+      // paying-customer-facing failure → payment page class.
       reportPaymentError(err, {
         tags: { source: "billing_entitlement_gate" },
         extra: { capability },

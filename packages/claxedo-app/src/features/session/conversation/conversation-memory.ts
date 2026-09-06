@@ -1,5 +1,5 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import type { LocalDiagnostics } from "@/features/processes/data/local-diagnostics"
-import { asRecord } from "@/lib/record"
 
 type Bucket = "chatBytes" | "imageBytes" | "compactionBytes"
 

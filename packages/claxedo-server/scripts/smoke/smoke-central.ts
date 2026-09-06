@@ -1,14 +1,11 @@
 import { fileURLToPath } from "node:url"
 import path from "node:path"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 type SmokeResult = {
   name: string
   ok: boolean
   message: string
-}
-
-function clean(value: string | undefined) {
-  return value?.trim() || undefined
 }
 
 function route(base: string, pathname: string) {
@@ -35,7 +32,7 @@ async function jsonProbe(name: string, url: string, options?: RequestInit): Prom
 }
 
 export async function centralSmoke(env: NodeJS.ProcessEnv = process.env) {
-  const centralUrl = clean(env.CLAXEDO_CENTRAL_URL)
+  const centralUrl = trimToUndefined(env.CLAXEDO_CENTRAL_URL)
   if (!centralUrl) throw new Error("CLAXEDO_CENTRAL_URL is required")
 
   const checks = [
@@ -43,8 +40,8 @@ export async function centralSmoke(env: NodeJS.ProcessEnv = process.env) {
     await jsonProbe("central.config", route(centralUrl, "/global/config")),
   ]
 
-  const token = clean(env.CLAXEDO_SMOKE_BEARER_TOKEN)
-  const workspaceId = clean(env.CLAXEDO_SMOKE_WORKSPACE_ID)
+  const token = trimToUndefined(env.CLAXEDO_SMOKE_BEARER_TOKEN)
+  const workspaceId = trimToUndefined(env.CLAXEDO_SMOKE_WORKSPACE_ID)
   if (token && workspaceId) {
     checks.push(await jsonProbe(
       "central.signed_connection",

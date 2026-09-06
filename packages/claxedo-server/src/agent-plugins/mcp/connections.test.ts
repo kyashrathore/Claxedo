@@ -69,7 +69,12 @@ describe("hosted Agent Plugin Connections adapter", () => {
 
     const listed = await provider({ ownerUserId: "user-1", orgId: "org-1", auth })
     expect(listed).toHaveLength(1)
-    expect(listed[0]).toMatchObject({ decl: { name: "docs MCP", capabilities: ["mcp"] }, impl: {} })
+    // The capability rides on the port, not on the declaration: a listing entry
+    // that lost the marker would resolve for no capability at all.
+    expect(listed[0]).toMatchObject({
+      decl: { name: "docs MCP" },
+      impl: { actions: { mcp: { capability: "mcp" } } },
+    })
     expect(fetch).toHaveBeenCalledTimes(3)
     expect(artifacts.get).toHaveBeenCalledWith("sha256:user")
 
@@ -86,8 +91,8 @@ describe("hosted Agent Plugin Connections adapter", () => {
       }),
     })
     expect(selected).toHaveLength(1)
-    expect(selected[0]?.impl.authorize).toEqual(expect.any(Function))
-    expect(selected[0]?.impl.attemptContext).toMatchObject({
+    expect(selected[0]?.impl.auth?.authorize).toEqual(expect.any(Function))
+    expect(selected[0]?.impl.auth?.attemptContext).toMatchObject({
       resource: "https://mcp.example/mcp",
       issuer: "https://login.example",
     })

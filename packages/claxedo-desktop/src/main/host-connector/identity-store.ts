@@ -1,9 +1,11 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
+import { asRecord } from "@claxedo/helpers/guards"
+
 import type { SafeStorageApi } from "../account/credential-store"
 import { secureStorageVerdict } from "../account/secure-storage"
-import { asRecord, readString } from "../../shared/json-read"
+import { readString } from "../../shared/json-read"
 import { isJsonWebKey, type HostConnectorBootstrapIdentity } from "./child-protocol"
 
 export type MachineIdentityFile = {

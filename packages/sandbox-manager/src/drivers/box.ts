@@ -1,3 +1,4 @@
+import { trimToUndefined } from "@claxedo/helpers/string"
 import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
@@ -209,7 +210,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
   async function execOrThrow(boxId: string, command: string, label: string): Promise<BoxCommandResult> {
     const result = await exec(boxId, command)
     if ((result.exitCode ?? 0) !== 0) {
-      throw new BoxApiError(`Box ${boxId} ${label} failed (exit ${result.exitCode}): ${clean(result.stderr) ?? clean(result.stdout) ?? ""}`)
+      throw new BoxApiError(`Box ${boxId} ${label} failed (exit ${result.exitCode}): ${trimToUndefined(result.stderr) ?? trimToUndefined(result.stdout) ?? ""}`)
     }
     return result
   }
@@ -253,7 +254,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
         boxId,
         `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/global/health || true`,
       )
-      const code = clean(probe.stdout)
+      const code = trimToUndefined(probe.stdout)
       if (code === "200") return
       last = `health probe returned ${code ?? "no response"}`
       await sleep(healthIntervalMs)
@@ -272,7 +273,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     await execOrThrow(boxId, `host ${port}`, "host publish")
     await waitForHealth(boxId, input)
     const urlResult = await execOrThrow(boxId, `host url ${port}`, "host url")
-    const url = clean(urlResult.stdout?.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
+    const url = trimToUndefined(urlResult.stdout?.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
     if (!url) throw new BoxApiError(`Box ${boxId} did not return a public URL for port ${port}`)
     return {
       workspaceId: input.workspaceId,

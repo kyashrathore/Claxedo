@@ -38,90 +38,50 @@ const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
 
 /**
  * Operations the renderer may not ask for, though main itself performs them.
+ * `HOSTED_OPERATIONS` is the closed set of authenticated calls this process may
+ * make; it is not the set the renderer may trigger.
  *
- * `HOSTED_OPERATIONS` is main's capability table — the closed set of
- * authenticated calls THIS PROCESS may make. It is not automatically the set
- * the renderer may trigger, and two kinds of operation come apart from it.
+ * Result is a credential — `account.cliExchange`. `POST /api/auth/cli/exchange`
+ * answers with a long-lived CLI access + refresh pair, and the renderer never
+ * receives account bearer or refresh tokens (`signIn` below returns the state,
+ * not the flow's token set, for the same reason). Refused before the call, not
+ * redacted after: every exchange is a real mint recorded in the revocation
+ * registry, and no renderer code needs it — `cli-login` in `@claxedo/app` is a
+ * web flow that fetches the exchange with the page's own session.
  *
- * ## 1. The RESULT is a credential — `account.cliExchange`
+ * Parameters are a credential — the `host.*` operations. The machine identity
+ * is a P-256 private key owned by `host-connector/identity-store.ts`; the
+ * renderer cannot produce one. But `host.enrollCurrentMachine` takes
+ * `publicKey` and `signature` from the caller and the route stores whatever
+ * key it is handed (`enrollBody` in `routes/hosted/host-enrollment.ts`), so a
+ * renderer holding this channel could enroll its own keypair under the owner's
+ * account and — because `enrollForUser` patches the row for an existing
+ * `host_id`, overwriting `public_key` and clearing `paused_at`/`revoked_at` —
+ * take over or un-revoke an honest machine. `host.enrollmentNonce` is step one
+ * of the same handshake. These stay in the table because main brokers them for
+ * the Host Connector child, which fills the key fields itself; the renderer's
+ * route to the feature is the connector's zero-argument IPC
+ * (`host-connector/ipc.ts`). Withheld rather than re-shaped because `account/`
+ * must not read the machine key and the child must not see the account
+ * credential (`host-connector/child-supervisor.ts`).
  *
- * `POST /api/auth/cli/exchange` answers with `access_token`,
- * `refresh_token`, `token_type` and `expires_in` — a long-lived CLI session
- * pair — and this module used to hand that body straight back over IPC. U8-R7
- * says the renderer never receives account bearer or refresh tokens, and
- * `signIn` two handlers below has always returned the STATE rather than the
- * flow's token set for exactly this reason. The generated operation loop
- * quietly reopened the hole that handler was written to close.
+ * Withheld channels stay registered: the IPC surface must equal the operation
+ * table so `account-ipc.test.ts` can catch an extra channel, and a registered
+ * refusal says what it is where a missing channel says nothing.
  *
- * REFUSED, not redacted. Discarding the response after the call would keep the
- * credential out of the renderer but still let a compromised one mint CLI
- * sessions at will — every exchange is a real mint, recorded in the revocation
- * registry — so the useful disposition is to never reach the server at all. And
- * nothing is lost: no renderer code calls this operation. `cli-login` in
- * `@claxedo/app` is a WEB flow that fetches the exchange with the page's own
- * session and posts the token to the CLI's loopback listener; it does not go
- * through this port, on any surface.
- *
- * ## 2. The PARAMETERS are a credential — the three `host.*` operations
- *
- * The machine identity is a P-256 private key that never expires and is the
- * entire authorisation for reaching this laptop remotely.
- * `host-connector/identity-store.ts` owns it, keeps it inside the OS secure
- * store, and refuses to mint one when that store is a lie. The renderer has no
- * part in it and cannot produce one.
- *
- * But `host.enrollCurrentMachine` declares `publicKey` and `signature` as body
- * fields substituted from the CALLER, and the route stores whatever public key
- * it is handed (`enrollBody` in `routes/hosted/host-enrollment.ts`). So a
- * renderer holding this channel generates its own keypair, takes a nonce from
- * `host.enrollmentNonce` — which is why that one is withheld too, it is step
- * one of the same handshake — signs it, and enrolls a machine whose private
- * half main has never seen, under the owner's account and on main's bearer.
- * Worse on a second call: `enrollForUser` in
- * the host-enrollment store PATCHES an existing row for the same `host_id`,
- * overwriting `public_key` and clearing `paused_at`/`revoked_at` — the exact
- * "same machine id presenting a different public key" takeover
- * `identity-store.ts` treats as unusable, and an
- * un-revoke of a machine the user revoked.
- *
- * These stay in the table because MAIN brokers them for the separately built
- * Host Connector child. The child fills `publicKey` and `signature` from the
- * in-memory bootstrap key, while Electron attaches account authorization. The
- * renderer's route to the same feature is the Host Connector's own IPC
- * (`host-connector/ipc.ts`), whose four operations take NO ARGUMENTS: pressing
- * Enable calls `claxedo.hostConnector.start`, and main decides everything
- * about the enrollment it then signs. Nothing in `@claxedo/app` names a
- * `host.*` account operation — `electron-machine-remote-access.ts` binds the
- * connector bridge, not this port.
- *
- * Withheld rather than re-shaped, deliberately. Deriving the fields inside the
- * operation table would mean `account/` reading the machine key, and the two
- * are kept apart on purpose: `host-connector/child-supervisor.ts` brokers only
- * fixed operation names because the child must not see the account credential,
- * and account code must not receive the machine key. The renderer is the only caller that has no
- * business here, so the renderer is what gets refused.
- *
- * The channel is still REGISTERED. Dropping it would make the IPC surface stop
- * matching the operation table, and that equality is what lets
- * `account-ipc.test.ts` catch an EXTRA channel — the failure that actually
- * matters here. A registered channel that refuses says what it is; a missing
- * one is indistinguishable from one nobody wired.
- *
- * Adding a name here is a narrowing and needs no matrix change. REMOVING one
- * means a renderer surface is about to reach an operation main was reserving.
- * For a case-1 name, ask what the surface needs from the result — a field, not
- * the body. For a case-2 name the answer is never removal: the renderer cannot
- * hold a machine key, so what it needs is a zero-argument operation on the Host
- * Connector's own IPC, where main supplies the identity.
+ * Adding a name here narrows and needs no matrix change. Removing one means a
+ * renderer surface is about to reach an operation main was reserving: for a
+ * result credential, expose the field the surface needs, not the body; for a
+ * parameter credential, add a zero-argument operation on the Host Connector's
+ * IPC where main supplies the identity.
  */
 export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
   "account.cliExchange",
   "host.enrollCurrentMachine",
   "host.enrollmentNonce",
   "host.enrollmentHeartbeat",
-  // Assignments name a HOST ID the renderer must not choose freely (the
-  // supervisor supplies this machine's own); hostConnector.share is the
-  // renderer's reviewed route.
+  // Assignments name a host id the renderer must not choose (the supervisor
+  // supplies this machine's own); the renderer's route is hostConnector.share.
   "workspace.assignHost",
   "workspace.unassignHost",
   // The signed Agent Plugins world carries MCP gateway bearer credentials;

@@ -7,6 +7,7 @@ import type { DocumentRead } from "../../port"
 import { fetchRelayResponse, parseRelayJson, type RelayHttpOptions } from "../../relay-http"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { asRecord } from "../../../platform/json/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export function createHostedDocumentRuntimeBroker(
   services: ControlPlaneServices,
@@ -31,10 +32,10 @@ export function createHostedDocumentRuntimeBroker(
       if (!workspaceId) throw new Error("Session has no reachable workspace placement")
       await authority.authorizeSessionRead(input.auth, { sessionId: input.sessionId, workspaceId })
       const opened = await authority.openWorkspace(input.auth, { workspaceId })
-      const orgId = string(opened.workspace?.org_id)
+      const orgId = trimToUndefined(opened.workspace?.org_id)
       if (!orgId || orgId !== input.entry.org_id)
         throw new Error("Session workspace organization does not match document scope")
-      const workspaceProjectId = string(opened.workspace?.project_id)
+      const workspaceProjectId = trimToUndefined(opened.workspace?.project_id)
       if (workspaceProjectId !== input.entry.project_id) {
         throw new Error("Session workspace project does not match document scope")
       }
@@ -265,18 +266,14 @@ function workspaceIdFrom(value: unknown) {
   const record = asRecord(value)
   if (!record) return undefined
   return (
-    string(record.workspace_id) ??
-    string(record.workspaceId) ??
-    string(asRecord(record.workspace)?.workspace_id)
+    trimToUndefined(record.workspace_id) ??
+    trimToUndefined(record.workspaceId) ??
+    trimToUndefined(asRecord(record.workspace)?.workspace_id)
   )
 }
 
-function string(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
-}
-
 function configuredControlPlaneUrl(env: NodeJS.ProcessEnv) {
-  const value = string(env.CLAXEDO_PUBLIC_URL) ?? string(env.CLAXEDO_CONTROL_PLANE_URL)
+  const value = trimToUndefined(env.CLAXEDO_PUBLIC_URL) ?? trimToUndefined(env.CLAXEDO_CONTROL_PLANE_URL)
   if (!value) throw new Error("Document write-back requires a configured Control Plane URL")
   const url = new URL(value)
   if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {

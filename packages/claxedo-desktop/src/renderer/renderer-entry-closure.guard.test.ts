@@ -9,40 +9,29 @@ import {
 import { MAIN_RENDERER_DOCUMENT } from "../main/navigation-guard"
 
 /**
- * What each desktop renderer entry actually pulls in.
+ * What each desktop renderer entry pulls in. The desktop is a third composition
+ * root beside `@claxedo/app`'s `main.tsx` and `local.tsx`, and the app's own
+ * closure guard (`src/architecture/local-entry-closure.guard.test.ts`) says
+ * nothing about it.
  *
- * The desktop is a THIRD composition root beside `@claxedo/app`'s `main.tsx`
- * and `local.tsx`, and until this file existed nothing measured it. The app's
- * `src/architecture/local-entry-closure.guard.test.ts` proved the LOCAL BROWSER
- * entry never reaches the identity provider and stayed green the entire time the desktop —
- * the product users actually install — imported `@claxedo/app/auth` from its
- * only entry and shipped the identity provider to every unsigned launch.
+ * Two claims, of different kinds:
  *
- * Two properties are measured here, and they are different kinds of claim:
+ *  - Absolute. No renderer entry this desktop ships — the unsigned entry or the
+ *    optional hosted activation (`hosted-contributions.ts`) — reaches
+ *    `@claxedo/app/auth` or `better-auth-browser-auth.ts`, the one module that
+ *    imports `better-auth/client` and mints a token. A signed account is
+ *    Electron main's to hold over its own AccountPort, never the renderer's.
  *
- *  - ABSOLUTE. The unsigned entry's closure reaches no `@claxedo/app/auth`
- *    subpath and no `better-auth-browser-auth.ts` — the one module that
- *    imports `better-auth/client` and mints a token. The optional hosted-
- *    activation chunk (`hosted-contributions.ts`) is held to the same
- *    absence below: no renderer entry this desktop ships ever carries the
- *    identity SDK, because a signed account is Electron main's to hold, over
- *    its own AccountPort, never the renderer's.
+ *  - Relative. Documents, the Relay client, the cloud runtime store and both
+ *    account adapters are reachable from `@claxedo/app`'s shared shell
+ *    (`app/entry/app.tsx` -> `app/integrations/feature-ports.ts`), so the
+ *    desktop cannot exclude them without changing app-owned modules. What it can
+ *    hold is that it adds none of its own: the unsigned desktop closure
+ *    introduces no such module the local browser product lacks.
  *
- *  - RELATIVE. Documents, the Relay client, the cloud runtime store
- *    and both account adapters are reachable from `@claxedo/app`'s SHARED
- *    shell (`app/entry/app.tsx` -> `app/integrations/feature-ports.ts`), so
- *    `src/app/entry/local.tsx` reaches every one of them too. Desktop cannot
- *    remove them without changing app-owned modules, and pretending otherwise
- *    would be the green-guard failure this file exists to end. What IS desktop's
- *    to hold is that it adds none of its own: the unsigned desktop closure must
- *    introduce no such module that the local browser product does not already
- *    have. That is asserted, and it bites the moment desktop code reaches for
- *    one directly.
- *
- * A source closure is not an artifact. Rollup can name a chunk for a dependency
- * no module imports, so this is the SOURCE-GRAPH measurement; the artifact-level
- * counterpart for the browser product is
- * `claxedo-app/scripts/check-local-bundle-identity.ts`.
+ * This is the source-graph measurement; Rollup can name a chunk for a dependency
+ * no module imports, and the artifact-level counterpart for the browser product
+ * is `claxedo-app/scripts/check-local-bundle-identity.ts`.
  */
 
 const desktopRoot = path.resolve(import.meta.dir, "../..")
@@ -50,19 +39,11 @@ const appRoot = path.resolve(desktopRoot, "../claxedo-app")
 const appSrc = path.join(appRoot, "src")
 
 /**
- * `@claxedo/app`'s declared subpath exports.
- *
- * Resolved from the manifest rather than left to `resolveImport`, which maps
- * `@claxedo/app/<x>` onto `src/<x>` and therefore answers NULL for any real
- * subpath export whose target lives somewhere the naive mapping cannot guess.
- * That is not a hypothetical gap: it is precisely the shape of specifier by
- * which the desktop renderer once reached the identity provider (through a
- * subpath the naive resolver could not follow), so a walk built on the
- * unpatched resolver reports a clean desktop closure and is wrong. Today
- * `@claxedo/app` declares no `"./auth"` export at all — the identity module,
- * `platform/auth/better-auth-browser-auth.ts`, is reached only by walking the
- * package's plain in-package import graph, which is what `resolve()` below
- * falls through to.
+ * `@claxedo/app`'s declared subpath exports. `resolveImport` maps
+ * `@claxedo/app/<x>` onto `src/<x>` and answers null for a real subpath export
+ * whose target lives elsewhere, which would make the walk report a clean
+ * closure it never followed. Declared exports resolve from the manifest first;
+ * everything else falls through to the in-package import graph.
  */
 const appExports = (
   JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as { exports?: Record<string, string> }
@@ -200,15 +181,9 @@ describe("the unsigned desktop renderer entry", () => {
   })
 
   test("adds no hosted capability that the local browser product does not already have", () => {
-    // The RELATIVE claim. Documents, the Relay client, the cloud
-    // runtime store and both account adapters arrive through
-    // `app/entry/app.tsx -> app/integrations/feature-ports.ts`, which BOTH local
-    // products mount; removing them is app-owned work, not Unit 11's, and
-    // asserting their absence here would simply be false.
-    //
-    // What is desktop's to hold is that its own entry and shell reach for none
-    // of them directly. Set difference, so the day app-side work removes one the
-    // assertion tightens by itself instead of going stale.
+    // Set difference against the app's own local entry: the shared shell reaches
+    // these already, and desktop must add none. The assertion tightens by itself
+    // if app-side work removes one.
     const introduced = hostedModules(BASE.modules).filter((module) => !APP_LOCAL.modules.has(module))
     expect(introduced).toEqual([])
 
@@ -295,11 +270,11 @@ describe("the renderer build keeps one local base document", () => {
   /**
    * Run the real config rather than read it.
    *
-   * The rollup INPUT is the property that matters: rollup links whatever an
-   * input's graph reaches, so a config listing both documents would put
-   * a second document would reintroduce a second renderer composition root.
-   * A text assertion cannot tell "names the local document" from "uses it";
-   * this runs the real config under both capability settings.
+   * The rollup input is the property that matters: rollup links whatever an
+   * input's graph reaches, so a config listing a second document reintroduces
+   * a second renderer composition root. A text assertion cannot tell "names
+   * the local document" from "uses it"; this runs the real config under both
+   * capability settings.
    *
    * `loadEnv` gives prefixed `process.env` values precedence over `.env` files,
    * which is what lets this drive both products from one process.
@@ -359,21 +334,12 @@ describe("the local base document reaches main and the renderer build", () => {
 })
 
 /**
- * The origin a PHONE is sent to, and whether the build actually carries it.
- *
  * `remoteAccessAppOrigin()` reads `import.meta.env.VITE_CLAXEDO_APP_ORIGIN` and
- * falls back to the hardcoded production origin. The resolver was correct; the
- * PLUMBING was missing. `loadEnv` reads the app's env files, but the renderer's
- * `root` is the renderer directory, so Vite never applies them itself — a var
- * that is not forwarded through `define` is simply absent at runtime.
- *
- * The result was silent and pointed the wrong way: a STAGING desktop handed
- * phones an `app.claxedo.com` QR, which renders a blank page there because the
- * workspace does not exist on that control plane. Nothing failed; the QR just
- * went somewhere useless.
- *
- * Asserted through the REAL config rather than by reading the file, because the
- * bug was precisely that the value never reached the config.
+ * falls back to the production origin. The renderer's Vite `root` is the
+ * renderer directory, so the app's env files are not applied by Vite itself; a
+ * value not forwarded through `define` is absent at runtime, and a staging
+ * desktop silently hands phones a production QR. Asserted through the real
+ * config because the file can name the variable without the value reaching it.
  */
 describe("renderer build carries the hosted app origin", () => {
   async function defineFor(origin: string | undefined) {

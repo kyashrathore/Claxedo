@@ -1,21 +1,15 @@
 /**
- * Workspace id minting — the ONE generator both control-plane variants use.
+ * Workspace id minting — the one generator both control-plane variants use.
  *
- * Ids used to be `` `ws_${Date.now().toString(36)}` `` in BOTH the hosted
- * Worker route (`routes/hosted-workspace.ts`) and the local Node route
- * (`routes/workspace.ts`): a bare millisecond timestamp with no random
- * component. Two consequences, both real:
- *
- *  1. **Guessable.** An attacker who knows roughly when a victim created a
- *     workspace can enumerate the whole plausible window — a few thousand
- *     candidates for a minute of wall clock — and hit the victim's id exactly.
- *     Chained with a workspace-authority create that has no existing-row guard,
- *     that is a targeted collision, not a probabilistic one.
- *  2. **Leaky.** The id IS the creation time, readable by anyone who sees it.
- *
- * The fix is randomness, not the removal of the timestamp: a sortable time
- * prefix is genuinely useful (log correlation, rough age at a glance) and was
- * never the weakness. So the shape is `ws_<base36 millis>_<random>`.
+ * A bare millisecond timestamp (`` `ws_${Date.now().toString(36)}` ``) would be
+ * guessable and leaky: an attacker who knows roughly when a workspace was
+ * created can enumerate the whole plausible window — a few thousand candidates
+ * for a minute of wall clock — and hit that id exactly, and the id itself
+ * reveals its creation time to anyone who sees it. Chained with a
+ * workspace-authority create that has no existing-row guard, that is a
+ * targeted collision, not a probabilistic one. The sortable time prefix stays
+ * because it is genuinely useful (log correlation, rough age at a glance); the
+ * fix is the random suffix, giving the shape `ws_<base36 millis>_<random>`.
  *
  * Cross-runtime by construction. This module touches only the global `crypto`
  * object (Web Crypto), which exists in Node >= 19 and in Cloudflare Workers, so
@@ -35,7 +29,7 @@ const ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"
 /**
  * Symbols of randomness per id: 16 x 5 bits = 80 bits.
  *
- * Sized by a LENGTH BUDGET, not by wishful maximalism. Workspace ids are
+ * Sized by a length budget, not by wishful maximalism. Workspace ids are
  * embedded in driver-side resource names that have real ceilings, and the
  * tightest two set the cap at ~28 characters total:
  *
@@ -49,8 +43,8 @@ const ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"
  *
  * 80 bits is not a compromise on the security property: an attacker who knows
  * the exact creation millisecond still faces 2^80 (~1.2e24) candidates over an
- * authenticated HTTP API. The weakness Chain A describes was the total absence
- * of randomness, and any cryptographic amount closes it.
+ * authenticated HTTP API. The weakness above was the total absence of
+ * randomness, and any cryptographic amount closes it.
  */
 const RANDOM_SYMBOLS = 16
 
@@ -89,7 +83,7 @@ export function newWorkspaceId(now: number = Date.now()): string {
 /**
  * Shape check for a minted workspace id.
  *
- * Deliberately NOT used to validate ids arriving on requests: user-hosted
+ * Deliberately not used to validate ids arriving on requests: user-hosted
  * workspaces carry caller-chosen ids (`registerLocalForSharing`), so rejecting
  * anything that does not match this pattern would break them. It exists so
  * tests and tooling can assert what this generator produces.

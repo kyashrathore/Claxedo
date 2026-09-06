@@ -4,10 +4,10 @@ import { currentComparisonsFor, publicComparisons } from "../src/content/competi
 // The inventory contract is evaluated as of the records' OWN latest review
 // date, never the wall clock: currency is time-based by design (an expired
 // page stays published behind an expired banner), so asserting the live
-// `currentComparisons` here turns every passed nextReview into a CI failure
-// (run 380: all six expired on 2026-08-23 and both unit lanes went red) —
-// and, emptied, lets the `.every(...)` checks below pass vacuously. The
-// date-driven flip itself is pinned by the fixed-date expiry test.
+// `currentComparisons` here would turn every passed nextReview into a CI
+// failure and, once the list empties, let the `.every(...)` checks below pass
+// vacuously. The date-driven flip itself is pinned by the fixed-date expiry
+// test.
 const asOfLatestReview = publicComparisons.map((item) => item.lastReviewed).sort().at(-1)!
 const reviewedComparisons = currentComparisonsFor(publicComparisons, asOfLatestReview)
 

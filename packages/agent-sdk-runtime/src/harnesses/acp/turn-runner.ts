@@ -753,7 +753,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       ...(input.variant ? { variant: input.variant } : {}),
     })
     return [
-      ...(recoveryMessage ? [start[0]] : []),
+      ...(recoveryMessage ? start.slice(0, 1) : []),
       ...committed.events.filter((event) => !recoveryMessage || event.type !== "session.status"),
     ]
   }

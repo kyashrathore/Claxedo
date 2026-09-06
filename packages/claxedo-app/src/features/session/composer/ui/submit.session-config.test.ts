@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 
 const { createSubmit, submitEvent, promptValue, state, calls, unsignedCalls, transportPromptAsyncCalls } = h
 
@@ -16,7 +16,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
   // composer's local model picker never re-binds it on submit. Only a
   // submitted agent override changes the persisted config.
   test("existing sessions persist a submitted agent override on the persisted binding", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = { id: "new-model", provider: { id: "new-provider" } }
     state.localCurrentAgent = { name: "review" }
@@ -54,7 +54,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
   })
 
   test("rubric C1: second submit with unchanged config does NOT re-PATCH", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = { id: "new-model", provider: { id: "new-provider" } }
     state.localCurrentAgent = { name: "review" }
@@ -82,7 +82,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
   })
 
   test("the local model picker never re-binds an existing session on submit", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = { id: "model-a", provider: { id: "prov" } }
     state.localCurrentAgent = { name: "review" }

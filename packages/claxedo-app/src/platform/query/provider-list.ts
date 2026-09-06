@@ -102,21 +102,21 @@ export function mergeProviderIndexWithDetails(
   index: NormalizedProviderListResponse,
 ) {
   if (!previous) return index
-  // An EMPTY catalog never replaces a populated one.
+  // An empty catalog never replaces a populated one.
   //
-  // This rule used to live at exactly one call site — `setProviderQuery` in
-  // `app/boot/data/bootstrap.ts` — while the merge that actually owns "how two
-  // provider catalogs combine" did not know it. Four writers reach this key
-  // (`setBootstrapProviderQueries`, the directory bootstrap's provider fetch,
-  // the globalSync patch handler at `providers/global-sync/provider.tsx`, and
-  // `providerListQuery`'s own `structuralSharing`), and only ONE of them was
-  // careful. The reachable case is a bootstrap payload with no `provider` field:
-  // `bootstrapGlobal` normalizes that to `{ all: [], connected: [], default: {} }`
-  // and patches it straight in, wiping a catalog the user could already see.
+  // Four call sites write this cache key — `setBootstrapProviderQueries`, the
+  // directory bootstrap's provider fetch, the globalSync patch handler at
+  // `providers/global-sync/provider.tsx`, and `providerListQuery`'s own
+  // `structuralSharing` — so the rule has to hold at the merge, not at any one
+  // of them. The reachable case is a bootstrap payload with no `provider`
+  // field: `bootstrapGlobal` normalizes that to
+  // `{ all: [], connected: [], default: {} }` and patches it straight in,
+  // wiping a catalog the user could already see.
   //
-  // Keeping `previous` whole rather than merging field-by-field is deliberate:
-  // it is exactly what the careful caller did by declining to write at all, so
-  // this is behaviour-preserving there and behaviour-fixing everywhere else.
+  // Keeping `previous` whole rather than merging field-by-field is
+  // deliberate: declining to write at all is exactly the behavior a careful
+  // caller would choose, so this is behavior-preserving there and
+  // behavior-fixing everywhere else.
   if (index.all.size === 0 && previous.all.size > 0) return previous
   return {
     ...index,

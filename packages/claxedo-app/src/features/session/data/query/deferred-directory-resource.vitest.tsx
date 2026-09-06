@@ -76,30 +76,49 @@ describe("deferred directory resource hydration", () => {
     expect(view.getByTestId("timeline")).toHaveTextContent("hydrated")
   })
 
-  test("cancels every pending refresh stage when the pane deactivates", async () => {
-    vi.useFakeTimers()
+  test.each(["delay", "frame", "idle"] as const)("cancels the pending %s stage when the pane deactivates", async (stage) => {
+    const queues = {
+      delay: new Map<number, () => void>(),
+      frame: new Map<number, () => void>(),
+      idle: new Map<number, () => void>(),
+    }
+    let token = 0
+    const schedule = (stage: keyof typeof queues) => (callback: () => void) => {
+      const id = ++token
+      queues[stage].set(id, callback)
+      return id
+    }
+    const cancel = (stage: keyof typeof queues) => (id: unknown) => { queues[stage].delete(Number(id)) }
+    const drain = (stage: keyof typeof queues) => {
+      const pending = [...queues[stage].values()]
+      queues[stage].clear()
+      for (const callback of pending) callback()
+    }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const [active, setActive] = createSignal(true)
     let requests = 0
-
     const Probe = () => {
-      const enabled = createDeferredDirectoryResourceGate({ scope: () => "/repo:commands", active })
+      const enabled = createDeferredDirectoryResourceGate({
+        scope: () => "/repo:commands", active,
+        schedule: schedule("delay"), cancel: cancel("delay"),
+        scheduleFrame: schedule("frame"), cancelFrame: cancel("frame"),
+        scheduleIdle: schedule("idle"), cancelIdle: cancel("idle"),
+      })
       useQuery(() => ({
-        queryKey: ["directory", "commands", "/repo"],
-        enabled: enabled(),
-        queryFn: async () => {
-          requests++
-          return []
-        },
+        queryKey: ["directory", "commands", "/repo"], enabled: enabled(),
+        queryFn: async () => { requests++; return [] },
       }))
       return null
     }
-
     render(() => <QueryClientProvider client={client}><Probe /></QueryClientProvider>)
-    await vi.advanceTimersByTimeAsync(50)
+    if (stage !== "delay") drain("delay")
+    if (stage === "idle") drain("frame")
+    expect(queues[stage].size).toBe(1)
     setActive(false)
-    await vi.advanceTimersByTimeAsync(1_000)
-
+    expect(queues[stage].size).toBe(0)
+    drain("delay"); drain("frame"); drain("idle")
+    await Promise.resolve()
     expect(requests).toBe(0)
+    client.clear()
   })
 })

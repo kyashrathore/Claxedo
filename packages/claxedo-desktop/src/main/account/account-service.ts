@@ -242,11 +242,11 @@ export function createAccountService(options: AccountServiceOptions) {
   /**
    * Come back from a blip without the user doing anything.
    *
-   * `unavailable` used to be terminal: the only producers of `signed` are boot
-   * and an interactive sign-in, so a ~2s descriptor 503 during a redeploy left
-   * the desktop showing "Sign in" — and remote access suspended — until
-   * someone restarted it. Nothing was wrong with the credential; the only
-   * fact was that one request had failed.
+   * The only producers of `signed` are boot and an interactive sign-in, so
+   * treating `unavailable` as terminal would leave the desktop showing
+   * "Sign in" — and remote access suspended — after any transient descriptor
+   * failure (a ~2s 503 during a redeploy, say) until someone restarted it,
+   * even though nothing was wrong with the credential itself.
    *
    * So while a credential is held and the session is not signed, re-validate
    * on a timer. Success returns the state to `signed` through the normal
@@ -432,17 +432,17 @@ export function createAccountService(options: AccountServiceOptions) {
   }
   /**
    * The profile lookup, retried with backoff while the session stays the
-   * same. One timed-out /userinfo used to leave the rail on a nameless
-   * "Signed in" until the next relaunch; a stalled edge is exactly the case
-   * where the next attempt succeeds.
+   * same. Without the retry, one timed-out /userinfo would leave the rail on
+   * a nameless "Signed in" until the next relaunch; retrying catches the
+   * stalled-edge case where the next attempt succeeds.
    */
   const resolveIdentityInto = (accessToken: string, startedIn: number, attempt: number) => {
     void (async () => {
       // On restore the persisted access token is usually already expired
-      // (5-minute TTL), so resolving identity with it answered 401 and every
-      // relaunch showed a nameless account. Identity follows the same token
-      // freshness rule as every hosted operation; the passed token is only
-      // the fallback when renewal is unavailable (e.g. mid-adopt).
+      // (5-minute TTL); resolving identity with it would answer 401 and leave
+      // every relaunch showing a nameless account. Identity follows the same
+      // token freshness rule as every hosted operation; the passed token is
+      // only the fallback when renewal is unavailable (e.g. mid-adopt).
       const fresh = await currentAccessToken()
       const identity = await options.resolveIdentity!(fresh.ok ? fresh.token : accessToken)
       // Sign-out (or a superseding sign-in) may have happened while the
@@ -450,6 +450,7 @@ export function createAccountService(options: AccountServiceOptions) {
       if (startedIn !== era) return
       setState({ status: "signed", identity })
     })().catch((error) => {
+      if (startedIn !== era || state.status !== "signed") return
       options.onError?.("identity", error)
       // Still signed — the credential is adopted — but the rail must not keep
       // a spinner up for a lookup that is over. Say the lookup failed, then

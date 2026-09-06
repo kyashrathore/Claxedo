@@ -1,3 +1,4 @@
+import { docsPort, workSourcePort } from "../ports/index.js"
 import type { ConnectionFields, IntegrationDeclaration, IntegrationImpl, VerifyResult } from "../types.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
 import { record, text } from "../json.js"
@@ -46,7 +47,6 @@ export function atlassianIntegration(options: IntegrationFetchOptions = {}): {
       id: "atlassian",
       name: "Atlassian",
       methods: ["key"],
-      capabilities: ["docs", "work-source"],
       keyTokenType: "basic",
       prompts: [
         { id: "site_url", label: "Site URL", placeholder: "https://your-team.atlassian.net" },
@@ -55,32 +55,35 @@ export function atlassianIntegration(options: IntegrationFetchOptions = {}): {
       ],
     },
     impl: {
-      async verify(fields: ConnectionFields, secret: string): Promise<VerifyResult> {
-        const site = normalizeSiteUrl(fields.site_url ?? "")
-        const email = (fields.email ?? "").trim()
-        if (!site || !email) return { ok: false, reason: "unauthorized" }
-        try {
-          const basic = Buffer.from(`${email}:${secret}`).toString("base64")
-          const res = await fetchImpl(`${site}/wiki/rest/api/user/current`, {
-            headers: {
-              Authorization: `Basic ${basic}`,
-              Accept: "application/json",
-            },
-          })
-          if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
-          if (!res.ok) return { ok: false, reason: "network" }
-          const displayName = text(record(await res.json().catch(() => ({})))?.displayName)
-          return {
-            ok: true,
-            ...(displayName ? { accountLabel: displayName } : {}),
-            // Persist the origin this call actually authenticated against, not
-            // the raw string the caller typed. Consumers then read a value that
-            // already satisfies the strict rule instead of re-deriving it.
-            fields: { site_url: site },
+      actions: { docs: docsPort, "work-source": workSourcePort },
+      auth: {
+        async verify(fields: ConnectionFields, secret: string): Promise<VerifyResult> {
+          const site = normalizeSiteUrl(fields.site_url ?? "")
+          const email = (fields.email ?? "").trim()
+          if (!site || !email) return { ok: false, reason: "unauthorized" }
+          try {
+            const basic = Buffer.from(`${email}:${secret}`).toString("base64")
+            const res = await fetchImpl(`${site}/wiki/rest/api/user/current`, {
+              headers: {
+                Authorization: `Basic ${basic}`,
+                Accept: "application/json",
+              },
+            })
+            if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
+            if (!res.ok) return { ok: false, reason: "network" }
+            const displayName = text(record(await res.json().catch(() => ({})))?.displayName)
+            return {
+              ok: true,
+              ...(displayName ? { accountLabel: displayName } : {}),
+              // Persist the origin this call actually authenticated against, not
+              // the raw string the caller typed. Consumers then read a value that
+              // already satisfies the strict rule instead of re-deriving it.
+              fields: { site_url: site },
+            }
+          } catch {
+            return { ok: false, reason: "network" }
           }
-        } catch {
-          return { ok: false, reason: "network" }
-        }
+        },
       },
     },
   }

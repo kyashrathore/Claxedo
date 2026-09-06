@@ -122,7 +122,7 @@ function services(input: {
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },
-    // SELF-HOST services. Every test in this file exercises `/api/channels/fake`,
+    // Self-host services. Every test in this file exercises `/api/channels/fake`,
     // which only the self-host composition mounts: `server.ts` passes
     // `includeFake: true`, while the hosted composition (`hosted-node.ts`) passes
     // `includeFake: false` and `requireLoopbackForFake: false` — so under hosted
@@ -966,16 +966,16 @@ describe("channels ingress", () => {
 })
 
 /**
- * The sender names the repo ("repo:owner/name" in their own message), so a named
- * repo that resolves to no workspace used to return `{ ok: true }` from
- * `authorizeInbound` — skipping the project authorization entirely and falling
- * back to whatever the thread already had. A sender could name a nonexistent
- * repo to dodge the check. It now fails closed.
+ * The sender names the repo ("repo:owner/name" in their own message), so a
+ * named repo that resolves to no workspace must fail closed in
+ * `authorizeInbound`: falling back to whatever the thread already had would
+ * let a sender name a nonexistent repo to dodge project authorization
+ * entirely.
  *
  * These drive `channels.core.handleInbound` directly rather than `createSelfHostedApp`,
- * which currently throws for these services (see the `localExecution` guard at
- * server.ts:452 — a pre-existing breakage tracked separately). `trustedSource`
- * bypasses the DM/group access gate but NOT `authorize`, which is the seam under
+ * which currently throws for these services (see the `localExecution` guard in
+ * server.ts — a pre-existing breakage tracked separately). `trustedSource`
+ * bypasses the DM/group access gate but not `authorize`, which is the seam under
  * test here.
  */
 describe("channel repo authorization fails closed", () => {
@@ -1029,7 +1029,7 @@ describe("channel repo authorization fails closed", () => {
       text: "No registered workspace for claxedo-failclosed/never-registered. Open or register it in Claxedo, then retry.",
       final: true,
     }])
-    // Denied BEFORE any session work — the whole point of failing closed here.
+    // Denied before any session work — the whole point of failing closed here.
     expect(svc.projectionStore.record_channel_run_audit).not.toHaveBeenCalled()
     expect(svc.projectionStore.put_session_meta).not.toHaveBeenCalled()
   })
@@ -1070,7 +1070,7 @@ describe("channel repo authorization fails closed", () => {
 
   test("a registered repo still runs a turn", async () => {
     // The positive case: failing closed must not have closed the door on the
-    // repos that DO resolve.
+    // repos that do resolve.
     const { svc, channels } = harness({ signed: true })
     await registeredRepoWorkspace({
       workspaceId: "ws_failclosed_ok",

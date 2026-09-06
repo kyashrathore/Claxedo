@@ -7,7 +7,6 @@ import type {
   AgentFilePartInput as FilePartInput,
   AgentOutputFormat as OutputFormat,
   AgentPresentationMessage as Message,
-  AgentPromptResponse as SessionPromptResponse,
   AgentTextPartInput as TextPartInput,
 } from "@claxedo/agent-runtime-contract"
 import type { ContextItem } from "@/features/session/providers/prompt"
@@ -34,13 +33,10 @@ export type PromptDispatchPayload = {
 export type PromptDispatchInput = {
   client: {
     session: {
-      prompt(input: PromptDispatchPayload): Promise<{ data?: SessionPromptResponse; error?: unknown }>
       promptAsync(input: PromptDispatchPayload): Promise<unknown>
     }
   }
   payload: PromptDispatchPayload
-  demo: boolean
-  onDemoReply: (reply: { info: Message; parts: Part[] }) => void
 }
 
 export type PromptContextItem = ContextItem & { key: string }
@@ -185,13 +181,11 @@ export type WaitForPendingWorktreeContext = {
 export type SendPromptRequestContext = {
   sessionID: string
   client: PromptDispatchInput["client"]
-  demo: boolean
   payload: PromptDispatchPayload
   waitForWorktree: () => Promise<boolean>
   prepareLiveEvents?: () => void | Promise<void>
   reconcileAfterDispatch?: () => void | Promise<void>
   refreshDirectory?: VoidFunction
-  onDemoReply: PromptDispatchInput["onDemoReply"]
   clearBoot: VoidFunction
   clearCloudStartup: VoidFunction
   onAbortCleanup: VoidFunction

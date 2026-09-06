@@ -1,17 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import {
-  createWorkspaceRelayBun,
-  mintRuntimeAccessToken,
-} from "../../../workspace-relay/src"
+import { mintRuntimeAccessToken } from "../../../workspace-relay/src"
+import { createWorkspaceRelayBun } from "../../../workspace-relay/src/bun"
 import { requestBodyText, requestUrl } from "../../src/lib/url"
 import {
   createWorkspaceRelayConnection,
   runtimeAccessTokenJti,
   type WorkspaceConnectionInfo,
 } from "../../src/platform/runtime/agent/workspace-relay-connection"
-
-await GlobalRegistrator.unregister()
 
 async function generateEdDsaKeyPair() {
   return await crypto.subtle.generateKey({

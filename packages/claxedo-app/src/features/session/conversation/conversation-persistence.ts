@@ -25,7 +25,8 @@ type ConversationStorage = {
 }
 
 let storage: ConversationStorage | undefined
-let principalNamespace = "anonymous"
+let principalNamespace: string | null = "anonymous"
+let principalGeneration = 0
 export const conversationPersistenceSchema = "claxedo-v2"
 function createPersistenceState() {
   return {
@@ -73,30 +74,35 @@ function serializePersistenceOperation(key: IDBValidKey, operation: () => Promis
 }
 
 export const conversationPersistence: ChatClientPersistence = {
-  getItem: (id) => storage
-    ? storage.get(id).then((messages) => compactConversationSnapshot(messages))
-    : undefined,
+  getItem: (id) => {
+    if (!storage || principalNamespace === null) return undefined
+    const generation = principalGeneration
+    return storage.get(id).then((messages) => generation === principalGeneration ? compactConversationSnapshot(messages) : undefined)
+  },
   setItem: (id, messages) => {
-    if (!storage || persistenceKeyIsRevoked(id)) return undefined
+    if (!storage || principalNamespace === null || persistenceKeyIsRevoked(id)) return undefined
+    const generation = principalGeneration
     const snapshot = compactConversationSnapshot(messages) ?? []
     return serializePersistenceOperation(id, async () => {
-      if (persistenceKeyIsRevoked(id)) return
+      if (generation !== principalGeneration || persistenceKeyIsRevoked(id)) return
       await storage?.set(id, snapshot)
     })
   },
-  removeItem: (id) => storage
+  removeItem: (id) => storage && principalNamespace !== null
     ? serializePersistenceOperation(id, async () => storage?.delete(id))
     : undefined,
 }
 
-export function setConversationPersistencePrincipal(namespace: string | undefined) {
-  const next = namespace ?? "anonymous"
+export function setConversationPersistencePrincipal(namespace: string | null | undefined) {
+  const next = namespace === undefined ? "anonymous" : namespace
   if (next === principalNamespace) return false
   principalNamespace = next
+  principalGeneration += 1
   return true
 }
 
 export function conversationPersistenceKey(id: string) {
+  if (principalNamespace === null) return undefined
   return `${conversationPersistenceSchema}\0${principalNamespace}\0${id}`
 }
 
@@ -105,8 +111,13 @@ export function conversationPersistenceKeyMatchesSession(
   sessionID: string,
   namespace = principalNamespace,
 ) {
+  if (namespace === null) return false
   if (typeof key !== "string" || !key.endsWith(`\0${sessionID}`)) return false
   return key.startsWith(`${conversationPersistenceSchema}\0${namespace}\0`)
+}
+
+export function conversationPersistenceGeneration() {
+  return principalGeneration
 }
 
 export function conversationPersistencePrincipal() {
@@ -124,6 +135,7 @@ export function preparePersistedSessionRevocation(
   sessionID: string,
   namespace = principalNamespace,
 ) {
+  if (namespace === null) return { purge: async () => {} }
   const scope = persistenceScopeKey(sessionID, namespace)
   const token = {}
   persistenceState.revokedScopes.set(scope, token)
@@ -155,6 +167,7 @@ export function allowPersistedSessionConversations(
   sessionID: string,
   namespace = principalNamespace,
 ) {
+  if (namespace === null) return
   persistenceState.revokedScopes.delete(persistenceScopeKey(sessionID, namespace))
 }
 

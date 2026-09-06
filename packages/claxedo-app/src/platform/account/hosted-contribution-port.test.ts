@@ -76,15 +76,15 @@ describe("the account gate", () => {
       (reason: unknown) => reason as HostedContributionError,
     )
 
-    // On the CODE: the message is prose a reword may change, the code is what a
+    // On the code: the message is prose a reword may change, the code is what a
     // caller branches on.
     expect(error.code).toBe("account_not_signed")
   })
 
   test("abandons an activation when the account signs out MID-LOAD", async () => {
     // The window the pre-load check cannot cover: a cold chunk load is a
-    // network round trip, and a sign-out inside it used to register hosted
-    // surfaces into an app that no longer had an account.
+    // network round trip, and a sign-out inside it would otherwise register
+    // hosted surfaces into an app that no longer has an account.
     let release: (() => void) | undefined
     const app = harness({
       load: async () => {
@@ -127,7 +127,7 @@ describe("the account gate", () => {
       () => expect.unreachable("deactivating mid-load must abandon the activation"),
       (reason: unknown) => reason as HostedContributionError,
     )
-    // Its OWN code: "the caller pulled the plug" is not "there is no account",
+    // Its own code: "the caller pulled the plug" is not "there is no account",
     // and a reader chasing an abandoned activation should not be sent looking
     // for a sign-out that never happened.
     expect(error.code).toBe("activation_abandoned")
@@ -175,9 +175,9 @@ describe("activation happens at most once", () => {
 
 describe("failure is not cached, the loaded bundle is", () => {
   test("a failed load can be retried, and the retry registers", async () => {
-    // The bug this covers: caching the REJECTED promise disabled hosted mode
-    // for the life of the window, so one transient chunk-load failure left a
-    // signed user in a local-only app until they reloaded the page.
+    // Caching a rejected promise would disable hosted mode for the life of the
+    // window: one transient chunk-load failure would leave a signed user in a
+    // local-only app until they reloaded the page.
     let attempts = 0
     const registered: string[] = []
     const port = createHostedContributionPort<Contribution>({
@@ -215,7 +215,7 @@ describe("failure is not cached, the loaded bundle is", () => {
   })
 
   test("an activation abandoned mid-load keeps the bundle it already loaded", async () => {
-    // The load SUCCEEDED; only the registration was abandoned. Re-importing the
+    // The load succeeded; only the registration was abandoned. Re-importing the
     // chunk on the next sign-in would buy nothing.
     let release: (() => void) | undefined
     let loads = 0

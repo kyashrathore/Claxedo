@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -24,65 +24,11 @@ import {
   indexUnambiguousSessionStatusTargets,
   isDisclosureToggleKey,
   isRootWorktreeRef,
-  sessionProjectSort,
   sessionRowTitle,
-  shouldAutoOpenWorkspaceSection,
-  shouldHydrateSidebarRuntime,
   primedSessionStatusType,
   mergedSessionStatusType,
   unambiguousSessionStatusTarget,
-  workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
-
-describe("shouldAutoOpenWorkspaceSection", () => {
-  test("opens when async inventory appears for an untouched empty workspace", () => {
-    expect(shouldAutoOpenWorkspaceSection({
-      rows: 1,
-      autoOpened: false,
-      manuallyToggled: false,
-    })).toBe(true)
-  })
-
-  test("does not reopen after the user manually toggles the workspace", () => {
-    expect(shouldAutoOpenWorkspaceSection({
-      rows: 1,
-      autoOpened: false,
-      manuallyToggled: true,
-    })).toBe(false)
-  })
-
-  test("opens when a terminal appears before sessions load", () => {
-    expect(shouldAutoOpenWorkspaceSection({
-      rows: 0,
-      terminals: 1,
-      autoOpened: false,
-      manuallyToggled: false,
-    })).toBe(true)
-  })
-})
-
-describe("shouldHydrateSidebarRuntime", () => {
-  test("does not hydrate runtime for passively opened central inventory rows", () => {
-    expect(shouldHydrateSidebarRuntime({
-      open: true,
-      active: false,
-      requested: false,
-    })).toBe(false)
-  })
-
-  test("hydrates active or explicitly requested sidebar workspaces", () => {
-    expect(shouldHydrateSidebarRuntime({
-      open: true,
-      active: true,
-      requested: false,
-    })).toBe(true)
-    expect(shouldHydrateSidebarRuntime({
-      open: true,
-      active: false,
-      requested: true,
-    })).toBe(true)
-  })
-})
 
 describe("unambiguousSessionStatusTarget", () => {
   test("returns a unique visible placement", () => {
@@ -143,24 +89,6 @@ describe("sessionRowTitle", () => {
   })
 })
 
-describe("sessionProjectSort", () => {
-  test("pins terminal-like sessions above newer normal sessions", () => {
-    const rows = [
-      { id: "ses-new", title: "Normal", time: 30 },
-      { id: "pty-old", title: "Shell", time: 10 },
-      { id: "ses-terminal-title", title: "Terminal", time: 5 },
-      { id: "ses-middle", title: "Normal", time: 20 },
-    ].sort(sessionProjectSort)
-
-    expect(rows.map((row) => row.id)).toEqual([
-      "pty-old",
-      "ses-terminal-title",
-      "ses-new",
-      "ses-middle",
-    ])
-  })
-})
-
 describe("isRootWorktreeRef", () => {
   test("treats workspace ids that resolve to the project worktree as root", () => {
     expect(isRootWorktreeRef({
@@ -182,70 +110,6 @@ describe("isRootWorktreeRef", () => {
         directory: "/repo/feature",
       },
     })).toBe(false)
-  })
-})
-
-describe("workspaceInventoryGroupFor", () => {
-  test("prefers a direct directory-keyed inventory group", () => {
-    const group = workspaceInventoryGroupFor({
-      groups: {
-        "/repo/main": {
-          key: "/repo/main",
-          directory: "/repo/main",
-          sessions: [{ id: "ses_main" }],
-        },
-        ws_main: {
-          key: "ws_main",
-          directory: "/repo/main",
-          workspaceId: "ws_main",
-          sessions: [{ id: "ses_workspace" }],
-        },
-      },
-      workspaceDir: "/repo/main",
-      workspace: {
-        directory: "/repo/main",
-        workspaceId: "ws_main",
-      },
-    })
-
-    expect(group?.sessions.map((session) => session.id)).toEqual(["ses_main"])
-  })
-
-  test("resolves workspace-id keyed inventory for a directory section", () => {
-    const group = workspaceInventoryGroupFor({
-      groups: {
-        ws_feature: {
-          key: "ws_feature",
-          directory: "/repo/feature",
-          workspaceId: "ws_feature",
-          sessions: [{ id: "ses_feature" }],
-        },
-      },
-      workspaceDir: "/repo/feature",
-      workspace: {
-        directory: "/repo/feature",
-        id: "workspace-row-id",
-        workspaceId: "ws_feature",
-      },
-    })
-
-    expect(group?.sessions.map((session) => session.id)).toEqual(["ses_feature"])
-  })
-
-  test("falls back to stored group metadata when the project workspace alias is missing", () => {
-    const group = workspaceInventoryGroupFor({
-      groups: {
-        ws_cached: {
-          key: "ws_cached",
-          directory: "/repo/cached",
-          workspaceId: "ws_cached",
-          sessions: [{ id: "ses_cached" }],
-        },
-      },
-      workspaceDir: "/repo/cached",
-    })
-
-    expect(group?.sessions.map((session) => session.id)).toEqual(["ses_cached"])
   })
 })
 
@@ -365,10 +229,10 @@ describe("publishFocusedRailSessionMeta", () => {
     }])
   })
 
-  // The correctness guard. These canonical entries are keyed by session id
-  // alone, so a group covering some OTHER placement of that session must never
-  // write under it -- the focused pane would then render another workspace's
-  // status for its own session.
+  // These canonical entries are keyed by session id alone, so a group covering
+  // some other placement of that session must never write under it -- the
+  // focused pane would then render another workspace's status for its own
+  // session.
   test("publishes nothing for a group the focused row is not in", () => {
     const applied: unknown[] = []
 
@@ -468,9 +332,9 @@ describe("railBatchData", () => {
   })
 
   test("rejects a failed read instead of substituting an empty payload", () => {
-    // Absence from a SUCCESSFUL response is the batch's idle assertion. The SDK
-    // reports every non-2xx as `data: undefined`, so an unreachable workspace
-    // used to answer that assertion with `{}` and clear every row to idle.
+    // Absence from a successful response is the batch's idle assertion. The SDK
+    // reports every non-2xx as `data: undefined` too, so treating an unreachable
+    // workspace's `data: undefined` the same way would clear every row to idle.
     expect(() => railBatchData("session status")({ data: undefined })).toThrow(/session status unavailable/)
     expect(() => railBatchData("permissions")({})).toThrow(/permissions unavailable/)
   })
@@ -505,3 +369,5 @@ describe("rail batch projection", () => {
     expect(mergeRailStatusRead(settled, targets, {})).toBe(settled)
   })
 })
+
+afterEach(() => { sidebarSessionStatusBatches.clear(); queryClient.clear() })

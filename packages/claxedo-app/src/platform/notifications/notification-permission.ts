@@ -1,8 +1,7 @@
 /**
  * Browser Notification-permission gating.
  *
- * Contract (see BUG A fix): the permission prompt is requested at most once,
- * and ONLY from an explicit user interaction — turning on a notification
+ * The permission prompt is requested only from an explicit user interaction — turning on a notification
  * toggle in Settings → General. Turn-completion (`platform.notify`, called
  * from session.idle/session.error handlers) must never call
  * `Notification.requestPermission()` itself; it only checks the CURRENT
@@ -22,9 +21,8 @@ export function notificationApiAvailable(): boolean {
 /**
  * Requests OS notification permission, but only if it is still undecided
  * ("default"). No-ops (and resolves with the current permission) once the
- * user has already granted or denied it — guaranteeing at most one real
- * browser prompt per permission-lifetime, regardless of how many times this
- * is called.
+ * user has already granted or denied it. Dismissal can leave permission at
+ * "default", so a later explicit gesture may request it again.
  *
  * Intended to be called ONLY from a direct user gesture (a Settings toggle
  * onChange handler) — never from background/event-driven code paths like

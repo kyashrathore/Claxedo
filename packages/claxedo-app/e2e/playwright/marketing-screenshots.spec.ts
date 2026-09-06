@@ -11,6 +11,7 @@
  */
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import path from "node:path"
+import { selectSignedHarness } from "../helpers/web-signed-relay-harness"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
@@ -33,7 +34,7 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
       sessionId,
       projectId: "northstar",
       projectName: "Northstar",
-      harness: "acp:codex",
+      harness: "codex-app-server",
       replyText: () =>
         "Release verification is ready. The acceptance checks pass, the deployment notes are updated, and the review evidence is attached.",
     })
@@ -42,9 +43,9 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     await installReviewApi(page)
     await installMarketingSessionList(page)
     await openWorkspace(page)
-    await suppressCaptureOnlyConnectionNotice(page)
     await expectDefaultTheme(page)
 
+    await selectSignedHarness(page, "Codex", "codex")
     const prompt = "Prepare the release verification flow and summarize the evidence for review."
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await input.fill(prompt)
@@ -119,13 +120,14 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     if (await collapseEnvironment.isVisible()) await collapseEnvironment.click()
     await expect(page.getByRole("button", { name: "Expand Environment" })).toBeVisible()
     await expect(page.getByRole("complementary", { name: "Session environment" })).toHaveClass(/\bis-collapsed\b/)
-    await page.waitForTimeout(400)
     await page.evaluate(() => {
-      ;(window as typeof window & { __marketingTerminalPush?: (text: string) => void }).__marketingTerminalPush?.(
+      const push = (window as typeof window & { __marketingTerminalPush?: (text: string) => void }).__marketingTerminalPush
+      if (!push) throw new Error("Marketing terminal socket did not install its output hook")
+      push(
         "\u001b[36m~/northstar $\u001b[0m codex --resume release-verification\r\n\u001b[32m✓ Codex resumed release-verification\u001b[0m\r\nReviewing 3 changed files…\r\n",
       )
     })
-    await page.waitForTimeout(300)
+    await expect(terminal.locator(".xterm-rows")).toContainText("Reviewing 3 changed files…")
     await page.locator('[data-testid="workbench-root"]').screenshot({
       path: path.join(screenshots, "marketing-session-terminal.png"),
       animations: "disabled",
@@ -307,9 +309,7 @@ async function expectDefaultTheme(page: Page) {
     .toBe("codex")
 }
 
-async function suppressCaptureOnlyConnectionNotice(page: Page) {
-  await page.addStyleTag({ content: '[data-claxedo] [role="status"] { display: none !important; }' })
-}
+
 
 // The rail sidebar's session list is backed by GET /api/control/session-list — a
 // claxedo-server-native endpoint distinct from the OpenCode /session route that
@@ -350,4 +350,3 @@ async function installMarketingSessionList(page: Page) {
   // (workspace-control-routes.ts:150) — same handler serves both.
   await page.route("**/api/claxedo/session-list**", handler)
 }
-

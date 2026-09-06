@@ -1,15 +1,10 @@
 /**
  * Keeps the rail's session-status batch fetch running.
  *
- * The rail renders "working" / "permission" badges from `session.status`, and
- * it used to fetch that batch exactly once per change of the visible row set:
- * a single `setTimeout(run, 250)` inside `createEffect(on(signature, …))`, with
- * `run` never rescheduling itself. Live updates were therefore left entirely to
- * `session.status` SSE events — which the server does not push for harness
- * (ACP/Claude) sessions. Measured against a running v0.0.65 build: the server
- * reported `{"type":"busy"}` over `GET /session/status` while the renderer's
- * cached status for the same session sat at `{"type":"idle"}`, last written
- * 385s earlier — so the row showed no activity at all.
+ * The rail renders "working" / "permission" badges from `session.status`, but
+ * live updates cannot rely on `session.status` SSE events alone: the server
+ * does not push them for harness (ACP/Claude) sessions, so a status change can
+ * sit uncaught until something else happens to re-fetch.
  *
  * Polling is the fix rather than new events on purpose: opencode's own CLI
  * already polls `session.status` for the same reason (see
@@ -31,7 +26,7 @@ export type SidebarStatusPollInput<Timer> = {
   clear: (timer: Timer) => void
   /**
    * Gate for "don't fetch right now" — a fast session switch in its quiet
-   * window, or a hidden window. Returning false must NOT stop the loop, only
+   * window, or a hidden window. Returning false must not stop the loop, only
    * skip that tick, otherwise the rail never recovers once the gate reopens.
    */
   shouldRun?: () => boolean
@@ -54,9 +49,9 @@ export function createSidebarStatusPoll<Timer>(input: SidebarStatusPollInput<Tim
     timer = undefined
     if (stopped) return
     if (input.shouldRun?.() !== false) input.run()
-    // Rescheduled even when the tick was skipped: a gate that is closed now
-    // (quiet window, hidden window) reopens later, and a loop that stopped on
-    // the closed gate is exactly the "fetched once, then never again" bug.
+    // Rescheduled even when the tick is skipped: a gate that is closed now
+    // (quiet window, hidden window) reopens later, so the loop must not stop
+    // on it.
     arm(intervalMs)
   }
 

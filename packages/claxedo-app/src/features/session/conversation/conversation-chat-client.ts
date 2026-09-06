@@ -7,7 +7,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { memoizeSuccessfulLoad, retry } from "@/lib/retry"
 import type { ConversationChatHandle } from "./agent-conversation"
-import { conversationPersistence, conversationPersistenceKey } from "./conversation-persistence"
+import { conversationPersistence, conversationPersistenceGeneration, conversationPersistenceKey } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
 import { scheduleSessionCacheCeiling } from "../data/sync/session-cache-cleanup"
 
@@ -120,7 +120,11 @@ export function createConversationChatClient(
 ): ConversationChatEntry {
   const [version, setVersion] = createSignal(0)
   let manualMutation = false
+  const generation = conversationPersistenceGeneration()
+  const isCurrent = () => generation === conversationPersistenceGeneration()
+  const persistenceKey = conversationPersistenceKey(conversationScopeKey(scope))
   const onMessagesChange = (messages: UIMessage[]) => {
+    if (!isCurrent()) return
     // Keep the sync working copy (query-cache reads + reactivity); IDB
     // durability is handled by the persistence adapter (real client only).
     if (writeConversationSnapshot(scope, messages) && !manualMutation) setVersion((value) => value + 1)
@@ -132,14 +136,15 @@ export function createConversationChatClient(
   let buffered = readConversationSnapshot(scope) ?? []
   let client: ChatClient | undefined
   const ready = (options.loadRuntime ?? loadChatClientRuntime)().then((runtime) => {
+    if (!isCurrent()) return
     client = new runtime.ChatClient({
       // Snapshot the signed principal/org namespace into the ChatClient id at
       // construction. A retained old-principal client therefore cannot write
       // into the next account's durable namespace after an auth transition.
-      id: conversationPersistenceKey(conversationScopeKey(scope)),
+      id: persistenceKey === undefined ? conversationScopeKey(scope) : persistenceKey,
       initialMessages: buffered,
       connection: noopConnection,
-      persistence: conversationPersistence,
+      ...(persistenceKey === undefined ? {} : { persistence: conversationPersistence }),
       onMessagesChange,
     })
   })
@@ -150,6 +155,7 @@ export function createConversationChatClient(
   const handle: ConversationChatHandle = {
     messages: () => (client ? client.getMessages() : buffered),
     setMessages: (messages) => {
+      if (!isCurrent()) return
       const compacted = compactConversationSnapshot(messages) ?? []
       if (client) {
         manualMutation = true

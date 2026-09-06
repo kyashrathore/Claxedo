@@ -64,8 +64,8 @@ type RelayHostTunnelWebSocketData = {
   channels: Map<string, RelayUserHostedClientWebSocket>
   heartbeat?: ReturnType<typeof setInterval>
   missedPongs: number
-  // T11: per-WS buffer for fragmented WebSocket frames that arrive as partial
-  // JSON. Bounded at TUNNEL_MESSAGE_BUFFER_CAP_BYTES; oversize triggers 1009.
+  // Reassembly buffer for WebSocket frames that arrive as partial JSON.
+  // Bounded at TUNNEL_MESSAGE_BUFFER_CAP_BYTES; oversize closes with 1009.
   messageBuffer: string
 }
 
@@ -110,7 +110,6 @@ type PendingTunnelHttpResponse = {
   resolve: (response: Response) => void
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
-  // T12: backpressure tracking for slow downstream consumers.
   // Chunks that arrive while controller.desiredSize <= 0 are buffered here
   // and drained back into the controller from pull() once the consumer reads.
   pendingChunks: Uint8Array[]
@@ -142,19 +141,19 @@ export type WorkspaceRelayHostTunnelOptions = {
   ) => boolean | Promise<boolean>
   hostTunnelPingIntervalMs?: number
   hostTunnelMaxMissedPongs?: number
-  // T19: debounce window used to coalesce host-tunnel connected/disconnected
+  // Debounce window used to coalesce host-tunnel connected/disconnected
   // audit emissions per host_id. Default 250ms. A flapping reconnect within
   // this window whose intended state matches lastWritten is suppressed.
   hostTunnelStateDebounceMs?: number
 }
 
 export type WorkspaceRelayBackpressureOptions = {
-  // T12: high-water mark used by the per-pending ByteLengthQueuingStrategy.
+  // High-water mark used by the per-pending ByteLengthQueuingStrategy.
   // When the controller's queued bytes meet or exceed this value, new chunks
   // are diverted into the per-pending overflow buffer until the consumer
   // catches up. Default 8 MiB.
   slowConsumerHighWaterMarkBytes?: number
-  // T12: how long the per-pending overflow buffer can stay non-empty before
+  // How long the per-pending overflow buffer can stay non-empty before
   // the request is failed with 503 slow_consumer_timeout. Default 30 s.
   slowConsumerTimeoutMs?: number
   tunnelRequestBodyMaxBytes?: number
@@ -191,7 +190,7 @@ export type WorkspaceRelayBunTelemetry = {
 }
 
 /**
- * T9: drain controller exposed by `createWorkspaceRelayBun`.
+ * Drain controller exposed by `createWorkspaceRelayBun`.
  *
  * On SIGTERM the operator (see `installShutdownDrainHandler` in main.ts)
  * flips `setDraining(true)`; from that point onward the relay
@@ -240,7 +239,7 @@ const UPSTREAM_WS_OPEN_TIMEOUT_MS_DEFAULT = 10_000
 // bound that should govern such traffic.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 64
 // Bytes are the resource this queue actually consumes, and 64 tiny frames is
-// not a memory problem. Admitting on EITHER bound lets a legitimate burst of
+// not a memory problem. Admitting on either bound lets a legitimate burst of
 // small frames through while still capping real memory, so the close above is
 // reserved for traffic that is genuinely too large to hold.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
@@ -250,19 +249,14 @@ const WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
  * Bytes queued in a socket's send buffer, or `undefined` if it cannot report.
  *
  * Bun spells this `getBufferedAmount()` — a method, not the browser's
- * `bufferedAmount` property. The two guards below used to read the property
- * behind a non-null assertion, which typechecked and then evaluated
- * `undefined > 8388608` forever: neither had ever closed a connection. Measured
- * in `relay-workerd-backpressure.test.ts` at 16.8 MB queued, twice the limit,
- * guard silent.
+ * `bufferedAmount` property. Reading the property on a Bun socket yields
+ * `undefined`, and `undefined > limit` is always false, so a guard built on it
+ * never fires.
  *
- * FAILS OPEN on a socket that cannot report, deliberately. Test doubles and any
- * exotic socket must not be closed for lacking the accessor — an unguarded
- * healthy connection beats a guard that kills healthy connections. Note this is
- * also why the same guard is NOT portable to `cloudflare.ts`: workerd's
- * WebSocket exposes no buffer depth in any form, so there it would fail open
- * unconditionally. Bounding the Cloudflare path needs a protocol-level
- * credit/ack window instead.
+ * Fails open on a socket that cannot report, deliberately: an unguarded healthy
+ * connection beats a guard that kills healthy connections. This is also why the
+ * guard is not portable to `cloudflare.ts` — workerd's WebSocket exposes no
+ * buffer depth, so bounding that path needs a protocol-level credit/ack window.
  */
 export const relayBufferedBytes = (socket: unknown): number | undefined => {
   if (typeof socket !== "object" || socket === null) return undefined
@@ -279,24 +273,21 @@ export const relayBufferedBytes = (socket: unknown): number | undefined => {
 /**
  * True only when the socket reports a depth over the limit. Unknown ⇒ false.
  *
- * Exported for `bun.test.ts`. Forcing a real over-limit buffer through the
- * server's own sockets is not achievable locally — a loopback peer drains far
- * faster than a test can outrun it, which is precisely why the dead guard went
- * unnoticed for so long — so the decision itself is asserted directly.
+ * Exported for `bun.test.ts`: a loopback peer drains faster than a test can
+ * fill it, so the decision is asserted directly.
  */
 export const relayOverBackpressureLimit = (socket: unknown, limitBytes: number) => {
   const queued = relayBufferedBytes(socket)
   return queued !== undefined && queued > limitBytes
 }
 const HOST_TUNNEL_MAX_MISSED_PONGS_DEFAULT = 2
-// T11: bound the per-WS reassembly buffer for fragmented JSON frames.
+// Cap on the per-WS reassembly buffer for fragmented JSON frames.
 const TUNNEL_MESSAGE_BUFFER_CAP_BYTES = 4 * 1024 * 1024
-// T12: defaults for per-request slow-consumer backpressure on tunnel HTTP
-// responses. Overridable via WorkspaceRelayBunOptions for tests.
+// Per-request slow-consumer backpressure defaults for tunnel HTTP responses;
+// overridable via WorkspaceRelayBunOptions.
 const SLOW_CONSUMER_HIGH_WATER_MARK_BYTES_DEFAULT = 8 * 1024 * 1024
 const SLOW_CONSUMER_TIMEOUT_MS_DEFAULT = 30_000
-// T19: default debounce window for host-tunnel connected/disconnected audit
-// emissions. Coalesces flapping reconnects per host_id.
+// Default debounce window for host-tunnel connected/disconnected audit emissions.
 const HOST_TUNNEL_STATE_DEBOUNCE_MS_DEFAULT = 250
 
 export type FragmentationStats = {
@@ -508,14 +499,14 @@ function isEventStream(input: TunnelHeaderMap) {
 /**
  * The browser-origin allowlist this relay instance enforces.
  *
- * `createWorkspaceRelayBun` compiles ONE matcher from the deployment's
+ * `createWorkspaceRelayBun` compiles one matcher from the deployment's
  * `allowedOrigins` (falling back to the product default list) and hands it to
  * every path that answers a browser: the WebSocket admission check, the
  * workspace fast path's preflight, and every CORS header it stamps. It is a
  * required parameter rather than a defaulted one so a new call site cannot
  * silently answer from the built-in list while the deployment configured its
- * own — which is exactly how a self-hosted relay's own app origin passed the
- * upgrade check and still failed every fast-path preflight.
+ * own: a self-hosted relay's own app origin would then pass the upgrade check
+ * but fail every fast-path preflight.
  */
 type RelayOriginMatcher = (origin: string) => boolean
 
@@ -716,7 +707,7 @@ async function audit(
   })
 }
 
-// T19: per-host_id debounce of host_tunnel.connected / host_tunnel.disconnected
+// Per-host_id debounce of host_tunnel.connected / host_tunnel.disconnected
 // audit emissions. Coalesces flapping (close + immediate reopen) within the
 // debounce window so a wifi flicker that disconnects and reconnects under
 // 250ms produces zero net audit events instead of a connect/disconnect/connect
@@ -780,8 +771,8 @@ function scheduleHostTunnelStateChange(
   state.set(input.hostId, entry)
 }
 
-// T12: drain as much of the overflow buffer as the controller will accept.
-// Decrements bytesQueued (which counts ONLY overflow-buffer bytes, not
+// Drain as much of the overflow buffer as the controller will accept.
+// Decrements bytesQueued (which counts only overflow-buffer bytes, not
 // bytes already inside the controller's internal queue). Clears the
 // slow-consumer watchdog once the overflow buffer is empty.
 function drainPendingChunks(entry: PendingTunnelHttpResponse) {
@@ -805,7 +796,7 @@ function drainPendingChunks(entry: PendingTunnelHttpResponse) {
   }
 }
 
-// T12: route a freshly-received chunk either into the controller (consumer
+// Route a freshly-received chunk either into the controller (consumer
 // keeping up) or into the overflow buffer (consumer slow). Starts the
 // slow-consumer watchdog the first time a chunk overflows.
 function enqueueChunkWithBackpressure(input: {
@@ -823,11 +814,11 @@ function enqueueChunkWithBackpressure(input: {
     entry.pendingChunks.push(chunk)
     entry.bytesQueued += chunk.byteLength
     if (!entry.slowConsumerTimeout) {
-      // T29: first overflow for this request — count it before arming the
-      // watchdog so the metric reflects "how often did we hit the HWM".
+      // First overflow for this request: count it before arming the watchdog
+      // so the metric reflects how often the HWM was hit.
       input.slowConsumerStats.overflowEvents += 1
       entry.slowConsumerTimeout = setTimeout(() => {
-        // T29: count actual timer fires (vs. timers cleared by drain).
+        // Count actual timer fires (not timers cleared by drain).
         input.slowConsumerStats.timerFired += 1
         const error = new Error("slow_consumer_timeout: downstream consumer did not drain in time")
         try {
@@ -842,8 +833,7 @@ function enqueueChunkWithBackpressure(input: {
           entry.resolve(jsonError("slow_consumer_timeout", "Downstream consumer did not drain in time", 503))
         }
         input.ws.data.pending.delete(input.requestId)
-        // T29: count after cleanup so droppedRequests reflects requests we
-        // actually freed (not double-counted on re-entry).
+        // Count after cleanup so droppedRequests reflects requests actually freed.
         input.slowConsumerStats.droppedRequests += 1
       }, input.slowConsumerTimeoutMs)
     }
@@ -856,10 +846,9 @@ function enqueueChunkWithBackpressure(input: {
   }
 }
 
-// T29: testing-only export. Allows unit tests to drive the slow-consumer
-// counter from a controlled ReadableStream consumer without depending on
-// Bun's HTTP server pulling rate (localhost is too fast to reliably trip
-// the HWM via real fetch+host-tunnel chunks).
+// Testing-only export: lets unit tests drive the slow-consumer counter
+// directly, since localhost is too fast to trip the HWM through real fetch +
+// host-tunnel chunks.
 export const __slowConsumerInternalsForTest = {
   enqueueChunkWithBackpressure,
   createSlowConsumerStats,
@@ -890,7 +879,7 @@ async function tunnelHttpRequest(input: {
   }
   const requestId = crypto.randomUUID()
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined
-  // T12: ByteLengthQueuingStrategy makes controller.desiredSize reflect
+  // ByteLengthQueuingStrategy makes controller.desiredSize reflect
   // remaining byte capacity. When it goes <= 0, downstream is at/over HWM
   // and we divert further chunks into the per-pending overflow buffer.
   // pull() is invoked by Web Streams when the consumer reads and the queue
@@ -981,8 +970,8 @@ async function tunnelHttpRequest(input: {
       input.request.headers,
       input.relayHostToken,
       input.workspaceId,
-      // T26: user-hosted tunnel — strip Cookie to avoid leaking browser
-      // cookies to the host process running on the user's laptop.
+      // User-hosted tunnel: strip Cookie so browser cookies never reach the
+      // host process on the user's laptop.
       { userHosted: true },
     )),
     ...(body?.bodyBase64 ? { body_base64: body.bodyBase64 } : {}),
@@ -1044,8 +1033,8 @@ async function directHttpRequest(input: {
       input.relayHostToken,
       input.workspaceId,
       {
-        // T26: cloud-vm direct path. Cookies pass through (default) — workspace
-        // dashboards in the VM may legitimately need session cookies.
+        // Cloud-vm direct path: cookies pass through — workspace dashboards in
+        // the VM may legitimately need session cookies.
         userHosted: false,
         upstreamHeaders: input.upstreamHeaders,
         signal: controller.signal,
@@ -1188,7 +1177,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
     resetSlowConsumerStats: () => resetSlowConsumerStats(slowConsumerStats),
   }
 
-  // T9: drain state. The Hono server below is constructed with a closure over
+  // Drain state. The Hono server below is constructed with a closure over
   // this flag so /health and the workspace fast-path see the same value.
   let draining = false
   const drainController: WorkspaceRelayBunDrainController = {
@@ -1226,7 +1215,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
     },
   }
 
-  // T31: assemble metrics sources here so `/metrics` can surface the bun-only
+  // Assemble metrics sources here so `/metrics` can surface the bun-only
   // per-relay counters (fragmentation + slow consumer) and the drain
   // controller's pending count without `server.ts` importing back into us.
   // We merge with any explicit `metricsSources` the caller passed (so callers
@@ -1237,7 +1226,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
     drainPending: options.metricsSources?.drainPending ?? drainController.pendingCount,
   }
 
-  // T31: per-request IP capture used to gate `/metrics` to loopback when no
+  // Per-request IP capture used to gate `/metrics` to loopback when no
   // metricsToken is configured. Bun's `server.requestIP(request)` is only
   // available on the raw inbound Request — we capture it on entry to fetch()
   // and look it up from the Hono handler via this WeakMap.
@@ -1281,7 +1270,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       const url = new URL(request.url)
       const workspaceId = workspaceIdFromPath(url.pathname)
       const hostId = hostIdFromTunnelPath(url.pathname)
-      // T31: capture the inbound peer IP so the Hono `/metrics` handler can
+      // Capture the inbound peer IP so the Hono `/metrics` handler can
       // gate on loopback. `server.requestIP` may return null for non-TCP
       // sockets (rare); skip the WeakMap entry in that case so the handler
       // falls back to deny / token-only.
@@ -1300,7 +1289,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           { status: draining ? 503 : 200 },
         )
       }
-      // T9: once draining starts, refuse new tunnel registrations and new
+      // Once draining starts, refuse new tunnel registrations and new
       // workspace requests. Other unrelated routes are handled by the Hono
       // server (see `app`) which also reads `drainController`.
       if (draining && websocketRequest(request) && hostId) {
@@ -1461,7 +1450,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             new Headers(),
             relay.request.relayHostToken,
             relay.request.target.workspaceId,
-            // T26: cloud-vm WS upgrade. Cookies pass through (default).
+            // Cloud-vm WS upgrade: cookies pass through.
             { userHosted: false, upstreamHeaders: relay.request.target.upstreamHeaders },
           )),
           queue: [],
@@ -1639,7 +1628,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           ws.data.upstream.send(message)
           return
         }
-        // Admit on EITHER bound: a burst of small frames during the few
+        // Admit on either bound: a burst of small frames during the few
         // milliseconds before upstream connects is normal client behaviour and
         // costs almost nothing to hold, so the frame count alone must not end
         // the session. Only genuinely large buffered traffic closes.
@@ -1715,9 +1704,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               new Headers(),
               ws.data.relayHostToken,
               ws.data.workspaceId,
-              // T26: user-hosted tunnel WS upgrade — strip Cookie. Headers are
-              // empty here today, but pass the flag for consistency in case
-              // upstream client headers are forwarded in the future.
+              // User-hosted tunnel WS upgrade: strip Cookie. Headers are empty
+              // here today; the flag keeps the rule uniform.
               { userHosted: true },
             )),
           }))

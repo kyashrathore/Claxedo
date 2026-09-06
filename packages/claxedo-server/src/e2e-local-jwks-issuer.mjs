@@ -2,28 +2,13 @@ import { createServer } from "node:http"
 import { once } from "node:events"
 import { SignJWT, exportJWK, generateKeyPair } from "jose"
 
-// A REAL local JWKS issuer for e2e control-plane fixtures.
-//
-// This is a SUPPORTED SELF-HOST MODE, not a stub: a request bearing a token
-// minted here is verified through the exact same code path as a provider-issued token —
-// `controlPlaneAuthContext` (platform/auth/auth.ts:298) calls the injected
-// `verifier`, which does real `jose.jwtVerify()` against a real HTTP JWKS
-// endpoint and a real EdDSA/ES256 keypair (see `customVerifierAuthAdapter`,
-// platform/auth/auth.ts:179 — the same adapter shape self-hosters use to wire
-// Auth0/Ory/anything OIDC-shaped, documented as a first-class alternative to
-// the signed auth adapter). What it does NOT cover: provider-specific behaviour —
-// a real provider's actual token shape, its JWKS rotation cadence, its session-claim
-// vocabulary (org role names, template claims). That gap is intentional and
-// is covered only by the nightly credentialed `live-*` lane, which runs
-// against a real provider test tenant (see `e2e/INVARIANTS.md`).
-//
-// Shared module so the mint/verify pair is written once. `signed-browser-
-// relay-fixture.mjs` is the first consumer (2026-08-06,
-// docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md Phase 3); the
-// plan's Phase 4 lanes (`desktop-signed-*`, `web-signed-*`) compose a real
-// control plane too and should import this instead of hand-rolling a second
-// local issuer — that duplication is exactly what the plan's "journey logic
-// exists once" gate (Definition of Done) forbids.
+// A real local JWKS issuer for e2e control-plane fixtures: a supported
+// self-host mode, not a stub. Tokens minted here are verified through the same
+// `jose.jwtVerify()` path as provider-issued ones (`customVerifierAuthAdapter`,
+// platform/auth/auth.ts). Provider-specific behaviour — token shape, JWKS
+// rotation cadence, session-claim vocabulary — is covered only by the nightly
+// credentialed `live-*` lane. Any lane that composes a real control plane
+// imports this rather than hand-rolling a second issuer.
 export async function startLocalJwksIssuer(input = {}) {
   const algorithm = input.algorithm ?? "EdDSA"
   const kid = input.kid ?? "e2e-local-jwks-1"

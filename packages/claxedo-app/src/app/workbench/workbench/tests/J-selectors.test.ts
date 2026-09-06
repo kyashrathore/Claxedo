@@ -35,14 +35,15 @@ describe("J. selectors", () => {
     expect(h.api.selectors.contentPane("a")).toBeNull()
   })
 
-  test("visiblePanes returns panes in render order", () => {
+  test("visiblePanes returns split-tree render order rather than creation order", () => {
     const h = harness()
     h.api.contents.add("a")
     h.api.contents.add("b")
     h.api.navigation.show("a")
-    h.api.split.split(h.api.selectors.contentPane("a")!, "right", "b")
-    const ids = h.api.selectors.visiblePanes().map((p) => p.id)
-    expect(ids).toHaveLength(2)
+    const right = h.api.selectors.contentPane("a")!
+    h.api.split.split(right, "left", "b")
+    const left = h.api.selectors.contentPane("b")!
+    expect(h.api.selectors.visiblePanes().map((pane) => pane.id)).toEqual([left, right])
   })
 
   test("paneRect returns fractional rect", () => {

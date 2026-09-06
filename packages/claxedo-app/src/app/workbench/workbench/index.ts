@@ -1,6 +1,4 @@
-// Public exports for the new Workbench layout system.
-//
-// Phase 1: provider/component/hook/reducers/selectors only. No callers wired yet.
+// Public exports for the Workbench layout system.
 
 export type {
   WorkbenchState,

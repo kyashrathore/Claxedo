@@ -1,4 +1,4 @@
-// Reactive projection of the streaming connection lifecycle (T7).
+// Reactive projection of the streaming connection lifecycle.
 //
 // The pure FSM lives in `@/app/connection/stream-sync-lifecycle` (framework-
 // agnostic, driven by bun:test with no Solid root). This platform module is the
@@ -15,11 +15,10 @@
 // `reportStreamSyncLifecycle` on every lifecycle transition; components call
 // `streamSyncLifecycleSnapshot` to read.
 //
-// `everLive` answers "has this stream EVER completed its first connect" — the
-// derivation T7 needs to distinguish a fresh session's ordinary startup
-// (idle → connecting, possibly retried, but never yet live) from a real drop
-// after a healthy connection. A UI only needs to react once a stream has proven
-// itself and then regressed.
+// `everLive` answers "has this stream ever completed its first connect", which
+// `shouldShowConnectionLine` needs to distinguish a fresh session's ordinary
+// startup (idle → connecting, possibly retried, never yet live) from a real
+// drop after a healthy connection.
 import { createStore, produce } from "solid-js/store"
 // Type-only edge to the pure FSM's state alphabet. platform never imports app
 // VALUE symbols; a type-only import carries no runtime dependency and no import

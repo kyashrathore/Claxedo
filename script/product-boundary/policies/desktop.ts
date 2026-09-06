@@ -86,7 +86,12 @@ export const desktopMainComposition: Policy = {
   // importing `Readable` from `node:stream` when its hand-rolled body wrapper
   // became the global web ReadableStream, and nothing else in this composition
   // reaches `node:stream`. Re-measured, no headroom in either number.
-  ceilings: { modules: 90, packages: 23 },
+  // +1 package (2026-09-06): `@claxedo/helpers/string` (reviewed owner
+  // `packages/claxedo-helpers/src/string.ts`) replaces the local claim readers
+  // in main. `string.ts` imports only `./guards` and touches no host API, so
+  // the edge adds nothing this Electron main composition can execute. Module
+  // count is unchanged because helpers sits outside `roots`. 90/24.
+  ceilings: { modules: 90, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -151,7 +156,12 @@ export const desktopAccountComposition: Policy = {
   // The package ceiling TIGHTENS 7 -> 6 for the same reason as the base
   // composition: `account/no-reuse-fetch.ts` no longer imports `node:stream`.
   // Re-measured, no headroom in either number.
-  ceilings: { modules: 19, packages: 6 },
+  // +1 package (2026-09-06): `account/identity.ts` reads its OIDC claims
+  // through `trimToUndefined` from `@claxedo/helpers/string` (reviewed owner
+  // `packages/claxedo-helpers/src/string.ts`) instead of a local copy that
+  // shadowed the canonical two-arg `stringClaim` in `/guards`. No host API
+  // behind that subpath; module count unchanged. 19/7.
+  ceilings: { modules: 19, packages: 7 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
     minModules: 10,
@@ -285,12 +295,9 @@ export const desktopRendererUnsigned: Policy = {
   // (composer intent/submission/draft, authority cache/query/controller,
   // runtime client/ingress, dock, Stop fallback + shared JSON reader):
   // thirteen modules.
-  // Plan 150 section E named a machine-routing module owned by the retired
-  // marketplace feature; that whole feature is gone, so it contributes nothing
-  // to this closure any more.
-  // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
-  // catalog owner) in the same slice: one more module, no package edge.
-  // Plan 150 section C: the same three Settings scope modules app-local
+  // `features/workspaces/data/workspace-catalog.ts` (the single catalog owner):
+  // one more module, no package edge.
+  // Settings scope: the same three Settings scope modules app-local
   // reviews (`features/settings/scope/settings-scope.tsx`, its pure
   // `settings-scope-options.ts`, and `features/settings/ui/scope-selector.tsx`)
   // — the explicit (workspace, harness) selection Providers and Models read
@@ -337,7 +344,10 @@ export const desktopRendererUnsigned: Policy = {
   // `app-local.ts` for what each one owns — plus `shared/json-read.ts`, reached
   // here through `renderer/remote-access/electron-machine-remote-access.ts`.
   // No new package edge: 56 is unchanged. Re-measured, no headroom.
-  ceilings: { modules: 1014, packages: 56 },
+  // +1 package (2026-09-06): @claxedo/helpers enters the closure through the
+  // shared app surface (see app-local.ts for the owner). Re-measured after the
+  // test-quality audit merge retired the per-file readers: 1009/57, no headroom.
+  ceilings: { modules: 1009, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -389,8 +399,8 @@ export const desktopHostedContribution: Policy = {
   // Optional service renderers now have independent catalog-driven roots. This
   // activation entry owns only desktop machine remote access and its shared
   // contract, so the reviewed closure deliberately shrinks from 322/40: the
-  // Goal-mode session owners the monolithic loader used to drag in are reached
-  // from their own service roots, not from this activation entry.
+  // Goal-mode session owners are reached from their own service roots, not
+  // from this activation entry.
   //
   // It also binds the cloud workspace-startup port, because this is the only
   // desktop binding of it and shared composer code (`submit-directory.ts`,
@@ -417,7 +427,12 @@ export const desktopHostedContribution: Policy = {
   //   claxedo-desktop/src/shared/json-read.ts — from
   //     `renderer/remote-access/electron-machine-remote-access.ts`.
   // Still one package edge (`@tanstack/solid-query`). Re-measured, no headroom.
-  ceilings: { modules: 47, packages: 1 },
+  // The second package edge is `@claxedo/helpers`, the canonical owner of
+  // `isLoopbackHttpUrl`, reached from `platform/api/api.ts`. Its root barrel is
+  // the runtime-neutral surface — no `node:` import can appear there, those live
+  // behind `/fs`, `/path`, `/process`, `/net` — so it is safe on a renderer
+  // graph. Module count is unchanged at 47; only the package edge moved.
+  ceilings: { modules: 47, packages: 2 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 4,

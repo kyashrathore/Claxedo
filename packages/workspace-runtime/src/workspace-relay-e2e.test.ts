@@ -4,12 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { spawn, type ChildProcess } from "node:child_process"
 import { exportSPKI, generateKeyPair } from "jose"
-import {
-  createWorkspaceRelayBun,
-  mintRuntimeAccessToken,
-  verifyRelayHostToken,
-  type WorkspaceRelayAuditEvent,
-} from "@claxedo/workspace-relay"
+import { mintRuntimeAccessToken, verifyRelayHostToken, type WorkspaceRelayAuditEvent } from "@claxedo/workspace-relay"
+import { createWorkspaceRelayBun } from "@claxedo/workspace-relay/bun"
 import type { RelayHostAuthAuditEvent } from "./workspace-host-service-auth"
 import { startServer, waitForWorkspaceRuntimeServerPort } from "./server"
 import { relayWorkspaceRuntimeExposure } from "./exposure"

@@ -1,4 +1,4 @@
-import type { AgentContentPart, AgentPresentationMessage, AgentPresentationSession, AgentPromptResponse, AgentSession, AgentTodo, PromptModel } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentPresentationMessage, AgentPresentationSession, AgentSession, AgentTodo, PromptModel } from "@claxedo/agent-runtime-contract"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import { AgentRuntimeRequestError, runtimeRequestError } from "./agent-runtime-request-error"
@@ -587,17 +587,15 @@ export function createAgentRuntimeClient(options: {
       // Returns what the harness KEPT, which can differ from `input.modeId`.
       return { data: await readJson<AgentRuntimePermissionModeState>(res) }
     },
-    async sendMessage(input: AgentRuntimePromptPayload & { mode?: "sync" | "async" }) {
+    async sendMessage(input: AgentRuntimePromptPayload) {
       const res = await fetchRuntimeSession({
         sessionID: input.sessionID,
         directory: input.directory,
-        suffix: input.mode === "sync" ? "/message" : "/prompt_async",
+        suffix: "/prompt_async",
         init: jsonInit("POST", input),
       })
-      if (input.mode !== "sync" && !res.ok) throw await runtimeRequestError(res)
-      return input.mode === "sync"
-        ? { data: await readJson<AgentPromptResponse>(res) }
-        : { data: undefined }
+      if (!res.ok) throw await runtimeRequestError(res)
+      return { data: undefined }
     },
     async abort(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
       const url = agentRuntimeSessionUrl({

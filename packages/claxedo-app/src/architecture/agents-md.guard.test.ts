@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { logicalOwner } from "./ownership"
 import { importSpecifiers } from "./import-graph"
-import { walk } from "./scanners"
+import { prodSourcePaths, walk } from "./scanners"
 import writers from "./query-cache-writers.json"
 
 type AgentsContract = {
@@ -93,10 +93,7 @@ function readContract(file: string): AgentsContract | string {
 }
 
 function prodFiles(dir: string) {
-  return walk(dir)
-    .filter((file) => /\.(ts|tsx)$/.test(file))
-    .filter((file) => !/\.(test|vitest)\./.test(file))
-    .filter((file) => !file.endsWith(".d.ts"))
+  return prodSourcePaths(appRoot).filter((file) => file.startsWith(`${dir}${path.sep}`))
 }
 
 function matchesGlob(value: string, glob: string) {

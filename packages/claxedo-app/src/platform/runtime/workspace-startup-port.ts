@@ -2,16 +2,16 @@ import type { WorkspaceRuntimeLog } from "./workspace-log"
 import type { WorkspaceRuntimeSnapshot } from "./workspace-runtime"
 
 /**
- * How local code asks for a workspace runtime to be BROUGHT UP, without owning
+ * How local code asks for a workspace runtime to be brought up, without owning
  * a way to do it.
  *
- * The three operations here are the genuinely hosted half of what used to be
- * `platform/runtime/cloud/workspace-runtime-store.ts`: waking a central cloud
+ * The three operations here need a hosted backend — waking a central cloud
  * sandbox, connecting to a user-hosted machine through the Relay, and admitting
- * a worktree on a remote host. All three need the authenticated transport and
- * the Relay; none of them can happen in a local build.
+ * a worktree on a remote host — and are bound by
+ * `platform/runtime/cloud/workspace-runtime-store.ts`. All three need the
+ * authenticated transport and the Relay; none of them can happen in a local build.
  *
- * They are still REACHED from local surfaces — the session composer and the
+ * They are still reached from local surfaces — the session composer and the
  * session actions menu — because "send a prompt" is one flow whether the
  * workspace is on this laptop or in a sandbox. Those callers name the
  * operation through `workspaceStartup()` and must not import this
@@ -24,10 +24,10 @@ import type { WorkspaceRuntimeSnapshot } from "./workspace-runtime"
  * `@claxedo/app` — the log rows a startup emits, and the runtime record it
  * resolves — not implementations.
  *
- * Deliberately NOT on this port: `resolveWorkspaceRuntime`. Reading the runtime
- * record works in every deployment, so putting it behind a port that a local
- * build cannot bind would break twelve local callers to no purpose. It lives in
- * `workspace-runtime-record.ts` instead.
+ * Deliberately absent from this port: `resolveWorkspaceRuntime`. Reading the
+ * runtime record works in every deployment, so putting it behind a port that a
+ * local build cannot bind would break twelve local callers to no purpose. It
+ * lives in `workspace-runtime-record.ts` instead.
  */
 
 /** One step of central cloud provisioning, published on the events bus. */

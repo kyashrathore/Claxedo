@@ -1,0 +1,37 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":disableDependencyDashboard"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "UTC",
+  "rangeStrategy": "pin",
+  "lockFileMaintenance": { "enabled": false },
+  "ignorePaths": ["**/node_modules/**", ".worktrees/**", "examples/**"],
+  "packageRules": [
+    {
+      "description": "One reviewed PR per week for everything that is not a workspace package.",
+      "matchPackagePatterns": ["*"],
+      "groupName": "weekly dependency updates",
+      "excludePackagePatterns": ["^@claxedo/", "^@opencode-ai/"]
+    },
+    {
+      "description": "The embedded OpenCode SDK is pinned to a beta build and carries hand-maintained dist patches (patches/@opencode-ai%2F*). A bump is a reviewed migration, never an automated PR.",
+      "matchPackagePatterns": ["^@opencode-ai/"],
+      "enabled": false
+    },
+    {
+      "description": "Every other patched dependency (root package.json claxedoDependencyPatches) needs its patch regenerated before the version can move.",
+      "matchPackageNames": [
+        "better-auth", "@better-auth/oauth-provider", "@npmcli/agent", "@silvia-odwyer/photon-node",
+        "@ai-sdk/xai", "@ai-sdk/google", "@modelcontextprotocol/sdk", "@pierre/diffs",
+        "@tanstack/solid-query", "@tanstack/virtual-core", "@kobalte/core", "tokentracker-cli"
+      ],
+      "groupName": "patched dependencies (regenerate patches/ first)",
+      "labels": ["needs-patch-regeneration"]
+    },
+    {
+      "description": "Toolchain pins move alone so a Bun/Electron/TypeScript bump is its own reviewable diff.",
+      "matchPackageNames": ["bun", "electron", "typescript", "@typescript/native-preview", "turbo"],
+      "groupName": "toolchain"
+    }
+  ]
+}

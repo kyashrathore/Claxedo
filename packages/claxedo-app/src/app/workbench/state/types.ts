@@ -185,7 +185,7 @@ export type ProcessPaneSlice = {
 
 // ── Composed state ────────────────────────────────────────────────────────
 export type ClaxedoState = {
-  /** Phase 1 Workbench state — panes, split tree, contentIds, focus. */
+  /** Workbench state — panes, split tree, contentIds, focus. */
   workbench: WorkbenchState
   /** Per-content registry keyed by contentId (== Workbench contentId). */
   meta: Record<string, ContentMeta>

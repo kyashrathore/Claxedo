@@ -1,0 +1,62 @@
+{
+  "canonical": [
+    {
+      "module": "@claxedo/helpers/guards",
+      "owner": "packages/claxedo-helpers/src/guards.ts",
+      "names": [
+        "asArray",
+        "asFiniteNumber",
+        "asRecord",
+        "asRecordOrEmpty",
+        "asString",
+        "assertRecord",
+        "isFiniteNumber",
+        "isRecord",
+        "isString",
+        "nonEmptyString",
+        "numberClaim"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/string",
+      "owner": "packages/claxedo-helpers/src/string.ts",
+      "names": [
+        "bearerToken",
+        "escapeRegExp",
+        "trimToEmpty",
+        "trimToUndefined"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/url.ts",
+      "names": [
+        "isLoopbackHostname",
+        "isLoopbackHttpUrl"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/env.ts",
+      "names": [
+        "envText"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/fs",
+      "owner": "packages/claxedo-helpers/src/fs.ts",
+      "names": [
+        "readJsonFile"
+      ]
+    }
+  ],
+  "twins": [
+    {
+      "reason": "Two independent replay paths must each sanitize their own buffer: the PTY host replays session.buffer to a reattaching socket, and the renderer replays its own localStorage snapshot on mount. The app cannot import the runtime package's internals. The duplication is deliberate; the drift is not.",
+      "files": [
+        "packages/claxedo-app/src/features/terminal/core/replay-safe-slice.ts",
+        "packages/workspace-runtime/src/pty/safe-slice.ts"
+      ]
+    }
+  ]
+}

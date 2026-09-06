@@ -12,6 +12,9 @@
     "isolatedModules": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // Workspace packages export `development` -> src/*.ts ahead of `types` ->
+    // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
+    "customConditions": ["development"],
     "noEmit": true,
     "lib": ["es2023", "dom", "dom.iterable"],
     // Type Checking & Safety

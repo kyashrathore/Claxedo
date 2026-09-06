@@ -1,24 +1,12 @@
 /**
- * The self-hosted single binary's start path.
+ * The self-hosted single binary's start path: the posture gate, then
+ * `startServer`.
  *
- * Unit 7 moves the self-hosted product onto its own composition. This is the
- * first half of that move, and it is the half that can land without breaking
- * anything: the entry point, its boot gate, and the ownership statement that
- * `deployments/local` is no longer a shared thing.
- *
- * The measurement that made this possible: after Unit 5 the desktop boots
- * `@claxedo/local-server`, so `startServer` in `deployments/self-hosted-node/app.ts`
- * has exactly ONE production caller left — the self-hosted entry. Its own
- * comment still claimed two. That file is now self-hosted's private
- * implementation rather than a shared composition, and this module is the
- * public way in.
- *
- * What has NOT moved yet: the 1,270-line `createSelfHostedApp` body, which still lives
- * in `deployments/self-hosted-node/app.ts` and is still reached by ~24 tests that
- * construct it with a `local` deployment mode and no authority. Those tests are
- * why the posture gate cannot simply be added there — see `posture.ts`. They
- * are the remaining migration, and until they move, `createSelfHostedApp` stays exported
- * for them and unreachable from production.
+ * `startServer` in `./app.ts` has this module as its only production caller
+ * (the desktop boots `@claxedo/local-server`), so it stays internal and this
+ * is the public way in. `createSelfHostedApp` stays exported for library
+ * consumers and the route contract tests; it gates itself when handed a
+ * `posture` option and refuses without a local-execution adapter.
  */
 
 import fs from "node:fs"

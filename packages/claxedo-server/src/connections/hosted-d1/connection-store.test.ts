@@ -4,7 +4,9 @@ import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
-import { createD1ConnectionStore, HostedConnectionExistsError, HostedConnectionPartitionError } from "./connection-store"
+import { ConnectionExistsError, connectionStoreCoreConformance } from "@claxedo/connections"
+
+import { createD1ConnectionStore, HostedConnectionPartitionError } from "./connection-store"
 
 // 0002 owns `users` and `orgs`, which 0020's foreign keys reference; 0020 owns
 // the table under test. The real migration files run — a hand-written schema in
@@ -65,6 +67,7 @@ const row = (input: {
   owner?: string
   accountLabel?: string
   fields?: Record<string, string>
+  updatedAt?: number
 }) => ({
   id: input.id,
   integrationId: input.integrationId,
@@ -73,17 +76,16 @@ const row = (input: {
   grantedCapabilities: ["mcp" as const],
   fields: input.fields ?? {},
   createdAt: 1_000,
-  updatedAt: 1_000,
+  updatedAt: input.updatedAt ?? 1_000,
 })
 
 describe("D1 hosted connection store", () => {
   test("partitions rows by org and owner and never leaks across either boundary", async () => {
     const target = await database()
     await seed(target, ["org-a", "org-b"], ["user-1", "user-2"])
-    const now = () => 2_000
-    const aliceInA = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-1", now })
-    const bobInA = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-2", now })
-    const aliceInB = createD1ConnectionStore({ database: target, orgId: "org-b", ownerUserId: "user-1", now })
+    const aliceInA = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-1" })
+    const bobInA = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-2" })
+    const aliceInB = createD1ConnectionStore({ database: target, orgId: "org-b", ownerUserId: "user-1" })
 
     await aliceInA.upsert(row({ id: "conn-personal", integrationId: "context7", owner: "user:user-1" }))
     await aliceInA.upsert(row({ id: "conn-org", integrationId: "composio", owner: "org:org-a" }))
@@ -128,7 +130,7 @@ describe("D1 hosted connection store", () => {
   test("upsert replaces the same row in place and delete is partition-scoped", async () => {
     const target = await database()
     await seed(target, ["org-a"], ["user-1", "user-2"])
-    const alice = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-1", now: () => 5_000 })
+    const alice = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-1" })
     const bob = createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-2" })
 
     await alice.upsert(row({ id: "conn-1", integrationId: "context7", owner: "user:user-1", accountLabel: "first" }))
@@ -138,6 +140,7 @@ describe("D1 hosted connection store", () => {
       owner: "user:user-1",
       accountLabel: "second",
       fields: { site: "https://example.test" },
+      updatedAt: 5_000,
     }))
     expect(await alice.list()).toMatchObject([
       { id: "conn-1", accountLabel: "second", fields: { site: "https://example.test" }, createdAt: 1_000, updatedAt: 5_000 },
@@ -179,7 +182,7 @@ describe("D1 hosted connection store", () => {
     // for the same (org, owner, integration) is unreachable through it — and
     // would strand a credential no route could ever resolve.
     await expect(store.upsert(row({ id: "conn-2", integrationId: "context7", owner: "user:user-1" })))
-      .rejects.toThrow(HostedConnectionExistsError)
+      .rejects.toThrow(ConnectionExistsError)
     // The organization partition is a distinct partition, not a duplicate.
     await store.upsert(row({ id: "conn-3", integrationId: "context7", owner: "org:org-a" }))
     expect((await store.list()).map((entry) => entry.id).toSorted()).toEqual(["conn-1", "conn-3"])
@@ -192,7 +195,7 @@ describe("D1 hosted connection store", () => {
     // overwrites its owner's row from inside another tenant's request.
     const target = await database()
     await seed(target, ["org-a", "org-b"], ["user-1", "user-2"])
-    const victim = createD1ConnectionStore({ database: target, orgId: "org-b", ownerUserId: "user-2", now: () => 1_000 })
+    const victim = createD1ConnectionStore({ database: target, orgId: "org-b", ownerUserId: "user-2" })
     await victim.upsert(row({
       id: "conn-victim",
       integrationId: "context7",
@@ -233,4 +236,25 @@ describe("D1 hosted connection store", () => {
     expect(await attackerInOtherOrg.list()).toEqual([])
     expect(await attackerInSameOrg.list()).toEqual([])
   })
+})
+
+/**
+ * The partition-agnostic half of the kit's store-port suite, run in this
+ * store's personal partition. The other half — the three-way `list({owner})`
+ * model — is unrunnable here by design: this store has no owner-absent team
+ * partition and refuses every owner key outside its two. What remains is row
+ * identity, upsert arbitration, deletion and copy-on-read, which this adapter
+ * previously shared with no other host at all.
+ */
+describe("D1 ConnectionStorePort core conformance", () => {
+  for (const testCase of connectionStoreCoreConformance(async () => {
+    const target = await database()
+    await seed(target, ["org-a"], ["user-1"])
+    return {
+      store: createD1ConnectionStore({ database: target, orgId: "org-a", ownerUserId: "user-1" }),
+      owner: "user:user-1",
+    }
+  })) {
+    test(testCase.name, testCase.run)
+  }
 })

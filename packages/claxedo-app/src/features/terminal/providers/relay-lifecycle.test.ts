@@ -179,13 +179,13 @@ describe("terminal relay lifecycle", () => {
     const { session, dispose } = createSession({ request })
     const ptyId = await session.new({
       createRequestId: "request-client-a",
-      initialCommand: `"/Users/yashvardhansingh/.claxedo/bin/claude" --dangerously-skip-permissions`,
+      initialCommand: `"/srv/home/.claxedo/bin/claude" --dangerously-skip-permissions`,
       title: "Claude",
     })
 
     expect(ptyId).toBe("pty_1")
     const create = calls.find((call) => call.method === "POST")
-    expect(create?.body?.command).toBe("/Users/yashvardhansingh/.claxedo/bin/claude")
+    expect(create?.body?.command).toBe("/srv/home/.claxedo/bin/claude")
     expect(create?.body?.args).toEqual(["--dangerously-skip-permissions"])
     expect(create?.body?.initialCommand).toBeUndefined()
     expect(create?.body?.createRequestId).toBe("request-client-a")
@@ -437,6 +437,9 @@ describe("terminal relay lifecycle", () => {
       }
       if (req.url.startsWith("http://127.0.0.1:3001/api/wr/pty") && req.method === "POST") {
         return Response.json({ id: `pty_${nextPty++}`, title: "Terminal", cwd: "/Users/yash/project" })
+      }
+      if (req.url.startsWith("http://127.0.0.1:3001/api/wr/pty/pty_1") && req.method === "PUT") {
+        return Response.json({ id: "pty_1", title: "Terminal", cwd: "/Users/yash/project/subdir" })
       }
       throw new Error(`Unexpected request: ${req.method} ${req.url}`)
     }

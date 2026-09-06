@@ -6,7 +6,6 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { validProjectRef } from "@/platform/sync/worktree"
 import { getExtensions } from "@/features/extensions"
-import { isDemoMode } from "@/platform/api/api"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_PORT } from "@/platform/api/local-server"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { ServerConnection } from "@/platform/connection/server-connection"
@@ -33,8 +32,7 @@ export function normalizeServerUrl(input: string) {
   try {
     const url = new URL(withProtocol)
     const local = url.hostname === "localhost" || url.hostname === "127.0.0.1"
-    // In demo mode, keep the origin as-is so MSW can intercept all requests
-    if (local && (url.port === "3000" || url.port === "4444") && !isDemoMode()) {
+    if (local && (url.port === "3000" || url.port === "4444")) {
       const env: unknown = import.meta.env.VITE_CLAXEDO_SERVER_URL
       if (typeof env === "string" && env.trim()) return env.trim().replace(/\/+$/, "")
       url.port = String(DEFAULT_LOCAL_CLAXEDO_SERVER_PORT)

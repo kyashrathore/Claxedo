@@ -91,6 +91,10 @@ describe("role policy", () => {
       "share.workspace": false,
       "view.account": false,
     },
+    "signed-unresolved": {
+      "share.workspace": true,
+      "view.account": true,
+    },
     signed: {
       "share.workspace": true,
       "view.account": true,
@@ -105,6 +109,7 @@ describe("role policy", () => {
     const principals = {
       anonymous: { kind: "anonymous" },
       local: { kind: "local", deviceId: "local" },
+      "signed-unresolved": { kind: "signed-unresolved" },
       signed: { kind: "signed", userId: "usr_1" },
       "org-member": {
         kind: "org-member",

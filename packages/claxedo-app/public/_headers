@@ -22,19 +22,14 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   # Legacy clickjacking header, kept for pre-CSP2 browsers only. Every current
   # browser IGNORES it when `frame-ancestors` is present, and frame-ancestors
-  # below is authoritative. SAMEORIGIN rather than DENY because X-Frame-Options
-  # has no way to express the marketing-site embed that frame-ancestors allows;
-  # DENY would silently be the stricter policy on old browsers for no gain.
+  # below is authoritative. SAMEORIGIN matches the frame-ancestors policy on
+  # old browsers.
   X-Frame-Options: SAMEORIGIN
   # ENFORCING, and deliberately frame-ancestors ONLY. This directive governs
   # who may embed us and nothing else, so it cannot break resource loading —
-  # unlike the full policy below. The two non-self origins are the marketing
-  # site, which embeds the demo app in an iframe (`previewSrc` in
-  # packages/claxedo-web/src/config.ts -> /demo/?embed=1) and drives it over
-  # postMessage; the app already trusts exactly these origins for that channel
-  # (TRUSTED_TOUR_ORIGINS in src/app/demo/tour-origin.ts). Everything else is
-  # blocked.
-  Content-Security-Policy: frame-ancestors 'self' https://claxedo.com https://www.claxedo.com
+  # unlike the full policy below. Nothing embeds the app: the marketing-site
+  # demo iframe that once needed claxedo.com here is gone.
+  Content-Security-Policy: frame-ancestors 'self'
   # REPORT-ONLY, and it must stay report-only until validated against real
   # traffic. Two directives here cannot be pinned from a static file:
   #   * connect-src — the workspace relay origin is RUNTIME-RESOLVED. The

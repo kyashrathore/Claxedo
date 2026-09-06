@@ -7,7 +7,8 @@ import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
-import { record, trimmed as text } from "../../platform/json"
+import { asRecord } from "@claxedo/helpers/guards"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -41,10 +42,10 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
   const denied = await localOnly(c, options)
   if (denied) return denied
   const body = await c.req.json().catch(() => undefined)
-  const row = record(body)
+  const row = asRecord(body)
   const selection = parseSelection(row?.harness)
   if (!selection) return c.json(errorBody("agent_config_harness_required", "A native harness or configured connection is required"), 400)
-  const sessionId = text(row?.sessionId) || c.req.query("sessionId") || c.req.header("x-session-id")
+  const sessionId = trimToUndefined(row?.sessionId) || c.req.query("sessionId") || c.req.header("x-session-id")
   if (sessionId) {
     return c.json(errorBody(
       "agent_config_harness_change_locked",
@@ -92,7 +93,7 @@ function selectionFromQuery(c: Context): RuntimeHarnessSelection | undefined {
 }
 
 function parseSelection(input: unknown): RuntimeHarnessSelection | undefined {
-  const row = record(input)
+  const row = asRecord(input)
   if (row?.kind === "native" && typeof row.harnessId === "string" && isNativeHarnessId(row.harnessId)) {
     return { kind: "native", harnessId: row.harnessId }
   }

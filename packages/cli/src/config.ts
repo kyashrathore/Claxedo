@@ -1,15 +1,11 @@
 import os from "node:os"
 import path from "node:path"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type CliConfig = {
   controlPlaneUrl: string
   appUrl: string
   stateDir: string
-}
-
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
 }
 
 function normalizedUrl(input: string) {
@@ -18,12 +14,12 @@ function normalizedUrl(input: string) {
 
 export function config(): CliConfig {
   const controlPlaneUrl = normalizedUrl(
-    clean(process.env.CLAXEDO_CONTROL_PLANE_URL) ?? clean(process.env.CLAXEDO_API_URL) ?? "https://app.claxedo.com",
+    trimToUndefined(process.env.CLAXEDO_CONTROL_PLANE_URL) ?? trimToUndefined(process.env.CLAXEDO_API_URL) ?? "https://app.claxedo.com",
   )
   return {
     controlPlaneUrl,
-    appUrl: normalizedUrl(clean(process.env.CLAXEDO_APP_URL) ?? "https://app.claxedo.com"),
-    stateDir: clean(process.env.CLAXEDO_HOME) ?? path.join(os.homedir(), ".claxedo"),
+    appUrl: normalizedUrl(trimToUndefined(process.env.CLAXEDO_APP_URL) ?? "https://app.claxedo.com"),
+    stateDir: trimToUndefined(process.env.CLAXEDO_HOME) ?? path.join(os.homedir(), ".claxedo"),
   }
 }
 

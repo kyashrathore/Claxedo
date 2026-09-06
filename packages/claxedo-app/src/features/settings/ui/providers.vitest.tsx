@@ -1,6 +1,8 @@
 /** Native catalog transport and provider-management affordances use the real hooks. */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+
+const clients = new Set<QueryClient>()
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal } from "solid-js"
 import { nativeHarness, connectionHarness, harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
@@ -151,6 +153,7 @@ const { useProviderAuth } = await import("@/app/providers/use-providers")
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
   return render(() => (
     <QueryClientProvider client={client}>
       <SettingsScopeProvider>
@@ -194,12 +197,17 @@ beforeEach(() => {
   }
 })
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  for (const client of clients) client.clear()
+  clients.clear()
+})
 
 describe("Settings → Providers reads under the selected (workspace, harness)", () => {
   test("provider authentication waits for explicit selection and uses the control plane", async () => {
     const [harness, setHarness] = createSignal("")
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
     const Probe = () => {
       const query = useProviderAuth(harness, () => "workspace:ws_local")
       return <div data-testid="auth-state">{query.isFetching ? "loading" : "idle"}</div>
@@ -308,6 +316,11 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
     )
     expect(state.credentialDeletes).toEqual([{ providerId: "api-provider", method: "DELETE" }])
     expect(state.connected).toEqual(["config-provider", "env-provider", "custom-provider"])
+    await waitFor(() => {
+      const disconnected = document.querySelector<HTMLElement>('[data-provider="api-provider"]')!
+      expect(within(disconnected).getByRole("button", { name: "common.connect" })).toBeVisible()
+      expect(within(disconnected).queryByRole("button", { name: "common.disconnect" })).toBeNull()
+    })
     expect(state.requests.at(-1)).toEqual({ scope: "workspace:ws_local", harness: "pi" })
   })
 })

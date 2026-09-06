@@ -2,6 +2,7 @@
 // own program from imports alone and never pick up this package's tsconfig
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
+import { trimToUndefined } from "@claxedo/helpers/string"
 import { WorkspaceRelayAuthError, verifyHostTunnelToken } from "./auth"
 import { bearerToken, errorBody } from "./http"
 import {
@@ -158,8 +159,8 @@ export function relayLocationHint(input: {
   region?: string
   country?: string
 }) {
-  const configured = clean(input.configured) ?? DEFAULT_RELAY_LOCATION_HINT
-  const region = clean(input.region)
+  const configured = trimToUndefined(input.configured) ?? DEFAULT_RELAY_LOCATION_HINT
+  const region = trimToUndefined(input.region)
   if (region) {
     // A caller may pass a literal CF hint (e.g. "weur") or a workspace region
     // name (e.g. "eu-west"); accept either.
@@ -168,7 +169,7 @@ export function relayLocationHint(input: {
     const mapped = direct ?? RELAY_REGION_TO_LOCATION_HINT[lowered]
     if (mapped) return mapped
   }
-  const country = clean(input.country)
+  const country = trimToUndefined(input.country)
   if (country) {
     const mapped = locationHintForCountry(country)
     if (mapped) return mapped
@@ -179,9 +180,9 @@ export function relayLocationHint(input: {
 /** The workspace region a request declares, if any. */
 export function relayRequestRegion(request: Request) {
   const url = new URL(request.url)
-  return clean(request.headers.get(RELAY_REGION_HEADER))
-    ?? clean(url.searchParams.get("region"))
-    ?? clean(url.searchParams.get("homeRegion"))
+  return trimToUndefined(request.headers.get(RELAY_REGION_HEADER))
+    ?? trimToUndefined(url.searchParams.get("region"))
+    ?? trimToUndefined(url.searchParams.get("homeRegion"))
 }
 
 /** The Cloudflare edge country for the request, when running on Cloudflare. */
@@ -324,9 +325,9 @@ export type WorkspaceRelayDurableObjectDrainController = {
 }
 
 const TUNNEL_PENDING_HTTP_CAP_DEFAULT = 32
-// Cap for STARTED streaming responses (SSE etc). A silent stream whose client
+// Cap for started streaming responses (SSE etc). A silent stream whose client
 // vanished cannot be detected (no write fails, cancel() may never fire), so on
-// overflow the OLDEST started stream is evicted — live clients just reconnect.
+// overflow the oldest started stream is evicted — live clients just reconnect.
 const TUNNEL_STARTED_STREAM_CAP_DEFAULT = 16
 const TUNNEL_CHANNEL_CAP_DEFAULT = 16
 const TUNNEL_REQUEST_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
@@ -343,16 +344,16 @@ const SLOW_CONSUMER_TIMEOUT_MS_DEFAULT = 30_000
 // few milliseconds before upstream connects.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 64
 // Bytes are the resource this queue actually consumes, and 64 tiny frames is
-// not a memory problem. Admitting on EITHER bound lets a legitimate burst of
+// not a memory problem. Admitting on either bound lets a legitimate burst of
 // small frames through while still capping real memory, so the close above is
 // reserved for traffic genuinely too large to hold.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
 const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const WORKSPACE_TARGET_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
-// Consecutive resolver-UNREACHABLE answers tolerated before an established
+// Consecutive resolver-unreachable answers tolerated before an established
 // connection is closed. 3 × the 30 s watcher interval survives ~90 s of resolver
-// downtime; previously a single 5xx closed every live session in the fleet at
-// once, with only the resolver client's 10 s cache as accidental grace.
+// downtime; a single 5xx would otherwise close every live session in the fleet
+// at once, with only the resolver client's 10 s cache as accidental grace.
 // Deliberately small: this is grace for an outage, not a way to outlive a
 // revocation. Worst-case revocation latency is unchanged — still bounded by the
 // token's own `exp`, which is checked locally and never graced.
@@ -405,7 +406,7 @@ type PendingTunnelHttpResponse = {
   bytes: number
   headers?: Headers
   status?: number
-  // Monotonic order in which the response STARTED streaming — used to evict
+  // Monotonic order in which the response started streaming — used to evict
   // the oldest (most likely orphaned) stream when the started-stream cap is
   // exceeded. Cloudflare does not reliably invoke ReadableStream.cancel()
   // when the downstream client disappears, so silent SSE streams can leak.
@@ -430,11 +431,6 @@ type RelayTrace = {
   phases: Array<{ name: string; ms: number }>
 }
 
-function clean(input: string | undefined | null) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function clampRate(input: number | undefined) {
   if (input === undefined || !Number.isFinite(input)) return 0
   if (input <= 0) return 0
@@ -443,8 +439,8 @@ function clampRate(input: number | undefined) {
 }
 
 function traceRequest(request: Request, routeKind: string, options: WorkspaceRelayDurableObjectRoomOptions): RelayTrace {
-  const id = clean(request.headers.get(TRACE_ID_HEADER)) ?? crypto.randomUUID()
-  const forceSecret = clean(options.traceForceHeaderSecret)
+  const id = trimToUndefined(request.headers.get(TRACE_ID_HEADER)) ?? crypto.randomUUID()
+  const forceSecret = trimToUndefined(options.traceForceHeaderSecret)
   const forced = !!forceSecret && request.headers.get(TRACE_FORCE_HEADER) === forceSecret
   const rate = clampRate(options.traceSampleRate)
   return {
@@ -562,7 +558,7 @@ function workspaceIdsFromSearch(url: URL) {
   return [...new Set([
     ...url.searchParams.getAll("workspaceId"),
     ...url.searchParams.getAll("workspace_id"),
-  ].map(clean).filter((item): item is string => !!item))]
+  ].map(trimToUndefined).filter((item): item is string => !!item))]
 }
 
 function randomToken() {
@@ -808,10 +804,10 @@ export function workspaceRelayDurableObjectRoomName(workspaceId: string) {
 
 export function workspaceRelayDurableObjectWorkspaceId(request: Request): string | undefined {
   const url = new URL(request.url)
-  const workspaceId = clean(workspaceIdFromRelayPath(url.pathname))
+  const workspaceId = trimToUndefined(workspaceIdFromRelayPath(url.pathname))
   if (workspaceId) return decodeURIComponent(workspaceId)
   if (!hostIdFromTunnelPath(url.pathname)) return undefined
-  return clean(url.searchParams.get("workspaceId")) ?? clean(url.searchParams.get("workspace_id"))
+  return trimToUndefined(url.searchParams.get("workspaceId")) ?? trimToUndefined(url.searchParams.get("workspace_id"))
 }
 
 function namespaceFromEnv(
@@ -953,7 +949,7 @@ export function createWorkspaceRelayDurableObjectGateway(
   return {
     async fetch(request: Request, env: WorkspaceRelayDurableObjectEnv = {}) {
       const gatewayStartedAt = performance.now()
-      const gatewayTraceId = clean(request.headers.get(TRACE_ID_HEADER)) ?? crypto.randomUUID()
+      const gatewayTraceId = trimToUndefined(request.headers.get(TRACE_ID_HEADER)) ?? crypto.randomUUID()
       const url = new URL(request.url)
       if (request.method === "OPTIONS" && (url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/host-tunnels/"))) {
         return corsPreflight(request)
@@ -1108,13 +1104,12 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
    * Rebuilds in-memory presence from the sockets the hibernation runtime still
    * holds, after this isolate woke with empty maps.
    *
-   * On the discarded-pending question (W6.2): a rebuilt tunnel starts with an
-   * empty `pending` map, and the review predicted an in-flight HTTP request's
-   * promise would therefore NEVER settle. Measured, it does settle. The rebuild
-   * runs at most once per isolate (`hibernatedSocketsRebuilt`) and always at the
-   * TOP of the first entry point, so it cannot run after a pending entry exists;
-   * anything in flight was created by this isolate AFTER the rebuild and keeps
-   * its own `forwardTimeoutMs` timer.
+   * A rebuilt tunnel starts with an empty `pending` map. That does not orphan
+   * an in-flight HTTP request's promise: the rebuild runs at most once per
+   * isolate (`hibernatedSocketsRebuilt`) and always at the top of the first
+   * entry point, so it cannot run after a pending entry exists — anything in
+   * flight was created by this isolate after the rebuild and keeps its own
+   * `forwardTimeoutMs` timer.
    *
    * That is an ordering invariant, not a structural guarantee, and nothing was
    * pinning it. Rather than add a durable pending index — which buys nothing,
@@ -1584,12 +1579,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     options.hibernatedRevocationCheckIntervalMs ?? HIBERNATED_REVOCATION_ALARM_INTERVAL_MS_DEFAULT
 
   /**
-   * Schedules the next hibernation-safe revocation sweep (W6b.2).
-   *
-   * MULTIPLEXING: a Durable Object has exactly one alarm slot, shared with
-   * anything else that might want it. So this only ever moves the alarm EARLIER
-   * — if something has already scheduled a sooner wake, that wake stands and the
-   * sweep runs then. It never clears an existing alarm.
+   * A Durable Object has exactly one alarm slot, shared with anything else
+   * that might want it, so scheduling this sweep only ever moves the alarm
+   * earlier — if something has already scheduled a sooner wake, that wake
+   * stands and the sweep runs then. It never clears an existing alarm.
    */
   const scheduleHibernatedRevocationCheck = async () => {
     const intervalMs = hibernatedRevocationIntervalMs()
@@ -1887,7 +1880,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
   const admitHostTunnel = async (request: Request, roomWorkspaceId: string, url: URL) => {
     if (!websocketRequest(request)) return json("websocket_upgrade_required", "Workspace Relay requires a WebSocket upgrade", 426)
-    const hostId = clean(hostIdFromTunnelPath(url.pathname))
+    const hostId = trimToUndefined(hostIdFromTunnelPath(url.pathname))
     if (!hostId) return json("host_tunnel_host_required", "Host tunnel id is required", 400)
     const workspaceIds = workspaceIdsFromSearch(url)
     if (!workspaceIds.includes(roomWorkspaceId)) {
@@ -2092,7 +2085,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     tunnel.channels.set(channelId, client)
     // Timers do not survive DO hibernation, which is why these are skipped on
     // that path. The alarm scheduled just below is what enforces revocation for
-    // an IDLE hibernated connection (W6b.2); the per-frame cached check in
+    // an idle hibernated connection; the per-frame cached check in
     // `handleUserHostedClientMessage` continues to cover active traffic.
     const activeTokenTimer = hibernation ? undefined : watchRuntimeAccessToken(client, (reason) => {
       closeSocket(pair.server, 1008, reason)
@@ -2308,9 +2301,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return json("relay_route_not_found", "Workspace Relay route not found", 404)
     },
     async webSocketMessage(socket: WorkspaceRelayDurableObjectSocket, message: string | ArrayBuffer) {
-      // Every throw below used to escape into the runtime, rejecting the DO's
-      // message promise with NO close and NO log: the connection stayed open, the
-      // client kept waiting, and nothing recorded why. A frame handler failing is
+      // An uncaught throw here would reject the DO's message promise with no
+      // close and no log: the connection would stay open, the client would
+      // keep waiting, and nothing would record why. A frame handler failing is
       // a relay-side bug, so it closes 1011 and says so — a client that sees a
       // close reconnects; one that sees silence hangs.
       try {
@@ -2328,7 +2321,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     },
     /**
      * Durable Object alarm entry point. Runs the hibernation-safe revocation
-     * sweep (W6b.2). The Worker must forward `alarm()` here.
+     * sweep. The Worker must forward `alarm()` here.
      */
     async alarm() {
       try {

@@ -10,12 +10,13 @@
  *
  * They narrow; they never assert. A caller that needs a richer shape composes
  * them (`str(rec(rec(x)?.data)?.message)`) rather than reaching for `as`.
+ *
+ * The plain-object test is the workspace-wide `isRecord`, re-exported so this
+ * module stays the package's single import for boundary narrowing.
  */
+import { isRecord } from "@claxedo/helpers/guards"
 
-/** The one plain-object test: a JSON object, never an array and never `null`. */
-export function isRecord(input: unknown): input is Record<string, unknown> {
-  return input !== null && typeof input === "object" && !Array.isArray(input)
-}
+export { isRecord } from "@claxedo/helpers/guards"
 
 /** The record view of `input`, or `undefined` when it is not a plain object. */
 export function rec(input: unknown): Record<string, unknown> | undefined {

@@ -1,7 +1,7 @@
-import { isOneOf, jsonRecord as rec } from "../../platform/runtime/lib/json"
+import { isOneOf } from "../../platform/runtime/lib/json"
 import { SESSION_ATTACHMENT_KINDS, type SessionAttachment } from "./types"
-export { jsonRecord as rec } from "../../platform/runtime/lib/json"
 import type { Workspace } from "../../workspace/store"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 
 
@@ -15,10 +15,6 @@ export function txt(input: unknown) {
 
 export function host(input: unknown) {
   return input === "workspace" ? input : undefined
-}
-
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }
 
 function uniq(input: string[]) {
@@ -39,7 +35,7 @@ export function attachments(input: unknown) {
   const seen = new Set<string>()
   const out: SessionAttachment[] = []
   for (const item of input) {
-    const row = rec(item)
+    const row = asRecord(item)
     const kind = txt(row?.kind)
     const targetID = txt(row?.targetID) ?? txt(row?.target_id)
     if (!targetID || !isOneOf(kind, SESSION_ATTACHMENT_KINDS)) continue
@@ -63,7 +59,7 @@ export function root(input: string, by: Map<string, { parentID?: string }>, seen
 }
 
 export function sessionModel(input: unknown): { providerID: string; modelID: string } | undefined {
-  const row = rec(input)
+  const row = asRecord(input)
   const providerID = txt(row?.providerID) ?? txt(row?.provider_id)
   const modelID = txt(row?.modelID) ?? txt(row?.model_id)
   if (!providerID || !modelID) return undefined
@@ -83,7 +79,7 @@ export function storedSessionRef(input: {
 }
 
 export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
-  const item = rec(input)
+  const item = asRecord(input)
   const session_id = txt(item?.id)
   if (!session_id || (item?.host !== undefined && !host(item.host))) return undefined
   const time = stamp(item)
@@ -114,7 +110,7 @@ export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
 }
 
 export function parseSessionMeta(input: unknown) {
-  const row = rec(input)
+  const row = asRecord(input)
   return {
     ...(row && "title" in row ? { title: txt(row.title) ?? null } : {}),
     ...(row && "parentID" in row ? { parentID: txt(row.parentID) ?? null } : {}),
@@ -124,10 +120,10 @@ export function parseSessionMeta(input: unknown) {
 }
 
 function stamp(input: unknown) {
-  const row = rec(input)
-  const time = rec(row?.time)
-  const created = num(time?.created) ?? num(row?.created_at) ?? now()
-  const updated = num(time?.updated) ?? num(row?.updated_at) ?? created
-  const archived = num(time?.archived) ?? num(row?.archived_at)
+  const row = asRecord(input)
+  const time = asRecord(row?.time)
+  const created = asFiniteNumber(time?.created) ?? asFiniteNumber(row?.created_at) ?? now()
+  const updated = asFiniteNumber(time?.updated) ?? asFiniteNumber(row?.updated_at) ?? created
+  const archived = asFiniteNumber(time?.archived) ?? asFiniteNumber(row?.archived_at)
   return { created, updated, archived }
 }

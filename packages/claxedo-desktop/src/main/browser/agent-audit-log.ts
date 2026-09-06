@@ -1,15 +1,15 @@
 /**
  * Append-only in-memory audit log of agent-initiated browser tool calls.
  *
- * Unit 4 wires `browser_screenshot` / `browser_evaluate_js` / `browser_navigate`
- * tool calls to also append to this log — downstream, the bound session shows
- * each entry as a system message so the user can *see* every agent-side action
+ * `browser_screenshot` / `browser_evaluate_js` / `browser_navigate` tool
+ * calls append to this log — downstream, the bound session shows each entry
+ * as a system message so the user can *see* every agent-side action
  * (prompt-injection audit trail).
  *
  * Keeping this as a process-local, in-memory ring for now is deliberate: it
  * must never block a tool call, and a desktop crash is cheap to recover from
  * (re-running the agent will re-log). Durable persistence can move to sqlite
- * later (see project_bun_migration / server-side stores).
+ * later.
  */
 
 export const MAX_AUDIT_ENTRIES = 500
@@ -94,5 +94,6 @@ export class AgentAuditLog {
   }
 }
 
-// Singleton — Unit 4 consumers import `agentAuditLog` directly.
+// Singleton — consumers import `agentAuditLog` directly rather than
+// constructing their own.
 export const agentAuditLog = new AgentAuditLog()

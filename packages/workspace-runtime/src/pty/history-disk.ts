@@ -92,9 +92,9 @@ export async function cleanupOrphanedHistory(
         }
       } catch {}
     }
-    // Deliberately NOT removing empty buckets. A session creates its bucket at
+    // Deliberately not removing empty buckets. A session creates its bucket at
     // startup and writes the file ~8ms later on the first flush; a sweep landing
-    // in that window would delete the directory out from under a LIVE terminal
+    // in that window would delete the directory out from under a live terminal
     // and every subsequent append would fail with ENOENT. The race is inherent
     // — there is no atomic "remove if still empty" — and an empty directory
     // costs a few bytes, so the trade is not close. Caught by
@@ -108,19 +108,15 @@ export async function cleanupOrphanedHistory(
  *
  * ## Why nothing is mirrored in memory
  *
- * This used to keep the ENTIRE history — up to `limit`, default 16 MB — in a
- * `string[]` in RAM as well as on disk, so `snapshot()` could be synchronous.
- * Two call sites needed it: compaction, and the cold-restore seed. Both can
- * read the file, and both happen at most once per session lifetime.
- *
- * That mirror was the single largest per-terminal cost on the server: 16M code
- * units is 16–32 MB of heap depending on content, held for the life of every
- * open terminal, for data that was already durable on disk and almost never
- * read. Six terminals could hold ~200 MB of scrollback nobody was looking at.
+ * Mirroring the full history — up to `limit`, default 16 MB — in a `string[]`
+ * would be the single largest per-terminal cost on the server: 16M code units
+ * is 16–32 MB of heap per open terminal, for data that is already durable on
+ * disk and read at most once per session lifetime (compaction and the
+ * cold-restore seed both read the file directly). Six terminals would hold
+ * ~200 MB of scrollback nobody is looking at.
  *
  * The live tail a running session serves (`Pty.snapshot`) comes from
- * `session.buffer`, which has its own separate 2 MB cap — so removing this
- * changed nothing about what a live client sees.
+ * `session.buffer`, which has its own separate 2 MB cap, independent of this.
  */
 export async function createDiskHistory(input: { directory: string; id: string; limit: number; sessionId?: string }) {
   const file = historyPath(input.directory, input.id)

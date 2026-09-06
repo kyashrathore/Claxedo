@@ -16,11 +16,10 @@ export const routes = {
 } as const
 
 /**
- * The CTAs the site actually renders. `cloud` ("Open Claxedo") and `deploy`
- * ("Deploy to Cloudflare") used to live here and were removed once no page
- * rendered them — an unused action keeps a conversion event name alive in
+ * The CTAs the site actually renders. Add an entry only alongside the page
+ * that renders it — an unused action keeps its conversion event name alive in
  * `analytics.ts`, which then reads like a live CTA to anyone auditing what the
- * site collects. Add one back only alongside the page that renders it.
+ * site collects.
  */
 export const marketingActions = {
   download: {

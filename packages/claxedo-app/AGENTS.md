@@ -101,7 +101,7 @@ Start here before making a nontrivial change in this package:
   retired experiment logs.
 - Per-directory `AGENTS.md` notes — several source directories carry their
   own scoped `AGENTS.md` with local rules (`src/architecture/`,
-  `src/app/demo/`, `src/features/browser/`, `src/features/extensions/`,
+  `src/features/browser/`, `src/features/extensions/`,
   `src/features/processes/`, `src/platform/runtime/agent/`,
   `src/platform/runtime/cloud/`, and most other `features/*` and `platform/*`
   roots — `find src -name AGENTS.md` lists them). Read the one covering the

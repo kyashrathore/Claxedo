@@ -1,11 +1,6 @@
 /**
- * NavigationRow / NavigationStatusDot — shared sidebar row primitive.
- *
- * Locks the behavior both navigation islands (session + terminal rows) now
- * share through this primitive: click/Enter/Space activation, `draggable`
- * wiring that seeds the workbench drag mime + typed payload, and the
- * status-dot color/aria mapping. Regressions here would previously have had to
- * be caught in two separate row implementations.
+ * NavigationRow / NavigationStatusDot: activation, drag source, and status-dot
+ * color/aria mapping shared by the session and terminal sidebar islands.
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -53,11 +48,8 @@ describe("NavigationRow", () => {
         <span>child</span>
       </NavigationRow>
     ))
-    // WP-C1: the row activates through a real <button> named after the row
-    // title, not a hand-rolled role="button" div. Enter/Space activation is now
-    // the platform's job (native button), so this locks the element type + the
-    // click path rather than synthesizing keydowns jsdom wouldn't turn into a
-    // click.
+    // Enter/Space is the native button's job; jsdom would not turn synthesized
+    // keydowns into a click, so only the tag and the click path are checked.
     const control = view.getByRole("button", { name: "Build sidebar" })
     expect(control.tagName).toBe("BUTTON")
     fireEvent.click(control)
@@ -105,13 +97,10 @@ describe("NavigationRow", () => {
       </NavigationRow>
     ))
     const row = view.getByTestId("row")
-    // WP-C3a finding 2: rows fill a VERTICAL scroll container, so `touch-action`
-    // must leave pan-y to the browser (the drag is gated behind a long-press) —
-    // NOT `none`, which killed sidebar touch scrolling entirely.
+    // `none` would kill sidebar touch scrolling; the drag is gated behind a
+    // long-press instead.
     expect(row.style.touchAction).toBe("pan-y")
     expect(row.getAttribute("data-session-id")).toBe("ses_1")
-    // WP-C1: the row container is a plain <div> now; its activate affordance is
-    // a real <button> (implicit role, no explicit role attribute on the row).
     expect(row.getAttribute("role")).toBeNull()
     expect(view.getByRole("button", { name: "Build sidebar" }).tagName).toBe("BUTTON")
   })

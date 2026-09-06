@@ -1,10 +1,7 @@
 /**
- * Claxedo extension surface (formerly @opencode-ai/app-shared).
- *
- * After Phase 4a-prep, claxedo owns its own extension types and a
- * single-tenant getExtensions() accessor. The plugin registry pattern
- * (multi-plugin map, globalThis dance, merge logic) is gone — only
- * claxedo registers, so the indirection had no consumer.
+ * Claxedo's extension surface: a single-tenant getExtensions() accessor, not a
+ * plugin registry (multi-plugin map, globalThis dance, merge logic) — only
+ * claxedo registers, so that indirection would have no consumer.
  */
 
 export interface AppExtensions {

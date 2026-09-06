@@ -1,23 +1,23 @@
 /**
- * `LiveSyncRoom` — the per-owner Durable Object that HOLDS hibernatable
+ * `LiveSyncRoom` — the per-owner Durable Object that holds hibernatable
  * WebSocket connections and can be rung from any Worker isolate. The public
  * Worker route bridges that internal socket to the browser's signed SSE
  * contract, so the Durable Object can park without a client migration.
  *
- * WHY A DO: on a single Node box, live-sync works via the in-memory
- * `claxedoBus` → SSE (`routes/events.ts`). On Cloudflare Workers there is no
- * shared memory across isolates, so a mutation handled by isolate A cannot
- * reach a client whose SSE stream is held by isolate B. A Durable Object is a
- * single-instance, name-addressable actor: every isolate routes
- * `env.LIVE_SYNC_ROOM.get(idFromName("owner:<id>"|"org:<id>"))` to the SAME
- * instance, which owns all of that owner's held streams. Any isolate POSTs a
+ * Why a Durable Object: on a single Node box, live-sync works via the
+ * in-memory `claxedoBus` → SSE (`routes/events.ts`). On Cloudflare Workers
+ * there is no shared memory across isolates, so a mutation handled by isolate
+ * A cannot reach a client whose SSE stream is held by isolate B. A Durable
+ * Object is a single-instance, name-addressable actor: every isolate routes
+ * `env.LIVE_SYNC_ROOM.get(idFromName("owner:<id>"|"org:<id>"))` to the same
+ * instance, which owns all of that owner's held streams. Any isolate posts a
  * nudge to that instance and the room fans it to every held connection.
  *
  * The public client remains SSE:
  * The hosted client connects with `fetch()` + a manually-read `ReadableStream`
  * and `Accept: text/event-stream` (see claxedo-app
- * `integrations/claxedo-events.tsx` `connect()` — it is SSE, NOT `EventSource`
- * and NOT a WebSocket, because it must attach a signed `Authorization: Bearer`
+ * `integrations/claxedo-events.tsx` `connect()` — it is SSE, not `EventSource`
+ * and not a WebSocket, because it must attach a signed `Authorization: Bearer`
  * header). The task requires preserving that client contract with zero client
  * changes, so `connectLiveSyncRoom` opens a private WebSocket to the room and
  * exposes its messages as `text/event-stream`. The room accepts the server end
@@ -42,7 +42,7 @@
  * sequence does to a stale cursor). The three invariants the sibling streams
  * established hold here too: `id:` on data frames and none on periodic
  * heartbeats, a bootstrap heartbeat carrying the resume cursor written before
- * anything else, and a cursor-less connection served NOTHING from the ring.
+ * anything else, and a cursor-less connection served nothing from the ring.
  */
 
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
@@ -54,21 +54,12 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
 
 const DEFAULT_HEARTBEAT_MS = 30_000
 /**
- * Held connections one room admits, across BOTH hold mechanisms.
+ * Held connections one room admits, across both hold mechanisms.
  *
- * Measured 2026-07-30 rather than asserted (see
- * `docs/cf-reliability-scalability-review-2026-07-28.md`, and the
- * harness at `scripts/bench/live-sync-capacity.ts`). The previous 256 was a
- * guess. One room under workerd held 16,000 concurrent bridged connections at a
- * 100% connect rate, fanning an org-wide nudge to all of them with a p99
- * arrival of 417ms; the first failures appeared around 16,300 and were the
- * HARNESS's transport, not the room (the room refused nothing — `capRefused=0`).
- * So 16k is a floor on the room's capability, not its ceiling.
- *
- * 2,000 is deliberately far below that: an 8x margin under the lowest number
- * measured, which keeps org-wide fan-out p99 near 50ms rather than 400ms. It
- * also comfortably clears the 1,000-connection org this work targets, which is
- * what makes sharding unnecessary — see the review doc for that decision.
+ * This is a deliberate margin below the room's measured capacity under
+ * workerd, not a guess: staying well under that ceiling keeps org-wide
+ * fan-out latency low, and comfortably clears the org sizes this work
+ * targets, which is what makes sharding unnecessary.
  *
  * Room work per nudge is one attachment read plus an `eventVisibleTo` filter
  * per held connection, so cost is linear in this number with a very small
@@ -87,9 +78,9 @@ const MAX_CONNECTIONS_CEILING = 16_000
 /**
  * Deployment override, read off the Worker env so the cap can be retuned (or
  * driven past its default by the capacity harness) without a code change. Both
- * counters resolve through THIS function — the WS and SSE paths hold
+ * counters resolve through this function — the WS and SSE paths hold
  * connections in different places but share one budget, and a room that
- * admitted the full cap on EACH would hold twice what was measured safe.
+ * admitted the full cap on each would hold twice what was measured safe.
  */
 function maxConnections(env: LiveSyncRoomEnv): number {
   const raw = env.LIVE_SYNC_MAX_CONNECTIONS
@@ -101,12 +92,12 @@ const SSE_QUEUE_LIMIT = 32
 const MAX_SOCKET_BUFFER_BYTES = 256 * 1024
 const HEARTBEAT: { type: "heartbeat" } = { type: "heartbeat" }
 
-// The room receives the resolved caller identity from the Worker (a TRUSTED
+// The room receives the resolved caller identity from the Worker (a trusted
 // internal DO fetch — DOs are unreachable from outside the Worker), so it can
 // apply `eventVisibleTo` per held connection without re-verifying the bearer.
-// NAMESPACE: `x-livesync-org` carries the AUTHORITY-INTERNAL org id resolved
-// at connect (`authority.resolveOrgId`), matching the namespace events are
-// stamped with — NEVER the raw the identity provider org claim (see `EventScopePrincipal`).
+// `x-livesync-org` carries the authority-internal org id resolved at connect
+// (`authority.resolveOrgId`), matching the namespace events are stamped
+// with — never the raw identity-provider org claim (see `EventScopePrincipal`).
 const HEADER_MODE = "x-livesync-mode"
 const HEADER_SUBJECT = "x-livesync-subject"
 const HEADER_ORG = "x-livesync-org"
@@ -115,7 +106,7 @@ const HEADER_HEARTBEAT_MS = "x-livesync-heartbeat-ms"
 const HEADER_LAST_EVENT_ID = "x-livesync-last-event-id"
 /**
  * Response header on the room's `/connect` reply carrying the cursor this
- * connection resumes from. The bridge cannot compute it: for a CURSOR-LESS
+ * connection resumes from. The bridge cannot compute it: for a cursor-less
  * client the resume point is the room's own `lastId()`, which only the room
  * knows, and getting it wrong is the difference between "everything from now
  * on" and "re-deliver the whole retained log on the next reconnect".
@@ -127,7 +118,7 @@ const HEADER_CURSOR = "x-livesync-cursor"
  * already fallen out of the room's retention window (or belongs to a sequence
  * this room no longer has — see `cursorAhead`). Deliberately the same shape and
  * `code` as `ClaxedoStreamGapEvent` in `routes/events.ts`: hosted and local
- * serve the SAME route to the SAME claxedo-app bundle, so a consumer that grows
+ * serve the same route to the same claxedo-app bundle, so a consumer that grows
  * a handler must not have to learn two spellings. Declared here rather than
  * imported because `routes/events.ts` pulls the process-local `claxedoBus` and
  * `hono/streaming`, neither of which may enter the Worker bundle.
@@ -146,7 +137,7 @@ type LiveSyncFrame = ClaxedoEvent | LiveSyncStreamGapEvent
 /**
  * Internal DO→bridge wire envelope. The room holds the ring, so the room is the
  * only party that knows a frame's `id:`; the bridge turns SSE bytes. Carrying
- * the id beside the frame keeps the PUBLIC wire unchanged — the bridge still
+ * the id beside the frame keeps the public wire unchanged — the bridge still
  * writes the bare event JSON on the `data:` line and adds `id:` as its own
  * line, exactly like the three already-resumable streams.
  */
@@ -170,13 +161,13 @@ function numericId(id: string | undefined) {
 }
 
 /**
- * True when the presented cursor is numerically AHEAD of everything this room
+ * True when the presented cursor is numerically ahead of everything this room
  * has ever assigned — proof that the sequence it came from is gone.
  *
  * Ids only ever increase within one room instance, so strictly-greater is
  * impossible in normal operation. It happens when the Durable Object was
  * evicted (its in-memory ring, and with it the counter, resets to zero) or when
- * the caller's room NAME changed (an org grant moves a client from
+ * the caller's room name changed (an org grant moves a client from
  * `owner:<subject>` to `org:<id>`, whose sequence is unrelated).
  *
  * `SseReplayBuffer` cannot detect this on its own: `hasGap` short-circuits to
@@ -225,7 +216,7 @@ type LiveSyncSocketAttachment = {
 /**
  * The resolved subscriber a live-sync connection is held for. `auth` is the
  * verified control-plane context (the identity provider claims — used only for heartbeat
- * reauthorization comparisons); `orgId` is the AUTHORITY-INTERNAL org id
+ * reauthorization comparisons); `orgId` is the authority-internal org id
  * resolved via `authority.resolveOrgId(auth)` at connect time, the identity
  * rooms are named with and `eventVisibleTo` scopes on. Absent `orgId` (no
  * authority composed) degrades to the subject-keyed owner room, where
@@ -254,9 +245,9 @@ function replayPrincipalKey(principal: EventScopePrincipal) {
 }
 
 /**
- * Derive the DO room NAME from a resolved subscriber. Org-scoped events
+ * Derive the DO room name from a resolved subscriber. Org-scoped events
  * (document.changed, provision) fan to every member of an org, so a subscriber
- * joins the room of their ACTIVE org — named by the authority-internal org id
+ * joins the room of their active org — named by the authority-internal org id
  * resolved at connect — and one POST reaches all members; owner-scoped events
  * (session.share.changed) are still narrowed to the right subject by the
  * per-connection `eventVisibleTo` filter inside the room. Signed callers with
@@ -271,20 +262,20 @@ export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
 }
 
 /**
- * The ONE publisher-side room-name derivation, applying the same
+ * The one publisher-side room-name derivation, applying the same
  * org-first/owner-fallback policy as `liveSyncRoomName` (which delegates here,
  * so subscriber and publisher cannot drift). A publisher that composes the
  * string by hand (`` `org:${orgId}` ``) silently disagrees with the subscriber
  * whenever its org field is absent or from the wrong namespace, and its events
  * strand in a room nobody is held in.
  *
- * NAMESPACE CONTRACT: room names live in the AUTHORITY-INTERNAL namespace —
+ * Room names live in the authority-internal namespace —
  * `orgId` must be the internal org id (SQLite `org_id`, i.e.
  * `authority.resolveOrgId` output, which is also what runtime-token claims and
  * document/provision event stamps carry) and `ownerUserId` the auth subject,
  * because that is the material `connectLiveSyncRoom` keys the subscriber's room
  * with. Issuer org claims (`org_...`,
- * `ControlPlaneAuthContext.user.orgId`) are a DIFFERENT namespace: passing one
+ * `ControlPlaneAuthContext.user.orgId`) are a different namespace: passing one
  * as `orgId` names a room no subscriber ever joins.
  *
  * Throws when the material cannot name a real room (absent, empty, or a
@@ -310,10 +301,11 @@ export function liveSyncRoomConnectHeaders(
   if (heartbeatMs && Number.isFinite(heartbeatMs) && heartbeatMs > 0) {
     headers[HEADER_HEARTBEAT_MS] = String(Math.floor(heartbeatMs))
   }
-  // Forwarded verbatim. The bearer is NOT re-verified inside the room, but the
-  // cursor is not an authorization input: every replayed frame still clears
-  // `eventVisibleTo` against the identity in the headers above, so a forged
-  // cursor can only change WHICH of the caller's own frames it receives.
+  // The header value is forwarded unchanged. The bearer is not re-verified
+  // inside the room, but the cursor is not an authorization input: every
+  // replayed frame still clears `eventVisibleTo` against the identity in the
+  // headers above, so a forged cursor can only change which of the caller's
+  // own frames it receives.
   if (lastEventId) headers[HEADER_LAST_EVENT_ID] = lastEventId
   return headers
 }
@@ -387,23 +379,29 @@ function liveSyncEvent(input: unknown): ClaxedoEvent | undefined {
   return undefined
 }
 
-declare global {
-  /**
-   * Declared rather than asserted: `WebSocketPair` exists only inside a Worker
-   * isolate, and this module is also built and unit-tested outside one. The
-   * lookup below goes through `globalThis` so an absent global is `undefined`
-   * rather than a `ReferenceError`.
-   */
-  var WebSocketPair: (new () => Record<number, LiveSyncSocket>) | undefined
+function isConstructor(value: unknown): value is new () => unknown {
+  return typeof value === "function"
 }
 
+function isLiveSyncSocket(value: unknown): value is LiveSyncSocket {
+  return value instanceof EventTarget && "send" in value && typeof value.send === "function" && "close" in value && typeof value.close === "function"
+}
+
+/**
+ * `WebSocketPair` is a workerd runtime global, and this module is also built
+ * and unit-tested outside a Worker isolate. It is looked up on `globalThis` so
+ * an absent global is `undefined` rather than a `ReferenceError`, and the pair
+ * it constructs is checked for the socket shape rather than asserted, because
+ * `@claxedo/workspace-relay` already declares the same global for its own
+ * socket model and a second ambient declaration collides with it.
+ */
 function defaultWebSocketPair() {
-  const Pair = globalThis.WebSocketPair
-  if (!Pair) return undefined
-  const pair = new Pair()
-  const client = pair[0]
-  const server = pair[1]
-  if (!client || !server) return undefined
+  const Pair: unknown = Reflect.get(globalThis, "WebSocketPair")
+  if (!isConstructor(Pair)) return undefined
+  const pair = asRecord(new Pair())
+  const client = pair?.[0]
+  const server = pair?.[1]
+  if (!isLiveSyncSocket(client) || !isLiveSyncSocket(server)) return undefined
   return { client, server }
 }
 
@@ -439,9 +437,9 @@ export class LiveSyncRoom {
    * happened to handle a mutation and read by a different one — empty exactly
    * when it matters. The Durable Object is the only single-instance,
    * name-addressable place in the hosted deployment: every `nudgeLiveSyncRoom`
-   * publisher and every subscriber for a room converge on THIS object, so the
+   * publisher and every subscriber for a room converge on this object, so the
    * ring, the id sequence, and the held connections are all colocated. That is
-   * also why the ring is per-ROOM rather than per-process — there is no
+   * also why the ring is per-room rather than per-process — there is no
    * per-process anything to hang it on.
    *
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
@@ -452,7 +450,7 @@ export class LiveSyncRoom {
    * still earns its keep: `isTerminalClaxedoEvent` protects the doorbells and
    * the `ready`/`error` provision settlements, whose loss is not self-healing.
    *
-   * ## Why in-memory and NOT `state.storage`
+   * ## Why in-memory and not `state.storage`
    *
    * The namespace is SQLite-backed (wrangler migration v3 declares
    * `new_sqlite_classes`), so durable storage is available and would survive
@@ -469,9 +467,9 @@ export class LiveSyncRoom {
    *  - The window the fix targets is the reconnect gap, and a room that was
    *    just woken by the nudge is still live across it.
    *
-   * The cost is a sequence that resets on eviction. That is not silent ON
-   * RECONNECT: `cursorAhead` turns a cursor from a lost sequence into the gap
-   * notice — but only at connect time. A connection HELD across the reset sees
+   * The cost is a sequence that resets on eviction. That is not silent on
+   * reconnect: `cursorAhead` turns a cursor from a lost sequence into the gap
+   * notice — but only at connect time. A connection held across the reset sees
    * the sequence go backwards with no notice; measured fail-safe both ways
    * (post-reset frames still deliver, and a stale cursor gets the gap notice
    * on its next reconnect) — see scripts/drill/live-sync-post-reset-resume-probe.ts.
@@ -489,7 +487,7 @@ export class LiveSyncRoom {
   ) {}
 
   /**
-   * The cursor a connection resumes from. A CURSOR-LESS connection resumes at
+   * The cursor a connection resumes from. A cursor-less connection resumes at
    * `lastId()` — "everything from now on" — so it is served nothing from the
    * ring. That matters even on a stream of doorbells: `provision` frames are
    * progress steps, so re-delivering a retained log to a fresh page would walk
@@ -541,7 +539,7 @@ export class LiveSyncRoom {
    * What to write to a connection at open time, after its bootstrap frame.
    *
    * The identity filter is applied when populating the principal's replay ring,
-   * HERE during replay drain, and in `handleNudge` for live writes. All three
+   * here during replay drain, and in `handleNudge` for live writes. All three
    * call the same `eventVisibleTo` with the same principal. The room is shared
    * by every member of an org, but cursor ids are minted only after a frame is
    * visible to that principal, so another member's traffic cannot create holes
@@ -551,7 +549,7 @@ export class LiveSyncRoom {
     const replay = this.replayFor(principal)
     const throughId = replay.lastId()
     if (cursorAhead(cursor, throughId) || replay.hasGap(cursor, throughId)) {
-      // The notice REPLACES the partial replay — a reader must refetch, not
+      // The notice replaces the partial replay — a reader must refetch, not
       // stitch a hole-ridden log into its incremental view. It carries only
       // cursor ids, no tenant data, so it bypasses the identity filter.
       return [{ frame: replayGapEvent(cursor, throughId) }]
@@ -621,7 +619,7 @@ export class LiveSyncRoom {
         // Initial hello so proxies flush headers and the client's stream
         // watchdog arms immediately (it only resets on `data:` lines). It
         // carries the cursor this connection resumes from, and is written
-        // BEFORE any replayed frame — without it the ring would be dead weight
+        // before any replayed frame — without it the ring would be dead weight
         // for the gap that matters most, because a reader only learns a cursor
         // by receiving a frame, so a reader that drops before its first frame
         // would reconnect cursor-less and never address the ring at all.
@@ -664,7 +662,7 @@ export class LiveSyncRoom {
     }
     const event = liveSyncEvent(input)
     if (!event) return Response.json({ error: "invalid nudge body" }, { status: 400 })
-    // Retain BEFORE fanning out, and once for the whole room, so a principal
+    // Retain before fanning out, and once for the whole room, so a principal
     // first seen after this nudge can seed its filtered ring. Each known
     // principal then mints its own compact id after `eventVisibleTo`; that same
     // id is used for the live write and later replay. Retention is unconditional
@@ -864,7 +862,7 @@ export function connectLiveSyncRoom(
         return true
       }
       /**
-       * Unwrap the internal id-carrying envelope back into the PUBLIC wire the
+       * Unwrap the internal id-carrying envelope back into the public wire the
        * hosted client already reads: the bare event JSON on `data:`, with `id:`
        * as its own line. claxedo-app captures `id:` before it decides whether a
        * frame has a payload it cares about, so an unhandled frame still
@@ -890,19 +888,19 @@ export function connectLiveSyncRoom(
           try {
             current = await reauthorize()
           } catch {
-            // Bearer tokens outlive nothing: a five-minute access token WILL
+            // Bearer tokens outlive nothing: a five-minute access token will
             // expire under a long-lived stream, and the re-check then throws
             // an AuthenticationError with the response already streaming — no
-            // 401 can exist anymore. That is the CLIENT's cue to reconnect
+            // 401 can exist anymore. That is the client's cue to reconnect
             // with a fresh token, not a server failure: erroring the stream
-            // here ended every wr/events invocation as an uncaught exception
-            // on a five-minute cycle. Close cleanly instead; the client's
-            // reconnect performs a full, fresh authorization.
+            // here would end every wr/events invocation as an uncaught
+            // exception on a five-minute cycle. Close cleanly instead; the
+            // client's reconnect performs a full, fresh authorization.
             stop()
             return
           }
           if (!sameSubscriber(subscriber, current)) {
-            // Same shape for a subscriber whose authorization CHANGED (org
+            // Same shape for a subscriber whose authorization changed (org
             // moved, actor revoked): the reconnect re-authorizes from scratch
             // and lands in the right room — or is refused with a real 401.
             stop()
@@ -928,7 +926,7 @@ export function connectLiveSyncRoom(
           })
           socket.addEventListener("close", () => stop())
           socket.addEventListener("error", () => stop(new Error("live-sync room socket failed")))
-          // The bootstrap frame is written BEFORE `accept()`, not after. The
+          // The bootstrap frame is written before `accept()`, not after. The
           // room has already queued this connection's replayed frames on the
           // socket, and accepting is what releases them; writing the cursor
           // first is the only ordering that guarantees a replayed frame can

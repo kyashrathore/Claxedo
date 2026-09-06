@@ -2,7 +2,6 @@
 # by any script in this repo; see root .gitignore's dist-* wildcard for the
 # rest of the build-target family)
 dist/
-dist-demo/
 
 # Dependencies (handled by root)
 node_modules/

@@ -107,22 +107,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     expect(navigated).toBe("/s/ses_1")
   })
 
-  test("non-draft path returns a deferred handoffCreatedSession callback", () => {
-    const result = applyCreatedSessionTargetEffects({
-      created: true,
-      session: { id: "ses_1" },
-      sourceScope: "scope-1",
-      sessionDirectory: "/repo/main",
-      shouldAutoAccept: false,
-      enableAutoAccept: () => undefined,
-      navigateOnCreate: true,
-      previousSessionId: "prev",
-      setLayoutTabs: () => undefined,
-      navigate: () => undefined,
-      publishCloudHandoff: () => undefined,
-    })
-    expect(typeof result.handoffCreatedSession).toBe("function")
-  })
+
 
   test("authoritative session ref wins over a stale catalog route id", async () => {
     const navigated: string[] = []
@@ -499,7 +484,7 @@ describe("applyCreatedSessionTargetEffects", () => {
   })
 
 
-  test("publishCloudHandoff fires with opening_session message when navigation runs", () => {
+  test("publishes the opening-session message before the deferred navigation callback", () => {
     let handoffMsg = ""
     applyCreatedSessionTargetEffects({
       created: true,

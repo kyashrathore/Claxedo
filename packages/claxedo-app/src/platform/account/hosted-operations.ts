@@ -4,7 +4,7 @@
  * The one app-owned registry of hosted operation IDs and their result shapes.
  *
  * `account-port.ts` says the renderer names an operation rather than building a
- * request. This says what each name MEANS to the renderer: what it takes, and
+ * request. This says what each name means to the renderer: what it takes, and
  * what comes back. Electron main holds the matching method-and-path table; the
  * two are held equal to
  * `docs/tech-docs/desktop-hosted-operation-matrix.md` from both sides.
@@ -38,12 +38,11 @@ export type DecodeResult<T> = { ok: true; value: T } | { ok: false; reason: stri
  * renderer needs in order to decide whether a retry is its own decision to
  * make. Anything unsafe is main's call.
  *
- * This used to say "because main is where the idempotency key lives". Main has
- * no idempotency key, for any operation — `claxedo-desktop`'s operation table
- * expresses a request as method + path + declared body and has no header seam,
- * and no route it names accepts a key in its body. So `safe: false` means
- * exactly what it says and nothing more: DO NOT RETRY. It is not a promise that
- * someone downstream will make a retry harmless.
+ * Main has no idempotency key, for any operation — `claxedo-desktop`'s
+ * operation table expresses a request as method + path + declared body and has
+ * no header seam, and no route it names accepts a key in its body. So
+ * `safe: false` means exactly what it says and nothing more: do not retry. It
+ * is not a promise that someone downstream will make a retry harmless.
  */
 export type HostedOperationSpec<T = unknown> = {
   safe: boolean
@@ -212,7 +211,7 @@ export const HOSTED_OPERATIONS = {
   "agentPlugins.sources.list": { safe: true, decode: statusResult },
   "agentPlugins.sources.add": { safe: false, decode: statusResult },
   "agentPlugins.sources.remove": { safe: true, decode: statusResult },
-  // An ENVELOPE, not a bare array: `GET /api/workspace` answers
+  // An envelope, not a bare array: `GET /api/workspace` answers
   // `{ workspaces: [...] }`, the same shape the local server's list handler
   // uses. Validated and passed through rather than unwrapped, because every
   // other row here validates without transforming and one decoder that quietly
@@ -236,7 +235,7 @@ export const HOSTED_OPERATIONS = {
   // answer without one is not a usable workspace.
   "workspace.create": { safe: false, decode: withStrings("workspaceId", "directory") },
   "workspace.lifecycle": { safe: false, decode: object },
-  // The lifecycle SNAPSHOT — lease, checkpoint, worktrees, runtime — not a
+  // The lifecycle snapshot — lease, checkpoint, worktrees, runtime — not a
   // list. The route is `GET /:id/checkpoints` and the name has misled twice.
   "workspace.checkpoints.list": { safe: true, decode: object },
   "workspace.checkpoints.create": { safe: false, decode: object },
@@ -261,11 +260,11 @@ export const HOSTED_OPERATIONS = {
   // public and worthless without the machine's private key.
   "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
   // Safe: the server extends an existing enrollment rather than creating
-  // anything, and a heartbeat that arrives twice is a heartbeat. A REJECTED one
+  // anything, and a heartbeat that arrives twice is a heartbeat. A rejected one
   // is not retried at all — the connector stops, because re-enrolling would be
   // it overruling a revocation.
   "host.enrollmentHeartbeat": { safe: true, decode: object },
-  // Workspace shares under machine-wide enrollment: the OWNER assigns a
+  // Workspace shares under machine-wide enrollment: the owner assigns a
   // workspace to an enrolled host (pure data — the machine's consent is the
   // Host Connector's signed heartbeat set). Main-only like the enrollment
   // trio; the renderer's route to sharing is the data-only

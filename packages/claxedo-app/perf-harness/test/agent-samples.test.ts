@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { rawMetricSample, readRawMetricSample, rendererClock } from "../src/agent-samples"
 
 describe("agent-app raw samples", () => {
-  test("emits a T3 protocol-compatible exact sample", () => {
+  test("records the supplied measurement identity, clock, and validity evidence", () => {
     expect(rawMetricSample({
       attemptId: "attempt-1",
       profile: "workspace-core-v1",
@@ -19,8 +19,13 @@ describe("agent-app raw samples", () => {
     })).toMatchObject({
       schemaVersion: 1,
       sampleId: "attempt-1-work_item.cold_open_ms",
+      attemptId: "attempt-1",
+      profile: "workspace-core-v1",
+      scenario: "work-item-cold-open-v1",
+      metric: "work_item.cold_open_ms",
       observation: { state: "exact", value: 12, unit: "ms" },
-      validity: { status: "valid" },
+      evidence: [{ name: "trusted-click-to-ready-paint", clockOwner: "claxedo-renderer", clockDomain: "performance.now", startTimestamp: 10, endTimestamp: 22 }],
+      validity: { status: "valid", evidence: [{ check: "target-visible", expectedCount: 1, actualCount: 1, passed: true }] },
     })
   })
 

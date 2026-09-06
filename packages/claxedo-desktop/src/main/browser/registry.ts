@@ -6,8 +6,8 @@
  * via `webContents.fromId(id)` and invokes `register()` here. `unregister()`
  * runs on pane close / webview destruction.
  *
- * Unit 2 only keeps the lifecycle bookkeeping. Attach/detach of CDP lives on
- * the `BrowserHandle` and is no-op here until Unit 3.
+ * Lifecycle bookkeeping only. CDP attach/detach lives on `BrowserHandle`;
+ * `unregister()` disposes the handle.
  */
 
 import type { WebContents } from "electron"

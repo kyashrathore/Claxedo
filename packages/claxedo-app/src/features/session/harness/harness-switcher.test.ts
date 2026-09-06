@@ -116,44 +116,27 @@ describe("harness switcher", () => {
     expect(remembered).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo" }])
   })
 
-  // The acp:codex Tier R repro. `setHarnessOnce` opens with
-  // `harnessSwitchStartPatch`, which sets `optionsLoading: true` for any
-  // harness that has config options — BEFORE the first `await`. Every
-  // abandon path after that (`!active()` once the workspace boot, the config
-  // POST, or the refresh resolves) returned without clearing it, and no
-  // options fetch was ever issued to clear it later. The model control renders
-  // "Loading models" straight off that flag with no other exit, so an
-  // abandoned switch stranded the composer for the life of the scope. Codex hit
-  // this most because its options endpoint is the slowest (~4s cold against a
-  // real binary), leaving the widest window for a supersede.
-  test("clears the loading flag when a switch is abandoned before options are fetched", async () => {
-    let releaseWorkspace: (value: WorkspaceBoot) => void = () => {}
-    let firstBoot = true
+  test("an abandoned switch cannot clear the newer selection's loading state", async () => {
+    const releases: Array<(value: WorkspaceBoot) => void> = []
     const switcher = switcherFor({
-      workspace: async () => {
-        if (!firstBoot) return { kind: "local" }
-        firstBoot = false
-        return await new Promise<WorkspaceBoot>((resolve) => {
-          releaseWorkspace = resolve
-        })
-      },
+      workspace: () => new Promise((resolve) => releases.push(resolve)),
     })
-
-    // The first switch parks on its workspace boot; a second switch for a
-    // different harness bumps the scope revision, so the first is abandoned the
-    // moment it resumes.
     const abandoned = switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })
-    void switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
-    releaseWorkspace({ kind: "local" })
+    const current = switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
+    const currentPatches = [...patches]
+    expect(currentPatches.at(-1)).toMatchObject({ harness: connectionHarness("claude-team"), optionsLoading: true })
+
+    releases[0]({ kind: "local" })
     await abandoned
 
-    expect(patches[0]).toMatchObject({ harness: connectionHarness("codex-team"), optionsLoading: true })
-    expect(optionFetches.some((item) => item.type === connectionHarness("codex-team"))).toBe(false)
-    // The abandoned switch must release the flag it raised: the last word on
-    // `optionsLoading` from any patch it emitted is `false`, never a dangling
-    // `true` that nothing else will ever lower.
-    const loadingPatches = patches.filter((patch) => patch.optionsLoading !== undefined)
-    expect(loadingPatches.at(-1)?.optionsLoading).toBe(false)
+    expect(patches).toEqual(currentPatches)
+    expect(optionFetches).toEqual([])
+    expect(remembered).toEqual([])
+
+    releases[1]({ kind: "local" })
+    await current
+    expect(optionFetches).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo", sessionId: "new" }])
+    expect(remembered).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo" }])
   })
 
   test("skips the local draft post for cloud and user-hosted workspace boots", async () => {

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { ACP_DANGER_TOOL_KINDS, CLAXEDO_AUTO_ANSWERS } from "@/features/session/permission/modes"
 import {
   autoResponseOwnsPermission,
   autoRespondsPermission,
@@ -19,21 +18,6 @@ const onFor = (sessionID: string) => ({ [acceptKey(sessionID, DIR)]: true })
 const onForDirectory = () => ({ [directoryAcceptKey(DIR)]: true })
 
 describe("isAutoApprovablePermission", () => {
-  // Regression guard: `CLAXEDO_AUTO_ANSWERS` DESCRIBES what Auto approves and this
-  // function DECIDES it. They drifted once — `question` was in the constant and
-  // missing from the decision — so the documented behaviour and the running
-  // behaviour disagreed. Pin them to the same set.
-  test("approves exactly the set CLAXEDO_AUTO_ANSWERS advertises", () => {
-    for (const key of CLAXEDO_AUTO_ANSWERS) {
-      expect(isAutoApprovablePermission(key)).toBe(true)
-    }
-    const advertised = new Set<string>(CLAXEDO_AUTO_ANSWERS)
-    for (const key of ["bash", "webfetch", "external_directory", "task", "skill", "doom_loop", "websearch"]) {
-      expect(advertised.has(key)).toBe(false)
-      expect(isAutoApprovablePermission(key)).toBe(false)
-    }
-  })
-
   // ACP harnesses send the protocol's `ToolKind`, not opencode's permission keys.
   // Before `toolCall.kind` was forwarded, `permission` held prose ("Read file
   // src/index.ts") and this matched NOTHING — auto-approve was inert on every ACP
@@ -45,22 +29,13 @@ describe("isAutoApprovablePermission", () => {
   })
 
   test("never approves ACP's risky ToolKinds", () => {
-    for (const kind of ACP_DANGER_TOOL_KINDS) {
-      expect(isAutoApprovablePermission(kind)).toBe(false)
-    }
-  })
-
-  // `delete`/`move` are file operations but must NOT ride along with `edit`, and
-  // `other` is the protocol catch-all for an unclassified request.
-  test("delete, move and other are excluded even though edit is allowed", () => {
-    expect(isAutoApprovablePermission("edit")).toBe(true)
-    for (const kind of ["delete", "move", "other"]) {
+    for (const kind of ["execute", "fetch", "delete", "move", "other"]) {
       expect(isAutoApprovablePermission(kind)).toBe(false)
     }
   })
 
   test("approves reads and in-project writes", () => {
-    for (const key of ["read", "glob", "grep", "list", "lsp", "edit", "todowrite"]) {
+    for (const key of ["read", "glob", "grep", "list", "lsp", "edit", "todowrite", "question"]) {
       expect(isAutoApprovablePermission(key)).toBe(true)
     }
   })

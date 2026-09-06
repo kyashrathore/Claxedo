@@ -95,9 +95,9 @@ export function panelReviewWorkingSetKey(input: ReviewVcsDirectory) {
 
 /**
  * The file path the working set's active tab points at, if the active tab is
- * a file tab. The files navigator restores its selection from this on reopen:
- * a consumed focus request is no longer replayed (it used to double as the
- * selection source), so the retained working set is the selection's owner.
+ * a file tab. The files navigator restores its selection from this on reopen;
+ * the retained working set is the selection's owner, not the (already
+ * consumed) focus request.
  */
 export function workingSetActiveFilePath(
   snapshot: ReviewWorkspaceWorkingSetSnapshot | undefined,
@@ -152,13 +152,13 @@ export function WorkspacePanelBody(props: {
   // retarget flush, moments before the panel disposed that body and built the
   // destination a second time.
   const directory = () => props.directory
-  // BUG-2: The session connecting gate (pages/session.tsx) only wraps the center
+  // The session connecting gate (`pages/session.tsx`) only wraps the center
   // pane. The Review panel lives here in ClaxedoLayout and would otherwise mount
-  // ReviewWorkspace ("Loading review...") against a relay-backed runtime that is not
-  // connected yet, or one the caller cannot reach (403). Gate the Review mount on
-  // workspace-readiness using the same workspace-relay-connection signal the
-  // session gate relies on. The sidebar session LIST stays live (central data);
-  // only the runtime-dependent Review surface waits.
+  // ReviewWorkspace ("Loading review...") against a relay-backed runtime that is
+  // not connected yet, or one the caller cannot reach (403). Gating the Review
+  // mount on workspace-readiness reuses the same workspace-relay-connection
+  // signal the session gate relies on; the sidebar session list stays live
+  // (central data) — only the runtime-dependent Review surface waits.
   const reviewWorkspaceId = () => {
     const dir = directory()
     return dir ? sessionWorkspaceRuntimeRef({ directory: dir })?.workspaceId : undefined
@@ -168,23 +168,23 @@ export function WorkspacePanelBody(props: {
     if (!workspaceId) return true
     return isWorkspaceReady(workspaceId)
   }
-  // Only a NEW focus request may steer the panel: a replayed unchanged one
+  // Only a new focus request may steer the panel: a replayed unchanged one
   // (kept by the slice across close) must not override the active tab restored
   // from the working set. The stale request is fixed at mount so consumption
-  // during THIS mount never retracts a focus the lazily loaded ReviewWorkspace
+  // during this mount never retracts a focus the lazily loaded ReviewWorkspace
   // has yet to read.
   const staleFocus = consumedPanelFocus.get(panelState())
   const focus = () => {
     const value = panelState().focus
     if (!value || isConsumedPanelFocus(value, staleFocus)) return undefined
-    // A focus request belongs to ONE workspace, and this body owns exactly one.
+    // A focus request belongs to one workspace, and this body owns exactly one.
     // The panel retains a recently-visited body beside the one it shows, and
     // both read the same live slice; without this, the retained body would
     // consume — through the shared `consumedPanelFocus` record — a request
     // aimed at the workspace the user just switched to, and the destination
     // would mount already believing that request had been served.
     //
-    // The test is the SLICE'S workspace against this body's pinned one, not
+    // The test is the slice's workspace against this body's pinned one, not
     // this body's displayed-ness: displayed-ness is derived from the very
     // slice a focus request steers, so subscribing the focus chain to it closes
     // a circle in the update graph (it recursed `runUpdates` without bound on
@@ -275,7 +275,7 @@ export function WorkspacePanelBody(props: {
   // Holds its last in-scope value while the focused pane has already moved to
   // another workspace. This body is being replaced by one built for that
   // workspace; projecting the incoming session into the review still mounted
-  // here would re-render the OUTGOING workspace's whole corpus, inside the
+  // here would re-render the outgoing workspace's whole corpus, inside the
   // click task, for a surface the user will never see.
   const targetContentId = createMemo<string | undefined>((previous) => {
     if (!ownsFocusedPane()) return previous

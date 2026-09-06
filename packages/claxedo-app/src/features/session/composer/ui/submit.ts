@@ -12,7 +12,7 @@ import { usePermission } from "@/features/session/providers/permission"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
-import { authFetch, getClaxedoServerUrl, isDemoMode } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
@@ -25,7 +25,7 @@ import { cloudSubmitMissingModel, resolvePromptSubmitConfig } from "./submit-mod
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { resolveSubmitMode, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
 import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
-import { admitPromptSubmission } from "../../commands/prompt-machine"
+import { admitPromptSubmission } from "../../commands/prompt-admission"
 import { createSubmitAbort } from "./submit-abort"
 import { createSubmitHarnessSelection } from "./mode-commands"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef } from "./submit-create-session"
@@ -162,7 +162,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       capturePromptSubmitScope(input, sdk.directory)
 
     const admission = admitPromptSubmission({
-      mode: input.composerMode(),
       bodyMd: text,
       imageCount: images.length,
       commentCount: input.commentCount(),
@@ -457,18 +456,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!target.created && persistedHarnessRef && sessionRef) {
       patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
     }
-    // Rail cache writes must run AFTER draft→session handoff. A synchronous
-    // upsert/reconcile remounts the sidebar first and the draft surface is no
-    // longer retargetable, so the URL stays on `/w/:id` (tier-real behavior 13).
-    // Follow-up turns must not bump the rail mid-submit either: reconcile
-    // remounts the session list while handleSubmit is still running and the
-    // composer restores the draft (tier-real T2 never leaves the input).
+    // Rail cache writes run after the draft→session handoff: a synchronous
+    // upsert/reconcile remounts the sidebar while the draft surface is still
+    // the target, leaving the URL stuck on `/w/:id`. Follow-up turns must not
+    // bump the rail mid-submit either — the remount restores the draft and the
+    // sent text reappears in the input.
     const bumpSessionRail = () => {
       if (!target.created) return
       // Signed public workspace ids are `ws_*` (or host === "workspace").
       // Local inventory UUID associations must keep directory-scoped rail
       // rows — stamping them as workspaceId duplicates the row under both
-      // `local:` and `workspace:` sessionRefs (tier-real local harness).
+      // `local:` and `workspace:` sessionRefs.
       bumpCreatedSessionRail({
         sessionId: session.id,
         title: provisionalTitle ?? "New Session",
@@ -634,14 +632,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       optimisticTimeline,
       runtimePromptClient,
       statusClient: signedControlPlane ? sessionClient(sessionDirectory, sessionHarnessType) : client,
-      demo: isDemoMode(),
       globalSDK,
       refreshDirectory: refreshPromptDirectory,
       clearInput: () => {
         clearInput()
-        // Follow-up turns: bump updatedAt only after the composer is cleared so a
-        // rail remount cannot restore the draft (tier-real T2). Create turns already
-        // wrote the optimistic row via bumpSessionRail.
+        // Follow-up turns bump updatedAt only after the composer is cleared so a
+        // rail remount cannot restore the draft; create turns already wrote the
+        // optimistic row via bumpSessionRail.
         if (target.created) return
         bumpExistingSessionRail({
           sessionId: session.id,

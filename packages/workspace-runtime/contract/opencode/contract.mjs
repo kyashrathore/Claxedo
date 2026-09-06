@@ -1,12 +1,11 @@
 /**
  * Executable contract probe for the pinned public OpenCode embedded SDK.
  *
- * Every assertion here corresponds to a numbered claim in
- * `docs/architecture/opencode-embedded-sdk-contract.md`. A failure means the
- * pinned release no longer behaves the way the cutover plan assumes, which is a
- * stop-and-re-plan signal — not something to work around in Claxedo code.
+ * `§n` on each check names the section of
+ * `docs/architecture/opencode-embedded-sdk-contract.md` it asserts. A failure
+ * means the pinned release drifted; move the pin, do not compensate in Claxedo.
  *
- * Shared by both entrypoints so there is exactly one set of assertions:
+ * Shared by both entrypoints so there is one set of assertions:
  *   probe.mjs      - imports the published package directly (needs Bun)
  *   probe-node.mjs - imports the Node bundle produced by build-node-bundle.ts
  */
@@ -49,11 +48,10 @@ export async function runContract(OpenCode) {
   check(3, "explicit database.path is honored", fs.existsSync(dbPath), true)
   check(3, "close() is present", typeof oc.close, "function")
   check(3, "asyncDispose is present", typeof oc[Symbol.asyncDispose], "function")
-  // Decision 4: the public interface must never hand a consumer a raw transport.
   check(3, "public interface exposes NO raw fetch", typeof oc.fetch, "undefined")
 
   // --- §6.2 Node V1 migration is a no-op ------------------------------------
-  // Diagnostic only. Readiness must come from semantic validation (Unit 6).
+  // Recorded, not asserted: this status flag is not a readiness signal.
   record(6.2, "migration.v1.status on a fresh db", await oc.migration.v1.status())
 
   // --- §7 API surface parity -------------------------------------------------
@@ -86,14 +84,12 @@ export async function runContract(OpenCode) {
   const listB = ids(await oc.sessions.list({ directory: wsB }))
   const listAll = ids(await oc.sessions.list({}))
 
-  // Decision 3 survives: directory-scoped listing really is isolated.
   check(4, "directory-scoped list isolates wsA", [listA.includes(a.id), listA.includes(b.id)], [true, false])
   check(4, "directory-scoped list isolates wsB", [listB.includes(b.id), listB.includes(a.id)], [true, false])
-  // ...but an unscoped list is host-global. The typed port must never expose one.
+  // An unscoped list is host-global; the typed port must never expose one.
   check(4, "unscoped list is host-global", listAll.length >= 2, true)
 
-  // Decision 13 is load-bearing: the SDK authorizes nothing by location.
-  // Claxedo's workspace scope is the ONLY barrier to a cross-workspace read.
+  // Claxedo's workspace scope is the only barrier to a cross-workspace read.
   const crossRead = await oc.sessions.get({ sessionID: b.id })
   check(4, "sessions.get performs NO location authorization", crossRead.location.directory, wsB)
 
@@ -107,8 +103,7 @@ export async function runContract(OpenCode) {
   const exported = await oc.sessions.export({ sessionID: a.id })
   check(6, "export envelope matches SessionTransferData", Object.keys(exported).sort(), ["info", "messages"])
   check(6, "export preserves session identity", exported.info.id, a.id)
-  // The legacy fork's CLI exporter writes the same `{ info, messages }` envelope,
-  // which is what makes the checkpoint 6a -> 6b transfer viable at all.
+  // The legacy fork's CLI exporter writes the same envelope; session transfer relies on it.
 
   // --- §5 Event durability assertions ---------------------------------------
   ac.abort()
@@ -127,12 +122,10 @@ export async function runContract(OpenCode) {
     check(5, "every event still carries an id", typeof connected.id, "string")
   }
 
-  // --- §2.3 Upstream layer-graph regression ---------------------------------
-  // beta-18314 captured an undefined FileSystemSearch dependency at build
-  // time, making every location-resolving call return an empty 500. Keep the
-  // public calls as the permanent contract instead of reaching into core.
-  // Resolve the catalogs after event teardown so the durability probe keeps
-  // exercising the same subscription lifecycle independently of catalog init.
+  // --- §2.3 Location-resolving calls answer ----------------------------------
+  // A broken core build once 500'd every location-resolving call; these stay
+  // public-API calls, never a reach into core. Run after event teardown so the
+  // durability probe is independent of catalog init.
   await checkResolves(2.3, "config.get resolves a location", () => oc.config.get({ location: { directory: wsA } }))
   await checkResolves(2.3, "agent.list resolves a location", () => oc.agent.list({ location: { directory: wsA } }))
   await checkResolves(2.3, "provider.list resolves a location", () =>
@@ -156,8 +149,8 @@ export async function runContract(OpenCode) {
   const failed = results.filter((r) => !r.ok)
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`)
   if (failed.length) {
-    console.log("\nA failure means the pinned SDK drifted from the cutover contract.")
-    console.log("Stop and re-plan against a later exact beta - do not compensate in Claxedo code.")
+    console.log("\nA failure means the pinned SDK drifted from the contract doc.")
+    console.log("Move the pin to a later exact beta - do not compensate in Claxedo code.")
   }
   return failed.length
 }

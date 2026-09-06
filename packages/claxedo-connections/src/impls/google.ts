@@ -1,5 +1,6 @@
 import { Google } from "../vendor/arctic/google.js"
 import type { FetchLike } from "../vendor/arctic/request.js"
+import { docsPort } from "../ports/index.js"
 import type { IntegrationDeclaration, IntegrationImpl, OAuthTokens } from "../types.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
 
@@ -60,21 +61,23 @@ export function googleIntegration(options: IntegrationFetchOptions & {
       id: "google",
       name: "Google",
       methods: ["oauth"],
-      capabilities: ["docs"],
     },
     impl: {
-      authorize(state, codeVerifier) {
-        const url = client.createAuthorizationURL(state, codeVerifier, options.scopes)
-        // Google only issues refresh tokens with these two parameters.
-        url.searchParams.set("access_type", "offline")
-        url.searchParams.set("prompt", "consent")
-        return url
-      },
-      async callback(code, codeVerifier) {
-        return toTokens(await client.validateAuthorizationCode(code, codeVerifier))
-      },
-      async refresh(refreshToken) {
-        return toTokens(await client.refreshAccessToken(refreshToken))
+      actions: { docs: docsPort },
+      auth: {
+        authorize(state, codeVerifier) {
+          const url = client.createAuthorizationURL(state, codeVerifier, options.scopes)
+          // Google only issues refresh tokens with these two parameters.
+          url.searchParams.set("access_type", "offline")
+          url.searchParams.set("prompt", "consent")
+          return url
+        },
+        async callback(code, codeVerifier) {
+          return toTokens(await client.validateAuthorizationCode(code, codeVerifier))
+        },
+        async refresh(refreshToken) {
+          return toTokens(await client.refreshAccessToken(refreshToken))
+        },
       },
     },
   }

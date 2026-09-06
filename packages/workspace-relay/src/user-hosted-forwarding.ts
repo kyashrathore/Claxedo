@@ -1,7 +1,7 @@
 import type { RelayAccess } from "./auth"
 
 /**
- * T26: the canonical "is this relay target user-hosted" rule.
+ * The canonical "is this relay target user-hosted" rule.
  *
  * A user-hosted workspace runs on the user's own laptop (backing:
  * "local-worktree"); a cloud workspace runs on a dedicated cloud VM
@@ -29,7 +29,7 @@ export function socketKindFor(target: { access: RelayAccess }): WorkspaceRelaySo
 }
 
 /**
- * T26 privacy rule: never forward the browser's `Cookie` header into a
+ * Privacy rule: never forward the browser's `Cookie` header into a
  * user-hosted workspace. Its host process runs on the user's own laptop and
  * may share a cookie jar with the browser (e.g. localhost dev tooling), so
  * passing cookies through verbatim risks leaking session data to the host.

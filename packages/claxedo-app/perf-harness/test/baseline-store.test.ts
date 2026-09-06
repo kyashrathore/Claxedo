@@ -60,7 +60,7 @@ describe("comparison", () => {
     expect(result.verdict).toBe("new")
   })
 
-  test("higher-is-better metrics are not scored backwards", () => {
+  test("longer frame times are scored as a regression", () => {
     // No such metric ships today, but the vocabulary allows one, and a
     // direction-blind comparison would silently invert it.
     const baseline = baselineWith({ renderer_task_p95_ms: { value: 10, samples: [10, 10, 10] } })

@@ -1,26 +1,22 @@
 import { ClaxedoDB, desc, eq } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable } from "./cloud.sql"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { jsonRecord as rec } from "@claxedo/server-core/platform/runtime/lib/json"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 function now() {
   return Date.now()
 }
 
-function txt(input: unknown) {
-  return typeof input === "string" ? input : undefined
-}
-
 function role(input: unknown) {
-  const row = rec(input)
-  const info = rec(row?.info)
-  return txt(row?.role) ?? txt(info?.role) ?? null
+  const row = asRecord(input)
+  const info = asRecord(row?.info)
+  return asString(row?.role) ?? asString(info?.role) ?? null
 }
 
 function messageId(input: unknown, session_id: string, ordinal: number) {
-  const row = rec(input)
-  const info = rec(row?.info)
-  return txt(row?.id) ?? txt(info?.id) ?? `${session_id}:${ordinal}`
+  const row = asRecord(input)
+  const info = asRecord(row?.info)
+  return asString(row?.id) ?? asString(info?.id) ?? `${session_id}:${ordinal}`
 }
 
 function cloud(ws: Workspace) {

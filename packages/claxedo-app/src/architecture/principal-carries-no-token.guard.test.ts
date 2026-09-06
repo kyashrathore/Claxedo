@@ -4,16 +4,10 @@ import path from "node:path"
 
 /**
  * The renderer's `Principal` must never carry bearer material or a way to mint
- * it.
- *
- * It used to expose `getToken`, and nothing ever called it — the capability was
- * pure surface area: a handle to bearer material on an object every component
- * reading `usePrincipal()` holds. Unit 6 makes that structural rather than
- * incidental, because Electron main becomes the sole owner of the desktop
- * account session and hands the renderer sanitized state plus named operations.
- * A token accessor here would be a second, contradictory path to the same
- * material — and the kind that is invisible in review, since it reads like an
- * ordinary field.
+ * it. Every component reading `usePrincipal()` holds this object; the account
+ * session's owner hands the renderer sanitized identity state plus named
+ * operations, and a token accessor here (once `getToken`, never called) would
+ * be a second path to the credential that reads like an ordinary field.
  */
 
 const APP_SRC = path.resolve(import.meta.dir, "..")

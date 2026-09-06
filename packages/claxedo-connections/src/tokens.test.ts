@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createIntegrationRegistry } from "./registry.js"
+import { docsPort } from "./ports/index.js"
 import { ConnectionTokenError, DefinitiveRefreshError, createTokenService } from "./tokens.js"
 import { createMemoryCredentialStore } from "./stores/memory.js"
 import type { ConnectionRow, OAuthTokens } from "./types.js"
@@ -26,8 +27,8 @@ function oauthHarness(input: {
 }) {
   const registry = createIntegrationRegistry()
   registry.register(
-    { id: "oauthy", name: "OAuthy", methods: ["oauth"], capabilities: ["docs"] },
-    (input.refresh ? { refresh: input.refresh } : {}),
+    { id: "oauthy", name: "OAuthy", methods: ["oauth"] },
+    { actions: { docs: docsPort }, auth: input.refresh ? { refresh: input.refresh } : {} },
   )
   const credentials = createMemoryCredentialStore()
   const seed = async () =>
@@ -46,8 +47,8 @@ describe("token service", () => {
     test(`key token preserves declared ${tokenType} authorization type`, async () => {
       const registry = createIntegrationRegistry()
       registry.register(
-        { id: "keyed", name: "Keyed", methods: ["key"], capabilities: ["docs"], keyTokenType: tokenType },
-        {},
+        { id: "keyed", name: "Keyed", methods: ["key"], keyTokenType: tokenType },
+        { actions: { docs: docsPort } },
       )
       const credentials = createMemoryCredentialStore()
       await credentials.put({ providerId: "integration:connection-1", kind: "api_key", secret: "key-secret" })
@@ -85,7 +86,7 @@ describe("token service", () => {
   test("missing key token type requires reconnect without resolving the secret", async () => {
     let reads = 0
     const registry = createIntegrationRegistry()
-    registry.register({ id: "keyed", name: "Keyed", methods: ["key"], capabilities: ["docs"] }, {})
+    registry.register({ id: "keyed", name: "Keyed", methods: ["key"] }, { actions: { docs: docsPort } })
     const credentials = createMemoryCredentialStore()
     await credentials.put({ providerId: "integration:connection-1", kind: "api_key", secret: "hidden-secret" })
     const tokens = createTokenService({

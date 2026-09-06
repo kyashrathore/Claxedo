@@ -240,8 +240,8 @@ describe("tail slope", () => {
   test("does not reduce the tail to its two endpoints", () => {
     const values = [0, 0, 0, 10, 20, 30, 5].map((mb) => mb * MB)
     const samples = sweepSamples(values)
-    const endpointSlope = (values.at(-1)! - values[2]) / (samples.at(-1)!.step - samples[2].step)
-    expect(tailSlope(samples)).not.toBeCloseTo(endpointSlope)
+    // Tail points (30,10), (40,20), (50,30), (60,5): covariance -25 / variance 500.
+    expect(tailSlope(samples)).toBeCloseTo(-0.05 * MB)
   })
 
   test("a sufficiently sampled flat curve reports zero", () => {
@@ -260,7 +260,7 @@ describe("tail slope", () => {
 })
 
 describe("settlement contract", () => {
-  test("requires three stable forced-GC observations", () => {
+  test("requires three stable observations", () => {
     const stable = [
       sample(50 * MB, 60),
       sample(50 * MB + 64 * 1024, 60),
@@ -327,20 +327,23 @@ describe("repeated sweep summary", () => {
     expect(summary.cacheCeilingSatisfied).toBe(true)
   })
 
-  test("one unstable or over-ceiling repetition invalidates the pooled contract", () => {
+  test.each([
+    { stable: false, cacheCeilingSatisfied: true },
+    { stable: true, cacheCeilingSatisfied: false },
+  ])("pools settlement and cache validity independently: %j", ({ stable, cacheCeilingSatisfied }) => {
     const summary = summarizeMemorySweeps([
       sweep(100, 20 * MB),
       sweep(200, 30 * MB, {
         settlement: {
           samples: [sample(30 * MB, 60)],
-          stable: false,
-          cacheCeilingSatisfied: false,
+          stable,
+          cacheCeilingSatisfied,
           diagnosticCacheCeilingSatisfied: true,
         },
       }),
     ])
-    expect(summary.allSettled).toBe(false)
-    expect(summary.cacheCeilingSatisfied).toBe(false)
+    expect(summary.allSettled).toBe(stable)
+    expect(summary.cacheCeilingSatisfied).toBe(cacheCeilingSatisfied)
   })
 
   test("portable records gate JS heap slope and settled heap separately", () => {

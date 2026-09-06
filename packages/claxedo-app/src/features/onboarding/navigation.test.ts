@@ -1,230 +1,102 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import type { OnboardingStepId } from "./registry"
 import {
-  backLocation,
-  canSkip,
-  initialLocation,
-  isSetupComplete,
-  nextLocation,
-  railSteps,
-  remainingCount,
-  resolveLocation,
-  selectLocation,
-  setupStepLocation,
-  stepPosition,
-  visibleSteps,
-  SETUP_DONE,
-  type SetupStepView,
+  backLocation, canSkip, initialLocation, isSetupComplete, nextLocation,
+  railSteps, remainingCount, resolveLocation, selectLocation, setupStepLocation,
+  stepPosition, visibleSteps, SETUP_DONE, type SetupStepView,
 } from "./navigation"
 
 function step(id: OnboardingStepId, overrides: Partial<SetupStepView> = {}): SetupStepView {
   return { id, applies: true, done: false, locked: false, skipped: false, optional: false, ...overrides }
 }
-
-/** The common shape: both required steps open, neither optional step applicable. */
-function freshLocalRun(): SetupStepView[] {
-  return [
-    step("project"),
-    step("ai"),
-    step("compute", { applies: false, optional: true }),
-    step("cloud-credentials", { applies: false, optional: true }),
-  ]
+function steps(): SetupStepView[] {
+  return [step("destination"), step("ai"), step("remote-access", { optional: true })]
 }
 
-/** A machine with a working sandbox provider token and a local credential. */
-function cloudCapableRun(): SetupStepView[] {
-  return [
-    step("project", { done: true }),
-    step("ai", { done: true }),
-    step("compute", { optional: true }),
-    step("cloud-credentials", { optional: true }),
-  ]
-}
-
-describe("visible steps", () => {
-  test("omits steps that do not apply", () => {
-    expect(visibleSteps(freshLocalRun()).map((s) => s.id)).toEqual(["project", "ai"])
+describe("setup navigation", () => {
+  test("locked steps remain counted in the rail but cannot be destinations", () => {
+    const run = [step("destination"), step("ai", { locked: true }), step("remote-access", { applies: false })]
+    expect(railSteps(run).map((s) => s.id)).toEqual(["destination", "ai"])
+    expect(visibleSteps(run).map((s) => s.id)).toEqual(["destination"])
+    expect(stepPosition(run, setupStepLocation("destination"))).toEqual({ index: 1, total: 2 })
+    expect(resolveLocation(run, "ai")).toEqual({ kind: "step", step: "destination" })
+    expect(resolveLocation(run, "remote-access")).toEqual({ kind: "step", step: "destination" })
+    expect(selectLocation(run, "ai", setupStepLocation("destination"))).toEqual({ kind: "step", step: "destination" })
+    expect(selectLocation(run, "remote-access", setupStepLocation("destination"))).toEqual({ kind: "step", step: "destination" })
   })
 
-  test("omits locked steps as destinations", () => {
-    const steps = [step("project"), step("ai", { locked: true })]
-    expect(visibleSteps(steps).map((s) => s.id)).toEqual(["project"])
+  test("entry chooses the first unfinished, unskipped step and then the recap", () => {
+    const run = steps()
+    expect(initialLocation(run)).toEqual({ kind: "step", step: "destination" })
+    expect(resolveLocation(run, undefined)).toEqual({ kind: "step", step: "destination" })
+    run[0] = step("destination", { done: true })
+    expect(initialLocation(run)).toEqual({ kind: "step", step: "ai" })
+    run[1] = step("ai", { done: true })
+    expect(initialLocation(run)).toEqual({ kind: "step", step: "remote-access" })
+    run[2] = step("remote-access", { optional: true, skipped: true })
+    expect(initialLocation(run)).toEqual({ kind: "done" })
   })
 
-  test("but keeps locked steps in the rail so the total does not grow", () => {
-    // "Step 1 of 2" must not become "Step 1 of 1" just because step 2 is not
-    // reachable until step 1 is done.
-    const steps = [step("project"), step("ai", { locked: true })]
-    expect(railSteps(steps).map((s) => s.id)).toEqual(["project", "ai"])
-    expect(stepPosition(steps, setupStepLocation("project"))).toEqual({ index: 1, total: 2 })
+  test("an open deep link is honored even for a completed step", () => {
+    const run = steps()
+    run[0] = step("destination", { done: true })
+    expect(resolveLocation(run, "ai")).toEqual({ kind: "step", step: "ai" })
+    expect(resolveLocation(run, "destination")).toEqual({ kind: "step", step: "destination" })
+    expect(selectLocation(run, "destination", setupStepLocation("ai"))).toEqual({ kind: "step", step: "destination" })
   })
 
-  test("the rail still omits steps that do not apply", () => {
-    expect(railSteps(freshLocalRun()).map((s) => s.id)).toEqual(["project", "ai"])
+  test("next advances, skips completed or skipped work, and stops at the recap", () => {
+    const run = steps()
+    expect(nextLocation(run, setupStepLocation("destination"))).toEqual({ kind: "step", step: "ai" })
+    run[1] = step("ai", { done: true })
+    expect(nextLocation(run, setupStepLocation("destination"))).toEqual({ kind: "step", step: "remote-access" })
+    run[1] = step("ai", { skipped: true })
+    expect(nextLocation(run, setupStepLocation("destination"))).toEqual({ kind: "step", step: "remote-access" })
+    expect(nextLocation(run, setupStepLocation("remote-access"))).toEqual({ kind: "done" })
+    expect(nextLocation(run, SETUP_DONE)).toEqual({ kind: "done" })
   })
 
-  test("includes optional steps once they apply", () => {
-    expect(visibleSteps(cloudCapableRun()).map((s) => s.id)).toEqual([
-      "project",
-      "ai",
-      "compute",
-      "cloud-credentials",
-    ])
-  })
-})
-
-describe("initial location", () => {
-  test("is the first unfinished step", () => {
-    expect(initialLocation(freshLocalRun())).toEqual(setupStepLocation("project"))
+  test("back follows visible steps, including completed work", () => {
+    const run = steps()
+    expect(backLocation(run, setupStepLocation("destination"))).toBeUndefined()
+    expect(backLocation(run, setupStepLocation("ai"))).toEqual({ kind: "step", step: "destination" })
+    expect(backLocation(run, SETUP_DONE)).toEqual({ kind: "step", step: "remote-access" })
+    run[1] = step("ai", { applies: false })
+    expect(backLocation(run, setupStepLocation("remote-access"))).toEqual({ kind: "step", step: "destination" })
   })
 
-  test("skips finished steps", () => {
-    const steps = freshLocalRun()
-    steps[0] = step("project", { done: true })
-    expect(initialLocation(steps)).toEqual(setupStepLocation("ai"))
+  test("only unfinished visible optional steps can be skipped", () => {
+    const run = steps()
+    expect(canSkip(run, setupStepLocation("destination"))).toBe(false)
+    expect(canSkip(run, setupStepLocation("remote-access"))).toBe(true)
+    expect(canSkip(run, SETUP_DONE)).toBe(false)
+    run[2] = step("remote-access", { optional: true, done: true })
+    expect(canSkip(run, setupStepLocation("remote-access"))).toBe(false)
+    run[2] = step("remote-access", { optional: true, locked: true })
+    expect(canSkip(run, setupStepLocation("remote-access"))).toBe(false)
   })
 
-  test("skips steps the user chose to skip", () => {
-    const steps = cloudCapableRun()
-    steps[2] = step("compute", { optional: true, skipped: true })
-    expect(initialLocation(steps)).toEqual(setupStepLocation("cloud-credentials"))
+  test("progress counts unfinished visible work and has no recap position", () => {
+    const run = steps()
+    expect(stepPosition(run, setupStepLocation("ai"))).toEqual({ index: 2, total: 3 })
+    expect(stepPosition(run, SETUP_DONE)).toBeUndefined()
+    expect(remainingCount(run)).toBe(3)
+    run[0] = step("destination", { done: true })
+    run[2] = step("remote-access", { optional: true, skipped: true })
+    expect(remainingCount(run)).toBe(1)
+    run[1] = step("ai", { locked: true })
+    expect(remainingCount(run)).toBe(0)
   })
 
-  test("is the recap once nothing is left", () => {
-    const steps = freshLocalRun().map((s) => ({ ...s, done: true }))
-    expect(initialLocation(steps)).toEqual(SETUP_DONE)
-  })
-})
-
-describe("deep links", () => {
-  test("an applicable open step is honoured", () => {
-    const steps = freshLocalRun()
-    steps[0] = step("project", { done: true })
-    expect(resolveLocation(steps, "ai")).toEqual(setupStepLocation("ai"))
-  })
-
-  test("a locked step falls back to the first open step (D10)", () => {
-    const steps = [step("project"), step("ai", { locked: true })]
-    expect(resolveLocation(steps, "ai")).toEqual(setupStepLocation("project"))
-  })
-
-  test("a step that does not apply falls back", () => {
-    expect(resolveLocation(freshLocalRun(), "compute")).toEqual(setupStepLocation("project"))
-  })
-
-  test("no request lands on the first open step", () => {
-    expect(resolveLocation(freshLocalRun(), undefined)).toEqual(setupStepLocation("project"))
-  })
-})
-
-describe("next", () => {
-  test("advances to the following step", () => {
-    expect(nextLocation(freshLocalRun(), setupStepLocation("project"))).toEqual(setupStepLocation("ai"))
-  })
-
-  test("jumps over steps that are already done", () => {
-    const steps = cloudCapableRun()
-    steps[2] = step("compute", { optional: true, done: true })
-    expect(nextLocation(steps, setupStepLocation("ai"))).toEqual(setupStepLocation("cloud-credentials"))
-  })
-
-  test("reaches the recap from the last step", () => {
-    expect(nextLocation(freshLocalRun(), setupStepLocation("ai"))).toEqual(SETUP_DONE)
-  })
-
-  test("cannot advance past the recap", () => {
-    expect(nextLocation(freshLocalRun(), SETUP_DONE)).toEqual(SETUP_DONE)
-  })
-})
-
-describe("back", () => {
-  test("is absent on the first step", () => {
-    expect(backLocation(freshLocalRun(), setupStepLocation("project"))).toBeUndefined()
-  })
-
-  test("returns to the previous visible step", () => {
-    expect(backLocation(freshLocalRun(), setupStepLocation("ai"))).toEqual(setupStepLocation("project"))
-  })
-
-  test("steps over a step that does not apply", () => {
-    const steps = cloudCapableRun()
-    steps[2] = step("compute", { applies: false, optional: true })
-    expect(backLocation(steps, setupStepLocation("cloud-credentials"))).toEqual(setupStepLocation("ai"))
-  })
-
-  test("returns from the recap to the last step", () => {
-    expect(backLocation(freshLocalRun(), SETUP_DONE)).toEqual(setupStepLocation("ai"))
-  })
-})
-
-describe("selecting from the rail", () => {
-  test("moves to the selected step", () => {
-    const from = setupStepLocation("project")
-    expect(selectLocation(freshLocalRun(), "ai", from)).toEqual(setupStepLocation("ai"))
-  })
-
-  test("selecting a locked step is a no-op (D9)", () => {
-    const steps = [step("project"), step("ai", { locked: true })]
-    const from = setupStepLocation("project")
-    expect(selectLocation(steps, "ai", from)).toEqual(from)
-  })
-
-  test("selecting a done step is allowed — review is not a mistake", () => {
-    const steps = cloudCapableRun()
-    const from = setupStepLocation("compute")
-    expect(selectLocation(steps, "project", from)).toEqual(setupStepLocation("project"))
-  })
-})
-
-describe("skip", () => {
-  test("required steps cannot be skipped", () => {
-    expect(canSkip(freshLocalRun(), setupStepLocation("ai"))).toBe(false)
-  })
-
-  test("optional steps can", () => {
-    expect(canSkip(cloudCapableRun(), setupStepLocation("compute"))).toBe(true)
-  })
-
-  test("a finished optional step has nothing to skip", () => {
-    const steps = cloudCapableRun()
-    steps[2] = step("compute", { optional: true, done: true })
-    expect(canSkip(steps, setupStepLocation("compute"))).toBe(false)
-  })
-
-  test("the recap has no skip", () => {
-    expect(canSkip(cloudCapableRun(), SETUP_DONE)).toBe(false)
-  })
-})
-
-describe("progress", () => {
-  test("counts only visible steps", () => {
-    expect(stepPosition(freshLocalRun(), setupStepLocation("ai"))).toEqual({ index: 2, total: 2 })
-  })
-
-  test("grows when optional steps become applicable", () => {
-    expect(stepPosition(cloudCapableRun(), setupStepLocation("compute"))).toEqual({ index: 3, total: 4 })
-  })
-
-  test("has no position on the recap", () => {
-    expect(stepPosition(freshLocalRun(), SETUP_DONE)).toBeUndefined()
-  })
-
-  test("remaining counts unfinished, unskipped steps", () => {
-    expect(remainingCount(cloudCapableRun())).toBe(2)
-  })
-})
-
-describe("completion", () => {
-  test("requires every required step", () => {
-    expect(isSetupComplete(freshLocalRun())).toBe(false)
-  })
-
-  test("ignores optional steps", () => {
-    expect(isSetupComplete(cloudCapableRun())).toBe(true)
-  })
-
-  test("ignores required steps that do not apply", () => {
-    const steps = [step("project", { done: true }), step("ai", { applies: false })]
-    expect(isSetupComplete(steps)).toBe(true)
+  test("completion requires all applicable required steps, including locked ones", () => {
+    const run = steps()
+    expect(isSetupComplete(run)).toBe(false)
+    run[0] = step("destination", { done: true })
+    run[1] = step("ai", { locked: true })
+    expect(isSetupComplete(run)).toBe(false)
+    run[1] = step("ai", { done: true })
+    expect(isSetupComplete(run)).toBe(true)
+    run[1] = step("ai", { applies: false })
+    expect(isSetupComplete(run)).toBe(true)
   })
 })

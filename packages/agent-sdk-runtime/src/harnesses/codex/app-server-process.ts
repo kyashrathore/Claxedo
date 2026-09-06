@@ -7,7 +7,8 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
-import { errorMessage, record, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
+import { asRecord } from "@claxedo/helpers/guards"
+import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 
 const log = Log.create({ service: "codex-app-server-process" })
@@ -266,7 +267,7 @@ export class CodexAppServerProcess {
   private handleLine(line: string) {
     let message: JsonRecord | undefined
     try {
-      message = record(JSON.parse(line))
+      message = asRecord(JSON.parse(line))
     } catch {
       message = undefined
     }
@@ -294,7 +295,7 @@ export class CodexAppServerProcess {
     const pending = this.pending.get(id)
     if (!pending) return
     this.pending.delete(id)
-    const error = record(message.error)
+    const error = asRecord(message.error)
     if (error) {
       pending.reject(new Error(text(error.message) ?? `codex app-server request ${id} failed`))
       return

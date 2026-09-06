@@ -3,39 +3,19 @@
  * Generates e2e/fixtures/harness-traces/<harness>.json for
  * e2e/playwright/core-harness-rendering-matrix.spec.ts.
  *
- * WHY THIS SCRIPT EXISTS:
- * the rendering-matrix spec must replay each harness family's REAL translated event
- * trace through the mocked SSE stream, not a hand-invented one. This script is the
- * single source of truth for those traces: it runs the ACTUAL production code from
- * `@claxedo/agent-event-runtime` (the harness adapters + the client-presentation
- * projection — the same pipeline claxedo-server runs in production, see
- * packages/workspace-runtime/src/session/service.ts) over RAW harness event payloads
- * copied/composed from that package's OWN test fixtures:
- *   - packages/agent-event-runtime/src/harnesses/acp/golden-compat.test.ts
- *   - packages/agent-event-runtime/src/harnesses/acp/event-translator.test.ts
- *   - packages/agent-event-runtime/src/harnesses/claude/adapter.test.ts
- *   - packages/agent-event-runtime/src/harnesses/codex/adapter.test.ts
- *   - packages/agent-event-runtime/src/harnesses/cursor/adapter.test.ts
+ * Each trace is produced by running the real `@claxedo/agent-event-runtime` adapters and
+ * the client-presentation projection over raw harness payloads taken from that package's
+ * own adapter tests. Only the raw inputs live here; the output is never hand-edited.
  *
- * The RAW payloads below are copied from (or are minor recombinations of) those
- * files' `agent.ingest({...})` calls — never hand-invented compat/SSE shapes. Only the
- * translation OUTPUT is generated (never hand-edited) by actually running the adapter
- * + projection code, per DoD #4 ("a script regenerates them; hand-edited fixtures are
- * rejected").
+ * "opencode" and "pi" have no adapter because they already speak the native compat shape.
+ * Their traces are authored as literal CompatEnvelope objects in the shape
+ * `createClientPresentationProjection` produces (`opencodeNativeTrace`); Pi reuses the
+ * same generator with a reduced scenario.
  *
- * TWO DOCUMENTED EXCEPTIONS (no adapter exists to derive from):
- *   - "opencode" (native harness): there is no packages/agent-event-runtime adapter
- *     for it — `find packages/agent-event-runtime/src/harnesses` has no opencode
- *     directory — because opencode's own SSE events ARE the target compat shape
- *     already (nothing to translate). Its trace is authored directly as literal
- *     CompatEnvelope objects matching the exact shape `createClientPresentationProjection`
- *     produces for every other harness (see OPENCODE_NATIVE_TRACE below).
- *   - "pi": there is no pi-specific code anywhere under packages/agent-event-runtime
- *     either (grep confirmed zero hits). Per project memory, Pi is a fixed-model
- *     harness built on the same opencode engine, so it speaks the native opencode
- *     compat format directly too. Its trace reuses the opencode-native generator with
- *     a reduced scenario (Pi's spec 10 coverage only needs to prove it shares the
- *     native rendering path, not repeat the full matrix — see the spec's SPEC block).
+ * The `<harness>` in the filename (and in `identity()`'s `directory`/`sessionID`) is a
+ * trace family name, not a harness identity: `claude-acp` means "recorded from Claude over
+ * ACP", while the app speaks `acp:claude`. The spec maps between them
+ * (`HARNESS_IDENTITY_BY_FIXTURE`) so committed traces stay byte-stable.
  *
  * FIXTURE KEY vs HARNESS IDENTITY: the `<harness>` in the filename (and in the
  * `directory`/`sessionID` strings `identity()` bakes into every envelope) is a
@@ -124,8 +104,8 @@ function runAdapter<State>(input: {
 // rules (Terminal->bash, "Read File"->read, "Task"->task, "Update TODOs"->todowrite).
 // ---------------------------------------------------------------------------
 const CLAUDE_ACP_RAW: RawEvent[] = [
-  // Cumulative-snapshot text dedup (behavior 1): second chunk repeats the first's
-  // prefix — only the NEW suffix should become a text-delta.
+  // Cumulative-snapshot text dedup: the second chunk repeats the first's prefix, and
+  // only the new suffix becomes a text-delta.
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -136,8 +116,8 @@ const CLAUDE_ACP_RAW: RawEvent[] = [
     method: "session/update",
     payload: { sessionUpdate: "agent_message_chunk", messageId: "message-1", content: { type: "text", text: "Building the feature now." } },
   },
-  // Terminal -> bash normalization (behavior 16) + evidence preserved through a
-  // completion whose own rawOutput is null (behavior 3/5 lifecycle).
+  // Terminal -> bash normalization, with evidence preserved through a completion whose
+  // own rawOutput is null.
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -185,7 +165,7 @@ const CLAUDE_ACP_RAW: RawEvent[] = [
     method: "session/update",
     payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-task-1", status: "completed" },
   },
-  // "Update TODOs" -> todowrite, never a tool row (behavior 9).
+  // "Update TODOs" -> todowrite, never a tool row.
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -199,7 +179,7 @@ const CLAUDE_ACP_RAW: RawEvent[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// codex-acp — raw ACP payloads: the exact Permission trace from golden-compat.test.ts
+// codex-acp — raw ACP payloads: the Permission trace from golden-compat.test.ts
 // ("maps a representative Codex ACP trace...") plus an apply_patch tool_call using the
 // registry's `names: ["apply_patch"]` discriminator (see registry.ts + state.ts's
 // `name()` extraction from rawInput._toolName/toolName/tool/name).
@@ -210,8 +190,8 @@ const CODEX_ACP_RAW: RawEvent[] = [
     method: "session/update",
     payload: { sessionUpdate: "agent_message_chunk", messageId: "message-1", content: { type: "text", text: "Patching the config." } },
   },
-  // Codex's fake "Permission" tool -> permission.asked (dock), never a tool row
-  // (behavior 12) — payload copied verbatim from golden-compat.test.ts.
+  // Codex's fake "Permission" tool -> permission.asked (dock), never a tool row;
+  // payload from golden-compat.test.ts.
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -222,16 +202,10 @@ const CODEX_ACP_RAW: RawEvent[] = [
       rawInput: { tool: "shell", reason: "Needs access", scopes: ["/repo"] },
     },
   },
-  // apply_patch tool_call. VERIFIED-REAL FINDING (not asserted as "apply_patch" —
-  // see the spec's HARNESS NOTES): registry.ts's codex-acp rule sets
-  // `short: "apply_patch", intent: "edit"`, but state.ts's `pick()` unconditionally
-  // does `if (nextIntent === "edit") short = "edit"` (line ~496) AFTER the registry
-  // lookup, with no exception for mode==="apply_patch". So Codex ACP's apply_patch
-  // tool_call actually renders through the generic "edit" ToolRegistry entry, not a
-  // dedicated "apply_patch" one — this trace intentionally proves THAT real behavior.
-  // The dedicated "apply_patch" renderer (multi-file accordion) IS proven separately
-  // via the opencode-native trace below, where opencode's own built-in tool is
-  // literally named "apply_patch".
+  // apply_patch tool_call. registry.ts's codex-acp rule sets `short: "apply_patch"`, but
+  // state.ts's `pick()` then rewrites `short` to "edit" for any edit intent, so this renders
+  // through the generic "edit" entry. The dedicated apply_patch renderer is covered by the
+  // opencode-native trace, where the tool is named "apply_patch".
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -267,7 +241,7 @@ const CODEX_ACP_RAW: RawEvent[] = [
 const CODEX_APP_SERVER_RAW: RawEvent[] = [
   { source: "codex.app-server", method: "item/agentMessage/delta", payload: { itemId: "msg-1", delta: "Inspecting the repo." } },
   { source: "codex.app-server", method: "item/reasoning/textDelta", payload: { delta: "Checking test coverage first." } },
-  // Codex plan stream renders as ORDINARY TEXT (behavior 11 — no plan part/dock).
+  // Codex plan stream renders as ordinary text (no plan part/dock).
   { source: "codex.app-server", method: "item/plan/delta", payload: { delta: "- inspect tests\n" } },
   { source: "codex.app-server", method: "item/completed", payload: { item: { id: "plan-1", type: "plan", text: "- inspect tests\n- run suite" } } },
   {
@@ -275,21 +249,21 @@ const CODEX_APP_SERVER_RAW: RawEvent[] = [
     method: "item/completed",
     payload: { item: { id: "cmd-1", type: "commandExecution", command: "git status", cwd: "/repo", output: "clean" } },
   },
-  // Diagnostics never render as a message row (behavior 17).
+  // Diagnostics never render as a message row.
   { source: "codex.app-server", method: "hook/started", payload: { threadId: "thread-1", turnId: "turn-1", run: { id: "hook-1" } } },
 ]
 
 // ---------------------------------------------------------------------------
 // cursor-acp — raw payloads from event-translator.test.ts's "emits only unseen
 // assistant text..." (reused shape) and "drops Cursor ACP writable-iterable
-// transport tail text" (verbatim), plus Terminal->bash and Update TODOs.
+// transport tail text", plus Terminal->bash and Update TODOs.
 // ---------------------------------------------------------------------------
 const CURSOR_ACP_RAW: RawEvent[] = [
-  // Cumulative full-text snapshot dedup (behavior 13).
+  // Cumulative full-text snapshot dedup.
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "agent_message_chunk", messageId: "message-1", content: { type: "text", text: "A" } } },
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "agent_message_chunk", messageId: "message-1", content: { type: "text", text: "A1" } } },
-  // The sentinel tail is swallowed entirely — zero events (behavior 14), verbatim
-  // from event-translator.test.ts.
+  // The sentinel tail is swallowed entirely (zero events); payload from
+  // event-translator.test.ts.
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -297,16 +271,15 @@ const CURSOR_ACP_RAW: RawEvent[] = [
   },
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "tool-bash-1", title: "Terminal", kind: "execute", rawInput: { command: "ls" } } },
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-bash-1", status: "completed", rawOutput: { stdout: "file.ts" } } },
-  // "Task: Subagent task" -> task classification. Cursor ACP exposes no supported
-  // child transcript identity, so the rendered card remains explicitly unavailable
-  // until a future host contract supplies one (behavior 15).
+  // "Task: Subagent task" -> task classification. Cursor ACP exposes no child
+  // transcript identity, so the rendered card stays explicitly unavailable.
   {
     source: "acp.jsonrpc",
     method: "session/update",
     payload: { sessionUpdate: "tool_call", toolCallId: "tool-task-1", title: "Task: Subagent task", rawInput: { description: "Investigate flaky test" } },
   },
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-task-1", status: "completed" } },
-  // "Update TODOs" -> todowrite, never a tool row (behavior 9).
+  // "Update TODOs" -> todowrite, never a tool row.
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -326,7 +299,7 @@ const CURSOR_SDK_RAW: RawEvent[] = [
     source: "cursor.sdk.message",
     payload: { type: "tool_call", agent_id: "agent-1", run_id: "run-1", call_id: "tool-shell-1", name: "shell", status: "completed", args: { command: "bun test", workingDirectory: "/repo" }, result: { status: "success", value: { exitCode: 0, stdout: "passed", stderr: "" } } },
   },
-  // updateTodos intercepted -> never a tool row (behavior 9).
+  // updateTodos intercepted -> never a tool row.
   {
     source: "cursor.sdk.message",
     payload: { type: "tool_call", agent_id: "agent-1", run_id: "run-1", call_id: "todo-1", name: "updateTodos", status: "completed", args: { todos: [{ content: "Ship adapter", status: "inProgress" }] } },
@@ -341,27 +314,22 @@ const CURSOR_SDK_RAW: RawEvent[] = [
 const CLAUDE_SDK_RAW: RawEvent[] = [
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Searching the repo." } } } },
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "thinking_delta", thinking: "Let me check the grep results." } } } },
-  // Raw native tool name "Grep" (capitalized, Anthropic's own convention) does not
-  // match the ToolRegistry's lowercase "grep" key -> GenericTool fallback
-  // (behavior 4; contrast with claude-acp's ACP-normalized "grep").
+  // Raw native tool name "Grep" (capitalized) does not match the ToolRegistry's lowercase
+  // "grep" key -> GenericTool fallback (contrast claude-acp's ACP-normalized "grep").
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_start", index: 2, content_block: { type: "tool_use", id: "tool-grep-1", name: "Grep", input: {} } } } },
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: "{\"pattern\":\"TODO\",\"path\":\"src\"}" } } } },
   { source: "claude.sdk.message", payload: { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-grep-1", content: "src/example.ts:1:TODO" }] } } },
-  // TodoWrite is intercepted before it ever becomes a tool-start -> never a tool row
-  // (behavior 9).
+  // TodoWrite is intercepted before it becomes a tool-start -> never a tool row.
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_start", index: 3, content_block: { type: "tool_use", id: "tool-todo-1", name: "TodoWrite", input: {} } } } },
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_delta", index: 3, delta: { type: "input_json_delta", partial_json: "{\"todos\":[{\"content\":\"Ship it\",\"status\":\"completed\"}]}" } } } },
-  // Diagnostics never render as a message row (behavior 17).
+  // Diagnostics never render as a message row.
   { source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "content_block_delta", index: 4, delta: { type: "citations_delta", citation: { type: "webpage", url: "https://example.com" } } } } },
 ]
 
 // ---------------------------------------------------------------------------
-// opencode (native) + pi — hand-authored CompatEnvelope literals. Documented
-// exception (see file header): there is no agent-event-runtime adapter for either,
-// because this already IS the target shape. Every field below matches the exact
-// shapes `createClientPresentationProjection` produces for the other six harnesses
-// (cross-checked against projection.ts's `toolPart`/`toolState`/`partEvent`
-// helpers and packages/session-ui/src/components/message-part.tsx's readers).
+// opencode (native) + pi — hand-authored CompatEnvelope literals; neither has an
+// adapter because this already is the target shape. Every field matches what
+// `createClientPresentationProjection` produces for the other harnesses.
 // ---------------------------------------------------------------------------
 function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
   const { sessionId, directory, assistantMessageId } = identity(harness)
@@ -373,7 +341,7 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
   const full = [
     part({ id: `${msg}-text`, sessionID: sessionId, messageID: msg, type: "text", text: "" }, 100),
     env({ type: "message.part.delta", properties: { sessionID: sessionId, messageID: msg, partID: `${msg}-text`, field: "text", delta: "Reading the config, then editing it." } }),
-    // reasoning — gated client-side by showReasoningSummaries (behavior 2).
+    // reasoning — gated client-side by showReasoningSummaries.
     part({ id: `${msg}-reasoning`, sessionID: sessionId, messageID: msg, type: "reasoning", text: "First read the file to see its current shape.", time: { start: 110 } }, 110),
     part(
       {
@@ -424,10 +392,8 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       190,
     ),
-    // apply_patch (behavior 3 + 16's dedicated-renderer half — opencode's own
-    // built-in tool is literally named "apply_patch"; see the CODEX_ACP_RAW comment
-    // above for why Codex ACP's own apply_patch tool_call does NOT reach this
-    // renderer in the current source).
+    // apply_patch — opencode's built-in tool carries this name, so it reaches the
+    // dedicated renderer (Codex ACP's apply_patch does not; see CODEX_ACP_RAW).
     part(
       {
         id: `${msg}-apply-patch`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-apply-patch-1", tool: "apply_patch",
@@ -442,7 +408,7 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       194,
     ),
     part({ id: `${msg}-compaction`, sessionID: sessionId, messageID: msg, type: "compaction" }, 195),
-    // GenericTool fallback for a genuinely unregistered tool name (behavior 4).
+    // GenericTool fallback for an unregistered tool name.
     part(
       {
         id: `${msg}-custom`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-custom-1", tool: "custom_mcp_tool",
@@ -450,7 +416,7 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       200,
     ),
-    // question tool: PENDING (hidden — behavior 10, part 1 of 2).
+    // question tool: pending (hidden until answered).
     part(
       {
         id: `${msg}-question`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-question-1", tool: "question",
@@ -508,7 +474,7 @@ function opencodeNativeLifecycleStages(harness: "opencode" | "pi") {
   }
 }
 
-/** session.diff must never create a phantom message row (behavior 8, supplementary). */
+/** session.diff must never create a phantom message row. */
 function opencodeNativeSessionDiff(harness: "opencode" | "pi"): CompatEnvelope {
   const { sessionId, directory } = identity(harness)
   return {
@@ -538,12 +504,9 @@ function build() {
     sessionDiff: opencodeNativeSessionDiff("opencode"),
   }
   const pi = {
-    // Pi's coverage is intentionally reduced — see file header. Reuse the same
-    // generator; the spec only replays a text reply + one dedicated tool renderer
-    // for it. The first 4 native envelopes are text `.updated`, text `.delta`,
-    // reasoning `.updated`, and the `read` tool (`config.json` subtitle) — enough
-    // to prove both that Pi shares the native text path (behavior 1) and that a
-    // Pi tool part reaches its dedicated ToolRegistry renderer (behavior 3).
+    // Pi replays only the first four native envelopes (text `.updated`, text `.delta`,
+    // reasoning `.updated`, the `read` tool): enough to show it shares the native text
+    // path and reaches a dedicated tool renderer.
     main: opencodeNativeTrace("pi").slice(0, 4),
   }
 

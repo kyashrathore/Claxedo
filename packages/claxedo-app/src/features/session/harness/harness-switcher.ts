@@ -80,16 +80,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
         input.rememberDraftHarness(scope, type, params)
         return
       }
-      // `harnessSwitchStartPatch` above raised `optionsLoading` before the
-      // first await. A switch that is abandoned mid-flight (a newer switch took
-      // the scope while this one was parked on the workspace boot, the config
-      // POST, or the refresh) never reaches an options fetch, so nothing else
-      // would ever lower that flag — and the model control renders "Loading
-      // models" straight off it with no other exit, stranding the composer for
-      // the life of the scope. Whoever owns the scope now has raised its own
-      // flag and will write the authoritative value; this only releases the one
-      // this abandoned switch is responsible for.
-      if (!active()) input.applyPatch(scope, { optionsLoading: false })
       return
     }
 

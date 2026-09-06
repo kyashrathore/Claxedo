@@ -12,12 +12,6 @@
     "reason": "Visible clock tick."
   },
   {
-    "file": "app/demo/handlers.ts",
-    "count": 2,
-    "owner": "demo runtime",
-    "reason": "MSW demo SSE heartbeat timers; demo fate is Phase 6."
-  },
-  {
     "file": "app/workbench/workbench/mount-idle-governor.ts",
     "count": 3,
     "owner": "workbench mount idle governor",

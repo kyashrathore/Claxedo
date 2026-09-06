@@ -4,14 +4,14 @@
  * console entries into a ring buffer, and exposes `screenshot`, `evaluate`,
  * and `getConsoleLogs` for the IPC layer to call through.
  *
- * State machine (per the plan's "CDP state machine"):
+ * CDP attach state machine:
  *
  *   Detached → Attaching → Attached → Reattaching → Attached
  *
  *   - `dom-ready` (first time or after crash) →
  *       debugger.attach("1.3")
  *       + Target.setAutoAttach({ flatten: true, waitForDebuggerOnStart: false })
- *       + enable Runtime / Page / Log / Overlay / DOM on the top session
+ *       + enable Runtime / Page / Log on the top session
  *   - `did-navigate` (main-frame only) → re-enable domains + re-subscribe
  *     Target.setAutoAttach. Cross-origin navigation swaps the RenderFrameHost;
  *     the enable is cheap and keeps Runtime events flowing on the new RFH.
@@ -50,12 +50,9 @@ import { isRecord, readArray, readNumber, readRecord, readString, readUnknown } 
 export type BrowserHandleState = "detached" | "attaching" | "attached" | "reattaching"
 
 const CDP_PROTOCOL_VERSION = "1.3"
-// Overlay/DOM/CSS used to be enabled here to back the old CDP-driven element
-// picker. That picker has been replaced by an in-page react-grab overlay
-// loaded via the guest preload (see `browser-preload/index.ts`), so those
-// domains are no longer needed — keeping them on would just cost a few
-// round-trips per navigation for nothing. Runtime/Page/Log are still needed
-// for console/exception streaming + navigation-state polling.
+// Runtime/Page/Log back console/exception streaming and navigation-state
+// polling. The element picker is an in-page overlay loaded by the guest preload
+// (`browser-preload/index.ts`), so Overlay/DOM/CSS are not enabled.
 const ENABLED_DOMAINS = ["Runtime", "Page", "Log"] as const
 
 const SIZE_LIMIT_BYTES = 1_000_000
@@ -79,13 +76,9 @@ export type EvaluateResult = EvaluateSuccess | EvaluateFailure
 export type ConsoleEntryListener = (entry: ConsoleEntry) => void
 
 /**
- * Kept for backward-compatibility with any external consumer that still
- * imports the old CDP-picker payload shape. The new guest-preload picker
- * (react-grab) never fires through this type — the renderer receives its
- * payloads directly via `ipc-message` from the `<webview>`, not through
- * `handle.onNodeSelected`. We export the alias + no-op listener hook so
- * the preload bridge's `BrowserNodeSelectedPayload` type keeps resolving
- * and the IPC handler can return `{ ok: true }` without a runtime path.
+ * The preload bridge's `BrowserNodeSelectedPayload`. The in-page picker
+ * delivers these to the renderer over the `<webview>`'s `ipc-message` channel;
+ * nothing in this handle emits one, and `onNodeSelected` is a typed no-op.
  */
 export type NodeSelectedPayload =
   | {
@@ -115,12 +108,9 @@ export type NodeSelectedPayload =
 export type NodeSelectedListener = (payload: NodeSelectedPayload) => void
 
 /**
- * Minimal subset of Electron's `WebContents` that the handle actually touches.
- * Extracted so `handle.test.ts` can stub without standing up Electron.
- *
- * Post-Unit-8: the toolbar also drives back/forward/reload/hard-reload and
- * opens Chromium DevTools. These live on `WebContents` directly; we pick them
- * through here so tests can stub them on the fake.
+ * The subset of Electron's `WebContents` the handle touches, including the
+ * toolbar's navigation and DevTools calls, so `handle.test.ts` can stub it
+ * without standing up Electron.
  */
 export type BrowserWc = Pick<
   WebContents,
@@ -287,25 +277,17 @@ export class BrowserHandle {
   }
 
   /**
-   * Legacy element-picker toggle.
-   *
-   * The CDP-driven picker has been replaced by an in-page react-grab
-   * overlay loaded via the guest preload. The renderer drives the picker
-   * mode directly over the `<webview>`'s IPC channel now (see
-   * `claxedo-picker:set-mode`), so this method is kept as a typed no-op
-   * for IPC/test back-compat — callers that still invoke it get a stable
-   * `{ ok: true }` and no CDP round-trip.
+   * Typed no-op. The renderer drives picker mode over the `<webview>`'s IPC
+   * channel (`claxedo-picker:set-mode`); this answers `{ ok: true }` with no
+   * CDP round-trip.
    */
   async setInspectMode(_enabled: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
     return { ok: true }
   }
 
   /**
-   * Node-selected subscription — retained as a typed no-op for any
-   * consumer that still references the old CDP-picker event stream. The
-   * picker now emits its payload via the guest `<webview>`'s
-   * `ipc-message` channel directly to the host renderer; nothing ever
-   * lands in this listener set.
+   * Typed no-op: the picker emits its payload over the `<webview>`'s
+   * `ipc-message` channel directly to the renderer, so nothing ever fires here.
    */
   onNodeSelected(_cb: NodeSelectedListener): () => void {
     return () => {}

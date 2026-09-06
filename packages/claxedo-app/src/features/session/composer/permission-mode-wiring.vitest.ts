@@ -3,11 +3,9 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
 import { markFastSessionSwitch } from "@/platform/runtime/session-switch"
 
-// Falsifier for the boot request graph's 3x GET /permission-mode: the
-// wiring's resource source used to be a fresh object literal, so ANY upstream
-// signal wobble refetched even when the resolved (session, directory, harness)
-// values were identical. The source is now a value-stable string. Verified
-// red on the old wiring: the first test observed one fetch per wobble.
+// createResource compares its source with `===`, so the resource key here is
+// a value-stable serialized string: an upstream signal wobble that resolves
+// to the same (session, directory, harness) must not trigger a refetch.
 const fetchModes = vi.hoisted(() =>
   vi.fn(async () => ({ data: { modes: [], appliesFrom: "next-turn" as const } })),
 )

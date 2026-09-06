@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-relay-protocol",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Wire types, message validation, and token verifier interfaces for the Claxedo workspace relay tunnel protocol",
   "license": "MIT",
@@ -19,9 +19,9 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
-      "bun": "./dist/index.mjs",
-      "development": "./dist/index.mjs",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     }
@@ -35,6 +35,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@claxedo/helpers": "workspace:*",
     "jose": "6.0.11"
   },
   "scripts": {

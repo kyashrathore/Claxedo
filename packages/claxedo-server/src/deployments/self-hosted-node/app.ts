@@ -454,7 +454,7 @@ export function isConnectionsCredentialPath(path: string): boolean {
  *
  * So it gets both policies, split by which of the two surfaces answered:
  *
- *   API responses          -> the hosted set, imported verbatim from
+ *   API responses          -> the hosted set, imported unchanged from
  *                             ./security-headers (enforcing `default-src
  *                             'none'`, `X-Frame-Options: DENY`).
  *   SPA bundle responses   -> the document set below (enforcing
@@ -686,15 +686,10 @@ export function createSelfHostedApp(
   }
   const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
   delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
-  // Every `app.route()` below is recorded against this composition, the same
-  // way `createSignedControlPlaneApp` records its own. What that buys HERE is
-  // narrower than it looks and worth stating plainly: one owner cannot collide
-  // with itself (`/api/workspace` is deliberately mounted twice), so this does
-  // not catch a duplicate inside this function. It catches the arrangement
-  // Unit 7 creates — a second composition mounting onto this app — which is
-  // silent in Hono and decided by call order. `mountControlPlaneChannels` and
-  // the other `mount*` helpers below run against this same wrapped app, so
-  // their claims land under this owner too.
+  // One owner cannot collide with itself (`/api/workspace` is mounted twice on
+  // purpose), so this catches a second composition mounting onto this app, not
+  // a duplicate inside this function. The `mount*` helpers below run against
+  // the same wrapped app, so their claims land under this owner too.
   const routeOwnership = createRouteOwnership()
   const app = withRouteOwnership(new Hono(), routeOwnership, "self-hosted-node")
   // Outermost ON PURPOSE, ahead of CORS, the unsigned-local gate and every
@@ -734,11 +729,11 @@ export function createSelfHostedApp(
     ...(services.authority
       ? {
           resolveRelayActor: async (request: Request, workspaceId: string) => {
-            // Loopback browser traffic may carry a control-plane JWT. Relay-
-            // forwarded user-hosted traffic carries a Runtime Access Token
-            // (audience `workspace-relay`). Treat RAT as a first-class actor
-            // proof — verifying it as a CP bearer throws `invalid_bearer_token`
-            // and used to 503 every `/workspaces/:id/*` session route.
+            // Loopback browser traffic may carry a control-plane JWT; relay-forwarded
+            // user-hosted traffic carries a Runtime Access Token (audience
+            // `workspace-relay`). A RAT is a first-class actor proof: verifying it as a
+            // control-plane bearer throws `invalid_bearer_token`, which would 503 every
+            // `/workspaces/:id/*` session route.
             try {
               const auth = await controlPlaneAuthContext(request, {
                 config: services.auth.config,

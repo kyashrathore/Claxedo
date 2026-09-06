@@ -1,3 +1,4 @@
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
   AgentRuntimeEvent,
@@ -8,7 +9,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
-import { number, object, optionLabels, pathFields, text } from "../../value"
+import { optionLabels, pathFields, text } from "../../value"
 
 type ClaudeBlockState = {
   type: "text" | "thinking" | "tool"
@@ -65,7 +66,7 @@ function assertNever(value: never): never {
 }
 
 function payload(event: { payload: unknown }) {
-  return object(event.payload) ?? {}
+  return asRecord(event.payload) ?? {}
 }
 
 function sdkMessage(event: { payload: unknown }) {
@@ -127,7 +128,7 @@ function unmappedSdkEvent(input: {
 }
 
 function toolInput(value: unknown) {
-  return object(value) ?? {}
+  return asRecord(value) ?? {}
 }
 
 function isTodoTool(toolName: string) {
@@ -145,7 +146,7 @@ function todoStatus(value: unknown) {
 function todosFromInput(input: Record<string, unknown>) {
   const todos = Array.isArray(input.todos) ? input.todos : []
   return todos.flatMap((todo, i) => {
-    const row = object(todo)
+    const row = asRecord(todo)
     if (!row) return []
     return [{
       id: String(i),
@@ -158,7 +159,7 @@ function todosFromInput(input: Record<string, unknown>) {
 
 function parseJsonRecord(value: string) {
   try {
-    return object(JSON.parse(value))
+    return asRecord(JSON.parse(value))
   } catch {
     return undefined
   }
@@ -222,14 +223,14 @@ function toolResultText(block: Record<string, unknown>) {
   const content = block.content
   if (typeof content === "string") return content
   if (!Array.isArray(content)) return ""
-  return content.flatMap((item) => text(item) ?? text(object(item)?.text) ?? []).join("\n")
+  return content.flatMap((item) => text(item) ?? text(asRecord(item)?.text) ?? []).join("\n")
 }
 
 function toolResultBlocks(message: Record<string, unknown>) {
-  const row = object(message.message) ?? {}
+  const row = asRecord(message.message) ?? {}
   const content = Array.isArray(row.content) ? row.content : []
   return content.flatMap((item) => {
-    const block = object(item)
+    const block = asRecord(item)
     if (!block || block.type !== "tool_result") return []
     const toolCallId = text(block.tool_use_id)
     if (!toolCallId) return []
@@ -238,19 +239,19 @@ function toolResultBlocks(message: Record<string, unknown>) {
       block,
       text: toolResultText(block),
       isError: block.is_error === true,
-      structured: object(message.tool_use_result),
+      structured: asRecord(message.tool_use_result),
     }]
   })
 }
 
 function assistantContent(message: Record<string, unknown>) {
-  const row = object(message.message) ?? {}
+  const row = asRecord(message.message) ?? {}
   return Array.isArray(row.content) ? row.content : []
 }
 
 function assistantSnapshotText(message: Record<string, unknown>) {
   return assistantContent(message).flatMap((item) => {
-    const block = object(item)
+    const block = asRecord(item)
     if (!block || block.type !== "text") return []
     return text(block.text) ?? []
   }).join("")
@@ -258,7 +259,7 @@ function assistantSnapshotText(message: Record<string, unknown>) {
 
 function assistantToolBlocks(message: Record<string, unknown>) {
   return assistantContent(message).flatMap((item) => {
-    const block = object(item)
+    const block = asRecord(item)
     if (!block || block.type !== "tool_use") return []
     const toolCallId = text(block.id)
     const toolName = text(block.name)
@@ -280,26 +281,26 @@ function agentResultMetadata(result: Record<string, unknown> | undefined) {
   return {
     agentId: text(result.agentId),
     status: text(result.status),
-    totalTokens: number(result.totalTokens),
-    totalToolUseCount: number(result.totalToolUseCount),
-    totalDurationMs: number(result.totalDurationMs),
-    usage: object(result.usage),
-    toolStats: object(result.toolStats),
+    totalTokens: asFiniteNumber(result.totalTokens),
+    totalToolUseCount: asFiniteNumber(result.totalToolUseCount),
+    totalDurationMs: asFiniteNumber(result.totalDurationMs),
+    usage: asRecord(result.usage),
+    toolStats: asRecord(result.toolStats),
   }
 }
 
 function agentResultText(result: Record<string, unknown> | undefined, fallback: string) {
   if (!result) return fallback
   const content = Array.isArray(result.content) ? result.content : []
-  return content.flatMap((item) => text(object(item)?.text) ?? []).join("\n") || fallback
+  return content.flatMap((item) => text(asRecord(item)?.text) ?? []).join("\n") || fallback
 }
 
 export function claudeChildCorrelationKey(value: unknown) {
-  return text(object(value)?.parent_tool_use_id)
+  return text(asRecord(value)?.parent_tool_use_id)
 }
 
 export function claudeSubagentObservations(value: unknown): ClaudeSubagentObservation[] {
-  const message = object(value)
+  const message = asRecord(value)
   if (!message) return []
   const harnessExecutionId = text(message.session_id)
   const wrapperId = text(message.uuid) ?? harnessExecutionId ?? "unknown"
@@ -326,7 +327,7 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
   }
 
   if (message.type === "user") {
-    const result = object(message.tool_use_result)
+    const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
     if (!agentId) return []
     return toolResultBlocks(message).map((tool) => ({
@@ -363,7 +364,7 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
         description: text(message.summary),
       })]
     case "task_updated": {
-      const patch = object(message.patch) ?? {}
+      const patch = asRecord(message.patch) ?? {}
       const status = taskStatus(patch.status)
       return [taskObservation(message, wrapperId, {
         ...(status ? { status } : {}),
@@ -375,7 +376,7 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
     case "background_tasks_changed": {
       const tasks = Array.isArray(message.tasks) ? message.tasks : []
       return tasks.flatMap((value) => {
-        const task = object(value)
+        const task = asRecord(value)
         if (!task || !text(task.task_id)) return []
         return [taskObservation(task, `${wrapperId}:${text(task.task_id)}`, {
           status: "running",
@@ -433,17 +434,17 @@ function slashCommandEvents(message: Record<string, unknown>) {
 }
 
 function requestUsage(message: Record<string, unknown>): { requestId: string; tokens: ClaudeRequestUsage; requestTotal: number } | undefined {
-  const row = object(message.message)
+  const row = asRecord(message.message)
   if (!row) return undefined
   const requestId = text(row.id)
-  const usage = object(row.usage)
+  const usage = asRecord(row.usage)
   if (!requestId || !usage) return undefined
   const tokens: ClaudeRequestUsage = {
-    input: number(usage.input_tokens) ?? null,
-    output: number(usage.output_tokens) ?? null,
-    reasoning: number(usage.thinking_tokens) ?? null,
-    cacheRead: number(usage.cache_read_input_tokens) ?? null,
-    cacheWrite: number(usage.cache_creation_input_tokens) ?? null,
+    input: asFiniteNumber(usage.input_tokens) ?? null,
+    output: asFiniteNumber(usage.output_tokens) ?? null,
+    reasoning: asFiniteNumber(usage.thinking_tokens) ?? null,
+    cacheRead: asFiniteNumber(usage.cache_read_input_tokens) ?? null,
+    cacheWrite: asFiniteNumber(usage.cache_creation_input_tokens) ?? null,
   }
   if (![tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite].some((value) => value !== null && value > 0)) return undefined
   return {
@@ -471,17 +472,17 @@ function sumRequestUsage(requests: Record<string, ClaudeRequestUsage>): ClaudeRe
 }
 
 function usageSnapshot(message: Record<string, unknown>, lastKnownContextWindow?: number) {
-  const usage = object(message.usage)
+  const usage = asRecord(message.usage)
   if (!usage) return undefined
   const inputTokens =
-    (number(usage.input_tokens) ?? 0) +
-    (number(usage.cache_creation_input_tokens) ?? 0) +
-    (number(usage.cache_read_input_tokens) ?? 0)
-  const outputTokens = number(usage.output_tokens) ?? 0
-  const totalTokens = number(usage.total_tokens) ?? inputTokens + outputTokens
-  const modelUsage = object(message.modelUsage)
+    (asFiniteNumber(usage.input_tokens) ?? 0) +
+    (asFiniteNumber(usage.cache_creation_input_tokens) ?? 0) +
+    (asFiniteNumber(usage.cache_read_input_tokens) ?? 0)
+  const outputTokens = asFiniteNumber(usage.output_tokens) ?? 0
+  const totalTokens = asFiniteNumber(usage.total_tokens) ?? inputTokens + outputTokens
+  const modelUsage = asRecord(message.modelUsage)
   const contextWindow = modelUsage
-    ? Object.values(modelUsage).flatMap((value) => number(object(value)?.contextWindow) ?? [])[0]
+    ? Object.values(modelUsage).flatMap((value) => asFiniteNumber(asRecord(value)?.contextWindow) ?? [])[0]
     : undefined
   const contextSize = contextWindow ?? lastKnownContextWindow ?? totalTokens
   return {
@@ -492,12 +493,12 @@ function usageSnapshot(message: Record<string, unknown>, lastKnownContextWindow?
       kind: "cumulative",
       ...(text(message.session_id) ? { nativeSessionId: text(message.session_id) } : {}),
       tokens: {
-        input: number(usage.input_tokens) ?? null,
-        output: number(usage.output_tokens) ?? null,
-        reasoning: number(usage.thinking_tokens) ?? null,
+        input: asFiniteNumber(usage.input_tokens) ?? null,
+        output: asFiniteNumber(usage.output_tokens) ?? null,
+        reasoning: asFiniteNumber(usage.thinking_tokens) ?? null,
         cache: {
-          read: number(usage.cache_read_input_tokens) ?? null,
-          write: number(usage.cache_creation_input_tokens) ?? null,
+          read: asFiniteNumber(usage.cache_read_input_tokens) ?? null,
+          write: asFiniteNumber(usage.cache_creation_input_tokens) ?? null,
         },
       },
     },
@@ -546,7 +547,7 @@ function questionFromToolUse(message: Record<string, unknown>, context: HarnessE
   const row = payload({ payload: message })
   const toolName = text(row.toolName) ?? text(row.name)
   if (toolName !== "AskUserQuestion") return []
-  const input = object(row.input) ?? row
+  const input = asRecord(row.input) ?? row
   const prompt = text(input.question) ?? text(input.prompt)
   if (!prompt) return []
   const options = optionLabels(input.options)
@@ -565,7 +566,7 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
   const row = payload({ payload: message })
   const toolName = text(row.toolName) ?? text(row.name)
   if (!toolName) return []
-  const input = object(row.input) ?? {}
+  const input = asRecord(row.input) ?? {}
   return [{
     type: "permission-request",
     requestId: text(row.requestId) ?? context.createId("permission"),
@@ -630,7 +631,7 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
                 case "tool_use":
                 case "server_tool_use":
                 case "mcp_tool_use": {
-                  const blockRow = object(block) ?? {}
+                  const blockRow = asRecord(block) ?? {}
                   const toolName = text(block.name)
                   const toolCallId = text(block.id)
                   if (!toolName || !toolCallId) return []

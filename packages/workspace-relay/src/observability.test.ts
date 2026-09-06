@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { initRelayObservability, relayTelemetryOptions, reportFatal } from "./main"
 
 /**
- * W2c (2026-07-28-001) observability gates, W3 kill-switch.
+ * Relay observability opt-in gates and the telemetry kill-switch.
  *
  * Load-bearing contract: sending takes two opt-ins — CLAXEDO_TELEMETRY_MODE=on
  * AND CLAXEDO_POSTHOG_KEY (or the POSTHOG_KEY fallback). Miss either and the
@@ -86,7 +86,7 @@ describe("relayTelemetryOptions", () => {
     expect(relayTelemetryOptions(base)?.release).toBeUndefined()
   })
 
-  test("deployment mode: absent → local (D9 default), value lowercased", () => {
+  test("deployment mode: absent → local, value lowercased", () => {
     const base = { ...ON, CLAXEDO_POSTHOG_KEY: "phc_abc123" }
     expect(relayTelemetryOptions(base)?.tags.deployment_mode).toBe("local")
     expect(

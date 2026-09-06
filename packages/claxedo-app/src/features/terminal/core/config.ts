@@ -45,7 +45,6 @@ export const MIN_CONTAINER_PX = 10
 // leaves it off by default. A screen-reader user (or a settings toggle) can
 // opt in via the persisted preference below; createTerminalInstance seeds each
 // new terminal from it, and TerminalBackend.setScreenReaderMode flips it live
-// on an already-mounted terminal. Full @xterm/addon-a11y wiring lands in WP-C1
-// on top of this toggle.
+// on an already-mounted terminal.
 
 export { getScreenReaderModePreference, setScreenReaderModePreference } from "@/platform/settings/terminal-preferences"

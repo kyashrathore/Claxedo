@@ -10,15 +10,9 @@ function slug(value: string) {
 }
 
 async function seedOneProject(page: Page, dir: string) {
-  // `page.addInitScript` re-runs this script on EVERY navigation in this browser
-  // context, including `page.reload()` — not just the first `page.goto()`. An
-  // unconditional `localStorage.clear()` here would silently wipe out any
-  // persisted app state (e.g. the model catalog's "recent" list) written between
-  // the initial load and a later reload within the same test, defeating any
-  // reload-persistence assertion. Guard the clear with a marker so it only fires
-  // once per fresh context (every test already gets its own isolated context, so
-  // this is not a cross-test isolation concern) — subsequent reloads within the
-  // same test keep whatever the app itself persisted.
+  // `addInitScript` re-runs on every navigation including `page.reload()`, so an
+  // unconditional `localStorage.clear()` would wipe state the app persisted mid-test and
+  // break the reload-persistence check. The marker limits the clear to a fresh context.
   await page.addInitScript((d: string) => {
     if (!sessionStorage.getItem("__e2e_seed_done__")) {
       localStorage.clear()
@@ -144,8 +138,7 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
       models: Object.fromEntries(Object.entries(provider.models).filter(([id]) => defaults[provider.id] === id)),
     })),
   }
-  // The OpenCode harness is a native catalog harness: its models come from the
-  // control plane's provider catalog (`/api/claxedo/agent-config/providers`),
+  // The OpenCode harness reads its models from the control plane's provider catalog,
   // not from an engine `/provider` route.
   await page.route("**/api/claxedo/agent-config/providers**", (route) => {
     if (!isApiRequest(route)) return route.continue()
@@ -173,9 +166,6 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
 /** Zero connected providers at all — no model is resolvable, selected or fallback. */
 async function installNoModelFixture(page: Page, mock: MockRuntimeHandles) {
   const body = { all: [], default: {}, connected: [] }
-  // The OpenCode harness is a native catalog harness: its models come from the
-  // control plane's provider catalog (`/api/claxedo/agent-config/providers`),
-  // not from an engine `/provider` route.
   await page.route("**/api/claxedo/agent-config/providers**", (route) => {
     if (!isApiRequest(route)) return route.continue()
     if (new URL(route.request().url()).pathname !== "/api/claxedo/agent-config/providers") return route.fallback()
@@ -213,16 +203,13 @@ async function openModelPopover(page: Page) {
 async function pickModelFromPopover(page: Page, modelName: string) {
   await openModelPopover(page)
   const item = page.locator('[data-slot="list-item"]', { hasText: modelName }).first()
-  // The popover's model list is sourced from the provider query (`useProviders()`,
-  // staleTime 5min) — under heavy parallel-suite load the initial fetch can take
-  // longer than a tight timeout; this is a real network-backed wait (not a sleep),
-  // so give it real headroom rather than tightening a fixed poll interval.
+  // The list waits on the provider fetch, which is slow under parallel-suite load.
   await expect(item).toBeVisible({ timeout: 25_000 })
   await item.click()
 }
 
 test.describe("core model, effort/variant, and agent controls @core", () => {
-  test("model picked before first send is reflected in the prompt payload — behavior 1", async ({ page }) => {
+  test("model picked before first send is reflected in the prompt payload", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
@@ -243,7 +230,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(mock.requests.promptBodies[0]?.modelID).toBe("claude-sonnet-4-6")
   })
 
-  test("the Effort section only renders for a multi-variant model, and the pick reaches the payload — behavior 2", async ({ page }) => {
+  test("the Effort section only renders for a multi-variant model, and the pick reaches the payload", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
@@ -280,7 +267,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(mock.requests.promptBodies[0]?.variant).toBe("high")
   })
 
-  test("mid-session model change PATCHes the session config immediately — behavior 3", async ({ page }) => {
+  test("mid-session model change PATCHes the session config immediately", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
@@ -307,7 +294,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(swapPatch?.model).toMatchObject({ providerID: "opencode", modelID: "big-pickle-1" })
   })
 
-  test("a freshly picked model survives a page reload of the same draft — behavior 4", async ({ page }) => {
+  test("a freshly picked model survives a page reload of the same draft", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
@@ -316,12 +303,8 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await pickModelFromPopover(page, "Big Pickle")
     await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 10_000 })
 
-    // The pick is persisted into the model store's "recent" list. That store is
-    // per (server, workspace): `Persist.serverWorkspace(server, workspace,
-    // "model")` names the bucket
-    // `claxedo.server.<…>.workspace.<…>.dat:workspace:model`. Wait for the
-    // actual localStorage write (deterministic poll, not a sleep) before
-    // reloading.
+    // The pick lands in the model store's "recent" list, persisted per (server,
+    // workspace). Wait for that write to land before reloading.
     await expect
       .poll(async () =>
         page.evaluate(() => {
@@ -346,13 +329,10 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 20_000 })
   })
 
-  test("zero-paid-provider path still opens the standard model picker — behavior 5", async ({ page }) => {
-    // Deliberately the DEFAULT mock (no paid-provider override): mock-runtime's
-    // opencode-harness provider always prices its model at cost 0.
-    // Having no PRICED provider used to divert this click into a Claxedo-only
-    // "unpaid model" funnel dialog, which dead-ended on an empty free-model list.
-    // The model control now opens the ordinary picker in every state; the picker
-    // carries its own connect affordances for an unconfigured workspace.
+  test("zero-paid-provider path still opens the standard model picker", async ({ page }) => {
+    // Deliberately the default mock, whose only provider is priced at 0. The model
+    // control opens the ordinary picker in every state; the picker carries its own
+    // connect affordances for an unconfigured workspace.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
@@ -362,7 +342,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await expect(page.getByText("Add more models from popular providers")).toHaveCount(0)
   })
 
-  test("multi-agent selector renders and the pick reaches the payload — behavior 6", async ({ page }) => {
+  test("multi-agent selector renders and the pick reaches the payload", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/agent-config/agents**", (route) => {
       if (!isApiRequest(route)) return route.continue()
@@ -378,10 +358,9 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
 
-    // The agent picker is no longer an inline chip: it is a radio group inside the
-    // `+` menu (add-menu.tsx). The fixture's agents are build+review, which is NOT
-    // the build+plan pair `planModeAgents()` collapses into a "Plan mode" checkbox,
-    // so the explicit radio group is what renders here.
+    // The agent picker is a radio group inside the `+` menu. build+review is not the
+    // build+plan pair that collapses into a single "Plan mode" checkbox, so the radio
+    // group renders.
     const addTrigger = page.locator('[data-action="prompt-add"]').last()
     await expect(addTrigger).toBeVisible({ timeout: 15_000 })
     await expect(addTrigger).not.toBeDisabled()
@@ -393,8 +372,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await expect(reviewOption).toBeVisible({ timeout: 10_000 })
     await reviewOption.click()
 
-    // Reopen to confirm the pick stuck: the checked indicator is the only place the
-    // current agent is visible now that the trigger is a bare `+`.
+    // The checked indicator is the only place the current agent shows, so reopen to read it.
     await addTrigger.click()
     await expect(agentItems.filter({ hasText: /^review$/i })).toHaveAttribute("data-checked", "", { timeout: 10_000 })
     await page.keyboard.press("Escape")
@@ -419,13 +397,9 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       const response = await fetch(`/session/${sessionID}/config?directory=${encodeURIComponent(directory)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        // The identity shape the app's own client sends on this route:
-        // `harness: sessionHarnessIdentity(type)` (`submit-transport.ts:322`,
-        // `harness-switcher.ts:173`) — a structured `{id, access}`. An open ACP
-        // connection's `acp:<slug>` presentation is only a STRING form; inside a
-        // structured identity the slug must arrive as `id` alongside
-        // `access: "acp"` (`normalizeHarnessIdentity`, harness-types.ts), or the
-        // whole harness key is silently dropped and the PATCH 200s unchanged.
+        // The client sends a structured `{id, access}` identity. `acp:<slug>` is only a
+        // string form: inside a structured identity the slug must arrive as `id` beside
+        // `access: "acp"`, or the harness key is dropped and the PATCH 200s unchanged.
         body: JSON.stringify({ harness: { id: "claude", access: "acp" } }),
       })
       return { status: response.status, body: await response.json() }
@@ -439,8 +413,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           code: "unsupported_operation",
           operation: "harness_switch",
           capability: "session_harness",
-          // The fixture's session runs on the embedded OpenCode harness
-          // (`installMockRuntime`'s default), so the rejection names it.
+          // The mock session runs on the embedded OpenCode harness, so the rejection names it.
           harness: "opencode",
           transport: "opencode",
           reason: "harness_switch_not_supported",
@@ -451,7 +424,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
   })
 
   test(
-    "failed initial config persistence preserves the unpublished draft — behavior 8",
+    "failed initial config persistence preserves the unpublished draft",
     async ({ page }) => {
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, configPatchFailure: true })
       await seedOneProject(page, DIR)
@@ -474,7 +447,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     },
   )
 
-  test("missing model blocks submit and opens the model picker on Enter — behavior 9", async ({ page }) => {
+  test("missing model blocks submit and opens the model picker on Enter", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installNoModelFixture(page, mock)
     await seedOneProject(page, DIR)
@@ -499,14 +472,13 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(mock.requests.createSessionCount).toBe(0)
   })
 
-  test("Settings -> Models visibility toggle propagates to the composer's model list — behavior 10", async ({ page }) => {
+  test("Settings -> Models visibility toggle propagates to the composer's model list", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
-    // Haiku 3 has an old (2020) release date and no explicit visibility row yet, so it
-    // defaults HIDDEN (src/features/session/providers/models.tsx:118-131) — absent from the popover list.
+    // Haiku 3's 2020 release date and absent visibility row default it hidden.
     await openModelPopover(page)
     await expect(page.locator('[data-slot="list-item"]', { hasText: "Haiku 3 (legacy)" })).toHaveCount(0)
     await page.keyboard.press("Escape")
@@ -516,9 +488,8 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     const dialog = page.locator('[data-slot="dialog-container"]')
     await expect(dialog).toBeVisible({ timeout: 10_000 })
     await page.getByRole("tab", { name: "Models" }).click()
-    // Settings reads under an explicit (workspace, harness); nothing is
-    // remembered for a draft that never switched, so choose OpenCode — the
-    // harness the composer's draft is on.
+    // Settings reads under an explicit (workspace, harness) and nothing is remembered for
+    // a draft that never switched, so pick the harness the draft is on.
     await page.locator('[data-action="settings-scope-harness"]').click()
     await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
 

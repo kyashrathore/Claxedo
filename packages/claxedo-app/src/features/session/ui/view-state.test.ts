@@ -580,10 +580,10 @@ describe("Claxedo session loaded-empty rendering", () => {
   })
 
   test("draft workspace kind falls back to the directory-ref's OWN kind, not a blanket cloud", () => {
-    // REGRESSION: a fresh draft nav to /w/:workspaceId/session for a `ws_`-shaped
-    // user-hosted id used to resolve to "cloud" here just because a ref existed,
-    // routing the draft through the cloud sandbox picker instead of the
-    // user-hosted gate.
+    // A fresh draft nav to /w/:workspaceId/session for a `ws_`-shaped
+    // user-hosted id must not resolve to "cloud" just because a ref exists —
+    // that would route the draft through the cloud sandbox picker instead of
+    // the user-hosted gate.
     expect(resolveDraftWorkspaceKind({
       resolvedKind: undefined,
       fallbackRefKind: "user-hosted",
@@ -611,7 +611,7 @@ describe("Claxedo session loaded-empty rendering", () => {
     })).toBe("cloud")
   })
 
-  // The web default must not override a REAL resolution — a user-hosted
+  // The web default must not override a real resolution — a user-hosted
   // workspace opened in the browser is still user-hosted.
   test("the hosted-web default never overrides a resolved kind", () => {
     expect(resolveDraftWorkspaceKind({

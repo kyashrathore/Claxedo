@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { promptScopeKey } from "./submit-prompt-scope"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 
 const {
   createSubmit,
@@ -45,7 +45,7 @@ afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("New-session creation: cloud, worktree, and tab handoff", () => {
   test("clears the visible workspace draft after creating a new session", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     const stateAtSubmit: Array<{ resetCount: number; optimisticCount: number }> = []
 
     const submit = createPromptSubmit({
@@ -107,7 +107,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("unattached drafts refuse to create a session from the sdk directory fallback", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const submit = createPromptSubmit({
       info: () => undefined,
@@ -145,7 +145,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("does not publish or prompt when the canonical session claim fails", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.sessionConfigSaveError = "config unavailable"
 
     const submit = createPromptSubmit({
@@ -182,7 +182,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("cloud new button creates a cloud workspace before the first prompt and reports startup", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
     let resetCalls = 0
 
@@ -249,6 +249,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       harnessController: { ...h.testHarnessController(), harness: () => undefined },
     })
     await submit.handleSubmit(submitEvent())
+    expect(hostedOperationCalls).toEqual([])
     expect(apiCalls.some((call) => call.url.includes("/api/workspace/create"))).toBe(false)
     expect(harnessClaimCalls).toEqual([])
     expect(calls.transportAsync).toBe(0)
@@ -256,7 +257,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("cloud create preserves selected model instead of replacing it with runtime fallback", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.localCurrentModel = { id: "gpt-5.5-pro", provider: { id: "openai" } }
     state.piSubmitModel = { key: { providerID: "openai", modelID: "gpt-5.5-pro" }, name: "GPT-5.5 Pro" }
     state.runtimeProviderResponse = {
@@ -306,15 +307,13 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
   })
 
-  // `fix(composer): require explicit model selection and fail loud` removed the
-  // provider-catalog substitution this used to assert: submit now takes ONLY
-  // the harness controller's explicit model key, and
-  // `model-strategy` pins "Explicit selection only — never substitute provider
-  // defaults or placeholders". The cloud-create path is the last one that could
-  // still reach a runtime `/provider` catalog, so it keeps its own gate.
+  // Submit takes only the harness controller's explicit model key; it never
+  // substitutes a provider default. The cloud-create path is the last one
+  // that could still reach a runtime `/provider` catalog, so it keeps its
+  // own gate against that fallback.
   test("cloud create fails loud instead of resolving a model from workspace runtime providers", async () => {
     state.piSubmitModel = undefined
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.claxedoServerUrl = "https://claxedo.example"
     state.localCurrentModel = undefined
     state.runtimeProviderResponse = {
@@ -360,6 +359,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     // The model gate must reject BEFORE directory provisioning: a cloud
     // workspace created for a submit that then fails the gate is orphaned —
     // nothing ever adopts or deletes it.
+    expect(hostedOperationCalls).toEqual([])
     expect(apiCalls.some((call) => new URL(call.url).pathname === "/api/workspace/create")).toBe(false)
     expect(toasts).toContainEqual({
       title: "prompt.toast.modelAgentRequired.title",
@@ -368,7 +368,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("cloud create retargets the active new-session tab to the created workspace", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
     state.mockSessionParams = {
       sessionId: () => "new",
@@ -455,7 +455,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("cloud startup stays open with the relay error when the first prompt fails", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.transportPromptAsyncError = new Error("Workspace connection failed: 401")
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
     promptContextItems.push(
@@ -539,7 +539,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("cloud create resolves project id from global project catalog when directory sync is not attached yet", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.syncProject = undefined
     state.globalProjects = [{
       id: "project-formlink",
@@ -583,7 +583,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("local create selection creates a worktree before the first prompt", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const submit = createPromptSubmit({
       info: () => undefined,
@@ -615,6 +615,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       directory: "/repo/main",
       worktreeCreateInput: { baseRef: "feature/base-ref" },
     }])
+    expect(hostedOperationCalls).toEqual([])
     expect(apiCalls.some((item) => new URL(item.url).pathname === "/api/workspace/create")).toBe(false)
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toContainEqual({
       directory: "/repo/main/new",
@@ -627,7 +628,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("local existing-worktree selection stays local and never calls cloud create", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.syncProject = {
       id: "project-1",
       worktree: "/repo/main",
@@ -650,13 +651,14 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
+    expect(hostedOperationCalls).toEqual([])
     expect(apiCalls.some((item) => new URL(item.url).pathname === "/api/workspace/create")).toBe(false)
     expect(worktreeCreateCalls).toEqual([])
     expect(optimisticAdds.map((item) => item.directory)).toContain("/repo/local-feature")
   })
 
   test("cloud main selection does not submit to local main when no cloud workspace is selected", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
 
     const submit = createPromptSubmit({
@@ -696,7 +698,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("cloud existing-workspace selection reuses that cloud directory instead of creating another one", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.syncProject = {
       id: "project-1",
       worktree: "/repo/main",
@@ -734,12 +736,13 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
+    expect(hostedOperationCalls).toEqual([])
     expect(apiCalls.some((item) => new URL(item.url).pathname === "/api/workspace/create")).toBe(false)
     expect(optimisticAdds.map((item) => item.directory)).toContain("workspace:ws_cloud")
   })
 
   test("reuses the active new-session tab when the first prompt creates a real session", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = []
     const showCalls: string[] = []
@@ -813,7 +816,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("navigates and refreshes when a workbench-scoped new session creates a real session", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.mockSessionParams = {
       sessionId: () => "new",
       directory: () => "/repo/main",
@@ -885,7 +888,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
   test("draft-backed create leaves Workbench surface handoff to lifecycle events", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const closeCalls: string[] = []
     const openCalls: Array<{ directory: string; sessionID: string; title: string }> = []
@@ -952,8 +955,8 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(navCalls).toEqual(["/w/project-1/session/session-1"])
   })
 
-  test("split-mode handoff still patches the draft tab even if focus shifts before the microtask", async () => {
-    state.demoMode = false
+  test("split-mode handoff patches the explicitly targeted draft tab", async () => {
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = []
     state.mockSessionParams = {

@@ -39,12 +39,13 @@
     "vitest": "2.1.9"
   },
   "dependencies": {
-    "@claxedo/agent-event-runtime": "workspace:0.7.0",
+    "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
-    "@claxedo/sandbox-contract": "workspace:0.7.0",
-    "@claxedo/usage-contract": "workspace:0.7.0",
-    "@claxedo/workspace-relay": "workspace:0.7.0",
-    "@claxedo/workspace-relay-protocol": "workspace:0.7.0",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/sandbox-contract": "workspace:*",
+    "@claxedo/usage-contract": "workspace:*",
+    "@claxedo/workspace-relay": "workspace:*",
+    "@claxedo/workspace-relay-protocol": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
     "better-sqlite3": "13.0.1",

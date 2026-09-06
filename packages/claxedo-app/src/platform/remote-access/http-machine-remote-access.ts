@@ -18,10 +18,10 @@ import { asRecord, readString, recordOrEmpty } from "@/lib/record"
  * A feature may not own a
  * platform mechanism; it names the operation and this layer decides the call.
  *
- * The funnel events that used to be emitted from inside `enable` and
- * `markSecondDeviceOpen` are NOT here. Onboarding's funnel is caller-specific
- * policy and belongs with the caller; the desktop implementation of the same
- * port would otherwise have had to reproduce it to stay equivalent.
+ * Deliberately does not emit onboarding's funnel events from `enable` or
+ * `markSecondDeviceOpen`: that is caller-specific policy and belongs with the
+ * caller, not this port — every implementation of this port would otherwise
+ * have to reproduce it to stay equivalent.
  *
  * Snake_case in, camelCase out: the wire shape is the server's vocabulary and
  * stops at this boundary. Every field is checked rather than cast, so a server

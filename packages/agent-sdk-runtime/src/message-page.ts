@@ -151,17 +151,18 @@ export function projectLatestSurfaceMessages(messages: readonly LatestSurfaceMes
   if (info.some((value) => value === undefined)) return []
 
   const candidates: SurfaceTextCandidate[] = []
-  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
-    const message = messages[messageIndex]
-    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex--) {
-      const candidate = surfaceTextCandidate(message.parts[partIndex], messageIndex, partIndex)
+  for (const [messageIndex, message] of messages.entries()) {
+    for (const [partIndex, part] of message.parts.entries()) {
+      const candidate = surfaceTextCandidate(part, messageIndex, partIndex)
       if (candidate) candidates.push(candidate)
     }
   }
+  candidates.reverse()
 
   const selected = new Set(
     selectLatestSurfaceTextCandidateIndexes(candidates)
       .map((index) => candidates[index])
+      .filter((candidate) => candidate !== undefined)
       .map((candidate) => `${candidate.messageIndex}:${candidate.partIndex}`),
   )
 

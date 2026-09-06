@@ -9,16 +9,6 @@ import {
 } from "./terminal-buffer"
 
 describe("terminal buffer guards", () => {
-  test("restore_buffer_trim_keeps_recent_tail", () => {
-    const head = "a".repeat(MAX_RESTORE_BUFFER_BYTES)
-    const tail = "tail"
-    const value = `${head}${tail}`
-    const result = prepareRestoreBuffer(value)
-    expect(result.trimmed).toBe(true)
-    expect(result.value?.endsWith(tail)).toBe(true)
-    expect(result.value?.length).toBe(MAX_RESTORE_BUFFER_BYTES)
-  })
-
   test("prepareRestoreBuffer trims oversized buffers to recent bytes", () => {
     const head = "a".repeat(MAX_RESTORE_BUFFER_BYTES)
     const tail = "b".repeat(128)

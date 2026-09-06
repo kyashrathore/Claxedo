@@ -1,10 +1,10 @@
 // Collapses every harness failure state into at most one composer notice.
 //
 // Kept pure and separate from `AgentHarnessSelector` because the ordering is
-// the whole point: these conditions overlap constantly (a dead runtime also
-// fails option discovery, which also leaves the saved model unresolvable), and
-// the old UI rendered each one independently — which is exactly how the control
-// row ended up showing "Unavailable ● Retry" all at once.
+// the whole point: these conditions overlap constantly — a dead runtime also
+// fails option discovery, which also leaves the saved model unresolvable —
+// and rendering each independently would stack "Unavailable ● Retry" in the
+// same row.
 import type { ComposerNoticeTone } from "./composer-notice"
 
 export type HarnessNoticeInput = {
@@ -16,7 +16,7 @@ export type HarnessNoticeInput = {
   optionsFailed: boolean
   /** No model options resolved at all. */
   noModels: boolean
-  /** The runtime's own error text, verbatim. */
+  /** The runtime's own error text, unedited. */
   configError?: string
   /** Name of a saved default model that no longer resolves. */
   savedModelUnavailable?: string
@@ -49,7 +49,7 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       tone: "critical",
       message: `${input.harnessLabel} runtime is unavailable`,
       detail: input.configError ?? "It never finished starting. Retry, or pick another agent.",
-      // The harness e2e specs locate this state by title; keep the string exact.
+      // The harness e2e specs locate this state by this title string; changing it breaks them.
       title: "Agent runtime unreachable after timeout",
       retry: true,
     }

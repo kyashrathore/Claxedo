@@ -7,7 +7,8 @@ import {
   thoughtLevelConfigOption,
   type SdkModelEntry,
 } from "../../sdk-model-catalog"
-import { record, text } from "../shared/sdk-runtime-adapter"
+import { asRecord } from "@claxedo/helpers/guards"
+import { text } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"
 import { codexAppServerModel } from "./protocol"
 
@@ -43,16 +44,16 @@ export async function fetchCodexModels(input: {
     const models = new Map<string, SdkModelEntry>()
     let cursor: string | undefined
     do {
-      const result = record(await proc.request("model/list", cursor ? { cursor } : {})) ?? {}
+      const result = asRecord(await proc.request("model/list", cursor ? { cursor } : {})) ?? {}
       const data = Array.isArray(result.data) ? result.data : []
       for (const item of data) {
-        const row = record(item)
+        const row = asRecord(item)
         if (!row || row.hidden === true) continue
         const id = text(row.model) ?? text(row.id)
         if (!id || models.has(id)) continue
         const supportedEffortLevels = Array.isArray(row.supportedReasoningEfforts)
           ? row.supportedReasoningEfforts
-            .map((option) => text(record(option)?.reasoningEffort))
+            .map((option) => text(asRecord(option)?.reasoningEffort))
             .filter((effort): effort is string => !!effort)
           : []
         models.set(id, {

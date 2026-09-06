@@ -29,15 +29,9 @@ const DEFAULT_TIMEOUT = 15_000
 const PLACEHOLDER_TITLE = /^(New Session|Untitled session)$/
 
 /**
- * B1 — the row for `sessionId` becomes visible with NO reload, and (when `index` is
- * given) sits at that position among session rows. Defects 1/2/7 all manifest here: a
- * `file://`-origin API base (1), a dropped rail-list invalidation (2), and a local
- * workspace that never opened an event stream at all (7) each leave this row absent
- * until something unrelated forces a reload.
- *
- * The row locator is the exact `data-session-id` selector, un-narrowed by `.first()` — a
- * duplicate-rendered row (open issue #14) makes `toBeVisible()` throw a Playwright
- * strict-mode violation here instead of silently resolving onto one copy.
+ * The row for `sessionId` is visible without a reload and, when `index` is given, sits at
+ * that position among session rows. A duplicate row fails strict mode here (see
+ * `expectRailRowUnique`).
  */
 export async function expectRailRowVisible(opts: {
   page: Page
@@ -53,7 +47,7 @@ export async function expectRailRowVisible(opts: {
 
   await expect(
     row,
-    `rail row for session "${sessionId}" never became visible without a reload (defects 1/2/7: file:// API base, dropped invalidation, or no event stream)`,
+    `rail row for session "${sessionId}" never became visible without a reload`,
   ).toBeVisible({ timeout })
 
   if (index !== undefined) {
@@ -81,16 +75,12 @@ export async function expectRailStatusAbsent(opts: {
 }
 
 /**
- * B3 — the rail title leaves the create-time placeholder ("New Session" /
- * "Untitled session") with NO reload, once the server's auto-title lands. Defect 8:
- * `session.updated` was dropped at the runtime bridge, so this stayed on the placeholder
- * forever, absent a reload that happened to land after some unrelated refetch.
+ * The rail title leaves the create-time placeholder ("New Session" / "Untitled session")
+ * without a reload; returns the settled text.
  *
- * Polls manually rather than `expect(title).not.toHaveText(PLACEHOLDER_TITLE)`: an EMPTY
- * title also fails to match that regex, so the naive form would resolve the instant the
- * row mounts with no text at all — trivially true, and proving nothing about the
- * auto-title actually arriving. This requires non-empty text that has left the
- * placeholder, and returns the settled value so a caller can assert on its content too.
+ * Polled by hand rather than `expect(title).not.toHaveText(PLACEHOLDER_TITLE)`: an empty
+ * title also fails that regex, so the naive form resolves the instant the row mounts with
+ * no text. Non-empty, non-placeholder text is required.
  */
 export async function expectRailTitleSettled(opts: {
   page: Page
@@ -115,7 +105,7 @@ export async function expectRailTitleSettled(opts: {
       expect(text.length, `rail title for session "${sessionId}" never rendered any text within ${timeout}ms`).toBeGreaterThan(0)
       expect(
         text,
-        `rail title for session "${sessionId}" is still the create-time placeholder "${text}" after ${timeout}ms (defect 8: session.updated dropped at the runtime bridge)`,
+        `rail title for session "${sessionId}" is still the create-time placeholder "${text}" after ${timeout}ms`,
       ).not.toMatch(PLACEHOLDER_TITLE)
       return text // unreachable: one of the two expects above always throws first
     }
@@ -124,11 +114,8 @@ export async function expectRailTitleSettled(opts: {
 }
 
 /**
- * B5 — after being re-prompted, an older row reaches rail index 0. Asserted on
- * whichever row IS first, rather than on the target row's own index, so a failure names
- * whichever row wrongly outranks it — mirrors `core-claude-native-sdk-rail.spec.ts`
- * lines 326-333. Defect 10: the reconcile rewrote a row's `updatedAt` in place with no
- * re-sort, so a 30-second-old row sat at position 6 under rows 12-29 minutes older.
+ * After a re-prompt, the row for `sessionId` is at rail index 0. Asserted on whichever
+ * row is first so a failure names the row that outranks it.
  */
 export async function expectRailRowMovesToTop(opts: {
   page: Page
@@ -140,17 +127,14 @@ export async function expectRailRowMovesToTop(opts: {
   if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
   await expect(
     page.locator(SELECTORS.allSessionRows).first(),
-    `expected session "${sessionId}" at rail index 0 after being re-prompted, but a different row still outranks it (defect 10: reconcile rewrote updatedAt with no re-sort)`,
+    `expected session "${sessionId}" at rail index 0 after being re-prompted, but a different row still outranks it`,
   ).toHaveAttribute("data-session-id", sessionId, { timeout })
 }
 
 /**
- * B6 — exactly ONE row renders per session id. Open issue #14 (plan line 187-192): a
- * session announced by a `session.lifecycle` frame carrying `info.workspaceID` renders
- * TWICE — once under a project section (`data-session-ref="<id>"`), once under a
- * workspace section (`data-session-ref="workspace:<wsId>:session:<id>"`). Adopting this
- * helper converts that from tolerated (`core-claude-native-sdk-rail.spec.ts` routes
- * around it with `.first()`) to blocking.
+ * Exactly one row renders for `sessionId`. A `session.lifecycle` frame carrying
+ * `info.workspaceID` once rendered the same session under both a project section and a
+ * workspace section; this makes that a failure instead of something `.first()` hides.
  */
 export async function expectRailRowUnique(opts: {
   page: Page
@@ -162,34 +146,21 @@ export async function expectRailRowUnique(opts: {
   if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
   await expect(
     page.locator(SELECTORS.sessionRow(sessionId)),
-    `expected exactly one rail row for session "${sessionId}" (open issue #14: a workspaceID-carrying frame double-renders into a project row AND a workspace row)`,
+    `expected exactly one rail row for session "${sessionId}"`,
   ).toHaveCount(1, { timeout })
 }
 
 /**
- * B7 — the background status dot transitions working -> done on a row that is never
- * focused. Defect 12: a Solid component body runs ONCE; an early
- * `if (status === "idle") return null` froze the glyph at whatever status existed at
- * MOUNT, so a row that started idle and only later went "working" never grew a dot at
- * all. A test that queries/mounts the row only AFTER the status is already "working"
- * cannot see that freeze — it would pass against broken code exactly as well as fixed
- * code, which is precisely how defect 12 shipped undetected.
+ * The status dot on a row that is never focused transitions working -> done, sits inside
+ * the glyph column left of the title, and leaves the timestamp rendered.
  *
- * This helper closes that hole structurally rather than trusting the caller's ordering:
- * it asserts the row is visible AND idle (dot count 0) itself, before calling
- * `driveWorking`, so every use of this oracle is provably mounted pre-status. Compare to
- * `core-claude-native-sdk-rail.spec.ts` lines 393-425, whose sequence (visible -> assert
- * no dot -> emit busy -> assert dot) this generalizes.
+ * The row must be visible and idle (no dot) before `driveWorking` runs, and that is
+ * asserted here rather than trusted: a Solid component body runs once, so a glyph that
+ * reads its status only at mount looks correct to any test that mounts the row already
+ * "working".
  *
- * `driveWorking`/`driveDone` are the caller's own transport calls (real SSE via
- * `mock.emitFlat()`/`mock.emit()`, or a real Tier R/L lane) — this module owns
- * assertions, not transport, per `e2e/INVARIANTS.md` cross-cutting rule 8: the DEV
- * direct-bus seam (`window.__claxedoEmitTestEvent`) must never be the sole delivery path
- * for a transport-dependent proof.
- *
- * The dot and the timestamp are asserted present TOGETHER while working: the pre-fix
- * layout sacrificed the timestamp to show the dot on the right; the fix moved the dot
- * into the left `navigation-row-glyph` gutter so both render at once (defect 11).
+ * `driveWorking`/`driveDone` are the caller's transport (SSE mock or a real lane); this
+ * module owns assertions, not delivery.
  */
 export async function expectRailStatus(opts: {
   page: Page
@@ -205,29 +176,26 @@ export async function expectRailStatus(opts: {
 
   await expect(
     row.locator(SELECTORS.statusDot),
-    `rail row for session "${sessionId}" already carries a status dot before this oracle drove one — the idle-mount precondition the defect-12 proof depends on does not hold`,
+    `rail row for session "${sessionId}" already carries a status dot before this oracle drove one; the row must mount idle`,
   ).toHaveCount(0)
 
   await driveWorking()
 
-  // Capture BEFORE the working-dot assert, suffixed "-working" — this is a two-claim
-  // scenario (working, then done) and one evidence PNG per call would silently overwrite
-  // itself between the two states if both used the bare scenario name. `withSuffix`
-  // (file header) keeps the two claims as two distinct, permanently-inspectable files.
+  // Two captures per call ("-working", "-done") so the second does not overwrite the first.
   const workingEvidence = withSuffix(evidence, "working")
   if (workingEvidence) await captureEvidence({ page, spec: workingEvidence.spec, scenario: workingEvidence.scenario })
 
   await expect(
     row.locator(`${SELECTORS.statusDot}[data-sidebar-status="working"]`),
-    `rail row for session "${sessionId}" never showed a "working" status dot after transitioning off idle (defect 12: the glyph froze at its mount status)`,
+    `rail row for session "${sessionId}" never showed a "working" status dot after transitioning off idle`,
   ).toHaveCount(1, { timeout })
   await expect(
     row.locator(`${SELECTORS.glyph} ${SELECTORS.statusDot}[data-sidebar-status="working"]`),
-    `rail row for session "${sessionId}"'s working dot is not inside the left [data-slot="navigation-row-glyph"] column (defect 11: the dot was orphaned at x=11, left of the workspace icon)`,
+    `rail row for session "${sessionId}"'s working dot is not inside the left [data-slot="navigation-row-glyph"] column`,
   ).toHaveCount(1)
   await expect(
     row.locator(SELECTORS.time),
-    `rail row for session "${sessionId}"'s timestamp is empty while working (defect 11: the dot used to replace the timestamp instead of sitting beside it in the glyph column)`,
+    `rail row for session "${sessionId}"'s timestamp is empty while working; the dot must sit beside it, not replace it`,
   ).toHaveText(/\S/)
 
   const dotX = await row.locator(SELECTORS.statusDot).evaluate((el) => el.getBoundingClientRect().left)

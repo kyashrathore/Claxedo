@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest"
 import { embeddedRuntimeTargetUrl } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
 
 /**
- * The embedded hop used to dispatch from a synthetic, portless origin, so
- * `requestPort` in workspace-runtime's PTY route fell through to the http
- * default of 80. Every terminal was then told `CLAXEDO_PORT=80`, the agent
- * hooks posted lifecycle events to a dead port, and coding agents in terminals
- * never showed status — silently, because notify.sh discards its curl output.
+ * The embedded hop must preserve the caller's port: a portless origin sends
+ * `requestPort` in workspace-runtime's PTY route to the http default of 80,
+ * every terminal is then told `CLAXEDO_PORT=80`, the agent hooks post
+ * lifecycle events to a dead port, and coding agents in terminals never show
+ * status — silently, since notify.sh discards its curl output.
  */
 describe("embeddedRuntimeTargetUrl", () => {
   test("preserves the caller's port, which becomes CLAXEDO_PORT for spawned terminals", () => {
@@ -17,7 +17,7 @@ describe("embeddedRuntimeTargetUrl", () => {
     expect(target.port).toBe("3001")
   })
 
-  // The exact expression the runtime applies to this URL (routes/pty.ts).
+  // Mirrors the port-derivation expression in routes/pty.ts.
   test("survives the runtime's own port derivation instead of defaulting to 80", () => {
     const target = embeddedRuntimeTargetUrl(new URL("http://127.0.0.1:3001/api/wr/pty"), "/api/wr/pty")
     const derived = target.port || (target.protocol === "https:" ? "443" : target.protocol === "http:" ? "80" : undefined)

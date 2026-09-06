@@ -40,9 +40,10 @@ function harnessState(overrides?: Partial<HarnessStoreState>): HarnessStoreState
   return {
     harnessMode: "harness",
     harness: CLAUDE_CONNECTION,
-    harnessBinary: "",
     selectedModel: "sonnet",
     dynamicModels: null,
+    thoughtLevels: null,
+    selectedThoughtLevel: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,
@@ -202,10 +203,11 @@ describe("harness hydrator", () => {
   })
 
   test("falls back to ready hydration and options load when draft status is unavailable", async () => {
-    const subject = createSubject({ local: false, statusOk: false, state: harnessState({ harness: CLAUDE_CONNECTION }) })
+    const subject = createSubject({ local: true, statusOk: false, state: harnessState({ harness: CLAUDE_CONNECTION }) })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
 
+    expect(subject.statusUrls).toHaveLength(1)
     expect(subject.calls).toEqual([
       "seed:scope",
       "ready:claude-team",
@@ -503,6 +505,8 @@ describe("harness hydrator", () => {
   test("marks existing sessions server-owned before asynchronous hydration", async () => {
     const subject = createSubject()
     const marks: string[] = []
+    let release!: (response: Response) => void
+    const config = new Promise<Response>((resolve) => { release = resolve })
     const hydrator = createHarnessHydrator<ScopeInput>({
       base: "http://127.0.0.1:3001",
       seed: () => {},
@@ -516,14 +520,16 @@ describe("harness hydrator", () => {
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
-        harnessSessionFetch: () => async () => response({}),
+        harnessSessionFetch: () => async () => await config,
         localHarnessConfigFetch: () => async () => response({}),
       },
       cache: subject.cache,
     })
 
-    await hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
+    const pending = hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
     expect(marks).toEqual(["scope"])
+    release(response({}))
+    await pending
   })
 
 })

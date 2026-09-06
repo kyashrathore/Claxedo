@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto"
 import type { JsonRecord } from "../shared/sdk-runtime-driver"
-import { errorMessage, record, text } from "../shared/sdk-runtime-values"
+import { asRecord } from "@claxedo/helpers/guards"
+import { errorMessage, text } from "../shared/sdk-runtime-values"
 import { codexSandboxPolicy, codexSettingsFor } from "../shared/permission-modes"
 import type { CodexAppServerProcess } from "./app-server-process"
 import type { CodexActiveThread } from "./active-thread"
@@ -17,7 +18,7 @@ export async function spawnDynamicCodexAgent(input: {
   permissionModeId?: string
 }) {
   const callId = text(input.params.callId) ?? randomUUID()
-  const args = record(input.params.arguments) ?? {}
+  const args = asRecord(input.params.arguments) ?? {}
   const prompt = text(args.message) ?? text(args.prompt) ?? text(args.description)
   if (!prompt) {
     return {
@@ -30,7 +31,7 @@ export async function spawnDynamicCodexAgent(input: {
   const settings = codexSettingsFor(input.permissionModeId)
   let childThreadId = ""
   try {
-    const result = record(await input.active.process.request("thread/start", {
+    const result = asRecord(await input.active.process.request("thread/start", {
       cwd: input.active.directory,
       approvalPolicy: settings.approvalPolicy,
       approvalsReviewer: "user",
@@ -38,7 +39,7 @@ export async function spawnDynamicCodexAgent(input: {
       threadSource: "subagent",
       ...(input.active.model ? { model: input.active.model } : {}),
     }))
-    childThreadId = text(record(result?.thread)?.id) ?? ""
+    childThreadId = text(asRecord(result?.thread)?.id) ?? ""
     if (!childThreadId) throw new Error("Codex app-server did not return a child thread id")
     await observe(input, childThreadId, callId, prompt, label, "running")
     await runDynamicCodexChild(input.active, childThreadId, prompt, input.permissionModeId)
@@ -99,7 +100,7 @@ async function runDynamicCodexChild(
     rejectCompleted = reject
   })
   const unsubscribe = active.process.onMessage((message) => {
-    const params = record(message.params) ?? {}
+    const params = asRecord(message.params) ?? {}
     if (text(params.threadId) !== threadId) return
     if (text(message.method) === "turn/completed") resolveCompleted?.()
     if (text(message.method) === "error") {

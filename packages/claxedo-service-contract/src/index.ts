@@ -1,3 +1,5 @@
+import { isRecord } from "@claxedo/helpers/guards"
+
 /**
  * The complete optional-service vocabulary. This is intentionally a closed
  * union: installing first-party Workers must not turn core into a remote-code
@@ -157,10 +159,6 @@ export function isFirstPartyServiceId(value: unknown): value is FirstPartyServic
 
 export function isServiceLifecycleMutationAction(value: unknown): value is ServiceLifecycleMutationAction {
   return typeof value === "string" && (SERVICE_LIFECYCLE_MUTATION_ACTIONS as readonly string[]).includes(value)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 /** The single object-shape gate for every untrusted payload this contract parses. */

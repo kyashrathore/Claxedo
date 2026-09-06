@@ -30,9 +30,7 @@ export type HarnessScopeInput = {
 export const harnessScope = panePreferenceScope
 export const isDraftScope = isDraftPaneScope
 
-export function initialHarness(): HarnessType | undefined {
-  return undefined
-}
+
 
 /**
  * The harness-store scope for a pane, from the pane's own identity.

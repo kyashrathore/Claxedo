@@ -30,6 +30,7 @@ import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { apiError, captureWorkspaceTelemetry, parsedBody, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
+import { asRecord } from "@claxedo/helpers/guards"
 import { controlPlaneRateLimitError } from "../runtime-token-guards"
 import { repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
@@ -38,7 +39,6 @@ import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/san
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
-import { asRecord } from "../../platform/json/index"
 
 const createBody = z
   .object({

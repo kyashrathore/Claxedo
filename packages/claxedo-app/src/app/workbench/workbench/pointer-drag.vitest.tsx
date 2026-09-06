@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { workbenchDrag, useDragSource, type DropZone } from "./pointer-drag"
 
-// The hand-rolled pointer-events drag engine (WP-C3): one controller that
-// unifies mouse + touch + pen, with movement/long-press thresholds so lists and
-// tab strips stay scrollable. These tests drive it directly (no workbench mount)
-// to pin threshold behavior and drop-zone dispatch.
+// Drives the drag controller directly (no workbench mount): thresholds and
+// drop-zone dispatch.
 
 function pointer(
   target: EventTarget,

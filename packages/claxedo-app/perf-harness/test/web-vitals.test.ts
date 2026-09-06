@@ -82,12 +82,16 @@ test("CLS is the heaviest session window, not the running total", () => {
     { t: 900, value: 0.1 },
   ])).toBeCloseTo(0.3, 6)
 
-  // A session also closes after 5s of continuous shifting.
+  // Every gap is below one second, so only the five-second cap can split this window.
   expect(cumulativeLayoutShift([
     { t: 0, value: 0.1 },
     { t: 900, value: 0.1 },
-    { t: 5200, value: 0.4 },
-  ])).toBeCloseTo(0.4, 6)
+    { t: 1800, value: 0.1 },
+    { t: 2700, value: 0.1 },
+    { t: 3600, value: 0.1 },
+    { t: 4500, value: 0.1 },
+    { t: 5000, value: 0.4 },
+  ])).toBeCloseTo(0.6, 6)
 
   expect(cumulativeLayoutShift([])).toBe(0)
 })
@@ -104,7 +108,7 @@ test("shifts inside 500ms after synthetic input are excused, earlier ones are no
 
 test("with no synthetic input nothing is excused", () => {
   const shifts = [{ t: 100, value: 0.2 }, { t: 900, value: 0.3 }]
-  expect(shiftsExcludingRecentInput(shifts, [])).toHaveLength(2)
+  expect(shiftsExcludingRecentInput(shifts, [])).toEqual(shifts)
 })
 
 test("a shift BEFORE the input it precedes is not excused", () => {

@@ -6,14 +6,8 @@ import { importSpecifiers, packageNameOf, sourceClosure } from "@claxedo/server-
 const ROOT = path.resolve(import.meta.dirname, "../..")
 
 /**
- * What the desktop-local server closes over.
- *
- * When this measurement started, the desktop-local entry reached 259 first-party
- * modules and 42 packages — better-auth, channels,
- * connections, wakes — from a build that never signs in. Most of that came from
- * sharing one package with the hosted product. The manifest now states
- * ownership directly, and this file is the check that the source agrees with the
- * manifest.
+ * What the desktop-local server closes over: the manifest states ownership,
+ * and this file checks that the source agrees with it.
  */
 
 type ExportTarget = string | null | { [condition: string]: ExportTarget }
@@ -43,26 +37,19 @@ function filesUnder(dir: string): string[] {
 }
 
 /**
- * The SOURCE producers this package publishes, derived from its `exports` map.
+ * The source producers this package publishes, derived from its `exports` map.
+ * The manifest is the only statement of what a consumer can import; a
+ * hand-written producer list would leave every later module unwalked.
  *
- * This used to be a hand-written list of thirteen route and composition files,
- * and that made the gate silent for everything written after it: a new producer
- * that imported the authority was simply not walked, and every assertion below stayed
- * green about it. The manifest is the only statement of what a consumer can
- * import, so the manifest is what the measurement reads.
+ * Most exports are `./*` -> `./src/*.ts`, so every source module is a producer.
+ * The self-hosted entry's `import` target under `dist/` is skipped: that bundle
+ * is measured from Bun's source map by `script/product-boundary/verify.ts`, and
+ * walking it here would count its dynamic-import expressions and external
+ * packages as authored modules.
  *
- * Most exports are `./*` -> `./src/*.ts`, so every source module is publishable
- * and every source module is a producer. The production self-hosted entry also
- * has an `import` target under `dist/`; that emitted bundle is measured from
- * Bun's source map by Unit 12's shared verifier. Feeding the generated bundle
- * back into this SOURCE walk would count its dynamic-import expressions and
- * external packages as if they were authored modules, duplicating the emitted
- * gate and making a build artifact change the source answer.
- *
- * Two kinds of matched file are dropped. Tests match the pattern but are not
- * shipped and are allowed edges a product module is not — a test may reach for
- * a hosted package to assert it stays out. Ambient `.d.ts` declarations are
- * erased whole and carry no runtime edge at all.
+ * Tests are dropped (not shipped, and allowed edges a product module is not —
+ * a test may reach for a hosted package to assert it stays out), and so are
+ * ambient `.d.ts` files (erased whole, no runtime edge).
  */
 function producers(): string[] {
   const sources = filesUnder(path.join(ROOT, "src")).map(
@@ -176,11 +163,9 @@ describe("@claxedo/local-server closure", () => {
   })
 
   it("contains no import the walk cannot follow", () => {
-    // `import(someVariable)` is invisible to this walk and to the typechecker.
-    // Three such edges lived in this codebase to keep Node-only modules out of
-    // a Worker bundle; one survived a package move and broke at runtime with a
-    // clean import graph the whole time. They are ports now, and this keeps
-    // them from coming back.
+    // `import(someVariable)` is invisible to this walk and to the typechecker;
+    // one such edge broke at runtime behind a clean import graph, so none are
+    // allowed — Node-only modules stay out of Worker bundles through ports.
     expect(closure().opaque).toEqual([])
   })
 

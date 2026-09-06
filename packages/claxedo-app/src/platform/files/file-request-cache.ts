@@ -90,7 +90,7 @@ export function clearFileRequestCache(runtime?: FileRequestRuntime) {
 // runtime. Mounting another pane for that runtime must preserve already-warmed
 // file/tree requests. The final release is the single lifetime boundary that
 // clears those results before an unobserved runtime can go stale.
-const fileRequestRuntimeCache = createRefCountedResourceCache<undefined>(32)
+const fileRequestRuntimeCache = createRefCountedResourceCache<undefined>()
 
 export function acquireFileRequestCache(runtime: FileRequestRuntime) {
   const handle = fileRequestRuntimeCache.acquire(fileRequestRuntimeKey(runtime), () => ({

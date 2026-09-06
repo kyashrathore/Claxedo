@@ -5,13 +5,13 @@ import { createTransport } from "@/platform/runtime/transport"
 import type { WorkspaceRuntimeRequestOptions } from "@/platform/runtime/transport"
 import {
   loadCachedEntry,
-  normalizeText,
   originOf,
   readCachedEntry,
   terminalScopedPlacement,
   type CacheKey,
   type CacheTtl,
 } from "./terminal-scoped-cache"
+import { trimToEmpty } from "@claxedo/helpers/string"
 
 export type TerminalLogSummary = {
   title: string
@@ -29,7 +29,7 @@ const SUMMARY_TTL: CacheTtl = { hit: 5_000, miss: 2_000 }
 const ALIAS_TTL_MS = 30_000
 
 const alias = new Map<string, { id: string; at: number }>()
-const text = normalizeText
+const text = trimToEmpty
 
 const resolve = (terminalId: string) => resolveRecovery(alias, terminalId, ALIAS_TTL_MS)
 

@@ -6,6 +6,9 @@
  * agree on the three-way `list({owner})` partition semantics that
  * `connectionScopeOf` and the `ownerlessRows: "refuse"` route invariant
  * depend on — a divergence here silently leaks or hides connections.
+ *
+ * Credential material has its own adapter and its own two-host suite:
+ * `credential-store-adapter.test.ts`.
  */
 import { describe, expect, test, beforeEach, afterAll } from "vitest"
 import { realpathSync, mkdirSync } from "fs"
@@ -20,26 +23,11 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
-const registry = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("../platform/db")
 ClaxedoDB.Drizzle()
 
-const { createConnectionStoreAdapter, createCredentialStoreAdapter } = await import("./store-adapter")
-const { connectionStoreConformance, credentialStoreConformance } = await import("@claxedo/connections")
-import type { ControlPlaneCredentials } from "../authority/services"
-
-function credentialsPort(): ControlPlaneCredentials {
-  return {
-    listCredentials: async () => registry.listCredentials(),
-    getCredentialByProvider: async (providerId) => registry.getCredentialByProvider(providerId),
-    resolveCredentialSecret: (providerId) => registry.resolveSecret(providerId),
-    putCredential: (input) => registry.putCredential(input),
-    deleteCredential: async (id) => registry.deleteCredential(id),
-    deleteCredentialsByProvider: async (providerId) => registry.deleteCredentialsByProvider(providerId),
-    updateCredentialStatus: async (id, status, error) => registry.updateCredentialStatus(id, status, error),
-    syncLocalCredentials: async () => ({ synced: [], removed: [] }) as never,
-  }
-}
+const { createConnectionStoreAdapter } = await import("./store-adapter")
+const { connectionStoreConformance } = await import("@claxedo/connections")
 
 function reset() {
   setBackendOverride(createTestBackend())
@@ -60,15 +48,6 @@ describe("SQLite ConnectionStorePort conformance", () => {
   for (const testCase of connectionStoreConformance(async () => {
     reset()
     return { store: createConnectionStoreAdapter() }
-  })) {
-    test(testCase.name, testCase.run)
-  }
-})
-
-describe("SQLite CredentialStorePort conformance", () => {
-  for (const testCase of credentialStoreConformance(async () => {
-    reset()
-    return { store: createCredentialStoreAdapter(credentialsPort()) }
   })) {
     test(testCase.name, testCase.run)
   }

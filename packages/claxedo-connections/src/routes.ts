@@ -2,8 +2,9 @@ import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ConnectionsService } from "./service.js"
 import type { ConnectionScope, IntegrationCapability } from "./types.js"
-import { ConnectionsUnavailableError, connectionScopeOf } from "./types.js"
 import { bool, record, stringRecord, text } from "./json.js"
+import { CAPABILITIES } from "./ports/index.js"
+import { ConnectionExistsError, ConnectionsUnavailableError, connectionScopeOf } from "./types.js"
 
 export type RouteGate = (c: Context) => Promise<Response | null> | Response | null
 export type RouteOwnerResolver = (c: Context) => string | undefined
@@ -37,8 +38,6 @@ export type IntegrationsRouteOptions = {
   ownerlessRows?: "team" | "refuse"
 }
 
-const CAPABILITIES = ["docs", "work-source", "channel", "code-host", "mcp"] as const satisfies readonly IntegrationCapability[]
-
 function isCapability(value: string | undefined): value is IntegrationCapability {
   return !!value && (CAPABILITIES as readonly string[]).includes(value)
 }
@@ -56,6 +55,17 @@ function scopeFrom(scope: unknown): ConnectionScope | undefined {
 
 export function createIntegrationsRoutes(service: ConnectionsService, options: IntegrationsRouteOptions = {}) {
   const app = new Hono()
+
+  // The service decides `connection_exists` from a RETURNED code, having read
+  // the partition first. A store that only discovers the duplicate at write
+  // time — the race where two concurrent connects both read no existing row
+  // and both mint a fresh id — can reach the client no other way than by
+  // throwing, and without this the loser surfaced as a bare 500. Every other
+  // cause is a real fault and is rethrown to the enclosing app unchanged.
+  app.onError((cause, c) => {
+    if (cause instanceof ConnectionExistsError) return c.json({ ok: false, code: "connection_exists" }, 409)
+    throw cause
+  })
   const gate: RouteGate = options.gate ?? (() => null)
   const tokenGate: RouteGate = options.tokenGate ?? (() => null)
   const refuseOwnerless = options.ownerlessRows === "refuse"
@@ -89,15 +99,6 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
       return row
     }
     return row.owner === keys.team || row.owner === keys.personal ? row : undefined
-  }
-
-  const visibleTeamConnection = async (id: string, keys: PartitionKeys) => {
-    const row = await visibleConnection(id, keys)
-    if (!row) return { state: "missing" as const }
-    const team = keys.team === undefined
-      ? row.owner === undefined && !refuseOwnerless
-      : row.owner === keys.team
-    return team ? { state: "visible" as const, row } : { state: "personal" as const }
   }
 
   const connectOwner = (c: Context, scope: ConnectionScope) => {
@@ -238,44 +239,6 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const result = await service.listRepositories(row.id)
     if (!result.ok) return c.json({ code: result.code }, result.status)
     return c.json({ repositories: result.repositories })
-  })
-
-  app.put("/connections/:id/webhook-secret", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
-    const selected = await visibleTeamConnection(c.req.param("id"), managementKeys(c))
-    if (selected.state === "missing") return c.json({ code: "connection_not_found" }, 404)
-    if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
-    const deniedTeamWrite = await options.teamWriteGate?.(c)
-    if (deniedTeamWrite) return deniedTeamWrite
-    const webhookSecret = text(record(await c.req.json().catch(() => undefined))?.secret)
-    if (!webhookSecret?.trim()) {
-      return c.json({ ok: false, code: "invalid_webhook_secret" }, 422)
-    }
-    try {
-      const result = await service.setWebhookSigningSecret(selected.row.id, webhookSecret)
-      return c.json(result, result.ok ? 200 : 422)
-    } catch (error) {
-      if (error instanceof ConnectionsUnavailableError) return c.json({ ok: false, code: "connections_unavailable" }, 503)
-      throw error
-    }
-  })
-
-  app.delete("/connections/:id/webhook-secret", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
-    const selected = await visibleTeamConnection(c.req.param("id"), managementKeys(c))
-    if (selected.state === "missing") return c.json({ code: "connection_not_found" }, 404)
-    if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
-    const deniedTeamWrite = await options.teamWriteGate?.(c)
-    if (deniedTeamWrite) return deniedTeamWrite
-    try {
-      const result = await service.removeWebhookSigningSecret(selected.row.id)
-      return c.json(result, result.ok ? 200 : 422)
-    } catch (error) {
-      if (error instanceof ConnectionsUnavailableError) return c.json({ ok: false, code: "connections_unavailable" }, 503)
-      throw error
-    }
   })
 
   app.post("/connections/:id/auth-failure", async (c) => {

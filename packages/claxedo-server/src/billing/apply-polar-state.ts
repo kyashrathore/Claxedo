@@ -22,7 +22,7 @@
  */
 
 import type { ApplyPolarStateArgs, ApplyPolarStateResult, BillingStore, OrgBillingStateWrite } from "./store-contract"
-import { asRecord } from "../platform/json/index"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 /** Subscription statuses that entitle (ADR 014 §3: past_due is grace-managed in entitlement.ts). */
 const ENTITLING_STATUSES = new Set(["active", "trialing", "past_due"])
@@ -31,10 +31,6 @@ type Rec = Record<string, unknown>
 
 function str(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined
-}
-
-function num(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 /** Read either wire (snake_case) or SDK (camelCase) key. */
@@ -102,7 +98,7 @@ function subscriptionState(subscription: Rec, source: "customer_state" | "subscr
   // pre-decided fallback ladder (plain quantity → seats feature count) lands
   // on seats. `customer.state_changed` subscription entries omit seats
   // entirely, hence preserve_seats.
-  const seats = num(subscription.seats) ?? num(subscription.quantity)
+  const seats = asFiniteNumber(subscription.seats) ?? asFiniteNumber(subscription.quantity)
   return {
     plan: "pro",
     subscription_status: status,

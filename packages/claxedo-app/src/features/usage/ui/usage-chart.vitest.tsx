@@ -4,6 +4,14 @@ import { UsageChart } from "./usage-chart"
 
 afterEach(cleanup)
 
+// The chart renders axis and tooltip dates in the viewer's locale, so expectations
+// are derived the same way instead of pinned to one locale's spelling.
+const dateLabel = (date: string) =>
+  new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+
+const costLabel = (value: number) =>
+  `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 const singleDayRange = {
   since: new Date("2026-08-08T00:00:00Z").getTime(),
   until: new Date("2026-08-08T23:59:59Z").getTime(),
@@ -45,7 +53,7 @@ describe("UsageChart", () => {
     const plot = view.container.querySelector(".usage-chart-plot")!
     expect(plot).toHaveAttribute("tabindex", "0")
     fireEvent.focus(plot)
-    expect(screen.getByRole("status")).toHaveTextContent("Aug 8, 2026")
+    expect(screen.getByRole("status")).toHaveTextContent(dateLabel("2026-08-08"))
     expect(screen.getByRole("status")).toHaveTextContent("12 tokens")
   })
 
@@ -85,7 +93,7 @@ describe("UsageChart", () => {
     ))
 
     const axisLabels = [...view.container.querySelectorAll(".usage-chart-axis span")].map((node) => node.textContent)
-    expect(axisLabels).toEqual(["May 12, 2026", "Jun 26, 2026", "Aug 9, 2026"])
+    expect(axisLabels).toEqual([dateLabel("2026-05-12"), dateLabel("2026-06-26"), dateLabel("2026-08-09")])
     expect(view.container.querySelectorAll(".usage-chart-area")).toHaveLength(0)
     expect(view.container.querySelector(".usage-chart-line")?.getAttribute("d")).toMatch(/^M960,/)
     expect(view.container.querySelector(".usage-chart-point")).toHaveAttribute("cx", "960")
@@ -171,7 +179,7 @@ describe("UsageChart", () => {
       />
     ))
     fireEvent.focus(view.container.querySelector(".usage-chart-plot")!)
-    expect(screen.getByRole("status")).toHaveTextContent("$0.13")
+    expect(screen.getByRole("status")).toHaveTextContent(costLabel(0.13))
   })
 
   test("stacks retained series, rolls the tail into Other, and reconciles the tooltip total", () => {

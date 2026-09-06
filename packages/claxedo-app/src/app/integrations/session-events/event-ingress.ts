@@ -30,6 +30,7 @@ import { prepareRegisteredSessionRevocation } from "@/features/session/conversat
 import { allowPersistedSessionConversations } from "@/features/session/conversation/conversation-persistence"
 import { asRecord, readField, readString } from "@/lib/record"
 import { sessionEventRow } from "@/features/session/data/sync/session-event-info"
+import { asFiniteNumber, asString } from "@claxedo/helpers/guards"
 
 export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
 
@@ -66,7 +67,7 @@ export function createSessionAuthorityRevision() {
 /** Canonical successful inventory is also grant authority when doorbells miss. */
 export function reconcileAuthorizedSessionPersistence(
   sessions: Iterable<{ id: string }>,
-  scope: string,
+  scope: string | null,
 ) {
   for (const session of sessions) allowPersistedSessionConversations(session.id, scope)
 }
@@ -131,7 +132,7 @@ type EventIngressInput = {
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
   sessionAccessRetained: (event: SessionAccessRevokedEvent) => Promise<boolean>
-  revocationScope: () => string
+  revocationScope: () => string | null
   onSessionAuthorityChanged?: () => void
   onSessionAccessRevoked?: (event: SessionAccessRevokedEvent) => void
   flushNavigationPersistence: () => Promise<void>
@@ -353,7 +354,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
 async function handleSessionShareRevoked(
   input: EventIngressInput,
   event: SessionAccessRevokedEvent,
-  scope: string,
+  scope: string | null,
   isActive: () => boolean,
 ) {
   try {
@@ -660,22 +661,22 @@ function projectCanonicalSessionTitle(input: {
   workspaceId?: string
 }) {
   const info = asRecord(input.info)
-  const sessionId = txt(info?.id) ?? txt(info?.sessionID)
+  const sessionId = asString(info?.id) ?? asString(info?.sessionID)
   if (!sessionId) return
-  const workspaceId = txt(info?.workspaceID) ?? txt(info?.workspaceId) ?? input.workspaceId
+  const workspaceId = asString(info?.workspaceID) ?? asString(info?.workspaceId) ?? input.workspaceId
   const target: SessionTitleTarget = {
     sessionId,
-    directory: txt(info?.directory) ?? input.directory,
+    directory: asString(info?.directory) ?? input.directory,
     ...(workspaceId ? { workspaceId } : {}),
   }
   if (input.type === "deleted") {
     input.writer.remove(target)
     return
   }
-  const title = txt(info?.title)
+  const title = asString(info?.title)
   if (!title) return
   const time = asRecord(info?.time)
-  const updatedAt = num(time?.updated) ?? num(info?.updatedAt)
+  const updatedAt = asFiniteNumber(time?.updated) ?? asFiniteNumber(info?.updatedAt)
   input.writer.publishCanonical({
     ...target,
     title,
@@ -692,9 +693,9 @@ function readLifecycleSessionInfo(input: unknown, directory: DirectoryRef): Life
   const title = txt(value.title)
   const version = txt(value.version)
   const time = asRecord(value.time)
-  const created = num(time?.created)
-  const updated = num(time?.updated)
-  const archived = num(time?.archived)
+  const created = asFiniteNumber(time?.created)
+  const updated = asFiniteNumber(time?.updated)
+  const archived = asFiniteNumber(time?.archived)
   if (id === undefined || slug === undefined || projectID === undefined) return undefined
   if (title === undefined || version === undefined) return undefined
   if (created === undefined || updated === undefined) return undefined
@@ -715,8 +716,8 @@ function sessionProjectionEvent(input: unknown) {
   const properties = asRecord(event?.properties)
   const info = asRecord(properties?.info)
   const part = asRecord(properties?.part)
-  const type = txt(event?.type)
-  const sessionId = txt(properties?.sessionID) ?? txt(properties?.sessionId) ?? txt(info?.sessionID) ?? txt(part?.sessionID)
+  const type = asString(event?.type)
+  const sessionId = asString(properties?.sessionID) ?? asString(properties?.sessionId) ?? asString(info?.sessionID) ?? asString(part?.sessionID)
   if (!type || !sessionId) return undefined
   const ordinal = typeof event?.event_ordinal === "number" && Number.isFinite(event.event_ordinal)
     ? event.event_ordinal
@@ -729,8 +730,8 @@ function sessionProjectionEvent(input: unknown) {
       ...(ordinal === undefined ? {} : { expectedEventOrdinal: ordinal }),
     }
   }
-  const replayGap = (type === "harness-notice" && txt(event?.code) === "runtime.sse_replay_gap") ||
-    (type === "runtime.diagnostic" && txt(properties?.code) === "runtime.sse_replay_gap")
+  const replayGap = (type === "harness-notice" && asString(event?.code) === "runtime.sse_replay_gap") ||
+    (type === "runtime.diagnostic" && asString(properties?.code) === "runtime.sse_replay_gap")
   if (replayGap) {
     return {
       action: "repair" as const,
@@ -755,8 +756,4 @@ function isCentralSessionRow(input: SessionEventRow) {
 
 function txt(input: unknown) {
   return typeof input === "string" ? input : undefined
-}
-
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }

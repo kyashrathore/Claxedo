@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
-import { createSignal, createMemo, For } from "solid-js"
+import { createSignal, For } from "solid-js"
 import type { HarnessSelection, SessionRef } from "@/platform/identity/session-ref"
 
 type CatalogProvider = {
@@ -90,29 +90,23 @@ vi.mock("@/features/session/preferences/pane", () => ({
 // Stub the merged harness→model picker, preserving the DOM contract these
 // tests were written against: a harness trigger, one button per harness option,
 // and the model control with its trigger props spread onto a real node. The
-// component under test no longer imports `Select` or `ModelSelectorPopover` —
-// it composes one picker — so this is where the seam moved.
+// component under test composes one picker rather than importing `Select` or
+// `ModelSelectorPopover`, so this is the seam.
 vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
   HarnessModelPicker: (props: any) => {
-    const groups = createMemo(() => props.harnessOptions.reduce((result, opt) => {
-      const group = harnessGroupForTest(opt)
-      result.set(group, [...(result.get(group) ?? []), opt])
-      return result
-    }, new Map<string, HarnessSelection[]>()))
     return (
       <div data-testid="select" data-disabled={props.harnessDisabled?.() ? "true" : "false"}>
         <button data-testid="select-trigger" disabled={props.harnessDisabled?.()}>
           {props.harnessLabel?.(props.harness?.())}
         </button>
-        <For each={[...groups().entries()]}>{([group, opts]) => (
-          <div data-testid={`select-group-${group}`}>
-            <span>{group}</span>
-            {opts.map((opt: HarnessSelection) => (
-              <button data-testid={`select-option-${harnessId(opt)}`} onClick={() => props.onHarnessSelect?.(opt)}>
-                {props.harnessLabel?.(opt) ?? harnessId(opt)}
-              </button>
-            ))}
-          </div>
+        <For each={props.harnessOptions}>{(opt: HarnessSelection) => (
+          <button
+            data-testid={`select-option-${harnessId(opt)}`}
+            data-group={props.harnessGroup(opt)}
+            onClick={() => props.onHarnessSelect?.(opt)}
+          >
+            {props.harnessLabel?.(opt) ?? harnessId(opt)}
+          </button>
         )}</For>
         <div data-testid="model-selector" data-disabled={props.modelDisabled?.() ? "true" : "false"}>
           <div
@@ -137,15 +131,8 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
   },
 }))
 
-// Mirrors harnessOptionGroup in the component; the stub groups rows the same
-// way so the "groups harness choices by ACP / native SDK / direct" test still
-// describes what a user sees.
 function harnessId(input: HarnessSelection) {
   return input.kind === "native" ? input.harnessId : input.connectionId
-}
-
-function harnessGroupForTest(input: HarnessSelection) {
-  return input.kind === "native" ? "Native SDK" : "Connections"
 }
 
 vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
@@ -166,8 +153,11 @@ import { harnessStatusPatch } from "@/features/session/harness/store-state"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 
 function harnessController(): HarnessSelectionController {
+  const [revision, refresh] = createSignal(0)
   return {
-    read: () => ({
+    read: () => {
+      revision()
+      return {
       harness: harnessType,
       readiness: readiness as ReturnType<HarnessSelectionController["read"]>["readiness"],
       isHarnessMode: harnessMode,
@@ -182,7 +172,8 @@ function harnessController(): HarnessSelectionController {
       draftDefaultModel: selectedModel
         ? { providerID: selectedModelProvider ?? harnessId(harnessType), modelID: selectedModel }
         : undefined,
-    }),
+      }
+    },
     hydrate: (scope: string, input?: { directory?: string; sessionId?: string; sessionRef?: SessionRef }) => {
       hydrateCalls.push({ scope, directory: input?.directory, sessionId: input?.sessionId, sessionRef: input?.sessionRef })
     },
@@ -193,6 +184,7 @@ function harnessController(): HarnessSelectionController {
       setModelCalls.push({ scope, model })
       selectedModel = model.modelID
       selectedModelProvider = model.providerID
+      refresh((value) => value + 1)
     },
     rememberDraftModel: () => false,
     resolveDraftDefault: (_scope, input) => {
@@ -209,10 +201,11 @@ function harnessController(): HarnessSelectionController {
 // there — never beside the controls.
 function TestAgentHarnessSelector(props: Omit<Parameters<typeof AgentHarnessSelector>[0], "harnessController">) {
   const channel = createComposerNoticeChannel()
+  const controller = harnessController()
   return (
     <ComposerNoticeProvider channel={channel}>
       <ComposerNoticeRow notice={channel.current()} />
-      <AgentHarnessSelector harnessController={harnessController()} {...props} />
+      <AgentHarnessSelector harnessController={controller} {...props} />
     </ComposerNoticeProvider>
   )
 }
@@ -223,6 +216,8 @@ function noticeRow(container: HTMLElement) {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   setHarnessCalls.length = 0
   setModelCalls.length = 0
   hydrateCalls.length = 0
@@ -260,14 +255,14 @@ beforeEach(() => {
 describe("AgentHarnessSelector — existing session handoff", () => {
   test("unsupported discovery does not create a connection group or schedule retries", async () => {
     discovery.mockImplementation(async () => Response.json({ status: "unsupported", reason: "operator_local_configuration" }))
-    const timeout = vi.spyOn(globalThis, "setTimeout")
+    vi.useFakeTimers()
     const { container } = render(() => <TestAgentHarnessSelector />)
     await discovery.mock.results[0].value
     await new Promise<void>((resolve) => queueMicrotask(resolve))
-    expect(container.querySelector("[data-testid='select-group-Connections']")).toBeNull()
+    expect(container.querySelector("[data-group='Connections']")).toBeNull()
     expect(discovery).toHaveBeenCalledTimes(1)
-    expect(timeout.mock.calls.filter(([, delay]) => delay === 500 || delay === 1000)).toHaveLength(0)
-    timeout.mockRestore()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(discovery).toHaveBeenCalledTimes(1)
   })
 
   test("keeps native Pi and a connection named pi as separate choices", async () => {
@@ -366,16 +361,6 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(captured.filter((entry) => entry.event === "harness_selected")).toEqual([])
   })
 
-  // RETIRED: "a typeahead-while-closed change does NOT switch the harness".
-  //
-  // That guarded a hazard of the Kobalte `Select` this control used to be: with
-  // the trigger focused but never opened, its typeahead mutated the value on a
-  // bare keystroke, and `openedViaMenu` existed solely to reject the resulting
-  // onChange. The merged picker is a Popover whose harness rows are plain
-  // buttons, so there is no value-mutating path that is not a click — the test
-  // could only ever assert against its own stub. What still holds is covered by
-  // the no-op and locked cases around it.
-
   test("clicking an option hands off an existing session", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
     const option = container.querySelector("[data-testid='select-option-codex']") as HTMLButtonElement
@@ -385,18 +370,8 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: { kind: "native", harnessId: "codex" } }])
   })
 
-  test("existing sessions can hand off to built-in harnesses", () => {
-    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
-
-    for (const runner of ["claude", "codex", "cursor", "pi"]) {
-      const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
-      fireEvent.click(opt)
-    }
-    expect(setHarnessCalls).toHaveLength(1)
-  })
-
-  test("only starts one runner switch while a switch is in flight", () => {
-    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+  test.each([false, true])("only starts one in-flight runner switch with sessionLocked=%s", (sessionLocked) => {
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={sessionLocked} />)
 
     for (const runner of ["claude", "codex", "cursor", "pi"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
@@ -405,19 +380,16 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: { kind: "native", harnessId: "codex" } }])
   })
 
-  test("groups only the currently supported native choices", () => {
+  test("forwards supported native options and their authoritative group labels", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-
-    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Claude")
-    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Codex")
-    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Cursor")
-    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Pi")
-    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("OpenCode")
-    expect(container.querySelector("[data-testid='select-option-opencode']")).not.toBeNull()
-    expect(container.querySelector("[data-testid='select-group-Connections']")).toBeNull()
-    expect(container.querySelector("[data-testid='select-option-claude-acp']")).toBeNull()
-    expect(container.querySelector("[data-testid='select-option-codex-acp']")).toBeNull()
-    expect(container.querySelector("[data-testid='select-option-cursor-acp']")).toBeNull()
+    const options = [...container.querySelectorAll('[data-testid^="select-option-"]')]
+    expect(options.map((option) => ({ label: option.textContent, group: option.getAttribute("data-group") }))).toEqual([
+      { label: "Claude", group: "Native SDK" },
+      { label: "Codex", group: "Native SDK" },
+      { label: "Cursor", group: "Native SDK" },
+      { label: "Pi", group: "Native SDK" },
+      { label: "OpenCode", group: "Native SDK" },
+    ])
   })
 
   test("renders the selected model when ACP model options are available", () => {
@@ -439,10 +411,11 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
+    expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toBe("Sonnet 4.6")
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-opus-4-6']") as HTMLButtonElement)
 
     expect(setModelCalls).toEqual([{ scope: "test-scope", model: { providerID: "claude", modelID: "claude-opus-4-6" } }])
-    expect(container.textContent).toContain("Opus 4.6")
+    expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toBe("Opus 4.6")
   })
 
   test("selecting the current runner model is a no-op command", () => {
@@ -602,7 +575,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(row!.textContent).toContain("Claude runtime is unavailable")
     // The harness e2e specs locate this state by title.
     expect(row!.getAttribute("title")).toBe("Agent runtime unreachable after timeout")
-    // Exactly one surface reports it, where four used to.
+    // One notice, not one per surface.
     expect(container.querySelectorAll("[data-component='composer-notice']")).toHaveLength(1)
   })
 
@@ -716,15 +689,11 @@ describe("AgentHarnessSelector — readiness UI", () => {
     expect(view.queryByText("Connecting")).toBeNull()
   })
 
-  // Cross-WP pin (fixme ledger core-harness-ownership-local:515), now LIVE after
-  // WP-B9. Before B9 the harness store's readiness was an error/ready binary, so a
-  // still-connecting harness never produced "polling" — the Connecting pill was
-  // unreachable and a starting harness showed a red "Unavailable". Drive the real
-  // store projector (harnessStatusPatch) with a startup status frame (ready:false,
-  // no hard failure, not a settled switch response) and assert it yields "polling"
-  // that this selector renders as "Connecting" — proving the path is reachable
-  // end-to-end, not just that the selector renders a hardcoded readiness.
-  test("startup status frame drives the store to 'polling', making the Connecting pill reachable [WP-B9]", () => {
+  // Drives the real store projector with a startup status frame (ready:false, no
+  // hard failure, not a settled switch response) so the "polling" readiness the
+  // Connecting pill depends on is reached through harnessStatusPatch rather than
+  // hardcoded.
+  test("startup status frame drives the store to 'polling', making the Connecting pill reachable", () => {
     const patch = harnessStatusPatch({
       data: { type: { kind: "native", harnessId: "codex" }, status: "configured", ready: false },
     })

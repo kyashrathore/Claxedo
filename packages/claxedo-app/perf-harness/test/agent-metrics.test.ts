@@ -28,7 +28,7 @@ describe("agent-app benchmark metric semantics", () => {
     })).toEqual({ state: "exact", value: 20, unit: "ms" })
   })
 
-  test("rejects duplicate or unmatched interaction evidence", () => {
+  test("rejects duplicate interaction evidence", () => {
     expect(eventTimingP95({
       probeCount: 2,
       durationThresholdMs: 16,

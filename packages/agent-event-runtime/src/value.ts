@@ -14,13 +14,9 @@ export function jsonText(value: unknown): string {
   }
 }
 
-export function number(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
-
 export function optionLabels(value: unknown) {
   if (!Array.isArray(value)) return []
-  return value.flatMap((item) => text(item) ?? text(object(item)?.label) ?? [])
+  return value.flatMap((item) => text(item) ?? text(asRecord(item)?.label) ?? [])
 }
 
 export function pathFields(

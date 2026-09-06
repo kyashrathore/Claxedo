@@ -1,5 +1,6 @@
 import type { JsonRecord } from "../shared/sdk-runtime-driver"
-import { record, text } from "../shared/sdk-runtime-values"
+import { asRecord } from "@claxedo/helpers/guards"
+import { text } from "../shared/sdk-runtime-values"
 
 /**
  * Projecting a remote MCP server's elicitation as an ordinary Codex question.
@@ -19,8 +20,8 @@ const MCP_ELICITATION_ALLOW_ONCE = "Allow once"
 
 function isEmptyMcpElicitationForm(params: JsonRecord) {
   if (text(params.mode) !== "form") return false
-  const schema = record(params.requestedSchema)
-  const properties = record(schema?.properties)
+  const schema = asRecord(params.requestedSchema)
+  const properties = asRecord(schema?.properties)
   return schema?.type === "object" && properties !== undefined && Object.keys(properties).length === 0
 }
 
@@ -72,6 +73,6 @@ export function codexMcpElicitationResponse(params: JsonRecord, answer: string |
   } catch {
     throw new Error("MCP elicitation response must be a JSON object")
   }
-  if (!record(content)) throw new Error("MCP elicitation response must be a JSON object")
+  if (!asRecord(content)) throw new Error("MCP elicitation response must be a JSON object")
   return { action: "accept" as const, content }
 }

@@ -11,15 +11,14 @@ export type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./
  * LOCAL content surfaces.
  *
  * Sessions, terminals, drafts, and context — everything the unsigned desktop
- * renders. Documents used to live here too, which made its implementation a
- * static import of the app's only entry. It now lives in
- * `documents-content-surfaces.tsx` and reaches the registry through
- * `app/composition/product-contributions.ts` after an account adapter reports
- * signed state. The `marketplace` surface left for the same reason: Agent
- * Plugins contributes it from `app/composition/agent-plugin-contribution-loader.tsx`.
+ * renders. Documents lives in `documents-content-surfaces.tsx` instead,
+ * reached through `app/composition/product-contributions.ts` after an account
+ * adapter reports signed state — registering it as a static import here would
+ * put it in the app's only entry. Agent Plugins contributes `marketplace` the
+ * same way, from `app/composition/agent-plugin-contribution-loader.tsx`.
  *
- * A surface added here is available to every build, signed or not. That is the
- * decision this file's boundary now forces someone to make explicitly.
+ * A surface added here is available to every build, signed or not — that is
+ * the decision this file's boundary forces explicitly.
  */
 
 // Lazy content surfaces: keep non-session feature bundles out of the eager main

@@ -6,15 +6,7 @@
  * downstream has to assert.
  */
 
-/** Is `value` a plain object — the shape every contract payload is carried in? */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
-/** The record `value` holds, or `undefined` when it is not one. */
-export function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
+export { asRecord, isRecord } from "@claxedo/helpers/guards"
 
 /** The non-empty string `value` holds, or `undefined`. */
 export function asText(value: unknown): string | undefined {

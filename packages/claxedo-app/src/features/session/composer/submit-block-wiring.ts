@@ -7,16 +7,11 @@ import { createPromptToolbarState } from "./toolbar-state"
 import { submitBlockReason, type SubmitBlock } from "./submit-block-reason"
 
 /**
- * The composer's submit-block wiring (T5): the single priority-ordered
- * "why is Send blocked?" derivation and the intent action that resolves an
- * actionable missing-model block. Factored out of
- * `composer.tsx` so the six-boolean-to-one-vocabulary logic is one cohesive
- * unit instead of scattered memos and closures in the component body.
- *
- * Behaviour is identical to the inline version: `submitBlock` is the one source
- * of truth both `submitInertBlocked` and the explain-on-intent copy derive from;
+ * The composer's "why is Send blocked?" derivation and the intent action that
+ * resolves an actionable missing-model block. `submitBlock` is the one source
+ * both `submitInertBlocked` and the explain-on-intent copy derive from;
  * `roleSubmitBlocked` hard-blocks the handler unconditionally; `openModelPicker`
- * clicks the one model picker already rendered in the toolbar.
+ * clicks the model picker already rendered in the toolbar.
  */
 export function createComposerSubmitBlockWiring(deps: {
   workspaceId?: Accessor<string | undefined>
@@ -33,9 +28,6 @@ export function createComposerSubmitBlockWiring(deps: {
   rootEl: () => HTMLDivElement | undefined
 }) {
   const roleSubmitBlocked = createMemo(() => submitBlockedByWorkspaceRole(deps.workspaceId?.()))
-  // One priority-ordered source of truth for "why is Send blocked?" (T5). Both
-  // `submitDisabled` and the explain-on-intent copy derive from this; they never
-  // diverge into the six-boolean drift the old composer had.
   const submitBlock = createMemo<SubmitBlock | null>(() => {
     const nextScope = deps.scope()
     const harnessMode = deps.isHarnessMode(nextScope)

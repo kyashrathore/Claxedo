@@ -16,7 +16,8 @@ test("summarize computes p95 and variance", () => {
   })
   expect(summary.p50).toBe(20)
   expect(summary.p95).toBe(30)
-  expect(summary.relative_stddev).toBeGreaterThan(0)
+  expect(summary.mean).toBe(20)
+  expect(summary.relative_stddev).toBeCloseTo(0.40824829046)
 })
 
 test("betterThan respects metric direction", () => {

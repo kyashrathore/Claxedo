@@ -4,9 +4,8 @@ import { looksLikeDirectoryPath, terminalHookWorkspaceId } from "./hook-workspac
 const runtimeId = () => "0cce5b5d-1a52-4538-865d-fde31ca7653c"
 
 describe("terminalHookWorkspaceId", () => {
-  // The actual defect: the PTY fell back to `cwd`, so notify.sh posted
-  // ?workspaceId=/Users/…/repo, which 404s, so no agent.lifecycle event ever
-  // reached the app and terminal coding agents showed no status.
+  // A cwd fallback makes notify.sh post ?workspaceId=<path>, which 404s and
+  // drops every agent.lifecycle event.
   test("falls back to the runtime workspace identity, never a directory", () => {
     const id = terminalHookWorkspaceId({ runtimeWorkspaceId: runtimeId })
     expect(id).toBe("0cce5b5d-1a52-4538-865d-fde31ca7653c")
@@ -24,7 +23,7 @@ describe("terminalHookWorkspaceId", () => {
   // so a path arriving here is treated as the mistake it almost certainly is.
   test("ignores a path-shaped value from the caller", () => {
     expect(terminalHookWorkspaceId({
-      envWorkspaceId: "/Users/yashvardhansingh/test/opencode",
+      envWorkspaceId: "/srv/repos/opencode",
       runtimeWorkspaceId: runtimeId,
     })).toBe("0cce5b5d-1a52-4538-865d-fde31ca7653c")
   })
@@ -42,7 +41,7 @@ describe("terminalHookWorkspaceId", () => {
 describe("looksLikeDirectoryPath", () => {
   test("recognises the path shapes a workspace id must never be", () => {
     for (const value of [
-      "/Users/yashvardhansingh/test/opencode",
+      "/srv/repos/opencode",
       "~/projects/app",
       "C:\\Users\\dev\\repo",
       "\\\\server\\share",

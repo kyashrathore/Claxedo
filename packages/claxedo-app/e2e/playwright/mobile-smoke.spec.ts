@@ -47,14 +47,9 @@ async function openWorkbench(page: Page, dir: string) {
   await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 15_000 })
 }
 
-/** Open the workspace side panel via the header `workspace-panel-toggle` button —
- * the entry point that is genuinely present at a NARROW boot. (behavior 2b / WP-C3
- * §3.2 suppresses the review-panel auto-open at phone width, so the L2 "Open
- * Processes" toolbar toggle `core-processes.spec.ts` uses at desktop is not rendered
- * here — it only appears once a review/process context is already up. The
- * always-present `workspace-panel-toggle`, `aria-label="Open workspace panel"`, is
- * the correct narrow-viewport opener.) This spec asserts nothing about which
- * navigator the panel shows — only that the shell opens+mounts full-width. */
+/** Opens the workspace side panel via the header `workspace-panel-toggle`, the only
+ * opener present at a narrow boot: the "Open Processes" toolbar toggle
+ * `core-processes.spec.ts` uses renders only once a review/process context is up. */
 async function openWorkspacePanel(page: Page) {
   const toggle = page.locator('[data-testid="workspace-panel-toggle"]').first()
   await expect(toggle).toBeVisible({ timeout: 10_000 })
@@ -82,11 +77,8 @@ function timelineScroller(page: Page) {
   return page.locator('[data-scrollable]:has([data-slot="session-turn-message-content"])').first()
 }
 
-/** Mocks the REAL terminal PTY create route (`/api/wr/pty`, not the stale
- * `/api/claxedo/pty` legacy path). Enough for a pane to mount and activate; the
- * websocket I/O is not modeled (not needed by this spec — only `core-terminal`
- * asserts terminal I/O). Verbatim copy of `core-panes-split-tabs.spec.ts`'s
- * `installPtyMock` — behavior 4's fixture needs the same second surface. */
+/** Mocks the terminal PTY create route (`/api/wr/pty`) so a pane can mount and
+ * activate; websocket I/O is not modeled. */
 function installPtyMock(page: Page) {
   let counter = 0
   return page.route("**/api/wr/pty**", async (route) => {
@@ -106,17 +98,15 @@ function installPtyMock(page: Page) {
   })
 }
 
-/** Playwright's bundled Chromium reports `navigator.platform === "Win32"` in this
- * harness regardless of host OS (`core-panes-split-tabs.spec.ts` carries the same
- * finding) — resolve the modifier at runtime instead of trusting `process.platform`. */
+/** Playwright's bundled Chromium reports `navigator.platform === "Win32"` regardless of
+ * host OS, so the modifier is resolved in the page, not from `process.platform`. */
 async function modKey(page: Page): Promise<"Meta" | "Control"> {
   const isMac = await page.evaluate(() => /(Mac|iPod|iPhone|iPad)/.test(navigator.platform))
   return isMac ? "Meta" : "Control"
 }
 
 /** The compact switcher tab strip only renders while the sidebar is unpinned
- * (`workbench-shell-header.tsx`'s `<Show when={!sidebarPinned()}>`) — same gate
- * `core-panes-split-tabs.spec.ts` documents for its own switcher assertions. */
+ * (`workbench-shell-header.tsx`'s `<Show when={!sidebarPinned()}>`). */
 async function unpinSidebarForSwitcher(page: Page) {
   const mod = await modKey(page)
   await page.keyboard.press(`${mod}+b`)
@@ -133,21 +123,12 @@ function visiblePaneContents(page: Page) {
   return page.locator("[data-workbench-content][data-pane-id]")
 }
 
-/** Thin wrapper over CDP `Input.dispatchTouchEvent` — the primitive Playwright's
- * own `page.touchscreen` doesn't expose (it only offers a single-shot `tap()`, no
- * multi-step drag path). This drives Chromium's REAL touch →
- * `PointerEvent(pointerType:"touch")` synthesis pipeline — the same one a
- * physical touchscreen drives — not a synthetic DOM event our engine could
- * special-case; `useDragSource`'s `pointerdown` listener (`pointer-drag.ts`) is
- * what actually receives this input. `touchPoints: []` on `touchEnd` signals full
- * release (Puppeteer's own `Touchscreen.tap()` convention). CRITICAL: every
- * `touchStart`/`touchMove` touch point carries the SAME explicit `id` — without
- * it, Chromium's touch→pointer synthesis treats each dispatched point as a
- * DISTINCT touch, minting a NEW `pointerId` per event; `useDragSource`'s
- * `window.pointermove` listener guards on `event.pointerId !== pointerId`
- * (`pointer-drag.ts`), so a mismatched id makes every move after the initial
- * `pointerdown` silently no-op (verified empirically: the drop-target overlay
- * never appeared without this). */
+/** CDP `Input.dispatchTouchEvent`, which drives Chromium's real touch -> PointerEvent
+ * synthesis; Playwright's `page.touchscreen` only offers a single-shot `tap()`.
+ * Every touch point carries the same `id`: without it Chromium mints a new
+ * `pointerId` per event and `useDragSource`'s `pointermove` guard
+ * (`event.pointerId !== pointerId`, `pointer-drag.ts`) drops every move.
+ * `touchPoints: []` on `touchEnd` is full release. */
 async function openTouch(page: Page) {
   const client = await page.context().newCDPSession(page)
   const TOUCH_ID = 7
@@ -167,28 +148,16 @@ async function openTouch(page: Page) {
   }
 }
 
-/** Long-press-drags from `source` to a point on `targetBox`'s edge (`axis`/
- * `edgeFraction` pick which edge — e.g. `axis:"x", edgeFraction:0.94` lands near
- * the right edge, `axis:"y", edgeFraction:0.08` near the top). Holds still for
- * longer than the engine's `TOUCH_LONG_PRESS_MS` (250ms, `pointer-drag.ts`)
- * before moving at all — moving first reads as a scroll and ABORTS the drag
- * (`pointer-drag.ts`'s real-input fix, WP-C3a). Returns the open touch session so
- * the caller can assert mid-drag DOM state (the drop-target overlay) before
- * calling `.end()` to commit — mirroring a real finger: press, hold, drag, lift.
+/** Long-press-drags from `source` to a point on `targetBox`'s edge (`axis:"x",
+ * edgeFraction:0.94` is near the right edge; `axis:"y", edgeFraction:0.08` near the
+ * top). Holds longer than `TOUCH_LONG_PRESS_MS` (250ms, `pointer-drag.ts`) before
+ * moving; moving first reads as a scroll and aborts the drag. Returns the open touch
+ * session so the caller can assert mid-drag state before `.end()`.
  *
- * PATH SHAPE IS LOAD-BEARING, not cosmetic. `useDragSource`'s drag sources
- * default their (non-grip) `touch-action` to the axis they must keep scrollable
- * pre-drag (`pan-x` for the horizontal tab strip) — Chromium's OWN compositor
- * keeps arbitrating that axis for native panning even mid-drag, and a pointer
- * path with real movement along the PERMITTED axis gets a native `pointercancel`
- * handed to the main thread regardless of our own `setPointerCapture()` call
- * (verified empirically: an initial diagonal jump toward the target reliably
- * cancelled a `touch-action:pan-x` tab drag; the SAME drop, reached via this
- * vertical-first path, never does). A tab strip always sits ABOVE every pane, so
- * a real finger's first movement leaving it is vertical anyway — this helper's
- * two-phase path (down, THEN across) matches that real gesture, not the other
- * way around. Many small steps, not one or two big jumps, for the same reason a
- * physical finger never teleports. */
+ * The path goes down first, then across, in many small steps. The tab strip keeps
+ * `touch-action: pan-x`, and Chromium's compositor still arbitrates that axis
+ * mid-drag: movement along it yields a native `pointercancel` despite
+ * `setPointerCapture()`, so an initial diagonal jump cancels a tab drag. */
 async function touchLongPressDragTo(
   page: Page,
   source: { x: number; y: number },
@@ -216,15 +185,14 @@ async function touchLongPressDragTo(
   return touch
 }
 
-// `@core`, not `@happy`: this spec exists because no other spec guards narrow-viewport
-// behavior, and `@happy` is a dead pre-consolidation lane no CI job selects — so
-// under `CLAXEDO_E2E_SUITE=core` the `mobile` Playwright project resolved to ZERO tests
-// and the guard guarded nothing. It is Tier M (every route mocked, zero real network),
-// 5 tests, so it belongs in the watched lane. The `mobile` project's `testMatch` still
-// confines it to iPhone-13 emulation; the chromium project `testIgnore`s `mobile-*`, so
-// it never also runs at desktop viewport. See the lane registry in `playwright.config.ts`.
+// `@core`, not `@happy`: no script or CI job selects `@happy`, and under
+// `CLAXEDO_E2E_SUITE=core` the `mobile` project would otherwise match zero tests.
+// The `mobile` project's `testMatch` confines this file to iPhone-13 emulation and
+// the chromium project `testIgnore`s `mobile-*`, so it never runs at desktop viewport.
 test.describe("mobile smoke @core", () => {
-  test("mobile sidebar drawer opens via the opener and scrim-closes — behavior 1", async ({ page }) => {
+  test("mobile sidebar drawer opens via the opener and scrim-closes", async ({ page }) => {
+    // The desktop header's "Show Sidebar" button is `md:flex hidden`, so the
+    // phone has its own opener (`md:hidden`, rail-sidebar-shell.tsx).
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
     await openWorkbench(page, DIR)
@@ -260,7 +228,7 @@ test.describe("mobile smoke @core", () => {
     await expect(opener).toHaveAttribute("aria-expanded", "false")
   })
 
-  test("workspace panel renders full-width with no resize handle below 640px — behavior 2", async ({ page }) => {
+  test("workspace panel renders full-width with no resize handle below 640px", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
     await openWorkbench(page, DIR)
@@ -269,33 +237,24 @@ test.describe("mobile smoke @core", () => {
     const panel = page.locator('[data-testid="workspace-panel-shell"]')
     await expect(panel).toHaveAttribute("data-open", "true")
 
-    // `panelStyleWidth()` (workspace-panel.tsx:105) sets the literal inline style
-    // string "100%" once `isMobile()` (viewportWidth() < 640) is true — asserted
-    // against the raw inline `style` attribute, not `toHaveCSS`/`getComputedStyle`
-    // (which always resolves a percentage width to its computed pixel value, so it
-    // can never observe the "100%" the source code actually writes).
+    // Asserted against the raw inline `style`: `toHaveCSS` resolves a percentage
+    // width to pixels, so it can never observe the `"100%"` `panelStyleWidth()` writes.
     await expect(panel).toHaveAttribute("style", /(?:^|;)\s*width:\s*100%\s*(?:;|$)/)
-    // Confirms this isn't inert authored-but-unused CSS: the panel's actual box is
-    // (near enough to) the emulated device's own viewport width, not some fixed
-    // desktop-era pixel value left over from a stale style.
+    // The box must match the viewport, not a stale fixed desktop width.
     const viewportWidth = page.viewportSize()?.width ?? 0
     const panelBox = await panel.boundingBox()
     expect(panelBox).not.toBeNull()
     expect(Math.abs((panelBox?.width ?? 0) - viewportWidth)).toBeLessThan(4)
 
-    // The pointer-drag resize handle is desktop-only (`<Show when={... && !isMobile()}>`,
-    // workspace-panel.tsx:233) — it must not exist in the DOM at all at this viewport,
-    // not just be hidden, since a keyboard/touch user has no equivalent for it anyway
-    // (a11y appendix finding).
+    // The resize handle is desktop-only (`!isMobile()`); it must be absent from the
+    // DOM, not hidden.
     await expect(panel.locator('[role="separator"][aria-label="Resize workspace panel"]')).toHaveCount(0)
   })
 
-  test("workspace review panel does NOT auto-open at narrow boot — behavior 2b", async ({ page }) => {
-    // WP-C3 §3.2: `route-intent.ts`'s `workspaceBrowse` branch used to
-    // unconditionally `workspacePanel.open("review", …)`, which at phone width
-    // (`isMobile()` → 100% panel) buried the composer with no user action. The
-    // narrow guard suppresses it; the draft composer is the boot surface. This is
-    // why `openWorkbench` no longer needs the old `closeWorkspacePanelIfOpen`.
+  test("workspace review panel does not auto-open at narrow boot", async ({ page }) => {
+    // `route-intent.ts`'s `workspaceBrowse` branch guards `workspacePanel.open("review", …)`
+    // on width: at phone width the panel is 100% and would bury the composer with
+    // no user action.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
     await page.goto(`/${slug(DIR)}/session`)
@@ -309,7 +268,7 @@ test.describe("mobile smoke @core", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 10_000 })
   })
 
-  test("seeded session timeline scrolls at a narrow viewport — behavior 3", async ({ page }) => {
+  test("seeded session timeline scrolls at a narrow viewport", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
     await openWorkbench(page, DIR)
@@ -333,7 +292,7 @@ test.describe("mobile smoke @core", () => {
   })
 
   test(
-    "long-press-dragging a switcher tab, then a pane grip, splits the workbench via touch — behavior 4",
+    "long-press-dragging a switcher tab, then a pane grip, splits the workbench via touch",
     async ({ page }) => {
       // TABLET-WIDTH OVERRIDE (this test only): split geometry is UNOBSERVABLE
       // below BP_MD (768, `workbench/collapse-projection.ts`) — the collapse
@@ -354,14 +313,8 @@ test.describe("mobile smoke @core", () => {
         timeout: 20_000,
       })
 
-      // Multi-surface fixture: a second background tab (a mocked terminal),
-      // matching `core-panes-split-tabs.spec.ts`'s `buildDraftPlusTerminalSplit`
-      // setup — 2 switcher tabs, 1 visible pane, nothing split yet. Creating the
-      // terminal focuses it, backgrounding the draft (mirrors the desktop spec's
-      // own ordering).
-      // The header's per-agent quick-launch buttons are gone; one "New Terminal"
-      // button opens the creator, whose tile turns that same surface into the
-      // terminal in place — so this still ends at 2 switcher tabs.
+      // Second surface: a mocked terminal. Creating it focuses it and backgrounds
+      // the draft: 2 switcher tabs, 1 visible pane, nothing split yet.
       await page.locator('[data-testid="workspace-scope-new-terminal"]').first().click()
       const launchers = page.locator('[data-component="terminal-new-launchers"]')
       await expect(launchers).toBeVisible({ timeout: 20_000 })
@@ -388,9 +341,8 @@ test.describe("mobile smoke @core", () => {
         "x",
         0.94, // near the right edge — `computeDropEdge` resolves to "right"
       )
-      // Drop-target overlay proves the touch-driven pointer stream reached the
-      // drop zone's hit-test (`workbench.tsx`'s `registerDropZone.onMove`), not
-      // just the source's own `pointerdown`.
+      // The overlay shows the pointer stream reached the drop zone's hit-test
+      // (`registerDropZone.onMove`), not just the source's `pointerdown`.
       await expect(page.locator(`[data-testid="drop-target-${terminalPaneId}"]`)).toBeVisible({ timeout: 5_000 })
       await tabDrag.end()
       await tabDrag.detach()
@@ -398,7 +350,7 @@ test.describe("mobile smoke @core", () => {
       await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
       await expect(visiblePaneContents(page)).toHaveCount(2, { timeout: 10_000 })
 
-      // --- Part 2: long-press-drag the DRAFT pane's own grip onto the terminal
+      // --- Part 2: long-press-drag the draft pane's own grip onto the terminal
       //     pane's top edge. Re-query the draft's pane after the split above —
       //     it now lives in a freshly-created pane, not its pre-split slot.
       const draftPane = page
@@ -427,12 +379,9 @@ test.describe("mobile smoke @core", () => {
       await gripDrag.end()
       await gripDrag.detach()
 
-      // Resulting geometry: the dragged pane's OWN slot is now empty (its
-      // content moved to a freshly-inserted pane beside the terminal —
-      // `reducers/split.ts`'s `split()` unbinds the source pane rather than
-      // deleting it), and the draft content's on-screen box has genuinely moved
-      // (not just a re-painted attribute) — both only true if the touch-driven
-      // pointer stream actually drove the commit, not merely the drop overlay.
+      // The dragged pane's own slot is now empty (`reducers/split.ts`'s `split()`
+      // unbinds the source pane rather than deleting it) and the draft content's
+      // box has moved.
       await expect(page.locator(`[data-testid="pane-${draftPaneId}"] [data-testid="empty"]`)).toBeVisible({
         timeout: 10_000,
       })

@@ -6,6 +6,7 @@ import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-sh
 import { betterAuthD1ReleaseInputs } from "./release-better-auth-d1"
 import { asRecord, parseJson, stringField } from "../../src/platform/json/index"
 import { errorMessage } from "../../src/platform/errors/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const sandboxScriptsRoot = path.join(serverRoot, "scripts/sandbox")
@@ -20,14 +21,10 @@ type Command = {
   env?: Record<string, string>
 }
 
-function clean(value: string | undefined) {
-  return value?.trim() || undefined
-}
-
 function targets(args = process.argv, fallback = "central") {
   const targetFlag = args.findIndex((arg) => arg === "--target" || arg === "--targets")
   const input =
-    clean(process.env.CLAXEDO_DEPLOY_TARGETS) ??
+    trimToUndefined(process.env.CLAXEDO_DEPLOY_TARGETS) ??
     args.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ??
     args.find((arg) => arg.startsWith("--target="))?.slice("--target=".length) ??
     (targetFlag >= 0 ? args[targetFlag + 1] : undefined) ??

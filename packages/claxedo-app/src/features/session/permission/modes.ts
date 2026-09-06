@@ -20,7 +20,7 @@ export const ACP_SAFE_TOOL_KINDS = ["search", "think"] as const
 
 /**
  * ACP `ToolKind` values that must always reach the user. `delete` and `move` are
- * deliberately NOT grouped with `edit`: a destructive file operation must not ride
+ * deliberately not grouped with `edit`: a destructive file operation must not ride
  * along with an in-project edit. `other` asks because it is the protocol's
  * catch-all — see the module note on failing safe.
  */
@@ -38,10 +38,10 @@ export const DANGER_GATED_PERMISSIONS = [
 ] as const
 
 /**
- * Generic bucket for `permission_decided` telemetry. NEVER the raw permission
+ * Generic bucket for `permission_decided` telemetry, never the raw permission
  * string itself: connection permission namespaces have an open tail — MCP tool
- * names, subagent ids, and shell tool ids are dynamic — so forwarding it
- * verbatim risks leaking a connection or tool name into an analytics event.
+ * names, subagent ids, and shell tool ids are dynamic — so forwarding one
+ * unchanged risks leaking a connection or tool name into an analytics event.
  * Anything this table does not recognize, including every dynamic id above,
  * buckets to "other" rather than being forwarded raw.
  */
@@ -149,10 +149,9 @@ export type HarnessPermissionModes = {
  * The harness's own modes, converted for display.
  *
  * Every field the user sees comes from `report`. Nothing here consults
- * `HarnessId` to decide what a mode does, which is the point: the app used to
- * hold a table of what each SDK supported, and that table was wrong about three
- * harnesses at once because nothing forced it to agree with the installed
- * packages. The runtime reads the packages; this renders what it says.
+ * `HarnessId` to decide what a mode does, on purpose: a static table of what
+ * each SDK supports drifts from what the installed packages actually do. The
+ * runtime reads the packages; this renders what it says.
  */
 export function harnessPermissionModes(input: {
   harness: HarnessId
@@ -163,7 +162,7 @@ export function harnessPermissionModes(input: {
   const label = harnessPermissionLabel(input.harness)
   const report = input.report
 
-  // Checked FIRST, ahead of the loading and empty-report branches, because
+  // Checked first, ahead of the loading and empty-report branches, because
   // neither is true here: this harness is not slow to answer and has not merely
   // failed to report — it has no policy surface. Saying "has not
   // reported any permission modes" would imply it might later.
@@ -193,12 +192,12 @@ export function harnessPermissionModes(input: {
   return {
     modes: report.modes.map((mode) => ({
       id: mode.id,
-      // The harness's own name and description, verbatim.
+      // The harness's own name and description, unchanged.
       name: mode.name,
       ...(mode.description ? { description: mode.description } : {}),
       origin: "harness" as const,
       // Suppressed on a draft: there is no "this session" for the change to be
-      // excluded from, and the first message will run under exactly this mode.
+      // excluded from, and the first message will run under this mode regardless.
       ...(report.appliesFrom === "next-session" && input.hasSession !== false
         ? { caveat: `Applies to the next ${label} agent, not this session` }
         : {}),
@@ -219,7 +218,7 @@ export function permissionModeOptions(input: {
    * Whether a session actually exists yet.
    *
    * Only `next-session` caveats care, and they care a lot: "applies to the next
-   * agent, not this session" is meaningless on a DRAFT, where there is no this
+   * agent, not this session" is meaningless on a draft, where there is no this
    * session to be excluded from. The first message creates the session and picks
    * the mode up, so on a draft the choice is simply in force.
    */
@@ -231,7 +230,7 @@ export function permissionModeOptions(input: {
 /**
  * The mode to start on when the user has chosen nothing.
  *
- * Prefers what the HARNESS says is current — it is the truth about the session,
+ * Prefers what the harness says is current — it is the truth about the session,
  * and on a resumed session it is the mode already in force. Only when the harness
  * reports no current mode does this choose its `auto` rung or first option.
  * Without reported modes there is no default to invent.
@@ -250,11 +249,10 @@ export function defaultPermissionSelection(input: {
       ? report.modes.find((mode) => mode.id === report.currentModeId)
       : undefined
     const chosen = current ?? report.modes.find((mode) => mode.level === "auto") ?? report.modes[0]!
-    // Always the harness's own id, including for the auto rung. This used to
-    // return Claxedo's id when the rung was `auto`, because a Claxedo "Auto" row
-    // then stood in front of the list and both being selected would have read as
-    // two states. That row is gone, so naming the rung anything but the harness's
-    // own word for it would now name a row the picker does not contain.
+    // Always the harness's own id, including for the auto rung: there is no
+    // separate Claxedo row standing in front of the list for it to point at,
+    // so naming the rung anything but the harness's own word for it would name
+    // a row the picker does not contain.
     return { kind: "harness", modeId: chosen.id }
   }
   return undefined

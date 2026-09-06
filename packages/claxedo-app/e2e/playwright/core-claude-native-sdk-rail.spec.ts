@@ -1,53 +1,30 @@
 /**
- * SPEC: Rail sidebar — the `claude` NATIVE-SDK harness
+ * The rail sidebar under the `claude` native-SDK harness, which reaches the renderer over a
+ * different set of wire events than the opencode and `codex-acp` harnesses the other rail
+ * specs run against.
  *
- * PURPOSE — every existing rail proof is written against either the built-in
- * opencode harness or `codex-acp`. This file pins the three rail behaviours a
- * user actually gets from the NATIVE-SDK (`claude`) harness, which reaches the
- * renderer over a DIFFERENT set of wire events. Each scenario below was first
- * captured from a real, running `claxedo-server` on 2026-08-06 by tapping
- * `GET /api/wr/events?workspaceId=…` with curl while driving a real session —
- * the payloads here are those captured frames verbatim, not invented shapes.
+ * Frames are delivered with `mock.emitFlat()`, served only to a workspace-scoped
+ * `**\/api\/wr\/events**` request, so the SSE fetch, the stream-target selection and the
+ * frame parser are all in the path. The dev-only `window.__claxedoEmitTestEvent` bus seam
+ * skips all three and would stay green while nothing reached a real user. The first
+ * scenario boots at `/` and enters the project client-side, so it fails if the app stays
+ * subscribed to the central stream alone.
  *
- * WHY THE EXISTING PROOFS DON'T COVER THIS
- *   `core-terminal.spec.ts`'s status-dot scenarios (behaviors 8/9) deliver
- *   `agent.lifecycle` with `emitClaxedoEvent()`, i.e. the DEV-only direct
- *   `window.__claxedoEmitTestEvent` seam, which hands the event straight to the
- *   bus and bypasses the SSE fetch, the stream-target selection and the frame
- *   parser entirely. Those scenarios therefore stay green even when NOTHING is
- *   delivered to a real user — which is exactly the state the app shipped in.
- *   Everything here goes through `mock.emitFlat()`, which is served only to a
- *   workspace-scoped `**\/api\/wr\/events**` request. The first scenario boots
- *   at `/` and enters the project client-side, so it fails if the app remains
- *   subscribed to the central stream alone.
+ * What the server puts on that wire:
+ *   1. creation publishes `session.lifecycle` `creating` then `created`, the latter
+ *      carrying `info.title` as the placeholder `"New Session"`;
+ *   2. the server then derives a real title from the first prompt (`fallbackSessionTitle`
+ *      in session-title.ts — a rule, not an LLM summary) and publishes `session.updated`
+ *      with `method: "auto-title"`, forwarded by `bridgeLifecycleEvent` in
+ *      workspace-runtime's `routes/session.ts`;
+ *   3. a chat turn publishes `agent.lifecycle` Busy/Idle with `tabId` set to the session id
+ *      and no `terminalId` at all;
+ *   4. `GET /session/status` never lists a native-SDK session, even mid-turn.
  *
- * WIRE FACTS captured from the real server (see each scenario for the frame)
- *   1. Session creation publishes `session.lifecycle` `creating` then `created`,
- *      the latter carrying `info.title` = the PLACEHOLDER `"New Session"`.
- *   2. The server later replaces that placeholder with a title derived from the
- *      first prompt (`fallbackSessionTitle`, session-title.ts:12 — a greeting
- *      maps to "Greeting", a leading "please/can you/..." is stripped, and
- *      anything over 72 chars is truncated; it is NOT an LLM summary), and
- *      publishes `session.updated` for the change (`runtime.ts:282-288`,
- *      `method:"auto-title"`). That frame used to be dropped by
- *      `bridgeLifecycleEvent` (workspace-runtime `routes/session.ts`) and now
- *      is forwarded verbatim — see the A2 scenario for the before/after
- *      measurements.
- *   3. A native-SDK CHAT turn publishes `agent.lifecycle` Busy/Idle with
- *      `tabId` set to the SESSION id and NO `terminalId` field at all.
- *   4. `GET /session/status` never lists a native-SDK session, not even while
- *      that session is demonstrably mid-turn (measured: absent across a 30s
- *      poll at 1s cadence while the agent was streaming a reply).
- *
- * Facts 3 and 4 are both true and neither is a defect — recorded here because
- * together they look exactly like a broken status dot and are not. The chat
- * row's dot is driven by `session.status`/`session.idle` SSE dispatched into
- * `shellDataKeys.sessionId(id,"status")`; `agent.lifecycle` feeds the TERMINAL
- * map, and the REST status map is not the dot's source. Verified live: a
- * BACKGROUND native-SDK session held `data-sidebar-status="working"` across 14
- * consecutive 1s samples for its whole turn. A terminal running Claude Code
- * delivers too — its rail row retitles itself to "Claude: <last reply>", which
- * only `agentLifecycleTitle` does, and only from a delivered `agent.lifecycle`.
+ * Facts 3 and 4 together look like a broken status dot and are not. The chat row's dot
+ * comes from `session.status`/`session.idle` SSE dispatched into
+ * `shellDataKeys.sessionId(id, "status")`; `agent.lifecycle` feeds the terminal status map,
+ * and the REST status map is not the dot's source at all.
  */
 
 import { sessionListRoute } from "../helpers/contracts/session-list"
@@ -73,14 +50,13 @@ async function openTreeAtDirectory(page: Page, dir: string) {
 type FixtureSession = { sessionId: string; title: string; createdAt: number; updatedAt: number }
 
 /**
- * Minimal stand-in for the paginated `session-list` the rail rows render from.
- * Deliberately a local copy rather than an import: `installSessionTreeFixtures`
- * in core-sidebar-tree.spec.ts is file-private, and duplicating ~30 lines is
- * cheaper than widening that file's surface for one neighbour.
+ * Minimal stand-in for the paginated `session-list` the rail rows render from. A local copy
+ * rather than an import: core-sidebar-tree.spec.ts's equivalent is file-private, and ~30
+ * duplicated lines are cheaper than widening that file's surface for one neighbour.
  *
- * `setSessions` models the SERVER's view of the world, so a scenario can move
- * the server's title (which really does change) independently of whatever the
- * client has cached — that gap IS the bug in scenario 2.
+ * `setSessions` models the server's view, so a scenario can move the server's title
+ * independently of whatever the client has cached. That gap is the whole subject of the
+ * auto-title scenario.
  */
 async function installSessionListFixture(
   page: Page,
@@ -157,29 +133,20 @@ async function openTreeFromHome(page: Page) {
 }
 
 /**
- * `.first()` is load-bearing, not laziness. A session announced by a
- * `session.lifecycle` frame that carries `info.workspaceID` (which the real
- * native-SDK frame does) renders TWICE — once from the project section with
- * `data-session-ref="<id>"`, once from a workspace section with
- * `data-session-ref="workspace:<wsId>:session:<id>"` — because the
- * control-plane list row and the event-derived row resolve to different
- * sections. That duplication is a real, separate defect (filed separately);
- * pinning it here would conflate it with the title/dot behaviours these
- * scenarios exist to prove, and either row rendering the dot/title correctly
- * is the outcome a user needs.
+ * `.first()` is load-bearing. A session announced by a `session.lifecycle` frame carrying
+ * `info.workspaceID` — which the real native-SDK frame does — renders twice: once from the
+ * project section as `data-session-ref="<id>"`, once from a workspace section as
+ * `data-session-ref="workspace:<wsId>:session:<id>"`, because the control-plane row and the
+ * event-derived row resolve to different sections. That duplication is a separate defect;
+ * either row carrying the right title and dot is the outcome these scenarios are about.
  */
 const sessionRow = (page: Page, id: string) =>
   page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${id}"]`).first()
 
 test.describe("rail — claude native-SDK harness @core", () => {
   /**
-   * CONTROL, expected GREEN. Proves the create half of the pipeline still works
-   * for the native-SDK harness AND that this file's fixtures/transport are
-   * wired correctly — without it, a red result below could just mean the
-   * harness never booted, which would make the two red proofs worthless.
-   *
-   * Frame captured verbatim from the real server (curl tap, 2026-08-06); note
-   * `info.title` is the placeholder the server really sends at this point.
+   * The create half of the pipeline, which also proves this file's fixtures and transport
+   * are wired: without it a failure below could just mean the harness never booted.
    */
   test("a native-SDK session appears in the rail the moment session.lifecycle 'created' lands", async ({ page }) => {
     const mock = await installMockRuntime(page, {
@@ -226,7 +193,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
   })
 
   /**
-   * BUG A2 (FIXED) — the auto-title reaching the rail without a reload.
+   * The auto-title reaching the rail with no reload.
    *
    * The defect: `bridgeLifecycleEvent` in workspace-runtime translated a few
    * compat types into `agent.lifecycle` and dropped everything else, so the
@@ -255,10 +222,9 @@ test.describe("rail — claude native-SDK harness @core", () => {
 
     const id = "ses_claude_title"
     const now = Date.now()
-    // A NEWER neighbour, so the session under test does not start at the top.
-    // The reconcile must therefore re-ORDER the list, not merely rewrite the
-    // row's text — the two failures shipped together and a test that seeds a
-    // single row can only ever catch the text half.
+    // A newer neighbour, so the session under test does not start at the top and the
+    // reconcile has to re-order the list rather than only rewrite the row's text. A
+    // single-row fixture could only ever catch the text half.
     fixtures.setSessions([
       { sessionId: "ses_claude_neighbour", title: "Neighbour", createdAt: now, updatedAt: now + 60_000 },
       { sessionId: id, title: "New Session", createdAt: now, updatedAt: now },
@@ -286,37 +252,26 @@ test.describe("rail — claude native-SDK harness @core", () => {
     await expect(row).toBeVisible({ timeout: 15_000 })
     await expect(row.locator('[data-slot="session-navigation-title"]')).toHaveText("New Session")
 
-    // QUIESCE before moving the server's title. Without this the scenario
-    // passes for the WRONG reason: `session.lifecycle created` invalidates the
-    // session-list, and that refetch is still in flight when the assertion
-    // above resolves — so a title changed immediately after would be picked up
-    // by the create-invalidation's own refetch rather than by anything
-    // reacting to the turn. Measured: the test went green with this wait
-    // absent and red with it present, against unchanged app code.
+    // Quiesce before moving the server's title. `session.lifecycle created` invalidates the
+    // session-list, and that refetch is still in flight when the assertion above resolves,
+    // so a title moved immediately after would be picked up by the create-invalidation's
+    // own refetch rather than by anything reacting to the turn.
     await page.waitForTimeout(3_000)
 
     mock.emitFlat({ type: "agent.lifecycle", tabId: id, workspaceId: WORKSPACE_ID, sessionId: id, eventType: "Busy" })
 
-    // NOTE the fixture is deliberately NOT updated: `/api/control/session-list`
-    // keeps serving the "New Session" placeholder for the rest of the scenario.
+    // The fixture is deliberately left alone: `/api/control/session-list` keeps serving the
+    // "New Session" placeholder for the rest of the scenario.
     //
-    // That inversion is what makes this test BITE. The obvious version — move
-    // the fixture's title and emit the event — passes even with the event
-    // mutated to a bogus type, because the mocked environment refetches the
-    // session-list on its own (verified by mutation: renaming the frame to
-    // `session.updated.MUTANT` still passed in 11s). Holding the fixture at the
-    // old title means a refetch actively RE-ASSERTS the placeholder, so the new
-    // title can only come from the event's own reconciliation
-    // (`reconcileUpdatedSessionListQueryData`). Mutate the frame and this goes
-    // red — which is the property a regression guard has to have.
+    // Moving the fixture's title too would make this pass on a bogus frame type, because
+    // the mocked environment refetches the session-list on its own. Holding the placeholder
+    // means a refetch actively re-asserts it, so the new title can only come from the
+    // event's own `reconcileUpdatedSessionListQueryData`.
     const newTitle = "Say TITLEPROBE and nothing else."
 
-    // The frame that announces it, copied verbatim off `/api/wr/events` after
-    // the bridge fix (`workspace-runtime/src/routes/session.ts`,
-    // `bridgeLifecycleEvent`). Before that fix this frame did not exist on the
-    // wire at all and the rail kept the placeholder until an unrelated refetch
-    // happened to land — so emitting it here IS the regression guard: delete
-    // the bridge and this scenario goes red.
+    // The frame that announces the new title. It reaches the workspace stream only because
+    // `bridgeLifecycleEvent` (workspace-runtime `routes/session.ts`) forwards it; drop that
+    // and the rail holds the placeholder until an unrelated refetch happens to land.
     mock.emitFlat({
       type: "session.updated",
       directory: DIR,
@@ -340,12 +295,10 @@ test.describe("rail — claude native-SDK harness @core", () => {
 
     await expect(row.locator('[data-slot="session-navigation-title"]')).toHaveText(newTitle, { timeout: 20_000 })
 
-    // …and the row must MOVE. `reconcileUpdatedSessionListRows` used to rewrite
-    // `updatedAt` in place with no re-sort, so an auto-titled session kept its
-    // original index while claiming a brand-new timestamp — seen live as a
-    // 30-second-old "Greeting" sitting at position 6 under rows 12-29 minutes
-    // older. Asserted on the FIRST rendered row rather than on a nth-match, so
-    // the failure message names whichever row wrongly outranks it.
+    // …and the row moves. `reconcileUpdatedSessionListRows` has to re-sort, not just
+    // rewrite `updatedAt` in place, or a freshly titled session keeps its old index while
+    // claiming a new timestamp. Asserted on the first rendered row rather than an nth-match
+    // so the failure message names whichever row wrongly outranks it.
     await expect(page.locator('[data-testid="rail-sidebar-session-row"]').first()).toHaveAttribute(
       "data-session-id",
       id,
@@ -354,27 +307,17 @@ test.describe("rail — claude native-SDK harness @core", () => {
   })
 
   /**
-   * The status dot for a native-SDK chat session, driven by the signal that
-   * actually drives it: `session.status` / `session.idle`.
+   * The status dot for a native-SDK chat session, driven by `session.status` /
+   * `session.idle` — the only signal that feeds it.
    *
-   * CORRECTION worth keeping, because it cost real time: an earlier version of
-   * this scenario emitted `agent.lifecycle` and asserted the dot, on the theory
-   * that the dot was broken for this harness. It is not. `agent.lifecycle` is
-   * simply not the chat row's input — it feeds the TERMINAL status map
-   * (`agent-status-listener.ts:164`, `terminalId || tabId`) — so that test was
-   * red against working software. Two observations that looked like evidence
-   * were both dead ends: injecting `agent.lifecycle` on the bus produced no dot
-   * (correct, wrong signal), and `GET /session/status` never lists a native-SDK
-   * session (also true, and also not the mechanism — the SSE frame dispatches
-   * straight into `shellDataKeys.sessionId(id,"status")`).
+   * `agent.lifecycle` is not the chat row's input: `agent-status-listener.ts` keys it by
+   * `terminalId || tabId` into the terminal status map. Asserting the dot off an
+   * `agent.lifecycle` frame fails against working software, and the absence of native-SDK
+   * sessions from `GET /session/status` is not the mechanism either — the SSE frame
+   * dispatches straight into `shellDataKeys.sessionId(id, "status")`.
    *
-   * Verified live afterwards: a BACKGROUND native-SDK session held
-   * `data-sidebar-status="working"` across 14 consecutive 1s samples for the
-   * whole of its turn, then settled.
-   *
-   * The value this keeps over behaviour 4 in core-sidebar-tree.spec.ts is
-   * harness coverage: that one runs the default opencode harness and this one
-   * pins the same contract for `claude-sdk`.
+   * core-sidebar-tree.spec.ts pins the same contract on the default opencode harness; this
+   * exists for the `claude-sdk` harness coverage.
    */
   test("a native-SDK session's rail row tracks working -> done as session.status/idle land", async ({ page }) => {
     const targetId = "ses_claude_dot"
@@ -401,8 +344,8 @@ test.describe("rail — claude native-SDK harness @core", () => {
     await expect(row).toBeVisible({ timeout: 15_000 })
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
 
-    // Same transport contract as core-sidebar-tree behavior 4; claude-sdk harness
-    // coverage is the mock install above, not a different wire shape for status.
+    // Same transport contract as core-sidebar-tree; the harness difference is the mock
+    // install above, not a different wire shape for status.
     mock.setSessionStatus(targetId, { type: "busy" })
     mock.emit({ type: "session.status", properties: { sessionID: targetId, status: { type: "busy" } } })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })

@@ -5,8 +5,6 @@ export const appUrl =
   clean(import.meta.env.CLAXEDO_APP_URL) ??
   (import.meta.env.DEV ? "http://localhost:4444" : "https://app.claxedo.com")
 
-export const previewSrc = `${appUrl}/demo/?embed=1`
-
 export const contact = "https://discord.gg/GC6QagQ8QE"
 export const github = "https://github.com/kyashrathore/Claxedo"
 export const version = "0.0.65"

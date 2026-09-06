@@ -10,7 +10,7 @@
  */
 
 /*
- * Viewport breakpoint tokens — mirrors src/utils/breakpoints.ts (WP-C3).
+ * Viewport breakpoint tokens — mirrors src/ui/controls/breakpoints.ts.
  * CSS custom properties CANNOT be interpolated into `@media` conditions, so the
  * `@media` rules below keep the literal pixel number; these variables document
  * the same values for calc()/inline-style use and are welded to the TS

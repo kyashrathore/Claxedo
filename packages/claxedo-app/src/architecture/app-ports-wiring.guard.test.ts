@@ -3,16 +3,15 @@ import { readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 
 /**
- * Every feature app-ports module must actually be configured — in production AND
+ * Every feature app-ports module must actually be configured — in production and
  * in the test stub.
  *
- * WHY THIS GUARD EXISTS. A feature's `app-ports.ts` shipped with a
- * `configure*AppPorts` that NOTHING ever called. Its accessor is
- * deliberately tolerant — it returns `undefined` for an
- * unconfigured port instead of throwing — so that feature's entire live-sync
- * doorbell degraded to "revalidate on activation only", silently, in production,
- * with every unit test green. Nothing in the type system or the test suite could
- * see it: the missing thing was a call site, not a type.
+ * A feature's `app-ports.ts` can ship a `configure*AppPorts` that nothing ever
+ * calls. Its accessor is deliberately tolerant — it returns `undefined` for an
+ * unconfigured port instead of throwing — so the feature's live-sync doorbell
+ * would silently degrade to "revalidate on activation only", with every unit
+ * test green. Neither the type system nor the test suite can see it: the
+ * missing thing is a call site, not a type.
  *
  * A feature declaring a ports seam and the shell forgetting to fill it is a
  * whole-feature-inert failure with no runtime symptom. It gets a guard.

@@ -158,16 +158,10 @@ async function startTerminalFromCreator(page: Page, preset: "claude" | "codex") 
 }
 
 async function buildDraftPlusTerminalSplit(page: Page) {
-  // These structural scenarios keep the draft/terminal panes inert (no conversational
-  // turn), but the app shell still has to BOOT: `ConnectionGate` polls
-  // `/api/claxedo/health` and the shell then resolves the workspace
-  // (`resolveWorkspace` -> bootstrap/`/api/workspace/resolve`). None of that is served
-  // by `installPtyMock` alone, so on the health-gated `/${slug}/session` boot route
-  // (`ConnectionGate.revealBeforeHealth` is false for it — see `src/app/entry/app.tsx`)
-  // the shell dies on the `ConnectionError`/error-boundary surface without a live
-  // backend. `installMockRuntime` supplies the full offline boot surface (health,
-  // bootstrap, workspace resolve, events, agent config) exactly as the turn-driven
-  // behaviors below already rely on; the modelled session id stays unused here.
+  // These panes stay inert, but the shell still boots through a health poll and a
+  // workspace resolve that `installPtyMock` does not serve; without them the route lands
+  // on `ConnectionError`. `installMockRuntime` supplies that boot surface. Its modelled
+  // session id goes unused here.
   await seedOneProject(page, DIR)
   await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
   await installPtyMock(page)
@@ -191,10 +185,9 @@ async function buildDraftPlusTerminalSplit(page: Page) {
   }
 }
 
-/** Sends a first prompt (promoting the draft to a real SESSION_ID surface,
- * driven to `idle`), then opens a fresh draft so SESSION_ID is a backgrounded,
- * unfocused switcher tab. Returns the mock plus a locator for that tab and a
- * reader for its status dot. Used by the switcher-status-dot behaviors. */
+/** Sends a first prompt (promoting the draft to a real SESSION_ID surface, driven to
+ * `idle`), then opens a fresh draft so SESSION_ID is a backgrounded, unfocused switcher
+ * tab. Returns the mock plus a locator for that tab and a reader for its status dot. */
 async function establishBackgroundedSession(page: Page, beforeUnpin?: (page: Page) => Promise<void>) {
   await seedOneProject(page, DIR)
   const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "acp:codex" })
@@ -273,14 +266,14 @@ async function selectAgentCompletionSound(page: Page) {
 }
 
 test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
-  test("dragging a background tab onto a pane's edge splits the workbench — behavior 1", async ({ page }) => {
+  test("dragging a background tab onto a pane's edge splits the workbench", async ({ page }) => {
     const { sessionContent, terminalContent } = await buildDraftPlusTerminalSplit(page)
     await expect(sessionContent).toBeVisible()
     await expect(terminalContent).toBeVisible()
     await expect(switcherTabs(page)).toHaveCount(2)
   })
 
-  test("dragging the resize divider changes the split ratio — behavior 2", async ({ page }) => {
+  test("dragging the resize divider changes the split ratio", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     const divider = page.locator('[data-testid="workbench-divider"]')
     const panes = visiblePaneContents(page)
@@ -305,7 +298,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       .not.toBe(Math.round(before.width))
   })
 
-  test("focusing a pane dims the other pane's content slot — behavior 3", async ({ page }) => {
+  test("focusing a pane dims the other pane's content slot", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     const panes = visiblePaneContents(page)
     const first = panes.nth(0)
@@ -337,7 +330,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     }).toPass({ timeout: 10_000 })
   })
 
-  test("mod+alt+ArrowLeft/Right move focus between split panes — behavior 4", async ({ page }) => {
+  test("mod+alt+ArrowLeft/Right move focus between split panes", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     const panes = visiblePaneContents(page)
     const first = panes.nth(0)
@@ -357,7 +350,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect.poll(() => isDim(second), { timeout: 10_000 }).toBe(true)
   })
 
-  test("mod+w collapses a 2-pane split back to one pane — behavior 5", async ({ page }) => {
+  test("mod+w collapses a 2-pane split back to one pane", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     await expect(visiblePaneContents(page)).toHaveCount(2)
 
@@ -372,14 +365,12 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible()
   })
 
-  // There is no behavior 6 test here: mod+w on the last pane opens a desktop
-  // Quit confirmation, and this target always serves the web entry point, which
-  // hardcodes `platform: "web"` with no quit handler and no override seam.
-
-  test("mod+\\ splits the focused pane by revealing the MRU hidden surface — behavior 7", async ({ page }) => {
+  test("mod+\\ splits the focused pane by revealing the MRU hidden surface", async ({ page }) => {
+    // The reducer rejects a split whose content already fills the target pane, so the
+    // chord has to feed it the most-recent hidden surface to do anything at all.
     await buildDraftPlusTerminalSplit(page)
-    // Collapse to a single visible pane while keeping two background surfaces —
-    // an MRU hidden surface for the split to reveal (same setup as behavior 8).
+    // Collapse to one visible pane while keeping two background surfaces, so the chord
+    // has an MRU hidden surface to reveal.
     await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
@@ -391,7 +382,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("mod+tab / mod+shift+tab cycle focus by most-recently-used order — behavior 8", async ({ page }) => {
+  test("mod+tab / mod+shift+tab cycle focus by most-recently-used order", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     // Collapse to a single pane holding a 3rd surface so mod+tab has an
     // unambiguous MRU pair to toggle between the two BACKGROUND tabs left over
@@ -412,7 +403,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect.poll(activeTitle, { timeout: 10_000 }).not.toBe(secondActive)
   })
 
-  test("mod+<N> remains browser-owned instead of switching tabs — behavior 9", async ({ page }) => {
+  test("mod+<N> remains browser-owned instead of switching tabs", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
@@ -425,14 +416,10 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     for (let i = 0; i < count; i++) {
       labels.push((await tabs.nth(i).locator('[data-testid="switcher-title-button"]').getAttribute("aria-label")) ?? "")
     }
-    // Focus the FIRST tab explicitly (bumps it to MRU-front). CompactSwitcher's
-    // `select()` paints `aria-current` SYNCHRONOUSLY on click (a scrub-preview)
-    // but only actually commits `wb.navigation.show()` — and therefore
-    // `contentRecency` — after a 48ms debounce (`SWITCH_COMMIT_DELAY_MS` in
-    // CompactSwitcher.tsx). Polling `aria-current` alone can observe the paint
-    // before the commit; firing mod+2 in that window races the stale debounced
-    // commit, which then clobbers the mod+2 navigation right after it lands.
-    // Wait out the debounce window before treating the click as settled.
+    // A switcher click paints `aria-current` synchronously but commits the navigation —
+    // and `contentRecency` — after a 48ms debounce, so polling the attribute can see the
+    // paint before the commit and a chord fired in that window gets clobbered by it.
+    // Wait out the debounce before treating the click as settled.
     await tabs.nth(0).locator('[data-testid="switcher-title-button"]').click()
     await expect.poll(() => activeTitleButton(page).getAttribute("aria-label"), { timeout: 10_000 }).toBe(labels[0])
     await page.waitForTimeout(200)
@@ -443,7 +430,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       .toBe(labels[0])
   })
 
-  test("the switcher tab strip preserves stable creation order across focus changes — behavior 10", async ({ page }) => {
+  test("the switcher tab strip preserves stable creation order across focus changes", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
@@ -466,7 +453,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     expect(after).toEqual(before)
   })
 
-  test("a busy background session shows working/done dots and plays its Settings sound on session.idle — behavior 11", async ({ page }) => {
+  test("a busy background session shows working/done dots and plays its Settings sound on session.idle", async ({ page }) => {
     await installMockAudioPlayback(page)
     const { mock, sessionDotStatus } = await establishBackgroundedSession(page, selectAgentCompletionSound)
 
@@ -479,13 +466,9 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       ;(window as typeof window & { __audioPlayCount__?: number }).__audioPlayCount__ = 0
     })
 
-    // NOTE (measured, not assumed): the tab does NOT start dotless here. The
-    // establishing turn's settle races the "New Session" click that
-    // backgrounds it, so the unseen-done effect frequently observes
-    // `previousActive:true, active:false, focused:false` and arms a "done"
-    // badge before this body runs (asserting "none" here fails with
-    // "done"). The transitions below are therefore pinned as explicit
-    // state CHANGES away from that starting badge, not as "a dot appeared".
+    // The tab does not reliably start dotless: the establishing turn's settle races the
+    // click that backgrounds it and often arms a "done" badge first. The assertions below
+    // are therefore state changes away from whatever badge is there, not "a dot appeared".
 
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("working")
@@ -503,7 +486,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect.poll(() => audioPlayCount(page), { timeout: 15_000 }).toBe(1)
   })
 
-  test("a background tab's done badge disappears once that tab is focused — behavior 12", async ({ page }) => {
+  test("a background tab's done badge disappears once that tab is focused", async ({ page }) => {
     const { mock, sessionTab, sessionDotStatus } = await establishBackgroundedSession(page)
 
     // Drive a busy -> idle turn entirely while the tab is unfocused, arming the
@@ -513,28 +496,23 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("done")
 
-    // Focusing that tab is what CLEARS it: `nextUnseenDone`'s `focused → false`
-    // branch drops the `unseenDone` entry, `sessionSurfaceStatus` falls through
-    // to "idle", and `StatusDot` renders nothing — the dot element leaves the
-    // DOM entirely (not merely a colour change), and the identity label comes
-    // back in its place.
+    // Focusing the tab clears the entry, `sessionSurfaceStatus` falls through to idle, and
+    // `StatusDot` renders nothing: the dot leaves the DOM and the identity label takes its
+    // place, rather than the dot merely changing colour.
     const titleButton = sessionTab.locator('[data-testid="switcher-title-button"]')
     await titleButton.click()
     await expect(titleButton).toHaveAttribute("aria-current", "page", { timeout: 10_000 })
-    // Absence is asserted by element COUNT, never by polling the status reader:
-    // `sessionDotStatus` calls `locator.getAttribute`, which waits (no action
-    // timeout is configured) for an element that is now gone, so a "none"
-    // poll would hang to the test timeout instead of passing.
+    // Absence is asserted by element count, not by the status reader: `getAttribute`
+    // waits on an element that is now gone and would hang to the test timeout.
     await expect(sessionTab.locator("[data-switcher-status]")).toHaveCount(0, { timeout: 15_000 })
     await expect(sessionTab.locator('[data-testid="switcher-title"]')).toHaveCount(1)
   })
 
-  test("switching away from a split and back restores it via the saved snapshot — behavior 13", async ({ page }) => {
+  test("switching away from a split and back restores it via the saved snapshot", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     await expect(visiblePaneContents(page)).toHaveCount(2)
 
-    // Navigate away to a THIRD surface — collapses to a single pane, saving a
-    // snapshot for both A and B (`saveSnapshotsForCurrentLayout`).
+    // Navigating to a third surface collapses to a single pane and snapshots both A and B.
     await startTerminalFromCreator(page, "codex")
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
@@ -544,12 +522,10 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
 
     await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
     await expect(visiblePaneContents(page)).toHaveCount(2, { timeout: 10_000 })
-    // Scope both content assertions to slots that still hold a pane. The third
-    // (Codex) terminal stays MOUNTED as a background tab — `Workbench`'s
-    // "always" mountPolicy — so a bare `[data-testid="terminal-pane"]` matches
-    // TWO elements here and dies on strict mode. Asserting exactly one PANED
-    // terminal plus exactly one PANED draft is also the stronger claim: the
-    // restored split holds those two surfaces and nothing else.
+    // Both assertions are scoped to slots that still hold a pane: the third terminal stays
+    // mounted as a background tab, so a bare terminal locator matches two nodes and dies on
+    // strict mode. One paned terminal plus one paned draft is also the stronger claim —
+    // the restored split holds those two surfaces and nothing else.
     const panedDraft = page.locator('[data-workbench-content][data-pane-id] [data-testid="session-content"][data-session-id="new"]')
     const panedTerminal = page.locator('[data-workbench-content][data-pane-id] [data-testid="terminal-pane"]')
     await expect(panedDraft).toHaveCount(1, { timeout: 10_000 })
@@ -558,7 +534,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(panedTerminal).toBeVisible()
   })
 
-  test("empty workbench auto-opens a draft, and closing it suppresses the immediate re-open — behavior 15", async ({ page }) => {
+  test("empty workbench auto-opens a draft, and closing it suppresses the immediate re-open", async ({ page }) => {
     await seedOneProject(page, DIR)
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPtyMock(page)
@@ -577,12 +553,9 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await tab.hover()
     await tab.getByRole("button", { name: `Close ${draftTitle}`, exact: true }).click()
 
-    // The close is honored: the workbench renders its empty state (no pane) and
-    // HOLDS it across the ~2s suppression window rather than a fresh draft pane
-    // replacing the closed one within ~100ms. Sample the rendered pane / empty
-    // state at fine granularity entirely in-page (Playwright round-trips are too
-    // coarse to catch a ~100ms replacement) and assert the workbench never
-    // re-populated a pane during the window.
+    // The empty state has to hold across the ~2s suppression window, not be replaced by a
+    // fresh draft pane after ~100ms. Sampling runs in-page because Playwright round-trips
+    // are too coarse to catch a replacement that brief.
     const held = await page.evaluate(async () => {
       const paneCounts: number[] = []
       const emptyCounts: number[] = []
@@ -600,7 +573,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     expect(held.minEmpty).toBeGreaterThan(0)
   })
 
-  test("header buttons create the corresponding surface — behavior 16", async ({ page }) => {
+  test("header buttons create the corresponding surface", async ({ page }) => {
     await seedOneProject(page, DIR)
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPtyMock(page)
@@ -608,12 +581,10 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await unpinSidebarForSwitcher(page)
     await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 20_000 })
 
-    // "as the ACTIVE pane" is the claim, so read the terminal that is actually
-    // bound to a pane. A bare `[data-testid="terminal-pane"]` cannot express it:
-    // the first terminal stays mounted as a background tab once the second one
-    // replaces it, so the bare locator matches two nodes and dies on strict
-    // mode. The paned-slot scope also lets the second click be pinned as a
-    // CHANGE of terminal id rather than "some terminal is on screen".
+    // Read the terminal bound to a pane: the first stays mounted as a background tab once
+    // the second replaces it, so a bare terminal locator matches two nodes and dies on
+    // strict mode. The paned scope also makes the second click a change of terminal id
+    // rather than "some terminal is on screen".
     const activeTerminal = page.locator('[data-workbench-content][data-pane-id] [data-testid="terminal-pane"]')
     await startTerminalFromCreator(page, "claude")
     await expect(activeTerminal).toHaveCount(1, { timeout: 20_000 })
@@ -633,7 +604,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       .toBeVisible({ timeout: 10_000 })
   })
 
-  test("mod+shift+p opens the command palette and dispatches a selected command — behavior 17", async ({ page }) => {
+  test("mod+shift+p opens the command palette and dispatches a selected command", async ({ page }) => {
     await seedOneProject(page, DIR)
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await openWorkbench(page, DIR)
@@ -642,35 +613,24 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await page.keyboard.press(`${await modKey(page)}+Shift+P`)
     const palette = page.locator('[data-testid="command-palette"]')
     await expect(palette).toBeVisible({ timeout: 10_000 })
-    // `list.tsx` passes `data-slot="list-search-input"` to the `<TextField>`
-    // component, but `TextField` doesn't forward that prop onto the actual
-    // rendered `<input>` — the real DOM node carries `data-slot="input-input"`
-    // instead (verified live: `[data-slot="list-search-input"]` matches 0
-    // elements anywhere on the page). Target the input by its stable
-    // ancestor slot instead of the never-applied attribute.
+    // `TextField` does not forward `data-slot` onto the rendered `<input>`, so the search
+    // field is reached through its ancestor slot rather than the name `list.tsx` passes in.
     await palette.locator('[data-slot="list-search"] input').fill("Toggle Sidebar", { timeout: 8000 })
     const item = palette.locator('[data-slot="list-item"]', { hasText: "Toggle Sidebar" }).first()
     await expect(item).toBeVisible({ timeout: 10_000 })
     await item.click()
 
     await expect(palette).toHaveCount(0, { timeout: 10_000 })
-    // Selecting "Toggle Sidebar" unpins/collapses the rail — but the `<nav>`
-    // itself NEVER unmounts (`rail-sidebar.tsx` always renders it; pinned vs.
-    // collapsed only flips `data-open`/`data-pinned` and, via `railToggleCommand`
-    // in `src/shell/layout/commands.ts`, its inline `width` style to 0px). NOT a
-    // `not.toBeVisible()` case, though: the `<nav>` also carries a permanent
-    // `border-right: 1px solid` (content-box sizing), so its rendered bounding
-    // box is width:1px even when collapsed — never truly empty — and
-    // Playwright's visibility check ignores `opacity` entirely, so the
-    // opacity-0-but-1px-wide collapsed rail still reads as "visible" (verified
-    // live: computed width stays "1px", opacity "0", stable, not transitioning
-    // further). `data-open` is the actual, unambiguous collapse signal.
+    // Collapsing the rail flips `data-open`/`data-pinned` and zeroes the inline width, but
+    // never unmounts the `<nav>`. Its permanent 1px right border leaves a non-empty box and
+    // Playwright's visibility check ignores opacity, so a collapsed rail still reads as
+    // visible; `data-open` is the unambiguous signal.
     const nav = page.getByRole("navigation", { name: "Projects and sessions" })
     await expect(nav).toHaveAttribute("data-open", "false", { timeout: 10_000 })
     await expect(nav).toHaveCSS("opacity", "0", { timeout: 10_000 })
   })
 
-  test("mod+b toggles the sidebar — behavior 18", async ({ page }) => {
+  test("mod+b toggles the sidebar", async ({ page }) => {
     await seedOneProject(page, DIR)
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await openWorkbench(page, DIR)
@@ -678,16 +638,10 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(nav).toBeVisible({ timeout: 20_000 })
     const mod = await modKey(page)
 
-    // The sidebar `<nav>` never unmounts on toggle (see behavior 17's note) —
-    // `railToggleCommand` (src/shell/layout/commands.ts) flips `docked` and
-    // sets the rail's inline `width` style to 0px, plus `opacity` to 0 via the
-    // `md:opacity-0` class. NOT a `not.toBeVisible()` case: the `<nav>` also
-    // carries a permanent 1px right border (content-box sizing), so its
-    // bounding box never actually reaches zero area even when collapsed, and
-    // Playwright's visibility check ignores `opacity` — verified live
-    // (collapsed computed width stays "1px", so `not.toBeVisible()` never
-    // resolves). `data-open` + computed `opacity` are the real, unambiguous
-    // collapse signals.
+    // The toggle zeroes the rail's inline width and opacity without unmounting the `<nav>`.
+    // Its permanent 1px right border keeps the bounding box non-empty and Playwright's
+    // visibility check ignores opacity, so `not.toBeVisible()` never resolves; `data-open`
+    // plus computed opacity are the collapse signals.
     const navWidth = () => nav.evaluate((el) => parseFloat((el as HTMLElement).style.width) || 0)
 
     await page.keyboard.press(`${mod}+b`)
@@ -696,18 +650,15 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(nav).toHaveCount(1)
     await expect.poll(navWidth, { timeout: 10_000 }).toBe(0)
 
-    // Re-expand: asserted with the SAME discriminating oracle as the collapse
-    // half, inverted. `toBeVisible()` is NOT usable here — per the note above it
-    // stays true in BOTH states (1px border box, opacity ignored), so a
-    // one-way toggle would pass it. `data-open` + opacity + the dispatched
-    // inline width are what actually distinguish expanded from collapsed.
+    // Re-expansion is asserted on the same signals inverted, since a one-way toggle would
+    // satisfy `toBeVisible()` in both states.
     await page.keyboard.press(`${mod}+b`)
     await expect(nav).toHaveAttribute("data-open", "true", { timeout: 10_000 })
     await expect(nav).toHaveCSS("opacity", "1", { timeout: 10_000 })
     await expect.poll(navWidth, { timeout: 10_000 }).toBeGreaterThan(0)
   })
 
-  test("two panes on the same relay-backed workspace share one ref-counted connection — behavior 19", async ({ page }) => {
+  test("two panes on the same relay-backed workspace share one ref-counted connection", async ({ page }) => {
     const WORKSPACE_ID = "ws_core_panes_split_tabs"
     const RELAY_ORIGIN = "https://relay.core-panes-split-tabs.test"
     const CLOUD_DIR = "/tmp/e2e-core-panes-split-tabs-cloud"
@@ -777,9 +728,8 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         body: JSON.stringify({ workspaceId: WORKSPACE_ID, directory: CLOUD_DIR, kind: "cloud", status: "ready" }),
       })
     })
-    // One mint per shared connection is the OBSERVABLE half of the sharing
-    // claim: every extra pane/tab on this workspace must reuse the connection
-    // the first one established, so this counter must never move past 1.
+    // One mint per shared connection: every extra pane or tab on this workspace reuses the
+    // connection the first one established, so this counter never moves past 1.
     let connectionMints = 0
     await page.route(`**/api/workspace/${WORKSPACE_ID}/connection**`, async (route) => {
       if (new URL(route.request().url()).pathname.endsWith("/connection")) connectionMints += 1
@@ -842,11 +792,9 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       .toBe(1)
     expect(connectionMints, "the second pane re-minted the workspace connection instead of sharing it").toBe(1)
 
-    // A THIRD surface on the same workspace (behavior 13's mechanism: a 2+-pane
-    // layout collapses to ONE new pane and both previous panes' content survives
-    // as UNPANED background tabs, per `destroyContent:false`) still shares the
-    // one lease — the Codex terminal, the draft and the first terminal are three
-    // live `WorkspaceGate`s over a single connection.
+    // A third surface still shares the one lease. Opening it collapses the split into a
+    // single new pane while both previous panes' content survives as unpaned background
+    // tabs (`destroyContent:false`), so three live `WorkspaceGate`s sit over one connection.
     await startTerminalFromCreator(page, "codex")
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
     await expect(backgroundTitleButtons(page)).toHaveCount(2, { timeout: 10_000 })

@@ -10,11 +10,9 @@ import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 
 // Sandbox driver secrets have exactly one sink: the credential registry.
 //
-// This route used to swallow a failed `putCredential` and write the raw auth
-// map into user-agent-config.json instead — plaintext, mode 0644 — and then
-// still return `configured: true`, so the settings UI reported success while
-// the secret sat on disk in the clear. These tests pin the corrected behavior:
-// a store failure is surfaced, and nothing about the secret is persisted.
+// These tests pin that a failed `putCredential` surfaces as an error rather
+// than falling back to writing the raw auth map into user-agent-config.json
+// (plaintext, mode 0644) while still reporting `configured: true`.
 
 const SECRET = "dt_contract_test_secret_value"
 
@@ -159,10 +157,10 @@ describe("sandbox driver credential codec round trip", () => {
   })
 })
 
-// `provider_id` is shared with model providers and is NOT unique — `vercel` is
-// both a sandbox driver id and a model-provider id. Removing sandbox
-// credentials used to delete EVERY row for the id, destroying the user's model
-// API key as a side effect of a settings click they'd read as narrow.
+// `provider_id` is shared with model providers and is not unique — `vercel` is
+// both a sandbox driver id and a model-provider id. An unscoped delete-by-id
+// would remove every row sharing that id, destroying the user's model API key
+// as a side effect of a settings click they'd read as narrow.
 describe("sandbox driver credential removal is scoped to its own kind", () => {
   test("Remove deletes the sandbox credential and spares the model provider key", async () => {
     const registry = await import("@claxedo/server-core/credentials/registry")
@@ -195,7 +193,7 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
 
     // A dedicated id: the round-trip suite above writes a sandbox_driver row
     // for every real driver into this same temp registry, so asserting the
-    // ABSENCE of one has to use an id no other test touches. The scoping
+    // absence of one has to use an id no other test touches. The scoping
     // behaviour is id-agnostic; the sibling test covers the real `vercel`
     // collision end-to-end through the route.
     const providerId = "kind-scope-probe"

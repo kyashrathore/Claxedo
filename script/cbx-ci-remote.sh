@@ -128,7 +128,7 @@ install_root() {
 }
 
 build_dist_packages() {
-  bun run build:claxedo-runtime-deps
+  bun run build:packages
 }
 
 install_chromium() {

@@ -1,33 +1,24 @@
 /**
- * Product route families for the mixed `deployments/local` composition.
+ * Every route the self-hosted composition mounts, assigned to the product that
+ * owns it: the desktop-local sidecar (`@claxedo/local-server`), the signed
+ * control plane shared with the hosted deployments (`@claxedo/server`), or
+ * machine publication (`@claxedo/host-connector`).
  *
- * `createApp` currently serves TWO products from one route table: the
- * desktop-local server that Electron starts as a loopback sidecar, and the
- * self-hosted signed single-binary that `package.json` `start` and the
- * Dockerfile ship. Nothing in the code says which route belongs to which — the
- * separation lives only in reviewers' heads, which is exactly why the package
- * split cannot be checked today.
- *
- * This table says it. Every mounted path is assigned to one family, and every
- * family names the package that will own it after the split. The contract tests
- * beside this file then have a discriminating gate: adding a route without
- * claiming an owner fails, and so does moving a route to the wrong product.
- *
- * `owner` is the TARGET owner, not today's producer — today's producer is
- * `deployments/local/server.ts` for all of them. The units that make each
- * target real are named per family.
+ * `self-hosted-node/local-product-contract.test.ts` fails a route mounted
+ * without a family or under the wrong owner; `@claxedo/local-server`'s
+ * user-hosted surface names families by these ids.
  */
 
 export type RouteFamilyOwner =
-  /** Moves to `@claxedo/local-server` (Unit 5). */
+  /** `@claxedo/local-server`: the desktop-local sidecar. */
   | "local-server"
-  /** Stays in `@claxedo/server`'s shared signed control plane (Units 7–8). */
+  /** `@claxedo/server`'s shared signed control plane. */
   | "server"
-  /** Moves to `@claxedo/host-connector` (Unit 6). */
+  /** `@claxedo/host-connector`: machine enrollment and publication. */
   | "host-connector"
 
 export type RouteFamily = {
-  /** Stable family ID used by the contract tests and by Units 5 and 7. */
+  /** Stable family ID used by the contract tests and the user-hosted surface. */
   id: string
   owner: RouteFamilyOwner
   /** What the family serves, in product terms. */
@@ -125,7 +116,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "session-meta",
     owner: "local-server",
-    serves: "Local session inventory and title metadata; Unit 4 moves its authority into Workspace Runtime.",
+    serves: "Local session inventory and title metadata.",
     paths: ["/api/claxedo/session", "/api/claxedo/session/", "/api/claxedo/session-list", "/api/control", "/api/control/"],
   },
   {
@@ -203,7 +194,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     serves: "The owner's view of their enrolled machines: status, devices, revoke, second-device open.",
     paths: ["/api/claxedo/remote-access", "/api/claxedo/remote-access/"],
   },
-  // ── Host publication: moves to @claxedo/host-connector ───────────────────
+  // ── Host publication: owned by @claxedo/host-connector ───────────────────
   {
     id: "remote-access-machine",
     owner: "host-connector",

@@ -4,20 +4,19 @@
  * `navigation-guard.ts` explains why the bridge is worth protecting: the
  * preload runs on every document its webContents loads, and the bridge reaches
  * `execFile`. That guard keeps the main window on the app document, which is
- * the right first control. This is the second one, and it exists because of
- * what Unit 6 adds: once Electron main holds the account credential, an IPC
- * caller is not merely running commands as the user — it is SPENDING an account.
+ * the right first control. This is the second one: Electron main holds the
+ * account credential (`account/account-ipc.ts`), so an IPC caller is not merely
+ * running commands as the user — it is spending an account.
  *
- * Depth matters here in a way it usually does not. The navigation guard is a
- * policy over URLs, and every bypass of it (an `about:blank` window that
- * inherits webPreferences, a subframe, a webview whose attributes were not
- * stripped, a future surface someone wires without reading that file) ends at
- * the same `ipcMain` handlers. Checking the SENDER instead of the destination
- * catches all of those with one rule.
+ * The navigation guard is a policy over URLs, and every bypass of it (an
+ * `about:blank` window that inherits webPreferences, a subframe, a webview
+ * whose attributes were not stripped, a future surface wired without reading
+ * that file) ends at the same `ipcMain` handlers. Checking the sender instead
+ * of the destination catches all of those with one rule.
  *
  * The rule: a call must come from the top frame of a webContents we ourselves
- * registered as the main renderer. Not "a trusted URL" — a trusted OBJECT.
- * URLs can be spoofed within a compromised renderer; a webContents id cannot be
+ * registered as the main renderer. Not a trusted URL — a trusted object. URLs
+ * can be spoofed within a compromised renderer; a webContents id cannot be
  * chosen by page content.
  *
  * Kept free of electron VALUE imports so the policy is directly testable, same

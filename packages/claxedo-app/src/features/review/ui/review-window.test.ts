@@ -277,7 +277,7 @@ describe("review window segments", () => {
 
   test("materializes one first-fold's worth of height, not of rows, before a viewport exists", () => {
     // The state a panel reopen restores: every row expanded, nothing measured.
-    const expanded = reviewExpandedRowHeight({ changedLines: 192, collapsedHeight: 40 })
+    const expanded = reviewExpandedRowHeight({ changedLines: 192, collapsedRowHeight: 72 })
     const segments = reviewWindowSegments({
       items,
       scrollTop: 0,
@@ -306,7 +306,7 @@ describe("review window segments", () => {
   })
 
   test("keeps an expanded row out of a measured window it cannot fit in", () => {
-    const expanded = (changedLines: number) => reviewExpandedRowHeight({ changedLines, collapsedHeight: 40 })
+    const expanded = (changedLines: number) => reviewExpandedRowHeight({ changedLines, collapsedRowHeight: 72 })
     const segments = reviewWindowSegments({
       items,
       scrollTop: 0,
@@ -322,8 +322,8 @@ describe("review window segments", () => {
   test("projects an expanded row from its own changed-line count", () => {
     expect(reviewExpandedRowHeight({ changedLines: 0, collapsedRowHeight: 40 }))
       .toBe(40 + REVIEW_DIFF_LINE_HEIGHT)
-    expect(reviewExpandedRowHeight({ changedLines: 10, collapsedRowHeight: 40 }))
-      .toBe(40 + 10 * REVIEW_DIFF_LINE_HEIGHT)
+    expect(reviewExpandedRowHeight({ changedLines: 10, collapsedRowHeight: 72 }))
+      .toBe(72 + 10 * REVIEW_DIFF_LINE_HEIGHT)
     expect(reviewExpandedRowHeight({ changedLines: 10, collapsedRowHeight: 0 }))
       .toBe(REVIEW_ESTIMATED_ROW_HEIGHT + 10 * REVIEW_DIFF_LINE_HEIGHT)
   })

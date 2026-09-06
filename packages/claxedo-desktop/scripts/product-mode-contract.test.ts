@@ -5,7 +5,8 @@ import path from "node:path"
 import { localServerPackageDir, resolveLocalServerEntry } from "./local-server"
 
 /**
- * Desktop product-mode contract.
+ * Desktop product-mode contract: where identity lives versus where compute
+ * runs, and the launch wiring that composes the server the desktop boots.
  *
  * This pins the LAUNCH WIRING. Desktop used to resolve its server
  * in four independent places — the child entry module, `predev`, `prebuild`,
@@ -22,14 +23,7 @@ function read(rel: string) {
   return readFileSync(path.join(packageRoot, rel), "utf8")
 }
 
-/**
- * The module the desktop server child imports, relative to the desktop package.
- *
- * Unit 5 changed this from `../../claxedo-server/src/deployments/local/server`
- * — a source-relative reach into the MIXED composition — to the local
- * product's declared package entry. Everything that resolves a server must
- * agree with it.
- */
+/** The module the desktop server child imports; everything that resolves a server must agree with it. */
 const DESKTOP_SERVER_ENTRY = "@claxedo/local-server/self-hosted-execution"
 
 /** The package directory whose sources feed the bundled desktop server. */
@@ -37,33 +31,25 @@ const DESKTOP_SERVER_PACKAGE_DIR = "../claxedo-local-server"
 
 describe("desktop server launch wiring", () => {
   test("the server child imports the declared server entry", () => {
-    // Anchored to an `import` statement, not a bare substring: this file's own
-    // doc comment names the package, and a guard that a comment can satisfy is
-    // how several checks on this branch stayed green through a real move.
+    // Anchored to an `import` statement: a bare-substring check is satisfied by
+    // prose that names the package.
     expect(read("scripts/claxedo-server-entry.ts")).toMatch(
       new RegExp(`^import [^\\n]* from "${DESKTOP_SERVER_ENTRY}"$`, "m"),
     )
   })
 
   test("development and production preparation resolve the same server package", () => {
-    // This used to check that each script CONTAINED the string
-    // "../claxedo-local-server". Both did — and in `prebuild.ts` the only thing
-    // that did was a `const` nothing read, left behind when the bundle helper
-    // took over the path. The assertion was green against dead code.
-    //
-    // Now both scripts import one resolver and the assertion is about the
-    // resolved value, which is what the bundler actually consumes.
+    // Both scripts import one resolver, and the assertion is about the resolved
+    // value — what the bundler consumes — not a path string a dead `const` could
+    // satisfy.
     for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
-      // Comments dropped line-wise: both scripts talk about
-      // `@claxedo/local-server` in prose, and a guard a comment can satisfy is
-      // precisely what let the dead `const` above survive.
+      // Comments dropped: both scripts name `@claxedo/local-server` in prose.
       const code = read(script)
         .split("\n")
         .filter((line) => !/^\s*(\/\/|\/?\*)/.test(line))
         .join("\n")
       expect(code, script).toContain(`from "./local-server"`)
-      // Each one GATES on the resolution, rather than merely importing the
-      // module for a path constant.
+      // Each script gates on the resolution, not merely imports the module.
       expect(code, script).toContain("resolveLocalServerEntry(PACKAGE_DIR)")
     }
     expect(localServerPackageDir(packageRoot)).toBe(path.resolve(packageRoot, DESKTOP_SERVER_PACKAGE_DIR))
@@ -91,8 +77,7 @@ describe("desktop server launch wiring", () => {
   })
 
   test("the renderer boots through the app package entry, not a source-relative path", () => {
-    // Unit 11 swaps this for the local app entry. Keeping it a package
-    // specifier is what lets the boundary guards see the edge at all.
+    // A package specifier is what lets the boundary guards see the edge.
     const renderer = read("src/renderer/shell.tsx")
     expect(renderer).toMatch(/from "@claxedo\/app(\/[^"]*)?"/)
     expect(renderer).not.toContain("../../claxedo-app/src")
@@ -109,32 +94,19 @@ describe("desktop server launch wiring", () => {
   })
 
   test("binds machine remote access to the Host Connector, with no HTTP fallback", () => {
-    // Another call site, not a type, and the one that already shipped broken.
-    // `/api/claxedo/remote-access/*` moved from the sidecar to the Host
-    // Connector; `@claxedo/local-server` serves none of those paths, so without
-    // this line "Enable remote access" posts into a 404 and every suite stays
-    // green because nothing was watching the transport.
+    // `@claxedo/local-server` serves no `/api/claxedo/remote-access/*` path;
+    // without this binding "Enable remote access" posts into a 404.
     const renderer = read("src/renderer/hosted-contributions.ts")
 
     expect(renderer).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
-    // And never the browser one. The desktop binding refuses rather than falls
-    // back when the preload exposes no bridge; a root that also bound the HTTP
-    // implementation would reintroduce the bug in the shape of resilience.
+    // Never the HTTP one: the desktop binding refuses when the preload exposes
+    // no bridge, and an HTTP fallback would hide that.
     expect(renderer).not.toContain("configureHttpMachineRemoteAccess")
   })
 
   test("declares its server dependency, rather than reaching into a source tree", () => {
-    // The asymmetry this contract was written to hold onto, now resolved.
-    //
-    // Desktop used to compose the renderer through the DECLARED `@claxedo/app`
-    // package but reach the server through a source-relative
-    // `../../claxedo-server/src/...` import with no manifest edge at all. That
-    // is invisible to every dependency audit, survives any amount of
-    // package.json tidying, and is exactly how hosted code leaks back into an
-    // unsigned desktop build.
-    //
-    // Both edges are declared now. Unit 12's emitted-artifact gate is what
-    // keeps them that way.
+    // A source-relative reach into a sibling package has no manifest edge, so
+    // no dependency check can see it; both edges must be declared.
     const manifest = JSON.parse(read("package.json")) as {
       dependencies?: Record<string, string>
     }

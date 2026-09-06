@@ -12,6 +12,7 @@ import type {
 import { DefinitiveRefreshError } from "../tokens.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
 import { record, text } from "../json.js"
+import { workSourcePort } from "../ports/index.js"
 
 const DEVICE_CODE_URL = "https://github.com/login/device/code"
 const TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -118,6 +119,28 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
     },
   }
 
+  const listRepositories = async (_fields: ConnectionFields, secret: string): Promise<CodeHostRepository[]> => {
+    const load = async (page: number, repositories: CodeHostRepository[]): Promise<CodeHostRepository[]> => {
+      const res = await fetchImpl(`https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated`, {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "claxedo",
+        },
+      }).catch(() => undefined)
+      if (!res) throw new Error("github_repositories_unavailable")
+      if (res.status === 401 || res.status === 403) throw new Error("github_repositories_unauthorized")
+      if (!res.ok) throw new Error("github_repositories_unavailable")
+      const body = await res.json().catch(() => undefined)
+      if (!Array.isArray(body)) throw new Error("github_repositories_invalid_response")
+      const next = [...repositories, ...body.flatMap(repositoryFromGitHub)]
+      if (body.length < 100 || page === 10) return next
+      return load(page + 1, next)
+    }
+    return load(1, [])
+  }
+
   return {
     decl: {
       id: "github",
@@ -125,69 +148,53 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
       // OAuth first: it is the preferred path where the deployment has an app,
       // and the pasted token stays as the fallback that always works.
       methods: clientId ? ["oauth", "key"] : ["key"],
-      capabilities: ["code-host", "work-source"],
       keyTokenType: "bearer",
       prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
     },
     impl: {
-      ...(clientId
-        ? {
-            device,
-            async refresh(refreshToken: string): Promise<OAuthTokens> {
-              const res = await form(TOKEN_URL, {
-                client_id: clientId,
-                ...(clientSecret ? { client_secret: clientSecret } : {}),
-                grant_type: "refresh_token",
-                refresh_token: refreshToken,
-              })
-              const body = record(await res.json().catch(() => ({}))) ?? {}
-              const refreshed = toTokens(body)
-              if (refreshed) return refreshed
-              // A spent or rejected refresh token can only be repaired by
-              // reconnecting, so it must not read as a retryable blip.
-              if (typeof body.error === "string") throw new DefinitiveRefreshError(body.error)
-              throw new Error("github_refresh_unavailable")
-            },
-          }
-        : {}),
-      async verify(_fields: ConnectionFields, secret: string): Promise<VerifyResult> {
-        try {
-          const res = await fetchImpl("https://api.github.com/user", {
-            headers: {
-              Authorization: `Bearer ${secret}`,
-              Accept: "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "claxedo",
-            },
-          })
-          if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
-          if (!res.ok) return { ok: false, reason: "network" }
-          const login = text(record(await res.json().catch(() => ({})))?.login)
-          return { ok: true, ...(login ? { accountLabel: login } : {}) }
-        } catch {
-          return { ok: false, reason: "network" }
-        }
+      actions: {
+        "code-host": { capability: "code-host", listRepositories },
+        "work-source": workSourcePort,
       },
-      async listRepositories(_fields: ConnectionFields, secret: string): Promise<CodeHostRepository[]> {
-        const load = async (page: number, repositories: CodeHostRepository[]): Promise<CodeHostRepository[]> => {
-          const res = await fetchImpl(`https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated`, {
-            headers: {
-              Authorization: `Bearer ${secret}`,
-              Accept: "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "claxedo",
-            },
-          }).catch(() => undefined)
-          if (!res) throw new Error("github_repositories_unavailable")
-          if (res.status === 401 || res.status === 403) throw new Error("github_repositories_unauthorized")
-          if (!res.ok) throw new Error("github_repositories_unavailable")
-          const body = await res.json().catch(() => undefined)
-          if (!Array.isArray(body)) throw new Error("github_repositories_invalid_response")
-          const next = [...repositories, ...body.flatMap(repositoryFromGitHub)]
-          if (body.length < 100 || page === 10) return next
-          return load(page + 1, next)
-        }
-        return load(1, [])
+      auth: {
+        ...(clientId
+          ? {
+              device,
+              async refresh(refreshToken: string): Promise<OAuthTokens> {
+                const res = await form(TOKEN_URL, {
+                  client_id: clientId,
+                  ...(clientSecret ? { client_secret: clientSecret } : {}),
+                  grant_type: "refresh_token",
+                  refresh_token: refreshToken,
+                })
+                const body = record(await res.json().catch(() => ({}))) ?? {}
+                const refreshed = toTokens(body)
+                if (refreshed) return refreshed
+                // A spent or rejected refresh token can only be repaired by
+                // reconnecting, so it must not read as a retryable blip.
+                if (typeof body.error === "string") throw new DefinitiveRefreshError(body.error)
+                throw new Error("github_refresh_unavailable")
+              },
+            }
+          : {}),
+        async verify(_fields: ConnectionFields, secret: string): Promise<VerifyResult> {
+          try {
+            const res = await fetchImpl("https://api.github.com/user", {
+              headers: {
+                Authorization: `Bearer ${secret}`,
+                Accept: "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "claxedo",
+              },
+            })
+            if (res.status === 401 || res.status === 403) return { ok: false, reason: "unauthorized" }
+            if (!res.ok) return { ok: false, reason: "network" }
+            const login = text(record(await res.json().catch(() => ({})))?.login)
+            return { ok: true, ...(login ? { accountLabel: login } : {}) }
+          } catch {
+            return { ok: false, reason: "network" }
+          }
+        },
       },
     },
   }

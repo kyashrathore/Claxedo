@@ -9,20 +9,23 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
 }))
 
-vi.mock("@/platform/api/api", () => ({
+vi.mock("@/platform/api/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/api/api")>(),
   api: apiMocks,
   getDefaultBaseUrl: () => "http://test.local",
-  normalizeUrl: (value: string | undefined) => value?.replace(/\/+$/, ""),
 }))
 
 vi.mock("@/features/workspaces/app-ports", () => ({
   emitTerminalFit: vi.fn(),
 }))
 
+const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth")
 afterEach(() => {
-  vi.useRealTimers()
   cleanup()
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 })
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+  if (originalWidth) Object.defineProperty(window, "innerWidth", originalWidth)
+  else Reflect.deleteProperty(window, "innerWidth")
   window.dispatchEvent(new Event("resize"))
   apiMocks.get.mockReset()
   apiMocks.post.mockReset()
@@ -165,11 +168,14 @@ describe("WorkspacePanel", () => {
       worktrees: [],
     })
     apiMocks.post.mockResolvedValue({})
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true)
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
 
     renderPanel({ ...openState, workspaceDir: "workspace:ws_cloud" })
     await waitFor(() => expect(screen.getByText("vercel · epoch 2")).toBeInTheDocument())
     fireEvent.click(screen.getByText("Cloud workspace"))
+    fireEvent.click(screen.getByRole("button", { name: "Replace…" }))
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    confirm.mockReturnValue(true)
     fireEvent.click(screen.getByRole("button", { name: "Replace…" }))
 
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
@@ -683,6 +689,40 @@ describe("WorkspacePanel", () => {
     window.dispatchEvent(pointerEvent("pointerup", 400))
 
     expect(panel).toHaveStyle({ width: "1107px" })
+  })
+
+  test.each(["pointercancel", "unmount"])("releases drag state on %s", (ending) => {
+    const clock = paintByHand()
+    const oldSelect = document.body.style.userSelect
+    const oldCursor = document.body.style.cursor
+    const oldSuspended = document.documentElement.dataset.terminalResizeSuspended
+    document.body.style.userSelect = "text"
+    document.body.style.cursor = "crosshair"
+    document.documentElement.dataset.terminalResizeSuspended = "prior"
+    try {
+      const view = renderPanel(openState)
+      const panel = screen.getByRole("complementary", { name: "Workspace panel" })
+      const initialWidth = panel.style.width
+      fireEvent(screen.getByRole("separator", { name: "Resize workspace panel" }), pointerEvent("pointerdown", 500))
+      window.dispatchEvent(pointerEvent("pointermove", 400))
+      expect(document.body.style.userSelect).toBe("none")
+      if (ending === "unmount") view.unmount()
+      else window.dispatchEvent(pointerEvent("pointercancel", 400))
+      expect(document.body.style.userSelect).toBe("text")
+      expect(document.body.style.cursor).toBe("crosshair")
+      expect(document.documentElement.dataset.terminalResizeSuspended).toBe("prior")
+      window.dispatchEvent(pointerEvent("pointermove", 200))
+      window.dispatchEvent(pointerEvent("pointerup", 200))
+      clock.paint(4)
+      expect(panel.style.width).toBe(initialWidth)
+      view.unmount()
+    } finally {
+      clock.restore()
+      document.body.style.userSelect = oldSelect
+      document.body.style.cursor = oldCursor
+      if (oldSuspended === undefined) delete document.documentElement.dataset.terminalResizeSuspended
+      else document.documentElement.dataset.terminalResizeSuspended = oldSuspended
+    }
   })
 
   test("exposes ARIA splitter value range and resizes via the keyboard", () => {

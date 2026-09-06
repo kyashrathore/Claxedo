@@ -61,9 +61,9 @@ export function sanitizeMarkdown(html: string) {
  * `innerHTML`, and the diagram source is assistant output — anything that can
  * steer what the model emits (a poisoned file the agent read, tool output, an
  * injected web page) can steer what lands in that sink. Mermaid's own
- * `securityLevel: "strict"` pass used to be the *only* control there, and strict
- * mode is precisely what the advisories against mermaid `>=11.1.0 <11.10.0`
- * bypass. So mermaid's output is treated as untrusted and re-sanitized here.
+ * `securityLevel: "strict"` pass is not sufficient alone: strict mode is
+ * precisely what the advisories against mermaid `>=11.1.0 <11.10.0` bypass, so
+ * mermaid's output is treated as untrusted and re-sanitized here.
  *
  * `sanitizeMarkdown`'s `config` above cannot be reused for this: it is an
  * HTML/MathML profile that allows only `svg` and `path`, so every `<g>`,

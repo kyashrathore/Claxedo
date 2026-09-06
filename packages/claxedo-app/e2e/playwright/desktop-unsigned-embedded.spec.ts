@@ -172,13 +172,10 @@ async function workspacePageDesignSignature(dialog: Locator) {
   })
 }
 
-// `@core` is REQUIRED, not decorative: `playwright.config.ts`'s suite registry
-// maps `core` to /@core/, and a spec carrying no lane tag executes in NO lane
-// and nobody notices — the registry's own comment records `a11y-sweep.spec.ts`
-// sitting silently unexecuted for exactly that reason. `@tier-real` then carves
-// this out of the sharded PR lane via `test:e2e:core:base`'s `--grep-invert`,
-// the same way `real-harness-local.spec.ts` is carved out, so the desktop build
-// cost lands in its own job. `@surface-desktop` selects the surface.
+// `@core` is required: `playwright.config.ts` maps the `core` suite to /@core/,
+// and an untagged spec runs in no lane. `@tier-real` carves this out of the
+// sharded PR lane via `test:e2e:core:base`'s `--grep-invert` so the desktop
+// build cost lands in its own job. `@surface-desktop` selects the surface.
 test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () => {
   let packaged: PackagedApp | undefined
   let scripted: ScriptedModelServer | undefined
@@ -210,11 +207,8 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     expect(isPackaged).toBe(true)
   })
 
-  /**
-   * A1 — the transport tripwire, DELIBERATELY a diagnostic (see the doctrine
-   * note in the file header). Real coverage for defect 1 is B1 in the sibling
-   * scenarios; this only fails earlier and names the cause.
-   */
+  // Diagnostic only: B1's wire check below is the real coverage of the API
+  // base; this fails earlier and names the cause.
   test("A1 (diagnostic): the renderer reaches its server over http(s), not the document origin", async () => {
     packaged = await launchPackagedApp({ timeoutMs: BOOT_TIMEOUT })
     const url = await expectServerReachable(packaged, 45_000)
@@ -222,37 +216,21 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   })
 
   /**
-   * The local daemon's lifetime is the packaged PROCESS's, not the window's.
-   * `holdClaxedoDaemonLease` (claxedo-desktop's
-   * `src/main/server-daemon-lease.ts`) takes one lease during `initialize()`
-   * and renews it until the app exits, and the exit paths — quit, restart,
-   * update — are what release or hand it off (`daemon-exit-lifecycle.ts`).
-   * Backgrounding is none of those, so it must leave the daemon alone.
+   * `holdClaxedoDaemonLease` (claxedo-desktop's `src/main/server-daemon-lease.ts`)
+   * holds the lease for the packaged process's lifetime; only quit, restart and
+   * update release it (`daemon-exit-lifecycle.ts`), so backgrounding the window
+   * must leave the daemon alone.
    *
-   * NON-VACUITY — "the daemon is still reachable" is exactly the shape of
-   * assertion that passes while the mechanism is dead, so this reads the
-   * daemon's OWN lifecycle snapshot (`GET /api/claxedo/daemon/state`, keyed by
-   * the discovery token the daemon publishes) alongside it:
+   * "Still reachable" could be a replacement daemon or an unarmed grace timer,
+   * so the daemon's own state endpoint is read alongside: the shortened grace
+   * reached it, a lease is still held, and pid/generation never change.
    *
-   *   - the shortened grace really reached the daemon (1200ms here, 180s in
-   *     production), so a background that outlives it several times over is a
-   *     real test of the grace rather than of an unarmed timer;
-   *   - a lease is still held while backgrounded, i.e. the daemon is up
-   *     BECAUSE the main process pins it, not because nothing is watching;
-   *   - the pid and generation never change, so a reachable health endpoint
-   *     cannot be a replacement daemon that quietly took over.
-   *
-   * THE STIMULUS IS MINIMIZE, NOT BLUR. A Playwright-launched Electron app is
-   * never the frontmost macOS application — measured 2026-09-03 on this
-   * packaged binary, `BrowserWindow.getFocusedWindow()` stays `null` and
-   * `isFocused()` stays false through `win.focus()`, `win.show()`,
-   * `win.moveTop()`, `app.dock.show()` and `app.focus({steal: true})`, in that
-   * order. `blur()` on a window that was never focused changes nothing, so a
-   * blur-driven version of this test backgrounds nothing and proves nothing.
-   * Minimize is a real window-state transition the same environment DOES
-   * perform (`isMinimized` true, `isVisible` false, both read back below), and
-   * it is the same class of user gesture: the window leaves the foreground
-   * without any of the exit paths that own the lease.
+   * The stimulus is minimize, not blur: a Playwright-launched Electron window
+   * is never focused on macOS (`isFocused()` stays false through `focus()`,
+   * `show()`, `moveTop()` and `app.focus({steal: true})`), so `blur()` changes
+   * nothing. Minimize is a window-state transition this environment does
+   * perform, and it is the same class of gesture: leaving the foreground
+   * without any exit path.
    */
   test("the local daemon's lifetime follows the packaged process, not window state", async () => {
     test.setTimeout(90_000)
@@ -453,8 +431,6 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       env: {
         ...model.piEnv,
       },
-      // The BrowserContext branch — see boot-observer.ts's doc on why a
-      // Page-level install cannot see this app's real boot sequence at all.
       beforeShellWindow: async (context) => {
         await installBootObserver(context)
       },
@@ -498,13 +474,9 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   // below points the app at its own scratch `git init` worktree instead.
 
   /**
-   * A scratch git worktree, isolated per scenario. `-b main` is not
-   * decoration: the project header's "New session in <branch>" affordance
-   * (`rail-sidebar.tsx`'s `HeaderActions`, `aria-label={New session in ${input.label}}`)
-   * embeds the CURRENT branch name, which without an explicit `-b` is
-   * whatever `init.defaultBranch` resolves to on the machine running the
-   * suite. Pinning it keeps that aria-label — and therefore every selector
-   * below that targets it — deterministic across machines/CI images.
+   * `-b main` pins the branch name the project header's "New session in
+   * <branch>" aria-label embeds; without it `init.defaultBranch` decides and
+   * the selectors below drift across machines.
    */
   async function makeScratchWorkspace(label: string): Promise<string> {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-desktop-${label}-`)))
@@ -518,14 +490,9 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   }
 
   /**
-   * Registers `dir` as a real local workspace via the same
-   * `GET /api/claxedo/workspace/resolve?directory=...&create=true` the app's own boot
-   * fires on first navigation (`real-harness-local.spec.ts`'s
-   * `registerWorkspace` uses the identical endpoint for the identical reason):
-   * until this resolves, a project seeded into the rail below 404s on every
-   * session/terminal action. A real endpoint call against the embedded server
-   * this test itself booted, not a mock. Returns the workspaceId the rail's
-   * `[data-testid="project-group"][data-project-id]` is keyed by.
+   * Registers `dir` with the same resolve endpoint the app's boot fires; until
+   * it resolves, a project seeded into the rail 404s on every session/terminal
+   * action. Returns the workspaceId the rail's project group is keyed by.
    */
   async function registerWorkspace(serverBase: string, dir: string): Promise<string> {
     const url = `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`
@@ -609,14 +576,8 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   }
 
   /**
-   * Points the rail at `dir` (see the harness-level doc above for why this,
-   * not `page.goto`) and returns the project group locator once it renders.
-   *
-   * MUST reload after seeding: `storeSet` is real IPC and really persists, but
-   * the renderer's Solid store already hydrated once at boot, before this
-   * call — a reload is the only way the rail re-reads the new blob. That
-   * reload is itself exercising real product behaviour (defect 3's fix), not
-   * routing around it.
+   * Seeds the rail with `dir` and reloads: `storeSet` persists, but the Solid
+   * store hydrated once at boot, so only a reload makes the rail re-read it.
    */
   async function openWorkspaceProject(app: PackagedApp, dir: string, workspaceId: string): Promise<Locator> {
     await app.page.evaluate(async (worktree) => {
@@ -647,29 +608,16 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     return projectGroup
   }
 
-  /**
-   * The composer's contenteditable, scoped to `:visible` — same duplicate-DOM
-   * hazard as `visibleSubmit` (see its doc): the workbench's stashed off-screen
-   * pane carries its OWN `[role="textbox"]` matching this same aria-label, and
-   * a plain `getByRole(...).last()` intermittently resolved to it instead of
-   * the active one (measured 2026-08-06: `composeText` hung its full 30s retry
-   * budget on iteration >0 of a multi-session scenario, clicking a textbox
-   * DOM order happened to put last but that was invisible).
-   */
+  // `:visible` is required: the workbench's stashed off-screen pane carries its
+  // own textbox with the same aria-label, and `.last()` alone can resolve to it.
   function composerInput(page: Page): Locator {
     return page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last()
   }
 
   /**
-   * Clicks the project header's "New session in main" affordance and returns
-   * the draft composer.
-   *
-   * The hover is required, not defensive: the header's action cluster
-   * (`rail-sidebar.tsx`'s `HeaderActions`) mounts on engagement — hover, focus
-   * or an explicit hold, see `rail-hover-engagement.ts` — so the button is
-   * absent from the DOM until the pointer reaches the header. Engaging it is
-   * the move a real user makes, and the one the web lane's rail specs make
-   * (`core-sidebar-tree.spec.ts`, `core-claude-native-sdk-rail.spec.ts`).
+   * The hover is required: the header's action cluster (`rail-sidebar.tsx`'s
+   * `HeaderActions`) mounts on engagement (`rail-hover-engagement.ts`), so the
+   * button is absent from the DOM until the pointer reaches the header.
    */
   async function openNewDraft(app: PackagedApp, projectGroup: Locator): Promise<Locator> {
     const header = projectGroup.locator('[data-testid="project-header"]')
@@ -717,11 +665,8 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("Sonnet")
-    // Match the row's NAME slot, not the row's whole text. A real catalog row
-    // renders its harness-supplied description under the name
-    // ("Sonnet" + "Sonnet 5 · Efficient for routine tasks"), so a `^Sonnet$`
-    // filter over the row text matches nothing here while still matching the
-    // Tier M rows — which is why only this lane saw it.
+    // Match the name slot, not the whole row: a real catalog row renders its
+    // description under the name, so `^Sonnet$` over the row text matches nothing.
     const model = page
       .locator('[data-component="harness-model-picker"]')
       .locator('[data-slot="list-item"]')
@@ -734,16 +679,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await expect(control).toContainText(/Sonnet/i, { timeout: 10_000 })
   }
 
-  /**
-   * The workbench keeps a STASHED, off-screen content pane mounted for fast
-   * tab switching, and that stashed pane carries its OWN
-   * `[data-action="prompt-submit"]` — verified 2026-08-06 by enumerating every
-   * match: two buttons exist simultaneously, one visible, one
-   * `isVisible() === false`. `.last()` (the pattern every other real lane in
-   * this repo uses, e.g. `real-harness-local.spec.ts`) resolved to the HIDDEN
-   * one here and hung every click for the full retry budget — `:visible` is
-   * the fix, not a stylistic preference.
-   */
+  // The workbench keeps a stashed off-screen pane mounted with its own
+  // `[data-action="prompt-submit"]`; `.last()` alone can resolve to the hidden
+  // one, so `:visible` is required.
   function visibleSubmit(page: Page): Locator {
     return page.locator('[data-action="prompt-submit"]:visible').last()
   }
@@ -764,15 +702,8 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     return ids.filter((id): id is string => !!id)
   }
 
-  /**
-   * B1's row-appears-live assertion needs the session id the app just minted,
-   * and there is no other way to learn it on this surface: no URL (see the
-   * `MemoryRouter` note above) and no response-body correlation the composer
-   * exposes to the DOM. Diffing the rail's own `data-session-id` attributes
-   * before/after mirrors the technique `core-terminal.spec.ts`'s
-   * `launchFromCreator` uses for PTY ids, adapted to a REAL backend where
-   * there is no request-log fixture to poll instead.
-   */
+  // No URL (MemoryRouter) and no DOM-exposed response id on this surface, so
+  // the new session id is learned by diffing the rail's `data-session-id`s.
   async function waitForNewSessionId(page: Page, before: string[], timeoutMs = 20_000): Promise<string> {
     const deadline = Date.now() + timeoutMs
     for (;;) {
@@ -796,7 +727,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
           })
           .catch((error) => ({ error: String(error) }))
         throw new Error(
-          `GATING: no new rail session row appeared within ${timeoutMs}ms (defects 1/2/7: file:// API base, ` +
+          `GATING: no new rail session row appeared within ${timeoutMs}ms (file:// API base, ` +
             `dropped invalidation, or no event stream). Rows seen: ${JSON.stringify(ids)}. ` +
             `Local inventory: ${JSON.stringify(inventory)}`,
         )
@@ -806,28 +737,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   }
 
   /**
-   * A freshly created terminal's row carries a CLIENT-MINTED
-   * `pending-<timestamp>-<rand>` id before the server's real `pty_...` id
-   * lands (`terminal-content.tsx`'s doc: "queues a create request ... then
-   * replaces the pending id with the real PTY id"). Excluding only the bare
-   * `"new"` placeholder (this file's first cut, matching `core-terminal.spec
-   * .ts`'s mocked-PTY-API fixture) caught that pending id instead — measured
-   * 2026-08-06: `[data-testid="terminal-pane"][data-terminal-id="pending-..."]`
-   * never mounts, because the pane is keyed by the REAL id. Both placeholder
-   * shapes must be excluded for this to resolve to something a pane locator
-   * can ever match.
-   */
-  /**
-   * `scope` MUST be the caller's own `[data-testid="project-group"]`, never
-   * the whole page. The app's baked-in default project (this repo's own
-   * checkout — see the harness-level doc above) carries its own real,
-   * already-connected terminal rows, and a page-wide query returns THEM
-   * mixed in with this test's own — measured 2026-08-06: `waitForTerminalId`
-   * "found" `pty_a510e0...`, a ghost id from that default project's rail
-   * section that simply hadn't rendered into the "before" snapshot yet, and
-   * `[data-testid="terminal-pane"][data-terminal-id="pty_a510e0..."]`
-   * (that ghost project's own, already-mounted-elsewhere pane) never matched
-   * this test's freshly opened one.
+   * A new terminal's row carries a client-minted `pending-<timestamp>-<rand>`
+   * id before the server's `pty_...` id lands, and the pane is keyed by the
+   * real id, so both placeholder shapes are excluded. `scope` must be the
+   * caller's project group: the default project carries its own connected
+   * terminal rows, and a page-wide query returns those too.
    */
   async function waitForNewTerminalId(scope: Locator, before: string[], timeoutMs = 20_000): Promise<string> {
     const deadline = Date.now() + timeoutMs
@@ -861,19 +775,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     return { app, model }
   }
 
-  /**
-   * `expectAssistantReplyVisible`'s geometric-truth layer retries
-   * `boundingBox()` against re-renders (its own doc: "a live timeline can
-   * re-render the row ... a boundingBox taken in that instant is null"), but
-   * NOT the `scrollIntoViewIfNeeded()` call immediately before it — measured
-   * live 2026-08-06, three separate times, always on a REAL (non-scripted-
-   * shortcut) harness turn: `Element is not attached to the DOM`. A real ACP
-   * subprocess reply streams in more part-updates than the scripted-only
-   * opencode path, so it hits the same DOM-truth-resolved-then-detached race
-   * turn-oracle.ts already documents, just more often. This file cannot add
-   * retry inside that oracle (not owned here), so every call in this spec
-   * goes through this one-retry wrapper instead of the raw import.
-   */
+  // The oracle's `scrollIntoViewIfNeeded()` is not retried against re-renders,
+  // and a real harness turn streams enough part-updates to hit "Element is not
+  // attached to the DOM", so every call here goes through this one-retry wrapper.
   async function expectAssistantReplyVisible(
     page: Parameters<typeof expectAssistantReplyVisibleOracle>[0],
     text: Parameters<typeof expectAssistantReplyVisibleOracle>[1],
@@ -914,7 +818,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await submitDraft(packaged.page)
     await sessionPostSeen.catch((err) => {
       throw new Error(
-        `GATING (B1 wire diagnostic, defect 1): never observed a 201 POST .../session on the wire — ${String(err)}`,
+        `GATING: no 201 POST .../session reached the wire — ${String(err)}`,
       )
     })
 
@@ -926,14 +830,13 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       scenario: "b2-first-turn",
     })
 
-    // B3: the rail title leaves the create-time placeholder with no reload
-    // (defect 8: session.updated dropped at the runtime bridge).
+    // B3: the rail title leaves the create-time placeholder with no reload; a
+    // `session.updated` dropped at the runtime bridge leaves it at "New Session".
     const settledTitle = await expectRailTitleSettled({ page: packaged.page, sessionId })
     expect(settledTitle.length, "settled rail title is empty").toBeGreaterThan(0)
 
-    // B4: a SECOND message in the SAME session (defect 9 / open issue #16:
-    // config.model wiped by a wholesale cache replace refused the second send
-    // with "Select an agent and model").
+    // B4: a second message in the same session; a cache replace that wipes
+    // `config.model` gets it refused with "Select an agent and model".
     await expect(
       packaged.page.locator('[data-action="prompt-harness-model"]:visible').last(),
       "the existing session can continue but its harness/model label fell back to Select model",
@@ -946,7 +849,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     )
     await expect(
       visibleSubmit(packaged.page),
-      'defect 9 / open issue #16: the second send is refused ("Select an agent and model")',
+      'the second send is refused ("Select an agent and model")',
     ).not.toHaveAttribute("aria-label", /select an agent/i)
     await visibleSubmit(packaged.page).click()
     await expectAssistantReplyVisible(packaged.page, marker2, {
@@ -992,14 +895,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const target = sessionIds[0]
     await expectRailRowVisible({ page: packaged.page, sessionId: target, index: 3 })
 
-    // Re-prompt it: focus its row, then send another message. Switching to an
-    // OLDER, already-existing session's pane (as opposed to opening a brand
-    // new draft) loads its persisted transcript, which measurably takes
-    // longer to settle than a blank draft — a bare click-then-compose here
-    // left the composer "not visible" for the FULL 30s actionability retry
-    // (measured 2026-08-06), because the workbench was still mid pane-switch.
-    // Waiting for THIS row's own seed reply (a marker only its pane can show)
-    // is a real, content-addressed proof the switch landed, not a fixed sleep.
+    // Switching to an existing session's pane loads its persisted transcript,
+    // which settles slower than a blank draft; this row's own seed reply proves
+    // the switch landed without a fixed sleep.
     await packaged.page.locator(RAIL_SELECTORS.sessionRow(target)).click()
     await expectAssistantReplyVisible(packaged.page, "B5_SEED_0", {
       spec: "desktop-unsigned-embedded",
@@ -1014,8 +912,8 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
 
     await expectRailRowMovesToTop({ page: packaged.page, sessionId: target })
 
-    // B6 (open issue #14): exactly one row renders for it, not a second copy
-    // under a workspace-scoped section.
+    // B6: one row, not a second copy under a workspace-scoped section (a frame
+    // carrying `workspaceID` can duplicate it).
     await expectRailRowUnique({ page: packaged.page, sessionId: target })
 
     await expectAssistantReplyVisible(packaged.page, "B5_REPROMPT", {
@@ -1070,13 +968,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
 
     const input = await openNewDraft(packaged, projectGroup)
     const control = packaged.page.locator('[data-action="prompt-harness-model"]:visible').last()
-    // Open issue #15: draft hangs on "Loading models" until a reload. The
-    // 5s budget IS the assertion — `expect(...).not.toContainText` retries
-    // for the full timeout, so this fails exactly when the control is still
-    // stuck past 5s.
+    // The 5s budget is the assertion: `not.toContainText` retries for the full
+    // timeout, so this fails when the control is still on "Loading models".
     await expect(
       control,
-      "open issue #15: draft never resolved a concrete model past 5s with no reload",
+      "draft never resolved a concrete model within 5s and no reload was performed",
     ).not.toContainText(/Loading models|Select model|^$/, { timeout: 5_000 })
 
     await composeText(packaged.page, input, "Reply with exactly this one token, nothing else: C1_MARK")
@@ -1218,14 +1114,10 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
 
   test("D1/D3: a real terminal streams a live prompt and its row aligns with session rows", async () => {
     const dir = await makeScratchWorkspace("d1-d3")
-    // Deliberately NOT the default 3001: `main/index.ts`'s `startClaxedoServer`
-    // tries `CLAXEDO_SERVER_PORT ?? 3001` first via `getFreePort`, so on a
-    // machine where 3001 is free (the common case) the embedded server binds
-    // 3001 anyway — which would make the port-fix assertion below pass by
-    // COINCIDENCE (a buggy hardcoded-3001 fallback and the real port landing
-    // on 3001 look identical) rather than by actually proving the terminal's
-    // env reflects the real port. Forcing a distinctive, obviously-non-
-    // default port here is what makes that assertion decisive.
+    // Not the default 3001: `startClaxedoServer` tries `CLAXEDO_SERVER_PORT ??
+    // 3001` first, so where 3001 is free a hardcoded-3001 fallback and the real
+    // port look identical. A distinctive port makes the `CLAXEDO_PORT`
+    // assertion below decisive.
     const started = await launchScriptedApp({ CLAXEDO_SERVER_PORT: "58217" })
     packaged = started.app
     scripted = started.model
@@ -1233,19 +1125,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
     const workspaceId = await registerWorkspace(serverBase, dir)
 
-    // Force xterm's DOM renderer BEFORE opening any terminal. The default is
-    // a WebGL/canvas renderer (`renderer.ts`'s `loadRenderer`), whose painted
-    // pixels `page.locator` cannot read as text at all — a canvas-only lane
-    // could never assert "never matches /Reconnecting.../" against real
-    // rendered content, only screenshot pixel-diffing, which the plan reserves
-    // for E2/nightly. `claxedo.terminal.renderer` is a REAL, shipped escape
-    // hatch (`renderer.ts`: "Allow an escape hatch for debugging /
-    // problematic GPUs"), read via plain `window.localStorage` — NOT the
-    // electron-store-backed `Persist` system (`rendererPreference()` in
-    // `renderer.ts` calls `localStorage` directly) — so this is a real
-    // user-facing setting, not a test seam. Verified live 2026-08-06: with it
-    // set, `.xterm-rows` renders the shell's real prompt text
-    // (`<cwd> main ❯ ... <clock>`), readable via Playwright locators.
+    // Force xterm's DOM renderer before any terminal opens: the default
+    // WebGL/canvas renderer paints pixels `page.locator` cannot read, and the
+    // buffer assertions below need `.xterm-rows` text. `claxedo.terminal.renderer`
+    // is the shipped escape hatch (`renderer.ts`'s `rendererPreference()`), read
+    // from plain `localStorage`, not the electron-store `Persist` system.
     await packaged.page.evaluate(() => localStorage.setItem("claxedo.terminal.renderer", "dom"))
     const projectGroup = await openWorkspaceProject(packaged, dir, workspaceId)
 
@@ -1285,19 +1169,17 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const xtermRows = pane.locator(".xterm-rows").first()
     await expect(
       xtermRows,
-      "no DOM-rendered terminal content within 10s — see defects 4/5/6/7 (file:// Origin rejection, workspaceId-as-a-path, CLAXEDO_PORT=80, no event stream) / open issue #17 (terminal creation hangs)",
+      "no DOM-rendered terminal content within 10s (file:// Origin rejection, workspaceId used as a path, wrong CLAXEDO_PORT, or no event stream)",
     ).toHaveText(/\S/, { timeout: 10_000 })
 
-    // The never-Reconnecting half is checked over the SAME 10s window, polled
-    // repeatedly rather than sampled once — a single late sample could miss a
-    // reconnect banner that had already scrolled/painted-over by the time it
-    // ran.
+    // Polled over the same 10s window rather than sampled once: a reconnect
+    // banner can be painted over before a single late sample.
     const deadline = Date.now() + 10_000
     while (Date.now() < deadline) {
       const text = (await xtermRows.innerText().catch(() => "")) ?? ""
       expect(
         text,
-        "defect 4: terminal buffer shows a Reconnecting banner — the WebSocket Origin (file://) was rejected by the loopback gate",
+        "terminal buffer shows a Reconnecting banner: the WebSocket Origin (file://) was rejected by the loopback gate",
       ).not.toMatch(/Reconnecting\.\.\. \d\/6/)
       await packaged.page.waitForTimeout(500)
     }
@@ -1319,12 +1201,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
         ? "echo CLAXEDO_PORT_CHECK=%CLAXEDO_PORT%"
         : 'echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"'
     await packaged.page.keyboard.type(portEchoCommand, { delay: 15 })
-    // The shell must have taken the WHOLE command before it is submitted.
-    // Anything already reading this PTY when the keystrokes arrive (a shell rc
-    // prompt, a pager) consumes the leading characters, and the truncated
-    // command then fails the port assertion below while never having asked for
-    // the port at all — see `electron-app.ts`'s ZDOTDIR root for the case that
-    // produced this.
+    // The shell must have taken the whole command before Enter: anything already
+    // reading the PTY (an rc prompt, a pager) eats the leading characters, and a
+    // truncated command fails the port assertion without having asked for the port.
     await expect(
       xtermRows,
       "the shell never echoed the typed command back, so the port assertion below would test nothing",
@@ -1332,37 +1211,22 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await packaged.page.keyboard.press("Enter")
     await expect(
       xtermRows,
-      `terminal's own $CLAXEDO_PORT never echoed the real embedded-server port (${expectedPort}) — see this file's ` +
-        `defect-6 note and D2's history`,
+      `terminal's own $CLAXEDO_PORT never echoed the real embedded-server port (${expectedPort})`,
     ).toContainText(`CLAXEDO_PORT_CHECK=${expectedPort}`, { timeout: 10_000 })
 
-    // D3: terminal row layout matches session rows (defect 11: terminal
-    // titles at x=65 vs session titles at x=41; dot orphaned at x=11).
+    // D3: terminal row geometry matches session rows.
     const beforeSession = await currentSessionIds(packaged.page)
     const input = await openNewDraft(packaged, projectGroup)
     await selectScriptedModel(packaged.page)
     await composeText(packaged.page, input, "Reply with exactly this one token, nothing else: D3_MARK")
     await submitDraft(packaged.page)
     await waitForNewSessionId(packaged.page, beforeSession)
-    // `expectRowGeometry` (geometry-oracle.ts, not owned by this file) sweeps
-    // EVERY `[data-testid="rail-sidebar-terminal-row"]`/session-title on the
-    // PAGE, not scoped to this project — and the app's own baked-in default
-    // project (this repo's own checkout; see the harness-level doc above)
-    // carries its own "New Terminal" row whose title span can sit in a
-    // `<Show>`-collapsed, `display:none` section while the row's OUTER
-    // element still matches the selector. Measured live 2026-08-06: the
-    // oracle's `boundingBox()` on that ghost row's title returned null and
-    // failed with "detached or display:none" — a real fixture-pollution
-    // hazard, not a geometry defect. Collapsing every OTHER project's header
-    // first removes its rows from the DOM entirely (`rail-sidebar.tsx`'s own
-    // `<Show when={open()}>` gate), which is what actually fixes it: a CSS-
-    // visibility skip could not, because the oracle deliberately does not do
-    // CSS-visibility filtering (that is its whole point, per its own doc).
-    // The collapse toggle is `[data-icon-interaction="binary"]` on the
-    // project header (`rail-sidebar.tsx`: `aria-label={open() ? "Collapse
-    // project" : "Expand project"} aria-expanded={open()}`), not the header
-    // row itself — clicking the header row navigates/selects the project
-    // instead of collapsing it.
+    // `expectRowGeometry` sweeps every terminal/session title on the page with
+    // no CSS-visibility filtering, and the default project's collapsed section
+    // keeps a `display:none` title whose `boundingBox()` is null. Collapsing
+    // every other project's header removes those rows from the DOM (`<Show
+    // when={open()}>`). The toggle is `[data-icon-interaction="binary"]`;
+    // clicking the header row itself selects the project instead.
     for (const toggle of await packaged.page
       .locator(
         `[data-testid="project-group"]:not([data-project-id="${workspaceId}"]) [data-icon-interaction="binary"][aria-expanded="true"]`,
@@ -1395,13 +1259,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       scenario: "a2-before-reload",
     })
 
-    // Defect 3: `history.pushState` threw on a `file://` document and broke
-    // the packaged app outright on reload. A plain page reload (not a route
-    // write) is the real user action; this is the load-bearing proof it
-    // survives.
+    // A plain page reload, not a route write, is the user action a `file://`
+    // document has to survive.
     await packaged.page.reload()
     await packaged.page.waitForLoadState("domcontentloaded")
-    await expect(packaged.page.locator("[data-claxedo]"), "shell never repainted after reload (defect 3)").toBeVisible({
+    await expect(packaged.page.locator("[data-claxedo]"), "shell never repainted after reload").toBeVisible({
       timeout: 30_000,
     })
 

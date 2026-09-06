@@ -5,7 +5,7 @@ import {
   preparePromptRequest,
 } from "./prepare-request"
 import type { ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
-import type { PromptContextItem } from "./types"
+import type { PromptContextItem, PromptTimelineOptimisticStore } from "./types"
 
 // Rubric T2: per-phase test for prepare-request.ts. The unit covers:
 //   - isPageCommentPath classifier (URL / "page" sentinel / file path)
@@ -132,21 +132,20 @@ describe("preparePromptRequest", () => {
       sessionID: "ses_1",
       sessionDirectory: "/repo/main",
     })
-    expect(result.optimisticParts.length).toBeGreaterThanOrEqual(1)
-    for (const part of result.optimisticParts) {
-      expect((part as { sessionID?: string }).sessionID).toBe("ses_1")
-      expect((part as { messageID?: string }).messageID).toBe(result.messageID)
-    }
+    expect(result.requestParts).toEqual([expect.objectContaining({ type: "text", text: "hi" })])
+    expect(result.optimisticParts).toEqual([expect.objectContaining({
+      ...result.requestParts[0], sessionID: "ses_1", messageID: result.messageID,
+    })])
   })
 })
 
 describe("createPromptTimelineReconciliation", () => {
   test("addSubmittedPrompt routes through the optimistic store with the prepared parts", () => {
-    const adds: Array<{ messageID: string; partsCount: number }> = []
+    const adds: Array<Parameters<PromptTimelineOptimisticStore["add"]>[0]> = []
     const reconcile = createPromptTimelineReconciliation({
       optimistic: {
         add: (input) => {
-          adds.push({ messageID: input.message.id, partsCount: input.parts.length })
+          adds.push(input)
         },
         remove: () => undefined,
       },
@@ -165,7 +164,14 @@ describe("createPromptTimelineReconciliation", () => {
       model: { providerID: "anthropic", modelID: "sonnet" },
     })
     reconcile.addSubmittedPrompt()
-    expect(adds).toEqual([{ messageID: "msg_42", partsCount: 2 }])
+    expect(adds).toEqual([{
+      directory: "/repo/main", sessionID: "ses_1",
+      message: expect.objectContaining({ id: "msg_42", sessionID: "ses_1", role: "user", agent: "build", model: { providerID: "anthropic", modelID: "sonnet" } }),
+      parts: [
+        { id: "p1", type: "text", text: "hi", sessionID: "ses_1", messageID: "msg_42" },
+        { id: "p2", type: "text", text: "more", sessionID: "ses_1", messageID: "msg_42" },
+      ],
+    }])
   })
 
   test("removeSubmittedPrompt routes through the optimistic store with the prepared messageID", () => {
@@ -190,33 +196,6 @@ describe("createPromptTimelineReconciliation", () => {
     })
     reconcile.removeSubmittedPrompt()
     expect(removes).toEqual(["msg_99"])
-  })
-
-  test("addDemoReply uses the reply's message + parts (not the prepared ones)", () => {
-    const adds: Array<{ messageID: string; partsCount: number }> = []
-    const reconcile = createPromptTimelineReconciliation({
-      optimistic: {
-        add: (input) => {
-          adds.push({ messageID: input.message.id, partsCount: input.parts.length })
-        },
-        remove: () => undefined,
-      },
-      promptRequest: {
-        messageID: "msg_user",
-        requestParts: [],
-        optimisticParts: [],
-        submittedCommentItems: [],
-      },
-      sessionID: "ses_1",
-      sessionDirectory: "/repo/main",
-      agent: "build",
-      model: { providerID: "anthropic", modelID: "sonnet" },
-    })
-    reconcile.addDemoReply({
-      info: { id: "msg_assistant", role: "assistant", sessionID: "ses_1", time: { created: 1 } } as never,
-      parts: [{ id: "p1", type: "text", text: "demo", sessionID: "ses_1", messageID: "msg_assistant" } as never],
-    })
-    expect(adds).toEqual([{ messageID: "msg_assistant", partsCount: 1 }])
   })
 
   test("variant is propagated into the submitted message model", () => {

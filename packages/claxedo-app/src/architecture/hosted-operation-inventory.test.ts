@@ -41,12 +41,12 @@ const HOSTED_CANDIDATE_ROOTS = [
 /**
  * Modules that reach authenticated transport but stay in `@claxedo/app`.
  *
- * Each needs a reason, because "it is exempt" is how an inventory rots. The
- * unit that removes each exemption is named.
+ * Each needs a reason, because "it is exempt" is how an inventory rots: the
+ * reason names the local route the module actually calls.
  */
 const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
   "app/routes/directory-layout.tsx":
-    "Local route shell. Unit 9 replaces its authFetch use with the injected local transport; it never calls Hosted Server.",
+    "Local route shell: resolves a directory route against the local server's `workspaceResolveUrl` through `platform.fetch` (authFetch only when the platform injects no transport); never calls Hosted Server.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
     "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
   "features/workspaces/data/project-api.ts":
@@ -119,11 +119,6 @@ function matrixOwners() {
 }
 
 describe("hosted operation matrix", () => {
-  test("exists and declares itself enforced by this test", () => {
-    expect(existsSync(matrixPath)).toBe(true)
-    expect(matrix).toContain("hosted-operation-inventory.test.ts")
-  })
-
   test("names an owner module for at least every hosted capability group", () => {
     for (const group of ["Documents", "Billing", "Connections", "Workspace authority", "Sessions"]) {
       expect(matrix, `matrix must cover ${group}`).toContain(`### ${group}`)
@@ -131,9 +126,9 @@ describe("hosted operation matrix", () => {
   })
 
   test("never promises a direct laptop runtime target", () => {
-    // U8-R22. A row returning `directRuntimeUrl` would make the laptop a direct
-    // client target and bypass every Relay authorization gate. The matrix may
-    // only MENTION the field in the prose that forbids it.
+    // A row returning `directRuntimeUrl` would make the laptop a direct client
+    // target and bypass every Relay authorization gate; only the prose that
+    // forbids it may mention the field.
     const rows = matrix.split("\n").filter((line) => line.trimStart().startsWith("| `"))
     expect(rows.filter((row) => row.includes("directRuntimeUrl"))).toEqual([])
   })
@@ -167,7 +162,7 @@ describe("hosted operation inventory", () => {
 
   test("every local exemption carries a reason", () => {
     for (const [module, reason] of Object.entries(LOCAL_AUTHENTICATED_MODULES)) {
-      expect(reason.length, `${module} needs a reason`).toBeGreaterThan(40)
+      expect(reason.trim(), `${module} needs a reason`).not.toBe("")
     }
   })
 

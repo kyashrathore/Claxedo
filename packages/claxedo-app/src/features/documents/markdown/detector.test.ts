@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
+import { MarkdownManager } from "@tiptap/markdown"
 import type { JSONContent } from "@tiptap/core"
 import {
   MARKDOWN_MAX_BYTES,
@@ -100,36 +101,26 @@ describe("Markdown rich-mode detector", () => {
     expect(serializedMarkdown(result.document, result.envelope)).toBe(markdown)
   })
 
-  test("keeps the 100 KiB and 500 KiB probes responsive and short-circuits the 2 MiB probe", () => {
-    const timed = <T,>(run: () => T) => {
-      const startedAt = performance.now()
-      const value = run()
-      return { value, ms: performance.now() - startedAt }
+  test("above the rich size limit, returns before invoking the parser", () => {
+    const parse = spyOn(MarkdownManager.prototype, "parse")
+    try {
+      expect(detectMarkdown("# Probe").status).toBe("rich")
+      expect(parse).toHaveBeenCalledTimes(1)
+      parse.mockClear()
+      expect(detectMarkdown("a".repeat(RICH_MARKDOWN_MAX_BYTES + 1)).status).toBe("source")
+      expect(detectMarkdown("a".repeat(MARKDOWN_MAX_BYTES)).status).toBe("source")
+      expect(detectMarkdown("a".repeat(MARKDOWN_MAX_BYTES + 1)).status).toBe("rejected")
+      expect(parse).not.toHaveBeenCalled()
+    } finally {
+      parse.mockRestore()
     }
+  })
 
-    const small = timed(() => detectMarkdown("a".repeat(100 * 1024)))
-    const nearSoftLimit = timed(() => detectMarkdown("a".repeat(500 * 1024)))
-    const hardLimit = timed(() => detectMarkdown("a".repeat(2 * 1024 * 1024)))
-
-    expect(small.value.status).toBe("rich")
-    expect(nearSoftLimit.value.status).toBe("rich")
-    expect(hardLimit.value.status).toBe("source")
-
-    // The real invariant: the 2 MiB probe must bail on SIZE *before* parsing.
-    // Status alone cannot prove that — a build that parsed first and rejected
-    // afterwards would still report "source". Comparing it against the 500 KiB
-    // probe, which does parse, keeps the check hardware-independent: a slower
-    // machine scales both sides, so only a genuine loss of the short-circuit
-    // collapses the ratio. The 5ms floor absorbs timer granularity.
-    expect(hardLimit.ms).toBeLessThan(Math.max(nearSoftLimit.ms * 0.1, 5))
-
-    // Coarse absolute backstop for the two probes that really do parse. This
-    // budget is calibrated against CI hardware, not dev hardware: the two
-    // probes measure ~190ms on an M-series laptop but ~1.1s on a 2-core hosted
-    // CI machine, so the original 1s ceiling could only ever pass locally. 3s
-    // keeps an order-of-magnitude parser regression failing while staying green
-    // on a slow, shared CI host.
-    expect(small.ms + nearSoftLimit.ms).toBeLessThan(3_000)
+  test("keeps supported 100 KiB and 500 KiB parsing within the coarse CI budget", () => {
+    const startedAt = performance.now()
+    expect(detectMarkdown("a".repeat(100 * 1024)).status).toBe("rich")
+    expect(detectMarkdown("a".repeat(500 * 1024)).status).toBe("rich")
+    expect(performance.now() - startedAt).toBeLessThan(3_000)
   })
 
   test("bounds pathological blockquote and nested-list parsing", () => {

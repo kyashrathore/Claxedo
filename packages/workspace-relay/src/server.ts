@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { exportJWK, type JWK } from "jose"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { RuntimeAccessVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
@@ -79,10 +80,6 @@ function relayClaimPair(access: unknown, backing: unknown): RelayClaimPair | und
   return undefined
 }
 
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return typeof input === "object" && input !== null
-}
-
 function isStringRecord(input: unknown): input is Record<string, string> {
   return isRecord(input) && Object.values(input).every((value) => typeof value === "string")
 }
@@ -125,7 +122,7 @@ export type WorkspaceRelayAuditEvent = {
   method: string
   path: string
   /**
-   * T16: only set on `relay.request.suppressed_summary` events. Counts the
+   * Only set on `relay.request.suppressed_summary` events. Counts the
    * number of `relay.request.accepted` audit events that were dropped by the
    * sampler in the previous flush interval.
    */
@@ -194,7 +191,7 @@ export type WorkspaceRelayRoutingOptions = {
   fetch?: typeof fetch
   forwardTimeoutMs?: number
   directory?: WorkspaceRelayDirectory
-  // Browser-origin allowlist for CORS. REPLACES the built-in default list
+  // Browser-origin allowlist for CORS. Replaces the built-in default list
   // (Claxedo/OpenCode app origins plus localhost dev hosts) when provided —
   // self-hosted deployments are not forced to keep the product domains.
   // Pattern grammar: exact origin, `https://*.example.com`, `http://localhost:*`.
@@ -203,7 +200,7 @@ export type WorkspaceRelayRoutingOptions = {
 
 export type WorkspaceRelayDrainOptions = {
   /**
-   * T9: when this returns true the relay reports unhealthy via `/health` and
+   * When this returns true the relay reports unhealthy via `/health` and
    * fast-paths every workspace request to a 503 (`relay_draining`) before
    * doing any auth or upstream work. Wired by `createWorkspaceRelayBun` to
    * the drain controller it exposes.
@@ -214,7 +211,7 @@ export type WorkspaceRelayDrainOptions = {
 export type WorkspaceRelayTelemetryOptions = {
   audit?: (event: WorkspaceRelayAuditEvent) => void | Promise<void>
   /**
-   * T16: probability (0.0 – 1.0) at which `relay.request.accepted` audit
+   * Probability (0.0 – 1.0) at which `relay.request.accepted` audit
    * events are emitted to the user `audit` callback. Denies and tunnel
    * lifecycle events are never sampled. When unset, defaults to 1.0
    * (emit every accept). Suppressed accepts are aggregated into a periodic
@@ -222,14 +219,14 @@ export type WorkspaceRelayTelemetryOptions = {
    */
   auditAcceptSampleRate?: number
   /**
-   * T16: how often (ms) the sampler emits a `relay.request.suppressed_summary`
+   * How often (ms) the sampler emits a `relay.request.suppressed_summary`
    * audit event with the count of suppressed accepts in the past interval.
    * Defaults to 60_000 (one minute). When sample rate is 1.0 no interval is
    * armed (nothing to flush). Exposed for tests.
    */
   auditFlushIntervalMs?: number
   /**
-   * T16: random source for the sampler. Defaults to `Math.random`. Override
+   * Random source for the sampler. Defaults to `Math.random`. Override
    * for deterministic tests.
    */
   random?: () => number
@@ -237,7 +234,7 @@ export type WorkspaceRelayTelemetryOptions = {
 
 export type WorkspaceRelayMetricsOptions = {
   /**
-   * T31: bearer token required to access `GET /metrics` from non-loopback
+   * Bearer token required to access `GET /metrics` from non-loopback
    * remotes. When unset, the endpoint allows loopback callers only (using
    * `metricsRemoteAddress` to identify the caller). When set, every request
    * must present `Authorization: Bearer <metricsToken>` regardless of origin.
@@ -245,7 +242,7 @@ export type WorkspaceRelayMetricsOptions = {
    */
   metricsToken?: string
   /**
-   * T31: returns the remote IP of the inbound `/metrics` request (used to
+   * Returns the remote IP of the inbound `/metrics` request (used to
    * gate access to the loopback when `metricsToken` is unset). When this is
    * also unset, `/metrics` fails closed. The Bun adapter wires this resolver
    * through `Bun.Server.requestIP`; other callers should set either this or
@@ -253,7 +250,7 @@ export type WorkspaceRelayMetricsOptions = {
    */
   metricsRemoteAddress?: (request: Request) => string | undefined
   /**
-   * T31: optional providers used to assemble the `/metrics` response body. The
+   * Optional providers used to assemble the `/metrics` response body. The
    * fragmentation/slow-consumer counters live in the bun adapter's per-handler
    * telemetry, and the in-flight pending count lives on the drain controller.
    * `createWorkspaceRelayBun` wires these to make ops counters visible on
@@ -277,7 +274,7 @@ export type WorkspaceRelayMetricsSources = {
 }
 
 /**
- * T31: shape of the JSON body returned by `GET /metrics`. Exported so the
+ * Shape of the JSON body returned by `GET /metrics`. Exported so the
  * bun adapter and ops dashboards can type-narrow against it.
  */
 export type WorkspaceRelayMetrics = {
@@ -490,7 +487,7 @@ export type WorkspaceRelayForwardHeadersOptions = {
    * verbatim risks leaking sensitive session data to the host. Cloud-vm
    * workspaces sit behind a dedicated network boundary where session cookies
    * may legitimately be needed (e.g. workspace dashboards), so the default
-   * is to NOT strip cookies. T26.
+   * is to not strip cookies.
    */
   userHosted?: boolean
   upstreamHeaders?: Record<string, string>
@@ -517,7 +514,7 @@ function forwardHeaders(
   for (const name of inboundNames) {
     if (isDangerousInboundHeader(name)) headers.delete(name)
   }
-  // T26: strip Cookie when forwarding into a user-hosted workspace. See
+  // Strip Cookie when forwarding into a user-hosted workspace. See
   // WorkspaceRelayForwardHeadersOptions for rationale.
   if (options.userHosted) headers.delete("cookie")
   // Bun's fetch auto-decodes gzip/br responses but errors on malformed
@@ -815,7 +812,7 @@ export function workspaceRelayForwardRequestInit(
 }
 
 /**
- * T16: per-options-object sampler state. We store the suppressed-event counter
+ * Per-options-object sampler state. We store the suppressed-event counter
  * (and the periodic flush timer) on a WeakMap keyed by `WorkspaceRelayOptions`
  * so that `authorizeWorkspaceRelayRequest`, the bun adapter's tunnel audit
  * helper, and the relay's own `createWorkspaceRelay` HTTP routes all share the
@@ -884,7 +881,7 @@ function flushSuppressedSummary(options: WorkspaceRelayOptions, state: AuditSamp
 }
 
 /**
- * T16: dispose the sampler's periodic flush timer for a given options object.
+ * Dispose the sampler's periodic flush timer for a given options object.
  * Tests call this in cleanup so the bun process can exit.
  */
 export function disposeAuditSampler(options: WorkspaceRelayOptions) {
@@ -1224,14 +1221,14 @@ export async function forwardWorkspaceRelayRequest(
 
 export type WorkspaceRelayApp = Hono & {
   /**
-   * T16: clear the sampler's periodic flush timer. Tests must call this so
+   * Clear the sampler's periodic flush timer. Tests must call this so
    * `setInterval` doesn't keep the process alive after the test exits.
    */
   disposeAuditSampler(): void
 }
 
 /**
- * T31: read the suppressed-accept counter for a given options object. Surfaced
+ * Read the suppressed-accept counter for a given options object. Surfaced
  * for the `/metrics` route handler. Returns 0 if no sampler state has been
  * created yet (no requests have been audit-sampled), which is the same value
  * an external observer would see.
@@ -1340,14 +1337,15 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
       if (!origin) return undefined
       return originAllowed(origin) ? origin : undefined
     },
-    // Was a fourth hand-maintained copy, and it had already lost
-    // `Last-Event-ID` and `X-Fetch-Bypass-Throttle` relative to the others.
+    // Spread from the shared list, not hand-maintained here: a duplicate
+    // array drifts out of sync and silently drops headers like
+    // `Last-Event-ID` or `X-Fetch-Bypass-Throttle`.
     allowHeaders: [...RELAY_ALLOWED_REQUEST_HEADER_LIST],
     allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }))
 
   app.get("/health", (c) => {
-    // T9: report unhealthy as soon as draining starts so Fly removes this
+    // Report unhealthy as soon as draining starts so Fly removes this
     // instance from routing.
     if (options.isDraining?.()) {
       return c.json(
@@ -1410,11 +1408,11 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
   })
 
   /**
-   * T31: ops-only metrics endpoint. Surfaces fragmentation, slow-consumer,
+   * Ops-only metrics endpoint. Surfaces fragmentation, slow-consumer,
    * directory size, audit suppressed-accept count, and drain pending count.
    *
    * Auth model:
-   *   - If `metricsToken` is configured, every request MUST present
+   *   - If `metricsToken` is configured, every request must present
    *     `Authorization: Bearer <metricsToken>` (loopback or not).
    *   - Otherwise the endpoint requires the caller to be loopback. The
    *     loopback check uses `metricsRemoteAddress(request)` — when that is
@@ -1433,7 +1431,7 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
 
   app.all("/workspaces/:workspaceId/*", async (c) => {
     const trace = createWorkspaceRelayTrace()
-    // T9: cheap fast-path before auth so a draining instance never even
+    // Cheap fast-path before auth so a draining instance never even
     // verifies a token for a request it can't serve. Mirrors the same
     // short-circuit in the Bun adapter for the cloud-vm direct path.
     if (options.isDraining?.()) {

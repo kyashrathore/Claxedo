@@ -29,7 +29,7 @@ describe("GitHub code-host repositories", () => {
     }
     const integration = githubIntegration({ fetchImpl: fetchImpl })
 
-    const repositories = await integration.impl.listRepositories?.({}, "github-secret")
+    const repositories = await integration.impl.actions["code-host"]!.listRepositories?.({}, "github-secret")
     expect(repositories).toHaveLength(101)
     expect(repositories?.[0]).toEqual({
       id: "1",
@@ -51,6 +51,6 @@ describe("GitHub code-host repositories", () => {
     const integration = githubIntegration({
       fetchImpl: (async () => new Response("token github-secret denied", { status: 403 })),
     })
-    await expect(integration.impl.listRepositories?.({}, "github-secret")).rejects.toThrow("github_repositories_unauthorized")
+    await expect(integration.impl.actions["code-host"]!.listRepositories?.({}, "github-secret")).rejects.toThrow("github_repositories_unauthorized")
   })
 })

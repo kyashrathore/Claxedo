@@ -5,15 +5,9 @@ import path from "node:path"
 /**
  * `deployments/local` stays gone.
  *
- * It was the mixed composition: one function serving the self-hosted product
- * and a `CLAXEDO_DEPLOYMENT_MODE=local` mode with no authority, which is why
- * neither product's boot gate could be applied to it. Unit 7 split them and
- * deleted the directory.
- *
- * A directory can come back by accident more easily than it went away — a
- * revert, a cherry-pick, a merge that resurrects a path nobody is looking at.
- * The plan asks for the old path to be rejected in governance rather than
- * trusted to stay deleted, and this is that rejection.
+ * It was the mixed composition — the self-hosted product and an authority-less
+ * `local` mode in one function — that neither boot gate could be applied to,
+ * and a revert, cherry-pick, or merge can resurrect a path nobody is watching.
  *
  * Deliberately narrow: it forbids THIS package's `src/deployments/local`, not
  * the string anywhere. `@claxedo/local-server` has a directory of the same

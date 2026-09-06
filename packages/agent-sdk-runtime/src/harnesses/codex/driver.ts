@@ -18,9 +18,9 @@ import { createLiveModelSource } from "../../live-model-source"
 import {
   resolveSupportedEffort,
 } from "../../sdk-model-catalog"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
-  record,
   text,
   type JsonRecord,
   type SdkRuntimeAuth,
@@ -32,7 +32,6 @@ import {
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
-  DEFAULT_CODEX_MODE,
   PermissionModeSelection,
   codexSandboxPolicy,
   codexSettingsFor,
@@ -78,9 +77,9 @@ export type CodexPluginLaunch = {
 }
 
 export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefined {
-  const config = record(record(launch)?.config)
+  const config = asRecord(asRecord(launch)?.config)
   if (!config || Object.keys(config).length === 0) return undefined
-  const marketplace = record(config.marketplace)
+  const marketplace = asRecord(config.marketplace)
   const name = text(marketplace?.name)
   const source = text(marketplace?.source)
   if (!name || !/^[A-Za-z0-9_-]+$/.test(name)) {
@@ -216,7 +215,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
     // under the default rung rather than whatever `thread/start` would assume.
-    const settings = CODEX_SETTINGS[DEFAULT_CODEX_MODE]
+    const settings = codexSettingsFor(undefined)
     const result = await proc.request("thread/start", {
       cwd: input.directory,
       approvalPolicy: settings.approvalPolicy,
@@ -225,8 +224,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
-    }).then((response) => record(response) ?? {})
-    const thread = record(result.thread)
+    }).then((response) => asRecord(response) ?? {})
+    const thread = asRecord(result.thread)
     const threadId = text(thread?.id)
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
     return { id: threadId }
@@ -330,13 +329,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     let messageQueue = Promise.resolve()
     const unsubscribe = proc.onMessage((message) => {
       const method = text(message.method)
-      const params = record(message.params) ?? {}
+      const params = asRecord(message.params) ?? {}
       if (!method) return
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       messageQueue = messageQueue.then(async () => {
         const { parentOwned } = await this.projectThreadNotification(input, threadId, method, params, message)
         if (method === "turn/started" && parentOwned) {
-          turnId = text(record(params.turn)?.id) ?? turnId
+          turnId = text(asRecord(params.turn)?.id) ?? turnId
           const active = this.host.lifecycle().get(input.sessionId)
           if (active) active.turnId = turnId
         }
@@ -345,7 +344,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
-    const startTurn = async (): Promise<JsonRecord> => record(await proc.request("turn/start", {
+    const startTurn = async (): Promise<JsonRecord> => asRecord(await proc.request("turn/start", {
       threadId,
       input: codexUserInput(input.input.parts),
       cwd: input.directory,
@@ -370,7 +369,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         }),
         turnStartFailed,
       ])
-      turnId = text(record(result.turn)?.id) ?? turnId
+      turnId = text(asRecord(result.turn)?.id) ?? turnId
       this.host.lifecycle().set(input.sessionId, {
         abort: input.abort,
         turnId,
@@ -413,7 +412,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         source: { dir: "in", method, frame },
       })
     }
-    const call = codexCollabAgentCall(record(params.item))
+    const call = codexCollabAgentCall(asRecord(params.item))
     if (call?.senderThreadId === threadId) {
       await Promise.all(call.receiverThreadIds.map((receiverThreadId) => input.observeSubagent({
         observation: {
@@ -437,7 +436,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         source: { dir: "in", method, frame },
       })))
     }
-    const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
+    const eventThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
     const parentOwned = !eventThreadId || eventThreadId === threadId
     input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
       dir: "in",

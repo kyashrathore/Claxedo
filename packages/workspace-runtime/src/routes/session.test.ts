@@ -369,9 +369,9 @@ describe("session Goal routes", () => {
       },
       goal: goal,
     })
-    // Capabilities are derived ONCE and the Goal read reuses that answer, so
-    // the combined route costs the runtime exactly what the two separate reads
-    // used to cost it — minus the second round-trip.
+    // Capabilities are derived once and the Goal read reuses that answer, so
+    // the combined route costs the runtime what two separate reads would
+    // cost, minus the second round-trip.
     expect(calls).toEqual(["capabilities", "read"])
     expect(guarded).toEqual(["goal_state"])
   })

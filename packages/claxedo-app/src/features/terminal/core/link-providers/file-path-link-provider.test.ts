@@ -130,7 +130,7 @@ describe("FilePathLinkProvider", () => {
 		it("should skip CLI flags that look like paths via suffix parsing", async () => {
 			const terminal = createMockTerminal([
 				{
-					text: '"" /Users/yashvardhansingh/test/opencode/packages --include="*.test.ts" 2>/dev/null"',
+					text: '"" /srv/repos/opencode/packages --include="*.test.ts" 2>/dev/null"',
 				},
 			]);
 			const onOpen = mock();
@@ -140,7 +140,7 @@ describe("FilePathLinkProvider", () => {
 
 			// Only the real directory should be linkified.
 			expect(links.length).toBe(1);
-			expect(links[0].text).toBe("/Users/yashvardhansingh/test/opencode/packages");
+			expect(links[0].text).toBe("/srv/repos/opencode/packages");
 		});
 
 		it("should skip numeric ratio patterns like 1/2", async () => {

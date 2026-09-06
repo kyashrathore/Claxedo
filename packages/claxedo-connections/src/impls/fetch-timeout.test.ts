@@ -32,10 +32,10 @@ describe("integration fetch timeout", () => {
 
   test("every key-based impl bounds verify at the injected deadline", async () => {
     const cases: { name: string; verify: (o: IntegrationFetchOptions) => Promise<unknown> }[] = [
-      { name: "github", verify: (o) => githubIntegration(o).impl.verify!({}, "s") },
-      { name: "notion", verify: (o) => notionIntegration(o).impl.verify!({}, "s") },
-      { name: "linear", verify: (o) => linearIntegration(o).impl.verify!({}, "s") },
-      { name: "atlassian", verify: (o) => atlassianIntegration(o).impl.verify!(SITE, "s") },
+      { name: "github", verify: (o) => githubIntegration(o).impl.auth!.verify!({}, "s") },
+      { name: "notion", verify: (o) => notionIntegration(o).impl.auth!.verify!({}, "s") },
+      { name: "linear", verify: (o) => linearIntegration(o).impl.auth!.verify!({}, "s") },
+      { name: "atlassian", verify: (o) => atlassianIntegration(o).impl.auth!.verify!(SITE, "s") },
     ]
     for (const { name, verify } of cases) {
       const silent = silentFetch()
@@ -52,7 +52,7 @@ describe("integration fetch timeout", () => {
     const integration = githubIntegration({ fetchImpl: silent.fetchImpl, timeoutMs: 5 })
     // listRepositories has no catch of its own — a timeout classifies as the
     // closed `unavailable` sentinel the service maps to 502.
-    await expect(integration.impl.listRepositories!({}, "s")).rejects.toThrow("github_repositories_unavailable")
+    await expect(integration.impl.actions["code-host"]!.listRepositories({}, "s")).rejects.toThrow("github_repositories_unavailable")
     expect(silent.signals[0]?.aborted).toBe(true)
   })
 

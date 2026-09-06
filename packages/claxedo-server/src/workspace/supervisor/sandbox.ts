@@ -1,4 +1,3 @@
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { randomUUID } from "crypto"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import {
@@ -57,6 +56,7 @@ import {
 import { now, runtimeBackoffMs, sleep } from "./clock"
 import type { WorkspaceRuntimeState } from "./store"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const log = Log.create({ service: "workspace-supervisor" })
 
@@ -419,18 +419,18 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
       return createDaytonaSandboxDriver({
         apiKey: auth.api_key,
         baseSnapshot:
-          clean(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ??
-          clean(process.env.CLAXEDO_SNAPSHOT_NAME) ??
+          trimToUndefined(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ??
+          trimToUndefined(process.env.CLAXEDO_SNAPSHOT_NAME) ??
           defaultSnapshotName(),
-        ...(clean(process.env.DAYTONA_API_URL) ? { apiUrl: clean(process.env.DAYTONA_API_URL) } : {}),
-        ...(clean(process.env.DAYTONA_ORGANIZATION_ID)
-          ? { organizationId: clean(process.env.DAYTONA_ORGANIZATION_ID) }
+        ...(trimToUndefined(process.env.DAYTONA_API_URL) ? { apiUrl: trimToUndefined(process.env.DAYTONA_API_URL) } : {}),
+        ...(trimToUndefined(process.env.DAYTONA_ORGANIZATION_ID)
+          ? { organizationId: trimToUndefined(process.env.DAYTONA_ORGANIZATION_ID) }
           : {}),
-        ...(clean(process.env.DAYTONA_TARGET) ? { target: clean(process.env.DAYTONA_TARGET) } : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+        ...(trimToUndefined(process.env.DAYTONA_TARGET) ? { target: trimToUndefined(process.env.DAYTONA_TARGET) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
         env: (_input, sandbox) => runtimeEnvForHost(state, driverId, sandbox.id),
       })
     }
@@ -444,10 +444,10 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
       return createCloudflareSandboxDriver({
         workerUrl: auth.worker_url,
         apiToken: auth.api_token,
-        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
         env: (_input, sandbox) => runtimeEnvForHost(state, driverId, sandbox.id),
       })
     }
@@ -461,12 +461,12 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
       return createModalSandboxDriver({
         tokenId: auth.token_id,
         tokenSecret: auth.token_secret,
-        ...(clean(process.env.CLAXEDO_MODAL_APP_NAME) ? { appName: clean(process.env.CLAXEDO_MODAL_APP_NAME) } : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_IMAGE) ? { baseImage: clean(process.env.CLAXEDO_RUNTIME_IMAGE) } : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+        ...(trimToUndefined(process.env.CLAXEDO_MODAL_APP_NAME) ? { appName: trimToUndefined(process.env.CLAXEDO_MODAL_APP_NAME) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_IMAGE) ? { baseImage: trimToUndefined(process.env.CLAXEDO_RUNTIME_IMAGE) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
         env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
       })
     }
@@ -481,13 +481,13 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         token: auth.access_token,
         teamId: auth.team_id,
         projectId: auth.project_id,
-        ...(clean(process.env.CLAXEDO_VERCEL_SNAPSHOT_ID)
-          ? { baseSnapshotId: clean(process.env.CLAXEDO_VERCEL_SNAPSHOT_ID) }
+        ...(trimToUndefined(process.env.CLAXEDO_VERCEL_SNAPSHOT_ID)
+          ? { baseSnapshotId: trimToUndefined(process.env.CLAXEDO_VERCEL_SNAPSHOT_ID) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
         env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
       })
     }
@@ -500,12 +500,12 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
       const { createBoxSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/box")
       return createBoxSandboxDriver({
         apiKey: auth.api_key,
-        ...(clean(process.env.CLAXEDO_BOX_API_URL) ? { baseUrl: clean(process.env.CLAXEDO_BOX_API_URL) } : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_IMAGE) ? { image: clean(process.env.CLAXEDO_RUNTIME_IMAGE) } : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+        ...(trimToUndefined(process.env.CLAXEDO_BOX_API_URL) ? { baseUrl: trimToUndefined(process.env.CLAXEDO_BOX_API_URL) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_IMAGE) ? { image: trimToUndefined(process.env.CLAXEDO_RUNTIME_IMAGE) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
         env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
       })
     }
@@ -518,10 +518,10 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
       const { createDockerSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/docker")
       return createDockerSandboxDriver({
         image: auth.image,
-        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
         env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
       })
     }

@@ -18,18 +18,13 @@ afterEach(() => {
 describe("conversationPersistence", () => {
   const key = (value: string) => `${conversationPersistenceSchema}\0${value}`
 
-  test("exposes a ChatClient persistence adapter", () => {
-    expect(typeof conversationPersistence.getItem).toBe("function")
-    expect(typeof conversationPersistence.setItem).toBe("function")
-    expect(typeof conversationPersistence.removeItem).toBe("function")
-  })
 
-  test("no-ops without throwing where IndexedDB is unavailable", () => {
-    // happydom provides no IndexedDB, so the adapter must degrade to a safe
-    // no-op rather than throw (ChatClient also swallows adapter errors).
-    expect(() => conversationPersistence.setItem("ses_x", [])).not.toThrow()
-    expect(() => conversationPersistence.removeItem("ses_x")).not.toThrow()
-    expect(() => conversationPersistence.getItem("ses_x")).not.toThrow()
+
+  test("returns no persisted value when browser storage is unavailable", async () => {
+    setConversationPersistenceStorageForTest(undefined)
+    await expect(Promise.resolve(conversationPersistence.setItem("ses_x", []))).resolves.toBeUndefined()
+    await expect(Promise.resolve(conversationPersistence.removeItem("ses_x"))).resolves.toBeUndefined()
+    await expect(Promise.resolve(conversationPersistence.getItem("ses_x"))).resolves.toBeUndefined()
   })
 
   test("matches every directory-scoped durable key only inside the anonymous principal", () => {
@@ -92,6 +87,27 @@ describe("conversationPersistence", () => {
     setConversationPersistencePrincipal(undefined)
   })
 
+  test("unresolved signed identity has no durable key and touches no storage", async () => {
+    const calls: string[] = []
+    setConversationPersistenceStorageForTest({
+      get: async () => { calls.push("get"); return [] },
+      set: async () => { calls.push("set") },
+      delete: async () => { calls.push("delete") },
+      keys: async () => { calls.push("keys"); return [] },
+    })
+    setConversationPersistencePrincipal(null)
+    expect(conversationPersistenceKey("/repo\0ses_1")).toBeUndefined()
+    await conversationPersistence.getItem("old-key")
+    await conversationPersistence.setItem("old-key", [])
+    await conversationPersistence.removeItem("old-key")
+    await preparePersistedSessionRevocation("ses_1").purge()
+    expect(calls).toEqual([])
+    setConversationPersistencePrincipal("signed:user_a")
+    const named = conversationPersistenceKey("/repo\0ses_1")!
+    await conversationPersistence.setItem(named, [])
+    expect(calls).toEqual(["set"])
+  })
+
   test("a revocation waits for an in-flight write and fences later writes until regrant", async () => {
     const values = new Map<IDBValidKey, unknown>()
     let releaseWrite: (() => void) | undefined
@@ -109,7 +125,7 @@ describe("conversationPersistence", () => {
       keys: async () => [...values.keys()],
     })
     setConversationPersistencePrincipal("signed:user_a")
-    const key = conversationPersistenceKey("/repo\0ses_revoked")
+    const key = conversationPersistenceKey("/repo\0ses_revoked")!
 
     const pendingWrite = Promise.resolve(conversationPersistence.setItem(key, []))
     await writeStarted

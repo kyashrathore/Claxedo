@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { QueryClient, QueryObserver } from "@tanstack/solid-query"
 import {
   activeSessionStatusPollQueryOptions,
@@ -6,6 +6,20 @@ import {
   activeSessionStatusPollScope,
   waitForFirstActiveSessionStatusPoll,
 } from "./active-session-status-poll"
+
+const cleanups: VoidFunction[] = []
+afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
+
+function whenRemoved(client: QueryClient) {
+  return new Promise<void>((resolve) => {
+    const unsubscribe = client.getQueryCache().subscribe((event) => {
+      if (event.type !== "removed" || event.query.queryKey[1] !== "session-status-poll") return
+      unsubscribe()
+      resolve()
+    })
+    cleanups.push(unsubscribe)
+  })
+}
 
 const scope = { directory: "/repo/main", sessionID: "ses_poll" }
 
@@ -45,21 +59,26 @@ describe("active session status poll lifecycle", () => {
       startedKeys: new Set<string>(),
       refresh: async () => true,
     })
+    cleanups.push(() => client.clear())
     const observer = new QueryObserver(client, options)
     const unsubscribe = observer.subscribe(() => undefined)
+    cleanups.push(unsubscribe)
 
     expect(options.queryKey).toEqual(["runtime", "session-status-poll", "/repo/main", "ses_poll"])
     expect(client.getQueryCache().find({ queryKey: activeSessionStatusPollRequestKey(scope), exact: true })).toBeDefined()
 
+    const removed = whenRemoved(client)
     unsubscribe()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await removed
 
     expect(client.getQueryCache().find({ queryKey: activeSessionStatusPollRequestKey(scope), exact: true })).toBeUndefined()
   })
 
   test("aborts an in-flight refresh when the owning observer unmounts", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    let started = false
+    cleanups.push(() => client.clear())
+    let signalStarted!: () => void
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
     let aborted = false
     const startedKeys = new Set([activeSessionStatusPollScope(scope)])
     const observer = new QueryObserver(client, activeSessionStatusPollQueryOptions({
@@ -67,7 +86,7 @@ describe("active session status poll lifecycle", () => {
       enabled: true,
       startedKeys,
       refresh: async (signal) => {
-        started = true
+        signalStarted()
         return await new Promise<boolean>((resolve) => {
           signal.addEventListener("abort", () => {
             aborted = true
@@ -77,11 +96,12 @@ describe("active session status poll lifecycle", () => {
       },
     }))
     const unsubscribe = observer.subscribe(() => undefined)
+    cleanups.push(unsubscribe)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(started).toBe(true)
+    await started
+    const removed = whenRemoved(client)
     unsubscribe()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await removed
 
     expect(aborted).toBe(true)
     expect(client.getQueryCache().find({ queryKey: activeSessionStatusPollRequestKey(scope), exact: true })).toBeUndefined()

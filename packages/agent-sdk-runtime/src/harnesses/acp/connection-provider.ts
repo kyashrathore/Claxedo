@@ -150,5 +150,10 @@ function materializedBindings(
   bindings: Readonly<Record<string, string>> | undefined,
   secrets: Readonly<Record<string, string>>,
 ) {
-  return Object.fromEntries(Object.entries(bindings ?? {}).map(([target, name]) => [target, secrets[name]]))
+  const materialized: Record<string, string> = {}
+  for (const [target, name] of Object.entries(bindings ?? {})) {
+    const value = secrets[name]
+    if (value !== undefined) materialized[target] = value
+  }
+  return materialized
 }

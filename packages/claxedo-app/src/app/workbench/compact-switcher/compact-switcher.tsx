@@ -363,9 +363,6 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                     data-testid="switcher-title-button"
                     aria-current={item().active ? "page" : undefined}
                     ref={(el) => {
-                      // Pointer-driven surface drag (mouse + touch + pen), replacing
-                      // native HTML5 `draggable` so tabs can be dragged onto a pane
-                      // on touch devices too (WP-C3). `canDrag` still gates kind.
                       const dispose = useDragSource(el, {
                         contentId: () => (canDrag(item()) ? item().contentId : undefined),
                         sourceKind: "tab",

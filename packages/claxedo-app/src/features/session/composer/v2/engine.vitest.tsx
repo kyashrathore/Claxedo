@@ -1,10 +1,8 @@
-// Strangler parity harness (plan 2026-07-25-005, W2/T2.2 + W3/T3.1).
-//
-// Every behaviour below is asserted against BOTH engines through the one
-// `ComposerEngine` contract, driving the REAL vendored controller on the
-// controller side and the REAL `editor-actions.ts`/`popover-controller.ts` on the
-// legacy side. The composer's own frame is not rendered: this owns the input
-// engine, and the frame is covered by `core-composer-modes.spec.ts`.
+// Parity harness for the two composer input engines: every case below runs against both
+// through the one `ComposerEngine` contract, driving the real vendored controller on one
+// side and the real `editor-actions.ts`/`popover-controller.ts` on the other. The composer
+// frame is not rendered — this owns the input engine, the frame is
+// `core-composer-modes.spec.ts`.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createRoot } from "solid-js"
 import { render, cleanup, waitFor } from "@solidjs/testing-library"
@@ -26,7 +24,6 @@ vi.mock("@/platform/persistence/persist", async () => {
 })
 
 import { PromptProvider, usePrompt } from "@/features/session/providers/prompt"
-import { renderPromptEditor } from "@/features/session/composer/ui/editor-serialization"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { createComposerEngine } from "@/features/session/composer/v2/engine"
 import {
@@ -122,8 +119,8 @@ function Probe(props: { kind: ComposerEngineKind }) {
       setCursorPosition(editor, value.length)
       engine.handleInput()
     },
-    // Insert at wherever the caret actually is, the way a browser keystroke does,
-    // so a mis-placed caret shows up as wrong TEXT rather than passing silently.
+    // Insert at wherever the caret actually is, the way a browser keystroke does, so a
+    // mis-placed caret shows up as wrong text rather than passing silently.
     typeAtCaret: (value: string) => {
       const selection = window.getSelection()!
       const range = selection.getRangeAt(0)
@@ -135,9 +132,9 @@ function Probe(props: { kind: ComposerEngineKind }) {
       selection.addRange(range)
       engine.handleInput()
     },
-    // A real keystroke: the engine sees keydown FIRST and may swallow it (this is
-    // the whole difference between how the two engines enter shell mode — legacy
-    // does it on keydown, upstream's machine does it on the resulting input).
+    // A real keystroke: the engine sees keydown first and may swallow it, which is the
+    // whole difference between how the two engines enter shell mode — one acts on the
+    // keydown, the other on the resulting input.
     press: (value: string) => {
       editor.focus()
       setCursorPosition(editor, editor.textContent?.length ?? 0)
@@ -180,8 +177,8 @@ describe("composer engine flag", () => {
     expect(resolveComposerEngineKind({ stored: null, env: undefined })).toBe("legacy")
     expect(resolveComposerEngineKind({ env: "controller" })).toBe("controller")
     expect(resolveComposerEngineKind({ env: "v2" })).toBe("controller")
-    // The per-browser override wins over the build env in BOTH directions, so a
-    // flagged-on build can still be pinned back to legacy from one machine.
+    // The per-browser override wins over the build env in both directions, so a flagged-on
+    // build can still be pinned back to legacy from one machine.
     expect(resolveComposerEngineKind({ stored: "legacy", env: "controller" })).toBe("legacy")
     expect(resolveComposerEngineKind({ stored: "controller", env: "legacy" })).toBe("controller")
     expect(normalizeComposerEngineKind("nonsense")).toBeUndefined()
@@ -216,14 +213,14 @@ for (const kind of ["legacy", "controller"] as const) {
       expect(harness.engine.mode()).toBe("normal")
     })
 
-    test("`!` enters shell mode without leaving the character behind — behavior 3", async () => {
+    test("`!` enters shell mode without leaving the character behind", async () => {
       harness.press("!")
       await waitFor(() => expect(harness.engine.mode()).toBe("shell"))
       await waitFor(() => expect(harness.text()).toBe(""))
       expect(harness.editor.textContent).toBe("")
     })
 
-    test("backspace on an empty shell editor returns to normal mode — behavior 3", async () => {
+    test("backspace on an empty shell editor returns to normal mode", async () => {
       harness.press("!")
       await waitFor(() => expect(harness.engine.mode()).toBe("shell"))
       harness.editor.focus()
@@ -243,7 +240,7 @@ for (const kind of ["legacy", "controller"] as const) {
       expect(options.some((option) => option.type === "file" && option.path === "src/recent.ts")).toBe(true)
     })
 
-    test("selecting a mention writes an inline pill part — behaviors 10, 11", async () => {
+    test("selecting a mention writes an inline pill part", async () => {
       harness.type("@")
       await waitFor(() => expect(harness.engine.popoverView.atFlat().length).toBeGreaterThan(0))
       const agent = harness.engine.popoverView.atFlat().find((option) => option.type === "agent")!
@@ -255,11 +252,11 @@ for (const kind of ["legacy", "controller"] as const) {
       expect(harness.engine.popover()).toBe(null)
     })
 
-    // The bug this pins: upstream's `store.addMention` writes `prompt` and `cursor`
-    // unbatched, so an unbatched insertion leaves the caret BEFORE the trailing
-    // space and the next keystroke yields "@reviewerplease". Text, not caret
-    // offsets, is asserted — a caret assertion would not have caught it either.
-    test("a mention leaves the caret after its trailing space — behavior 10", async () => {
+    // `store.addMention` writes `prompt` and `cursor` unbatched, so an unbatched insertion
+    // leaves the caret before the trailing space and the next keystroke yields
+    // "@reviewerplease". Asserted on text rather than caret offsets, which stay plausible
+    // either way.
+    test("a mention leaves the caret after its trailing space", async () => {
       harness.type("@rev")
       await waitFor(() => expect(harness.engine.popoverView.atFlat().length).toBeGreaterThan(0))
       const agent = harness.engine.popoverView.atFlat().find((option) => option.type === "agent")!
@@ -269,7 +266,7 @@ for (const kind of ["legacy", "controller"] as const) {
       await waitFor(() => expect(harness.text()).toBe("@reviewer please take a look"))
     })
 
-    test("Escape closes an open popover and leaves mode and text alone — behavior 6", async () => {
+    test("Escape closes an open popover and leaves mode and text alone", async () => {
       harness.type("@")
       await waitFor(() => expect(harness.engine.popover()).toBe("at"))
       const event = harness.key({ key: "Escape" })
@@ -289,7 +286,7 @@ for (const kind of ["legacy", "controller"] as const) {
       expect(triggers).toContain("docs")
     })
 
-    test("a builtin command fires immediately and clears the editor — behavior 1", async () => {
+    test("a builtin command fires immediately and clears the editor", async () => {
       harness.type("/model")
       await waitFor(() => expect(harness.engine.popoverView.slashFlat().length).toBeGreaterThan(0))
       const model = harness.engine.popoverView.slashFlat().find((command) => command.id === "model.choose")!
@@ -299,7 +296,7 @@ for (const kind of ["legacy", "controller"] as const) {
       expect(harness.engine.popover()).toBe(null)
     })
 
-    test("a custom command inserts its trigger for editing instead of firing — behavior 2", async () => {
+    test("a custom command inserts its trigger for editing instead of firing", async () => {
       harness.type("/dep")
       await waitFor(() => expect(harness.engine.popoverView.slashFlat().length).toBeGreaterThan(0))
       const deploy = harness.engine.popoverView.slashFlat().find((command) => command.id === "custom.deploy")!
@@ -323,10 +320,10 @@ for (const kind of ["legacy", "controller"] as const) {
       expect(harness.engine.documentPicker.open()).toBe(false)
     })
 
-    // Constraint from the `+` menu that landed 2026-07-25: focus is deliberately
-    // NOT handed to the editor, so the surface has to survive the menu's blur.
-    // Both entries must open their list and STAY open across that blur.
-    test("the `+` menu opens both popovers and they survive the menu's blur", async () => {
+    // The `+` menu deliberately does not hand focus to the editor, so each popover has to
+    // survive the menu's blur. The two engines differ here: the controller retains each
+    // list, the legacy engine closes on blur.
+    test("the `+` menu opens both popovers and each engine applies its blur policy", async () => {
       harness.engine.openPopover("slash")
       await waitFor(() => expect(harness.engine.popover()).toBe("slash"))
       await waitFor(() => expect(harness.engine.popoverView.slashFlat().length).toBeGreaterThan(0))
@@ -336,9 +333,11 @@ for (const kind of ["legacy", "controller"] as const) {
       harness.engine.openPopover("at")
       await waitFor(() => expect(harness.engine.popover()).toBe("at"))
       await waitFor(() => expect(harness.engine.popoverView.atFlat().length).toBeGreaterThan(0))
+      harness.engine.handleBlur()
+      expect(harness.engine.popover()).toBe(kind === "legacy" ? null : "at")
     })
 
-    test("Shift+Enter adds a newline and does not submit — behavior 9", async () => {
+    test("Shift+Enter adds a newline and does not submit", async () => {
       harness.type("line")
       await waitFor(() => expect(harness.text()).toBe("line"))
       const event = harness.key({ key: "Enter", shiftKey: true })
@@ -384,13 +383,12 @@ for (const kind of ["legacy", "controller"] as const) {
       cleanup()
       document.body.replaceChildren()
       mount(kind === "legacy" ? "controller" : "legacy", scope)
-      // Same directory scope, so the SAME prompt-cache entry: the other engine
-      // starts from the draft the first one left behind.
+      // Same directory scope means the same prompt-cache entry, so the other engine starts
+      // from the draft the first one left behind.
       await waitFor(() => expect(harness.text()).toBe("survives the flip"))
       expect(harness.prompt.current()).toEqual(parts)
       // ...and the new engine renders it into its own editor element.
-      renderPromptEditor(harness.editor, harness.prompt.current())
-      expect(harness.editor.textContent).toBe("survives the flip")
+      await waitFor(() => expect(harness.editor.textContent).toBe("survives the flip"))
     })
   })
 }

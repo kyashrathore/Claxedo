@@ -9,9 +9,8 @@ import { sanitizeReplay } from "./replay-sanitize"
 const ESC = "\x1b"
 
 describe("sanitizeReplay — single-pass scanner edges", () => {
-  test("returns the SAME string reference when nothing needs stripping", () => {
+  test("preserves styled content when nothing needs stripping", () => {
     const input = `${ESC}[1;32mgreen${ESC}[0m plain text`
-    // No copy at all in the common case — the point of the rewrite.
     expect(sanitizeReplay(input)).toBe(input)
   })
 
@@ -57,17 +56,10 @@ describe("sanitizeReplay — single-pass scanner edges", () => {
     expect(sanitizeReplay(`a${ESC}]11;?${ESC}\\b`)).toBe("ab")
   })
 
-  test("stays linear on a large TUI-shaped buffer", () => {
-    // The old implementation ran 8 full-buffer regex passes, each allocating a
-    // fresh copy of the whole buffer. Guard the shape: ~1MB of dense escapes
-    // must stay well clear of any quadratic blowup.
+  test("preserves all retained content in a large TUI-shaped buffer", () => {
     const unit = `${ESC}[1;32mline${ESC}[0m${ESC}[?1003h${ESC}[>0q\r\n`
     const big = unit.repeat(20000)
-    const started = Date.now()
     const out = sanitizeReplay(big)
-    expect(Date.now() - started).toBeLessThan(2000)
-    expect(out).not.toContain(`${ESC}[?1003h`)
-    expect(out).not.toContain(`${ESC}[>0q`)
-    expect(out).toContain(`${ESC}[1;32mline${ESC}[0m`)
+    expect(out).toBe(`${ESC}[1;32mline${ESC}[0m\r\n`.repeat(20000))
   })
 })

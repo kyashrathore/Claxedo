@@ -109,7 +109,7 @@ function scheduleDelayedTask(task: () => void, delay: number) {
 }
 
 type MetaPayload = {
-  status: Record<string, SessionStatus>
+  status?: Record<string, SessionStatus>
   permissions?: PermissionRequest[]
   questions?: QuestionRequest[]
 }
@@ -244,7 +244,7 @@ export async function syncSessionMeta(input: {
     currentDirectory: input.currentDirectory?.(),
   })) return false
 
-  if (input.instrumentPoll) {
+  if (input.instrumentPoll && status !== undefined) {
     observeSessionStatusPoll({
       directory: input.directory,
       sessionID: input.sessionID,
@@ -272,21 +272,21 @@ async function fetchSessionMeta(input: {
     }
   }
 }): Promise<MetaPayload> {
-  const fallbackUnlessAborted = <T,>(fallback: T) => (error: unknown) => {
+  const unavailableUnlessAborted = (error: unknown) => {
     if (input.signal?.aborted) throw error
-    return fallback
+    return undefined
   }
   const [status, permissions, questions] = await Promise.all([
-    input.sdk.session.status(undefined, { signal: input.signal }).then((x) => x.data ?? {})
-      .catch(fallbackUnlessAborted<Record<string, SessionStatus>>({})),
+    input.sdk.session.status(undefined, { signal: input.signal }).then((x) => x.data)
+      .catch(unavailableUnlessAborted),
     input.includeRequests === false
       ? Promise.resolve(undefined)
-      : input.sdk.permission.list(undefined, { signal: input.signal }).then((x) => x.data ?? [])
-        .catch(fallbackUnlessAborted<PermissionRequest[]>([])),
+      : input.sdk.permission.list(undefined, { signal: input.signal }).then((x) => x.data)
+        .catch(unavailableUnlessAborted),
     input.includeRequests === false
       ? Promise.resolve(undefined)
-      : input.sdk.question.list(undefined, { signal: input.signal }).then((x) => x.data ?? [])
-        .catch(fallbackUnlessAborted<QuestionRequest[]>([])),
+      : input.sdk.question.list(undefined, { signal: input.signal }).then((x) => x.data)
+        .catch(unavailableUnlessAborted),
   ])
   return { status, permissions, questions }
 }
@@ -295,7 +295,10 @@ function loadSessionMeta(input: Parameters<typeof fetchSessionMeta>[0] & { direc
   const key = metaKey(input.directory, input.includeRequests)
   const cached = queryClient.getQueryData<MetaPayload>(key)
   const updatedAt = queryClient.getQueryState<MetaPayload>(key)?.dataUpdatedAt ?? 0
-  if (!input.force && cached && Date.now() - updatedAt < HYDRATE_FRESH_MS) return Promise.resolve(cached)
+  const complete = cached?.status !== undefined && (input.includeRequests === false || (
+    cached.permissions !== undefined && cached.questions !== undefined
+  ))
+  if (!input.force && complete && Date.now() - updatedAt < HYDRATE_FRESH_MS) return Promise.resolve(cached)
   return leasedQueryRequest({
     scopeKey: ["runtime", "directory-session-meta-request", input.directory, input.includeRequests === false ? "status" : "requests"],
     authority: input.sdk,

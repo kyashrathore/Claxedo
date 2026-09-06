@@ -171,6 +171,28 @@ describe("createShellSettle motion tracking", () => {
     expect(gate.settled()).toBe(true)
   })
 
+  test("keeps equal transition properties on different elements independent", () => {
+    clocks = createClocks()
+    const first = motionElement("transform")
+    const second = motionElement("transform")
+    const gate = mountGate(() => [first.motion, second.motion])
+    active = gate
+    clocks.frame()
+    first.emit("transitionrun")
+    second.emit("transitionrun")
+    clocks.frame()
+    first.emit("transitionend")
+    clocks.idle()
+    clocks.frame()
+    expect(gate.motionSettled()).toBe(false)
+    expect(gate.settled()).toBe(false)
+    second.emit("transitioncancel")
+    expect(gate.motionSettled()).toBe(true)
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
   test("ignores a transition on a property it is not tracking", () => {
     clocks = createClocks()
     const column = motionElement("margin-right")

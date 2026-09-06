@@ -1,8 +1,9 @@
 import type { Context } from "hono"
 import type { SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { asRecord } from "@claxedo/helpers/guards"
 import { eventSessionId, type CompatEnvelope } from "../compat-events"
-import { rec, str } from "../json-value"
+import { str } from "../json-value"
 import type { WorkspaceRuntimeEvent } from "../bus"
 import {
   sessionAccessContext,
@@ -242,8 +243,8 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
     case "session.lifecycle":
       return event.sessionID
     case "session.updated": {
-      const properties = rec(event.properties)
-      const info = rec(properties?.info)
+      const properties = asRecord(event.properties)
+      const info = asRecord(properties?.info)
       return text(properties?.sessionID) ?? text(properties?.sessionId) ?? text(info?.sessionID) ?? text(info?.id)
     }
     default:
@@ -253,12 +254,12 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
 
 /** Extracts only producer-owned session identifiers; it never guesses from directory/tab ids. */
 export function unknownEventSessionId(event: unknown): string | undefined {
-  const row = rec(event)
+  const row = asRecord(event)
   if (!row) return undefined
-  const properties = rec(row.properties)
-  const info = rec(properties?.info)
-  const part = rec(properties?.part)
-  const payload = rec(row.payload)
+  const properties = asRecord(row.properties)
+  const info = asRecord(properties?.info)
+  const part = asRecord(properties?.part)
+  const payload = asRecord(row.payload)
   return text(row.sessionID)
     ?? text(row.sessionId)
     ?? text(properties?.sessionID)

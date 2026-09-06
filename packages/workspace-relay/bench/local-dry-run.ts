@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Phase 0 gate: prove the loadgen produces the full metric set end-to-end
-// against a REAL locally-booted Bun relay (`bun src/main.ts`) bridging to a
+// Local-first gate: proves the loadgen produces the full metric set end-to-end
+// against a real locally-booted Bun relay (`bun src/main.ts`) bridging to a
 // real local WS/HTTP target. Nothing here is mocked — the relay is the shipping
 // process, booted with the same env vars production uses; only the RAT issuer
 // and target resolver are bench-supplied (the control plane's job in prod).

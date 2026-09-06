@@ -4,12 +4,12 @@ import { queryKeys } from "@/platform/query/keys"
 import { normalizeProjectList, readProjectCatalog } from "@/platform/query/control-plane"
 import { authFetch as defaultAuthFetch } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { isDemoMode } from "@/lib/runtime-mode"
-import { asRecord, readArray } from "@/lib/record"
+import { readArray } from "@/lib/record"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import type { SignedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 /**
  * The workspaces the current principal can see, as one query.
@@ -82,20 +82,13 @@ function txt(input: unknown) {
   return typeof input === "string" && input ? input : undefined
 }
 
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
 /**
  * Whether the central server answers for its own workspaces on `/project`.
- *
- * True for the loopback daemon, and for demo mode — served from an ordinary
- * https origin but backed entirely by the in-page mock server, which owns a
- * project inventory and no control plane. `platform/api/api.ts` already routes
- * the demo's base URL the same way.
+ * True for the loopback daemon, which owns a project inventory and no control
+ * plane.
  */
 function centralOwnsProjects(serverUrl: string | undefined) {
-  return centralTransportForServer(serverUrl) === "loopback" || isDemoMode()
+  return centralTransportForServer(serverUrl) === "loopback"
 }
 
 /**
@@ -182,8 +175,8 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
       txt(row.display_name) ??
       txt(row.displayName) ??
       workspaceId
-    const created = num(row.created_at) ?? num(row.createdAt) ?? 0
-    const updated = num(row.updated_at) ?? num(row.updatedAt) ?? created
+    const created = asFiniteNumber(row.created_at) ?? asFiniteNumber(row.createdAt) ?? 0
+    const updated = asFiniteNumber(row.updated_at) ?? asFiniteNumber(row.updatedAt) ?? created
     const group = groups.get(projectID) ?? {
       id: projectID,
       name: projectDisplayName(row, projectID),

@@ -31,10 +31,10 @@ import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
   extractTextFromParts,
-  record,
   text,
   type SdkRuntimeAuth,
   type SdkRuntimeDriver,
@@ -119,9 +119,9 @@ export function claudeTranscriptGoalSnapshot(
   entry: SessionStoreEntry,
   previous?: RuntimeGoalSnapshot,
 ): RuntimeGoalSnapshot | null | undefined {
-  const row = record(entry)
+  const row = asRecord(entry)
   if (!row || row.type !== "attachment") return undefined
-  const attachment = record(row.attachment)
+  const attachment = asRecord(row.attachment)
   if (text(attachment?.type) !== "goal_status") return undefined
   if (attachment?.met === true) return null
   if (attachment?.met !== false) return undefined
@@ -145,7 +145,7 @@ export function claudeTranscriptGoalSnapshot(
  * for this workspace; the SDK takes them as local plugin configs.
  */
 export function claudePluginConfigs(input: unknown): SdkPluginConfig[] {
-  const launch = record(input)
+  const launch = asRecord(input)
   if (!Array.isArray(launch?.pluginRoots)) return []
   return [...new Set(launch.pluginRoots.filter((item): item is string => typeof item === "string" && Boolean(item.trim())))]
     .map((pluginPath) => ({ type: "local", path: pluginPath }))
@@ -510,7 +510,7 @@ export async function ingestClaudeSdkMessage(
   input: Pick<SdkRuntimeTurnInput, "ingest" | "observeSubagent" | "rebindAgentSession">,
   message: SDKMessage,
 ) {
-  const sdkSessionId = text(record(message)?.session_id)
+  const sdkSessionId = text(asRecord(message)?.session_id)
   if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
   await Promise.all(claudeSubagentObservations(message).map((observation) => input.observeSubagent({
     observation,

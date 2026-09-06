@@ -1,13 +1,7 @@
 import type { PaneRect, WorkbenchState } from "./types"
 
-/**
- * Narrow-viewport breakpoint (Tailwind `md`). Below this canvas width the
- * workbench collapses to a single full-bleed pane and hides the rest. This
- * is the TS side of the token; sweeping the ad-hoc CSS literals
- * (420/639/767/900/1200) onto a matching `--bp-md` custom property is a separate
- * C3 consolidation step and is intentionally out of scope for this module.
- */
-export const BP_MD = 768
+import { BP_MD } from "@/ui/controls/breakpoints"
+export { BP_MD } from "@/ui/controls/breakpoints"
 
 /** The rect a single pane occupies when the workbench is collapsed. */
 const FULL_BLEED: PaneRect = { top: 0, left: 0, width: 1, height: 1 }

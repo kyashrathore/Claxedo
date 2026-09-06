@@ -1,171 +1,34 @@
 /**
- * SPEC: Terminal panel (workspace PTY tabs)
+ * The terminal panel: workbench tabs backed by a server-owned PTY, covering creation from
+ * the terminal creator, input/output over the socket, refit on split, exit cleanup, agent
+ * status dots, auto-rename, and reattach across reload.
  *
- * PURPOSE — lets a user run a real shell (or an agent CLI like Claude/Codex) inside the
- * app, alongside sessions, without leaving the workspace. Terminals are workbench tabs
- * backed by a server-owned PTY process; the app owns reconnect, resize, title and
- * status-dot bookkeeping around that PTY.
+ * A terminal lives in two independent pieces of state. The context store
+ * (`src/context/terminal.tsx`) holds the per-directory PTY list and xterm snapshots under a
+ * `terminal.v2` localStorage key; the workbench tab is `state.meta`, persisted with the rest
+ * of the layout. The sidebar rows derive from `state.meta` alone and never consult the
+ * store. Opening a terminal creates a pending content id first, then swaps in the real PTY
+ * id in both `state.meta` and the URL once `terminal.new()` resolves.
  *
- * STATE MODEL —
- *   - Server truth: one PTY process per terminal, addressed by `id`. Created via
- *     `POST /api/wr/pty` (body: `{ title, cwd?, command?/args?/initialCommand?, env }`),
- *     updated via `PUT /api/wr/pty/:id` (title/size), deleted via `DELETE /api/wr/pty/:id`,
- *     streamed over `wss://.../api/wr/pty/:id/connect?directory=&cursor=`.
- *   - Client store: `createTerminalSession` (`src/context/terminal.tsx`) holds
- *     `{ active?: string; all: LocalPTY[] }` per workspace directory, persisted to
- *     localStorage under a `terminal.v2` scoped key (survives reload) via `persisted()`.
- *     `all` entries carry `{id, title, titleNumber, cwd, buffer, cursor, scrollY, ...}`
- *     xterm-restore snapshot fields. `active` is used by the mobile compact-switcher
- *     terminal drawer, not by the desktop workbench tab strip.
- *   - Workbench tab: a SEPARATE piece of state, `state.meta` (`ContentMeta` with
- *     `type: "terminal"`, `terminalId`, `content.title`), persisted as part of the whole
- *     `ClaxedoState` layout (workbench/meta/rail/...). The sidebar terminal rows
- *     (`TerminalSurfaceRow`) are derived from `state.meta` ONLY
- *     (`deriveTerminalSurfaceRows`, `src/claxedo-ui/navigation-islands/session-navigation.ts`)
- *     — they do NOT cross-reference `terminal.all()`. Opening a terminal from the
- *     workspace toolbar (`terminal-actions.ts` `openTerminal`) creates a pending content
- *     id, queues a create request (`state.terminal.queueCreateForContent`), and navigates
- *     to `/w/<workspaceId>/terminal/<pendingId>`; `TerminalContentInner`
- *     (`src/claxedo-ui/content-renderers/terminal-content.tsx`) consumes the queued
- *     create, calls `terminal.new()`, then replaces the pending id with the real PTY id
- *     in both `state.meta` and the URL.
- *   - Per-PTY ephemeral status: `state.terminal.agentStatus[ptyId]` ("idle"|"working"|
- *     "permission") and `agentSeen[ptyId]` (bool), persisted in `ClaxedoState.terminal`
- *     (`src/claxedo-ui/state/terminal.ts`). Driven by `agent.lifecycle` and `pty.exited`
- *     events over the ClaxedoEventsProvider bus (`src/providers/claxedo-events.tsx`).
- *     Displayed status is DERIVED (`terminalSurfaceStatus`,
- *     `src/claxedo-ui/compact-switcher/surface-status.ts`): "permission" if
- *     agentStatus=permission, "working" if agentStatus=working, "done" if agentStatus=idle
- *     AND seen=true, else "idle" (hidden, no dot).
- *   - Terminal title: `content.title` (workbench tab / sidebar row text) is the source of
- *     truth; a `createEffect` in `TerminalContentInner` mirrors it into the context
- *     store's `title` field whenever they diverge. Lifecycle auto-rename
- *     (`agentLifecycleTitle`, `src/claxedo-ui/state/agent-status-listener.ts`) rewrites
- *     ONLY "generic" titles (`Terminal`, `Terminal N`, `<Provider>`, `<Provider> N`) into
- *     `"<Provider>: <context>"`; any other (user/custom) title is left untouched forever.
- *   - Command presets: `localStorage["claxedo.terminalCommands"]`
- *     (`src/components/settings-terminals.tsx`, `getTerminalCommands`/
- *     `saveTerminalCommands`) holds `{ claude, codex, custom: {id,name,command}[] }`,
- *     edited from Settings → Terminals. Defaults: `claude --dangerously-skip-permissions`,
- *     `codex -c model_reasoning_effort="high" --ask-for-approval never --sandbox
- *     danger-full-access`. Read fresh (no reactivity) by the workspace toolbar
- *     (`src/claxedo-ui/layouts/workspace-toolbar.tsx`) on every render/click.
+ * The displayed status is derived, not stored: "permission", "working", "done" only when
+ * idle and previously seen, otherwise no dot at all. `useClearAttentionOnFocus` runs on
+ * every render of the focused tab and demotes its own "permission" back to "working", so
+ * status is only observable on a backgrounded terminal — these tests keep a second terminal
+ * focused throughout.
  *
- * ANATOMY —
- *   `[data-testid="workspace-scope-new-terminal"]` (`[aria-label="New Terminal"]`) — the one
- *     terminal button in the toolbar. It opens the terminal CREATOR rather than starting a
- *     PTY: the header's directory is a fallback chain (`sidebarDir() ??
- *     focusedPaneWorkspaceDir()`), so the per-agent quick-launch buttons that used to sit
- *     here started an agent somewhere the user never picked. Hidden when the surface cannot
- *     create terminals at all.
- *   `[data-component="terminal-new-launchers"]` — the creator's launcher grid, rendered once
- *     a workspace is chosen (prefilled on a workspace route). Each tile is
- *     `[data-slot="terminal-launcher"][data-launcher-id]`: `shell` (plain login shell,
- *     always present), then `claude`/`codex` when Settings → Terminals has a command for
- *     them, then `custom:<id>` per saved custom command. The roster is derived from that one
- *     settings blob by `terminalLaunchers()`, so it is not a per-surface JSX list any more.
- *   `[data-component="workspace-more-menu"]` — toolbar dropdown trigger ("chevron-down"
- *     next to the terminal button). It no longer carries any terminal entries; only "New
- *     Document" (when documents are available) and "Configure..." (Settings → Terminals).
- *   `[data-testid="rail-sidebar-terminal-row"]` — one per open terminal tab, with
- *     `data-terminal-id`, `data-pane-id`/`data-content-id`, `data-active`, `data-pending`.
- *     Contains a status dot `span[data-sidebar-status="working"|"permission"|"done"]`
- *     (absent entirely while "idle") and the title text
- *     (`terminalSurfaceTitle(title, status)` — appends " · working"/" · needs input"/
- *     " · done" for display only; the persisted title never contains the suffix).
- *   `[data-testid="terminal-pane"][data-terminal-id]` → `[data-testid="terminal-xterm-host"]`
- *     — the mounted xterm instance for that PTY; `.xterm` inside it is the live canvas.
- *   Settings → Terminals (`Tabs.Trigger[value="terminals"]`, text "Terminals"): "Claude
- *     Command"/"Codex Command" text inputs, an "Add" button that appends a blank
- *     name+command row, per-row remove (trash icon), "Save Changes" (disabled until
- *     dirty) which persists to localStorage and shows a "Terminal commands saved" toast.
- *   `[data-testid="pane-<paneId>"]` / `[data-workbench-content][data-pane-id]` — workbench
- *     pane/tab-content chrome shared with every other content type (sessions, terminals);
- *     dragging a `data-workbench-content` node's payload (MIME
- *     `application/x-workbench-content`, the content id) onto another pane's edge calls
- *     `wb.split.split(paneId, edge, contentId)`, creating a real geometric split.
+ * `content.title` is the source of truth and is mirrored into the store. Lifecycle
+ * auto-rename rewrites only generic titles (`Terminal`, `Terminal N`, `<Provider>`,
+ * `<Provider> N`); anything the user typed is left alone forever. The launcher roster comes
+ * from `localStorage["claxedo.terminalCommands"]`, read fresh on every render.
  *
- * BEHAVIORS —
- *   1. The creator's "Shell" tile creates a plain terminal: `POST /api/wr/pty` fires with a
- *      default numbered title ("Terminal N") and no command, and a pane + sidebar row
- *      mount for it.
- *   2. The creator's Claude tile creates a terminal whose PTY create body's
- *      `command`/`args` are the parsed `claude` command from Settings → Terminals
- *      (default `claude --dangerously-skip-permissions`).
- *   3. The creator's Codex tile does the same for the configured `codex` command.
- *   4. A custom command added and saved in Settings → Terminals appears as a creator tile;
- *      pressing it creates a terminal whose PTY create body's `initialCommand`
- *      (non-agent-binary commands are not split into `command`/`args`) matches the saved
- *      command string, titled with the saved name.
- *   5. Typing into a focused terminal pane forwards the keystrokes to the PTY over the
- *      WebSocket (`ws.send`), and the shell's (mocked) echoed output visibly paints new
- *      non-background pixels into the `.xterm` canvas.
- *   6. Splitting the terminal's pane (drag another tab onto its edge) triggers a refit:
- *      the terminal's rendered box shrinks to its new pane's box with no zero-size
- *      collapse and no overflow past the new pane's right edge.
- *   7. When the server pushes `pty.exited` for a terminal's PTY id, the terminal context
- *      store (`terminal.tsx`) drops it from `all()`/reassigns `active()` in the same tick,
- *      AND any tracked agent status for that PTY clears back to idle
- *      (`usePtyExitCleanup`, `agent-status-listener.ts`) — the status dot disappearing is
- *      the reliably DOM-observable half of this contract this spec asserts (see the
- *      test's own comment for why the `terminal.all()` half is NOT independently asserted
- *      here — it raced a still-mounted tab's `terminal.ensure()` re-add in a real run).
- *   8. The sidebar row's status dot mirrors `agent.lifecycle` events for its terminal id:
- *      hidden while idle, pulsing amber (`data-sidebar-status="working"`) on `Busy`, solid
- *      amber (`"permission"`) on `UserActionRequired`, green (`"done"`) once `Idle` fires
- *      after having been busy/pending (seen=true). Only observable for a BACKGROUNDED
- *      terminal: `useClearAttentionOnFocus` runs on every render of the currently
- *      FOCUSED tab and immediately demotes its own "permission" back to "working" (see
- *      behavior 9's sibling rule below) — so this behavior's test deliberately keeps a
- *      second terminal focused/active throughout.
- *   9. Focusing (clicking) a terminal row whose dot shows "done" clears the seen flag —
- *      the dot disappears (state returns to idle/hidden).
- *   10. `agent.lifecycle` events rewrite a GENERIC title ("Terminal N") into
- *      "<Provider>: <context>" from the event's `refName`/`prompt`, but the same event
- *      never overwrites a non-generic (custom/user) title.
- *   11. Reloading the page reattaches the terminal pane to the SAME persisted PTY id
- *      (`data-terminal-id` unchanged, sidebar row still present) without issuing another
- *      `POST /api/wr/pty` — the PTY create count is unchanged across reload.
- *   12. Reloading an active terminal while its agent is working restores the daemon's
- *      terminal-session lifecycle snapshot before another SSE frame arrives, so both the
- *      sidebar and compact-tab status dots remain `working`.
- *
- * INVARIANTS — completed-turn oracle (`e2e/helpers/turn-oracle.ts`) does not apply here:
- *   this spec has no chat/session prompt sends, only terminal lifecycle. Harness-ownership
- *   invariant (#1 in `e2e/INVARIANTS.md`) is not exercised by this spec either.
- *
- * HARNESS NOTES — none; terminals are harness-agnostic (a terminal just runs a shell
- *   command, optionally one of `claude`/`codex`/`gemini`/`cursor`/`cursor-agent` when the
- *   parsed command's binary name matches, see `launchCommand` in `src/context/terminal.tsx`).
- *
- * OUT OF SCOPE — the Process panel/feature (add/start/stop/restart/crash overlays,
- *   `.claxedo/processes.jsonc`) is `core-processes` (spec 20), including the ONE behavior
- *   this spec's PURPOSE mentions but does not itself prove end-to-end: pruning a terminal
- *   tab whose owning PTY was `process:*`-owned and is no longer reported by the process
- *   feature (`cleanupStaleProcessTabs`, `src/claxedo-ui/context/process-pane.tsx:384-416`)
- *   — that reconciliation only runs when the Process feature's `fetchProcesses()` fires,
- *   which requires spec 20's mocks/UI surface (`GET /api/wr/process`) that this spec does
- *   not stand up. The process-owned cleanup contract runs in `core-processes` and its
- *   focused unit tests.
- *   Terminal drag-reorder within the tab strip, process-owned terminal dedup, and the
- *   mobile compact-switcher terminal drawer are also out of scope (spec 16/20 territory).
- *   A real PTY backend on :3001 is NOT required — this spec drives PTY REST via a
- *   hand-rolled `page.route` mock (mock-runtime.ts does not cover `/api/wr/pty`) and the
- *   PTY WebSocket via a fake `window.WebSocket` (the same technique
- *   `e2e-legacy/terminal-in-workspace.spec.ts` used), and drives `agent.lifecycle`/
- *   `pty.exited` events via the dev-only `window.__claxedoEmitTestEvent` hook
- *   (`src/providers/claxedo-events.tsx`, `import.meta.env.DEV`-gated) instead of faking the
- *   SSE stream, since the shared mock's `/global/event`/`/event` stream is scoped to the
- *   OpenCode SDK event shape, not the Claxedo events bus terminals use. `installAppBootMock`
- *   (below) additionally mocks `GET /api/claxedo/health`/`bootstrap`/etc — every one of
- *   this spec's routes navigates to `/<slug>/session` (not `/s/`- or `/w/`-prefixed), so
- *   `ConnectionGate` (`src/app.tsx`) treats it as `revealBeforeHealth === false` and BLOCKS
- *   the entire app behind a "Could not reach 127.0.0.1:3001" screen until that health check
- *   resolves — confirmed empirically (a spec revision without this mock never painted
- *   `[data-claxedo]` at all); mock-runtime.ts is not reused for it because this spec's
- *   boot-only needs are a small, terminal-agnostic subset of that helper's full chat/session
- *   streaming surface.
+ * No PTY backend is needed: PTY REST is a hand-rolled `page.route` mock, the PTY socket is a
+ * fake `window.WebSocket`, and Claxedo events are injected at the route level. Every route
+ * here navigates to `/<slug>/session`, which is neither `/s/`- nor `/w/`-prefixed, so
+ * `ConnectionGate` refuses to reveal the app until `GET /api/claxedo/health` resolves —
+ * hence `installAppBootMock`. That mock's origin is `127.0.0.1:3001`, a different origin
+ * from the app, so every response needs CORS headers.
  */
+
 import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { expectActiveTerminalSurfaceParity } from "../helpers/surface-parity"
 import { expect, test, type Page, type Route } from "@playwright/test"
@@ -185,39 +48,17 @@ function corsHeaders() {
 
 // ─── Claxedo event bus (route-level central-stream SSE injection) ──────────
 //
-// See the long comment on the central-stream mounts in `installAppBootMock`
-// for why this exists instead of the `window.__claxedoEmitTestEvent` dev-only
-// hook. Broadcasts (fanout), NOT a single drain-once queue: on this route
-// shape (`/<slug>/session`) TWO independent readers open their own
-// long-lived reconnecting connection to this bus at once —
-// `ClaxedoEventsProvider`'s "central" target on `/api/claxedo/events`
-// (src/app/integrations/claxedo-events.tsx) AND `global-sdk.tsx`'s
-// `sseJsonStream` on `/api/wr/events`, which rewrites its
-// usual `/global/event`/`/event` request to `/api/wr/events` for this route
-// shape (see `apiFetchUrl`, src/utils/api.ts:200-205, and the matching
-// comment on `installMockRuntime`'s `wrEventsHandler` in
-// `e2e/helpers/mock-runtime.ts`). A real SSE endpoint multicasts every event
-// to every connected reader; a single shared drain-once queue instead lets
-// whichever connection happens to be waiting "steal" the event from the
-// other — confirmed empirically via a monkey-patched `JSON.parse` stack
-// trace: the `Busy` event's JSON.parse frame pointed at `emitEvent`
-// (claxedo-events.tsx:160, the correct consumer), but the very next
-// `UserActionRequired` event's JSON.parse frame pointed at `sseJsonStream`
-// (global-sdk.tsx:248) instead — global-sdk doesn't care about
-// `agent.lifecycle` and silently drops it, so `ClaxedoEventsProvider` (and
-// therefore `useAgentLifecycleListener`) never saw it and the sidebar dot
-// never moved off "working".
+// Two independent readers connect to this bus at once on this route shape:
+// `ClaxedoEventsProvider`'s central target on `/api/claxedo/events`, and global-sdk's
+// `sseJsonStream`, whose request is rewritten to `/api/wr/events`. A real SSE endpoint
+// multicasts to both; one shared queue instead lets whichever connection is waiting steal
+// the event from the other, and global-sdk silently drops `agent.lifecycle`.
 //
-// Fix: broadcast every event to a small set of PERSISTENT "slots" (one per
-// concurrent logical reader), not to a single shared queue and not to
-// ephemeral per-request channels either — Playwright's `route.fulfill()`
-// can't drip a body over time, so each reconnect is a brand-new HTTP
-// request, and a channel torn down between two of a reader's OWN reconnects
-// would silently drop any event emitted during that gap. `drain()` instead
-// claims whichever existing slot is currently idle (or creates a new one),
-// so a slot's unclaimed backlog survives across its own reader's
-// reconnects, while still giving each independent reader its own copy of
-// every event (real multi-client SSE semantics).
+// So events fan out to persistent per-reader slots rather than ephemeral per-request
+// channels: `route.fulfill()` cannot drip a body over time, making every reconnect a fresh
+// HTTP request, and a channel torn down between one reader's own reconnects would drop
+// anything emitted in the gap. `drain()` claims whichever slot is idle, so a slot's backlog
+// survives its reader's reconnects.
 type ClaxedoTestEvent = Record<string, unknown>
 
 type ClaxedoEventSlot = { pending: ClaxedoTestEvent[]; waiters: Array<() => void>; busy: boolean }
@@ -225,15 +66,10 @@ type ClaxedoEventSlot = { pending: ClaxedoTestEvent[]; waiters: Array<() => void
 const emptySlot = (): ClaxedoEventSlot => ({ pending: [], waiters: [], busy: false })
 
 /**
- * One slot per reader that WILL connect, created up front rather than on that
- * reader's first `drain()`.
- *
- * `emit()` fans out to the slots that exist at the moment it is called, so a
- * slot created lazily has no backlog: an event emitted before a reader's first
- * connection is invisible to it forever, with no replay to recover it. That is
- * a real failure mode here, not a theoretical one — `emitClaxedoEvent` fires as
- * soon as a terminal exists, which under load beats `ClaxedoEventsProvider`'s
- * central connection, and the auto-rename frame was simply never delivered.
+ * One slot per reader that will connect, created up front rather than on that reader's
+ * first `drain()`. `emit()` only reaches slots that already exist and there is no replay,
+ * so a lazily-created slot misses every event emitted before its reader first connected —
+ * and `emitClaxedoEvent` can fire before the provider's central connection is up.
  */
 const CLAXEDO_BUS_READERS = 2
 
@@ -296,19 +132,10 @@ function claxedoSseBody(batch: ClaxedoTestEvent[]) {
 const claxedoEventBuses = new WeakMap<Page, ClaxedoEventBus>()
 
 /**
- * App-boot mock: everything `ConnectionGate` (`src/app.tsx`) and the OpenCode
- * SDK need to get past the startup health gate and paint `[data-claxedo]`.
- * `openWorkspaceRoute` below navigates to `/<slug>/session`, which does NOT
- * start with `/s/` or `/w/`, so `revealBeforeHealth` is false and the app
- * BLOCKS behind a "Could not reach 127.0.0.1:3001" screen
- * (`ConnectionError`) until `GET /api/claxedo/health` resolves `{healthy:
- * true}` — confirmed empirically (see findings). `getClaxedoServerUrl()`
- * (health/bootstrap/agent-config/wr/*) defaults to `http://127.0.0.1:3001`,
- * a DIFFERENT origin than the app under test, so every response here needs
- * CORS headers (a `res.json()` read on a cross-origin `mode:"cors"` fetch
- * rejects without them) — `e2e/helpers/mock-runtime.ts` does not cover this
- * spec's boot path (it targets chat/session flows) so this is hand-rolled,
- * matching `e2e-legacy/terminal-in-workspace.spec.ts`'s proven route shapes.
+ * Everything `ConnectionGate` and the OpenCode SDK need to get past the startup health gate
+ * and paint `[data-claxedo]`. Every response carries CORS headers: `getClaxedoServerUrl()`
+ * resolves to `http://127.0.0.1:3001`, a different origin from the app, and a `res.json()`
+ * read on a cross-origin `mode:"cors"` fetch rejects without them.
  */
 async function installAppBootMock(page: Page, dir: string, projectId = "proj_core_terminal") {
   const headers = corsHeaders()
@@ -431,32 +258,15 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   await page.route("**/global/event?**", eventStreamHandler)
   await page.route("**/event?**", eventStreamHandler)
 
-  // `ClaxedoEventsProvider` (src/app/integrations/claxedo-events.tsx) consumes
-  // agent.lifecycle/pty.exited/etc events over its "central" stream target in
-  // both dev and production builds. That target is
-  // `controlPlaneEventsUrl` -> `GET /api/claxedo/events`; `/api/wr/events` is
-  // what a WORKSPACE-scoped target opens (and what global-sdk's compat loop is
-  // rewritten to). Both spellings are the SAME stream on both real servers —
-  // claxedo-local-server/src/opencode/compat-routes/index.ts and
-  // claxedo-server/src/routes/hosted/shell.ts each mount one handler on
-  // `/global/event`, `/api/wr/events` and `/api/claxedo/events` — so both are
-  // served by the one handler below. Mounting only `/api/wr/events` left the
-  // provider's central connection escaping to 127.0.0.1:3001 and NO reader on
-  // this bus, so every `emitClaxedoEvent` frame was dropped.
+  // Both real servers mount one handler on `/global/event`, `/api/wr/events` and
+  // `/api/claxedo/events`, so both spellings are served here too. The provider opens the
+  // central `/api/claxedo/events` one; mounting only `/api/wr/events` lets it escape to
+  // 127.0.0.1:3001, leaving this bus with no reader and every emitted frame dropped.
   //
-  // That provider also exposes a
-  // `window.__claxedoEmitTestEvent` direct-injection hook, but ONLY `if
-  // (import.meta.env.DEV)` — false when this suite runs against a built app
-  // served statically (`vite preview`/static server), which is this spec's
-  // default (confirmed empirically: the hook was `undefined` against the
-  // pooled :4455 static server even though the exact same test passes
-  // against a genuine `vite dev` server). Route-level SSE injection works in
-  // both, so it is the only reliable channel here — mounted the same
-  // drain-and-reconnect way `e2e/helpers/mock-runtime.ts`'s `EventBus` does
-  // (Playwright's `route.fulfill()` cannot drip a body over time; the
-  // provider's stream reader reconnects on stream end with backoff, so each
-  // "connection" here blocks until an event is pending, fulfills once, and
-  // the next reconnect picks up the next batch). See `emitClaxedoEvent`.
+  // The provider's `window.__claxedoEmitTestEvent` hook is not usable instead: it is
+  // `import.meta.env.DEV`-gated and this suite's default target is a statically-served
+  // build. Each "connection" blocks until an event is pending and fulfills once, since
+  // `route.fulfill()` cannot drip a body; the reader reconnects and picks up the next batch.
   const claxedoEventBus = new ClaxedoEventBus()
   claxedoEventBuses.set(page, claxedoEventBus)
   const claxedoEventsHandler = async (route: Route) => {
@@ -664,14 +474,9 @@ async function installPtyApi(page: Page, dir: string): Promise<PtyApi> {
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers })
     return route.fulfill({ status: 200, contentType: "application/json", headers, body: "[]" })
   })
-  // NOTE: `/api/wr/events` is intentionally NOT mounted here — every caller of
-  // `installPtyApi` calls `installAppBootMock` first, which already owns that
-  // route (via `ClaxedoEventBus`, so `emitClaxedoEvent` can inject events).
-  // Playwright's `page.route` is LIFO (the most-recently-registered matching
-  // handler wins, and only falls through to earlier ones on `route.fallback()`)
-  // — a second unconditional `route.fulfill()` here previously shadowed that
-  // bus with a static heartbeat-only stream, silently dropping every event
-  // `emitClaxedoEvent` sent for the rest of the test.
+  // `/api/wr/events` is deliberately not mounted here: `installAppBootMock` already owns it,
+  // and `page.route` is LIFO, so a handler here would shadow the event bus and drop every
+  // frame `emitClaxedoEvent` sends.
 
   return api
 }
@@ -727,9 +532,8 @@ async function createPresetTerminal(page: Page, api: PtyApi, preset: "claude" | 
 }
 
 /**
- * Custom commands get a generated `custom:<id>` launcher id, so match on the
- * name the user typed in Settings -> Terminals instead — that is also the thing
- * the test is asserting reached the PTY.
+ * Custom commands get a generated `custom:<id>` launcher id, so match on the name typed in
+ * Settings -> Terminals instead.
  */
 async function createCustomTerminal(page: Page, api: PtyApi, name: string) {
   return launchFromCreator(page, api, { name })
@@ -760,27 +564,18 @@ async function emitClaxedoEvent(page: Page, event: Record<string, unknown>) {
 }
 
 async function splitTerminalPaneWith(page: Page, hostPtyId: string, sourcePtyId: string) {
-  // The workbench DnD is pointer-driven (WP-C3 touch-DnD rewrite,
-  // src/claxedo-ui/workbench/pointer-drag.ts): native HTML5 DragEvents are no
-  // longer listened for at all (the old `onDragOver`/`onDrop` pane handlers and
-  // the `WORKBENCH_DRAG_MIME` DataTransfer payload were removed), so a synthetic
-  // `DragEvent` drop is now a silent no-op and never creates a split. Drive the
-  // split with REAL pointer input instead: drag the SOURCE terminal's sidebar row
-  // — a `useDragSource` "navigation-row" that resolves that terminal's workbench
-  // content id via `prepareContentId` (src/claxedo-ui/navigation-islands/
-  // navigation-row.tsx) — onto the HOST pane's right edge. This is exactly what a
-  // user does and mirrors the sibling core-panes-split-tabs spec's
-  // `dragTabOntoRightEdge`.
+  // The workbench drag engine is pointer-driven and listens for no native HTML5 DragEvents,
+  // so a synthetic `DragEvent` drop is a silent no-op. Drag the source terminal's sidebar
+  // row with real pointer input onto the host pane's right edge instead.
   const target = terminalPane(page, hostPtyId)
   const box = await target.boundingBox()
   if (!box) throw new Error("host terminal pane has no bounding box")
   await sidebarTerminalRow(page, sourcePtyId).dragTo(target, {
     targetPosition: { x: Math.max(1, box.width - 6), y: box.height / 2 },
   })
-  // The real split signal is the resize divider appearing (`rootSplit()` becomes
-  // truthy). `visiblePaneCount` is unreliable as a gate here — it counts every
-  // `[data-pane-id]`-bearing content slot, several of which exist (hidden
-  // background tabs) even with a single pane, so it reads > 1 without a split.
+  // The divider appearing is the split signal. `visiblePaneCount` counts every
+  // `[data-pane-id]` content slot, including hidden background tabs, so it reads > 1 with
+  // no split at all.
   await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
 }
 
@@ -791,7 +586,7 @@ function contentIdFor(page: Page, ptyId: string) {
 }
 
 test.describe("core terminal panel @core", () => {
-  test("the creator's Shell tile creates a plain terminal with a default numbered title — behaviors 1", async ({ page }) => {
+  test("the creator's Shell tile creates a plain terminal with a default numbered title", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-plain"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -807,7 +602,7 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Terminal/)
   })
 
-  test("the creator's Claude tile uses the Settings -> Terminals Claude command — behaviors 2", async ({ page }) => {
+  test("the creator's Claude tile uses the Settings -> Terminals Claude command", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-claude-preset"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -824,7 +619,7 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Claude/)
   })
 
-  test("the creator's Codex tile uses the Settings -> Terminals Codex command — behaviors 3", async ({ page }) => {
+  test("the creator's Codex tile uses the Settings -> Terminals Codex command", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-codex-preset"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -841,7 +636,7 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Codex/)
   })
 
-  test("a custom command configured in Settings -> Terminals launches with that exact command — behaviors 4", async ({ page }) => {
+  test("a custom command configured in Settings -> Terminals launches with that exact command", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-custom"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -849,8 +644,8 @@ test.describe("core terminal panel @core", () => {
     await seedProject(page, DIR)
     await openWorkspaceRoute(page, DIR)
 
-    // Configure the custom command through the real Settings -> Terminals UI (the
-    // scope hint requires this be asserted here, not just seeded via localStorage).
+    // Configured through the real Settings UI rather than seeded into localStorage, so the
+    // save path is part of what this proves.
     await openToolbarDropdown(page)
     await page.getByRole("menuitem", { name: "Configure..." }).click()
     await page.getByRole("tab", { name: "Terminals" }).click()
@@ -873,7 +668,7 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Aider/)
   })
 
-  test("typing into a focused terminal sends input over the PTY socket and paints output — behaviors 5", async ({ page }) => {
+  test("typing into a focused terminal sends input over the PTY socket and paints output", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-type-output"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page, { echo: true })
@@ -884,17 +679,11 @@ test.describe("core terminal panel @core", () => {
     const id = await createPlainTerminal(page, api)
     await expect.poll(async () => (await terminalPaintSummary(page, id)).visible, { timeout: 15_000 }).toBe(true)
     const baseline = await terminalPaintSummary(page, id)
-    // `chromaPixels` is a near-full-canvas "non-dark-pixel" count (see
-    // `terminalPaintSummary`'s `max > 60` clause) — the initial banner alone
-    // already paints the vast majority of the viewport, so its frame-to-frame
-    // jitter (cursor blink phase, antialiasing) can swing several hundred
-    // pixels either way. A strict "more than baseline" comparison after
-    // typing a few more characters is therefore noise, not signal (verified:
-    // a real run saw the count go DOWN after typing, 694276 -> 693855, with
-    // no rendering regression). The floor check below (still painting,
-    // comfortably above baseline/2) plus the sent-log assertion is the
-    // reliable pair: one proves input reached the PTY, the other that the
-    // canvas is still actively rendering afterward, not collapsed/blank.
+    // `chromaPixels` counts non-dark pixels across nearly the whole canvas, and the opening
+    // banner already fills most of it, so cursor blink and antialiasing swing the count by
+    // hundreds between frames — it can even fall after typing. Asserting a floor rather than
+    // growth, paired with the sent-log check below, is what actually separates "input
+    // reached the PTY and the canvas is still rendering" from "collapsed or blank".
     expect(baseline.chromaPixels).toBeGreaterThan(100)
 
     await terminalPane(page, id).click()
@@ -917,7 +706,7 @@ test.describe("core terminal panel @core", () => {
       .toBeGreaterThan(baseline.chromaPixels / 2)
   })
 
-  test("splitting the pane refits the terminal to its new size without clipping — behaviors 6", async ({ page }) => {
+  test("splitting the pane refits the terminal to its new size without clipping", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-split-refit"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -962,7 +751,9 @@ test.describe("core terminal panel @core", () => {
     expect(afterBox!.y + afterBox!.height).toBeLessThanOrEqual(paneRect!.y + paneRect!.height + 1)
   })
 
-  test("an externally exited PTY clears its tracked agent status — behaviors 7", async ({ page }) => {
+  // `reconcilePtyExit` has to clear the `seen` flag alongside the status; leaving it set
+  // would strand a "done" dot on a terminal whose PTY is gone.
+  test("an externally exited PTY clears its tracked agent status", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-external-exit"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -978,36 +769,22 @@ test.describe("core terminal panel @core", () => {
     const id2 = await createPlainTerminal(page, api)
     const dot1 = sidebarTerminalRow(page, id1).locator("[data-sidebar-status]")
 
-    // Background terminal 1 gets a tracked agent status first (`pty.exited`'s
-    // `usePtyExitCleanup` cleanup, agent-status-listener.ts, only acts on a
-    // PTY id that `isTracked()` — i.e. has HAD `setAgentStatus` called at
-    // least once — so a never-tracked terminal's exit is a silent no-op by
-    // design, not a bug to prove around).
+    // The exit cleanup only acts on a PTY that has had a status set at least once, so give
+    // terminal 1 one first — a never-tracked terminal's exit is a no-op by design.
     await emitClaxedoEvent(page, { type: "agent.lifecycle", tabId: id1, terminalId: id1, eventType: "Busy" })
     await expect(dot1).toHaveAttribute("data-sidebar-status", "working", { timeout: 10_000 })
 
     await emitClaxedoEvent(page, { type: "pty.exited", id: id1, exitCode: 0 })
 
-    // Reliable, DOM-observable proof the app registered the exit: the
-    // tracked agent status resets to idle and the dot disappears
-    // (`usePtyExitCleanup`). NOTE: `terminal.tsx`'s own `pty.exited` handler
-    // ALSO removes the id from `terminal.all()`/reassigns `active` in the
-    // same tick (verified via a direct localStorage read of the persisted
-    // `terminal.v2` store) — but that removal is not durably observable
-    // through this spec's harness: because `pty.exited` never removes the
-    // WORKBENCH TAB (`state.meta`) for the exited PTY, the still-mounted
-    // `TerminalContentInner` for that tab can resurrect the entry via
-    // `terminal.ensure()` (`src/claxedo-ui/content-renderers/
-    // terminal-content.tsx`) on an unrelated re-render, observed empirically
-    // (a "next New Terminal reclaims the freed number" proof was flaky:
-    // sometimes green, sometimes not, depending on exactly when that re-add
-    // raced the assertion) — reported as a finding rather than asserted here.
+    // The dot disappearing is the durable proof. The store's own removal from `terminal.all()`
+    // is not: `pty.exited` never removes the workbench tab, so the still-mounted content
+    // renderer can resurrect the entry through `terminal.ensure()` on any later re-render.
     await expect(dot1).toHaveCount(0, { timeout: 10_000 })
 
     void id2
   })
 
-  test("the sidebar status dot mirrors agent.lifecycle Busy/UserActionRequired/Idle — behaviors 8", async ({ page }) => {
+  test("the sidebar status dot mirrors agent.lifecycle Busy/UserActionRequired/Idle", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-status-dot"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -1015,21 +792,13 @@ test.describe("core terminal panel @core", () => {
     await seedProject(page, DIR)
     await openWorkspaceRoute(page, DIR)
 
-    // A SECOND terminal is created (and left focused) so the first one is
-    // BACKGROUNDED for the rest of the test. This matters: `agent-status-
-    // listener.ts`'s `useClearAttentionOnFocus` runs on every render for
-    // whichever tab IS currently focused and immediately demotes a
-    // "permission" status back to "working" for it — so a "permission" dot
-    // can never be observed on the terminal that is the active/focused tab
-    // at the moment the event lands (confirmed via a real run: asserting
-    // eventType:"UserActionRequired" -> "permission" on the just-created,
-    // still-focused terminal flaked with "Received: working" every time).
+    // A second terminal is created and left focused so the first is backgrounded:
+    // `useClearAttentionOnFocus` demotes the focused tab's "permission" back to "working" on
+    // every render, so that dot is unobservable on the active tab.
     const id = await createPlainTerminal(page, api)
     const foregroundId = await createPlainTerminal(page, api)
-    // Terminal creation no longer guarantees focus transfer after the creator
-    // closes. Make the foreground/background relationship this behavior needs
-    // explicit so focus reconciliation cannot demote the first terminal's
-    // permission state back to working.
+    // Creation does not guarantee focus transfer once the creator closes, so pin which
+    // terminal is foreground explicitly.
     await sidebarTerminalRow(page, foregroundId).click()
     const dot = sidebarTerminalRow(page, id).locator("[data-sidebar-status]")
 
@@ -1045,7 +814,7 @@ test.describe("core terminal panel @core", () => {
     await expect(dot).toHaveAttribute("data-sidebar-status", "done", { timeout: 10_000 })
   })
 
-  test("working status survives reload in both sidebar and compact tabs — behaviors 8/12", async ({ page }) => {
+  test("working status survives reload in both sidebar and compact tabs", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-status-reload"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -1062,17 +831,15 @@ test.describe("core terminal panel @core", () => {
     })
     await expectActiveTerminalSurfaceParity({ page, terminalId: id, expected: "working" })
 
-    // No lifecycle frame is emitted after navigation. `seedProject` clears
-    // browser persistence on every document load, and the typed terminal URL
-    // reconstructs the surface, so the daemon-style terminal-session snapshot
-    // is the only source capable of restoring this status.
+    // No lifecycle frame is emitted after navigation and `seedProject` clears persistence on
+    // every load, so the terminal-session snapshot is the only thing that can restore this.
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     await waitForTerminalMounted(page, id)
     await expectActiveTerminalSurfaceParity({ page, terminalId: id, expected: "working" })
   })
 
-  test("focusing a done terminal clears its status dot — behaviors 9", async ({ page }) => {
+  test("focusing a done terminal clears its status dot", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-clear-on-focus"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -1100,15 +867,14 @@ test.describe("core terminal panel @core", () => {
     void id2
   })
 
-  test("lifecycle auto-rename updates a generic title but never a user-set title — behaviors 10", async ({ page }) => {
+  test("lifecycle auto-rename updates a generic title but never a user-set title", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-lifecycle-rename"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
     const api = await installPtyApi(page, DIR)
-    // `seedProject`'s init script unconditionally calls `localStorage.clear()`
-    // on every navigation — it MUST be registered (and therefore run) before
-    // `seedTerminalCommands`'s script, or the clear() wipes the custom-command
-    // entry the latter just wrote (addInitScript runs in registration order).
+    // `seedProject`'s init script calls `localStorage.clear()` on every navigation and init
+    // scripts run in registration order, so it has to be registered before
+    // `seedTerminalCommands` or the clear wipes what that just wrote.
     await seedProject(page, DIR)
     await seedTerminalCommands(page, { custom: [{ id: "aider", name: "Aider", command: "aider --model gpt-4" }] })
     await openWorkspaceRoute(page, DIR)
@@ -1140,7 +906,7 @@ test.describe("core terminal panel @core", () => {
     await expect(customRow).not.toContainText("Claude:")
   })
 
-  test("reload reattaches the terminal to its persisted PTY without a new create — behaviors 11", async ({ page }) => {
+  test("reload reattaches the terminal to its persisted PTY without a new create", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-reattach"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -1155,12 +921,8 @@ test.describe("core terminal panel @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
     await waitForTerminalMounted(page, id)
-    // `installFakeTerminalSocket`'s init script re-runs (and resets its
-    // `__e2eTerminalSockets` counter to 0) on EVERY navigation, including
-    // this reload — so the only correct post-reload expectation is "at least
-    // one reconnect socket opened for the SAME pty id", not "more than
-    // whatever it was pre-reload" (that count is gone the instant the
-    // document navigates).
+    // The fake-socket init script re-runs on every navigation and resets its counter, so the
+    // only sound post-reload check is that a socket reopened for the same pty id.
     await expect
       .poll(
         () =>

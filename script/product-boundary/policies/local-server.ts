@@ -91,7 +91,10 @@ export const localServer: Policy = {
   // had each written inline, so it adds a module without adding a package edge
   // or any new reach. Reviewed owner: local-server platform. Re-measured, not
   // summed: 54 modules, 21 packages.
-  ceilings: { modules: 54, packages: 21 },
+  // +1 package (2026-09-06): @claxedo/helpers, reached through the shared
+  // server-core surface (see server.ts for the owner). Re-measured, not
+  // summed: 54 modules, 22 packages.
+  ceilings: { modules: 54, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
@@ -112,6 +115,13 @@ export const localServer: Policy = {
     // inside the isolated workspace so the Local Server bundle never consumes
     // outputs left behind by a developer's existing checkout.
     buildPackages: [
+      // `@claxedo/helpers` publishes dist-only subpaths (`/guards`, `/string`)
+      // that every package below bundles against; it has no @claxedo/*
+      // dependencies, so it builds first.
+      { packageDir: "packages/claxedo-helpers" },
+      // server-core's agent-config, workspace store and sandbox routes read the
+      // driver contract; its published subpath is dist-only.
+      { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/agent-sdk-runtime" },

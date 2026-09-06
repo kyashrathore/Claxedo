@@ -1,5 +1,6 @@
 /**
- * SPEC: Cloud workspace provisioning
+ * Cloud workspace provisioning: the startup pipeline, unlock on ready, one send through
+ * the relay lane, reload-resume, create failures, and hosted-plane project creation.
  *
  * PURPOSE — a "cloud" workspace has no local backing: its runtime is a sandbox VM
  * provisioned and reached through the Claxedo control plane + Workspace Relay. Before
@@ -158,10 +159,8 @@ const PROJECT_ID = "proj_core_cloud_provisioning"
 const WORKSPACE_ID = "ws_core_cloud_provisioning"
 const SESSION_ID = "ses_core_cloud_provisioning"
 const CONNECTION_ID = "cloud-agent"
-// Real, versioned, servable house-model id — NOT the bare "big-pickle", which
-// the app reserves as the non-selectable pre-provisioning placeholder
-// (`signed-workspace-model.ts`); serving that exact id as the only model leaves
-// the composer stuck on "Select model". Display name stays "Big Pickle".
+// A versioned id: the bare "big-pickle" is the non-selectable pre-provisioning
+// placeholder and would leave the composer on "Select model".
 const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
 
 type PipelineStep = "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready"
@@ -173,16 +172,9 @@ const STEP_LABEL: Record<Exclude<PipelineStep, "ready">, string> = {
   waiting_health: "Waiting for health check",
 }
 
-// The pipeline row for `label`: its icon slot carries `[data-icon="check-
-// small"]` once `stepState()` marks that row `"done"`, nothing while it is
-// active/pending. `.filter({hasText})` scoped to `span` (never `div`) so it
-// resolves to the row's own label span, not any ancestor whose aggregate text
-// also happens to contain it — the live-log strip below the pipeline can echo
-// the CURRENT step's own label verbatim (`latestLog()` falls back to
-// `cloudStep(last.step)` when the log has no custom message), so callers
-// should only use labels for steps that are NOT the one under test at that
-// moment (bound it from its done/not-done neighbours instead, as behavior 5
-// does below).
+// Scoped to `span` so it resolves to the row's label, not an ancestor. The live-log
+// strip can echo the current step's label, so bound the current step from its
+// neighbours rather than reading its own row.
 function stepRow(view: Locator, label: string) {
   return view.locator("span").filter({ hasText: label }).locator("xpath=..")
 }
@@ -255,11 +247,9 @@ function textOf(parts: unknown): string {
     .trim()
 }
 
-// Cursor-resumed SSE event log, matching e2e/helpers/mock-runtime.ts's EventBus:
-// every concurrent reader receives each event in order and reconnects with its
-// own Last-Event-ID. Duplicated here because mock-runtime.ts's cloud/relay
-// support does not model the `/api/wr/events` central provision stream or the
-// `/workspaces/:id/...` proxy lane this spec needs.
+// Cursor-resumed SSE event log: every reader gets each event in order and reconnects
+// with its own Last-Event-ID. mock-runtime's cloud support does not model the central
+// provision stream or the `/workspaces/:id/...` lane.
 class Bus<T> {
   private log: Array<{ id: number; payload: T }> = []
   private sequence = 0
@@ -358,18 +348,9 @@ async function installCloudRuntimeMock(
       : {},
   })
 
-  // Auto-advance is triggered LAZILY, on the first real `/api/workspace/resolve`
-  // hit for this workspace (below), not at install time. The page can take a
-  // while to actually reach that request under load (cold Vite module
-  // transforms, shared dev server contention) — starting the timer at install
-  // time would let the workspace reach "ready" before the app ever observes
-  // the earlier steps, making behavior 1 (the pipeline actually rendering)
-  // unobservable/flaky.
-  //
-  // Keep each step dwell long enough that a warm Vite + Soft paint still
-  // mounts CloudStartupView while currentStep is still non-ready. 150ms was
-  // enough under cold load; warm fail-fast runs finished all four steps before
-  // the first paint and skipped the pipeline entirely.
+  // Advance starts on the first resolve hit, not at install: under load the page may
+  // reach that request after an install-time timer had already finished. Each dwell
+  // must outlast a warm first paint, or the pipeline is never observed.
   let advanceStarted = false
   function startAutoAdvance() {
     if (!opts.autoAdvance || advanceStarted) return
@@ -448,8 +429,7 @@ async function installCloudRuntimeMock(
         ready: true,
       })
     }
-    // The ConnectionGate polls the claxedo health endpoint; a 598 here reads as
-    // "server unreachable" and gates the whole app behind the error screen.
+    // Unanswered, the startup gate reads the server as unreachable.
     if (url.pathname === "/health" || url.pathname === "/global/health" || url.pathname === "/api/claxedo/health") {
       return json(route, { healthy: true, ok: true, version: "1.0.0-test" })
     }
@@ -469,9 +449,8 @@ async function installCloudRuntimeMock(
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: `data: ${JSON.stringify({ directory: "global", payload: { type: "server.connected", properties: {} } })}\n\n` }).catch(() => {})
     }
 
-    // ---- Control-plane session catalog (sidebar list; separate from the
-    // /workspaces/:id/session CRUD lane above — a signed-control-plane cloud
-    // workspace's sidebar reads THIS, not the runtime's own /session list) ----
+    // ---- Control-plane session catalog: the sidebar reads this, not the runtime's
+    // own /session list ----
     if (isSessionListPath(url.pathname)) {
       const rows = sessionCreated
         ? [{
@@ -513,11 +492,8 @@ async function installCloudRuntimeMock(
     ) {
       return json(route, { ok: true })
     }
-    // The signed session-reservation boundary crossed BEFORE the runtime create
-    // (`reservePrivateSession`, src/platform/runtime/private-session-reservation.ts).
-    // Unanswered it does not degrade: the client refuses a receipt that is not
-    // its own immutable intent, so the send aborts before any session exists and
-    // the oracle has nothing to prove. See ../helpers/contracts/session-registration.ts.
+    // The reservation boundary crossed before the runtime create; unanswered, the send
+    // aborts before any session exists.
     if (isSessionRegistrationReservePath(url.pathname) && method === "POST") {
       const reservation = parseSessionReservationRequest(request.postDataJSON?.() ?? undefined, request.url())
       const result = sessionReservationResponse(reservation)
@@ -554,9 +530,8 @@ async function installCloudRuntimeMock(
       return json(route, {
         access: "cloud",
         backing: "cloud-vm",
-        // What `cloud-connection.ts` mints: a provisioned sandbox's runtime
-        // delegates to the control plane's session authority, so it serves
-        // SESSION-SCOPED event streams only.
+        // A provisioned sandbox delegates to the control plane's session authority, so
+        // it serves session-scoped event streams only.
         sessionAuthority: "managed-private",
         workspaceId: WORKSPACE_ID,
         role: "owner",
@@ -590,20 +565,15 @@ async function installCloudRuntimeMock(
         const batch = await sessionBus.drain(4000, lastEventId(route))
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }
-      // `GET /session/:id/goal/state` (workspace-runtime `session-core.ts`): the
-      // session view reads the Goal capabilities and the goal in one round trip
-      // on activation; a harness without Goals answers "not implemented" with a
-      // null goal.
+      // A harness without Goals answers "not implemented" with a null goal.
       if (/^\/session\/[^/]+\/goal\/state$/.test(runtimePath)) {
         return json(route, { capabilities: { implemented: false, available: false, actions: [] }, goal: null })
       }
       if (runtimePath === "/session/status") {
         return json(route, sessionCreated && sessionBusy ? { [SESSION_ID]: { type: "busy" } } : {})
       }
-      // Draft-submit worktree admission (`prepareWorkspaceSessionWorktree`): a
-      // cloud draft's first turn admits a session worktree before prompt_async.
-      // `path` becomes the session directory — keep it the workspace ref so every
-      // other handler in this lane stays keyed on WORKSPACE_ID.
+      // A cloud draft admits a session worktree before prompt_async; `path` becomes the
+      // session directory, so keep it the workspace ref this lane is keyed on.
       if (runtimePath === "/api/wr/worktrees" && method === "POST") {
         return json(route, { worktree: { path: WORKSPACE_ID, branch: "main", baseCommit: "e2e-base-commit" } })
       }
@@ -630,8 +600,7 @@ async function installCloudRuntimeMock(
         return json(route, { transport: "runtime", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
       }
       if (/^\/session\/[^/]+\/todo$/.test(runtimePath)) return json(route, [])
-      // The real route answers a page envelope (`{ messages, maxEventOrdinal }`),
-      // never a bare array — see mock-runtime's `**/session/*/message**`.
+      // The real route answers a page envelope, never a bare array.
       if (/^\/session\/[^/]+\/message$/.test(runtimePath)) return json(route, { messages, maxEventOrdinal: 0 })
       if (/^\/session\/[^/]+\/prompt_async$/.test(runtimePath)) {
         promptCount += 1
@@ -681,8 +650,7 @@ async function installCloudRuntimeMock(
       return json(route, { error: "unhandled cloud runtime path", path: runtimePath }, 599)
     }
 
-    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
-    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
+    // The usage outbox beacon fires on every boot.
     if (url.pathname === "/api/claxedo/usage/sync") {
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     }
@@ -697,20 +665,12 @@ function workspaceRoute(sessionId?: string) {
 }
 
 test.describe("core cloud provisioning @core", () => {
-  test("cloud workspace mid-provisioning renders the pipeline, unlocks on ready, and a send is proven by the oracle — behaviors 1,2,3,4", async ({ page }) => {
-    // Shared dev server can be under heavy concurrent load from other agents'
-    // spec runs; a cold cloud-workspace route transforms many ESM modules the
-    // first time it's visited. Give this test headroom beyond the file's
-    // default 60s budget (matches the pattern in core-busy-abort-errors.spec.ts).
+  test("cloud workspace mid-provisioning renders the pipeline, unlocks on ready, and a send is proven by the oracle", async ({ page }) => {
+    // A cold cloud-workspace route transforms many modules on a shared dev server.
     test.setTimeout(120_000)
     await installCloudRuntimeMock(page, { registerWorkspace: true, initialStep: "acquiring_sandbox", autoAdvance: true })
     await seedCloudProject(page, { registerWorkspace: true })
 
-    // waitUntil: "domcontentloaded" (not the default "load") — the shared dev
-    // server transforms hundreds of ESM modules on a cold first visit to this
-    // route, and "load" would wait on all of them; the app itself only needs
-    // the document parsed, matching what every other spec in this suite
-    // already waits for right after goto.
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 100_000 })
     await page.waitForLoadState("domcontentloaded")
 
@@ -721,9 +681,7 @@ test.describe("core cloud provisioning @core", () => {
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
     await expect(input).toHaveAttribute("contenteditable", "true")
-    // Product rule: drafts do not invent a catalog default. Choose the
-    // operator-configured connection first, then its model, through the same
-    // picker a user drives after the provisioning gate unlocks.
+    // Drafts do not invent a default: pick the connection, then its model.
     await selectCloudAgentConnection(page)
     await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
 
@@ -737,11 +695,7 @@ test.describe("core cloud provisioning @core", () => {
     await expectTurnCounts(page, { user: 1, assistant: 1 })
   })
 
-  test("reload mid-provisioning resumes at the current step, not step 0 — behavior 5", async ({ page }) => {
-    // Shared dev server can be under heavy concurrent load from other agents'
-    // spec runs; a cold cloud-workspace route transforms many ESM modules the
-    // first time it's visited. Give this test headroom beyond the file's
-    // default 60s budget (matches the pattern in core-busy-abort-errors.spec.ts).
+  test("reload mid-provisioning resumes at the current step, not step 0", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installCloudRuntimeMock(page, { registerWorkspace: true, initialStep: "starting_runtime", autoAdvance: false })
     await seedCloudProject(page, { registerWorkspace: true })
@@ -752,11 +706,8 @@ test.describe("core cloud provisioning @core", () => {
     const view = page.locator('[data-component="cloud-startup-view"]')
     await expect(view).toBeVisible({ timeout: 20_000 })
     await expect(view).toContainText(STEP_LABEL.starting_runtime, { timeout: 20_000 })
-    // Resumed AT starting_runtime, not step 0: the two earlier steps read
-    // `done` (check icon) and the step after starting_runtime reads not-done —
-    // together that brackets the active row to exactly index 2, matching the
-    // mock's `initialStep`, without ever needing to read starting_runtime's
-    // own row (ambiguous while it's current — see `stepRow`'s note).
+    // The two earlier rows read done and the next reads not-done, bracketing the
+    // active row without reading its own (ambiguous while current).
     await expectStepDone(view, STEP_LABEL.acquiring_sandbox)
     await expectStepDone(view, STEP_LABEL.cloning)
     await expectStepNotDone(view, STEP_LABEL.waiting_health)
@@ -766,10 +717,6 @@ test.describe("core cloud provisioning @core", () => {
 
     const viewAfterReload = page.locator('[data-component="cloud-startup-view"]')
     await expect(viewAfterReload).toBeVisible({ timeout: 20_000 })
-    // Behavior 5: resumed at the SAME step the server reports, not reset to
-    // "Acquiring sandbox" — the resolve response is server truth, and reload
-    // fully discards client-held state, so this only holds if the app reads
-    // that server truth on every fresh mount.
     await expect(viewAfterReload).toContainText(STEP_LABEL.starting_runtime, { timeout: 20_000 })
     await expectStepDone(viewAfterReload, STEP_LABEL.acquiring_sandbox)
     await expectStepDone(viewAfterReload, STEP_LABEL.cloning)
@@ -777,7 +724,7 @@ test.describe("core cloud provisioning @core", () => {
   })
 
   test(
-    "cloud workspace create failure (request rejected) shows a toast, opens no pipeline, creates no session, and preserves composer text — behavior 6",
+    "cloud workspace create failure (request rejected) shows a toast, opens no pipeline, creates no session, and preserves composer text",
     async ({ page }) => {
       test.setTimeout(120_000)
       await stampTestAuth(page.context())
@@ -808,8 +755,7 @@ test.describe("core cloud provisioning @core", () => {
 
       const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
       await expect(input).toBeVisible({ timeout: 20_000 })
-      // Switching the draft's environment to "cloud" re-resolves the catalog.
-      // Product rule: drafts do not invent a default — pick Big Pickle explicitly.
+      // Switching to cloud re-resolves the catalog; drafts do not invent a default.
       await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
       const promptText = "should not create a cloud vm"
       await input.click()
@@ -817,8 +763,7 @@ test.describe("core cloud provisioning @core", () => {
       await expect(input).toContainText(promptText, { timeout: 10_000 })
       await page.locator(SELECTORS.submitControl).last().click()
 
-      // Exactly one toast — this used to also fail 2-for-1 on the double-toast
-      // bug (see submit-directory.ts's `creationRejected` comment); now fixed.
+      // One toast: a rejected create must not also fall through to the missing-workspaceId toast.
       await expect(page.locator('[data-slot="toast-title"]')).toHaveCount(1, { timeout: 10_000 })
       await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud workspace", { timeout: 10_000 })
       await expect(page.locator('[data-slot="toast-description"]')).toContainText("workspace creation blew up", { timeout: 10_000 })
@@ -829,11 +774,7 @@ test.describe("core cloud provisioning @core", () => {
     },
   )
 
-  test("cloud workspace create failure (200 with missing workspaceId) shows the same toast and preserves composer text — behavior 6", async ({ page }) => {
-    // Shared dev server can be under heavy concurrent load from other agents'
-    // spec runs; a cold cloud-workspace route transforms many ESM modules the
-    // first time it's visited. Give this test headroom beyond the file's
-    // default 60s budget (matches the pattern in core-busy-abort-errors.spec.ts).
+  test("cloud workspace create failure (200 with missing workspaceId) shows the same toast and preserves composer text", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
     await page.route("**/api/workspace/create", (route) => {
@@ -862,8 +803,6 @@ test.describe("core cloud provisioning @core", () => {
 
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
-    // See the "request rejected" scenario above: pick a model after the cloud
-    // environment switch so submit reaches createCloudWorkspace.
     await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     const promptText = "should not create a cloud vm either"
     await input.click()
@@ -881,44 +820,14 @@ test.describe("core cloud provisioning @core", () => {
 })
 
 /**
- * BEHAVIOR 7 — "New Project" on a hosted control plane.
+ * A hosted plane (`platform === "web"`, non-loopback central transport) has no
+ * filesystem, so the Project chip's create form offers a repository only. Creating a
+ * project never asks where it runs; execution is the Environment/Workspace chips'
+ * question at first send.
  *
- * WHY THIS LIVES HERE and not in `core-workspace-lifecycle`: that spec owns the
- * folder branch of project creation (the server's directory picker, offered when
- * the server executes locally). The branch below is the OTHER one — a signed
- * hosted plane (`platform === "web"`, non-loopback central transport) — where
- * the composer's Project chip offers a repository only: a hosted plane has no
- * filesystem to pick from, so the form renders neither "Select project" nor the
- * folder/repository switch, and it never consults the local
- * `GET /api/workspace/drivers` route (the request that used to 404 on hosted and
- * disable submit forever in the retired create dialog).
- *
- * Creating a project never asks where it will run (docs/plans/2026-09-05-003):
- * the create request is `POST /api/claxedo/projects` `{name, source: {kind:
- * "repository", repoUrl}}`, the panel closes on success, and NO workspace is
- * created. Execution is the Environment/Workspace chips' question at first
- * send — `core-composer-hosted-chips` behavior 5 proves that half. The GitHub
- * device-code connect flow no longer lives inside project creation; Settings →
- * Integrations owns it (`core-settings-auth`).
- *
- * The hosted plane serves that projects route on D1 in the plan's next slice;
- * this Tier M spec mocks it like every other route here and pins the CLIENT
- * contract the hosted route has to meet. Listing the created project is that
- * slice's job too: a hosted inventory is derived from the control plane's
- * WORKSPACE lists (`workspaceCatalogQuery` → `controlPlaneCatalog`), so a
- * repository project that has no workspace yet has nothing to be listed from
- * until the plane's projects route exists — not asserted here.
- *
- * TRANSPORT — `window.__CLAXEDO_E2E_SERVER_URL__` (read by `resolveDefaultUrl()`
- * in `src/app/entry/app.tsx`, dev/e2e builds only) forces a NON-loopback default
- * server, which is what makes `centralTransportForServer() !== "loopback"`.
- * Requests still resolve to this origin's mocks because every route glob below
- * is origin-agnostic.
- *
- * INVARIANTS — no turn is sent here, so the assistant-reply oracle
- * (`e2e/INVARIANTS.md` rule "every send uses expectAssistantReplyVisible") does
- * not apply: this spec ends at project creation, and its proof obligation is the
- * `POST /api/claxedo/projects` body plus the project appearing in the chip.
+ * `__CLAXEDO_E2E_SERVER_URL__` forces the non-loopback default server; every route glob
+ * is origin-agnostic, so the mocks still answer. The hosted plane does not serve
+ * `/api/claxedo/projects` yet, so listing the created project is not asserted.
  */
 const HOSTED_SERVER_URL = "https://cloud.example.test"
 const HOSTED_REPO_URL = "https://github.com/acme/app"
@@ -926,19 +835,14 @@ const HOSTED_PROJECT_ID = "prj_core_cloud_hosted"
 
 test.describe("core cloud project creation on a hosted control plane @core", () => {
   test(
-    "New Project on a hosted plane creates a repository project through the composer's Project chip — behavior 7",
+    "New Project on a hosted plane creates a repository project through the composer's Project chip",
     async ({ page }) => {
       test.setTimeout(120_000)
       await stampTestAuth(page.context())
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
 
-      // This is a hosted account before its first project exists. Do not leave
-      // installMockRuntime's default local-worktree row in the signed hosted
-      // inventory: a local row has no cloud/user-hosted workspace kind and the
-      // real signed runtime contract correctly rejects it. Empty inventory is
-      // the authoritative pre-create state this flow starts from; the created
-      // project joins it the way the hosted plane's own inventory would list
-      // a repository project that has no workspace yet.
+      // A hosted account before its first project: `installMockRuntime`'s default
+      // local-worktree row has no cloud kind and the signed inventory contract rejects it.
       const created: Array<{ id: string; name: string }> = []
       await page.route("**/api/claxedo/bootstrap**", (route) =>
         route.fulfill({
@@ -961,8 +865,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
           }),
         }),
       )
-      // `GET /project` is the inventory the composer's Project chip lists
-      // (`projectListQuery`); it carries the same rows as the bootstrap above.
+      // The Project chip lists `GET /project`; same rows as bootstrap.
       await page.route("**/project**", (route) => {
         const type = route.request().resourceType()
         if (type !== "fetch" && type !== "xhr") return route.continue()
@@ -980,9 +883,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
         })
       })
 
-      // The hosted control plane has no drivers route. Project creation must
-      // never ask for one — the retired dialog's 404 here is what used to
-      // disable submit forever.
+      // A hosted plane has no drivers route; creation must not ask for one.
       let driversRequests = 0
       await page.route("**/api/workspace/drivers**", (route) => {
         driversRequests += 1
@@ -1036,9 +937,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       const form = page.locator('[data-slot="project-create-form"]')
       await expect(form).toBeVisible({ timeout: 20_000 })
 
-      // Repository only: a hosted plane executes nothing locally, so there is no
-      // folder to select and no source switch — and no provider control either
-      // (execution is not this form's question).
+      // No folder, no source switch, no provider control: execution is not this form's question.
       await expect(form.getByRole("button", { name: "Select project" })).toHaveCount(0)
       await expect(form.locator('[data-slot="project-create-source"]')).toHaveCount(0)
       await expect(page.getByText("Sandbox Provider")).toHaveCount(0)
@@ -1052,9 +951,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBe(1)
       expect(createBodies[0]).toEqual({ name: "app", source: { kind: "repository", repoUrl: HOSTED_REPO_URL } })
 
-      // Success closes the panel — created, not executed (see the header: the
-      // hosted inventory cannot list a workspace-less project until the plane's
-      // projects route lands, so the listing is not asserted).
+      // Success closes the panel; the hosted plane serves no project listing to assert.
       await expect(form).toHaveCount(0, { timeout: 20_000 })
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-project-created.png" })
 

@@ -137,11 +137,6 @@ describe("reconnect status messages", () => {
     expect(msg).toContain("Reconnected")
   })
 
-  test("reconnectFailedMessage returns non-empty string", () => {
-    const msg = reconnectFailedMessage()
-    expect(msg.length).toBeGreaterThan(0)
-  })
-
   test("reconnectFailedMessage includes connection lost text", () => {
     const msg = reconnectFailedMessage()
     expect(msg).toContain("Connection lost")

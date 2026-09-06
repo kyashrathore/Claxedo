@@ -1,26 +1,24 @@
 import { defineConfig, devices } from "@playwright/test"
 import { resolveE2EAuthMode } from "./e2e/auth-mode"
+import { suiteGrep } from "./e2e/suites"
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4455)
 process.env.PLAYWRIGHT_PORT ??= String(port)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`
 const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
-// Browser specs run in two explicit identity modes. `test-user` preserves the
-// historical webdriver-authenticated lane. `local-unsigned` is the real
-// loopback/no-user composition: auth surfaces stay mounted, but there is no
-// provider key and both the webdriver and stored test-auth bypasses are disabled.
-// Keeping this at the Vite process boundary makes every spec in a run exercise
-// the same app composition; individual specs cannot accidentally drift back to
-// Test User because of Playwright's `navigator.webdriver` value.
+// Browser specs run in two identity modes: `test-user` (webdriver-authenticated)
+// and `local-unsigned` (loopback/no-user: auth surfaces mounted, no provider key,
+// webdriver and stored test-auth bypasses disabled). Resolving it at the Vite
+// process boundary keeps every spec in a run on the same app composition.
 resolveE2EAuthMode()
 // SUITE LANE REGISTRY — the single source of truth for `CLAXEDO_E2E_SUITE`.
 // A spec is only ever executed by a lane whose tag it carries, so a spec with no
 // recognised lane tag runs in NO lane and nobody notices: that is exactly how
 // `a11y-sweep.spec.ts` sat tagged `@happy` (a dead pre-consolidation lane that no
-// script and no CI job selected) and went silently unexecuted. Keep this object the
-// ONLY place suite names are decided, and keep it in sync with the lane-tag list in
-// `src/architecture/e2e-suite-tags.guard.test.ts`, which fails if any spec under
-// `e2e/playwright/` carries none of these tags.
+// script and no CI job selected) and went silently unexecuted. Keep `e2e/suites.ts`
+// the ONLY place suite names are decided, and keep it in sync with the lane-tag list
+// in `e2e/discovery.test.ts`, which fails if any spec under `e2e/playwright/`
+// carries none of these tags.
 //   core      — Tier M (`installMockRuntime`, zero real network, per e2e/INVARIANTS.md
 //               rule 6). The lane CI actually watches: `test:e2e:core:base`, sharded
 //               six-way per auth mode on every PR. This is the default, so a bare `test:e2e` runs
@@ -41,12 +39,6 @@ resolveE2EAuthMode()
 // Packaged-app specs are collected only when CLAXEDO_E2E_DESKTOP=1. This keeps
 // browser lanes at zero skips while the desktop CI lane still executes every
 // `desktop-*.spec.ts` test against the artifact it requires.
-const suiteGrep = {
-  core: /@core/,
-  live: /@live/,
-  marketing: /@marketing/,
-  all: undefined,
-} satisfies Record<string, RegExp | undefined>
 type SuiteName = keyof typeof suiteGrep
 const isSuiteName = (value: string): value is SuiteName => Object.hasOwn(suiteGrep, value)
 const suite = process.env.CLAXEDO_E2E_SUITE ?? "core"
@@ -108,18 +100,12 @@ export default defineConfig({
   },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  // No retries, anywhere. CI used to retry twice, which silently converted flakes
-  // into passes: three separate flaky tests survived unnoticed that way, and one
-  // (`core-first-prompt-local` behavior 5) turned out to be a HARD 15/15 failure
-  // locally that only ever looked intermittent because slower runners crossed a
-  // timing boundary. A retry budget does not make a suite trustworthy, it makes an
-  // untrustworthy suite quiet. A flake is now a red build, which is the point.
+  // No retries: a retry budget converts flakes into passes and hides them. A flake
+  // is a red build.
   //
-  // KNOWN RESIDUAL RISK: the draft->session handoff has an unfixed app race — a
-  // confirmed `POST /session -> 201` sometimes leaves the URL on the draft route.
-  // It is shared by the `sendPrompt` helper and therefore reachable from many core
-  // specs under heavy load. If CI goes red there, fix the race; do not restore
-  // retries.
+  // Known residual: the draft->session handoff has an unfixed app race (a confirmed
+  // `POST /session -> 201` can leave the URL on the draft route), reachable from
+  // every spec that uses `sendPrompt`. If CI goes red there, fix the race.
   retries: 0,
   // Under a prebuilt static server, per-file parallelism is safe: mocks are
   // page-scoped route interceptions and every spec keys its own /tmp dir. The
@@ -148,14 +134,9 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      // `devices["iPhone 13"]` per LLD WP-03 step 1 / appendix responsive refactor
-      // step ("Add a `devices['iPhone 13']`-style mobile project to
-      // playwright.config.ts"). Only `mobile-*.spec.ts` files run here — never
-      // selected implicitly by the default `testMatch`, only via `--project=mobile`.
-      // `devices["iPhone 13"]` defaults to WebKit (`defaultBrowserType`), but only
-      // Chromium is provisioned in this environment (and by every other project here)
-      // — override `browserName` so the mobile project gets the same viewport/touch/
-      // UA emulation on the browser this repo actually installs.
+      // Only `mobile-*.spec.ts` runs here, via `--project=mobile`. `devices["iPhone 13"]`
+      // defaults to WebKit, but only Chromium is provisioned, so `browserName` is
+      // overridden to keep the viewport/touch/UA emulation on the installed browser.
       name: "mobile",
       testMatch: ["**/mobile-*.spec.ts"],
       use: { ...devices["iPhone 13"], browserName: "chromium" },

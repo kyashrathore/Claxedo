@@ -5,16 +5,15 @@ import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
 import {
   ConnectionsUnavailableError,
-  connectionWebhookSigningProviderId,
   type IntegrationDeclaration,
   type IntegrationImpl,
 } from "./types.js"
+import { docsPort, mcpPort, workSourcePort } from "./ports/index.js"
 
 const KEY_DECL: IntegrationDeclaration = {
   id: "fake",
   name: "Fake",
   methods: ["key"],
-  capabilities: ["docs"],
   keyTokenType: "bearer",
   prompts: [{ id: "token", label: "Token", secret: true }],
 }
@@ -23,7 +22,6 @@ const GITHUB_DECL: IntegrationDeclaration = {
   id: "github",
   name: "GitHub",
   methods: ["key"],
-  capabilities: ["code-host", "work-source"],
   keyTokenType: "bearer",
   prompts: [{ id: "token", label: "Token", secret: true }],
 }
@@ -31,7 +29,10 @@ const GITHUB_DECL: IntegrationDeclaration = {
 function harness(input: { impl?: IntegrationImpl; decl?: IntegrationDeclaration } = {}) {
   const registry = createIntegrationRegistry()
   registry.register(input.decl ?? KEY_DECL, input.impl ?? {
-    verify: async (_fields, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }),
+    actions: { docs: docsPort },
+    auth: {
+      verify: async (_fields, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }),
+    },
   })
   const credentials = createMemoryCredentialStore()
   const connections = createMemoryConnectionStore()
@@ -44,17 +45,20 @@ function harness(input: { impl?: IntegrationImpl; decl?: IntegrationDeclaration 
 describe("connections service", () => {
   test("freezes OAuth integration context and forwards authorization-response issuer validation", async () => {
     const seen: unknown[][] = []
-    const callback: NonNullable<IntegrationImpl["callback"]> = async (...args) => {
+    const callback: NonNullable<NonNullable<IntegrationImpl["auth"]>["callback"]> = async (...args) => {
       seen.push(args)
       return { accessToken: "oauth-access" }
     }
     const { service, attempts, registry } = harness()
     registry.register(
-      { id: "mcp-test", name: "MCP", methods: ["oauth"], capabilities: ["mcp"] },
+      { id: "mcp-test", name: "MCP", methods: ["oauth"] },
       {
-        attemptContext: { issuer: "https://issuer.example" },
-        authorize: (state) => new URL(`https://issuer.example/authorize?state=${state}`),
-        callback,
+        actions: { mcp: mcpPort },
+        auth: {
+          attemptContext: { issuer: "https://issuer.example" },
+          authorize: (state) => new URL(`https://issuer.example/authorize?state=${state}`),
+          callback,
+        },
       },
     )
     const started = await service.connectOAuth({ integrationId: "mcp-test", owner: "user:1" })
@@ -74,18 +78,24 @@ describe("connections service", () => {
     const { service } = harness({
       decl: GITHUB_DECL,
       impl: {
-        verify: async () => ({ ok: true }),
-        listRepositories: async (_fields, secret) => {
-          seen.push(secret)
-          return [{
-            id: "1",
-            name: "app",
-            fullName: "acme/app",
-            cloneUrl: "https://github.com/acme/app.git",
-            private: true,
-            permissions: { read: true, write: false },
-          }]
+        actions: {
+          "code-host": {
+            capability: "code-host",
+            listRepositories: async (_fields, secret) => {
+              seen.push(secret)
+              return [{
+                id: "1",
+                name: "app",
+                fullName: "acme/app",
+                cloneUrl: "https://github.com/acme/app.git",
+                private: true,
+                permissions: { read: true, write: false },
+              }]
+            },
+          },
+          "work-source": workSourcePort,
         },
+        auth: { verify: async () => ({ ok: true }) },
       },
     })
     await service.connect({ integrationId: "github", fields: {}, secret: "github-secret" })
@@ -106,12 +116,24 @@ describe("connections service", () => {
     expect(JSON.stringify(result)).not.toContain("github-secret")
   })
 
-  test("listRepositories: 501 when the integration declares code-host but implements no listing", async () => {
-    const { service } = harness({
-      decl: GITHUB_DECL,
-      impl: { verify: async () => ({ ok: true }) },
+  test("listRepositories: 501 when a stored grant outlives the port that served it", async () => {
+    // An integration cannot declare code-host without implementing it, so the
+    // only way to reach this branch is a row whose grant was written while the
+    // integration still served the port. Deriving capabilities from ports made
+    // this the sole remaining path — the grant is durable, the port is not.
+    const { service, connections, credentials } = harness({
+      decl: { ...GITHUB_DECL, id: "github" },
+      impl: { actions: { "work-source": workSourcePort }, auth: { verify: async () => ({ ok: true }) } },
     })
-    await service.connect({ integrationId: "github", fields: {}, secret: "github-secret" })
+    await connections.upsert({
+      id: "connection-1",
+      integrationId: "github",
+      grantedCapabilities: ["code-host"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await credentials.put({ providerId: "integration:connection-1", kind: "api_key", secret: "github-secret" })
 
     const result = await service.listRepositories("connection-1")
     expect(result).toEqual({ ok: false, status: 501, code: "repository_listing_unsupported" })
@@ -132,10 +154,16 @@ describe("connections service", () => {
       const { service } = harness({
         decl: GITHUB_DECL,
         impl: {
-          verify: async () => ({ ok: true }),
-          listRepositories: async () => {
-            throw thrown
+          actions: {
+            "code-host": {
+              capability: "code-host",
+              listRepositories: async () => {
+                throw thrown
+              },
+            },
+            "work-source": workSourcePort,
           },
+          auth: { verify: async () => ({ ok: true }) },
         },
       })
       await service.connect({ integrationId: "github", fields: {}, secret: "github-secret" })
@@ -150,10 +178,16 @@ describe("connections service", () => {
     const { service } = harness({
       decl: GITHUB_DECL,
       impl: {
-        verify: async () => ({ ok: true }),
-        listRepositories: async () => {
-          throw new Error("401 Unauthorized for token github-secret")
+        actions: {
+          "code-host": {
+            capability: "code-host",
+            listRepositories: async () => {
+              throw new Error("401 Unauthorized for token github-secret")
+            },
+          },
+          "work-source": workSourcePort,
         },
+        auth: { verify: async () => ({ ok: true }) },
       },
     })
     await service.connect({ integrationId: "github", fields: {}, secret: "github-secret" })
@@ -167,7 +201,7 @@ describe("connections service", () => {
   })
 
   test("reverify: 'unsupported' without a verify impl, 'missing' when the stored secret is gone", async () => {
-    const unsupported = harness({ impl: {} })
+    const unsupported = harness({ impl: { actions: { docs: docsPort } } })
     await unsupported.connections.upsert({
       id: "connection-1",
       integrationId: "fake",
@@ -192,7 +226,10 @@ describe("connections service", () => {
     // The provider is reachable at connect time and unreachable afterwards.
     let reachable = true
     const { service, credentials } = harness({
-      impl: { verify: async () => (reachable ? { ok: true } : { ok: false, reason: "network" }) },
+      impl: {
+        actions: { docs: docsPort },
+        auth: { verify: async () => (reachable ? { ok: true } : { ok: false, reason: "network" }) },
+      },
     })
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
     await service.reportAuthFailure("connection-1", "401 from provider")
@@ -239,8 +276,11 @@ describe("connections service", () => {
     const secret = "sk-super-secret-9911"
     const { service } = harness({
       impl: {
-        verify: async () => {
-          throw new Error(`upstream said: invalid token ${secret}`)
+        actions: { docs: docsPort },
+        auth: {
+          verify: async () => {
+            throw new Error(`upstream said: invalid token ${secret}`)
+          },
         },
       },
     })
@@ -265,43 +305,15 @@ describe("connections service", () => {
     expect(await service.remove("connection-1")).toBe(false)
   })
 
-  test("webhook signing secrets have an independent lifecycle and cascade with the Connection", async () => {
+
+  test("no surviving path writes webhook signing material", async () => {
     const { service, credentials } = harness({ decl: GITHUB_DECL })
     await expect(service.connect({ integrationId: "github", fields: {}, secret: "good" })).resolves.toEqual({ ok: true })
-
-    const oldSecret = "old-webhook-secret"
-    const configured = await service.setWebhookSigningSecret("connection-1", oldSecret)
-    expect(configured).toEqual({ ok: true })
-    expect(JSON.stringify(configured)).not.toContain(oldSecret)
-    expect(await credentials.resolveSecret(connectionWebhookSigningProviderId("connection-1"))).toBe(oldSecret)
-    expect(await credentials.resolveSecret("integration:connection-1")).toBe("good")
-    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBe(oldSecret)
-    expect(await service.resolveWebhookSigningSecret("connection-1", "linear")).toBeUndefined()
-    expect(await service.resolveWebhookSigningSecret("missing", "github")).toBeUndefined()
-
-    await expect(service.setWebhookSigningSecret("connection-1", "new-webhook-secret")).resolves.toEqual({ ok: true })
-    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBe("new-webhook-secret")
-    await expect(service.removeWebhookSigningSecret("connection-1")).resolves.toEqual({ ok: true })
-    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBeUndefined()
-    expect(await credentials.resolveSecret("integration:connection-1")).toBe("good")
-
-    await service.setWebhookSigningSecret("connection-1", "delete-with-connection")
-    await service.remove("connection-1")
-    expect(await credentials.get("integration:connection-1")).toBeUndefined()
-    expect(await credentials.get(connectionWebhookSigningProviderId("connection-1"))).toBeUndefined()
-  })
-
-  test("webhook signing secrets are limited to work-source Connections", async () => {
-    const { service } = harness()
-    await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
-    await expect(service.setWebhookSigningSecret("connection-1", "secret")).resolves.toEqual({
-      ok: false,
-      code: "webhook_not_supported",
-    })
-    await expect(service.setWebhookSigningSecret("missing", "secret")).resolves.toEqual({
-      ok: false,
-      code: "webhook_not_supported",
-    })
+    await service.reverify("connection-1")
+    await service.getToken("connection-1", "work-source")
+    expect(await credentials.get("integration:connection-1:webhook-signing")).toBeUndefined()
+    expect(Reflect.get(service, "setWebhookSigningSecret")).toBeUndefined()
+    expect(Reflect.get(service, "resolveWebhookSigningSecret")).toBeUndefined()
   })
 
   test("removeOwner cascades one owner's personal rows and spares team + other owners", async () => {
@@ -401,7 +413,8 @@ describe("connections service", () => {
   test("list propagates credential-store outages instead of substituting broken", async () => {
     const registry = createIntegrationRegistry()
     registry.register(KEY_DECL, {
-      verify: async () => ({ ok: true }),
+      actions: { docs: docsPort },
+      auth: { verify: async () => ({ ok: true }) },
     })
     const memoryCredentials = createMemoryCredentialStore()
     const service = createConnectionsService({
@@ -476,17 +489,20 @@ describe("connections service", () => {
         id: "oauthy",
         name: "OAuthy",
         methods: ["oauth"],
-        capabilities: ["docs"],
-        prompts: [{ id: "resource", label: "Resource" }],
+        prompts: [{ id: "resource", label: "Resource" }]
       },
       {
-        authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
-        callback: async (code) => ({
-          accessToken: `at-${code}`,
-          refreshToken: "rt-1",
-          expiresAt: 111,
-          fields: { resource: "https://resource.test/mcp", undeclared: "discard" },
-        }),
+        actions: { docs: docsPort },
+        auth: {
+          authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
+          callback: async (code) => ({
+            accessToken: `at-${code}`,
+            refreshToken: "rt-1",
+            expiresAt: 111,
+            fields: { resource: "https://resource.test/mcp", undeclared: "discard" },
+          }),
+      
+        },
       },
     )
     const credentials = createMemoryCredentialStore()
@@ -515,14 +531,18 @@ describe("connections service", () => {
   test("OAuth integrations persist allowlisted callback metadata without rendering it as a prompt", async () => {
     const registry = createIntegrationRegistry()
     registry.register(
-      { id: "mcp", name: "MCP", methods: ["oauth"], capabilities: ["mcp"] },
+      { id: "mcp", name: "MCP", methods: ["oauth"]  },
       {
-        canonicalFields: ["resource"],
-        authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
-        callback: async () => ({
-          accessToken: "access",
-          fields: { resource: "https://resource.test/mcp", untrusted: "discard" },
-        }),
+        actions: { mcp: mcpPort },
+        auth: {
+          canonicalFields: ["resource"],
+          authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
+          callback: async () => ({
+            accessToken: "access",
+            fields: { resource: "https://resource.test/mcp", untrusted: "discard" },
+          }),
+      
+        },
       },
     )
     const connections = createMemoryConnectionStore()
@@ -546,10 +566,14 @@ describe("connections service", () => {
     const attempts = createAttempts({ now: () => now, retentionMs: 100, sweepIntervalMs: 0 })
     const registry = createIntegrationRegistry()
     registry.register(
-      { id: "oauthy", name: "OAuthy", methods: ["oauth"], capabilities: ["docs"] },
+      { id: "oauthy", name: "OAuthy", methods: ["oauth"]  },
       {
-        authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
-        callback: async (code) => ({ accessToken: `at-${code}` }),
+        actions: { docs: docsPort },
+        auth: {
+          authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
+          callback: async (code) => ({ accessToken: `at-${code}` }),
+      
+        },
       },
     )
     const service = createConnectionsService({
@@ -608,10 +632,14 @@ describe("connections service", () => {
   test("connectOAuth attempt scope derives from teamOwner (org team rows are not 'personal')", async () => {
     const registry = createIntegrationRegistry()
     registry.register(
-      { id: "oauthy", name: "OAuthy", methods: ["oauth"], capabilities: ["docs"] },
+      { id: "oauthy", name: "OAuthy", methods: ["oauth"]  },
       {
-        authorize: (state) => new URL(`https://provider.example/auth?state=${state}`),
-        callback: async (code) => ({ accessToken: `at-${code}` }),
+        actions: { docs: docsPort },
+        auth: {
+          authorize: (state) => new URL(`https://provider.example/auth?state=${state}`),
+          callback: async (code) => ({ accessToken: `at-${code}` }),
+      
+        },
       },
     )
     const service = createConnectionsService({

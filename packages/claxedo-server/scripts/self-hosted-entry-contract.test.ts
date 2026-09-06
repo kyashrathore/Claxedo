@@ -3,34 +3,17 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 
 /**
- * Self-hosted launch-path contract.
- *
- * The self-hosted single-binary is a SHIPPED product: `bun run start`, the
- * Docker `CMD`, and the Fly deployment all boot one entry module. Unit 7 moves
- * that entry from `deployments/local/main.ts` to `deployments/self-hosted-node`
- * and Unit 8 deletes the old directory outright.
- *
- * The hazard is not the move — it is a PARTIAL move. Retargeting the package
- * script but not the Dockerfile produces a repository where every test passes,
- * `bun run start` works on a laptop, and the published container fails at
- * `docker run` with a module-not-found. Nothing else in the suite looks at the
- * Dockerfile, so nothing else can catch that.
- *
- * So this file asserts that every launch surface names the SAME entry, and it
- * derives that entry from one constant. Unit 7 changes the constant once and
- * every surface that disagrees fails by name.
+ * Every self-hosted launch surface — `bun run start`, the Docker `CMD`, the Fly
+ * deployment — must boot the same entry module, derived here from one constant.
+ * A partial move (package script retargeted, Dockerfile not) leaves every test
+ * green and the published container failing at `docker run`; nothing else in
+ * the suite reads the Dockerfile.
  */
 
 const packageRoot = path.resolve(import.meta.dirname, "..")
 const repoRoot = path.resolve(packageRoot, "../..")
 
-/**
- * The single self-hosted entry module, relative to the package root.
- *
- * Unit 7 changes this to `src/deployments/self-hosted-node/index.ts` and must
- * change `package.json`, the Dockerfile, and the smoke scripts in the same
- * slice — this test is what forces that to be one slice rather than three.
- */
+/** The single self-hosted entry module, relative to the package root. */
 const SELF_HOSTED_ENTRY = "src/deployments/self-hosted-node/index.ts"
 
 /** The health path the container's HEALTHCHECK probes. */
@@ -71,15 +54,9 @@ describe("self-hosted entry contract", () => {
   })
 
   test("the image's app build gets an explicit heap", () => {
-    // Found by building the image: the app build died with
-    // `FATAL ERROR: Reached heap limit` (exit 134). `NODE_OPTIONS` is set in
-    // the Dockerfile, but in the RUNTIME stage — the build stage inherits
-    // nothing from it.
-    //
-    // Nothing else can catch this. Node sizes its default heap from the
-    // cgroup rather than the host, so the identical build succeeds outside
-    // Docker on a 7.7GB machine and fails inside it, and every test in the
-    // repository passes either way. The only signal is building the image.
+    // The Dockerfile's runtime-stage `NODE_OPTIONS` is not inherited by the
+    // build stage, and Node sizes its default heap from the cgroup, so the app
+    // build dies with `Reached heap limit` only inside Docker.
     const dockerfile = read("Dockerfile")
     const appBuild = dockerfile.slice(
       dockerfile.indexOf("cd packages/claxedo-app"),
@@ -90,29 +67,20 @@ describe("self-hosted entry contract", () => {
   })
 
   test("the image compiles better-sqlite3 against its own glibc", () => {
-    // Found by running the container. better-sqlite3 ships a prebuild linked
-    // against GLIBC_2.38; the image is bookworm (2.36). The prebuild installs
-    // fine, the build succeeds, the container starts, logs "opening claxedo
-    // database" — and then dies with ERR_DLOPEN_FAILED.
-    //
-    // Same blind spot as the heap check above: everything passes on the host,
-    // and only running the image shows it. `node-gyp` was already installed in
-    // the Dockerfile for this exact purpose and was never invoked.
+    // better-sqlite3's prebuild links GLIBC_2.38; the bookworm image has 2.36,
+    // so the container starts and dies at the first database open. Only
+    // running the image shows it.
     const dockerfile = read("Dockerfile")
 
-    // Scanned over RUN INSTRUCTIONS, not the whole file. Checking the raw
-    // text passed with the rebuild deleted, because the comment above it in
-    // the Dockerfile explains the fix and contains the string — the same trap
-    // that caught a guard of mine in claxedo-app earlier.
+    // Scanned over RUN instructions only: the Dockerfile's own comment names
+    // the command.
     const instructions = dockerfile
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("#"))
       .join("\n")
 
-    // On `node-gyp rebuild`: `npm rebuild` inside a package directory rebuilds
-    // that package's DEPENDENCIES and silently produces nothing, so a weaker
-    // "some rebuild command is present" would pass for the version that did
-    // not work.
+    // `npm rebuild` inside a package directory rebuilds its dependencies and
+    // produces nothing, so "some rebuild command is present" is not enough.
     expect(instructions, "the image must compile better-sqlite3 rather than trust its prebuild").toContain(
       "node-gyp rebuild",
     )
@@ -122,9 +90,7 @@ describe("self-hosted entry contract", () => {
   })
 
   test("the public package entry exposes the self-hosted composition", () => {
-    // `main`/`exports` are what `@claxedo/server` consumers resolve. Unit 7
-    // replaces `createSelfHostedApp` with `createSelfHostedApp` here; until then this
-    // records that the public surface is the mixed local composition.
+    // `main`/`exports` are what `@claxedo/server` consumers resolve.
     expect(manifest.main).toBe("./src/index.ts")
     const index = read("src/index.ts")
     expect(index).toContain('from "./deployments/self-hosted-node/app"')

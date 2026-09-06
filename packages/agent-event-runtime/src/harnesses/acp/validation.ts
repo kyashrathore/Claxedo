@@ -1,5 +1,6 @@
 import { isRecord, object } from "../../value"
 import type { ContentBlock, SessionUpdate, ToolCallContent } from "./types"
+import { asRecord } from "@claxedo/helpers/guards"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 
 type ValidationContext = { diagnostics: AcpDiagnostics; toolCallId?: string; title?: string; kind?: string }
@@ -14,7 +15,7 @@ function details(ctx: ValidationContext) {
 
 export function safeMeta(value: unknown, ctx: ValidationContext): Record<string, unknown> | undefined {
   if (value === undefined || value === null) return undefined
-  const row = object(value)
+  const row = asRecord(value)
   if (row) return row
   diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
     ...details(ctx),
@@ -26,7 +27,7 @@ export function safeMeta(value: unknown, ctx: ValidationContext): Record<string,
 
 export function safeRawInput(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
-  const row = object(value)
+  const row = asRecord(value)
   if (row) return row
   diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
     ...details(ctx),
@@ -60,7 +61,7 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
     return null
   }
   const out = value.flatMap((item) => {
-    const row = object(item)
+    const row = asRecord(item)
     if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
       return [{ path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }]
     }

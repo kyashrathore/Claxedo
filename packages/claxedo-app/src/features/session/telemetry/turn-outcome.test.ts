@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { turnOutcomeEvents } from "./turn-outcome"
-import type { FirstTurnMessage } from "../onboarding/first-turn-recovery"
+import { firstTurnFunnelEvents, type FirstTurnMessage } from "../onboarding/first-turn-recovery"
 
 const user = (id: string, created = 1000): FirstTurnMessage => ({ id, role: "user", time: { created } })
 
@@ -21,6 +21,35 @@ describe("settling", () => {
     expect(events).toHaveLength(1)
     expect(events[0].name).toBe("turn_completed")
     expect(events[0].properties.duration_ms).toBe(2500)
+  })
+
+  test.each(["tool-calls", "unknown"])("a completed %s step does not settle the turn or onboarding funnel", (finish) => {
+    const step: FirstTurnMessage = {
+      id: "u1_step", role: "assistant", parentID: "u1", finish,
+      time: { created: 1000, completed: 1500 },
+    }
+    const streaming = [user("u1"), step]
+    expect(turnOutcomeEvents(streaming, new Set())).toEqual([])
+    expect(firstTurnFunnelEvents(streaming, true)).toEqual([])
+
+    const finished = [...streaming, assistant("u1", { completed: 3500 })]
+    expect(turnOutcomeEvents(finished, new Set())).toEqual([{
+      name: "turn_completed", userMessageId: "u1",
+      properties: { is_first_turn: true, duration_ms: 2500 },
+    }])
+    expect(firstTurnFunnelEvents(finished, true)).toEqual([{ name: "first_turn_ok" }, { name: "first_cloud_turn_ok" }])
+  })
+
+  test("an unfinished earlier reply cannot hide a later failed reply", () => {
+    const messages = [user("u1"), assistant("u1"), {
+      id: "u1_failed", role: "assistant" as const, parentID: "u1",
+      time: { created: 2000 }, error: { data: { firstTurnErrorClass: "harness" } },
+    }]
+    expect(turnOutcomeEvents(messages, new Set())).toEqual([{
+      name: "turn_failed", userMessageId: "u1",
+      properties: { is_first_turn: true, failure_class: "harness" },
+    }])
+    expect(firstTurnFunnelEvents(messages, false)).toEqual([{ name: "first_turn_failed", class: "harness" }])
   })
 
   test("an in-flight turn reports nothing", () => {

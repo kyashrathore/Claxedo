@@ -274,7 +274,7 @@ describe("createWorkspaceActions", () => {
     // (canonicalSessionRoute("new") === "/s/new"); it must take the workspace
     // route like any fresh draft.
     const { props, navs, nav, seedMeta } = makeProps()
-    seedMeta({ id: "content-draft", type: "session", directory: "/workspace/feature", sessionId: "new" })
+    seedMeta({ id: "content-draft", type: "session", directory: "/workspace/feature", sessionId: "new", content: { workspaceRouteId: "ws_feature" } })
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(
       project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] }),

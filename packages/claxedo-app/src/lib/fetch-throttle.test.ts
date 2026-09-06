@@ -5,7 +5,7 @@
 //    pile-up where bootstrap fanned out 30+ workspace requests against a
 //    6-slot HTTP/1.1 budget with 2 slots already eaten by event streams.
 
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
   __resetFetchThrottleForTests,
   __setFetchThrottleForTests,
@@ -16,6 +16,10 @@ import {
 } from "./fetch-throttle"
 
 beforeEach(() => {
+  __resetFetchThrottleForTests()
+})
+
+afterEach(() => {
   __resetFetchThrottleForTests()
 })
 
@@ -70,8 +74,7 @@ describe("throttledFetch", () => {
 
     // Fill the cap with two never-resolving regular requests.
     const blockers = [deferred<Response>(), deferred<Response>()]
-    void throttledFetch(() => blockers[0].promise, {})
-    void throttledFetch(() => blockers[1].promise, {})
+    const blockingRequests = blockers.map((blocker) => throttledFetch(() => blocker.promise, {}))
     await new Promise((r) => setTimeout(r, 0))
     expect(t.inFlight()).toBe(2)
 
@@ -92,6 +95,7 @@ describe("throttledFetch", () => {
 
     blockers[0].resolve(new Response(""))
     blockers[1].resolve(new Response(""))
+    await Promise.all(blockingRequests)
   })
 
   test("event-stream pathnames bypass the throttle even without Accept", async () => {
@@ -99,7 +103,7 @@ describe("throttledFetch", () => {
     const t = getFetchThrottle()
 
     const blocker = deferred<Response>()
-    void throttledFetch(() => blocker.promise, {})
+    const blockingRequest = throttledFetch(() => blocker.promise, {})
     await new Promise((r) => setTimeout(r, 0))
     expect(t.inFlight()).toBe(1)
 
@@ -123,6 +127,7 @@ describe("throttledFetch", () => {
     expect(t.inFlight()).toBe(1)
 
     blocker.resolve(new Response(""))
+    await blockingRequest
   })
 
   test("classifies hosted and workspace event paths as streams", () => {
@@ -138,7 +143,7 @@ describe("throttledFetch", () => {
     const t = getFetchThrottle()
 
     const blocker = deferred<Response>()
-    void throttledFetch(() => blocker.promise, {})
+    const blockingRequest = throttledFetch(() => blocker.promise, {})
     await new Promise((r) => setTimeout(r, 0))
     expect(t.inFlight()).toBe(1)
 
@@ -152,6 +157,7 @@ describe("throttledFetch", () => {
     expect(t.inFlight()).toBe(1)
 
     blocker.resolve(new Response(""))
+    await blockingRequest
   })
 
   test("releases the slot even when the underlying fetch throws", async () => {

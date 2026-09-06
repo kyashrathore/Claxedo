@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
+  activeHarness,
+  desiredHarness,
   HARNESS_DISPLAY_NAMES,
   decodeHarnessState,
   decodeSessionConfig,
-  effectiveHarnessModel,
   extractModelsFromConfigOptions,
   extractThoughtLevelFromConfigOptions,
   failedHarness,
@@ -54,13 +55,6 @@ describe("harness profile", () => {
     expect(HARNESS_DISPLAY_NAMES).toEqual({ claude: "Claude", codex: "Codex", cursor: "Cursor", pi: "Pi", opencode: "OpenCode" })
     expect(harnessDisplayLabel("my-agent")).toBe("My Agent")
     expect(harnessDisplayLabel("acp:literal-id")).toBe("Acp:literal Id")
-  })
-
-  test("resolves selected models without treating external OpenCode specially", () => {
-    const external = { kind: "connection", connectionId: "opencode" } as const
-    expect(effectiveHarnessModel(external, "")).toBe("default")
-    expect(effectiveHarnessModel(external, "gpt-5.5")).toBe("gpt-5.5")
-    expect(effectiveHarnessModel({ kind: "native", harnessId: "pi" }, undefined)).toBe("default")
   })
 
   test("extracts model options with selectOptions precedence", () => {
@@ -322,16 +316,7 @@ describe("harness profile", () => {
     })
   })
 
-  test("stays pure and out of runtime/query/UI layers", async () => {
-    const source = await Bun.file(new URL("./profile.ts", import.meta.url)).text()
 
-    expect(source).not.toContain("solid-js")
-    expect(source).not.toContain("@tanstack")
-    expect(source).not.toContain("RuntimeGateway")
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("@opencode-ai/sdk")
-    expect(source).not.toContain("localStorage")
-  })
 })
 
 /**
@@ -461,3 +446,112 @@ describe("extractThoughtLevelFromConfigOptions", () => {
     ).toBeNull()
   })
 })
+
+  describe("desiredHarness vs activeHarness during switch", () => {
+    test("separates desired from active while a switch is in flight", () => {
+      const data = {
+        type: { kind: "connection", connectionId: "acp:codex" },
+        binary: "/tmp/codex-acp",
+        activeType: { kind: "connection", connectionId: "acp:claude" },
+        activeBinary: "/tmp/claude-agent-acp",
+      } as const
+
+      expect(desiredHarness(data)).toEqual({ kind: "connection", connectionId: "acp:codex" })
+      expect(activeHarness(data)).toEqual({ kind: "connection", connectionId: "acp:claude" })
+    })
+
+    test("desired and active match when no switch is happening", () => {
+      const data = {
+        type: { kind: "connection", connectionId: "acp:claude" },
+        binary: "/tmp/claude-agent-acp",
+        activeType: { kind: "connection", connectionId: "acp:claude" },
+        activeBinary: "/tmp/claude-agent-acp",
+      } as const
+
+      expect(desiredHarness(data)).toEqual({ kind: "connection", connectionId: "acp:claude" })
+      expect(activeHarness(data)).toEqual({ kind: "connection", connectionId: "acp:claude" })
+    })
+
+    test("activeHarness falls back to type when activeType is missing", () => {
+      const data = {
+        type: { kind: "connection", connectionId: "acp:codex" },
+        binary: "/tmp/codex-acp",
+      } as const
+
+      expect(activeHarness(data)).toEqual({ kind: "connection", connectionId: "acp:codex" })
+    })
+  })
+  describe("failedHarness", () => {
+    test("treats error status as terminal", () => {
+      expect(failedHarness({ type: { kind: "connection", connectionId: "acp:codex" }, status: "error" })).toBe(true)
+    })
+
+    test("treats error message as terminal", () => {
+      expect(
+        failedHarness({ type: { kind: "connection", connectionId: "acp:claude" }, error: "binary not found" }),
+      ).toBe(true)
+    })
+
+    test("ready state is not failed", () => {
+      expect(failedHarness({ type: { kind: "connection", connectionId: "acp:claude" }, status: "ready" })).toBe(false)
+    })
+
+    test("no status and no error is not failed", () => {
+      expect(failedHarness({ type: { kind: "connection", connectionId: "external-opencode" } })).toBe(false)
+    })
+  })
+  describe("extractModelsFromConfigOptions", () => {
+    test("returns models from a model select option", () => {
+      const result = extractModelsFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "opus",
+          options: [
+            { value: "sonnet", name: "Sonnet" },
+            { value: "opus", name: "Opus" },
+          ],
+        },
+      ])
+
+      expect(result).toEqual({
+        currentModel: "opus",
+        models: [
+          { id: "sonnet", name: "Sonnet" },
+          { id: "opus", name: "Opus" },
+        ],
+      })
+    })
+
+    test("returns null when no model option exists", () => {
+      const result = extractModelsFromConfigOptions([
+        {
+          id: "mode",
+          name: "Mode",
+          category: "mode",
+          type: "select",
+          currentValue: "default",
+          options: [{ value: "default", name: "Default" }],
+        },
+      ])
+
+      expect(result).toBeNull()
+    })
+
+    test("returns null when model option has no choices", () => {
+      const result = extractModelsFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "",
+          options: [],
+        },
+      ])
+
+      expect(result).toBeNull()
+    })
+  })

@@ -2,7 +2,11 @@
 // mechanism: it reads no env, holds no module-global state, and reaches a
 // host only through the store ports below.
 
-export type IntegrationCapability = "docs" | "work-source" | "channel" | "code-host" | "mcp"
+// A capability is whatever a port serves; the union is derived from the port
+// map so a name can never exist without something behind it.
+export type { CapabilityPorts, IntegrationCapability } from "./ports/index.js"
+import type { CapabilityPorts, IntegrationCapability } from "./ports/index.js"
+
 export type IntegrationMethodKind = "key" | "oauth"
 
 export type IntegrationPrompt = {
@@ -14,11 +18,14 @@ export type IntegrationPrompt = {
   secret?: boolean
 }
 
+// What an integration's author writes. There is deliberately no `capabilities`
+// field: the set is derived by the registry from the ports the impl provides,
+// so a declaration cannot claim what nothing serves. Read it back off a
+// `RegisteredIntegration`.
 export type IntegrationDeclaration = {
   id: string
   name: string
   methods: IntegrationMethodKind[]
-  capabilities: IntegrationCapability[]
   prompts?: IntegrationPrompt[]
   // Wire form served by the token endpoint for key credentials.
   keyTokenType?: "bearer" | "basic"
@@ -110,7 +117,13 @@ export type DeviceAuth = {
   poll: (deviceCode: string) => Promise<DevicePoll>
 }
 
-export type IntegrationImpl = {
+/**
+ * How an integration obtains and maintains a credential. Every member here is
+ * about proving access; none of them serves a capability, which is what makes
+ * the split from `actions` worth having — the two halves change for unrelated
+ * reasons and are consumed by unrelated code paths.
+ */
+export type AuthImpl = {
   /**
    * Public fields learned by an OAuth callback that may be persisted even
    * though they are not user-facing prompts. This keeps discovery metadata
@@ -118,7 +131,6 @@ export type IntegrationImpl = {
    */
   canonicalFields?: readonly string[]
   verify?: (fields: ConnectionFields, secret: string) => Promise<VerifyResult>
-  listRepositories?: (fields: ConnectionFields, secret: string) => Promise<CodeHostRepository[]>
   authorize?: (state: string, codeVerifier: string) => URL | Promise<URL>
   /** Public, non-secret values frozen into the one-time OAuth attempt. */
   attemptContext?: Readonly<Record<string, string>>
@@ -130,6 +142,20 @@ export type IntegrationImpl = {
   ) => Promise<OAuthTokens>
   device?: DeviceAuth
   refresh?: (refreshToken: string) => Promise<OAuthTokens>
+}
+
+export type IntegrationImpl = {
+  auth?: AuthImpl
+  /**
+   * The capability ports this integration serves, keyed by capability.
+   *
+   * This map is the only source of a declaration's capability set: the registry
+   * derives it from these keys, and an author has nowhere to write the set by
+   * hand. That is the point of the split. A declaration used to be able to
+   * claim `code-host` with no `listRepositories` behind it, resolve for the
+   * capability, and fail only when a caller reached the missing method.
+   */
+  actions: Partial<CapabilityPorts>
 }
 
 // Frozen wire shape — identical for key and oauth connections. No expires_at:
@@ -180,6 +206,23 @@ export type CredentialStorePort = {
 }
 
 export type ConnectionStorePort = {
+  /**
+   * Writes `row` under `row.id`. The id is the key, and `(integrationId,
+   * owner)` is unique: a write naming a NEW id for a partition that already
+   * holds a row for that integration is refused with `ConnectionExistsError`.
+   *
+   * The refusal is the D1 store's database invariant
+   * (`hosted_connections_one_per_partition`) stated as the port contract,
+   * because the alternatives both corrupt. Keeping both rows makes
+   * `get(integrationId, owner)` pick an arbitrary winner; rewriting the
+   * existing row under its OLD id discards the supplied id, so
+   * `getById(suppliedId)` misses after an `upsert` that resolved successfully
+   * and the credential written under the supplied id is stranded.
+   *
+   * `createdAt` and `updatedAt` are the caller's, not the store's — the
+   * service owns the clock, and a store that stamped its own would make the
+   * value it returns disagree with the value it was told.
+   */
   upsert(row: ConnectionRow): Promise<void>
   get(integrationId: string, owner?: string): Promise<ConnectionRow | undefined>
   getById(id: string): Promise<ConnectionRow | undefined>
@@ -193,12 +236,6 @@ export type ConnectionStorePort = {
 // credential per provider id; the namespace keeps integrations out of the
 // host's harness/model-provider id space).
 export const connectionProviderId = (connectionId: string) => `integration:${connectionId}`
-
-// Webhook signing material is a secondary credential. It must never share
-// the provider id used by the access token because token refresh/status
-// transitions and webhook-secret rotation have independent lifecycles.
-export const connectionWebhookSigningProviderId = (connectionId: string) =>
-  `${connectionProviderId(connectionId)}:webhook-signing`
 
 export const CONNECTION_ERROR_CODES = [
   "connection_exists",
@@ -226,6 +263,21 @@ export type ConnectionTokenFailureCode = (typeof CONNECTION_TOKEN_FAILURE_CODES)
 export class ConnectionsUnavailableError extends Error {
   constructor() {
     super("connections_unavailable")
+  }
+}
+
+/**
+ * A second connection row for one `(integrationId, owner)`.
+ *
+ * Unreachable through `createConnectionsService`, which resolves the existing
+ * row's id before writing — so this is the race: two concurrent connects both
+ * read no existing row, both mint a fresh id, and the loser is refused here
+ * rather than corrupting the partition. Routes map it to 409
+ * `connection_exists`.
+ */
+export class ConnectionExistsError extends Error {
+  constructor() {
+    super("connection_exists")
   }
 }
 

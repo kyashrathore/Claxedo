@@ -1,10 +1,9 @@
-// The workspace-scope controls that used to sit BELOW the composer as two
-// segmented controls plus two selects. They now sit above it, as a stacked card
-// of dropdown chips: the composer bar is for "how this turn runs", the band
-// above it is for "where it runs". Segmented controls forced every option to be
-// on screen at once, which is why the old row needed three container-query
-// breakpoints to survive a narrow pane; a chip that opens a searchable menu
-// costs a fixed width no matter how many projects or worktrees exist.
+// The workspace-scope controls render as a stacked card of dropdown chips
+// above the composer: the composer bar is for "how this turn runs", the band
+// above it is for "where it runs". A chip that opens a searchable menu costs a
+// fixed width no matter how many projects or worktrees exist, unlike a
+// segmented control, which has to keep every option on screen at once and
+// needs container-query breakpoints to survive a narrow pane.
 //
 // The picker follows upstream's `prompt-project-selector.tsx` interaction model
 // (search field, per-row project avatar, checkmark on the current row, a
@@ -141,7 +140,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
   // contenteditable), so it cannot steal keys from a real field.
   //
   // The input element is the query's source of truth rather than a signal here.
-  // `List` owns the filter (its clear button writes the field WITHOUT notifying
+  // `List` owns the filter (its clear button writes the field without notifying
   // `onFilter`), so mirroring it into a controlled `filter` prop would let the two
   // disagree and make the clear button snap its own text back.
   //
@@ -172,7 +171,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
       placement="bottom-start"
       gutter={4}
       // The row sits directly above the composer, so a full-height menu fits in
-      // NEITHER direction: without fitViewport it flipped up and clipped its own
+      // neither direction: without fitViewport it flipped up and clipped its own
       // search field off the top of the window. `overlap` lets it cover the
       // composer (which is what the design does) instead of being squeezed.
       fitViewport
@@ -213,7 +212,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
           style={{
             "max-height": "min(360px, var(--kb-popper-content-available-height, 360px))",
             /*
-             * The FLOATING surface, not a background layer. This menu is an
+             * The floating surface, not a background layer. This menu is an
              * overlay, so it has to land on the same surface every other
              * overlay uses — `--overlay-surface` is the semantic role every
              * theme resolves for `DropdownMenu`, `Select` and `Popover`, and
@@ -262,10 +261,10 @@ function ContextChipPicker(props: { chip: ContextChip }) {
             {(option) => (
               <>
                 <Show when={option.avatar}>{(avatar) => <ChipAvatar avatar={avatar()} />}</Show>
-                {/* The label/detail spans must stay DIRECT children of
+                {/* The label/detail spans must stay direct children of
                     `context-chip-row`: the shared composer-menu stylesheet types
                     them with `> span:first-child` / `> span + span`, so the
-                    avatar is a SIBLING of this element, never inside it.
+                    avatar is a sibling of this element, never inside it.
                     `flex-1` is what pushes `List`'s checkmark to the right edge,
                     where upstream absolutely positions its own. */}
                 <div data-slot="context-chip-row" class="flex min-w-0 flex-1 flex-col items-start">
@@ -278,7 +277,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
             )}
           </List>
           {/*
-            A SIBLING of `List`, not its `add` slot. The slot renders inside
+            A sibling of `List`, not its `add` slot. The slot renders inside
             `[data-slot="list-scroll"]`, which carries a scroll-driven
             `mask: linear-gradient(...)` (see list.css) — so while the list was
             scrollable this row sat under a 20px fade and dimmed along with the
@@ -353,7 +352,7 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
       // the lip of the card behind.
       //
       // The hairline carries the card edge, because fill alone cannot: `bg-deep`
-      // is DARKER than the composer in dark mode but LIGHTER than the page in
+      // is darker than the composer in dark mode but lighter than the page in
       // light mode, where it lands within 2/255 of the page background and the
       // stacked-card read disappears. `border-b-0` keeps the bottom edge from
       // showing through the composer that overlaps it.
@@ -365,7 +364,7 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
           silently close the menu under the user. `Index` keys by position (the
           chip order is fixed) and just updates the item. */}
       <Index each={props.chips}>{(chip) => <ContextChipPicker chip={chip()} />}</Index>
-      {/* The pin REPLACES the environment/worktree chips rather than all of them
+      {/* The pin replaces the environment/worktree chips rather than all of them
           — the project is still switchable on a self-hosted workspace. */}
       <Show when={props.pin}>
         {(pin) => (

@@ -162,8 +162,6 @@ describe("workspace relay runtime env", () => {
     const jwk = { ...(await exportJWK(key.publicKey)), kid: "kid-rotated", alg: "EdDSA", use: "sig" }
     const resolver = createLocalJWKSet({ keys: [jwk] })
 
-    // Bootstrap path: build options from env (T6 loader path) and assert the
-    // middleware accepts an RHT whose kid matches the JWKS.
     const options = await relayHostAuthFromEnv({
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
       WORKSPACE_RUNTIME_HOST_ID: "host_1",

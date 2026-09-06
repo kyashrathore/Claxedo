@@ -9,7 +9,7 @@
  *
  * The binding is described structurally rather than imported from
  * `@cloudflare/workers-types`, so this compiles in the Node build too — the
- * suffix records the runtime it TARGETS, not a compile-time dependency.
+ * suffix records the runtime it targets, not a compile-time dependency.
  */
 
 import { DocumentInvalidEntryError, DocumentTooLargeError } from "../../errors"
@@ -71,9 +71,8 @@ export function createR2ConditionalObjectStore(
     },
     delete: (key) => bucket.delete(key),
     async list(prefix, listOptions) {
-      // The bound used to throw, which made a large project unreadable rather than slow. It now
-      // truncates and says so: the caller sees `truncated` plus a cursor to resume from, so a
-      // project past the bound degrades to paging instead of failing.
+      // A project past the bound degrades to paging instead of failing: the caller sees
+      // `truncated` plus a cursor to resume from.
       const limit = Math.max(1, Math.min(listOptions?.limit ?? Infinity, options.maxListObjects ?? DEFAULT_MAX_LIST_OBJECTS))
       const results: ObjectListingItem[] = []
       const startAfter = resumeAfterKey(listOptions?.cursor)

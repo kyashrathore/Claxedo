@@ -76,6 +76,19 @@
       ],
       "cwd": "packages/claxedo-web",
       "port": 4612
+    },
+    {
+      "name": "claxedo-docs",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "mintlify@latest",
+        "dev",
+        "--port",
+        "3333"
+      ],
+      "cwd": "packages/claxedo-docs",
+      "port": 3333
     }
   ]
 }

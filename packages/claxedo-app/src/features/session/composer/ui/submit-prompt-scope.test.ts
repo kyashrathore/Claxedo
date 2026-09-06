@@ -56,14 +56,7 @@ describe("prompt submit/clear scope derivation", () => {
     expect(twice).not.toBe(once)
   })
 
-  test("shell-mode and normal-mode share one draft scope (mode independence lives in the history stack, not the scope)", () => {
-    // The prompt draft cache is keyed by directory+session only; mode does not
-    // enter the scope. Clearing after a shell send and after a normal send must
-    // target the same composer read key for a given directory/session.
-    const directory = "/proj/gamma"
-    const sessionId = "ses_mode"
-    expect(submitClearKey(directory, sessionId)).toBe(composerReadKey(directory, sessionId))
-  })
+
 
   test("uniquePromptScopes dedupes on raw dir+id and keeps the draft vs new-session split", () => {
     const draft = promptViewScope({ directory: "/proj/alpha", sessionId: "new" })

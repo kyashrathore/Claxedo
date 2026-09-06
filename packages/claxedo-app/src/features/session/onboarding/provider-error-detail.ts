@@ -8,8 +8,8 @@
 // This module splits that error in two, matching the §5 rule of the retired
 // error proposal: `summary` is a sentence a human reads,
 // `detail` is the provider's own bytes, verbatim, for the collapsed disclosure.
-import { asRecord } from "@/lib/record"
 import { harnessDisplayLabel } from "@/ui/harness-display"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export type ProviderErrorDetail = {
   /**

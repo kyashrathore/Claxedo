@@ -55,7 +55,7 @@ export function isCloudShareable(credential: OnboardingCredential) {
 /**
  * Why a cloud-relevant credential cannot be shared, when the user deserves to
  * be told. Absent for a credential that shares fine, and absent for one that
- * was never part of this conversation — `isCloudRelevantCredential` decides
+ * is not cloud-relevant at all — `isCloudRelevantCredential` decides
  * that, and those rows are not rendered at all rather than explained away.
  */
 export function cloudShareBlock(credential: OnboardingCredential): CloudShareBlock | undefined {

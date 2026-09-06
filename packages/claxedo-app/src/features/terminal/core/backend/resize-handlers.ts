@@ -5,7 +5,7 @@ import { createResizeCoordinator, type ResizeCoordinator } from "../resize-coord
 import { onTerminalFitEvent } from "../fit-event"
 import { objectProperty } from "./reflect"
 import type { TerminalRendererRef } from "./renderer"
-import { createParserIdleGate, runWhenParserIdle, type ParserIdleGate } from "../parser-idle-gate"
+import { cancelParserIdleWork, createParserIdleGate, runWhenParserIdle, type ParserIdleGate } from "../parser-idle-gate"
 
 // ============================================================================
 // Resize Handler
@@ -42,8 +42,28 @@ export function setupResizeHandlers(
     }
   }
 
-  // The actual fit, unguarded. Only ever invoked through the parser-idle gate.
+  const isSuspended = () =>
+    typeof document !== "undefined" && document.documentElement.dataset.terminalResizeSuspended === "1"
+  let disposed = false
+  let fontMetricsDirty = false
+
+  const refresh = () => {
+    if (disposed || !isRendererReady()) return
+    try { xterm.refresh(0, xterm.rows - 1) } catch {}
+    try { renderer?.current.clearTextureAtlas?.() } catch {}
+  }
+
+  // Every fit, including the immediate observer path, enters through the parser
+  // gate. Keep metric invalidation pending across drag suspension and parsing.
   const runFit = () => {
+    if (disposed || isSuspended() || !isRendererReady()) return
+    const remeasure = fontMetricsDirty
+    if (remeasure) {
+      fontMetricsDirty = false
+      const fs = xterm.options.fontSize ?? 14
+      xterm.options.fontSize = fs + 0.001
+      xterm.options.fontSize = fs
+    }
     // proposeDimensions() can throw or return undefined right after reload /
     // portal mount (renderer/font metrics not ready). Still attempt a fit so
     // xterm paints; failures are tolerated and refresh() will still run.
@@ -62,7 +82,10 @@ export function setupResizeHandlers(
         return
       }
       fitAddon.fit()
-    } catch {}
+    } catch {} finally {
+      // A metric nudge must repaint in the same parser-idle turn as its fit.
+      if (remeasure) refresh()
+    }
   }
 
   const coordinator = createResizeCoordinator({
@@ -77,11 +100,7 @@ export function setupResizeHandlers(
     measure: () => ({ width: container.clientWidth, height: container.clientHeight }),
     getCols: () => xterm.cols,
     getRows: () => xterm.rows,
-    refresh: () => {
-      if (!isRendererReady()) return
-      try { xterm.refresh(0, xterm.rows - 1) } catch {}
-      try { renderer?.current.clearTextureAtlas?.() } catch {}
-    },
+    refresh,
     clear: () => {
       // Fix Ink-style TUI duplication after resize/rewrap by clearing the
       // visible screen before the app re-renders on SIGWINCH.
@@ -113,11 +132,8 @@ export function setupResizeHandlers(
     },
   })
 
-  // Check global suspension flag
-  const isSuspended = () =>
-    typeof document !== "undefined" && document.documentElement.dataset.terminalResizeSuspended === "1"
-
   let wasSuspended = isSuspended()
+  if (wasSuspended) coordinator.suspend()
 
   const checkSuspension = () => {
     const nowSuspended = isSuspended()
@@ -144,7 +160,8 @@ export function setupResizeHandlers(
   let lastObservedHeight = 0
 
   const resizeObserver = new ResizeObserver((entries) => {
-    if (!container.isConnected) return
+    if (disposed || !container.isConnected) return
+    checkSuspension()
 
     const entry = entries[0]
     const width = entry?.contentRect?.width ?? container.clientWidth
@@ -157,19 +174,9 @@ export function setupResizeHandlers(
       Math.abs(width - lastObservedWidth) / lastObservedWidth > 0.2
 
     if ((wasZero && width > 0 && height > 0) || significantWidthChange) {
-      // Force cell re-measurement so fitAddon.fit() uses correct metrics
-      const fs = xterm.options.fontSize ?? 14
-      xterm.options.fontSize = fs + 0.001
-      xterm.options.fontSize = fs
-
-      // Immediately fit + clear atlas + refresh so the canvas dimensions
-      // update in the same frame as the font-nudge. Without this, the
-      // coordinator's deferred settle runs 1+ frames later, during which
-      // the WebGL renderer paints with stale canvas resolution → pixelated.
-      if (isRendererReady()) {
-        try { fitAddon.fit() } catch {}
-        try { renderer?.current.clearTextureAtlas?.() } catch {}
-        try { xterm.refresh(0, xterm.rows - 1) } catch {}
+      fontMetricsDirty = true
+      if (!wasSuspended && isRendererReady()) {
+        runWhenParserIdle(parserGate, runFit)
       }
     }
 
@@ -222,6 +229,8 @@ export function setupResizeHandlers(
   return {
     coordinator,
     cleanup: () => {
+      disposed = true
+      cancelParserIdleWork(parserGate)
       window.removeEventListener("resize", handleResize)
       removeFitListener()
       document.removeEventListener("visibilitychange", handleVisibilityChange)

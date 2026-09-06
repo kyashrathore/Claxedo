@@ -1,5 +1,6 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { createHash } from "node:crypto"
-import { isOneOf, jsonRecord, jsonRecord as record } from "@claxedo/server-core/platform/runtime/lib/json"
+import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
@@ -28,6 +29,7 @@ import {
   type WorkspaceAction,
   type WorkspaceRow,
 } from "./workspace-authority-store"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
 const MAX_MESSAGE_PAGE_LIMIT = 500
@@ -344,7 +346,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const operationId = required(value.operationId, "operationId")
       const sessionId = required(value.sessionId, "sessionId")
       const workspaceId = required(value.workspaceId, "workspaceId")
-      const title = optional(value.title)
+      const title = trimToUndefined(value.title)
       return db.transaction(() => {
         const row = registration(db, operationId)
         if (!row) throw new SqlitePrivateSessionAuthorityError("registration_transition_denied", "A matching session reservation is required")
@@ -651,7 +653,7 @@ export function createSqlitePrivateSessionAuthority(input: {
 
 function reserveIntent(value: ReservePrivateSessionInput) {
   const kind = value.kind
-  const parentSessionId = optional(value.parentSessionId)
+  const parentSessionId = trimToUndefined(value.parentSessionId)
   if (kind === "fork" && !parentSessionId) {
     throw new SqlitePrivateSessionAuthorityError("invalid_input", "Fork reservation requires parentSessionId")
   }
@@ -664,7 +666,7 @@ function reserveIntent(value: ReservePrivateSessionInput) {
     workspaceId: required(value.workspaceId, "workspaceId"),
     kind,
     parentSessionId,
-    title: optional(value.title),
+    title: trimToUndefined(value.title),
   }
 }
 
@@ -710,15 +712,15 @@ function publicSession(db: SqliteAuthorityDb, row: SessionRow, viewerActorId: st
 }
 
 function messageId(value: unknown) {
-  const row = record(value)
-  const info = record(row?.info)
-  return optional(row?.id) ?? optional(info?.id)
+  const row = asRecord(value)
+  const info = asRecord(row?.info)
+  return trimToUndefined(row?.id) ?? trimToUndefined(info?.id)
 }
 
 function messageRole(value: unknown) {
-  const row = record(value)
-  const info = record(row?.info)
-  return optional(row?.role) ?? optional(info?.role) ?? null
+  const row = asRecord(value)
+  const info = asRecord(row?.info)
+  return trimToUndefined(row?.role) ?? trimToUndefined(info?.role) ?? null
 }
 
 function canonicalMessage(value: unknown) {
@@ -792,10 +794,10 @@ function positiveFence(value: number) {
 
 function publicMessage(row: MessageRow) {
   const value = JSON.parse(row.data) as unknown
-  const message = record(value)
+  const message = asRecord(value)
   if (!message) return value
-  const info = record(message.info) ?? {}
-  const claxedo = record(info.claxedo) ?? {}
+  const info = asRecord(message.info) ?? {}
+  const claxedo = asRecord(info.claxedo) ?? {}
   const { author: _author, ...safeClaxedo } = claxedo
   const { claxedo: _claxedo, ...safeInfo } = info
   const canonical = row.author_actor_id && (row.author_kind === "human" || row.author_kind === "agent")
@@ -837,13 +839,9 @@ function decodeCursor(sessionId: string, value: string) {
 }
 
 function required(value: unknown, name: string) {
-  const text = optional(value)
+  const text = trimToUndefined(value)
   if (!text) throw new SqlitePrivateSessionAuthorityError("invalid_input", `${name} is required`)
   return text
-}
-
-function optional(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
 function json(value: unknown) {

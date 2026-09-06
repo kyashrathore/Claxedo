@@ -39,7 +39,7 @@ describe("global sync inventory source", () => {
       shouldUseSignedControlPlaneInventory({
         hasSignedAccess: true,
         baseUrl: "http://127.0.0.1:3001",
-        directory: "/Users/yashvardhansingh/test/opencode",
+        directory: "/srv/repos/opencode",
       }),
     ).toBe(false)
   })
@@ -102,14 +102,14 @@ describe("global sync inventory source", () => {
     queryClient.setQueryData(queryKeys.controlPlane.projects("http://127.0.0.1:3001"), [
       {
         id: "project_1",
-        worktree: "/Users/yashvardhansingh/test/opencode",
-        sandboxes: ["/Users/yashvardhansingh/test/opencode"],
+        worktree: "/srv/repos/opencode",
+        sandboxes: ["/srv/repos/opencode"],
         time: { created: 0, updated: 0 },
         workspaces: {
-          "/Users/yashvardhansingh/test/opencode": {
+          "/srv/repos/opencode": {
             id: "ws_user_hosted",
             kind: "user-hosted",
-            directory: "/Users/yashvardhansingh/test/opencode",
+            directory: "/srv/repos/opencode",
           },
         },
       },
@@ -119,7 +119,7 @@ describe("global sync inventory source", () => {
       shouldUseSignedControlPlaneInventory({
         hasSignedAccess: true,
         baseUrl: "http://127.0.0.1:3001",
-        directory: "/Users/yashvardhansingh/test/opencode",
+        directory: "/srv/repos/opencode",
       }),
     ).toBe(true)
   })
@@ -164,7 +164,7 @@ describe("global sync inventory source", () => {
         hasSignedAccess: true,
         baseUrl: "http://127.0.0.1:3001",
         project: {
-          worktree: "/Users/yashvardhansingh/test/opencode",
+          worktree: "/srv/repos/opencode",
           sandboxes: ["workspace:ws_123"],
           workspaces: {
             "workspace:ws_123": { kind: "cloud" },

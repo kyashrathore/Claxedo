@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
-import path from "node:path"
 import {
   HOSTED_OPERATIONS,
   decodeHostedResult,
@@ -8,67 +6,8 @@ import {
   isSafeOperation,
 } from "./hosted-operations"
 
-/**
- * The app's half of the operation contract.
- *
- * Three ways this stops working, and none is caught by exercising a decode:
- * it drifts from the reviewed matrix, it grows a transport, or a decoder gets
- * loose enough to accept the thing it was written to reject. Each has a test.
- *
- * A fourth way is NOT tested here and cannot be: a decoder that is internally
- * consistent and simply wrong about what its route returns. Every shape below
- * is written by hand, so it agrees with whatever reading of the routes produced
- * it — which is how the workspace list, `workspace.resolve`,
- * `host.enrollCurrentMachine` and three more shipped mismatched. The shapes
- * here exist to pin decoder BEHAVIOUR — what is rejected, and with what
- * message — not to state the contract.
- */
-
-const source = readFileSync(path.join(import.meta.dir, "hosted-operations.ts"), "utf8")
-const matrix = readFileSync(
-  path.resolve(import.meta.dir, "../../../../../docs/tech-docs/desktop-hosted-operation-matrix.md"),
-  "utf8",
-)
-
-function matrixNames() {
-  return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*)` \|/gm)].map((match) => match[1])
-}
-
-describe("the registry", () => {
-  test("names only operations the matrix declares", () => {
-    const declared = new Set(matrixNames())
-
-    expect(hostedOperationNames().filter((name) => !declared.has(name))).toEqual([])
-  })
-
-  test("agrees with Electron main's table", () => {
-    // Two registries, one contract. Main owns method-and-path; this owns result
-    // shape. A name in one and not the other means a channel that cannot be
-    // called or an operation with no decoder.
-    const mainTable = readFileSync(
-      path.resolve(import.meta.dir, "../../../../claxedo-desktop/src/main/account/hosted-operations.ts"),
-      "utf8",
-    )
-    // Matched on the key alone, not `": { method"` — one of main's entries is
-    // written across several lines, and a same-line pattern silently dropped
-    // it. Scoped to the table literal so unrelated string keys elsewhere in
-    // the file cannot join the list.
-    const table = mainTable.slice(mainTable.indexOf("HOSTED_OPERATIONS = {"), mainTable.indexOf("} as const satisfies"))
-    const mainNames = [...table.matchAll(/^ {2}"([a-z][\w.]*)":/gm)].map((match) => match[1])
-
-    expect(mainNames.length).toBeGreaterThan(10)
-    expect(hostedOperationNames().toSorted()).toEqual(mainNames.toSorted())
-  })
-
-  test("carries no transport, under any spelling", () => {
-    // The registry could describe a request if it were allowed to. It is not —
-    // a registry that could express a URL is a place to add a fourteenth
-    // operation that happens to take a path.
-    for (const forbidden of ["fetch(", "http", "url", "method:", "headers", "Bearer", "authorization"]) {
-      expect(source, `the registry must not mention ${forbidden}`).not.toContain(forbidden)
-    }
-  })
-})
+// Decoder behavior belongs here. Architecture/account-port.guard.test.ts holds
+// the port, main route table, decoder registry and reviewed matrix in agreement.
 
 describe("decodeHostedResult", () => {
   test("requires the complete session People capability envelope", () => {

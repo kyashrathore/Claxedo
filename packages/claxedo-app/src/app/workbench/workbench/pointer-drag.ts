@@ -1,24 +1,16 @@
 import { createSignal } from "solid-js"
 
 /**
- * Hand-rolled pointer-events drag controller — the single input layer that
- * powers pane/tab/session reorder for mouse, touch, AND pen, replacing the
- * native HTML5 drag-and-drop that never fired on touch devices. Hand-rolled
- * (not a DnD library) because the workbench's drop semantics are bespoke edge
- * geometry that no generic sortable/collision library models, and the repo
- * already owns this pointerdown-threshold-move-up pattern elsewhere (WP-C3
- * touch-DnD decision).
+ * Pointer-events drag controller for pane/tab/session drags: one input layer
+ * for mouse, touch, and pen (native HTML5 drag-and-drop never fires on touch).
+ * Hand-rolled because the workbench's drop semantics are bespoke edge geometry
+ * no generic DnD library models.
  *
- * Contracts preserved by the rewrite: the workbench `contentId` string is still
- * the payload (formerly the `WORKBENCH_DRAG_MIME` DataTransfer value, now an
- * in-memory field), `computeDropEdge` is still the edge oracle, and the split
- * commit is still `wb.split.split(paneId, edge, contentId)`. Only the *input*
- * changes: a drag starts when OUR controller crosses a movement/long-press
- * threshold, not when the browser begins a native drag.
- *
- * Structure: ONE module-level controller store (`workbenchDrag`) that sources
- * feed (`begin`/`move`/`end`/`cancel`) and drop zones subscribe to
- * (`registerDropZone`). A source attaches via the `useDragSource` ref helper.
+ * One module-level store (`workbenchDrag`): sources feed it through
+ * `useDragSource` (`begin`/`move`/`end`/`cancel`), drop zones subscribe via
+ * `registerDropZone`. The payload is the workbench `contentId`;
+ * `computeDropEdge` and `wb.split.split` remain the edge oracle and split
+ * commit.
  */
 
 export type DragSourceKind = "workbench-pane" | "tab" | "navigation-row"
@@ -175,11 +167,10 @@ export type DragSourceOptions = {
   enabled?: () => boolean
   /**
    * CSS `touch-action` for the source element. Defaults to `"pan-y"` so a
-   * vertical list (sidebar) still scrolls by touch — the drag is gated behind a
-   * long-press, not raw finger movement. Override per surface: `"pan-x"` for a
-   * horizontal tab strip, `"none"` for a dedicated grip that never scrolls.
-   * NEVER default this to `"none"`: that kills touch scrolling on any source
-   * that fills a scroll container (the WP-C3 regression this option fixes).
+   * vertical list still scrolls by touch (the drag is gated behind a
+   * long-press). `"pan-x"` for a horizontal tab strip; `"none"` only for a
+   * dedicated grip — on anything that fills a scroll container it kills touch
+   * scrolling.
    */
   touchAction?: string
   /** Fires when a drag actually starts (past threshold), NOT on every pointerdown. */

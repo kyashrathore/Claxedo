@@ -1,3 +1,4 @@
+import { nonEmptyString } from "@claxedo/helpers/guards"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import {
@@ -28,7 +29,7 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { raw, record } from "../../platform/json"
+import { asRecord } from "@claxedo/helpers/guards"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -131,8 +132,6 @@ async function authorizeWorkspaceRead(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
-const nonEmptyString = raw
-
 async function authorizedProjectWorkspaceIds(
   auth: SignedControlPlaneAuth,
   options: Options,
@@ -141,7 +140,7 @@ async function authorizedProjectWorkspaceIds(
   const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
   if (!Array.isArray(workspaces)) return new Set<string>()
   return new Set(workspaces.flatMap((input) => {
-    const row = record(input)
+    const row = asRecord(input)
     if (!row) return []
     const rowProjectId = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectID) ?? nonEmptyString(row.projectId)
     if (rowProjectId !== projectId) return []
@@ -159,7 +158,7 @@ function responseMeta(input: SessionMeta | undefined, auth: SignedControlPlaneAu
 }
 
 function authoritySessionId(input: unknown) {
-  const row = record(input)
+  const row = asRecord(input)
   return nonEmptyString(row?.session_id)
     ?? nonEmptyString(row?.sessionId)
     ?? nonEmptyString(row?.sessionID)
@@ -170,7 +169,7 @@ function authoritySessionId(input: unknown) {
 function authoritySessionMeta(input: unknown, workspaceId: string): SessionMeta | undefined {
   const sessionID = authoritySessionId(input)
   if (!sessionID) return undefined
-  const row = record(input)
+  const row = asRecord(input)
   const createdAt = typeof row?.created_at === "number"
     ? row.created_at
     : typeof row?.createdAt === "number"

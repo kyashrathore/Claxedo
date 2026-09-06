@@ -68,7 +68,7 @@ export function createPromptInputSubmitRetry(input: {
   readonly rawHandleSubmit: (event: Pick<Event, "preventDefault">) => unknown
   readonly roleSubmitBlocked: Accessor<boolean>
   /**
-   * Any standing block reason (T5). Actionable reasons leave the Send button
+   * Any standing block reason. Actionable reasons leave the Send button
    * clickable so it can explain itself; the handler still refuses to submit.
    */
   readonly submitBlocked?: Accessor<boolean>

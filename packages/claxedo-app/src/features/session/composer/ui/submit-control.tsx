@@ -25,10 +25,9 @@ export function PromptSubmitControl(props: {
   stopLabel: string
   readOnlyLabel: string
 }) {
-  // Resolve-on-intent (T5 §B3): actionable block reasons leave the button
-  // clickable-but-dimmed. Missing-model clicks open the one model picker;
-  // runtime failures flash the reason as the click/touch fallback for users
-  // where hover never fires.
+  // Actionable block reasons keep the button clickable but dimmed: a missing
+  // model opens the model picker; other reasons flash the explanation, since
+  // touch users never see the hover tooltip.
   const [flash, setFlash] = createSignal(false)
   let timer: ReturnType<typeof setTimeout> | undefined
   const clearTimer = () => {

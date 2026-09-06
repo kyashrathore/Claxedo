@@ -208,7 +208,9 @@ describe("Cloudflare Pages headers for the SPA", () => {
     // An enforcing policy that governs only who may embed us cannot break
     // resource loading. If this ever grows a fetch directive it stops being
     // risk-free and must be validated against real traffic first.
-    expect(enforcing).toBe("frame-ancestors 'self' https://claxedo.com https://www.claxedo.com")
+    // `'self'` only: the marketing-site demo iframe that once needed the
+    // claxedo.com origins here is gone, and nothing else embeds the app.
+    expect(enforcing).toBe("frame-ancestors 'self'")
   })
 
   test("the full SPA policy ships REPORT-ONLY", () => {

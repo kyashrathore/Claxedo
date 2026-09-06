@@ -52,10 +52,7 @@ describe("physical-footprint observation recorded beside summed RSS", () => {
     expect([...(await readPhysFootprint([], shippedHelper))]).toEqual([])
   })
 
-  test("reads a real footprint from the shipped helper for this process", async () => {
-    // The helper is a build artifact; its absence is a no-op everywhere else in
-    // this change, so it must not be a false failure here either.
-    if (process.platform !== "darwin" || !existsSync(shippedHelper)) return
+  test.skipIf(process.platform !== "darwin" || !existsSync(shippedHelper))("reads a real footprint from the shipped helper for this process", async () => {
     const readings = await readPhysFootprint([process.pid], shippedHelper)
     const bytes = readings.get(process.pid)
     expect(bytes).toBeGreaterThan(0)

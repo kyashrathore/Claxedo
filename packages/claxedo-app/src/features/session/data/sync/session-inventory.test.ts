@@ -114,6 +114,27 @@ describe("session inventory query helpers", () => {
     expect(next.byWorkspace["/repo/a"].nextCursor).toBe(4)
   })
 
+  test("reconciles paged workspace rows by scoped identity when opaque session ids collide", () => {
+    const first = { id: "shared", directory: "/repo/a", workspaceId: "ws_a", projectID: "project_a", time: { updated: 1 } }
+    const second = { id: "shared", directory: "/repo/b", workspaceId: "ws_b", projectID: "project_b", time: { updated: 2 } }
+    const next = normalizeSessionInventory({
+      ...emptySessionInventoryStore<typeof first>(),
+      sessions: [first, second],
+      sessionOrder: [first.id, second.id],
+      global: [],
+      byProject: {},
+      byWorkspace: {
+        ws_a: { directory: first.directory, workspaceId: first.workspaceId, projectID: first.projectID, sessions: [first], hasMore: true, total: 2 },
+        ws_b: { directory: second.directory, workspaceId: second.workspaceId, projectID: second.projectID, sessions: [second], hasMore: true, total: 3 },
+      },
+    })
+
+    expect(next.byWorkspace.ws_a.sessions).toEqual([first])
+    expect(next.byWorkspace.ws_b.sessions).toEqual([second])
+    expect(next.byWorkspace.ws_a.total).toBe(2)
+    expect(next.byWorkspace.ws_b.total).toBe(3)
+  })
+
   test("removes a session by root id from canonical rows and derived indexes", () => {
     const next = removeSessionInventorySession(inventory(), {
       id: "ses-archive",
@@ -142,10 +163,10 @@ describe("session inventory query helpers", () => {
   })
 
   /**
-   * The inventory has ONE reader left: the snapshot that seeds which rail
-   * sections open. Rendered rows, pagination and freshness moved to each
-   * section's own source (`session-source.ts`), so the reload and the two
-   * paginators this boundary used to route are gone rather than unused.
+   * The inventory has one reader left: the snapshot that seeds which rail
+   * sections open. Rendered rows, pagination, and freshness belong to each
+   * section's own source (`session-source.ts`) instead, so this boundary has
+   * no reload or paginator to test — that is not a gap, it is the boundary.
    */
   test("routes the one remaining loader call through the shell data boundary", async () => {
     const calls: unknown[] = []
@@ -186,13 +207,13 @@ describe("session inventory query helpers", () => {
   })
 
   test("a loopback control plane keeps local control sessions through the merge path even when a signed workspace exists", () => {
-    // Merge-LAYER counterpart to the derivation test above (which only exercised
-    // normalizeSessionInventory). The former source-regex assertion against
-    // context/global-sync.tsx guarded two things about the reload merge path:
-    // (1) a loopback control plane does NOT swap the local session list for a
-    // signed-only snapshot, and (2) merging signed workspace groups in never
-    // evicts the local control sessions. Both halves are asserted here against
-    // the real inventory-source exports the reload path uses.
+    // Merge-layer counterpart to the derivation test above (which only
+    // exercises normalizeSessionInventory). This guards two things about the
+    // reload merge path: (1) a loopback control plane does not swap the local
+    // session list for a signed-only snapshot, and (2) merging signed
+    // workspace groups in never evicts the local control sessions. Both
+    // halves are asserted here against the real inventory-source exports the
+    // reload path uses.
     const loopbackBaseUrl = "http://127.0.0.1:4096"
 
     // (1) In loopback, even with signed access, the inventory does not switch to

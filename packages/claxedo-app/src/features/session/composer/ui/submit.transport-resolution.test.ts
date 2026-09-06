@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 
 const {
   createSubmit,
@@ -27,7 +27,7 @@ afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Workspace-runtime transport + model resolution", () => {
   test("loopback cloud workspace refs use workspace runtime transport for create and prompt", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
 
     const cloudDir = "ws_123"
@@ -65,7 +65,7 @@ describe("Workspace-runtime transport + model resolution", () => {
   })
 
   test("a draft without an authoritative model key cannot submit", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = undefined
     state.piSubmitModel = undefined
@@ -105,7 +105,7 @@ describe("Workspace-runtime transport + model resolution", () => {
   })
 
   test("existing workspace sessions do not fall back to unrelated provider defaults while selection restores", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = undefined
     state.localCurrentAgent = { name: "build" }
@@ -157,7 +157,7 @@ describe("Workspace-runtime transport + model resolution", () => {
   })
 
   test("loopback resumed workspace sessions keep directory on prompt_async", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
 
     const submit = createPromptSubmit({
@@ -192,7 +192,7 @@ describe("Workspace-runtime transport + model resolution", () => {
   })
 
   test("signed control-plane existing normal submit reuses canonical config on runtime transport", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.runtimeSessionConfig = {
       harness: { id: "pi", access: "native" },
       agent: "agent",
@@ -203,6 +203,7 @@ describe("Workspace-runtime transport + model resolution", () => {
       info: () => ({ id: "signed-existing" }),
       sessionID: () => "signed-existing",
       sessionDirectory: () => "/repo/main",
+      conversationDirectory: () => "/mounted/conversation",
       signedControlPlane: () => true,
       composerMode: () => ({ kind: "session", ref: localSessionRef("signed-existing") }),
     })
@@ -214,7 +215,9 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.create).toBe(0)
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
-    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "signed-existing" })
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "signed-existing", directory: "/repo/main" })
+    expect(h.optimisticAdds).toContainEqual(expect.objectContaining({ sessionID: "signed-existing", directory: "/mounted/conversation" }))
+    expect(h.buildRequestPartCalls.at(-1)).toMatchObject({ sessionDirectory: "/repo/main" })
     expect(runtimeCalls).toContainEqual(expect.objectContaining({
       input: "/session/signed-existing/config?directory=%2Frepo%2Fmain",
       method: "GET",

@@ -1,18 +1,24 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { openMermaidViewer } from "./markdown-viewer"
 
 const renderedDiagram =
   '<svg xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width: 120px" viewBox="0 0 120 80"><rect width="120" height="80"/><text x="10" y="20">Ready</text></svg>'
 
+const triggers: HTMLElement[] = []
+let previousOverflow = ""
+beforeEach(() => { previousOverflow = document.body.style.overflow })
+
 afterEach(() => {
   const close = document.querySelector<HTMLButtonElement>('[data-component="mermaid-viewer"] [data-action="close"]')
   close?.click()
-  document.body.style.overflow = ""
+  document.body.style.overflow = previousOverflow
+  for (const trigger of triggers.splice(0)) trigger.remove()
 })
 
 describe("timeline Mermaid dialog viewer", () => {
   test("opens a fitted diagram without a header and supports zoom, drag, and focus restoration", async () => {
     const trigger = document.createElement("button")
+    triggers.push(trigger)
     document.body.appendChild(trigger)
     trigger.focus()
     document.body.style.overflow = "clip"

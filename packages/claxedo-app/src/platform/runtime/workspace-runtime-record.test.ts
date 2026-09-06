@@ -13,13 +13,18 @@ import { requestUrl } from "@/lib/url"
 // happy-dom's preloaded window must survive this suite: deleting it without
 // restoring poisons whichever test file shares the process afterwards
 // (e.g. agent-runtime-client.test.ts hits "window is not defined").
-const preloadedWindow = (globalThis as typeof globalThis & { window?: unknown }).window
+const preloadedWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+const previousApi = Object.getOwnPropertyDescriptor(globalThis, "api")
+const previousFastSwitch = Object.getOwnPropertyDescriptor(globalThis, "__claxedoFastSessionSwitch")
 
 afterEach(() => {
   queryClient.clear()
-  delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
-  ;(globalThis as typeof globalThis & { window?: unknown }).window = preloadedWindow
-  delete (globalThis as { api?: unknown }).api
+  for (const [key, descriptor] of [
+    ["window", preloadedWindow], ["api", previousApi], ["__claxedoFastSessionSwitch", previousFastSwitch],
+  ] as const) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+    else Reflect.deleteProperty(globalThis, key)
+  }
 })
 
 describe("workspace runtime record", () => {
@@ -75,7 +80,7 @@ describe("workspace runtime record", () => {
       directory: "/tmp/ws",
     })
 
-    expect(query.queryFn()).rejects.toThrow("upstream exploded")
+    await expect(query.queryFn()).rejects.toThrow("upstream exploded")
   })
 
   test("resolveWorkspaceRuntime uses the shared query cache", async () => {
@@ -145,8 +150,7 @@ describe("workspace runtime record", () => {
 
     // Age the entry past every freshness window the record has.
     const key = queryKeys.runtime.workspace({ baseUrl: scope.baseUrl, directory: scope.directory })
-    const state = queryClient.getQueryCache().find({ queryKey: key })!.state as { dataUpdatedAt: number }
-    state.dataUpdatedAt = Date.now() - 60_000
+    queryClient.setQueryData(key, queryClient.getQueryData(key), { updatedAt: Date.now() - 60_000 })
 
     // Routing identity cannot have changed, so there is nothing to ask for.
     await workspaceRuntimeRoutingRecord(scope)

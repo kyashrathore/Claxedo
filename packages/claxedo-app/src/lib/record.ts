@@ -7,17 +7,12 @@
  * `typeof value === "object"` alone narrows to `object`, which TypeScript will
  * not let you index — reaching for `as Record<string, unknown>` there is the
  * single most duplicated cast in this package, and `isRecord` is its answer.
+ * The record predicates themselves are the workspace-wide ones; this module
+ * re-exports them so its importers keep one import for the whole reader set.
  */
+import { isRecord } from "@claxedo/helpers/guards"
 
-/** True when `value` is a non-null, non-array object that can be indexed by string. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-/** Narrow `value` to an indexable record, or `undefined` when it is not one. */
-export function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
+export { asRecord, isRecord } from "@claxedo/helpers/guards"
 
 /** Narrow `value` to an indexable record, falling back to an empty one. */
 export function recordOrEmpty(value: unknown): Record<string, unknown> {

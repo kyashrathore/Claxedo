@@ -130,13 +130,7 @@ describe("resolveSubmitDirectory", () => {
   })
 })
 
-// Rubric T6: per-phase abort / cancel coverage for resolve.ts. Only the
-// cloud path of `resolveSubmitDirectory` awaits — `prepareCloudSessionDirectory`
-// can run for the length of a runtime boot. The resolver does not (yet)
-// accept an AbortSignal directly, so abort surfaces through the injected
-// dependency returning `false` mid-await; the resolver must short-circuit
-// to `undefined` without proceeding to publish "Runtime ready".
-describe("resolveSubmitDirectory abort coverage", () => {
+describe("resolveSubmitDirectory pending preparation", () => {
   const baseInput = {
     isNewSession: true,
     defaultDirectory: "/default",
@@ -146,36 +140,25 @@ describe("resolveSubmitDirectory abort coverage", () => {
     createLocalWorktree: async () => undefined,
   } as const
 
-  test("cloud path aborts mid-await when prepareCloudSessionDirectory rejects via an external signal", async () => {
-    const controller = new AbortController()
-    let handoffMessages: string[] = []
-    let prepareStarted = false
-    const promise = resolveSubmitDirectory({
+  test("a pending cloud preparation failure suppresses the ready handoff", async () => {
+    let signalStarted!: () => void
+    let release!: (ready: boolean) => void
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const handoffMessages: string[] = []
+    const pending = resolveSubmitDirectory({
       ...baseInput,
       resolveCloudSessionDirectory: async () => "/cloud/ws",
-      prepareCloudSessionDirectory: (_dir) =>
-        new Promise<boolean>((resolve) => {
-          prepareStarted = true
-          // Simulate abort being threaded into prepareCloudSessionDirectory
-          // via an external AbortController: when the signal flips we
-          // resolve with `false` (the same value the resolver treats as
-          // "prepare failed / aborted").
-          controller.signal.addEventListener("abort", () => resolve(false), { once: true })
-        }),
-      publishCloudHandoff: (_status, msg) => {
-        handoffMessages.push(msg)
+      prepareCloudSessionDirectory: () => {
+        signalStarted()
+        return new Promise<boolean>((resolve) => { release = resolve })
       },
+      publishCloudHandoff: (_status, message) => { handoffMessages.push(message) },
     })
-    // Flip the signal after the resolver has entered the await — this is
-    // the mid-await abort window.
-    await new Promise<void>((r) => setTimeout(r, 0))
-    expect(prepareStarted).toBe(true)
-    controller.abort()
-    const result = await promise
-    expect(result).toBeUndefined()
-    // The "Runtime ready. Loading models." handoff only publishes AFTER
-    // a successful prepare — an aborted prepare must not publish it.
-    expect(handoffMessages).not.toContain("Runtime ready. Loading models.")
+    await started
+    expect(handoffMessages).toEqual([])
+    release(false)
+    await expect(pending).resolves.toBeUndefined()
+    expect(handoffMessages).toEqual([])
   })
 })
 
@@ -202,6 +185,7 @@ describe("resolveSubmitSessionTarget", () => {
       createSessionTarget: async () => undefined,
     })
     expect(result).toEqual({ session, replaceSession: false, created: false })
+    expect(result.session).toBe(session)
   })
 
   test("hydrates an existing session via client.get when explicitSessionID is given", async () => {

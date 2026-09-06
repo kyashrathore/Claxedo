@@ -979,7 +979,7 @@ describe("workspace relay Bun adapter", () => {
         auditEvents.push(event)
       },
     }, {
-      // T19: disable debounce so connected audit fires immediately for this assertion.
+      // Disable debounce so connected audit fires immediately for this assertion.
       hostTunnelStateDebounceMs: 0,
     })
     const relay = Bun.serve({
@@ -3119,7 +3119,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("processes a complete tunnel JSON message normally (T11 fragmentation baseline)", async () => {
+  test("processes a complete tunnel JSON message normally (fragmentation baseline)", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3248,7 +3248,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("reassembles a fragmented tunnel JSON message split into two halves (T11)", async () => {
+  test("reassembles a fragmented tunnel JSON message split into two halves", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3331,7 +3331,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("reassembles a tunnel JSON message split into three parts (T11)", async () => {
+  test("reassembles a tunnel JSON message split into three parts", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3414,7 +3414,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("closes WS with code 1009 when buffered fragments exceed 4 MB cap (T11)", async () => {
+  test("closes WS with code 1009 when buffered fragments exceed 4 MB cap", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3445,8 +3445,8 @@ describe("workspace relay Bun adapter", () => {
         host.onclose = (event) => resolve({ code: event.code, reason: event.reason })
       })
 
-      // Send fragments that never form valid JSON. Each is just under the 1 MB
-      // WS payload cap (T3 enforces 16 MB max, so 1 MB is comfortably under).
+      // Send fragments that never form valid JSON. Each is 1 MB, comfortably
+      // under the relay's 16 MB WS `maxPayloadLength` cap.
       // 5 chunks × 1 MB = 5 MB total which should trip the 4 MB buffer cap.
       const chunk = "{".repeat(1024 * 1024)
       for (let i = 0; i < 5; i++) {
@@ -3470,7 +3470,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("fragmentation counter is exposed and increments per buffered fragment (T11)", async () => {
+  test("fragmentation counter is exposed and increments per buffered fragment", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3523,8 +3523,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  // T12: Slow-consumer backpressure on tunnel HTTP responses.
-  test("normal flow under HWM streams all chunks without backpressure (T12)", async () => {
+  test("normal flow under HWM streams all chunks without backpressure", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3613,7 +3612,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("slow consumer triggers backpressure pause and drains on read (T12)", async () => {
+  test("slow consumer triggers backpressure pause and drains on read", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3713,16 +3712,11 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  // T29: re-enabled with a counter assertion. The original test tried to
-  // assert reader-side errors after http.response.start; Bun's
-  // `controller.error()` doesn't reliably surface as a thrown read in this
-  // configuration. We now drive the slow-consumer code path at the unit
-  // level (a controlled ReadableStream consumer that never reads) and
-  // assert on an isolated counter that the timer body increments.
-  // Going through real fetch + host-tunnel chunks doesn't reliably trip the
-  // HWM on localhost — Bun's HTTP server pulls between every WS message,
-  // keeping desiredSize at HWM no matter how many chunks we push.
-  test("slow consumer beyond timeout fails with 503 slow_consumer_timeout (T12)", async () => {
+  // Driven at the unit level with a consumer that never reads: on localhost
+  // Bun's HTTP server pulls between every WS message, so real fetch +
+  // host-tunnel chunks never trip the HWM, and `controller.error()` does not
+  // reliably surface as a thrown read.
+  test("slow consumer beyond timeout fails with 503 slow_consumer_timeout", async () => {
     const slowConsumerStats = __slowConsumerInternalsForTest.createSlowConsumerStats()
     let controller: ReadableStreamDefaultController<Uint8Array>
     const stream = new ReadableStream<Uint8Array>({
@@ -3772,10 +3766,8 @@ describe("workspace relay Bun adapter", () => {
         slowConsumerTimeoutMs: 150,
         slowConsumerStats,
       })
-      // Wait past the slow-consumer timeout (150 ms); 400 ms slack matches
-      // the original test's wait window.
+      // Wait past the 150 ms slow-consumer timeout.
       await new Promise((resolve) => setTimeout(resolve, 400))
-      // T29: assert via isolated counter rather than reader-side error.
       expect(slowConsumerStats.timerFired).toBeGreaterThanOrEqual(1)
       expect(slowConsumerStats.droppedRequests).toBeGreaterThanOrEqual(1)
       // Because responseStarted is false, the timer body resolves the
@@ -3786,7 +3778,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("pending entry is cleaned up after slow-consumer timeout (T12)", async () => {
+  test("pending entry is cleaned up after slow-consumer timeout", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -3898,9 +3890,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  // T29: per-handler slow-consumer telemetry mirrors T11's fragmentation
-  // telemetry and gives the backpressure path an observable production signal.
-  test("slow-consumer telemetry starts zeroed after handler creation (T29)", async () => {
+  test("slow-consumer telemetry starts zeroed after handler creation", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const handler = createWorkspaceRelayBun({
@@ -3921,13 +3911,9 @@ describe("workspace relay Bun adapter", () => {
     })
   })
 
-  // T29: drive enqueueChunkWithBackpressure directly with a controlled
-  // ReadableStream consumer that never reads. Going through real fetch +
-  // host-tunnel chunks doesn't reliably trip the HWM on localhost — Bun's
-  // HTTP server pulls between every WS message, keeping desiredSize at HWM.
-  // The unit-level path exercises the same code under deterministic
-  // conditions.
-  test("slow-consumer counter increments on overflow + timer fire (T29)", async () => {
+  // Localhost never trips the HWM through real fetch (Bun pulls between every
+  // WS message), so drive enqueueChunkWithBackpressure directly.
+  test("slow-consumer counter increments on overflow + timer fire", async () => {
     const slowConsumerStats = __slowConsumerInternalsForTest.createSlowConsumerStats()
     const before = slowConsumerStats
     expect(before.overflowEvents).toBe(0)
@@ -3996,7 +3982,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  describe("drain controller (T9)", () => {
+  describe("drain controller", () => {
     test("isDraining() is false initially; setDraining(true) flips it", async () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -4423,7 +4409,7 @@ describe("workspace relay Bun adapter", () => {
     })
   })
 
-  describe("host-tunnel state debounce (T19)", () => {
+  describe("host-tunnel state debounce", () => {
     type ConnectionAuditEvent = {
       action: "host_tunnel.connected" | "host_tunnel.disconnected"
       hostId: string

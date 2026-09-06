@@ -4,13 +4,11 @@ const USES_BUN_FILE = /Bun\.file\(/
 const USES_TO_CONTAIN = /\.toContain\(/
 
 /**
- * Test files that read a source file's raw text via `Bun.file(...).text()`
- * and assert `.toContain`/`.not.toContain` against it, instead of invoking
- * exported functions and asserting behavior. This anti-pattern (renaming a
- * variable or reformatting an import silently breaks the test with zero
- * behavior change) belongs centrally in src/architecture/scanners.ts as a
- * named rule with an allowlist/baseline, not scattered per feature file --
- * this scanner is that landing spot for Wave 1/2 to migrate into.
+ * Test files that read a source file's raw text via `Bun.file(...).text()` and
+ * assert `.toContain` against it instead of exercising exported behavior. A
+ * rename or import reformat breaks such a test with zero behavior change, so
+ * source-text rules belong here as named scanners with a baseline, not in
+ * per-feature test files.
  */
 export function sourceTextGrepOffenders(files: SourceFile[]) {
   return files

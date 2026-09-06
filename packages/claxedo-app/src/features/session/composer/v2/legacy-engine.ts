@@ -1,12 +1,12 @@
-// The LEGACY engine: Claxedo's own editor/popover/history machinery, moved
-// verbatim out of `composer.tsx` behind the shared `ComposerEngine` contract
-// (plan 2026-07-25-005, W3/T3.1). THIS IS THE DEFAULT PATH.
+// The legacy engine: Claxedo's own editor/popover/history machinery, moved
+// unchanged out of `composer.tsx` behind the shared `ComposerEngine` contract.
+// This is the default path.
 //
 // Nothing here is new behaviour — it is the same `createPromptEditorActions` +
 // `createPromptPopoverController` + `createPromptHistoryController` wiring the
-// composer had inline, with the local popover/mode/history store it used to own.
-// It stays until W5.2 deletes it, so a regression on the controller path is one
-// flag away from being ruled out.
+// composer had inline, including the local popover/mode/history store. It
+// stays as a fallback: if the controller path regresses, flipping the flag
+// back to this engine rules it out immediately.
 import { createEffect, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createPromptEditorActions } from "@/features/session/composer/ui/editor-actions"

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { notionIntegration } from "./notion.js"
+import { capabilitiesOf } from "../ports/index.js"
 
 /** The header names exactly as the impl set them — `Headers` would lower-case them. */
 const headerRecord = (init: HeadersInit | undefined): Record<string, string> => {
@@ -11,15 +12,17 @@ const headerRecord = (init: HeadersInit | undefined): Record<string, string> => 
 
 describe("notion integration", () => {
   test("declares a key-method docs integration with a single secret prompt", () => {
-    const { decl } = notionIntegration()
+    const { decl, impl } = notionIntegration()
     expect(decl).toEqual({
       id: "notion",
       name: "Notion",
       methods: ["key"],
-      capabilities: ["docs"],
       keyTokenType: "bearer",
       prompts: [{ id: "token", label: "Internal integration token", secret: true }],
     })
+    // The capability is served rather than declared, so it is asserted on the
+    // ports the impl provides.
+    expect(capabilitiesOf(impl.actions)).toEqual(["docs"])
   })
 
   test("verifies against the Notion users/me endpoint and returns the account label", async () => {
@@ -31,7 +34,7 @@ describe("notion integration", () => {
       }),
     })
 
-    const result = await integration.impl.verify!({}, "notion-secret")
+    const result = await integration.impl.auth!.verify!({}, "notion-secret")
     expect(result).toEqual({ ok: true, accountLabel: "Acme Bot" })
     expect(calls).toEqual([{
       url: "https://api.notion.com/v1/users/me",
@@ -44,7 +47,7 @@ describe("notion integration", () => {
     const integration = notionIntegration({
       fetchImpl: (async (_input: string | URL | Request) => Response.json({ name: 42 })),
     })
-    expect(await integration.impl.verify!({}, "notion-secret")).toEqual({ ok: true })
+    expect(await integration.impl.auth!.verify!({}, "notion-secret")).toEqual({ ok: true })
   })
 
   for (const status of [401, 403] as const) {
@@ -52,7 +55,7 @@ describe("notion integration", () => {
       const integration = notionIntegration({
         fetchImpl: (async (_input: string | URL | Request) => new Response("API token is invalid: notion-secret", { status })),
       })
-      const result = await integration.impl.verify!({}, "notion-secret")
+      const result = await integration.impl.auth!.verify!({}, "notion-secret")
       expect(result).toEqual({ ok: false, reason: "unauthorized" })
       expect(JSON.stringify(result)).not.toContain("notion-secret")
     })
@@ -64,7 +67,7 @@ describe("notion integration", () => {
         throw new Error("connect ECONNREFUSED while sending notion-secret")
       }),
     })
-    const result = await integration.impl.verify!({}, "notion-secret")
+    const result = await integration.impl.auth!.verify!({}, "notion-secret")
     expect(result).toEqual({ ok: false, reason: "network" })
     expect(JSON.stringify(result)).not.toContain("notion-secret")
   })
@@ -73,7 +76,7 @@ describe("notion integration", () => {
     const integration = notionIntegration({
       fetchImpl: (async (_input: string | URL | Request) => new Response("upstream boom notion-secret", { status: 500 })),
     })
-    const result = await integration.impl.verify!({}, "notion-secret")
+    const result = await integration.impl.auth!.verify!({}, "notion-secret")
     expect(result).toEqual({ ok: false, reason: "network" })
     expect(JSON.stringify(result)).not.toContain("notion-secret")
   })
@@ -82,6 +85,6 @@ describe("notion integration", () => {
     const integration = notionIntegration({
       fetchImpl: (async (_input: string | URL | Request) => new Response("not json", { status: 200 })),
     })
-    expect(await integration.impl.verify!({}, "notion-secret")).toEqual({ ok: true })
+    expect(await integration.impl.auth!.verify!({}, "notion-secret")).toEqual({ ok: true })
   })
 })

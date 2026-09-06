@@ -1,12 +1,11 @@
-// The one interface both composer input engines implement (plan 2026-07-25-005,
-// W2/T2.2 + W3/T3.1). `composer.tsx` speaks ONLY this; it never sees
-// `editor-actions.ts`/`popover-controller.ts` on one side or upstream's
-// `createPromptInputV2Controller` on the other.
+// The one interface both composer input engines implement. `composer.tsx`
+// speaks only this; it never sees `editor-actions.ts`/`popover-controller.ts`
+// on one side or upstream's `createPromptInputV2Controller` on the other.
 //
-// Everything the eight Claxedo capabilities need (submit-block derivation,
-// harness selection, workspace kinds, permission modes, document mentions,
-// signed control plane, boot state, composer-mode scoping) stays OUTSIDE this
-// contract, in our frame — which is exactly why Option 4 needs no upstream fork.
+// Everything Claxedo-specific (submit-block derivation, harness selection,
+// workspace kinds, permission modes, document mentions, signed control plane,
+// boot state, composer-mode scoping) stays outside this contract, in our frame,
+// so the upstream controller runs unforked.
 import type { Accessor } from "solid-js"
 import type { ContentPart, ImageAttachmentPart, Prompt, usePrompt } from "@/features/session/providers/prompt"
 import type { ComposerDocumentOption, createDocumentPickerController } from "@/features/session/composer/document-picker-controller"
@@ -140,17 +139,15 @@ export type ComposerEngineBuildInput = ComposerEngineInput & {
 // ---------------------------------------------------------------------------
 // The flag that picks the implementation.
 // ---------------------------------------------------------------------------
-// Strangler switch for the composer's INPUT ENGINE (plan 2026-07-25-005, W3/T3.1).
-//
-// Two engines drive the exact same Claxedo frame:
+// Two engines drive the same Claxedo frame:
 //   "legacy"     — our own `editor-actions.ts` + `popover-controller.ts` + the
-//                  local popover/history machinery. THE DEFAULT.
+//                  local popover/history machinery. The default.
 //   "controller" — upstream's vendored `createPromptInputV2Controller`.
 //
-// Only ONE is constructed per composer mount (`v2/engine.ts`), so the two
-// interaction state machines never coexist. The persisted DRAFT is deliberately
-// the single source of truth for both (`providers/prompt.tsx`) — that is what
-// makes flipping the flag lossless: the draft is not owned by either engine.
+// Only one is constructed per composer mount (`v2/engine.ts`), so the two
+// interaction state machines never coexist. The persisted draft
+// (`providers/prompt.tsx`) is the single source of truth for both, which is
+// what makes flipping the flag lossless: neither engine owns the draft.
 export type ComposerEngineKind = "legacy" | "controller"
 
 /**
@@ -160,7 +157,7 @@ export type ComposerEngineKind = "legacy" | "controller"
  */
 export const COMPOSER_ENGINE_STORAGE_KEY = "claxedo.composer.engine"
 
-/** `v2`/`v1` are accepted spellings so the plan's own vocabulary works verbatim. */
+/** `v2`/`v1` are accepted spellings for `controller`/`legacy`. */
 export function normalizeComposerEngineKind(value: string | null | undefined): ComposerEngineKind | undefined {
   if (value === "controller" || value === "v2") return "controller"
   if (value === "legacy" || value === "v1") return "legacy"

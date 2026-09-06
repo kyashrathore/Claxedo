@@ -1,9 +1,6 @@
 // Request-part preparation and optimistic timeline reconciliation for the
 // prompt submit pipeline.
-import type {
-  AgentContentPart as Part,
-  AgentPresentationMessage as Message,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import { Identifier } from "@/lib/id"
 import { type ImageAttachmentPart, type Prompt } from "@/features/session/providers/prompt"
 import { buildRequestParts } from "@/features/session/composer/ui/build-request-parts"
@@ -105,14 +102,6 @@ export function createPromptTimelineReconciliation(input: {
         directory: input.sessionDirectory,
         sessionID: input.sessionID,
         messageID: input.promptRequest.messageID,
-      })
-    },
-    addDemoReply: (reply: { info: Message; parts: Part[] }) => {
-      input.optimistic.add({
-        directory: input.sessionDirectory,
-        sessionID: input.sessionID,
-        message: reply.info,
-        parts: reply.parts,
       })
     },
   }

@@ -1,10 +1,10 @@
 import type { PromptInput } from "../../index"
 import { isRuntimeGoalStatus, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { harnessSpawnEnv } from "../shared/spawn-env"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
   extractTextFromParts,
-  record,
   text,
   type JsonRecord,
   type SdkRuntimeTurnInput,
@@ -68,7 +68,7 @@ export class GoalTurnEventQueue implements AsyncIterable<RawHarnessEvent> {
 }
 
 export function codexGoalSnapshot(sessionId: string, value: unknown): RuntimeGoalSnapshot {
-  const goal = record(value)
+  const goal = asRecord(value)
   const objective = text(goal?.objective)
   const status = text(goal?.status)
   if (!goal || !objective || !status) throw new Error("Codex app-server returned an invalid Goal")

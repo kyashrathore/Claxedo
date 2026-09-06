@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { googleIntegration } from "./google.js"
+import { capabilitiesOf } from "../ports/index.js"
 
 const OPTS = {
   clientId: "cid",
@@ -12,8 +13,9 @@ const OPTS = {
 describe("google integration (vendored arctic)", () => {
   test("authorize URL golden shape: PKCE + offline access + consent", async () => {
     const { decl, impl } = googleIntegration(OPTS)
-    expect(decl).toMatchObject({ id: "google", methods: ["oauth"], capabilities: ["docs"] })
-    const url = new URL(String(await impl.authorize!("state-1", "verifier-1")))
+    expect(decl).toMatchObject({ id: "google", methods: ["oauth"] })
+    expect(capabilitiesOf(impl.actions)).toEqual(["docs"])
+    const url = new URL(String(await impl.auth!.authorize!("state-1", "verifier-1")))
     expect(url.origin + url.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth")
     expect(url.searchParams.get("response_type")).toBe("code")
     expect(url.searchParams.get("client_id")).toBe("cid")
@@ -38,7 +40,7 @@ describe("google integration (vendored arctic)", () => {
       return Response.json({ access_token: "at", refresh_token: "rt", expires_in: 3600, token_type: "Bearer" })
     }
     const { impl } = googleIntegration({ ...OPTS, fetchImpl })
-    const tokens = await impl.callback!("the-code", "the-verifier")
+    const tokens = await impl.auth!.callback!("the-code", "the-verifier")
     expect(tokens).toEqual({ accessToken: "at", refreshToken: "rt", expiresAt: 1_000_000 + 3600 * 1000 })
     expect(seen[0].url).toBe("https://oauth2.googleapis.com/token")
     const body = new URLSearchParams(seen[0].body)
@@ -64,8 +66,8 @@ describe("google integration (vendored arctic)", () => {
       return Response.json({ error: "invalid_grant" }, { status: 400 })
     }
     const { impl } = googleIntegration({ ...OPTS, fetchImpl })
-    expect(await impl.refresh!("rt-0")).toEqual({ accessToken: "at-2", expiresAt: 1_000_000 + 3_600_000 })
-    await expect(impl.refresh!("rt-0")).rejects.toMatchObject({ code: "invalid_grant" })
+    expect(await impl.auth!.refresh!("rt-0")).toEqual({ accessToken: "at-2", expiresAt: 1_000_000 + 3_600_000 })
+    await expect(impl.auth!.refresh!("rt-0")).rejects.toMatchObject({ code: "invalid_grant" })
   })
 
   test("a provider that never answers is aborted at the injected deadline", async () => {
@@ -78,7 +80,7 @@ describe("google integration (vendored arctic)", () => {
         })
       })
     const { impl } = googleIntegration({ ...OPTS, fetchImpl, timeoutMs: 5 })
-    await expect(impl.refresh!("rt-0")).rejects.toThrow("Failed to send request")
+    await expect(impl.auth!.refresh!("rt-0")).rejects.toThrow("Failed to send request")
     expect((aborted as Error | undefined)?.name).toBe("TimeoutError")
   })
 })

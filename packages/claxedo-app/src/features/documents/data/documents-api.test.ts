@@ -20,7 +20,9 @@ await mock.module("@/platform/api/api", () => ({
   ...realApiModule,
   authFetch: async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
-    return responses.shift() ?? Response.json({})
+    const response = responses.shift()
+    if (!response) throw new Error(`Unexpected document request: ${url}`)
+    return response
   },
   getClaxedoServerUrl: () => "http://test.local",
 }))
@@ -82,7 +84,7 @@ describe("documentsApi", () => {
     expect(calls.map((call) => call.url)).toEqual(["http://test.local/documents?project_id=p1&archived=active"])
   })
 
-  test("open performs the two-step summary then content request", async () => {
+  test("open combines summary metadata and content", async () => {
     responses.push(
       Response.json(summaryRow({ id: "doc-1", display_name: "Plan", project_id: "p1", archived_at: null })),
       Response.json({ markdown: "# Plan\n", version: "opaque-v1", modifiedAt: 1 }),
@@ -224,12 +226,18 @@ describe("documentsApi", () => {
   })
 
   test("missing documents surface a typed recovery state", async () => {
-    responses.push(Response.json({ error: { code: "document_not_found" } }, { status: 404 }))
+    responses.push(
+      Response.json({ error: { code: "document_not_found" } }, { status: 404 }),
+      Response.json({ error: { code: "document_not_found" } }, { status: 404 }),
+    )
     await expect(documentsApi.open("missing")).rejects.toMatchObject({ code: "document_not_found", status: 404 })
   })
 
   test("archived summary surfaces a typed recovery state and discards the concurrent content read", async () => {
-    responses.push(Response.json(summaryRow({ id: "doc-1", display_name: "Archived", project_id: "p1", archived_at: "now" })))
+    responses.push(
+      Response.json(summaryRow({ id: "doc-1", display_name: "Archived", project_id: "p1", archived_at: "now" })),
+      Response.json({ markdown: "archived content", version: "opaque-v1", modifiedAt: 1 }),
+    )
     await expect(documentsApi.open("doc-1")).rejects.toMatchObject({ code: "document_archived", status: 410 })
     // `open()` deliberately fetches summary and content concurrently so a normal
     // open costs one trip through the fetch throttle instead of two. The archived

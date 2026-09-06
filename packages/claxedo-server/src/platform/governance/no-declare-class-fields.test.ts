@@ -9,10 +9,10 @@
  *   SyntaxError: TypeScript 'declare' fields must first be transformed by
  *   @babel/plugin-transform-typescript.
  *
- * It fails at PARSE time, so the whole module tree behind it disappears and the
+ * It fails at parse time, so the whole module tree behind it disappears and the
  * e2e runner reports "No tests found" rather than a type error. `tsc` and the
  * unit runners accept the syntax happily, so nothing before the e2e job catches
- * it — which is exactly how four of these reached `dev`.
+ * it.
  *
  * The fix is never to drop the narrowing, and never to merge a same-named
  * interface beside the class either — that is a declaration merge between a
@@ -35,7 +35,7 @@ import { walk } from "../../test-support/guards"
 const SRC = path.resolve(import.meta.dirname, "../..")
 
 /**
- * Matches `declare` fields INSIDE a class body — indented, and naming a field
+ * Matches `declare` fields inside a class body — indented, and naming a field
  * rather than opening a block. Ambient module/global declarations (`declare
  * module "*.md" {`, `declare global {`) and top-level `declare const` are
  * untouched by this defect: they sit at column 0 and babel strips them.
@@ -63,7 +63,7 @@ describe("declare class fields", () => {
   /**
    * The scan above passes trivially if it walks nothing or the pattern never
    * matches, which is how a guard rots into decoration. These pin both halves:
-   * the corpus is real, and the pattern fires on the exact line CI rejected
+   * the corpus is real, and the pattern fires on the line CI rejected
    * while leaving the ambient forms this codebase legitimately uses alone.
    */
   test("the scan reaches a real corpus", () => {

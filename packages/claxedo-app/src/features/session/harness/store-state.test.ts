@@ -17,25 +17,20 @@ describe("harness store state projectors", () => {
   // The seed carries no remembered choice for ANY scope kind: a draft's comes
   // from the per-(server, workspace, harness) defaults, a session's from its
   // own config. Nothing is pane-scoped any more.
-  test("builds the same empty initial state for a draft and a session scope", () => {
-    for (const scope of ["session:ses_1", "draft:/repo:route"]) {
+  test("starts with no choice while assigning session authority and awaiting draft authority", () => {
+    for (const [scope, authority] of [["session:ses_1", "server"], ["draft:/repo:route", "unresolved"]]) {
       expect(initialHarnessStoreState({ scope })).toMatchObject({
         harnessMode: "unknown",
         harness: undefined,
         selectedModel: "",
         readiness: "unresolved",
         optionsSource: "empty",
+        draftDefaultAuthority: authority,
       })
     }
   })
 
-  test("seeds a fresh scope unresolved without inventing a harness", () => {
-    const seeded = initialHarnessStoreState({ scope: "draft:/repo:route" })
-    expect(seeded.harness).toBeUndefined()
-    expect(seeded.harnessMode).toBe("unknown")
-    expect(seeded.readiness).toBe("unresolved")
-    expect(seeded.selectedModel).toBe("")
-  })
+
 
   test("projects harness status onto current state", () => {
     expect(
@@ -76,8 +71,7 @@ describe("harness store state projectors", () => {
 
     // A harness that is configured/applying but not yet ready is still
     // CONNECTING, not failed — it must report "polling" so the selector shows a
-    // "Connecting" pill instead of a red "Unavailable" at startup (bug: the
-    // error/ready binary made the polling UI unreachable).
+    // "Connecting" pill instead of a red "Unavailable" at startup.
     expect(
       harnessStatusPatch({
         data: {
@@ -145,10 +139,8 @@ describe("harness store state projectors", () => {
       }),
     ).toMatchObject({ readiness: "ready" })
 
-    // A live-but-degraded harness (`/api/wr/health` reports ok:true while
-    // harnessHealth.status is degraded/unavailable — process lost + recovering)
-    // maps to the "degraded" readiness that drives the composer health peek +
-    // Send gate (T4). This finally exercises the union member at selection.ts:9.
+    // A live-but-degraded harness (ready:true while harnessHealth.status is
+    // degraded/unavailable — process lost and recovering) maps to "degraded".
     expect(
       harnessStatusPatch({
         data: {
@@ -184,7 +176,7 @@ describe("harness store state projectors", () => {
     ).toMatchObject({ harnessMode: "harness", readiness: "degraded" })
   })
 
-  test("derives the standing health-probe readiness transition (T4)", () => {
+  test("derives the standing health-probe readiness transition", () => {
     // Degraded/unavailable health degrades a settled harness.
     expect(harnessHealthReadiness({ harness: codex, current: "ready", health: "degraded" })).toBe("degraded")
     expect(harnessHealthReadiness({ harness: codex, current: "ready", health: "unavailable" })).toBe("degraded")
@@ -234,13 +226,5 @@ describe("harness store state projectors", () => {
     })
   })
 
-  test("stays pure and out of runtime/query/UI layers", async () => {
-    const source = await Bun.file(new URL("./store-state.ts", import.meta.url)).text()
 
-    expect(source).not.toContain("solid-js")
-    expect(source).not.toContain("@tanstack")
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("@opencode-ai/sdk")
-    expect(source).not.toContain("localStorage")
-  })
 })

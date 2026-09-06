@@ -2,7 +2,6 @@ import type { NormalizedProviderListResponse } from "@/platform/query/provider-l
 import { mergeProviderIndexWithDetails, providerNeedsDetailHydration } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
 
-const detailedProviders = new Set<string>()
 const pendingProviderDetails = new Map<string, Promise<void>>()
 
 export function providerDetailCacheKey(queryKey: readonly unknown[], providerId: string) {
@@ -37,19 +36,10 @@ export function loadProviderDetailsOnce(
 
   const cached = queryClient.getQueryData<NormalizedProviderListResponse>(queryKey)
   if (!providerNeedsDetailHydration(cached, providerId)) {
-    detailedProviders.add(key)
     return Promise.resolve()
   }
-  // A prior load may have been marked detailed while the cache still holds an
-  // index row (persisted storage, merge race, or scope change).
-  detailedProviders.delete(key)
-
   const task = Promise.resolve()
     .then(load)
-    .then(() => {
-      const after = queryClient.getQueryData<NormalizedProviderListResponse>(queryKey)
-      if (!providerNeedsDetailHydration(after, providerId)) detailedProviders.add(key)
-    })
     .finally(() => pendingProviderDetails.delete(key))
   pendingProviderDetails.set(key, task)
   return task

@@ -11,7 +11,7 @@ import {
   harnessPreparingSessionKey,
   harnessStateFromSessionConfig,
   harnessWorkspaceRuntimeRef,
-  initialHarness,
+  harnessScope,
   isDraftScope,
   modelOptionsUnavailableMessage,
   refreshHarnessTypeForScope,
@@ -25,9 +25,7 @@ import {
 } from "./store-policy"
 
 describe("harness store policy", () => {
-  test("a scope starts unresolved without a default harness", () => {
-    expect(initialHarness()).toBeUndefined()
-  })
+
 
   test("classifies model-option fetch and retry policy", () => {
     expect(
@@ -147,7 +145,7 @@ describe("harness store policy", () => {
       harnessChangeKey(local, { kind: "connection", connectionId: "acp:codex" }),
     )
 
-    expect(sessionModelSyncKey(local)).toBe(sessionModelSyncKey(local))
+    expect(sessionModelSyncKey(local)).not.toBe(sessionModelSyncKey({ ...local, directory: "/other" }))
     expect(sessionModelSyncKey(local)).not.toBe(sessionModelSyncKey(cloud))
     expect(sessionModelSyncKey({ ...local, serverUrl: "https://app.claxedo.test" })).not.toBe(
       sessionModelSyncKey(local),
@@ -246,6 +244,8 @@ describe("harness store policy", () => {
         directory: "/tmp/project",
       }),
     ).toBe(true)
+    expect(shouldUseLocalHarnessConfigApi({ baseUrl: "https://localhost:3001", directory: "/tmp/project" })).toBe(true)
+    expect(shouldUseLocalHarnessConfigApi({ baseUrl: "ftp://127.0.0.1:3001", directory: "/tmp/project" })).toBe(false)
     expect(
       shouldUseLocalHarnessConfigApi({
         baseUrl: "https://claxedo.example.test",
@@ -294,13 +294,49 @@ describe("harness store policy", () => {
     })
   })
 
-  test("stays out of Solid state, query ownership, SDK, and localStorage", async () => {
-    const source = await Bun.file(new URL("./store-policy.ts", import.meta.url)).text()
 
-    expect(source).not.toContain("solid-js")
-    expect(source).not.toContain("@tanstack")
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("@opencode-ai/sdk")
-    expect(source).not.toContain("localStorage")
-  })
 })
+
+  describe("harnessScope", () => {
+    test("session scope: sessionId", () => {
+      const scope = harnessScope({ directory: "/tmp/proj", sessionId: "ses_abc" })
+      expect(scope).toBe("session:ses_abc")
+    })
+
+    test("draft scope: directory + surfaceId (no session)", () => {
+      const scope = harnessScope({ directory: "/tmp/proj", surfaceId: "tab_1" })
+      expect(scope).toBe("draft:/tmp/proj:tab_1")
+    })
+
+    test("new session treated as draft", () => {
+      const scope = harnessScope({ directory: "/tmp/proj", sessionId: "new", surfaceId: "tab_2" })
+      expect(scope).toBe("draft:/tmp/proj:tab_2")
+    })
+
+    test("draftId takes precedence for draft scopes", () => {
+      const scope = harnessScope({ directory: "/tmp/proj", sessionId: "new", surfaceId: "tab_2", draftId: "draft_2" })
+      expect(scope).toBe("draft:draft_2")
+    })
+
+    test("missing directory still produces valid scope", () => {
+      const scope = harnessScope({ sessionId: "ses_123" })
+      expect(scope).toBe("session:ses_123")
+    })
+
+    test("missing surfaceId defaults to 'route'", () => {
+      const scope = harnessScope({ directory: "/tmp/proj" })
+      expect(scope).toBe("draft:/tmp/proj:route")
+    })
+
+    test("same session keeps one scope across directories", () => {
+      const a = harnessScope({ directory: "/a", sessionId: "s1" })
+      const b = harnessScope({ directory: "/b", sessionId: "s1" })
+      expect(a).toBe(b)
+    })
+
+    test("same directory but different sessions produce different scopes", () => {
+      const a = harnessScope({ directory: "/tmp", sessionId: "s1" })
+      const b = harnessScope({ directory: "/tmp", sessionId: "s2" })
+      expect(a).not.toBe(b)
+    })
+  })

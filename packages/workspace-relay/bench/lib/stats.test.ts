@@ -3,19 +3,15 @@ import { fileURLToPath } from "node:url"
 import { evaluateGates, markdownRow, shapeLabel, type RowMetrics } from "./stats"
 
 /**
- * Regression coverage for the bench's own reporting, driven by a real failure.
+ * Overhead is relayed minus direct latency, so a negative value claims the
+ * relayed path beat a direct connection — a signal that the run failed, not
+ * that the relay is faster. Two reporting bugs could hide that signal:
  *
- * `bench/reports/dialin-100k-msgs-2026-07-17T20-59-47-113Z.json` recorded a p99
- * WS overhead of **-8972.69 ms** after all 50 connections closed and 22 of
- * 100,000 messages arrived. Overhead is relayed − direct, so a negative value
- * claims the relayed path beat a direct connection by nine seconds.
- *
- * Two reporting bugs made that run unreadable for two weeks:
- *   1. The latency gate PASSED on it — a nonsense negative compares as "less
+ *   1. The latency gate passed on it — a nonsense negative compares as "less
  *      than the 100ms gate", and a non-finite value short-circuited to `true`.
  *      Only the zero-loss gate failed, so the cause looked like plain slowness.
- *   2. The close REASON was discarded, so the report said `1006×50` while the
- *      relay had been naming the exact guard that fired.
+ *   2. The close reason was discarded, so the report said `1006×50` instead of
+ *      naming the guard that actually fired.
  */
 
 const base: Omit<RowMetrics, "gates"> = {
@@ -51,8 +47,8 @@ describe("bench gate evaluation", () => {
       upstreamFailureReasons: { "Upstream WebSocket queue limit exceeded": 50 },
     })
     expect(gates.latencyMeasurable).toBe(false)
-    // The specific regression: this was TRUE before, so the run's only visible
-    // failure was message loss and the latency looked fine.
+    // A negative overhead must fail the gate, or the only visible failure is
+    // message loss while the latency looks fine.
     expect(gates.wsMessageP99OverheadPass).toBe(false)
     expect(gates.pass).toBe(false)
   })
@@ -114,22 +110,21 @@ describe("bench markdown row", () => {
 })
 
 /**
- * W7.2 — the CI gate override.
- *
  * The gate thresholds are read from the environment once, at module load, so a
  * shared CI runner can raise a latency bound whose jitter is not a property of
  * the relay. That is a loaded footgun if it can be used to silence a real
  * regression, so these pin the three properties that keep it honest:
  *
- *   1. Absent env => the RUNBOOK numbers (100 ms). The default is the contract.
- *   2. A malformed or non-positive override is IGNORED, not obeyed. `=0` must
+ *   1. Absent env falls back to the documented defaults (100 ms) — the default
+ *      is the contract.
+ *   2. A malformed or non-positive override is ignored, not obeyed. `=0` must
  *      never mean "gate disabled".
- *   3. No override exists for message loss. "Zero loss" does not degrade with
+ *   3. No override exists for message loss. Zero loss does not degrade with
  *      runner noise, so there is nothing to relax.
  *
  * Each runs in a subprocess because the constants are captured at import.
  */
-describe("bench gate env overrides (W7.2 CI wiring)", () => {
+describe("bench gate env overrides", () => {
   async function gatesUnder(env: Record<string, string>): Promise<{ http: number; ws: number }> {
     const proc = Bun.spawn({
       cmd: [
@@ -186,21 +181,18 @@ describe("bench gate env overrides (W7.2 CI wiring)", () => {
 })
 
 /**
- * The shape label must distinguish runs that differ in LOAD, not just in
- * connection count.
- *
- * `c20/load20` was the label on both an 80-message smoke row (WS p99 ~2 ms) and
- * a 40,000-message stress row (WS p99 66–81 ms — inside the 100 ms gate, but
- * only ~1.3x under it). Anyone reading `bench/reports/` to pick a gate baseline
- * saw one label covering two runs ~500x apart in message volume. That is a
- * measurement-integrity bug, not cosmetics.
+ * The shape label must distinguish runs that differ in load, not just in
+ * connection count. A label covering both an 80-message smoke run and a
+ * 40,000-message stress run at the same concurrency would let someone pick a
+ * gate baseline from the wrong run — a measurement-integrity bug.
  */
 describe("bench shape label", () => {
   test("the two runs the old label conflated are now distinguishable", () => {
     const smoke = shapeLabel({ concurrency: 20, wsMessagesPerConnection: 4 })
     const stress = shapeLabel({ concurrency: 20, wsMessagesPerConnection: 2_000 })
 
-    // The regression: both of these used to render "c20/load20".
+    // Both differ only in message volume; a shape label without load would
+    // collapse them into the same string.
     expect(smoke).not.toBe(stress)
     expect(smoke).toBe("c20/load20/m4")
     expect(stress).toBe("c20/load20/m2000")

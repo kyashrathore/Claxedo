@@ -328,7 +328,7 @@ describe("session capabilities query ownership", () => {
         hosting: "user-hosted",
         hostId: "host_1",
       },
-      harness: { id: "codex-acp", binary: "/opt/codex" },
+      harness: { kind: "connection", connectionId: "codex-team" },
     } satisfies SessionRef
     const complete = {
       ...request,

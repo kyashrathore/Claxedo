@@ -40,7 +40,7 @@ describe("new-session branch snapshot", () => {
       .mockReturnValueOnce(initialRefs)
       .mockResolvedValue({ branches: choices.map((choice) => choice.gitRef), branchChoices: choices, tags: [], recent: [] })
 
-    await new Promise<void>((resolve, reject) => createRoot((dispose) => {
+    const h = createRoot((dispose) => {
       const [fetching, setFetching] = createSignal(false)
       const [vcs, setVcs] = createSignal({ branch: "main" })
       const [dataUpdatedAt, setDataUpdatedAt] = createSignal(1)
@@ -57,47 +57,22 @@ describe("new-session branch snapshot", () => {
         touch: () => {},
         setWorktree: () => {},
       })
-
-      const deadline = Date.now() + 2_000
-      const check = () => {
-        if (dependencies.refsRequired.mock.calls.length < 2 || source.state().status === "loading") {
-          if (Date.now() > deadline) {
-            dispose()
-            reject(new Error("branch refs invalidation did not settle"))
-            return
-          }
-          setTimeout(check, 0)
-          return
-        }
-        try {
-          expect(dependencies.refsRequired).toHaveBeenCalledTimes(2)
-          expect(source.state()).toMatchObject({ status: "ready", current: choices[1] })
-          dispose()
-          resolve()
-        } catch (error) {
-          dispose()
-          reject(error)
-        }
-      }
-      const waitForInitialRead = () => {
-        if (dependencies.refsRequired.mock.calls.length === 0) {
-          setTimeout(waitForInitialRead, 0)
-          return
-        }
-        setFetching(true)
-        setVcs({ branch: "feature/e2e" })
-        setDataUpdatedAt(2)
-        setFetching(false)
-        resolveInitial({
-          branches: ["main"],
-          branchChoices: [choices[0]],
-          tags: [],
-          recent: [],
-        })
-        check()
-      }
-      setTimeout(waitForInitialRead, 0)
-    }))
+      return { dispose, source, setFetching, setVcs, setDataUpdatedAt }
+    })
+    try {
+      await vi.waitFor(() => expect(dependencies.refsRequired).toHaveBeenCalledTimes(1))
+      h.setFetching(true)
+      h.setVcs({ branch: "feature/e2e" })
+      h.setDataUpdatedAt(2)
+      h.setFetching(false)
+      resolveInitial({ branches: ["main"], branchChoices: [choices[0]], tags: [], recent: [] })
+      await vi.waitFor(() => {
+        expect(dependencies.refsRequired).toHaveBeenCalledTimes(2)
+        expect(h.source.state()).toMatchObject({ status: "ready", current: choices[1] })
+      })
+    } finally {
+      h.dispose()
+    }
   })
 
   test("matches a cloud branch name to its local Git-resolvable remote ref", () => {

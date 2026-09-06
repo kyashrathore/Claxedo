@@ -3,26 +3,17 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 /**
- * CONTRACT BINDING: the central event stream's route spellings.
+ * Contract binding for the central event stream's route spellings.
  *
- * `claxedo-local-server` mounts ONE handler (`streamGlobalEvents`) on several
- * paths, and the hosted server does the same, because different app readers
- * open the same bus under different names: global-sdk's compat loop opens
- * `/global/event` (rewritten to `/api/wr/events` for a signed document), while
- * `ClaxedoEventsProvider`'s CENTRAL target opens `controlPlaneEventsUrl` ->
- * `/api/claxedo/events`.
+ * `claxedo-local-server` mounts one handler (`streamGlobalEvents`) on several paths
+ * because different readers open the same bus under different names: global-sdk's compat
+ * loop opens `/global/event` (`/api/wr/events` for a signed document) and
+ * `ClaxedoEventsProvider`'s central target opens `/api/claxedo/events`.
  *
- * `core-terminal.spec.ts` hand-rolls its own boot mock instead of using
- * `installMockRuntime`, and it mounted its Claxedo event bus on
- * `/api/wr/events` alone. When the provider's central target moved to
- * `/api/claxedo/events`, that spec's bus lost its only reader: the connection
- * escaped to 127.0.0.1:3001 and every `emitClaxedoEvent` frame was silently
- * dropped, taking five terminal status/title behaviours red with no signal
- * pointing at the mock. Nothing failed at the seam that actually broke.
- *
- * This test is that signal. It reads the mounts off the REAL server source, so
- * adding, renaming or removing a central spelling there fails here instead of
- * quietly starving a spec's event bus.
+ * A spec that hand-rolls its boot mock and routes only some of those spellings loses its
+ * bus reader silently: the connection escapes to the real port and every emitted frame is
+ * dropped with nothing failing at the seam. This test reads the mounts off the server
+ * source so adding, renaming or removing a spelling fails here.
  */
 const repoFile = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
@@ -62,12 +53,9 @@ describe("central event stream mounts", () => {
   })
 
   test("core-processes' crash injection reaches the provider's central target", () => {
-    // Behaviour 19 delivers `process.crashed` by intercepting the app's first
-    // event-stream connection. `ProcessPaneProvider` reads it off
-    // `useClaxedoEvents`, so the interception has to cover the central
-    // spelling as well as the workspace-scoped one — pinning only
-    // `/api/wr/events` let global-sdk's compat loop claim the single
-    // interception and the process pane never learned about the crash.
+    // `process.crashed` is delivered by intercepting the app's first event-stream
+    // connection, and `ProcessPaneProvider` reads it off `useClaxedoEvents`; if only
+    // `/api/wr/events` is routed, global-sdk's compat loop claims that interception.
     const spec = repoFile("../playwright/core-processes.spec.ts")
     expect(routes(spec, "/api/claxedo/events")).toBe(true)
     expect(routes(spec, "/api/wr/events")).toBe(true)

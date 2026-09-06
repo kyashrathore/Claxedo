@@ -3,9 +3,7 @@ import { createDocumentIndexController, documentProjectIdentity, resolveDocument
 import { DocumentApiError, type DocumentSummary, type DocumentsApi } from "../data/documents-api"
 import type { DocumentChangedEvent } from "../data/document-changed-event"
 
-// The central-bus doorbell envelope: camelCase and identity-only. This is the
-// sole surviving client consumer of `document.changed`; the legacy snake_case
-// `/documents/events` SSE and the editor's external-change controller are gone.
+// The central-bus doorbell envelope: camelCase and identity-only.
 const changed = (projectId: string, documentId = "doc-1"): DocumentChangedEvent => ({
   type: "document.changed",
   documentId,
@@ -414,13 +412,8 @@ describe("document project scope", () => {
   })
 })
 
-// EC-B6, restated for the doorbell. The controller
-// no longer owns a socket, so it no longer backs off or reconnects — the central
-// stream does. What survives is the guarantee that mattered: after the stream
-// drops and recovers, the index revalidates EXACTLY once, covering every nudge
-// missed while it was down (R4 — never silently stale).
-describe("EC-B6 index revalidation on central-stream reconnect", () => {
-  test("refetches exactly once on the reconnect edge, not on every connected report", async () => {
+describe("index revalidation on central-stream reconnect", () => {
+  test("refetches once on the reconnect edge, not on every connected report", async () => {
     let listCalls = 0
     let connectedHandler!: (connected: boolean) => void
     const controller = createDocumentIndexController({

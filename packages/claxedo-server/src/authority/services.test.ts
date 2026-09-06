@@ -132,7 +132,7 @@ describe("control-plane services", () => {
   })
 
   test("central-store ports are accepted as the composition input and delegate to the backend", () => {
-    // The seam is ports-IN: callers pass the ports, and the composition holds
+    // The seam is ports-in: callers pass the ports, and the composition holds
     // no injected bag of its own.
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync))
@@ -345,7 +345,7 @@ describe("control-plane services", () => {
     const previous = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "https://ambient.authority.test"
     try {
-      // Ambient env no longer materializes an authority.
+      // Ambient env does not materialize an authority.
       expect(createControlPlaneServices(fakePorts()).authority).toBeUndefined()
       // Only an explicitly injected authority lands on the composed services.
       const injected = fakeAuthority()
@@ -375,7 +375,7 @@ describe("control-plane services", () => {
     // nothing about the route table and no other test in this repository
     // notices — verified by mutation: deleting the call fails nothing else.
     //
-    // Order is load-bearing too: the workspace runtime proxy ANSWERS
+    // Order is load-bearing too: the workspace runtime proxy answers
     // `/session` itself, so a tap registered after it never sees the call and
     // the session list silently stops filling.
     const text = fs.readFileSync(
@@ -437,10 +437,9 @@ describe("control-plane services", () => {
   })
 
   test("local composition ignores ambient signed-auth env without embedded auth", async () => {
-    // The retired hosted composition is gone: ambient signed
-    // env without CLAXEDO_EMBEDDED_AUTH no longer fails closed — the default
-    // local composition boots local-only on SQLite. Only embedded Better Auth
-    // selects signed mode.
+    // Ambient signed env without CLAXEDO_EMBEDDED_AUTH does not fail closed:
+    // the default local composition boots local-only on SQLite. Only
+    // embedded Better Auth selects signed mode.
     const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     const previous = {
       signed: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
@@ -571,9 +570,8 @@ describe("control-plane services", () => {
         error: { code: "relay_resolver_unauthorized" },
       })
 
-      // The global unsigned-local guard is now the PRIMARY gate for
-      // non-loopback unsigned requests; the per-route local-only projection
-      // (previously `local_only_projection_route` here) is demoted to
+      // The global unsigned-local guard is the primary gate for non-loopback
+      // unsigned requests; the per-route local-only projection is
       // defense-in-depth behind it.
       const bootstrap = await built.app.request("https://control.example.test/api/claxedo/bootstrap", {
         headers: { authorization: "Bearer unsigned-local-test" },
@@ -597,6 +595,24 @@ describe("control-plane services", () => {
       if (previous.nextPublicKey) process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_NEXT_PUBLIC_KEY_PEM = previous.nextPublicKey
       else delete process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_NEXT_PUBLIC_KEY_PEM
     }
+  })
+
+
+  test("createSelfHostedApp gates remote central runtime events with signed auth", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
+    const built = createSelfHostedApp(createControlPlaneServices(fakePorts(), {
+      authority: testManagedSessionAuthority(),
+    }))
+
+    // In an unsigned-local deployment a remote caller is denied by the
+    // global unsigned-local guard before the per-route bearer gate; the
+    // per-route gate remains as defense-in-depth behind it.
+    const missing = await built.app.request("https://control.example.test/api/wr/runtime-events")
+
+    expect(missing.status).toBe(403)
+    await expect(missing.json()).resolves.toMatchObject({
+      error: { code: "unsigned_local_loopback_required" },
+    })
   })
 
   test("createSelfHostedApp rejects hosted services so hosted security hooks cannot be bypassed", async () => {
@@ -715,11 +731,11 @@ describe("control-plane services", () => {
     expect(text).toContain("gitBranch: z.string().optional()")
     expect(text).toContain("services?.sandbox.defaultDriver")
     expect(text).toContain("sandboxDriverCredentials(options, services)")
-    // Kind-scoped since 6fee6b3ae. `provider_id` is shared with model providers
-    // and is not unique -- `vercel` is both a sandbox driver and a model
-    // provider -- so the unscoped lookup this used to pin let a model API key
-    // satisfy the sandbox-credential gate, passing creation and failing later at
-    // launch. Assert the scope, not just the call.
+    // `provider_id` is shared with model providers and is not unique --
+    // `vercel` is both a sandbox driver and a model provider -- so an
+    // unscoped lookup would let a model API key satisfy the
+    // sandbox-credential gate, passing creation and failing later at launch.
+    // Assert the scope, not just the call.
     expect(text).toContain(".getCredentialByProvider(id, \"sandbox_driver\")")
     expect(text).toContain("const hasCredentials = credential?.status === \"available\" || !!sandboxDriverAuth(driverConfig, id)")
     expect(text).toContain("const gitBranch = body.gitBranch?.trim() || (rawWorkspaceName ? name : undefined)")

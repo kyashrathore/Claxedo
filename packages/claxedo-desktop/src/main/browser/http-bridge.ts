@@ -65,9 +65,7 @@ export type BridgeTabSummary = {
 export type BridgeDeps = {
   registry: BrowserRegistry
   auditLog?: AgentAuditLog
-  /** Optional resolver for the renderer-visible `groupId`. Unit 4 leaves it
-   * unwired (returns undefined) — later units can plumb it through from the
-   * pane-registration IPC payload. */
+  /** Optional resolver for the renderer-visible `groupId`; unset, tab summaries report `groupId: undefined`. */
   getGroupId?: (paneId: string) => string | undefined
   /**
    * Fallback title resolver for panes whose guest reports no title yet.

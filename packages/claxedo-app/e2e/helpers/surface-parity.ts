@@ -10,13 +10,10 @@
 // sidebar, so it always reads a brand-new mount and can never observe a status
 // change on an already-mounted tab; `expectSurfaceStatus` is the variant that
 // never touches the sidebar toggle, for exactly that reason.
+import { escapeRegExp } from "@claxedo/helpers/string"
 import { expect, type Locator, type Page } from "@playwright/test"
 
-/** Mirrors `SwitcherStatus` (compact-switcher/switcher-items.ts:4) and the
- * status union `NavigationStatusDot` accepts (navigation-row.tsx:172) —
- * defined locally rather than imported so this helper stays as
- * self-contained as turn-oracle.ts's SELECTORS, not coupled to an app source
- * path that e2e/ has no other reason to import from. */
+/** Mirrors the status union both dots render; local so e2e/ does not import app source. */
 export type SurfaceStatus = "idle" | "working" | "permission" | "done"
 
 export type ParityEvidence = {
@@ -40,25 +37,10 @@ const SELECTORS = {
   switcherStatus: "[data-switcher-status]",
 } as const
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
 /**
- * Reads the rail row's status AND title in one pass — every caller below
- * needs the title immediately after to locate the matching switcher tab, so
- * this avoids re-locating the row a second time (the same re-query-races
- * concern turn-oracle.ts's `domTruth`/`geometricTruth` split documents).
- *
- * Absence of `[data-sidebar-status]` IS "idle", not an unknown state:
- * `NavigationRowStatusGutter` (navigation-row.tsx:150-165) wraps the dot in
- * `<Show when={status !== "idle"}>`, so idle renders no dot at all. Note also
- * that dot only ever renders for NESTED rows —
- * `session-navigation-list.tsx:83` gates `NavigationRowStatusGutter` behind
- * `<Show when={props.row.nested}>` — a top-level (ungrouped) row shows no dot
- * regardless of status, which is a rail precondition unrelated to anything
- * this file tests; a caller whose session row is not nested will see every
- * status read back as "idle" no matter what the server reports.
+ * Reads the rail row's status and title together; the title is what locates the matching
+ * switcher tab. No `[data-sidebar-status]` means "idle": the dot is not rendered for idle,
+ * and only for nested rows, so a top-level row always reads idle.
  */
 async function readRailRow(page: Page, sessionId: string): Promise<{ status: SurfaceStatus; title: string }> {
   const row = page.locator(SELECTORS.railRow(sessionId))
@@ -76,18 +58,11 @@ async function readRailRow(page: Page, sessionId: string): Promise<{ status: Sur
 }
 
 /**
- * Locates the compact-switcher tab for the title read from a rail row. The
- * switcher now exposes its workbench content id, but the rail row exposes the
- * runtime session id instead, so title text remains the shared signal for
- * cross-surface status checks. Both titles come from the same session title
- * projection, so
- * matching on it is the same correlation `core-session-actions.spec.ts`'s
- * "switcher tab title sync" test relies on (it only skips the filter because
- * that spec keeps exactly one tab open). Exact match via an anchored RegExp,
- * not Playwright's substring `hasText`, so "Session" cannot match "New
- * Session". `.first()` remains a tolerated gap for status checks when two
- * runtime sessions have the same projected title; direct switcher navigation
- * uses `data-content-id` below and does not share that ambiguity.
+ * The switcher tab whose title equals the rail row's title. The rail exposes the runtime
+ * session id and the switcher the workbench content id, so title text is the only shared
+ * signal. Anchored RegExp rather than substring `hasText`, so "Session" cannot match
+ * "New Session". `.first()` tolerates two sessions sharing a title; content-id lookups
+ * (`switcherTabForContentId`) do not.
  */
 function switcherTabForTitle(page: Page, title: string): Locator {
   const exact = new RegExp(`^${escapeRegExp(title)}$`)
@@ -131,10 +106,7 @@ export async function focusSwitcherTab(
   ).toHaveAttribute("data-selected", "true", { timeout: 10_000 })
 }
 
-/** Absence of `[data-switcher-status]` IS "idle" — same reasoning as
- * `readRailRow`, mirrored on `StatusDot`'s own early return
- * (compact-switcher.tsx:31) and `SwitcherPrefixMark`'s enclosing
- * `<Show when={hasVisibleStatus(item)}>` (compact-switcher.tsx:63). */
+/** No `[data-switcher-status]` means "idle", as in `readRailRow`. */
 async function readSwitcherStatusFromTab(tab: Locator): Promise<SurfaceStatus> {
   const dot = tab.locator(SELECTORS.switcherStatus)
   if ((await dot.count()) === 0) return "idle"
@@ -154,17 +126,12 @@ export async function closeSidebar(page: Page): Promise<void> {
   await toggle.click()
   await expect(
     page.locator(SELECTORS.switcherRoot),
-    'compact-switcher never mounted after collapsing the sidebar (workbench-shell-header.tsx:107 "<Show when={!sidebarPinned()}>" gate)',
+    "compact-switcher never mounted after collapsing the sidebar",
   ).toBeVisible({ timeout: 10_000 })
 }
 
-/**
- * Re-pins the sidebar rail via the header's "Show Sidebar" affordance (no
- * `data-testid`; matched by its `aria-label`, same as
- * `core-sidebar-tree.spec.ts:1087`). This UNMOUNTS `CompactSwitcher` and
- * every tab in it (same Show gate, inverted) — callers mid-transition-
- * experiment must not call this until they are done observing that tab.
- */
+/** Re-pins the sidebar via the header's "Show Sidebar" button, which unmounts
+ * `CompactSwitcher` and every tab in it. */
 export async function openSidebar(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Show Sidebar" }).click()
   await expect(page.locator(SELECTORS.sidebarToggle), "sidebar-toggle button never reappeared after re-opening the sidebar").toBeVisible(
@@ -187,7 +154,7 @@ export async function expectSurfaceParity(opts: {
   const before = await readRailRow(page, sessionId)
   expect(
     before.status,
-    `rail row for session "${sessionId}" reports data-sidebar-status="${before.status}", expected "${expected}" BEFORE the sidebar was touched`,
+    `rail row for session "${sessionId}" reports data-sidebar-status="${before.status}", expected "${expected}" before the sidebar was touched`,
   ).toBe(expected)
 
   await closeSidebar(page)
@@ -209,7 +176,7 @@ export async function expectSurfaceParity(opts: {
   ).toBe(expected)
   expect(
     switcherStatus,
-    `data-sidebar-status="${before.status}" and data-switcher-status="${switcherStatus}" DISAGREE for session "${sessionId}" (title "${before.title}") — the two surfaces have drifted apart`,
+    `data-sidebar-status="${before.status}" and data-switcher-status="${switcherStatus}" disagree for session "${sessionId}" (title "${before.title}")`,
   ).toBe(before.status)
 
   await openSidebar(page)
@@ -250,11 +217,11 @@ export async function expectSurfaceStatus(opts: {
 
   expect(
     switcherStatus,
-    `data-switcher-status="${switcherStatus}" but expected "${expected}" for session "${sessionId}" (title "${rail.title}") on an ALREADY-MOUNTED tab — matches the shape of defect #12 if this is idle/absent when the rail already moved on`,
+    `data-switcher-status="${switcherStatus}" but expected "${expected}" for session "${sessionId}" (title "${rail.title}") on an already-mounted tab`,
   ).toBe(expected)
   expect(
     switcherStatus,
-    `data-sidebar-status="${rail.status}" and data-switcher-status="${switcherStatus}" DISAGREE for session "${sessionId}" (title "${rail.title}")`,
+    `data-sidebar-status="${rail.status}" and data-switcher-status="${switcherStatus}" disagree for session "${sessionId}" (title "${rail.title}")`,
   ).toBe(rail.status)
 
   return { sessionId, title: rail.title, sidebarStatus: rail.status, switcherStatus }

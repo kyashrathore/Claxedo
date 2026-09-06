@@ -1,0 +1,4 @@
+[test]
+# These tests exercise native HTTP, server fixtures, and browser-driver helpers.
+# Keep the application unit suite's Happy DOM preload in its own process.
+timeout = 5000

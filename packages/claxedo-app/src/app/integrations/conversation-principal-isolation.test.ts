@@ -21,7 +21,7 @@ describe("conversation principal isolation", () => {
 
   test("clears authoritative conversation state when user or organization changes", async () => {
     const cleared: string[] = []
-    const transition = createPrincipalDataIsolation({ clear: () => cleared.push("clear") })
+    const { update: transition } = createPrincipalDataIsolation({ clear: () => cleared.push("clear") })
     transition({
         kind: "org-member",
         userId: "user_a",
@@ -38,7 +38,7 @@ describe("conversation principal isolation", () => {
 
   test("the local device becoming the signed user keeps its data and revalidates", async () => {
     const calls: string[] = []
-    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    const { update: transition } = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
     transition({ kind: "local", deviceId: "device_a" })
     transition({ kind: "signed", userId: "user_a" })
     // The first transition after boot is the usual namespace clear; the flip to the signed user is a refresh.
@@ -52,7 +52,7 @@ describe("conversation principal isolation", () => {
 
   test("a signed user whose organization resolves keeps its data; another user or an org switch wipes", async () => {
     const calls: string[] = []
-    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    const { update: transition } = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
     transition({ kind: "signed", userId: "user_a" })
     transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
     expect(calls).toEqual(["clear", "refresh"])
@@ -61,14 +61,16 @@ describe("conversation principal isolation", () => {
     expect(calls).toEqual(["clear", "refresh", "clear", "clear"])
   })
 
-  test("the unnamed signed principal published at sign-in becoming the named one is enrichment, not a new person", async () => {
+  test("unresolved signed state has no durable namespace and clears unowned data before identity publication", async () => {
     const calls: string[] = []
-    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    const { update: transition } = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
     transition({ kind: "local", deviceId: "device_a" })
-    transition({ kind: "signed", userId: "signed-user" })
+    transition({ kind: "signed-unresolved" })
+    expect(conversationPersistenceKey("scope")).toBeUndefined()
+    transition({ kind: "signed-unresolved" })
     transition({ kind: "signed", userId: "user_a" })
     transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
-    expect(calls).toEqual(["clear", "refresh", "refresh", "refresh"])
+    expect(calls).toEqual(["clear", "clear", "clear", "refresh"])
     transition({ kind: "signed", userId: "user_b" })
     expect(calls.at(-1)).toBe("clear")
   })
@@ -76,14 +78,14 @@ describe("conversation principal isolation", () => {
   test("does not clear again for a reactive refresh of the same principal", async () => {
     const cleared: string[] = []
 
-    const transition = createPrincipalDataIsolation({ clear: () => { cleared.push("clear") } })
+    const { update: transition } = createPrincipalDataIsolation({ clear: () => { cleared.push("clear") } })
     transition({ kind: "signed", userId: "user_a" })
     transition({ kind: "signed", userId: "user_a" })
     expect(cleared).toEqual(["clear"])
   })
 
   test("namespaces local devices independently", async () => {
-    const transition = createPrincipalDataIsolation({ clear: () => undefined })
+    const { update: transition } = createPrincipalDataIsolation({ clear: () => undefined })
     transition({ kind: "local", deviceId: "device_a" })
     expect(conversationPersistenceKey("scope")).toBe(key("local:device_a\0scope"))
     transition({ kind: "local", deviceId: "device_b" })
@@ -91,7 +93,7 @@ describe("conversation principal isolation", () => {
   })
 
   test("removes authority-derived session caches before exposing a new principal", async () => {
-    const transition = createPrincipalDataIsolation({})
+    const { update: transition } = createPrincipalDataIsolation({})
     transition({ kind: "signed", userId: "user_a" })
     const inventoryKey = queryKeys.shell.sessionInventory("https://app.test")
     const listKey = queryKeys.shell.sessionList("https://app.test", { scope: "global" })

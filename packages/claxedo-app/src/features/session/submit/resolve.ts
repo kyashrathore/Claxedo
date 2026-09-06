@@ -11,7 +11,7 @@ import type {
   SubmitSessionTargetResult,
   SubmittedConfig,
 } from "./types"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { resolveWorkspaceSubmitSelection } from "../composer/workspace-submit-selection"
 
 export async function resolveSubmitSessionTarget(
   input: ResolveSubmitSessionTargetContext,
@@ -37,63 +37,31 @@ export async function resolveSubmitSessionTarget(
   return { session, replaceSession, created: false }
 }
 
-// `resolveSubmitDirectory` is the imperative ORCHESTRATOR: it owns the shared
-// top-level admission tree (not-new → reuse; draft+"main"+no projectDirectory →
-// missing-workspace; cloud/user-hosted → remote handling; "create" → local
-// worktree; explicit worktreeSelection → use it; else → default) and turns each
-// branch into a side effect (callbacks). The remote branch delegates the
-// sub-decision (prepare existing vs provision cloud vs missing) to
-// `resolveWorkspaceSubmitPlan` (session/composer/workspace-resolver.ts)
-// via the `resolveCloudSessionDirectory` callback. Those two functions encode
-// the SAME shared top-level tree independently, so `resolve-workspace-plan-agreement.test.ts`
-// pins that they never diverge on shared inputs.
+/** Execute the selected directory plan; remote provisioning remains owned by its resolver callback. */
 export async function resolveSubmitDirectory(
   input: ResolveSubmitDirectoryContext,
 ): Promise<SubmitDirectoryResult | undefined> {
-  let sessionDirectory = input.projectDirectory ?? input.fallbackDirectory
-
-  if (!input.isNewSession) {
-    return { directory: sessionDirectory ?? input.defaultDirectory }
-  }
-
-  if (input.draftId && !input.projectDirectory && input.worktreeSelection === "main") {
+  const selection = resolveWorkspaceSubmitSelection(input)
+  if (selection.status === "missing-workspace") {
     input.showMissingWorkspace()
     return undefined
   }
-
-  // user-hosted rides the same "resolve an existing remote workspace" path as
-  // cloud: resolveCloudSessionDirectory/prepareCloudSessionDirectory detect a
-  // user-hosted workspace and connect through the relay WITHOUT provisioning a
-  // sandbox (see submit.ts existingCloudWorkspace / prepareUserHostedRuntime).
-  // The cloud-startup overlay helpers self-gate to kind === "cloud", so they
-  // no-op for user-hosted — its connection UI is owned by the WorkspaceGate.
-  if (isRelayBackedWorkspaceKind(workspaceKind(input.workspaceKind))) {
-    const cloudDirectory = await input.resolveCloudSessionDirectory(
-      input.worktreeSelection,
-      input.projectDirectory,
-      input.fallbackDirectory,
-      input.workspaceKind,
-    )
-    if (!cloudDirectory) return undefined
-    sessionDirectory = cloudDirectory
-    const prepared = await input.prepareCloudSessionDirectory(sessionDirectory)
-    if (!prepared) return undefined
-    if (typeof prepared === "string") sessionDirectory = prepared
-    input.publishCloudHandoff("loading_models", "Runtime ready. Loading models.")
-  } else if (input.worktreeSelection === "create") {
-    const localDirectory = await input.createLocalWorktree(input.projectDirectory ?? input.fallbackDirectory)
-    if (!localDirectory) return undefined
-    sessionDirectory = localDirectory
-  } else if (input.worktreeSelection !== "main" && input.worktreeSelection !== "create") {
-    sessionDirectory = input.worktreeSelection
+  if (selection.status === "ready") return { directory: selection.directory }
+  if (selection.status === "create-local-worktree") {
+    const directory = await input.createLocalWorktree(selection.baseDirectory)
+    return directory ? { directory } : undefined
   }
-
-  if (input.draftId && !sessionDirectory) {
-    input.showMissingWorkspace()
-    return undefined
-  }
-
-  return { directory: sessionDirectory ?? input.defaultDirectory }
+  const directory = await input.resolveCloudSessionDirectory(
+    input.worktreeSelection,
+    input.projectDirectory,
+    input.fallbackDirectory,
+    input.workspaceKind,
+  )
+  if (!directory) return undefined
+  const prepared = await input.prepareCloudSessionDirectory(directory)
+  if (!prepared) return undefined
+  input.publishCloudHandoff("loading_models", "Runtime ready. Loading models.")
+  return { directory: typeof prepared === "string" ? prepared : directory }
 }
 
 export function resolveSubmitMode(input: { mode: SubmitMode; setMode: (mode: SubmitMode) => void }): "normal" {

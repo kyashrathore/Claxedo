@@ -2,12 +2,12 @@ import { asRecord, readField } from "@/lib/record"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 
-// Rubric C3: a session that *had* a disagreement at any point used to lock
-// `canDisablePolling=false` forever (monotonic gate). The new evaluation is
-// a sliding window — the gate opens when there has been NO disagreement in
-// the recent `T_RECOVER_MS` window AND at least `N_MATCHES_REQUIRED` matching
-// polls inside the recent `T_WINDOW_MS` window. The constants are deliberate
-// and live in the file header so an operator can tune them without grepping.
+// The gate is a sliding window, not a monotonic one: a session that once had
+// a disagreement is not locked out of polling removal forever. It opens once
+// there has been no disagreement in the recent `T_RECOVER_MS` window and at
+// least `N_MATCHES_REQUIRED` matching polls inside the recent `T_WINDOW_MS`
+// window. The constants are deliberate and live in the file header so an
+// operator can tune them without grepping.
 const T_RECOVER_MS = 10 * 60 * 1000 // 10 minutes after the last disagreement
 const T_WINDOW_MS = 30 * 60 * 1000 // matching polls evaluated over the last 30 min
 const N_MATCHES_REQUIRED = 3 // need 3 matching polls in the window
@@ -234,8 +234,8 @@ export function sessionStatusPollingRemovalGate(input?: {
       disagreements,
     }
   }
-  // Sliding-window recovery: a disagreement OLDER than T_RECOVER_MS no longer
-  // blocks the gate as long as recent matching evidence has accumulated.
+  // Sliding-window recovery: a disagreement older than T_RECOVER_MS does not
+  // block the gate as long as recent matching evidence has accumulated.
   if (hasRecentDisagreement(disagreements, now)) {
     return {
       canDisablePolling: false,
@@ -263,11 +263,11 @@ export function sessionStatusPollingRemovalGate(input?: {
   }
 }
 
-// Rubric C3: exporter surface for telemetry/observability. The polling-removal
-// gate is a property of fleet-wide evidence; a single dev box's view is rarely
-// the right one. This snapshot is the contract the telemetry exporter publishes
-// (logger, analytics, devtools panel — whichever the project wires up). Per
-// the rubric this avoids the write-only Map pattern.
+// Exporter surface for telemetry/observability. The polling-removal gate is a
+// property of fleet-wide evidence; a single dev box's view is rarely the
+// right one. This snapshot is the contract the telemetry exporter publishes
+// (logger, analytics, devtools panel — whichever the project wires up),
+// rather than evidence sitting in a write-only map nothing ever reads.
 export type SessionStatusTelemetrySnapshot = {
   generatedAt: number
   config: {
@@ -341,8 +341,8 @@ export function getSessionStatusTelemetrySnapshot(now: number = Date.now()): Ses
   }
 }
 
-// Rubric Q8: expose the telemetry snapshot via a window-attached debug
-// accessor so developers can inspect the polling-removal gate state from
+// Expose the telemetry snapshot via a window-attached debug accessor so
+// developers can inspect the polling-removal gate state from
 // the browser console without code injection. Guarded by the same env
 // var the dev server already gates other debug helpers on; in production
 // builds (`__CLAXEDO_DEBUG__` is false / undefined) the accessor is not

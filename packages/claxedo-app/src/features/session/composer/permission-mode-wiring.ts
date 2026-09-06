@@ -110,17 +110,15 @@ export function createComposerPermissionModeWiring(input: {
   const [resource, { refetch }] = createResource(
     // A DRAFT still fetches, with an empty session id, so the
     // picker can show the harness's real modes before the first message rather
-    // than a placeholder. That is the whole point — the opening turn is when the
-    // choice matters most, and it was previously the one turn nobody could set.
+    // than a placeholder — the opening turn is when the choice matters most.
     //
-    // The source is a serialized STRING, not an object literal, deliberately:
-    // createResource compares sources with `===`, so a fresh object refetched
-    // on every upstream signal wobble even when the resolved values were
-    // identical — the boot request graph showed the same permission-mode GET
-    // three times. Value equality keeps the intended contract (refetch when the
-    // session/directory/harness actually changes, and on explicit `refetch()`)
-    // while dropping the byte-identical repeats. The request itself stays
-    // `no-store` — nothing here caches a response.
+    // The source is a serialized string, not an object literal, deliberately:
+    // createResource compares sources with `===`, so a fresh object would
+    // refetch on every upstream signal wobble even when the resolved values
+    // are identical. Serializing keeps the refetch keyed to the
+    // session/directory/harness actually changing (or an explicit
+    // `refetch()`) while dropping the byte-identical repeats. The request
+    // itself stays `no-store` — nothing here caches a response.
     resourceKey,
     async (sourceKey) => {
       // `sourceKey` is this module's own `JSON.stringify`, but it comes back as
@@ -149,19 +147,16 @@ export function createComposerPermissionModeWiring(input: {
   )
 
   /**
-   * FOUR states, not two, and the two extra ones are the whole point.
+   * Four states, not two, and the two extra ones are the whole point.
    *
    * `undefined` from here means "in flight", and the picker renders that as
-   * loading copy. So every state that is NOT in flight has to be turned into a
+   * loading copy. So every state that is not in flight has to be turned into a
    * real answer, or it renders as a spinner that never resolves.
    *
-   * A FAILED fetch leaves `latest` undefined, so without this branch a dead
+   * A failed fetch leaves `latest` undefined, so without this branch a dead
    * backend is indistinguishable from a slow one and renders as a spinner that
    * never resolves — the same defect as the "Waiting for … to report its modes"
    * bug this whole feature replaced, one layer higher.
-   *
-   * (A draft used to land here too, for the same reason. It no longer does: it
-   * fetches the directory-scoped list instead of not fetching at all.)
    *
    * `latest` is used for the success path so a refetch does not blank a
    * still-true answer.
@@ -174,7 +169,7 @@ export function createComposerPermissionModeWiring(input: {
   const cache = new Map<string, HarnessModeReport>()
 
   const report = (): HarnessModeReport | undefined => {
-    // Checked BEFORE the fetch result, because the fetch succeeds either way.
+    // Checked before the fetch result, because the fetch succeeds either way.
     // The directory-scoped route answers from the recorded table without ever
     // asking the agent, so a broken harness still returns a full, plausible
     // list — and a list is the one thing that must not be shown here.
@@ -191,7 +186,7 @@ export function createComposerPermissionModeWiring(input: {
       return live
     }
     // In flight: show this harness's cached answer if we have one, and undefined
-    // otherwise. Deliberately NOT `resource.latest` — that keeps the PREVIOUS
+    // otherwise. Deliberately not `resource.latest` — that keeps the previous
     // harness's list on screen across a switch, which is the stale-read the
     // harness key exists to prevent.
     return cache.get(key)
@@ -230,7 +225,7 @@ export function createComposerPermissionModeWiring(input: {
     showToast({
       variant: "error",
       title: input.requestFailedTitle(),
-      // Says the change did NOT happen. Silence here would leave the user
+      // Says the change did not happen. Silence here would leave the user
       // believing a policy is in force that the harness never accepted.
       description: `The permission mode was not changed: ${detail}`,
     })

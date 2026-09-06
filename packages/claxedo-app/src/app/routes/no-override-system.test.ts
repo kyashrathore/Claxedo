@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { existsSync } from "node:fs"
 
 // Replaces the former `override-batch-contract.test.ts`, a 331-line suite of
 // raw-source-text `.toContain` assertions across ~25 files. Per the pages
@@ -12,11 +13,8 @@ import { describe, expect, test } from "bun:test"
 const srcRoot = new URL("../../", import.meta.url)
 
 describe("no upstream override system", () => {
-  test("there is no src/overrides directory", async () => {
-    // A directory materializes as a readable "file" handle; a missing path does
-    // not. Either way, no `overrides` tree may exist under src/.
-    const overrides = Bun.file(new URL("overrides", srcRoot))
-    expect(await overrides.exists()).toBe(false)
+  test("there is no src/overrides directory", () => {
+    expect(existsSync(new URL("overrides", srcRoot))).toBe(false)
   })
 
   test("route-owning pages resolve to first-party files, not override shadows", async () => {

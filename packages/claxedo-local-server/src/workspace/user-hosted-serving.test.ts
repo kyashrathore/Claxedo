@@ -18,10 +18,9 @@ vi.mock("@claxedo/workspace-runtime/relay", () => ({
   startWorkspaceRelayHostTunnel: (options: Omit<StartedTunnel, "closed">) => {
     const entry: StartedTunnel = { ...options, closed: false }
     started.push(entry)
-    // The real tunnel emits `connecting` SYNCHRONOUSLY, before this call
-    // returns. A mock that waited would hide every handler that reaches for
-    // the value being constructed — which is exactly the crash this mock
-    // originally let through and the route test caught.
+    // The real tunnel emits `connecting` synchronously, before this call
+    // returns. A mock that waited would hide any handler that reaches for
+    // the value being constructed before that event fires.
     options.onEvent({ type: "connecting" })
     return {
       close: () => {
@@ -57,10 +56,10 @@ const live = () => started.filter((entry) => !entry.closed)
  * deployed relay — two `workspaceId` params answered 400 with that code, one
  * answered 426 `websocket_upgrade_required`.
  *
- * The machine is still enrolled as a MACHINE and still holds ONE Host Tunnel
- * Token; only the transport is per workspace. This is the defect that made the
- * phone say "workspace host is offline": the daemon dialled once for the whole
- * set, the relay rejected every attempt, and no socket ever existed.
+ * The machine is still enrolled as a machine and still holds one Host Tunnel
+ * Token; only the transport is per workspace. Getting this wrong reproduces
+ * the phone's "workspace host is offline" symptom: the daemon dials once for
+ * the whole set, the relay rejects every attempt, and no socket ever exists.
  */
 describe("relay connection grain", () => {
   afterEach(() => {
@@ -232,9 +231,9 @@ function relayDeliveredHeaders(): Record<string, string> {
 
 describe("loopback replay headers", () => {
   /**
-   * Asserted against the REAL gate the daemon mounts, not against a restatement
-   * of the strip list — a list-shaped test would have passed while production
-   * 403'd, which is exactly how this shipped.
+   * Asserted against the gate the daemon actually mounts, not a restatement
+   * of the strip list — a list-shaped test would pass even if production
+   * still 403'd.
    */
   test("turns a relay-delivered request into one the unsigned-local gate accepts", () => {
     const verbatim = new Request(LOCAL_TARGET, { headers: relayDeliveredHeaders() })

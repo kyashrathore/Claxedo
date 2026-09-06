@@ -7,7 +7,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
-import { asRecord } from "../platform/json/index"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
@@ -27,10 +27,6 @@ function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
 
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
 function requireSignedAuth(auth: ControlPlaneAuthContext | undefined) {
   if (auth?.mode === "signed") return auth
   throw new HostedSessionPullError(401, "signed_auth_required", "Signed auth is required")
@@ -42,8 +38,8 @@ function relayRole(value: unknown): RelayRole | undefined {
 
 function sessionStamp(input: Record<string, unknown>) {
   const time = asRecord(input.time)
-  const createdAt = num(time?.created) ?? num(input.created_at)
-  const updatedAt = num(time?.updated) ?? num(input.updated_at) ?? createdAt
+  const createdAt = asFiniteNumber(time?.created) ?? asFiniteNumber(input.created_at)
+  const updatedAt = asFiniteNumber(time?.updated) ?? asFiniteNumber(input.updated_at) ?? createdAt
   return {
     ...(createdAt === undefined ? {} : { createdAt }),
     ...(updatedAt === undefined ? {} : { updatedAt }),
@@ -153,8 +149,8 @@ async function hostedWorkspaceForPull(
     directory: `workspace:${workspaceId}`,
     kind: "cloud",
     status: "ready",
-    created_at: num(workspace?.created_at) ?? num(workspace?.createdAt) ?? stamp,
-    updated_at: num(workspace?.updated_at) ?? num(workspace?.updatedAt) ?? stamp,
+    created_at: asFiniteNumber(workspace?.created_at) ?? asFiniteNumber(workspace?.createdAt) ?? stamp,
+    updated_at: asFiniteNumber(workspace?.updated_at) ?? asFiniteNumber(workspace?.updatedAt) ?? stamp,
   } satisfies Workspace
   return { workspaceId, ws, workspace, role }
 }

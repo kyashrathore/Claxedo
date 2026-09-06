@@ -29,7 +29,7 @@ import { render } from "solid-js/web"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
-import { urlRoutingEnabled } from "@/lib/runtime-mode"
+import { writeBrowserRoute } from "@/lib/browser-history"
 import { ConfigProvider } from "../providers/config"
 
 const loadAgentPluginContributions = __CLAXEDO_AGENT_PLUGINS_ENABLED__
@@ -87,10 +87,7 @@ const platform: Platform = {
         const notification = new Notification(title, { body: description ?? "", icon: "/favicon-96x96-v3.png" })
         notification.onclick = () => {
           window.focus()
-          if (href && urlRoutingEnabled()) {
-            window.history.pushState(null, "", href)
-            window.dispatchEvent(new PopStateEvent("popstate"))
-          }
+          if (href) writeBrowserRoute(href, { replace: false, notify: true })
           notification.close()
         }
       })

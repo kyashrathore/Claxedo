@@ -261,9 +261,9 @@ export type MockRuntimeRequests = {
   failed: string[]
   badResponses: string[]
   /**
-   * Every API request (`resourceType` fetch/xhr) that reached the END of this page's
-   * route chain without any handler fulfilling it — i.e. every request that ESCAPED
-   * the mock and went to the real network.
+   * Every API request (`resourceType` fetch/xhr) that reached the end of this page's
+   * route chain without any handler fulfilling it — a request that escaped the mock
+   * and went to the real network.
    *
    * An escape has two failure modes and NEITHER is loud:
    *   1. SAME-ORIGIN — the VITE DEV SERVER answers the SPA's `index.html` at **HTTP
@@ -277,13 +277,13 @@ export type MockRuntimeRequests = {
    *
    * FORMAT is `"<METHOD> <origin><pathname>"`. The query string is dropped so the list
    * is stable across runs (directories, session ids and cache-busters all live there);
-   * the ORIGIN is kept, deliberately, because a request that escapes to a third party
-   * (an identity provider, a CDN) is a different finding from one that escapes to the app's own
+   * the origin is kept because a request that escapes to a third party (an identity
+   * provider, a CDN) is a different finding from one that escapes to the app's own
    * origin, and a pathname-only record cannot tell a filter which is which.
    *
-   * NOT recorded: documents, scripts, stylesheets, images and fonts. The SPA's own
-   * asset graph is served by the dev server BY DESIGN and is not an escape — the
-   * `api()` gate (fetch/xhr only) is what draws that line.
+   * Not recorded: documents, scripts, stylesheets, images and fonts — the SPA's own
+   * asset graph is served by the dev server by design and is not an escape; the
+   * `api()` gate (fetch/xhr only) draws that line.
    */
   unhandled: string[]
   createSessionCount: number
@@ -456,17 +456,16 @@ export type MockRuntimeOptions = {
   /** `POST /session/:id/prompt_async` returns 500 instead of dispatching. */
   dispatchFailure?: boolean
   /**
-   * `POST /session/:id/abort` RECORDS the request (see `requests.abortCount`) but
+   * `POST /session/:id/abort` records the request (see `requests.abortCount`) but
    * withholds its response until `handles.releaseAbort()` is called.
    *
-   * This is what makes "status reconciles optimistically BEFORE the network responds"
-   * (core-busy-abort-errors behavior 3) falsifiable instead of decorative: with an
-   * immediately-200 abort there is no window in which the network has not answered
-   * yet, so an assertion made after the click proves nothing about optimism. With the
-   * response held open, the submit control can only leave "stop" via the client-side
-   * write in `createPromptAbort`
+   * This is what makes "status reconciles optimistically before the network
+   * responds" falsifiable instead of decorative: an immediately-200 abort leaves no
+   * window in which the network hasn't answered yet, so an assertion made after the
+   * click proves nothing about optimism. With the response held open, the submit
+   * control can only leave "stop" via the client-side write in `createPromptAbort`
    * (`src/features/session/composer/ui/submit-abort.ts` — `setPromptSessionStatus
-   * ({status: idle, source: "server"})` runs BEFORE `client.session.abort()` is even
+   * ({status: idle, source: "server"})` runs before `client.session.abort()` is even
    * called).
    *
    * Release before the test ends so the page tears down cleanly.
@@ -1610,9 +1609,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
-  /** The cloud workspace's OWN top-level project row (self-referencing `workspaces` map)
+  /** The cloud workspace's own top-level project row (self-referencing `workspaces` map)
    * so the empty-draft header's project `<Select>` can navigate local <-> cloud
-   * client-side (core-harness-ownership-cloud behavior 5's same-pane leak-guard test). */
+   * client-side. */
   function cloudProjectRow() {
     return {
       id: CLOUD_PROJECT_ID,
@@ -1932,18 +1931,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/claxedo/events**", claxedoEventsHandler)
 
   // Sessions on the /w/<workspaceId>/session/<id> route shape consume live events from
-  // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), NOT
-  // /global/event. Without these mounts on the primary origin, emit() is a
-  // silent no-op for local sessions and specs only pass via the REST
-  // reconciliation fallback (confirmed in core-busy-abort-errors' request-log
-  // investigation). Same bus and wire envelope as /global/event, so cloud()
+  // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), not
+  // /global/event. Without these mounts on the primary origin, emit() is a silent
+  // no-op for local sessions and specs only pass via the REST reconciliation
+  // fallback. Same bus and wire envelope as /global/event, so cloud()
   // re-registration on the relay origin remains behavior-identical.
   //
-  // FLAT frames get an extra short replay window on top of the log. History:
-  // `EventBus` USED to be a work-queue whose `drain()` handed each event to
-  // exactly one connection, which is fatal on this route because TWO app
-  // consumers poll it concurrently — ClaxedoEventsProvider's central stream
-  // (the only consumer that understands flat frames) AND global-sdk's compat
+  // Flat frames get an extra short replay window on top of the log. `EventBus` is an
+  // append-only log with per-reader cursor resume, but flat frames are stripped from
+  // the log delivery and served instead from `flatWrReplay`
+  // (`FLAT_WR_REPLAY_WINDOW_MS`, declared next to `emitFlat`), so they carry no `id:`
+  // and cannot advance a reader's cursor.
+  //
+  // Two app consumers poll this route concurrently: ClaxedoEventsProvider's central
+  // stream (the only consumer that understands flat frames) and global-sdk's compat
   // stream, since `authFetch` rewrites `/global/event` to `/api/wr/events`
   // (`signedRuntimeEventInput`, src/platform/api/api.ts), which parses flat
   // frames into a directory:"global" envelope where `session.lifecycle` matches
@@ -2208,8 +2209,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       ],
     },
     /**
-     * ACP agents advertise on session/new, so a DRAFT is answered from the
-     * runtime's recorded tables (`ACP_KNOWN_MODES`) — the agents' OWN ids and
+     * ACP agents advertise on session/new, so a draft is answered from the
+     * runtime's recorded tables (`ACP_KNOWN_MODES`) — the agents' own ids and
      * names, captured from the live binaries.
      *
      * Mirroring the real tables matters more than it looks: a spec asserting on
@@ -2217,8 +2218,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
      * runtime does not produce would keep passing while the product showed
      * something else entirely.
      *
-     * Note each vendor's ACP list differs from its SDK list above — same product,
-     * two transports, genuinely different surfaces.
+     * Each vendor's ACP list differs from its SDK list above — same product, two
+     * transports, genuinely different surfaces.
      */
     "acp:claude": {
       modes: [
@@ -2267,15 +2268,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       appliesFrom: harness === "cursor-sdk" ? "next-session" : "next-turn",
     }
   }
-  // Directory-scoped: what a DRAFT asks for.
-  //
-  // `harness`, NOT `options.harness`: the mutable binding is the whole reason
-  // `harness` is a `let` (see its declaration) — it tracks the in-app switch via
-  // `POST /api/claxedo/agent-config/harness`. Reading the frozen install option
-  // here meant a draft that switched harness kept reporting the ORIGINAL
-  // harness's permission modes forever, so a real per-harness-modes regression
-  // could not fail this mock.
-  await page.route("**/permission/modes**", (r) => (api(r) ? json(r, modeState(harness)) : r.continue()))
+  // Drafts name their native harness or connection in the query. Session
+  // bindings are separate: changing a draft does not rewrite an existing session.
+  await page.route("**/permission/modes**", (route) => {
+    if (!api(route)) return route.continue()
+    return json(route, modeState(harnessFixtureFromUrl(route.request().url(), harness)))
+  })
   await page.route("**/session/*/permission-mode**", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() === "PUT") {
@@ -2657,7 +2655,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // catch-all below is registered later and so out-matches this route even with the
   // wildcard — hence the explicit hand-back there.
   //
-  // The body is the LIVE map, built through `sessionStatusResponseBody` so it can only
+  // The body is the live map, built through `sessionStatusResponseBody` so it can only
   // ever carry the shape the real route produces — see `./contracts/session-status.ts`
   // for both server implementations. Idle is an ABSENT key on the wire, never
   // `{type:"idle"}`, so a fixed idle-VALUED map is a shape neither server path can emit.
@@ -3057,17 +3055,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       api(r) ? json(r, { worktrees: [] }) : r.continue(),
     )
 
-    // Resolve must discriminate by workspaceId/directory — a blanket catch-all here
-    // would also answer the LOCAL directory's own resolve (mounted earlier, above)
-    // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
-    // same-pane local -> cloud draft navigation in core-harness-ownership-cloud
-    // behavior 5).
-    // BOTH spellings, like the generic default above: `workspaceResolveUrl`
-    // requests `/api/claxedo/workspace/resolve` on loopback transports (every
-    // e2e page) and `/api/workspace/resolve` elsewhere. Covering only the
-    // unprefixed one let the cloud workspace's resolve fall through to the
-    // LOCAL-shaped default, so the draft submit never entered the cloud lane
-    // and `cloudPromptCount` stayed 0 for every cloud spec.
+    // Resolve discriminates by workspaceId/directory: a blanket catch-all here would
+    // also answer the local directory's own resolve, mounted above, with cloud info,
+    // breaking any spec that drives both lanes in one page.
+    //
+    // Both spellings, like the generic default above: `workspaceResolveUrl` requests
+    // `/api/claxedo/workspace/resolve` on loopback transports (every e2e page) and
+    // `/api/workspace/resolve` elsewhere. Cover only the unprefixed one and the cloud
+    // workspace's resolve falls through to the local-shaped default, leaving the
+    // draft submit outside the cloud lane with `cloudPromptCount` stuck at 0.
     const cloudWorkspaceResolveResponse = () => workspaceResolveResponse({
       id: workspaceId,
       project_id: CLOUD_PROJECT_ID,

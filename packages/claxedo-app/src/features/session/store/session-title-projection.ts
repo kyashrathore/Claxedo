@@ -7,6 +7,7 @@ import {
   stableSessionTitle,
   type StableSessionTitle,
 } from "@/features/session/lib/session-title-sync"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type SessionTitleTarget = {
   sessionId: string
@@ -47,10 +48,6 @@ type ProjectionState = {
   byKey: Record<string, SessionTitleProjectionEntry | undefined>
 }
 
-function normalized(value: string | undefined) {
-  return value?.trim() || undefined
-}
-
 function centralTarget(
   sessionRef: SessionRef | undefined,
   directory: string | undefined,
@@ -61,17 +58,17 @@ function centralTarget(
 }
 
 function targetKeys(target: SessionTitleTarget) {
-  const sessionId = normalized(target.sessionId)
+  const sessionId = trimToUndefined(target.sessionId)
   if (!sessionId || sessionId === "new") return []
   const ref = target.sessionRef
-  const targetDirectory = normalized(target.directory)
-  const targetWorkspaceId = normalized(target.workspaceId)
+  const targetDirectory = trimToUndefined(target.directory)
+  const targetWorkspaceId = trimToUndefined(target.workspaceId)
   if (centralTarget(ref, targetDirectory, targetWorkspaceId)) return [sessionViewKey({ sessionId })]
 
   const workspaceId = targetWorkspaceId ??
-    normalized(ref?.toolSandbox?.kind === "workspace" ? ref.toolSandbox.workspaceId : ref?.workspaceId)
+    trimToUndefined(ref?.toolSandbox?.kind === "workspace" ? ref.toolSandbox.workspaceId : ref?.workspaceId)
   const directory = targetDirectory ??
-    normalized(ref?.toolSandbox?.kind === "local" ? ref.toolSandbox.cwd : ref?.cwd)
+    trimToUndefined(ref?.toolSandbox?.kind === "local" ? ref.toolSandbox.cwd : ref?.cwd)
   const keys = [
     workspaceId ? sessionViewKey({ sessionId, workspaceId }) : undefined,
     directory ? sessionViewKey({ sessionId, directory }) : undefined,
@@ -96,8 +93,8 @@ function inventoryUpdatedAt(row: SessionInventoryRow | undefined) {
 
 function preferInventoryRow(current: SessionInventoryRow | undefined, next: SessionInventoryRow) {
   if (!current) return next
-  const currentConcrete = isConcreteSessionTitle(normalized(current.title))
-  const nextConcrete = isConcreteSessionTitle(normalized(next.title))
+  const currentConcrete = isConcreteSessionTitle(trimToUndefined(current.title))
+  const nextConcrete = isConcreteSessionTitle(trimToUndefined(next.title))
   if (currentConcrete !== nextConcrete) return nextConcrete ? next : current
   return (inventoryUpdatedAt(next) ?? 0) > (inventoryUpdatedAt(current) ?? 0) ? next : current
 }
@@ -136,7 +133,7 @@ function resolveEntry(
   if (!next.inventory && !next.provisionalTitle && !next.canonical) return undefined
   const concreteInventoryReplacesProvisional =
     previous?.resolved?.source === "provisional" &&
-    isConcreteSessionTitle(normalized(next.inventory?.title))
+    isConcreteSessionTitle(trimToUndefined(next.inventory?.title))
   const prior = (resetInventoryResolution &&
       (previous?.resolved?.source === "inventory" || previous?.resolved?.source === "placeholder")) ||
       concreteInventoryReplacesProvisional
@@ -245,7 +242,7 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
         for (const alias of aliases) {
           const current = state.byKey[alias]
           const inventory = nextByKey.get(alias)
-          const inventoryIsConcrete = isConcreteSessionTitle(normalized(inventory?.title))
+          const inventoryIsConcrete = isConcreteSessionTitle(trimToUndefined(inventory?.title))
           setEntry(alias, resolveEntry(alias, current, {
             inventory,
             // A provisional title only bridges the create→authoritative gap.
@@ -260,7 +257,7 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
       inventoryKeys = new Set(nextByKey.keys())
     },
     publishProvisional(target) {
-      const title = normalized(target.title)
+      const title = trimToUndefined(target.title)
       if (!title) return
       for (const key of expandedWriteKeys(target)) {
         const current = state.byKey[key]
@@ -272,7 +269,7 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
       }
     },
     publishCanonical(target) {
-      const title = normalized(target.title)
+      const title = trimToUndefined(target.title)
       if (!title) return
       for (const key of expandedWriteKeys(target)) {
         const current = state.byKey[key]

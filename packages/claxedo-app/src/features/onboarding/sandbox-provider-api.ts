@@ -5,7 +5,7 @@ import { workspaceSandboxDriversUrl } from "./app-ports"
 
 /**
  * The sandbox provider catalog and the in-flow save, so setup can satisfy the
- * provider key without a detour into Settings (plan 2026-07-31-001 §4.3).
+ * provider key without a detour into Settings.
  *
  * The control plane speaks "driver"; the user-facing word is "provider".
  */
@@ -25,7 +25,7 @@ export type SandboxProviderField = {
  */
 export type SandboxProviderVerification = {
   state: "working" | "broken" | "unknown"
-  /** Already a user-facing sentence; render it verbatim. */
+  /** Already a user-facing sentence; render it as-is. */
   reason?: string
 }
 

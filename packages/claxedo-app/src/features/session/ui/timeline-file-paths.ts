@@ -1,6 +1,3 @@
-// Path handling for timeline file interactions: `@path` chips in assistant
-// markdown (click-to-open, T16) and the file context menu (T11).
-
 import {
   resolveWorkspaceFileFocus,
   type WorkspaceFileFocusTarget,
@@ -14,7 +11,7 @@ export const stripMentionSigil = (raw: string) => raw.trim().replace(/^@/, "")
 /**
  * Shared with the terminal's file links: normalizes `./`, relativizes
  * absolute-in-workspace paths, parses `:line[:col]` suffixes, and refuses
- * `~`/traversal/out-of-workspace paths (which used to open blank tabs).
+ * `~`/traversal/out-of-workspace paths, which would open blank tabs.
  */
 export function timelineFileFocus(
   raw: string,
@@ -108,8 +105,8 @@ export function timelineExternalSourceClickTarget(event: MouseEvent): string | u
  * Resolve the file path a context-menu event targets. Inline-code chips carry
  * the path as their text; filename slots render only the basename — there the
  * full path travels on a `data-path` attribute set at the render sites.
- * (Falling back to slot textContent used to fabricate
- * `<workspaceDir>/<basename>` paths for Open/Copy/Reveal.)
+ * Falling back to slot textContent would fabricate `<workspaceDir>/<basename>`
+ * paths for Open/Copy/Reveal.
  */
 export function timelineFileTarget(target: EventTarget | null): string | undefined {
   const el = target instanceof Element ? target : null

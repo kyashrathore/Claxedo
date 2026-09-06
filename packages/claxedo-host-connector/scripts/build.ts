@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 
+import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 import {
   normalizeSourceMapBuildManifest,
   serializeBuildManifest,
@@ -24,6 +25,7 @@ const result = await runBunBuild("Host Connector bundle failed", {
   target: "browser",
   splitting: false,
   sourcemap: "external",
+  plugins: [publishedExportsPlugin()],
 })
 
 execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], {

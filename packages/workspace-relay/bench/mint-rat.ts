@@ -21,6 +21,7 @@
 // Bearer <rat>` (HTTP) or the `claxedo-rat.<rat>` WS subprotocol.
 
 import { readFile, writeFile } from "node:fs/promises"
+import { trimToUndefined } from "@claxedo/helpers/string"
 import { benchKeypairPems, benchIdentityFromPrivatePem } from "./lib/tokens"
 import type { RelayRole } from "../src/auth"
 
@@ -68,11 +69,11 @@ async function resolvePem(value: string): Promise<string> {
 }
 
 async function main() {
-  const action = clean(arg("action")) ?? "keygen"
+  const action = trimToUndefined(arg("action")) ?? "keygen"
 
   if (action === "keygen") {
     const { publicKeyPem, privateKeyPem } = await benchKeypairPems()
-    const out = clean(arg("out"))
+    const out = trimToUndefined(arg("out"))
     if (out) {
       await writeFile(`${out}.pub.pem`, publicKeyPem)
       await writeFile(`${out}.key.pem`, privateKeyPem)
@@ -86,7 +87,7 @@ async function main() {
   }
 
   if (action === "mint") {
-    const pemArg = clean(arg("private-key-pem")) ?? clean(process.env.BENCH_RAT_PRIVATE_KEY_PEM)
+    const pemArg = trimToUndefined(arg("private-key-pem")) ?? trimToUndefined(process.env.BENCH_RAT_PRIVATE_KEY_PEM)
     if (!pemArg) {
       console.error("[mint-rat] mint requires --private-key-pem <file|pem> (or BENCH_RAT_PRIVATE_KEY_PEM)")
       process.exit(2)

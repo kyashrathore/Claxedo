@@ -150,26 +150,26 @@ function network(input: SandboxDriverEnsureInput): NetworkPolicy | undefined {
  * and https://vercel.com/docs/sandbox/concepts/firewall — credentials
  * brokering).
  *
- * The result is the UNION of `base` — the create-time allow-list — and the
+ * The result is the union of `base` — the create-time allow-list — and the
  * brokered hosts, never a replacement. Replacing it is wrong in both
- * directions. It BREAKS egress the caller was granted: `updateNetworkPolicy`
- * overwrites the whole policy, so a sandbox created with git and the npm
- * registry allowed loses both the instant a brokered secret is attached, and
- * the agent's next `npm install` fails mid-run. And it can silently WIDEN
- * egress: a brokered host that was not in the create-time list becomes
- * reachable, so a policy nobody approved is installed as a side effect of
- * attaching a credential. A union changes exactly one thing — it adds the
- * brokered hosts, which is the smallest edit that makes the credential usable.
+ * directions: it breaks egress the caller was granted, since
+ * `updateNetworkPolicy` overwrites the whole policy, so a sandbox created with
+ * git and the npm registry allowed loses both the instant a brokered secret is
+ * attached, and the agent's next `npm install` fails mid-run. It can also
+ * silently widen egress, since a brokered host that was not in the create-time
+ * list becomes reachable, installing a policy nobody approved as a side effect
+ * of attaching a credential. A union changes exactly one thing — it adds the
+ * brokered hosts, the smallest edit that makes the credential usable.
  *
  * `base` is the create-time `NetworkPolicy` exactly as passed to `create`, and
- * it is REQUIRED even though `undefined` is a legal value: `undefined` means
+ * it is required even though `undefined` is a legal value: `undefined` means
  * "no policy was requested", so the merge keeps egress unrestricted, expressed
  * as the `"*"` wildcard the record form needs for the header transforms to ride
- * alongside it. That is the opposite of what this function used to return with
- * no base at all (deny-all-except-brokered-hosts), so an optional parameter
- * would let an existing caller keep compiling while its egress silently WIDENS.
- * Spelling the base out forces that decision to be made once, visibly. A
- * `"deny-all"` base contributes nothing, leaving deny-all-except-brokered-hosts.
+ * alongside it. An optional parameter defaulting to
+ * deny-all-except-brokered-hosts would let an existing caller keep compiling
+ * while its egress silently widens. Spelling the base out forces that decision
+ * to be made once, visibly. A `"deny-all"` base contributes nothing, leaving
+ * deny-all-except-brokered-hosts.
  */
 export function vercelBrokeredNetworkPolicy(
   secrets: SandboxBrokeredSecret[],

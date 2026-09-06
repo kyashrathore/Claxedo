@@ -306,15 +306,13 @@ describe("GET /", () => {
 /**
  * Per-account abuse budget.
  *
- * The app-wide `defaultRequestGuard` in `deployments/hosted-shared/hosted-core-app.ts`
- * already limits this route, and empirically fires on it — but it is IP-keyed
- * BY DESIGN, so it bounds one network path and says nothing about one account.
- * These tests are about the other axis, the one the plan's Unit 6 abuse-control
- * bullet asks for and this file had none of.
+ * The app-wide `defaultRequestGuard` (`hosted-core-app.ts`) is IP-keyed, so it
+ * bounds one network path and says nothing about one account; these tests
+ * cover the account axis.
  *
- * The default budget is used deliberately rather than an injected tiny one: an
- * excessive-traffic test that only proves "a limiter I supplied limits" would
- * pass with the production default set to a million.
+ * The shipped default budget is used rather than an injected tiny one: a test
+ * that only proves "a limiter I supplied limits" would pass with the
+ * production default set to a million.
  */
 describe("per-account budget", () => {
   test("excessive enrollment-request traffic from ONE account is cut off", async () => {

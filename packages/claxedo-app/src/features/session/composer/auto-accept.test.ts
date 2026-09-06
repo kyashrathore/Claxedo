@@ -3,44 +3,61 @@ import { createRoot, createSignal } from "solid-js"
 import { createComposerAutoAccept } from "./auto-accept"
 
 function harness(sessionId?: string) {
-  const [active, setActive] = createSignal(false)
-  const calls: string[] = []
+  const [sessionActive, setSessionActive] = createSignal(!sessionId)
+  const [directoryActive, setDirectoryActive] = createSignal(!!sessionId)
+  const calls: unknown[][] = []
   const control = createComposerAutoAccept({
     permission: {
-      isAutoAccepting: () => active(),
-      isAutoAcceptingDirectory: () => active(),
-      toggleAutoAccept: (id: string) => {
-        calls.push(`session:${id}`)
-        setActive((value) => !value)
+      isAutoAccepting: (id: string, directory: string) => {
+        calls.push(["read-session", id, directory])
+        return sessionActive()
+      },
+      isAutoAcceptingDirectory: (directory: string) => {
+        calls.push(["read-directory", directory])
+        return directoryActive()
+      },
+      toggleAutoAccept: (id: string, directory: string) => {
+        calls.push(["session", id, directory])
+        setSessionActive((value) => !value)
       },
       toggleAutoAcceptDirectory: (directory: string) => {
-        calls.push(`directory:${directory}`)
-        setActive((value) => !value)
+        calls.push(["directory", directory])
+        setDirectoryActive((value) => !value)
       },
     },
     sessionId: () => sessionId,
     directory: () => "/work/repo",
   })
-  return { active, calls, control }
+  return { calls, control }
 }
 
 describe("createComposerAutoAccept", () => {
   test("uses the session scope for an existing session", () => {
     createRoot((dispose) => {
-      const { active, calls, control } = harness("ses_1")
+      const { calls, control } = harness("ses_1")
+      expect(control.active()).toBe(false)
+      expect(control.currentlyActive()).toBe(false)
+      expect(calls.every((call) => call[0] === "read-session")).toBe(true)
+      expect(calls).toContainEqual(["read-session", "ses_1", "/work/repo"])
       control.toggle()
-      expect(active()).toBe(true)
-      expect(calls).toEqual(["session:ses_1"])
+      expect(control.active()).toBe(true)
+      expect(control.currentlyActive()).toBe(true)
+      expect(calls.filter((call) => !String(call[0]).startsWith("read-"))).toEqual([["session", "ses_1", "/work/repo"]])
       dispose()
     })
   })
 
   test("uses the directory scope for a draft", () => {
     createRoot((dispose) => {
-      const { active, calls, control } = harness()
+      const { calls, control } = harness()
+      expect(control.active()).toBe(false)
+      expect(control.currentlyActive()).toBe(false)
+      expect(calls.every((call) => call[0] === "read-directory")).toBe(true)
+      expect(calls).toContainEqual(["read-directory", "/work/repo"])
       control.toggle()
-      expect(active()).toBe(true)
-      expect(calls).toEqual(["directory:/work/repo"])
+      expect(control.active()).toBe(true)
+      expect(control.currentlyActive()).toBe(true)
+      expect(calls.filter((call) => !String(call[0]).startsWith("read-"))).toEqual([["directory", "/work/repo"]])
       dispose()
     })
   })

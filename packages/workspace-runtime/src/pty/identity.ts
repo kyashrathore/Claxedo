@@ -2,15 +2,14 @@
  * The terminal identity we present to programs running in a PTY.
  *
  * Agent TUIs branch on `TERM_PROGRAM` to tune behaviour they cannot probe —
- * most visibly wheel-scroll compensation. Passing the HOST's `TERM_PROGRAM`
- * through (which the env allowlist used to do) meant a TUI saw whatever
- * launched the desktop app: `Apple_Terminal`, `iTerm.app`, or nothing at all.
- * None of those describe our terminal, and the resulting behaviour was
- * effectively random per user.
+ * most visibly wheel-scroll compensation. Passing the host's own
+ * `TERM_PROGRAM` through would make a TUI see whatever launched the desktop
+ * app — `Apple_Terminal`, `iTerm.app`, or nothing at all. None of those
+ * describe our terminal, so behaviour would be effectively random per user.
  *
  * ## Why `vscode`
  *
- * This value is COUPLED to how our renderer emits wheel events, and the two
+ * This value is coupled to how our renderer emits wheel events, and the two
  * must always agree:
  *
  * - We use xterm.js's stock wheel handling, which damps trackpad deltas to ~30%
@@ -19,13 +18,13 @@
  *   `vscode` identity is to amplify its own scrolling to match. That is the
  *   behaviour we want.
  * - A kitty-class identity tells a TUI the terminal already emits a
- *   native-fidelity, one-report-per-line stream, so it DISABLES its multiplier.
+ *   native-fidelity, one-report-per-line stream, so it disables its multiplier.
  *   Claiming `kitty` while emitting a damped stock stream makes transcript
  *   scrolling crawl at roughly a third of native speed.
  *
- * So: if a full-fidelity wheel handler is ever added (synthesising SGR reports
- * per line rather than per event), this constant MUST flip to `kitty` in the
- * SAME change. `identity.test.ts` pins the coupling in both directions.
+ * If a full-fidelity wheel handler is ever added (synthesising SGR reports per
+ * line rather than per event), this constant must flip to `kitty` in the same
+ * change. `identity.test.ts` pins the coupling in both directions.
  */
 export const TERMINAL_TERM_PROGRAM = "vscode"
 

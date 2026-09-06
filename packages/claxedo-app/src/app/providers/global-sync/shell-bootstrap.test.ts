@@ -2,8 +2,11 @@ import { afterEach, describe, expect, mock, test } from "bun:test"
 import { bootstrapInitialShell, fetchShellBootstrap } from "./shell-bootstrap"
 import { requestUrl } from "@/lib/url"
 
+const originalApi = Object.getOwnPropertyDescriptor(globalThis, "api")
+
 afterEach(() => {
-  delete (globalThis as { api?: unknown }).api
+  if (originalApi) Object.defineProperty(globalThis, "api", originalApi)
+  else delete (globalThis as { api?: unknown }).api
 })
 
 describe("fetchShellBootstrap", () => {

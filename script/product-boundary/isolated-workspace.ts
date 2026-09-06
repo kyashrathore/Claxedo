@@ -27,6 +27,9 @@ const ROOT_FILES = [
   // Package build scripts run their Bun.build calls through the repo's one
   // failure-reporting wrapper.
   "script/bun-build.ts",
+  // Packages whose published exports resolve to dist rewrite their sibling
+  // imports through this plugin at build time.
+  "script/published-exports-plugin.ts",
 ]
 const STRIPPED_STUB_FIELDS = ["exports", "main", "module", "types", "bin", "scripts", "files"]
 

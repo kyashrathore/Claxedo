@@ -106,9 +106,10 @@ export namespace Pty {
    *   QUEUE_HIGH_WATERMARK  1 MB             — pending writes to a slow pty
    *   modeTracker                            — headless xterm, scrollback: 0
    *
-   * History is NOT in this list: it lives only on disk (see history-disk.ts).
-   * It used to be mirrored in RAM at HISTORY_LIMIT — 16 MB per terminal, for
-   * data that was already durable and read at most once per session lifetime.
+   * History is not in this list: it lives only on disk (see history-disk.ts),
+   * never mirrored in RAM — mirroring it would cost HISTORY_LIMIT, 16 MB per
+   * terminal, for data already durable and read at most once per session
+   * lifetime.
    */
   const BUFFER_LIMIT = 1024 * 1024 * 2
   const WEBSOCKET_BUFFERED_AMOUNT_MAX = (() => {
@@ -636,15 +637,10 @@ export namespace Pty {
     if (claxedoPort && setupComplete) {
       const tabId = env.CLAXEDO_TAB_ID || id
       const terminalId = env.CLAXEDO_TERMINAL_ID || id
-      // The agent hooks post this straight back as `?workspaceId=` (see
-      // agent-hooks/templates notify.sh), and the runtime resolves that as a
-      // workspace IDENTITY. Falling back to `cwd` put a directory path in that
-      // slot, so every hook call 404'd — silently, because notify.sh
-      // backgrounds its curl and discards the response. Net effect: no
-      // `agent.lifecycle` event ever reached the app, so a coding agent running
-      // in a terminal never showed working/permission status. Verified against
-      // a live server: `?workspaceId=<cwd path>` → 404,
-      // `?workspaceId=<uuid>` → 200 {"success":true}.
+      // Posted straight back by agent hooks as `?workspaceId=` (see
+      // agent-hooks/templates notify.sh) and resolved as a workspace
+      // identity; see `terminalHookWorkspaceId` for why a directory path in
+      // this slot fails silently.
       const workspaceId = terminalHookWorkspaceId({
         envWorkspaceId: env.CLAXEDO_WORKSPACE_ID,
         runtimeWorkspaceId: () => runtimeWorkspaceId(),
@@ -748,9 +744,9 @@ export namespace Pty {
       hasClaxedoPort: !!claxedoPort,
     })
 
-    // Read from disk (async — the history is no longer mirrored in RAM). Capped
-    // at BUFFER_LIMIT because that is what `session.buffer` can hold; seeding
-    // more would only be trimmed straight back off.
+    // Read from disk (an async op) and capped at BUFFER_LIMIT — that is what
+    // `session.buffer` can hold, so seeding more would only be trimmed
+    // straight back off.
     const restored = previousPtyId ? await history.snapshot(BUFFER_LIMIT) : ""
     const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
     let initialCommandSent = false
@@ -876,7 +872,7 @@ export namespace Pty {
         // Cut on a safe boundary: a raw `slice(excess)` can land inside an
         // escape sequence, and the replay then starts mid-CSI — xterm prints
         // the parameter bytes as literal junk at the top of the scrollback.
-        // `bufferCursor` advances by the ACTUAL cut so the invariant
+        // `bufferCursor` advances by the actual cut so the invariant
         // `bufferCursor + buffer.length === cursor` still holds for connect().
         const cut = safeStartIndex(session.buffer, session.buffer.length - BUFFER_LIMIT)
         session.buffer = session.buffer.slice(cut)

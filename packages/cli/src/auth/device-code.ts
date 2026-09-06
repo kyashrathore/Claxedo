@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process"
 import { config, url } from "../config"
 import { requestJson } from "../http"
-import { number, object, text } from "../json"
+import { object } from "../json"
 import { writeCredentials, type Credentials } from "./token-store"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { asFiniteNumber } from "@claxedo/helpers/guards"
 
 type DeviceCode = {
   deviceCode: string
@@ -15,9 +17,9 @@ type DeviceCode = {
 
 function deviceCode(input: unknown): DeviceCode {
   const row = object(input)
-  const code = text(row.device_code) ?? text(row.deviceCode)
-  const userCode = text(row.user_code) ?? text(row.userCode)
-  const verificationUri = text(row.verification_uri) ?? text(row.verification_url) ?? text(row.verificationUrl)
+  const code = trimToUndefined(row.device_code) ?? trimToUndefined(row.deviceCode)
+  const userCode = trimToUndefined(row.user_code) ?? trimToUndefined(row.userCode)
+  const verificationUri = trimToUndefined(row.verification_uri) ?? trimToUndefined(row.verification_url) ?? trimToUndefined(row.verificationUrl)
   if (!code || !userCode || !verificationUri) {
     throw new Error("Device-code response is missing device_code, user_code, or verification URI")
   }
@@ -25,28 +27,28 @@ function deviceCode(input: unknown): DeviceCode {
     deviceCode: code,
     userCode,
     verificationUri,
-    ...((text(row.verification_uri_complete) ?? text(row.verificationUriComplete))
-      ? { verificationUriComplete: text(row.verification_uri_complete) ?? text(row.verificationUriComplete) }
+    ...((trimToUndefined(row.verification_uri_complete) ?? trimToUndefined(row.verificationUriComplete))
+      ? { verificationUriComplete: trimToUndefined(row.verification_uri_complete) ?? trimToUndefined(row.verificationUriComplete) }
       : {}),
-    intervalMs: Math.max(1, number(row.interval) ?? 5) * 1000,
-    expiresAt: Date.now() + Math.max(60, number(row.expires_in) ?? 600) * 1000,
+    intervalMs: Math.max(1, asFiniteNumber(row.interval) ?? 5) * 1000,
+    expiresAt: Date.now() + Math.max(60, asFiniteNumber(row.expires_in) ?? 600) * 1000,
   }
 }
 
 function credential(input: unknown, controlPlaneUrl: string): Credentials {
   const row = object(input)
-  const accessToken = text(row.access_token) ?? text(row.accessToken)
+  const accessToken = trimToUndefined(row.access_token) ?? trimToUndefined(row.accessToken)
   if (!accessToken) throw new Error("Device-token response is missing access_token")
-  const expiresIn = number(row.expires_in) ?? number(row.expiresIn)
-  const identity = text(row.identity) ?? text(row.email) ?? text(row.subject) ?? text(row.user_id)
+  const expiresIn = asFiniteNumber(row.expires_in) ?? asFiniteNumber(row.expiresIn)
+  const identity = trimToUndefined(row.identity) ?? trimToUndefined(row.email) ?? trimToUndefined(row.subject) ?? trimToUndefined(row.user_id)
   return {
     controlPlaneUrl,
     accessToken,
-    ...((text(row.refresh_token) ?? text(row.refreshToken))
-      ? { refreshToken: text(row.refresh_token) ?? text(row.refreshToken) }
+    ...((trimToUndefined(row.refresh_token) ?? trimToUndefined(row.refreshToken))
+      ? { refreshToken: trimToUndefined(row.refresh_token) ?? trimToUndefined(row.refreshToken) }
       : {}),
-    ...((text(row.token_type) ?? text(row.tokenType))
-      ? { tokenType: text(row.token_type) ?? text(row.tokenType) }
+    ...((trimToUndefined(row.token_type) ?? trimToUndefined(row.tokenType))
+      ? { tokenType: trimToUndefined(row.token_type) ?? trimToUndefined(row.tokenType) }
       : {}),
     ...(expiresIn ? { expiresAt: Date.now() + expiresIn * 1000 } : {}),
     ...(identity ? { identity } : {}),

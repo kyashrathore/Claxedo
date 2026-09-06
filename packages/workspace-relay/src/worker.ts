@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, exportJWK, importPKCS8, importSPKI } from "jose"
+import { trimToUndefined } from "@claxedo/helpers/string"
 import {
   createWorkspaceRelayDurableObjectGateway,
   createWorkspaceRelayDurableObjectRoom,
@@ -21,7 +22,7 @@ import {
 } from "./server"
 import { deriveRelayHostKid, deriveRelayHostPublicKey, type RelayKey, type RuntimeAccessTokenClaims } from "./auth"
 
-export type WorkspaceRelayWorkerEnv = Record<string, unknown> & {
+type WorkspaceRelayWorkerBindings = {
   WORKSPACE_RELAY_ROOM?: WorkspaceRelayDurableObjectNamespace
   CLAXEDO_RELAY_RESOLVER_URL?: string
   CLAXEDO_CENTRAL_URL?: string
@@ -43,6 +44,8 @@ export type WorkspaceRelayWorkerEnv = Record<string, unknown> & {
   CLAXEDO_RELAY_ALLOWED_ORIGINS?: string
 }
 
+export type WorkspaceRelayWorkerEnv = Record<string, unknown> & WorkspaceRelayWorkerBindings
+
 type ResolverClient = {
   target(workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined>
   revocation(args: { jti: string; workspaceId: string; hostId: string }): Promise<RuntimeAccessTokenActiveResult>
@@ -50,18 +53,13 @@ type ResolverClient = {
 
 type ResolverFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>
 
-function clean(input: unknown) {
-  const value = typeof input === "string" ? input.trim() : undefined
-  return value ? value : undefined
-}
-
 function positiveInteger(input: unknown) {
-  const parsed = Number(clean(input))
+  const parsed = Number(trimToUndefined(input))
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
 }
 
 function sampleRate(input: unknown) {
-  const parsed = Number(clean(input))
+  const parsed = Number(trimToUndefined(input))
   if (!Number.isFinite(parsed)) return undefined
   if (parsed < 0) return 0
   if (parsed > 1) return 1
@@ -69,7 +67,7 @@ function sampleRate(input: unknown) {
 }
 
 function pem(input: unknown) {
-  return clean(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 function json(code: string, message: string, status = 503) {
@@ -89,22 +87,22 @@ async function relayHostJwksResponse(env: WorkspaceRelayWorkerEnv) {
   })
 }
 
-function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWorkerEnv  ) {
-  const value = clean(env[name])
+function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWorkerBindings) {
+  const value = trimToUndefined(env[name])
   if (!value) throw new Error(`${name} is required`)
   return value
 }
 
 export function workspaceRelayWorkerResolverUrl(env: WorkspaceRelayWorkerEnv) {
-  const resolverUrl = clean(env.CLAXEDO_RELAY_RESOLVER_URL)
+  const resolverUrl = trimToUndefined(env.CLAXEDO_RELAY_RESOLVER_URL)
   if (resolverUrl) return resolverUrl.replace(/\/+$/, "")
-  const centralUrl = clean(env.CLAXEDO_CENTRAL_URL)
+  const centralUrl = trimToUndefined(env.CLAXEDO_CENTRAL_URL)
   if (centralUrl) return `${centralUrl.replace(/\/+$/, "")}/internal/relay`
   throw new Error("CLAXEDO_RELAY_RESOLVER_URL or CLAXEDO_CENTRAL_URL is required")
 }
 
 async function loadRuntimeAccessKey(env: WorkspaceRelayWorkerEnv): Promise<RelayKey> {
-  const jwksUrl = clean(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
+  const jwksUrl = trimToUndefined(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
   if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
   const publicPem = pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
   if (!publicPem) {
@@ -123,14 +121,14 @@ async function loadRelayHostKeys(env: WorkspaceRelayWorkerEnv) {
     : await deriveRelayHostPublicKey(privateKey)
   const current: RelayHostPublicKey = {
     publicKey,
-    kid: clean(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveRelayHostKid(publicKey),
+    kid: trimToUndefined(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveRelayHostKid(publicKey),
   }
   const nextPem = pem(env.CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM)
   const nextPublicKey = nextPem ? await importSPKI(nextPem, "EdDSA", { extractable: true }) : undefined
   const next = nextPublicKey
     ? {
-        publicKey: nextPublicKey,
-        kid: clean(env.CLAXEDO_RELAY_HOST_NEXT_KID) ?? await deriveRelayHostKid(nextPublicKey),
+      publicKey: nextPublicKey,
+      kid: trimToUndefined(env.CLAXEDO_RELAY_HOST_NEXT_KID) ?? await deriveRelayHostKid(nextPublicKey),
       }
     : undefined
   return { privateKey, publicKeys: next ? [current, next] : [current], currentKid: current.kid }
@@ -189,10 +187,10 @@ export async function workspaceRelayDurableObjectOptions(
     relayHostAlgorithm: "EdDSA",
     relayHostPublicKeys: relayHost.publicKeys,
     relayHostMintKid: relayHost.currentKid,
-    auditAcceptSampleRate: Number(clean(env.CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE) ?? "0.1"),
+    auditAcceptSampleRate: Number(trimToUndefined(env.CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE) ?? "0.1"),
     ...(positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) ? { tunnelChannelCap: positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) } : {}),
     ...(sampleRate(env.CLAXEDO_RELAY_TRACE_SAMPLE_RATE) !== undefined ? { traceSampleRate: sampleRate(env.CLAXEDO_RELAY_TRACE_SAMPLE_RATE) } : {}),
-    ...(clean(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) ? { traceForceHeaderSecret: clean(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) } : {}),
+    ...(trimToUndefined(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) ? { traceForceHeaderSecret: trimToUndefined(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) } : {}),
     resolveTarget: (claims: RuntimeAccessTokenClaims) => resolver.target(claims.workspace_id, claims.host_id),
     isRuntimeAccessTokenActive: (claims: RuntimeAccessTokenClaims) =>
       resolver.revocation({
@@ -264,8 +262,8 @@ export class WorkspaceRelayRoom {
   }
 
   private async loadRoom() {
-    setWorkspaceRelayAppOrigins(clean(this.env.CLAXEDO_APP_ORIGINS))
-    setWorkspaceRelayAllowedOrigins(clean(this.env.CLAXEDO_RELAY_ALLOWED_ORIGINS))
+    setWorkspaceRelayAppOrigins(trimToUndefined(this.env.CLAXEDO_APP_ORIGINS))
+    setWorkspaceRelayAllowedOrigins(trimToUndefined(this.env.CLAXEDO_RELAY_ALLOWED_ORIGINS))
     if (this.room) return this.room
     this.loading ??= workspaceRelayDurableObjectOptions(this.env)
       .then((options) => createWorkspaceRelayDurableObjectRoom({
@@ -315,8 +313,8 @@ const gateway = createWorkspaceRelayDurableObjectGateway({ bindingName: "WORKSPA
 
 export default {
   fetch(request: Request, env: WorkspaceRelayWorkerEnv) {
-    setWorkspaceRelayAppOrigins(clean(env.CLAXEDO_APP_ORIGINS))
-    setWorkspaceRelayAllowedOrigins(clean(env.CLAXEDO_RELAY_ALLOWED_ORIGINS))
+    setWorkspaceRelayAppOrigins(trimToUndefined(env.CLAXEDO_APP_ORIGINS))
+    setWorkspaceRelayAllowedOrigins(trimToUndefined(env.CLAXEDO_RELAY_ALLOWED_ORIGINS))
     if (new URL(request.url).pathname === "/.well-known/jwks.json") {
       return relayHostJwksResponse(env)
     }

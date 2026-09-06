@@ -83,8 +83,6 @@ const shikiThemesDist = normalizePath(
   ),
 )
 
-const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
-
 /**
  * Local signed web development runs the dev server over TLS: the browser
  * client's auth contract requires exact HTTPS origins, and the `Secure`
@@ -119,7 +117,6 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || "http://127.0.0.1:2593"
   return {
     define: {
-      __DEMO_ENABLED__: JSON.stringify(isDemoBuild || mode === "development"),
       __CLAXEDO_AGENT_PLUGINS_ENABLED__: JSON.stringify(agentPluginsEnabled),
     },
     plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
@@ -170,7 +167,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     },
     build: {
       target: "esnext",
-      outDir: isDemoBuild ? "dist-demo" : "dist",
+      outDir: "dist",
       // PostHog Error Tracking symbolication (deploy-claxedo-app.yml).
       // "hidden" writes *.map files next to each chunk without adding a
       // `//# sourceMappingURL` comment to the bundle, so nothing shipped to
@@ -180,9 +177,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
       // the publish directory.
       sourcemap: "hidden",
       rollupOptions: {
-        input: isDemoBuild
-          ? { demo: fileURLToPath(new URL("./demo/index.html", import.meta.url)) }
-          : { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
+        input: { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
         output: {
           manualChunks: {
             "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],

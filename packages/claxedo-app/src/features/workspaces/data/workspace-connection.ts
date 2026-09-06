@@ -345,7 +345,7 @@ function applyLog(workspaceId: string, log: CloudLog) {
 
 function driveConnection(workspaceId: string, runtime: ConnectionRuntime, options?: { keepReadyWhileChecking?: boolean }) {
   const generation = (runtime.generation += 1)
-  const cancelled = () => runtimes.get(workspaceId)?.generation !== generation
+  const cancelled = () => runtimes.get(workspaceId) !== runtime || runtime.generation !== generation
   const input = runtime.input
 
   // `local` workspaces have no relay backing — there is nothing to connect to,
@@ -509,7 +509,7 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
         keepReadyWhileChecking: connections[workspaceId]?.status === "ready",
       })
     }
-    return { release: () => releaseWorkspaceConnection(workspaceId) }
+    return connectionHandle(workspaceId, existing)
   }
 
   const runtime: ConnectionRuntime = { input, generation: 0 }
@@ -542,7 +542,7 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
       : {}),
   })
   driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmUserHosted })
-  return { release: () => releaseWorkspaceConnection(workspaceId) }
+  return connectionHandle(workspaceId, runtime)
 }
 
 // Later acquires for the same workspaceId may carry a directory/events the
@@ -585,6 +585,18 @@ function refinedKind(prev: WorkspaceConnectionKind, next: WorkspaceConnectionKin
   return next
 }
 
+function connectionHandle(workspaceId: string, runtime: ConnectionRuntime) {
+  let released = false
+  return {
+    release() {
+      if (released) return
+      released = true
+      if (runtimes.get(workspaceId) !== runtime) return
+      releaseWorkspaceConnection(workspaceId)
+    },
+  }
+}
+
 function releaseWorkspaceConnection(workspaceId: string) {
   const state = connections[workspaceId]
   const runtime = runtimes.get(workspaceId)
@@ -597,6 +609,7 @@ function releaseWorkspaceConnection(workspaceId: string) {
   setConnections(workspaceId, "refs", 0)
   // Debounced teardown — survive fast pane swaps / split re-layout.
   runtime.teardownTimer = globalThis.setTimeout(() => {
+    if (runtimes.get(workspaceId) !== runtime) return
     const current = connections[workspaceId]
     // A re-acquire in the debounce window bumped refs back up — abort teardown.
     if (current && current.refs > 0) return

@@ -45,9 +45,8 @@ describe("identityFromUserInfo", () => {
     })
   })
 
-  test(" tolerates an empty or unknown body", () => {
-    expect(identityFromUserInfo(null)).toEqual({ userId: "" })
-    expect(identityFromUserInfo({})).toEqual({ userId: "" })
+  test.each([null, {}, { sub: "   " }, { name: "Display only" }])("rejects userinfo without a canonical subject: %j", (body) => {
+    expect(() => identityFromUserInfo(body)).toThrow("userinfo omitted its subject")
   })
 })
 
@@ -75,7 +74,7 @@ describe("createIdentityResolver", () => {
     expect(calls).toEqual([{ url: "https://id.test/oauth/userinfo", authorization: "Bearer at_live" }])
   })
 
-  test("returns an empty identity when userinfo fails", async () => {
+  test("rejects when userinfo fails so the account owner can retry", async () => {
     const errors: unknown[] = []
     const resolve = createIdentityResolver({
       userInfoUrl: "https://id.test/oauth/userinfo",
@@ -83,7 +82,7 @@ describe("createIdentityResolver", () => {
       onError: (error) => errors.push(error),
     })
 
-    await expect(resolve("at")).resolves.toEqual({ userId: "" })
+    await expect(resolve("at")).rejects.toThrow("userinfo failed: 503")
     expect(errors).toHaveLength(1)
   })
 
@@ -96,9 +95,23 @@ describe("createIdentityResolver", () => {
       timeoutMs: 1,
     })
 
-    await expect(resolve("at")).resolves.toEqual({ userId: "" })
+    await expect(resolve("at")).rejects.toThrow("userinfo timed out")
     expect(errors).toHaveLength(1)
     expect(errors[0]).toBeInstanceOf(Error)
     expect((errors[0] as Error).message).toBe("userinfo timed out")
   })
+  test("bounds a body decode that stalls after headers arrive", async () => {
+    let signal: AbortSignal | undefined
+    const resolve = createIdentityResolver({
+      userInfoUrl: "https://id.test/oauth/userinfo",
+      fetch: async (_url, init) => {
+        signal = init?.signal ?? undefined
+        return { ok: true, json: () => new Promise(() => {}) } as Response
+      },
+      timeoutMs: 1,
+    })
+    await expect(resolve("at")).rejects.toThrow("userinfo timed out")
+    expect(signal?.aborted).toBe(true)
+  })
+
 })

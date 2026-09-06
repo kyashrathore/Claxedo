@@ -21,11 +21,7 @@ import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
 import { ClaxedoSessionMetaTable } from "@claxedo/server-core/session/meta.sql"
-import { isJsonRecord, jsonRecord, jsonRecord as rec } from "@claxedo/server-core/platform/runtime/lib/json"
-
-function txt(input: unknown): string | undefined {
-  return typeof input === "string" ? input : undefined
-}
+import { asRecord, asString, isRecord } from "@claxedo/helpers/guards"
 
 function num(input: unknown): number | undefined {
   return typeof input === "number" ? input : undefined
@@ -53,7 +49,7 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
     if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
     const encoded = input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length)
     if (!encoded) throw new Error("missing cursor payload")
-    const decoded = rec(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")))
+    const decoded = asRecord(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")))
     if (
       decoded?.sessionId !== sessionId ||
       typeof decoded.ordinal !== "number" ||
@@ -74,10 +70,10 @@ function staleToolError(message?: string) {
 
 function terminalizedPart(part: Record<string, unknown>, ts: number, message?: string) {
   if (part.type !== "tool") return part
-  const state = rec(part.state)
-  const status = txt(state?.status)
+  const state = asRecord(part.state)
+  const status = asString(state?.status)
   if (status !== "pending" && status !== "running") return part
-  const time = rec(state?.time)
+  const time = asRecord(state?.time)
   return {
     ...part,
     state: {
@@ -97,10 +93,10 @@ export function terminalizeReplayMessages(
   options: { interrupted?: boolean; message?: string } = {},
 ) {
   return messages.map((message) => {
-    const time = rec(message.info.time)
-    const err = rec(message.info.error)
-    const data = rec(err?.data)
-    const errorMessage = options.message ?? txt(data?.message) ?? txt(err?.message)
+    const time = asRecord(message.info.time)
+    const err = asRecord(message.info.error)
+    const data = asRecord(err?.data)
+    const errorMessage = options.message ?? asString(data?.message) ?? asString(err?.message)
     const terminal =
       options.interrupted ||
       (message.info.role === "assistant" && (typeof time?.completed === "number" || !!message.info.error))
@@ -130,10 +126,10 @@ export function persistMessageEvent(
   directory?: string,
 ) {
   if (event.type === "message.updated") {
-    const props = rec(event.properties)
-    const info = rec(props?.info)
+    const props = asRecord(event.properties)
+    const info = asRecord(props?.info)
     if (!info) return
-    const messageId = txt(info.id)
+    const messageId = asString(info.id)
     if (!messageId) return
 
     const now = Date.now()
@@ -148,7 +144,7 @@ export function persistMessageEvent(
           message_id: messageId,
           session_id: sessionId,
           workspace_id,
-          role: txt(info.role) ?? null,
+          role: asString(info.role) ?? null,
           ordinal,
           event_ordinal,
           data: JSON.stringify({ info, parts: [] }),
@@ -159,7 +155,7 @@ export function persistMessageEvent(
           target: ClaxedoCloudMessageTable.message_id,
           set: {
             workspace_id,
-            role: txt(info.role) ?? null,
+            role: asString(info.role) ?? null,
             data: JSON.stringify({ info, parts: existingParts(messageId) }),
             event_ordinal,
             updated_at: now,
@@ -171,26 +167,26 @@ export function persistMessageEvent(
   }
 
   if (event.type === "message.part.updated") {
-    const props = rec(event.properties)
-    const part = rec(props?.part)
+    const props = asRecord(event.properties)
+    const part = asRecord(props?.part)
     if (!part) return
-    const messageId = txt(part.messageID)
+    const messageId = asString(part.messageID)
     if (!messageId) return
 
     const now = Date.now()
     const existing = loadMessage(messageId)
     const parsed = existing
       ? readStoredMessage(existing.data)
-      : { info: { id: messageId, sessionID: txt(part.sessionID) ?? sessionId }, parts: [] }
+      : { info: { id: messageId, sessionID: asString(part.sessionID) ?? sessionId }, parts: [] }
     const parts = parsed.parts.slice()
-    const index = parts.findIndex((item) => txt(rec(item)?.id) === txt(part.id))
+    const index = parts.findIndex((item) => asString(asRecord(item)?.id) === asString(part.id))
     if (index >= 0) parts[index] = part
     else parts.push(part)
 
     writeMessage({
       messageId,
       sessionId,
-      role: txt(rec(parsed.info)?.role) ?? null,
+      role: asString(asRecord(parsed.info)?.role) ?? null,
       info: parsed.info,
       parts,
       now,
@@ -201,33 +197,33 @@ export function persistMessageEvent(
   }
 
   if (event.type === "message.part.delta") {
-    const props = rec(event.properties)
-    const messageId = txt(props?.messageID)
-    const partId = txt(props?.partID)
-    const field = txt(props?.field)
-    const delta = txt(props?.delta)
+    const props = asRecord(event.properties)
+    const messageId = asString(props?.messageID)
+    const partId = asString(props?.partID)
+    const field = asString(props?.field)
+    const delta = asString(props?.delta)
     if (!messageId || !partId || !field || delta === undefined) return
 
     const now = Date.now()
     const existing = loadMessage(messageId)
     const parsed = existing
       ? readStoredMessage(existing.data)
-      : { info: { id: messageId, sessionID: txt(props?.sessionID) ?? sessionId }, parts: [] }
+      : { info: { id: messageId, sessionID: asString(props?.sessionID) ?? sessionId }, parts: [] }
     const parts = parsed.parts.slice()
-    const idx = parts.findIndex((item) => txt(rec(item)?.id) === partId)
+    const idx = parts.findIndex((item) => asString(asRecord(item)?.id) === partId)
     const prev =
-      idx >= 0 && rec(parts[idx])
-        ? rec(parts[idx])!
+      idx >= 0 && asRecord(parts[idx])
+        ? asRecord(parts[idx])!
         : {
             id: partId,
-            sessionID: txt(props?.sessionID) ?? sessionId,
+            sessionID: asString(props?.sessionID) ?? sessionId,
             messageID: messageId,
             type: "text",
             text: "",
           }
     const next = {
       ...prev,
-      [field]: `${txt(prev[field]) ?? ""}${delta}`,
+      [field]: `${asString(prev[field]) ?? ""}${delta}`,
     }
     if (idx >= 0) parts[idx] = next
     if (idx < 0) parts.push(next)
@@ -235,7 +231,7 @@ export function persistMessageEvent(
     writeMessage({
       messageId,
       sessionId,
-      role: txt(rec(parsed.info)?.role) ?? null,
+      role: asString(asRecord(parsed.info)?.role) ?? null,
       info: parsed.info,
       parts,
       now,
@@ -362,7 +358,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
           LATEST_SURFACE_MAX_INFO_BYTES,
         )
         .flatMap((row): Array<{ ordinal: number; info_json: string }> => {
-          const item = jsonRecord(row)
+          const item = asRecord(row)
           const ordinal = item && numberColumn(item, "ordinal")
           const info_json = item && textColumn(item, "info_json")
           return ordinal === undefined || info_json === undefined ? [] : [{ ordinal, info_json }]
@@ -391,7 +387,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
           LATEST_SURFACE_MAX_PART_BYTES,
         )
         .flatMap((row): Array<LatestSurfaceCandidate> => {
-          const item = jsonRecord(row)
+          const item = asRecord(row)
           if (!item) return []
           const message_ordinal = numberColumn(item, "message_ordinal")
           const part_ordinal = numberColumn(item, "part_ordinal")
@@ -431,7 +427,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
               }),
             )
             .flatMap((row): Array<{ message_ordinal: number; part_json: string }> => {
-              const item = jsonRecord(row)
+              const item = asRecord(row)
               const message_ordinal = item && numberColumn(item, "message_ordinal")
               const part_json = item && textColumn(item, "part_json")
               return message_ordinal === undefined || part_json === undefined
@@ -440,13 +436,13 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
             })
       const partsByOrdinal = new Map<number, Array<Record<string, unknown>>>()
       for (const part of selectedParts) {
-        const parsed = jsonRecord(JSON.parse(part.part_json))
+        const parsed = asRecord(JSON.parse(part.part_json))
         if (!parsed) continue
         partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), parsed])
       }
       const messages = infoRows.length === selectedOrdinals.length
         ? infoRows.flatMap((row) => {
-            const info = jsonRecord(JSON.parse(row.info_json))
+            const info = asRecord(JSON.parse(row.info_json))
             return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
           })
         : []
@@ -572,11 +568,11 @@ export function readSessionEventsAfter(sessionId: string, afterOrdinal: number):
       .orderBy(ClaxedoCloudMessageEventTable.event_ordinal)
       .all(),
   ).map((row) => {
-    const parsed = jsonRecord(JSON.parse(row.data))
-    const properties = rec(parsed?.properties)
+    const parsed = asRecord(JSON.parse(row.data))
+    const properties = asRecord(parsed?.properties)
     return {
       event_ordinal: row.event_ordinal,
-      type: txt(parsed?.type) ?? row.type,
+      type: asString(parsed?.type) ?? row.type,
       ...(row.directory ? { directory: row.directory } : {}),
       ...(properties ? { properties } : {}),
     }
@@ -607,13 +603,13 @@ export function subscribeMessageReplay(bus: {
     const { type, properties } = event.payload
     if (type !== "message.updated" && type !== "message.part.updated" && type !== "message.part.delta") return
 
-    const props = rec(properties)
+    const props = asRecord(properties)
     const sessionId =
       type === "message.updated"
-        ? txt((rec(props?.info))?.sessionID)
+        ? asString((asRecord(props?.info))?.sessionID)
         : type === "message.part.updated"
-          ? (txt(props?.sessionID) ?? txt((rec(props?.part))?.sessionID))
-          : txt(props?.sessionID)
+          ? (asString(props?.sessionID) ?? asString((asRecord(props?.part))?.sessionID))
+          : asString(props?.sessionID)
     if (!sessionId) return
 
     persistMessageEvent(sessionId, { type, properties }, event.directory)
@@ -659,11 +655,11 @@ function readStoredMessage(data: string): { info: Record<string, unknown>; parts
   // for and cannot read is a data error, and message-replay.test.ts uses
   // exactly that to prove the bounded page reader never touches rows outside
   // its selection.
-  const row = jsonRecord(JSON.parse(data))
+  const row = asRecord(JSON.parse(data))
   const parts = row?.parts
   return {
-    info: jsonRecord(row?.info) ?? {},
-    parts: Array.isArray(parts) ? parts.filter(isJsonRecord) : [],
+    info: asRecord(row?.info) ?? {},
+    parts: Array.isArray(parts) ? parts.filter(isRecord) : [],
   }
 }
 

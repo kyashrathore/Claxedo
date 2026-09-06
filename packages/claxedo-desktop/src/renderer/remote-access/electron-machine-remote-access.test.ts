@@ -226,10 +226,9 @@ describe("capabilities this product does not have", () => {
   test("offers neither a second-device marker nor an account-wide device list", async () => {
     // `markSecondDeviceOpen` stays absent — the machine that published itself
     // is never the second device. `devices` stays absent too: enumerating the
-    // account's machines is not one of the closed operations, and the
-    // synthetic "this machine" row that used to stand in for it existed only
-    // to carry `sharedWorkspaceIds` — which now travels on `status()`, its
-    // authoritative producer.
+    // account's machines is not one of the closed operations, and
+    // `sharedWorkspaceIds` already travels on `status()`, its authoritative
+    // producer.
     const idle = electronMachineRemoteAccess(bridge().handle)
     expect(idle.markSecondDeviceOpen).toBeUndefined()
     expect(idle.devices).toBeUndefined()

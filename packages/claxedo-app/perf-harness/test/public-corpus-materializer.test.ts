@@ -181,6 +181,7 @@ describe("public OpenCode corpus materialization", () => {
           workspaceDirectory: path.join(root, "workspaces"),
         }),
       ).rejects.toThrow(/invalid event order/)
+      expect(await Bun.file(path.join(root, "state", "data", "opencode-engine", "opencode.db")).exists()).toBe(false)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

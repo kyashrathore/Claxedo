@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { HARNESS_IDS } from "@/platform/identity/session-ref"
-import type { AgentPermissionModeState } from "@claxedo/agent-sdk-runtime"
 import { PERMISSION_MECHANISMS } from "./mechanisms"
 import {
   NATIVE_NO_POLICY_REASON,
@@ -20,7 +19,7 @@ const report = (input: Partial<HarnessModeReport> = {}): HarnessModeReport => ({
 })
 
 /**
- * Every harness that HAS a policy surface — i.e. all but the sandboxed ones.
+ * Every harness that has a policy surface — i.e. all but the sandboxed ones.
  *
  * Derived from the mechanism table rather than hardcoded, so adding another
  * sandboxed harness cannot silently leave these loops asserting that it offers
@@ -40,9 +39,8 @@ const THREE_MODES: HarnessModeReport = report({
 
 describe("harness modes are shown in the harness's own words", () => {
   // The core rule of this module. Every user-visible string here came off the
-  // wire; nothing is derived from HarnessId. The previous design held a per-SDK
-  // table in the app, and that table was wrong about three harnesses at once
-  // because nothing forced it to agree with the installed packages.
+  // wire; nothing is derived from HarnessId. A static per-SDK table in the app
+  // would drift from what the installed packages actually support.
   test("id, name and description pass through untouched", () => {
     const { modes } = harnessPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     expect(modes.map((mode) => mode.id)).toEqual(["default", "acceptEdits", "auto"])
@@ -53,7 +51,7 @@ describe("harness modes are shown in the harness's own words", () => {
 
   test("Claxedo contributes nothing to a harness that reports its own modes", () => {
     for (const harness of POLICY_HARNESS_IDS) {
-      // The harness enforces; its list IS the picker. A Claxedo row above it
+      // The harness enforces; its list is the picker. A Claxedo row above it
       // could only be a label over one of those same rows — on Claude, over a
       // row already named "Auto" — so the menu would open on a paraphrase of
       // something it was hiding.
@@ -63,7 +61,7 @@ describe("harness modes are shown in the harness's own words", () => {
 
   test("a harness reporting nothing gets no invented picker options", () => {
     for (const harness of POLICY_HARNESS_IDS) {
-      // Nothing to switch TO otherwise — Auto alone would be a one-item picker
+      // Nothing to switch to otherwise — Auto alone would be a one-item picker
       // with no way back.
       const options = permissionModeOptions({ harness }).harness.modes
       expect(options.map((option) => option.name), harness).toEqual([])
@@ -72,9 +70,9 @@ describe("harness modes are shown in the harness's own words", () => {
 
   test("a malformed mode report reads as no modes, never a render throw", () => {
     // `readJson` does no shape validation: a proxy error page or a server
-    // mid-deploy can 200 a body with no `modes` array. That must degrade
-    // exactly like an empty report — this function runs in a composer render
-    // memo, and a throw there takes the whole shell into the ErrorBoundary.
+    // mid-deploy can 200 a body with no `modes` array. That has to degrade
+    // like an empty report — this function runs in a composer render memo,
+    // and a throw there takes the whole shell into the ErrorBoundary.
     const malformed = {} as HarnessModeReport
     for (const harness of POLICY_HARNESS_IDS) {
       const options = permissionModeOptions({ harness, report: malformed }).harness.modes
@@ -95,20 +93,20 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   test("a reported auto rung is offered as the harness's own row, not relabelled", () => {
-    // The regression this pins: Claxedo used to hoist this rung into a row of
-    // its own called "Auto", so the same write appeared twice under two names.
+    // Pins the auto rung to the harness's own row rather than a second
+    // Claxedo-owned row that duplicates the same write under another name.
     const { modes } = harnessPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     const auto = modes.find((mode) => mode.id === "auto")!
     expect(auto.name).toBe("Auto-review")
     expect(auto.origin).toBe("harness")
     expect(auto.delivery).toMatchObject({ kind: "harness-permission-mode", modeId: "auto" })
-    // Exactly one row applies that mode. Two would be the duplicate this removes.
+    // One row applies that mode. Two would be a duplicate write under two names.
     const applies = modes.filter((mode) => JSON.stringify(mode.delivery).includes('"modeId":"auto"'))
     expect(applies).toHaveLength(1)
   })
 
-  // THREE distinct empty states, and collapsing any two is how a permanent gap
-  // comes to look like a spinner — which is exactly what shipped before.
+  // Three distinct empty states. Collapsing any two would make a permanent
+  // gap look like a spinner.
   test("not fetched, unsupported, and reported-nothing read differently", () => {
     const loading = harnessPermissionModes({ harness: "claude-acp" })
     expect(loading.modes).toEqual([])
@@ -128,13 +126,11 @@ describe("harness modes are shown in the harness's own words", () => {
   // A 200 carrying something that is not a mode report has to degrade to a
   // fourth empty state, not throw. This runs inside the composer's render, so a
   // throw here does not break one control — it takes the whole shell into the
-  // ErrorBoundary and the user gets a blank "Something went wrong" page. That
-  // is not hypothetical: a mis-scoped e2e route served the session row on
-  // `/session/:id/permission-mode` and blanked the app on every seeded session.
+  // ErrorBoundary and the user gets a blank "Something went wrong" page.
   test("an unreadable report degrades instead of throwing", () => {
     // Built by parsing a JSON body rather than casting an object literal: that
-    // is exactly how the bad value reaches this function in production —
-    // `readJson` hands back whatever the response contained, unvalidated.
+    // is how the bad value reaches this function in production — `readJson`
+    // hands back whatever the response contained, unvalidated.
     const unreadable: HarnessModeReport = JSON.parse(`{"appliesFrom":"next-turn"}`)
     const malformed = harnessPermissionModes({ harness: "claude-sdk", report: unreadable })
 
@@ -166,11 +162,11 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   /*
-   * A draft has no session, so there is nothing for a next-session change to be
-   * excluded FROM. The caveat read "applies to the next agent, not this session"
-   * on a composer where no session existed — describing a distinction that had
-   * no second term. The first message creates the session and runs under exactly
-   * the chosen mode, so on a draft the choice is simply in force.
+   * A draft has no session, so there is nothing for a next-session change to
+   * be excluded from — a caveat contrasting "the next agent" with "this
+   * session" has no second term to contrast against. The first message
+   * creates the session and runs under the chosen mode, so on a draft the
+   * choice is simply in force.
    */
   test("a next-session harness stays silent on a draft", () => {
     const cursor = report({
@@ -185,15 +181,12 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   /*
-   * A draft and a live session show the SAME list.
+   * A draft and a live session show the same list: the rows are identical,
+   * and only the next-session caveat (asserted above) may differ. The auto
+   * rung is the harness's own row, so there is no separate Claxedo-owned copy
+   * whose wording could vary with `hasSession`.
    *
-   * Claxedo used to hoist the auto rung into a row of its own whose description
-   * quoted the harness's id, and that row's copy had a `hasSession` branch — so
-   * the list appeared to change on the first message. Nothing is hoisted now, so
-   * the invariant is stronger and cheaper to state: the rows are identical, and
-   * only the next-session caveat (asserted above) may differ.
-   *
-   * Uses codex-acp's real auto rung, verbatim from the live binary.
+   * Uses codex-acp's real auto rung, unchanged from the live binary.
    */
   test("a draft and a live session offer the same rows", () => {
     const codexAcp = report({
@@ -215,9 +208,9 @@ describe("harness modes are shown in the harness's own words", () => {
 
 describe("the two groups are mutually exclusive", () => {
   // Two controls over one behaviour with no way to tell which wins is
-  // unreadable, and that is what a Claxedo row above the harness's own list was:
-  // it forwarded whichever row carried `level: "auto"`, so the same write sat on
-  // screen twice under two names.
+  // unreadable — a Claxedo row above the harness's own list forwarding
+  // whichever row carries `level: "auto"` would put the same write on screen
+  // twice under two names.
   test("a harness with modes contributes them and nothing else", () => {
     const options = permissionModeOptions({ harness: "claude-sdk", report: THREE_MODES })
     expect(options).not.toHaveProperty("claxedo")
@@ -253,10 +246,10 @@ describe("choosing a default", () => {
   })
 
   test("with no current mode reported, the harness's own auto rung is chosen", () => {
-    // By the HARNESS's id, not Claxedo's. This used to return
-    // `claxedo-allow-safe` because a Claxedo "Auto" row stood in front of the
-    // list; with that row gone, a claxedo id here would select a row the picker
-    // does not render and the trigger would read "Permissions".
+    // By the harness's id, not Claxedo's: there is no separate Claxedo "Auto"
+    // row in front of the list for a claxedo id to select, so returning one
+    // here would select a row the picker does not render, and the trigger
+    // would read "Permissions".
     expect(defaultPermissionSelection({ harness: "claude-sdk", report: THREE_MODES })).toEqual({
       kind: "harness",
       modeId: "auto",
@@ -332,30 +325,6 @@ describe("resolving a stored selection", () => {
   })
 })
 
-/**
- * The runtime produces this shape and the app re-declares it as a wire type, so
- * the two can drift silently — the app would keep compiling and quietly stop
- * understanding half the payload.
- *
- * The assertion is the ASSIGNMENT, checked at compile time by `tsgo -b`, not the
- * `expect` below: a renamed or retyped field on the runtime's own
- * `AgentPermissionModeState` fails to build here. The runtime type is imported
- * type-only, so this adds no runtime dependency on that package.
- */
-describe("the wire shape matches the runtime's own declaration", () => {
-  test("the runtime's state is assignable to the app's report, and back", () => {
-    const fromRuntime: AgentPermissionModeState = {
-      modes: [{ id: "a", name: "A", description: "d", level: "auto" }],
-      currentModeId: "a",
-      appliesFrom: "next-turn",
-    }
-    const asReport: HarnessModeReport = fromRuntime
-    const backAgain: AgentPermissionModeState = { ...asReport, modes: [...asReport.modes] }
-    expect(backAgain.currentModeId).toBe("a")
-    expect(asReport.appliesFrom).toBe("next-turn")
-  })
-})
-
 describe("classifyToolKind — permission_decided's tool_kind bucketing", () => {
   test("buckets each named tier to its generic category", () => {
     expect(classifyToolKind("read")).toBe("read")
@@ -375,7 +344,7 @@ describe("classifyToolKind — permission_decided's tool_kind bucketing", () => 
     expect(classifyToolKind("question")).toBe("interactive")
   })
 
-  // The permission namespace has an OPEN TAIL — MCP tool names, subagent ids,
+  // The permission namespace has an open tail — MCP tool names, subagent ids,
   // and the shell tool id are all dynamic strings the harness invents at
   // runtime. Every one of them must land in the same safe bucket rather than
   // being forwarded, or a connection/tool name leaks into analytics.
@@ -389,7 +358,7 @@ describe("classifyToolKind — permission_decided's tool_kind bucketing", () => 
 })
 
 describe("permissionDecidedProperties — the permission_decided property allowlist", () => {
-  // The guard against future PII creep: this enumerates the exact allowed keys.
+  // The guard against future PII creep: this enumerates the full set of allowed keys.
   // Tripwire — add a forbidden property (e.g. `title`) to the function's return
   // in modes.ts, watch this fail, then remove it.
   test("emits exactly decision, mode, and tool_kind — nothing else", () => {

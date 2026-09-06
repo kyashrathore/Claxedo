@@ -1,5 +1,5 @@
+import { asArray, asRecord } from "@claxedo/helpers/guards"
 import type { SignedControlPlaneAuth } from "./auth"
-import { jsonRecord } from "../runtime/lib/json"
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "./private-session-authority"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 
@@ -84,7 +84,7 @@ export async function exercisePrivateSessionAuthorityConformance(
   })
   invariant(
     asArray(await authority.listSessions(creator.auth, { workspaceId })).some(
-      (row) => record(row)?.session_id === sessionId,
+      (row) => asRecord(row)?.session_id === sessionId,
     ),
     "exact registration retry did not reconcile the session",
   )
@@ -167,12 +167,12 @@ export async function exercisePrivateSessionAuthorityConformance(
       },
     ],
   })
-  const page = record(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId }))
+  const page = asRecord(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId }))
   const messages = asArray(page?.messages)
-  const canonical = messages.map(record).find((message) => record(message?.info)?.id === "message_canonical_actor")
-  const forged = messages.map(record).find((message) => record(message?.info)?.id === "message_forged_actor")
-  const canonicalAuthor = record(record(record(canonical?.info)?.claxedo)?.author)
-  const forgedAuthor = record(record(record(forged?.info)?.claxedo)?.author)
+  const canonical = messages.map(asRecord).find((message) => asRecord(message?.info)?.id === "message_canonical_actor")
+  const forged = messages.map(asRecord).find((message) => asRecord(message?.info)?.id === "message_forged_actor")
+  const canonicalAuthor = asRecord(asRecord(asRecord(canonical?.info)?.claxedo)?.author)
+  const forgedAuthor = asRecord(asRecord(asRecord(forged?.info)?.claxedo)?.author)
   invariant(
     canonicalAuthor?.id === participant.runtime.actorId &&
       canonicalAuthor.kind === participant.runtime.actorKind &&
@@ -244,12 +244,6 @@ export async function exercisePrivateSessionAuthorityConformance(
     access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
     attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
   }
-}
-
-const record = jsonRecord
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
 }
 
 async function rejects(operation: () => Promise<unknown>) {

@@ -169,7 +169,7 @@ describe("harness selection", () => {
         readiness: "error",
       }),
     ).toBe(false)
-    // A degraded harness (process lost / recovering) blocks Send (T4) even with a
+    // A degraded harness (process lost / recovering) blocks Send even with a
     // valid model, so the composer health peek can name the condition first.
     expect(
       harnessReadyForSubmit({

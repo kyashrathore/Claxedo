@@ -1,5 +1,5 @@
 /**
- * Pure key-sequence mapping for the mobile terminal accessory row (WP-C3).
+ * Pure key-sequence mapping for the mobile terminal accessory row.
  *
  * Soft keyboards on touch devices omit Esc / Tab / Ctrl / arrows, which are
  * essential for TUIs (vim, the agent TUI, shells). The accessory row surfaces

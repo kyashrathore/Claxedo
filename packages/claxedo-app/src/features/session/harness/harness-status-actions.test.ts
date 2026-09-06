@@ -24,9 +24,10 @@ beforeEach(() => {
   state = {
     harnessMode: "harness",
     harness: CLAUDE_CONNECTION,
-    harnessBinary: "",
     selectedModel: "sonnet",
     dynamicModels: null,
+    thoughtLevels: null,
+    selectedThoughtLevel: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,
@@ -132,12 +133,7 @@ describe("harness status actions", () => {
     expect(optionFetches).toEqual([])
   })
 
-  test("applies a failed harness status over the seeded opencode placeholder so the error surfaces", async () => {
-    // The store seeds `harness: "opencode"` before any user confirmation. A
-    // failed status for the harness this scope is actually configured with
-    // (e.g. acp:claude with a missing binary) must be applied — treating the
-    // seed as a confirmed different selection would silently swallow the error,
-    // leaving submit unblocked with no red dot (core-harness-ownership-local).
+  test("applies failed status while the scope has no confirmed harness", async () => {
     state.harness = undefined
 
     await actions().applyStatus(scope, {
@@ -161,6 +157,7 @@ describe("harness status actions", () => {
   // model control renders "Loading models" behind the error state forever. A
   // status that will not fetch options must settle the flag itself.
   test("settles the loading flag when a failed status skips the options fetch", async () => {
+    state.optionsLoading = true
     const subject = actions()
 
     await subject.applyStatus(scope, {

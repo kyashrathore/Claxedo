@@ -40,13 +40,14 @@ function sessionRowHtml(opts: { id: string; title: string; time?: string }): str
     </div>`
 }
 
-describe("expectRailRowVisible (B1) — rail-oracle.ts:53-74", () => {
+describe("expectRailRowVisible — row appears without a reload, at the claimed index", () => {
   test("healthy: a row present with no reload becomes visible", async () => {
     await page.setContent(`<body>${sessionRowHtml({ id: "s1", title: "Refactor rail oracle" })}</body>`)
     await expect(expectRailRowVisible({ page, sessionId: "s1", timeout: 500 })).resolves.toBeDefined()
   })
 
-  test("broken: row for the target session never renders (defects 1/2/7 shape) times out", async () => {
+  // timeout 300ms: the failure is deterministic absence, not a race.
+  test("broken: row for the target session never renders", async () => {
     await page.setContent(`<body>${sessionRowHtml({ id: "unrelated-session", title: "Unrelated" })}</body>`)
     await expect(expectRailRowVisible({ page, sessionId: "s1", timeout: 300 })).rejects.toThrow(/never became visible without a reload/)
   })
@@ -63,7 +64,7 @@ describe("expectRailRowVisible (B1) — rail-oracle.ts:53-74", () => {
   })
 })
 
-describe("expectRailTitleSettled (B3) — rail-oracle.ts:88-112, defect 8", () => {
+describe("expectRailTitleSettled — title leaves the create-time placeholder", () => {
   test("healthy: a real (non-placeholder) title resolves immediately", async () => {
     await page.setContent(`<body>${sessionRowHtml({ id: "s1", title: "Refactor rail oracle module" })}</body>`)
     await expect(expectRailTitleSettled({ page, sessionId: "s1", timeout: 500 })).resolves.toBe(
@@ -71,17 +72,14 @@ describe("expectRailTitleSettled (B3) — rail-oracle.ts:88-112, defect 8", () =
     )
   })
 
-  test('broken: title stuck at the create-time placeholder "New Session" (defect 8) never settles', async () => {
+  test('broken: title stuck at the create-time placeholder "New Session" never settles', async () => {
     await page.setContent(`<body>${sessionRowHtml({ id: "s1", title: "New Session" })}</body>`)
     await expect(expectRailTitleSettled({ page, sessionId: "s1", timeout: 300 })).rejects.toThrow(
       /still the create-time placeholder "New Session"/,
     )
   })
 
-  // The "Untitled session" placeholder is the second half of the PLACEHOLDER_TITLE regex
-  // (rail-oracle.ts:40) — covered separately because a regex bug that matched only "New
-  // Session" (e.g. an unescaped `|` precedence slip) would pass the test above and still
-  // let this placeholder through undetected in production.
+  // Covered separately so a PLACEHOLDER_TITLE regex that matched only "New Session" fails here.
   test('broken: title stuck at the alternate placeholder "Untitled session" never settles', async () => {
     await page.setContent(`<body>${sessionRowHtml({ id: "s1", title: "Untitled session" })}</body>`)
     await expect(expectRailTitleSettled({ page, sessionId: "s1", timeout: 300 })).rejects.toThrow(
@@ -90,7 +88,7 @@ describe("expectRailTitleSettled (B3) — rail-oracle.ts:88-112, defect 8", () =
   })
 })
 
-describe("expectRailRowMovesToTop (B5) — rail-oracle.ts:121-127, defect 10", () => {
+describe("expectRailRowMovesToTop — the re-prompted row reaches index 0", () => {
   test("healthy: the re-prompted row sits at index 0", async () => {
     const rows = [
       sessionRowHtml({ id: "target", title: "Re-prompted" }),
@@ -101,7 +99,7 @@ describe("expectRailRowMovesToTop (B5) — rail-oracle.ts:121-127, defect 10", (
     await expect(expectRailRowMovesToTop({ page, sessionId: "target", timeout: 500 })).resolves.toBeUndefined()
   })
 
-  test("broken: the re-prompted row is still buried at index 5 (defect 10 — reconcile never re-sorted)", async () => {
+  test("broken: the re-prompted row is still buried at index 5", async () => {
     const olderRows = Array.from({ length: 5 }, (_, i) => sessionRowHtml({ id: `s${i}`, title: `Older ${i}` })).join("")
     const rows = olderRows + sessionRowHtml({ id: "target", title: "Re-prompted" })
     await page.setContent(`<body>${rows}</body>`)
@@ -111,13 +109,13 @@ describe("expectRailRowMovesToTop (B5) — rail-oracle.ts:121-127, defect 10", (
   })
 })
 
-describe("expectRailRowUnique (B6) — rail-oracle.ts:137-143, open issue #14", () => {
+describe("expectRailRowUnique — exactly one row per session id", () => {
   test("healthy: exactly one row renders for the session id", async () => {
     await page.setContent(`<body>${sessionRowHtml({ id: "s1", title: "Solo row" })}</body>`)
     await expect(expectRailRowUnique({ page, sessionId: "s1", timeout: 500 })).resolves.toBeUndefined()
   })
 
-  test("broken: two rows share the same session id (issue #14 — workspaceID double-render)", async () => {
+  test("broken: two rows share the same session id", async () => {
     const rows = sessionRowHtml({ id: "s1", title: "Project copy" }) + sessionRowHtml({ id: "s1", title: "Workspace copy" })
     await page.setContent(`<body>${rows}</body>`)
     await expect(expectRailRowUnique({ page, sessionId: "s1", timeout: 300 })).rejects.toThrow(
@@ -126,22 +124,11 @@ describe("expectRailRowUnique (B6) — rail-oracle.ts:137-143, open issue #14", 
   })
 })
 
-/** A row shaped for `expectRailStatus`: title and time are explicitly positioned (needed
- * for the oracle's own `dotX < titleX` check, line 204-209) and the glyph column starts
- * EMPTY — `expectRailStatus`'s defect-12 mount-while-idle precondition (lines 181-187)
- * requires the dot to be absent before `driveWorking` runs, in both the healthy and
- * broken fixtures below, or the oracle fails on the precondition instead of the thing this
- * test is trying to isolate. */
+/** A row for `expectRailStatus`: title and time are positioned so `dotX < titleX` is
+ * measurable, and the glyph column starts empty so the idle-mount precondition holds. */
 function statusRowHtml(id: string): string {
-  // The row itself gets an explicit height: every child below is `position:absolute`
-  // (deliberately, so its `left` is measured from the viewport/ICB and stays comparable to
-  // the plain pixel values geometry-oracle.ts's header cites — "terminal titles at x=65,
-  // session titles at x=41"), which removes each child from normal flow. A block element
-  // whose entire content is out-of-flow collapses to height:0, and Playwright's
-  // `toBeVisible` treats a zero-area box as hidden — caught 2026-08-06 when this fixture's
-  // `expect(row).toBeVisible()` failed with "Received: hidden" before this height was
-  // added, on EVERY variant (healthy included), which is exactly the kind of fixture bug
-  // this mutation suite exists to not have (a broken fixture, not a broken oracle).
+  // Every child is position:absolute, so the row needs an explicit height; a zero-area
+  // row reads as hidden to `toBeVisible`.
   return `
     <div data-testid="rail-sidebar-session-row" data-session-id="${id}" style="height:24px; width:300px;">
       <span data-slot="navigation-row-glyph" style="position:absolute; left:0; top:0; width:16px; height:16px;"></span>
@@ -150,7 +137,7 @@ function statusRowHtml(id: string): string {
     </div>`
 }
 
-describe("expectRailStatus (B7) — rail-oracle.ts:170-222, defects 11 & 12", () => {
+describe("expectRailStatus — idle -> working -> done on an unfocused row, dot placement", () => {
   test("healthy: idle -> working -> done, dot inside the glyph column and left of the title", async () => {
     await page.setContent(`<body>${statusRowHtml("s1")}</body>`)
     const driveWorking = () =>
@@ -170,7 +157,8 @@ describe("expectRailStatus (B7) — rail-oracle.ts:170-222, defects 11 & 12", ()
     ).resolves.toBeDefined()
   })
 
-  test("broken: driveWorking never produces a dot (defect 12 shape) — the working assertion times out", async () => {
+  // `driveWorking` does nothing, so the working-dot assertion fails, not the idle precondition.
+  test("broken: driveWorking never produces a dot — the working assertion times out", async () => {
     await page.setContent(`<body>${statusRowHtml("s1")}</body>`)
     await expect(
       expectRailStatus({
@@ -189,7 +177,7 @@ describe("expectRailStatus (B7) — rail-oracle.ts:170-222, defects 11 & 12", ()
   // Below 8000ms this test fails on the bun timeout while that assertion is still
   // legitimately polling.
   test(
-    "broken: dot renders on working but outside the glyph column (defect 11 — orphaned dot)",
+    "broken: dot renders on working but outside the glyph column (orphaned dot)",
     async () => {
       await page.setContent(`<body>${statusRowHtml("s1")}</body>`)
       const driveWorking = () =>

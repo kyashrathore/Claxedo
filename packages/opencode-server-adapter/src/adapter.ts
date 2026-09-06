@@ -3,13 +3,13 @@ import type { AgentExecutionBinding, AgentMessage, AgentSession, PromptInput } f
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import type { HarnessCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { asRecord } from "@claxedo/helpers/guards"
 import { OPENCODE_SERVER_CONNECTION_CAPABILITIES, type ResolvedOpenCodeServerConnection } from "./config"
 import { OpenCodeServerAdapterError } from "./errors"
 import { serverSentEvents } from "./sse"
 import {
   isUnsupportedInteractiveEvent,
   openCodeEventSessionId,
-  record,
   type OpenCodeLeafEvent,
 } from "./translate"
 import { OpenCodeTurn } from "./turn"
@@ -107,7 +107,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     const data = await this.json("session.todo", `/session/${encodeURIComponent(binding.upstreamSessionId)}/todo`)
     if (!Array.isArray(data)) throw this.error("invalid_response", "OpenCode session.todo response must be an array", "session.todo")
     return data.map((item) => {
-      const todo = record(item)
+      const todo = asRecord(item)
       if (!todo || typeof todo.content !== "string" || typeof todo.status !== "string" || typeof todo.priority !== "string") {
         throw this.error("invalid_response", "OpenCode session.todo response contained an invalid item", "session.todo")
       }
@@ -265,10 +265,10 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     } catch {
       throw this.error("reconciliation_gap", "OpenCode authoritative reconciliation snapshots were unavailable", "events.reconcile")
     }
-    const statusesMap = record(statuses)
+    const statusesMap = asRecord(statuses)
     if (!statusesMap) throw this.error("reconciliation_gap", "OpenCode status snapshot was invalid", "events.reconcile")
     const status = statusesMap[binding.upstreamSessionId]
-    const type = record(status)?.type
+    const type = asRecord(status)?.type
     if (status !== undefined && type !== "idle" && type !== "busy" && type !== "retry") {
       throw this.error("reconciliation_gap", "OpenCode status snapshot contained an unknown bound-session state", "events.reconcile")
     }
@@ -313,7 +313,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     try { data = await this.jsonBody("compatibility.probe", response) } catch {
       throw this.error("compatibility_probe_failed", "OpenCode compatibility probe returned invalid JSON", "compatibility.probe")
     }
-    const health = record(data)
+    const health = asRecord(data)
     if (health?.healthy !== true || typeof health.version !== "string" || !health.version) {
       throw this.error("compatibility_probe_failed", "OpenCode compatibility probe returned an unsupported health payload", "compatibility.probe")
     }
@@ -331,15 +331,15 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   private parseBoundEvent(data: string, binding: AgentExecutionBinding): OpenCodeLeafEvent | undefined {
     let value: unknown
     try { value = JSON.parse(data) } catch { throw this.error("invalid_event", "OpenCode event data is not valid JSON", "events.read") }
-    const envelope = record(value)
-    const payload = record(envelope?.payload)
+    const envelope = asRecord(value)
+    const payload = asRecord(envelope?.payload)
     if (!envelope || !payload || typeof payload.id !== "string" || typeof payload.type !== "string") {
       throw this.error("invalid_event", "OpenCode global event envelope is invalid", "events.read")
     }
     // Durable sync records share the global stream but are not live Session
     // events and intentionally carry `syncEvent` instead of `properties`.
     if (payload.type === "sync") return undefined
-    const properties = record(payload.properties)
+    const properties = asRecord(payload.properties)
     if (!properties) throw this.error("invalid_event", "OpenCode global event envelope is invalid", "events.read")
     const event = { type: payload.type, properties }
     const sessionId = openCodeEventSessionId(event)
@@ -365,14 +365,14 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
    */
   private validateMessages(messages: unknown[], upstreamSessionId: string): UpstreamMessage[] {
     return messages.map((item) => {
-      const row = record(item)
-      const info = record(row?.info)
+      const row = asRecord(item)
+      const info = asRecord(row?.info)
       if (!row || !info || info.sessionID !== upstreamSessionId || typeof info.id !== "string" || !Array.isArray(row.parts)) {
         throw this.error("invalid_response", "OpenCode messages crossed the bound upstream session", "session.messages")
       }
       const messageId = info.id
       const parts = row.parts.map((itemPart) => {
-        const part = record(itemPart)
+        const part = asRecord(itemPart)
         if (!part || part.sessionID !== upstreamSessionId || part.messageID !== messageId) {
           throw this.error("invalid_response", "OpenCode message part crossed the bound upstream session", "session.messages")
         }
@@ -383,7 +383,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   }
 
   private session(operation: string, data: unknown, expectedId?: string) {
-    const row = record(data)
+    const row = asRecord(data)
     if (!row || typeof row.id !== "string" || !row.id || row.directory !== this.config.targetDirectory || (expectedId && row.id !== expectedId)) {
       throw this.error("invalid_response", `OpenCode ${operation} response crossed its bound session or workspace`, operation)
     }

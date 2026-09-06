@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/connections",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "Connections kit: integration registry, credential/connection store ports, OAuth attempt machine, and token service for linking external accounts (Notion, Atlassian, GitHub, Google) to a host application",
   "license": "MIT",
@@ -20,9 +20,9 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
-      "bun": "./dist/index.mjs",
-      "development": "./dist/index.mjs",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     }
@@ -42,6 +42,7 @@
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
+    "@claxedo/helpers": "workspace:*",
     "hono": "4.10.7"
   },
   "devDependencies": {

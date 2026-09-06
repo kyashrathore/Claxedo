@@ -213,19 +213,9 @@ describe("WorkspaceGate", () => {
     expect(calls.acquire).not.toHaveBeenCalled()
   })
 
-  // RESOLVED 2026-07-11 (WP-B5): the "second pane refs stuck at 1" symptom (e2e
-  // core-panes-split-tabs behavior 19) is NOT in this gate or the connection
-  // authority — both ref-count correctly (proven above +
-  // workspace-connection.test.ts). The earlier `suppressConnectionGate`
-  // hypothesis was WRONG: a terminal surface does NOT set that flag. The real
-  // cause was workspace RESOLUTION divergence — a newly opened terminal inherits
-  // `activeDirectory` (the route key) as its directory, and when that route key
-  // disagrees with the signed inventory (a mock `/api/workspace/resolve` that
-  // answers `local-<sessionId>` for a directory the inventory calls cloud) the
-  // terminal's SessionPaneScope resolves `local` and its gate is a no-op, so no
-  // second ref is taken. The two surfaces converging on ONE connection key is now
-  // pinned at the resolver layer: session-workspace-key.test.ts, "a session pane
-  // and a secondary surface of the same workspace converge on ONE connection key".
+  // Two panes on one relay-backed workspace sharing a single ref-counted
+  // connection depends on both surfaces resolving the same workspaceId+kind,
+  // not on this gate; session-workspace.test.ts pins that convergence.
 
   test("reacquires when a fallback workspace kind is refined", () => {
     const firstRelease = vi.fn()

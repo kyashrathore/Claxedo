@@ -1,12 +1,12 @@
 /**
  * Which inner Workspace tabs own DOM.
  *
- * Only the active one. Deactivated tabs used to stay mounted so a switch back
- * was instant, but a closed or inactive tab that still owns a live DOM tree,
- * its listeners, and its observers is exactly the hidden ownership a disposed
- * Workspace is supposed to give back. What a tab needs to come back is
- * restored instead: the panel's working set carries the tab list and the Review
- * surface, and TabFile re-reads from the canonical request cache.
+ * Only the active one: keeping a closed or inactive tab mounted would leave it
+ * still owning a live DOM tree, its listeners, and its observers — exactly the
+ * hidden ownership a disposed Workspace is supposed to give back. What a tab
+ * needs to come back is restored instead: the panel's working set carries the
+ * tab list and the Review surface, and TabFile re-reads from the canonical
+ * request cache.
  *
  * The one exception is a tab whose activation is prepared but not yet
  * committed. It mounts for that frame so its content is laid out before it
@@ -15,27 +15,17 @@
  *
  * Review retains its semantic working set while another tab is active, but its
  * DOM surface is unmounted and reconstructed from that state when selected
- * again (review-workspace.tsx). Retaining a bounded LRU of file-tab DOM bodies
- * was measured here and REJECTED — not on ownership grounds, on correctness. A
- * retained file body cannot hold its rendered content:
- *
- *  - Display-locked (`content-visibility: hidden`), the Pierre text viewer's
- *    window collapses to zero rows and nothing ever redraws them: it renders
- *    once per options change and its virtualizer windows against a scroll
- *    parent it cannot measure while the subtree is skipped. Every switch back
- *    revealed an EMPTY file. The 3x "win" that showed on the file-open probe
- *    was that empty view.
- *  - Merely hidden (`visibility: hidden`, or `opacity: 0` with paint order),
- *    the rows survive some reveals and not others: whatever tears the window
- *    down while the body is hidden — a navigator opening beside it was enough
- *    — is never followed by a redraw, so a reveal is blank at random. Today's
- *    unmount/remount is what hides that upstream fragility.
- *
- * In the rejected experiment, retention saved the viewer's shadow root and its
- * adopted stylesheet (~24ms of script per switch); the row rebuild, which is
- * the larger half, was still paid on reveal. Reviving that approach needs the
- * viewer to redraw on reveal (session-ui/components/file.tsx), not a change
- * here.
+ * again (review-workspace.tsx). Retaining file-tab bodies instead fails on
+ * correctness rather than ownership: a retained body cannot hold its rendered
+ * content. Display-locked (`content-visibility: hidden`), the Pierre text
+ * viewer's window collapses to zero rows and nothing redraws them — it renders
+ * once per options change and windows its virtualizer against a scroll parent
+ * it cannot measure while the subtree is skipped. Merely hidden
+ * (`visibility: hidden`, or `opacity: 0` with paint order), whatever tears the
+ * window down — a navigator opening beside it is enough — is never followed by
+ * a redraw, so reveals are blank at random. The unmount/remount is what hides
+ * that fragility; retention needs the viewer to redraw on reveal
+ * (session-ui/components/file.tsx) first.
  */
 export function reviewWorkspaceMountedTabs<Tab extends { id: string; kind: string }>(input: {
   tabs: readonly Tab[]

@@ -1,29 +1,14 @@
-// WP-C2 · registry-wide keyboard-chord collision guard.
+// Registry-wide keyboard-chord collision guard: enumerates every chord binding
+// source in claxedo-app and fails on any same-chord double-registration without
+// an entry in KNOWN_CHORD_COLLISIONS.
 //
-// This is the single test that enumerates EVERY keyboard-chord binding source
-// in claxedo-app and fails on any same-chord double-registration that does not
-// have an explicit, documented precedence decision. It supersedes the
-// two-source-only check in `app/workbench/rail/rail-keyboard-commands.test.ts`,
-// which could only see the rail-registry-vs-workbench pair and was structurally
-// blind to the titlebar and session-command call sites that re-introduced the
-// exact collisions it was written to catch.
+// IMPORTED sources come from pure production exports and cannot drift. DECLARED
+// sources are registered inline inside Solid components that cannot be imported
+// without a mount; each carries an `evidence` substring that the drift guards
+// below check in both directions (inventory→file and file→inventory).
 //
-// Two classes of source:
-//   * IMPORTED — chords come from a pure production export (rail, layout,
-//     workbench, prompt-mode). These can never drift from the code because the
-//     test exercises the real function/constant.
-//   * DECLARED — chords are registered inline inside a Solid component
-//     (titlebar.tsx, use-session-commands.tsx, app-shell-commands.ts) that
-//     cannot be imported without a full mount. Each declared binding carries an
-//     `evidence` substring; `declared sources still exist in source` below reads
-//     the owning file and asserts the evidence is present, so a rename/removal
-//     in production fails this guard instead of silently desyncing the inventory.
-//
-// KNOWN_CHORD_COLLISIONS is the explicit precedence policy. Seeding a collision
-// here is a deliberate, reviewed decision (recorded in the WP-C2 report), not a
-// grandfather clause: the list is shrink-only (a stale entry that no longer
-// corresponds to a live collision fails the guard), and any NEW collision that
-// is not listed fails the guard.
+// KNOWN_CHORD_COLLISIONS is shrink-only: a stale entry fails the guard, and so
+// does any new collision not listed.
 
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
@@ -51,14 +36,11 @@ interface ChordBinding {
   source: BindingSourceId
 }
 
-// Platform-agnostic chord normalizer used ONLY for comparison in this guard.
-// It intentionally does not reuse command-palette's `parseKeybind` (which keys
-// "mod" to metaKey/ctrlKey by platform and drags the whole context module — and
-// its DOM/Solid deps — into a bun:test). "option" collapses to "alt" and
-// "cmd/command" to "meta" so `mod+option+ArrowLeft` (titlebar) and
-// `mod+alt+ArrowLeft` (workbench) are recognized as the same chord — the exact
-// alias the audit flagged. Modifier order is normalized so `shift+mod+.` and
-// `mod+shift+.` compare equal.
+// Comparison-only chord normalizer. Not command-palette's `parseKeybind`: that
+// resolves "mod" per platform and drags DOM/Solid deps into a bun:test.
+// "option"→"alt" and "cmd"/"command"→"meta" so `mod+option+ArrowLeft` and
+// `mod+alt+ArrowLeft` compare equal (that alias once hid a live collision);
+// modifier order is normalized too.
 const MOD_ALIASES: Record<string, string> = {
   option: "alt",
   control: "ctrl",
@@ -163,9 +145,6 @@ const DECLARED_SOURCES: DeclaredSource[] = [
       { commandId: "permissions.autoaccept", raw: "mod+shift+a", evidence: `"mod+shift+a"` },
     ],
   },
-  // The legacy titlebar (titlebar.tsx) and its tab/history/quit bindings were
-  // deleted with the shell rewrite's dead-code sweep; the workbench owns tab
-  // navigation now and declares its chords below.
   {
     source: "app-shell-commands",
     file: "../app/app-shell-commands.ts",
@@ -199,40 +178,20 @@ interface CollisionDecision {
 const KNOWN_CHORD_COLLISIONS: CollisionDecision[] = [
   {
     chord: canonicalizeChord("mod+w"),
-    // Order of specificity: session-commands tab.close (file tab) > workbench
-    // closePane (pane) > rail claxedo.pane.close (palette-only; owns the
-    // desktop last-pane Quit dialog). The legacy titlebar's capture-phase
-    // session-tab close was deleted with the titlebar. Unifying the rest
-    // behind a single `claxedo.pane.close` command that internally walks that
-    // fallback chain is WP-C2 phase 2 — it requires migrating the workbench
-    // window-listener, which is out of phase-1 ownership. See WP-C2 report §W9.
     decision:
-      "tab.close(file tab) > workbench closePane(pane) > claxedo.pane.close(last-pane Quit). Single-owner unification deferred to WP-C2 phase 2 (workbench listener migration).",
+      "tab.close (file tab) > workbench closePane (pane) > claxedo.pane.close (palette-only, last-pane Quit). Unifying under one command needs workbench/keyboard.ts on the registry first.",
     phase2: true,
   },
   {
     chord: canonicalizeChord("mod+shift+s"),
-    // command-palette keymap is first-registered-wins: session.new mounts before
-    // theme.scheme.cycle, so session.new owns the chord. theme.scheme.cycle stays
-    // palette-invokable. Re-chording theme.scheme.cycle touches app-shell-commands.ts
-    // (outside phase-1 ownership) — deferred.
-    decision: "session.new owns mod+shift+s (first-registered); theme.scheme.cycle is palette-only until re-chorded. Deferred (app-shell-commands.ts).",
+    // The palette keymap is first-registered-wins, and session.new mounts first.
+    decision: "session.new owns mod+shift+s (first-registered); theme.scheme.cycle is palette-only until re-chorded in app-shell-commands.ts.",
     phase2: true,
   },
   {
     chord: canonicalizeChord("mod+shift+e"),
-    // fileTree.toggle (session registry) is the app-level owner. prompt.mode.normal
-    // is bound on the same chord but only fires from the prompt editor's element-
-    // scoped onKeyDown (which runs before the event bubbles to the registry
-    // document listener), so there is no runtime double-fire; the registry keymap
-    // still resolves fileTree.toggle first. Both surfaces are outside phase-1's
-    // editable ownership; the shared chord is intentional and documented.
     decision: "fileTree.toggle owns mod+shift+e in the registry; prompt.mode.normal is prompt-editor-local (fires before bubbling). No runtime double-fire.",
   },
-  // mod+alt+Arrow and mod+1..9 collided only with the legacy titlebar's hidden
-  // session-tab bindings ("superseded/undiscoverable — re-chord or drop in
-  // phase 2"). Deleting the titlebar WAS that drop; the workbench and rail
-  // owners keep their chords collision-free.
 ]
 
 // ---------------------------------------------------------------------------
@@ -241,14 +200,8 @@ function readSource(relative: string): string {
   return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
 }
 
-// Extract every declared keybind chord LITERAL from a source file. Matches only
-// object-property `keybind:` declarations (single-quote, double-quote, or
-// backtick). It deliberately does NOT match `keybind={command.keybind("id")}`
-// JSX-prop references (those use `keybind=` and point at a command id, not a
-// chord). This is the reverse of the evidence assertion: instead of proving each
-// inventory entry still exists in the file, it proves the file introduces no
-// chord the inventory has not accounted for — so a newly added colliding chord
-// in a declared component can no longer slip in undetected.
+// Every declared `keybind:` chord literal (quote or backtick). Does not match
+// `keybind={command.keybind("id")}` JSX props, which name a command, not a chord.
 function scanKeybindTokens(text: string): string[] {
   const re = /keybind:\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/g
   const tokens: string[] = []
@@ -286,7 +239,7 @@ function collisions(bindings: ChordBinding[]) {
     .filter((entry) => entry.commandIds.length > 1)
 }
 
-describe("WP-C2 keyboard binding surface", () => {
+describe("registry-wide keyboard binding surface", () => {
   test("declared sources still exist in source (drift guard)", () => {
     const missing: string[] = []
     const byFile = new Map<string, string>()
@@ -302,13 +255,8 @@ describe("WP-C2 keyboard binding surface", () => {
   })
 
   test("declared source files contain NO keybind chord beyond the inventory (reverse drift guard)", () => {
-    // Teeth the previous evidence-only check lacked: the evidence assertion is
-    // inventory→file (each listed chord still present); this is file→inventory
-    // (no chord present that the inventory has not enrolled into collision
-    // analysis). A new `keybind: "…"` added to any declared component that is not
-    // mirrored in DECLARED_SOURCES fails HERE, and once mirrored it is subject to
-    // the collision guard below — so a newly added colliding chord can no longer
-    // hide in a DECLARED (non-imported) source.
+    // file→inventory direction: a chord declared in source but missing from
+    // DECLARED_SOURCES would escape collision analysis.
     const expectedByFile = inventoryTokensByFile()
     const problems: string[] = []
     for (const [file, expected] of expectedByFile) {
@@ -316,7 +264,7 @@ describe("WP-C2 keyboard binding surface", () => {
       for (const token of scanned)
         if (!expected.has(token))
           problems.push(
-            `${file}: keybind ${JSON.stringify(token)} is declared in source but absent from the WP-C2 inventory — add it to DECLARED_SOURCES so it enters collision analysis`,
+            `${file}: keybind ${JSON.stringify(token)} is declared in source but absent from this guard's inventory — add it to DECLARED_SOURCES so it enters collision analysis`,
           )
       for (const token of expected)
         if (!scanned.has(token))
@@ -329,9 +277,9 @@ describe("WP-C2 keyboard binding surface", () => {
     expect(readSource("../features/session/composer/ui/mode-commands.ts")).toContain(`"mod+u"`)
   })
 
-  test("terminal.toggle ghost command is now registered with its Ctrl+` chord", () => {
-    // §0.4 of the inventory: terminal.toggle was referenced by 3 call sites but
-    // never registered. WP-C2 registers it in use-session-commands.tsx.
+  test("terminal.toggle is registered with its ctrl+` chord", () => {
+    // Referenced by session-header, desktop-menu.ts, and EDITABLE_KEYBIND_IDS;
+    // a reference without a registration is a ghost command.
     const session = readSource("../features/session/ui/use-session-commands.tsx")
     expect(session).toContain(`id: "terminal.toggle"`)
     expect(session).toContain('"ctrl+`"')

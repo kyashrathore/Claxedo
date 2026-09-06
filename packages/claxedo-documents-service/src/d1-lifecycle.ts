@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import {
   isServiceLifecycleMutationAction,
   serializeServiceLifecycleMutationRequest,
@@ -32,9 +33,6 @@ type LifecycleRow = Readonly<{
   state: ServiceLocalLifecycleState
   revision: number
 }>
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 function isLifecycleState(value: unknown): value is ServiceLocalLifecycleState {
   return value === "installed_disabled" || value === "enabling" || value === "enabled"

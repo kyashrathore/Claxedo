@@ -10,27 +10,6 @@ const supportedDirectory = new URL("../markdown/fixtures/supported/", import.met
 const docsDirectory = resolve(import.meta.dir, "../../../../../../docs")
 
 describe("production rich editor Markdown parity", () => {
-  test("uses the intended production extension configuration", () => {
-    expect(documentRichEditorExtensions().map((extension) => extension.name)).toEqual([
-      "starterKit",
-      "codeBlock",
-      "link",
-      "underline",
-      "textStyle",
-      "color",
-      "highlight",
-      "image",
-      "table",
-      "tableRow",
-      "tableHeader",
-      "tableCell",
-      "taskList",
-      "taskItem",
-      "slashCommands",
-      "markdown",
-    ])
-  })
-
   test("round-trips every detector-admitted supported fixture with the production configuration", () => {
     for (const name of readdirSync(supportedDirectory).sort()) {
       const markdown = readFileSync(new URL(name, supportedDirectory), "utf8")

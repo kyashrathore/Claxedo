@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { queryClient } from "@/platform/query/query-client"
 import { createRoot } from "solid-js"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import {
@@ -20,8 +21,20 @@ import {
   type WorkspaceConnectionInfo,
 } from "@/platform/runtime/agent/workspace-relay-connection"
 
-beforeEach(() => configureAppPortsForTest())
-afterEach(() => internals.reset())
+const readyStorageKey = "claxedo.workspace-connection.ready.v1"
+let previousReady: string | null
+beforeEach(() => {
+  configureAppPortsForTest()
+  queryClient.clear()
+  previousReady = localStorage.getItem(readyStorageKey)
+  localStorage.removeItem(readyStorageKey)
+})
+afterEach(() => {
+  internals.reset()
+  queryClient.clear()
+  if (previousReady === null) localStorage.removeItem(readyStorageKey)
+  else localStorage.setItem(readyStorageKey, previousReady)
+})
 
 describe("workspace connection authority", () => {
   const runtimeReadyFetch: typeof fetch = async (input) => {
@@ -37,6 +50,7 @@ describe("workspace connection authority", () => {
   const relayInfo = (input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConnectionInfo => ({
     access: "cloud",
     backing: "cloud-vm",
+    sessionAuthority: "managed-private",
     workspaceId: "ws_relay",
     role: "viewer",
     relayUrl: "https://relay.example.test",
@@ -262,11 +276,9 @@ describe("workspace connection authority", () => {
   })
 
   test("a second acquire on the same relay-backed workspace increments the shared ref to 2", () => {
-    // The connection AUTHORITY is not the cause of the "second pane refs stuck
-    // at 1" symptom (e2e core-panes-split-tabs behavior 19): a second acquire
-    // for the same relay-backed workspaceId fans into the one entry and bumps
-    // refs. The stuck-at-1 cause is a CONSUMER that skips WorkspaceGate for
-    // secondary surfaces (see the fixme-ready note) — no second acquire fires.
+    // A second acquire for the same relay-backed workspaceId fans into the one
+    // entry and bumps its ref count. A secondary surface whose refs stay at 1 is
+    // therefore a consumer that never acquired, not a fan-in failure here.
     createRoot((dispose) => {
       const first = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(1)
@@ -281,18 +293,53 @@ describe("workspace connection authority", () => {
     })
   })
 
-  test("re-acquire during the teardown debounce window cancels teardown", () => {
-    createRoot((dispose) => {
+  test("re-acquire cancels teardown; the final release actually tears down", () => {
+    const originalSet = globalThis.setTimeout
+    const originalClear = globalThis.clearTimeout
+    const pending = new Map<number, () => void>()
+    let next = 0
+    globalThis.setTimeout = ((run: () => void, delay: number) => {
+      expect(delay).toBe(5_000)
+      pending.set(++next, run)
+      return next
+    }) as typeof setTimeout
+    globalThis.clearTimeout = ((id: number) => { pending.delete(id) }) as typeof clearTimeout
+    try {
       const first = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
-      first.release() // schedules debounced teardown, refs -> 0
-      expect(workspaceConnection("ws_swap")?.refs).toBe(0)
-
+      const peer = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
+      first.release()
+      first.release()
+      expect(workspaceConnection("ws_swap")?.refs).toBe(1)
+      expect(pending.size).toBe(0)
+      peer.release()
+      expect(pending.size).toBe(1)
+      const cancelled = [...pending.values()][0]
       const second = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
-      // Re-acquire bumps refs back up and clears the pending teardown timer.
+      expect(pending.size).toBe(0)
+      cancelled()
       expect(workspaceConnection("ws_swap")?.refs).toBe(1)
       second.release()
-      dispose()
-    })
+      expect(pending.size).toBe(1)
+      ;[...pending.values()][0]()
+      expect(workspaceConnection("ws_swap")).toBeUndefined()
+      const replacement = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
+      second.release()
+      expect(workspaceConnection("ws_swap")?.refs).toBe(1)
+      replacement.release()
+    } finally {
+      internals.reset()
+      globalThis.setTimeout = originalSet
+      globalThis.clearTimeout = originalClear
+    }
+  })
+
+  test("a handle from a reset runtime cannot release its replacement", () => {
+    const old = acquireWorkspaceConnection({ workspaceId: "ws_replaced", kind: "local" })
+    internals.reset()
+    const replacement = acquireWorkspaceConnection({ workspaceId: "ws_replaced", kind: "local" })
+    old.release()
+    expect(workspaceConnection("ws_replaced")?.refs).toBe(1)
+    replacement.release()
   })
 
   test("offline classification: forbidden is terminal; others are transient", () => {

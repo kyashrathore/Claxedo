@@ -139,9 +139,9 @@ describe("Better Auth + D1 user-deployed composition", () => {
 
   test("hands a bound credentials KV namespace to the hosted credential store", async () => {
     // The composition env is strings only, so the binding object cannot ride
-    // in it. Without the explicit seam a deployment with the hosted credential
-    // store enabled refuses to start asking for the REST KV configuration —
-    // which is exactly how staging release 65 failed its candidate health.
+    // in it. Without this explicit seam, a deployment with the hosted
+    // credential store enabled would refuse to start, still expecting REST KV
+    // configuration.
     const { authDatabase, controlPlaneDatabase } = await databases()
     const credentialEnv = env({
       CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",

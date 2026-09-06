@@ -7,6 +7,7 @@
 
 import { bool, num, oneOf, record, records, strings, stringRecord, text } from "./json"
 import type { ControlPlaneRequest } from "./control-plane-request"
+import { asRecord } from "@claxedo/helpers/guards"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -300,10 +301,8 @@ const clean = (value: unknown) => {
 
 const workspaceRef = (id: string) => `workspace:${id}`
 
-const rec = record
-
 const configRow = (value: unknown) => {
-  const row = rec(value)
+  const row = asRecord(value)
   const id = clean(row?.id)
   const name = clean(row?.name)
   if (!id || !name) throw new Error("Process config response missing id or name")

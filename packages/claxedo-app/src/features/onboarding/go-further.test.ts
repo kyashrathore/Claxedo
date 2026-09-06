@@ -25,7 +25,7 @@ describe("go-further cards", () => {
     expect(card("self-host").appliesTo("self-host")).toBe(false)
   })
 
-  test("every card names an action, so none is a dead end", () => {
+  test("every card provides action and explanation text", () => {
     for (const item of onboardingGoFurtherCards) {
       expect(item.action.length).toBeGreaterThan(0)
       expect(item.education.length).toBeGreaterThan(0)

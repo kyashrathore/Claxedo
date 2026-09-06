@@ -90,9 +90,7 @@ export type ProductContributionsInput = {
    *
    * The build signal, not the account: a hosted build activates at boot and
    * serves unsigned windows too, and a local build must never register the
-   * hosted set even if an account somehow reports signed. Unit 11 replaces this
-   * with the account port's own signed state, at which point it and
-   * `followAccount` become the same question.
+   * hosted set even if an account somehow reports signed.
    */
   hostedComposition: () => boolean
 }
@@ -126,20 +124,12 @@ export type ProductContributions = {
   /**
    * Follow the account: activate while it is signed, remove on sign-OUT.
    *
-   * Asymmetric on purpose, and this is the one policy decision in this module.
-   *
-   * A hosted BUILD composes hosted surfaces whether or not a window holds an
-   * account — that is what `initClaxedo` does at boot, and the loopback E2E
-   * lane depends on it (a hosted surface renders with no
-   * account). So "not signed" cannot mean "remove"; it would empty the
-   * composition of every window that has not signed in yet.
-   *
-   * Signing OUT carries no such ambiguity, and it is the defect this closes:
-   * before it, hosted surfaces stayed registered until the page reloaded. A
-   * window that has never held an account is left exactly as composed.
-   *
-   * Unit 11 makes activation itself account-driven, at which point `held`
-   * disappears and this collapses to "signed ? activate : deactivate".
+   * Asymmetric on purpose. A hosted build composes hosted surfaces whether or
+   * not a window holds an account (`initClaxedo` does so at boot, and the
+   * loopback e2e lane renders hosted surfaces with no account), so "not
+   * signed" cannot mean "remove". Signing out is unambiguous; without it,
+   * hosted surfaces stay registered until the page reloads. A window that has
+   * never held an account is left as composed.
    */
   followAccount(account: AccountState): void
 }

@@ -1,16 +1,9 @@
 /**
- * Permanent absence gates for the OpenCode SDK boundary (Unit 8, Decision 15).
+ * Absence gates for the OpenCode SDK boundary.
  *
- * The hazard is specific and real: the published SDK tarball CONTAINS a raw
- * `fetch` at `dist/internal/host.js`. It is not in the package `exports` map,
- * so Node ESM refuses it — but a bundler that disrespects `exports`, or a
- * deliberate deep import, reaches it. Using it would make the public
- * installation cosmetic, which is the exact outcome the plan's Alternatives
- * section rejects. A grep is cheap; discovering this in a shipped artifact is
- * not.
- *
- * These gates enforce what is already true rather than aspirational state, and
- * the fork allowlist below ratchets to empty when Unit 8 deletes it.
+ * The published SDK tarball carries a raw-fetch host at `dist/internal/host.js`
+ * that is not in its `exports` map; a bundler that ignores `exports`, or a deep
+ * import, still reaches it. These greps keep it out of first-party source.
  */
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
@@ -38,8 +31,7 @@ function search(pattern: string, extraExcludes: readonly string[] = []): string[
   const args = ["--fixed-strings", "--line-number", "--no-heading", pattern, "."]
   for (const glob of SOURCE_GLOBS) args.push("--glob", glob)
   for (const dir of NEVER_SOURCE) args.push("--glob", `!**/${dir}/**`)
-  // Exact paths: excluding every directory named `opencode` accidentally
-  // excluded the new canonical owner as well as the old upstream tree.
+  // Exact paths: a `**/opencode/**` glob would also exclude the canonical owner.
   for (const dir of [...PENDING_DELETION, ...extraExcludes]) args.push("--glob", `!${dir}/**`)
   try {
     const out = execFileSync("rg", args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })
@@ -86,11 +78,8 @@ describe("public SDK boundary", () => {
   })
 
   /**
-   * Legacy `@opencode-ai/sdk` consumers still outside the owning package.
-   *
-   * This list only ever shrinks — Unit 2b migrates these to Claxedo DTOs. It is
-   * asserted exactly, so removing a consumer without updating the list fails
-   * just as loudly as adding one.
+   * `@opencode-ai/sdk` importers outside the owning package. Asserted exactly,
+   * so a removal fails as loudly as an addition; it only ever shrinks.
    */
   const LEGACY_SDK_CONSUMERS = [
     // A string inside a scanner's test fixture, not a real import.
@@ -111,8 +100,7 @@ describe("public SDK boundary", () => {
   })
 
   test("the pinned SDK family is imported only by its owning package", () => {
-    // `@claxedo/workspace-runtime/opencode` is the sole owner of the public SDK
-    // (Decision 2). Everything else consumes Claxedo ports and DTOs.
+    // Everything outside `src/opencode` consumes Claxedo ports and DTOs, not the SDK.
     const hits = search('from "@opencode-ai/sdk"')
       .filter((line) => !isSelfReference(line))
       .filter((line) => !line.startsWith("./packages/workspace-runtime/src/opencode/"))

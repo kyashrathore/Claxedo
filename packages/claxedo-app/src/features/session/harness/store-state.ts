@@ -1,6 +1,5 @@
 import {
   desiredHarness,
-  effectiveHarnessModel,
   hardFailedHarness,
   harnessHasConfigOptions,
   type HarnessHealthStatus,
@@ -10,7 +9,6 @@ import {
   type OptionsSource,
 } from "./profile"
 import { harnessMode, type HarnessReadiness } from "./selection"
-import { initialHarness } from "./store-policy"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
 import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
@@ -51,16 +49,15 @@ export type HarnessStorePatch = Partial<HarnessStoreState>
 export function initialHarnessStoreState(input: {
   scope: string
 }): HarnessStoreState {
-  const type = initialHarness()
   return {
-    harnessMode: harnessMode(type),
-    harness: type,
-    selectedModel: type ? effectiveHarnessModel(type, "") : "",
-    selectedModelProvider: type?.kind === "native" && !isCatalogHarnessId(type.harnessId) ? type.harnessId : undefined,
+    harnessMode: "unknown",
+    harness: undefined,
+    selectedModel: "",
+    selectedModelProvider: undefined,
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
-    readiness: type ? "ready" : "unresolved",
+    readiness: "unresolved",
     optionsSource: "empty",
     optionsStale: false,
     optionsLoading: false,
@@ -94,11 +91,9 @@ export function harnessStatusPatch(input: {
   // in-flight probe — surface that as "polling" so the selector renders a
   // "Connecting" pill instead of a red "Unavailable". A hard failure — or a
   // ready:false carried by a *settled* completed switch response — is "error".
-  // A live-but-degraded harness (`/api/wr/health` reports `ok:true`/`ready:true`
-  // while `harnessHealth.status` is degraded/unavailable — the harness process was
-  // lost and is recovering) maps to the "degraded" readiness. This finally
-  // populates the union member declared at selection.ts:9 that has been inert
-  // since it was written, and drives the composer health peek + Send gate (T4).
+  // A live-but-degraded harness (`ready:true` while `harnessHealth.status` is
+  // degraded/unavailable — the process was lost and is recovering) maps to
+  // "degraded", which drives the composer health peek and the Send gate.
   // Precedence: a hard failure still wins; a still-connecting harness
   // (`ready === false`, i.e. startup) stays "polling" — a genuinely process-lost
   // harness reports `ready:true`, so the two never legitimately coincide, and
@@ -173,12 +168,10 @@ export function harnessSwitchStartPatch(input: {
 }
 
 /**
- * The readiness transition a standing harness-health probe (T4) should apply, or
- * `undefined` to leave readiness untouched. Deliberately narrow: it only moves
- * between "ready" and "degraded" and never stomps a state owned by another
- * source — a hard "error" or an in-flight "polling" is left alone, and OpenCode
- * (the always-available local default) never degrades. This keeps the modest
- * 20s health poll from fighting hydration / harness-switch over readiness.
+ * The readiness transition a standing harness-health probe should apply, or
+ * `undefined` to leave readiness untouched. It only moves between "ready" and
+ * "degraded"; a hard "error" or an in-flight "polling" belongs to hydration /
+ * harness-switch and is left alone, so the health poll never fights them.
  */
 export function harnessHealthReadiness(input: {
   harness?: HarnessType

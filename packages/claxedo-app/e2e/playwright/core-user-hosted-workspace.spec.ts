@@ -1,21 +1,14 @@
 /**
- * SPEC: User-hosted workspace connect (mocked-relay tier)
+ * Connecting to a user-hosted workspace: a real machine somebody is running `claxedo up`
+ * on, reached through the Workspace Relay tunnel. Nothing is provisioned or cloned — the
+ * workspace already exists — so the whole "getting ready" story is about reaching it.
+ * Everything here is mocked; a real tunnel, real JWTs, WS multiplexing and transport-layer
+ * role enforcement belong to live-user-hosted-relay.spec.ts.
  *
- * PURPOSE — a "user-hosted" workspace is NOT a central sandbox: it is a real machine the
- * user (or a teammate) is running `claxedo up` on, reached through the Workspace Relay
- * tunnel. Unlike a cloud workspace there is nothing to provision or clone — the workspace
- * already exists — so its "getting ready" story is entirely about REACHING it: mint a
- * relay connection, then probe the host's runtime health through the tunnel until it
- * answers or a bounded retry budget is exhausted. This spec owns that connect experience
- * end to end in the mocked-relay tier: the distinct 3-step pipeline, the host-offline
- * terminal state and its exact "run `claxedo up`" copy, the health probe's tolerance for
- * transient relay hiccups, that every workspace-scoped surface (session send, and whatever
- * else is exercised while ready) routes through the relay lane rather than any bare/local
- * endpoint, a workspace going from ready to paused (host taken offline) after a warm
- * reload, and the in-app entry point that publishes this machine's local workspaces for
- * remote access. The DEEP half — real relay/JWT fixtures, genuine WS multiplexing, PTY/file
- * writes through a live tunnel, role enforcement — is Tier L's `live-user-hosted-relay`
- * (spec 25); this spec never makes a real network call.
+ * The connection authority is the one cloud workspaces use: `workspaceConnection`, keyed by
+ * `workspaceId` and ref-counted across mounted panes. `WorkspaceGate` renders
+ * `CloudStartupView variant="user-hosted"` until status is `ready`, `WorkspaceOfflineView`
+ * when status is `{offline: reason}`, and its children once ready.
  *
  * STATE MODEL — the SAME single connection authority as cloud workspaces owns this:
  * `workspaceConnection` (in-memory Solid store, `src/features/workspaces/data/
@@ -113,59 +106,23 @@
  *     machine's local inventory. There is no per-workspace tick list and no per-workspace
  *     QR: the rail's old "Share workspace" kebab item was removed with them.
  *
- * BEHAVIORS —
- *   1. Landing on a not-yet-ready user-hosted workspace renders the 3-step pipeline with
- *      the "Connecting to workspace" heading and step labels/order distinct from cloud's
- *      4-step pipeline — no cloud-only step key or label ever appears.
- *   2. Once the connection mints and the health probe succeeds, the gate unlocks: the
- *      pipeline view disappears and the draft composer becomes reachable/editable.
- *   3. A prompt sent through the now-ready user-hosted workspace — and every supporting
- *      bootstrap/session call the composer makes while ready (provider, agent, session
- *      create/get/message/config/capabilities, prompt dispatch, plus the diff/vcs
- *      plumbing) — is served EXCLUSIVELY through the relay lane (`/workspaces/:id/...`);
- *      the oracle proves the reply renders, and zero of those calls ever hit a bare/local
- *      equivalent path.
- *   4. A persistently offline host (every health probe answers `503 user_hosted_app_
- *      offline`) renders the terminal offline view with the exact "run `claxedo up`"
- *      detail copy, offers Retry (non-terminal reason), and never renders the composer.
- *   5. Transient relay hiccups on the health probe (409/503, simulating the DO presence-
- *      registration gap) do not prevent the workspace from eventually reaching `ready` —
- *      the retry loop recovers and the composer unlocks — proving the retry BUDGET
- *      tolerates them, i.e. a blip is never misclassified as the terminal "genuine runtime
- *      error" branch (which fails fast with zero retries).
- *   6. A workspace that was ready before an earlier connect, reloaded within the 60s warm-
- *      start window while the host is now offline, is optimistically shown ready for a
- *      moment and then flips to the offline view once the background health check
- *      confirms the host is unreachable — "pause" surfaces as a real state transition, not
- *      a stuck stale-ready UI.
- *   7. Enabling remote access in Settings > Devices publishes this machine's local
- *      workspaces on its own: the assignment POST reaches the wire with no per-workspace
- *      gesture, and the panel reports `Serving 1 workspace`. The app-triggered path to
- *      `share-workspace.ts` reaches a registered state without any dedicated user-hosted
- *      connect flow required first (it targets the project's own main workspace).
+ * A successful connect is remembered per workspace in
+ * `localStorage['claxedo.workspace-connection.ready.v1']` for 60s. A reconnect inside that
+ * window renders `ready` from frame zero while the health check runs behind it
+ * (`keepReadyWhileChecking`, so status is not reset to connecting first), and the same
+ * `onOffline` path flips that optimistic render to the offline view if the host has since
+ * gone away. That transition is what "paused" looks like.
  *
- * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
- *   e2e/INVARIANTS.md, exercised via the oracle in behavior 3); harness ownership (#1) is
- *   fixed to Pi throughout — this spec is about the CONNECTION layer, not harness
- *   selection. This spec's own pinned invariant: the gate's displayed state (pipeline step
- *   / offline / ready) is DERIVED FROM the connection authority's server-reported truth
- *   (mint + health probe results), never from client-side assumptions about elapsed time.
+ * `"no-host"` is the only offline reason exercised here, and it is not terminal, so the
+ * offline view offers Retry. Its copy comes from the gate's own `OFFLINE_COPY`;
+ * `prepareUserHostedRuntime` carries a slightly different default message that is never
+ * rendered.
  *
- * HARNESS NOTES — none; harness stays Pi so
- *   the connect/relay-routing contract stays isolated from harness selection concerns
- *   (`core-harness-ownership-cloud`, spec 12, owns the harness matrix over the relay).
- *
- * OUT OF SCOPE — real relay/JWT fixtures, genuine WS multiplexing, connection token
- *   refresh/JTI rotation, restart-tunnel-without-reload, viewer/editor role enforcement at
- *   the transport layer (`live-user-hosted-relay`, spec 25); 403/forbidden terminal state
- *   and reconnect-without-error-toast behavior, which is the CLOUD equivalent's contract
- *   (`core-cloud-offline-roles`, spec 13) — this spec only exercises the `"no-host"`
- *   offline reason, the one unique to user-hosted; the create-cloud-workspace dialog and
- *   4-step cloud pipeline (`core-cloud-provisioning`, spec 11, and `core-workspace-
- *   lifecycle`, spec 18); full Terminal/Files panel UI and their own dedicated behaviors
- *   (`core-terminal`, spec 19; diff/file panel rendering, spec 8/others) — this spec proves
- *   only that the panels' underlying REQUESTS route through the relay lane, via the
- *   session send and its supporting calls, not their rendered UI.
+ * Sharing is a machine-level gesture, not a per-workspace one: enabling remote access in
+ * Settings > Devices publishes every local workspace this machine holds, reconciled by
+ * `useLocalWorkspaceAutoShareDriver` through the same one-shot
+ * `registerUserHostedWorkspace` → `POST /api/workspace/:id/host-assignment`. It never
+ * touches `workspaceConnection`.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
@@ -540,9 +497,9 @@ async function installUserHostedRuntimeMock(
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
     }
     // ---- Control-plane session inventory + central event stream (bare
-    // origin, ALWAYS — independent of any workspace's connect/ready state;
+    // origin, always — independent of any workspace's connect/ready state;
     // `src/context/global-sync/inventory-source.ts` and
-    // `src/providers/claxedo-events.tsx`). Not part of Behavior 3's runtime
+    // `src/providers/claxedo-events.tsx`). Not part of the per-workspace runtime
     // lane, so never counted in `bareHitsDuringReady`.
     if (isSessionListPath(url.pathname)) {
       return json(route, { view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], groups: [] })
@@ -559,14 +516,13 @@ async function installUserHostedRuntimeMock(
       return json(route, { harness: selected, activeHarness: selected, model: BIG_PICKLE.id, ok: true, status: "ready", ready: true })
     }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
-    // ONE central stream under three spellings, exactly as both real servers
-    // mount it (claxedo-local-server compat-routes/index.ts and
-    // claxedo-server/src/routes/hosted/shell.ts each map `/global/event`,
-    // `/api/wr/events` and `/api/claxedo/events` onto a single handler).
-    // `/api/claxedo/events` is the one `ClaxedoEventsProvider` opens for a
-    // signed account, so leaving it out did not silence a stream — it made the
-    // provider retry a rejected fetch for the life of the page, which is where
-    // those bare-origin hits came from.
+    // One central stream under three spellings, exactly as both real servers mount it:
+    // claxedo-local-server's compat-routes and claxedo-server's hosted/shell.ts each map
+    // `/global/event`, `/api/wr/events` and `/api/claxedo/events` onto a single handler.
+    // `ClaxedoEventsProvider` opens `/api/claxedo/events` for a signed account; leaving
+    // that spelling unanswered does not silence a stream, it makes the provider retry a
+    // rejected fetch for the life of the page and charge every attempt to the
+    // bare-origin count.
     if (url.pathname === "/api/wr/events" || url.pathname === "/api/claxedo/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
     }
@@ -580,8 +536,8 @@ async function installUserHostedRuntimeMock(
     // The signed session-reservation boundary a relay-backed send crosses
     // BEFORE the runtime create (`reservePrivateSession`,
     // src/platform/runtime/private-session-reservation.ts). Bare origin by
-    // design — it is the control plane's own route — so it is not part of
-    // Behavior 3's runtime lane either. Unanswered it does not degrade: the
+    // design — it is the control plane's own route — so it is not part of the
+    // runtime lane either. Unanswered it does not degrade: the
     // client refuses a receipt that is not its own intent and the send aborts
     // before any session exists. See ../helpers/contracts/session-registration.ts.
     if (isSessionRegistrationReservePath(url.pathname) && method === "POST") {
@@ -662,16 +618,14 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }])
       if (runtimePath === "/command") return json(route, [])
       if (runtimePath === "/permission") return json(route, [])
-      // Deliberately NOT left to the `json(route, {})` catch-all at the bottom of
-      // this handler, and the difference is fatal rather than cosmetic. The
-      // composer fetches this on every render (composer/permission-mode-wiring.ts),
-      // and `harnessPermissionModes` reads `report.modes` straight off the body
-      // (session/permission/modes.ts). An empty object has no `modes`, the read
-      // used to throw inside a Solid memo, and the error escaped to the app-level
-      // boundary — so the WHOLE page became "Something went wrong" and this spec
-      // saw no composer at all rather than a broken one. The body below is
-      // verbatim what workspace-runtime serves for a harness with no
-      // adapter-reported modes (routes/session-core.ts).
+      // Not left to the `json(route, {})` catch-all at the bottom of this handler, and
+      // the difference is fatal rather than cosmetic. The composer fetches this on every
+      // render (composer/permission-mode-wiring.ts), and `harnessPermissionModes` reads
+      // `report.modes` straight off the body (session/permission/modes.ts). An empty
+      // object has no `modes`; that read throws inside a Solid memo and escapes to the
+      // app-level boundary, so the whole page becomes "Something went wrong" and there is
+      // no composer left to assert on. The body below is what workspace-runtime serves
+      // for a harness with no adapter-reported modes (routes/session-core.ts).
       if (runtimePath === "/permission/modes") {
         return json(route, {
           modes: [],
@@ -887,8 +841,8 @@ async function installUserHostedRuntimeMock(
       if (runtimePath.startsWith("/find")) return json(route, [])
       // Unmatched-but-relay-scoped path: accept generically rather than
       // faking an exact shape (e.g. a PTY create call this spec does not
-      // otherwise model) — still recorded in `relayHits` above, which is
-      // what behavior 3's routing assertion checks.
+      // otherwise model) — still recorded in `relayHits` above, which is what the
+      // routing assertion checks.
       return json(route, {})
     }
 
@@ -916,20 +870,17 @@ async function installUserHostedRuntimeMock(
     }
     if (url.pathname === "/provider/auth" || url.pathname === "/api/claxedo/agent-config/providers/auth") return json(route, {})
 
-    // ---- Central boot reads (bare origin, ALWAYS) ----
-    // Each of these is issued by a mount, not by a workspace: the shell's
-    // home-directory read (`pathQuery` via `queryOptions.path(null)`,
-    // src/app/app-shell-state.ts), the central connection's health probe
-    // (`checkOpenCodeServerHealthCached`, src/app/connection/server.tsx), this
-    // machine's remote-access device list (src/platform/remote-access/
-    // http-machine-remote-access.ts) and the usage outbox beacon
-    // (`installUsageOutboxWakeups`). They belong with the bootstrap/inventory
-    // block above — central discovery, never the per-workspace runtime lane —
-    // and answering them here is what keeps behavior 3's oracle meaning "no
-    // bare RUNTIME equivalent". They are issued concurrently with the first
-    // `/api/wr/health` probe, i.e. with the very request that flips `ready`, so
-    // an unmodeled one falls through to the counter below on whichever side of
-    // that race it lands and reads as a bare runtime hit it never was.
+    // ---- Central boot reads (bare origin, always) ----
+    // Each of these is issued by a mount, not by a workspace: the shell's home-directory
+    // read (`pathQuery` via `queryOptions.path(null)`), the central connection's health
+    // probe (`checkOpenCodeServerHealthCached`), this machine's remote-access device list
+    // and the usage outbox beacon (`installUsageOutboxWakeups`). They belong with the
+    // bootstrap/inventory block above — central discovery, never the per-workspace
+    // runtime lane — and answering them here is what keeps the routing oracle meaning "no
+    // bare runtime equivalent". They are issued concurrently with the first
+    // `/api/wr/health` probe, i.e. with the very request that flips `ready`, so an
+    // unmodeled one falls through to the counter below on whichever side of that race it
+    // lands and reads as a bare runtime hit it never was.
     if (url.pathname === "/path") {
       return json(route, { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" })
     }
@@ -989,18 +940,14 @@ function workspaceRoute(sessionId?: string) {
 }
 
 test.describe("core user-hosted workspace @core", () => {
-  test("landing on an unready user-hosted workspace renders the distinct 3-step pipeline — behavior 1", async ({ page }) => {
+  test("landing on an unready user-hosted workspace renders the distinct 3-step pipeline", async ({ page }) => {
     // Pad well beyond the suite's 60s default: this is the FIRST navigation
     // of the file, which pays for cold dev-server compile on a shared server
     // that may also be serving other concurrent spec runs.
     test.setTimeout(120_000)
-    // A generous mint delay (real-time, not simulated) so the pipeline is
-    // guaranteed to still be on screen by the time the first assertion polls
-    // it, regardless of dev-server cold-compile/hydration jitter on the very
-    // first navigation of a run — the connect sequence itself has no fixed
-    // mint-latency contract to pin (unlike the health retry constants in this
-    // spec's STATE MODEL section), so this value is purely a test-timing
-    // margin, not a behavior under test.
+    // A generous mint delay so the pipeline is still on screen when the first assertion
+    // polls it, whatever the cold-compile jitter on a run's first navigation. There is
+    // no mint-latency contract to pin; this is test-timing margin only.
     await installUserHostedRuntimeMock(page, { health: [200], mintDelayMs: 3000, healthDelayMs: 800 })
     await seedProject(page, { registerWorkspace: true })
 
@@ -1037,15 +984,10 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(view).toHaveCount(0, { timeout: 20_000 })
   })
 
-  // The reply renders through the real projection path: the mock emits the turn as
-  // AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
-  // (`{contractVersion, directory, sessionId, assistantMessageId, payload}`), which
-  // global-sdk's runtime loop reads via `runtimeEnvelope` and runs through
-  // `createClientPresentationProjection`. The `session-status: busy` → `finish` pair
-  // settles the turn, and the settle re-fetches the message list over the relay lane
-  // (now carrying the `${userID}_r` assistant row) — see `installUserHostedRuntimeMock`
-  // above.
-  test("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
+  // The reply renders through the real projection path: the mock publishes the turn as
+  // AgentRuntimeEvent frames on the relay's runtime-events lane, and the `busy` → `finish`
+  // pair settles it into a message-list refetch over that same lane.
+  test("ready unlocks the composer and a send is proven by the oracle through the relay lane", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
@@ -1079,8 +1021,8 @@ test.describe("core user-hosted workspace @core", () => {
     await expectAssistantReplyVisible(page, `user-hosted ack 1: ${promptText}`)
     await expectTurnCounts(page, { user: 1, assistant: 1 })
 
-    // Behavior 3: everything that happened while ready went through the
-    // relay lane; nothing hit a bare/global runtime equivalent instead.
+    // Everything that happened while ready went through the relay lane; nothing hit a
+    // bare/global runtime equivalent instead.
     expect(mock.requests.promptCount).toBe(1)
     expect(mock.requests.relayHits.some((h) => h.includes("/prompt_async"))).toBe(true)
     expect(mock.requests.relayHits.some((h) => h.includes("/session") && h.startsWith("POST"))).toBe(true)
@@ -1100,12 +1042,12 @@ test.describe("core user-hosted workspace @core", () => {
     for (const frame of mock.requests.runtimeFramesEmitted) {
       expect(frame.contractVersion).toBe(RUNTIME_EVENT_CONTRACT_VERSION)
       expect(frame.sessionId).toBe(SESSION_ID)
-      // `${userID}_r` convention (Tier-M reconciliation rule, e2e/INVARIANTS.md).
+      // The runtime names an assistant reply `${userMessageId}_r`.
       expect(String(frame.assistantMessageId).endsWith("_r")).toBe(true)
     }
   })
 
-  test("a persistently offline host renders the terminal offline view with the exact claxedo-up copy — behavior 4", async ({ page }) => {
+  test("a persistently offline host renders the terminal offline view with the exact claxedo-up copy", async ({ page }) => {
     // The real retry budget alone is ~22s (15 attempts * 1.5s); pad well
     // beyond the suite's 60s default so a slow/cold navigation on a shared,
     // possibly contended dev server doesn't race the test timeout
@@ -1126,7 +1068,7 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
   })
 
-  test("transient 409/503 health hiccups still reach ready — behavior 5", async ({ page }) => {
+  test("transient 409/503 health hiccups still reach ready", async ({ page }) => {
     test.setTimeout(120_000)
     await installUserHostedRuntimeMock(page, { health: [409, 503, 200] })
     await seedProject(page, { registerWorkspace: true })
@@ -1142,9 +1084,9 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
   })
 
-  test("a workspace ready before an earlier connect flips ready-to-offline on a warm reload while the host is now paused — behavior 6", async ({ page }) => {
-    // Two navigations (initial connect + reload); pad generously beyond the
-    // suite default for the same cold-navigation margin as behaviors 4/5.
+  test("a workspace ready before an earlier connect flips ready-to-offline on a warm reload while the host is now paused", async ({ page }) => {
+    // Two navigations (initial connect + reload); pad generously beyond the suite
+    // default for cold-navigation margin.
     test.setTimeout(120_000)
     await installUserHostedRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true })
@@ -1178,13 +1120,12 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.getByTestId("workspace-offline")).toContainText("Workspace host is offline")
   })
 
-  test("enabling remote access publishes this machine's workspaces with no per-workspace gesture — behavior 7", async ({ page }) => {
+  test("enabling remote access publishes this machine's workspaces with no per-workspace gesture", async ({ page }) => {
     test.setTimeout(120_000)
     await stampTestAuth(page.context())
-    // Deliberately NOT the user-hosted connect pipeline: the reconciler resolves
-    // against the project's own main workspace directory, so a plain local
-    // session (no relay backing at all) is enough — see this spec's STATE MODEL
-    // section on share/register.
+    // Deliberately not the user-hosted connect pipeline: the reconciler resolves
+    // against the project's own main workspace directory, so a plain local session
+    // with no relay backing at all is enough.
     const assignments: string[] = []
     // The machine's own publication state, as the control plane would hold it.
     const machine = { enabled: false, workspaceIds: [] as string[] }
@@ -1222,9 +1163,8 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/command") return json(route, [])
       if (url.pathname === "/permission") return json(route, [])
       // Same fatal gap as the relay lane above: this mock's trailing
-      // `json(route, {}, 200)` would serve `{}` here, the composer would read
-      // `.modes` off it, and the app would render its error boundary instead of
-      // the shell — which is exactly how this test lost `[data-claxedo]`.
+      // `json(route, {}, 200)` would serve `{}` here, the composer would read `.modes`
+      // off it, and the app would render its error boundary instead of the shell.
       if (url.pathname === "/permission/modes") {
         return json(route, {
           modes: [],
@@ -1239,10 +1179,9 @@ test.describe("core user-hosted workspace @core", () => {
         return json(route, { workspaceId: `local-${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
       }
       // Reaching Settings means opening the rail account menu, which mounts the
-      // org/team switcher. Same fatal gap as `/permission/modes` above: the
-      // trailing `json(route, {}, 200)` would serve `{}`, the switcher would
-      // call `.find` on it, and the app would render its error boundary instead
-      // of the shell — which is exactly how this test first failed.
+      // org/team switcher. Same fatal gap as `/permission/modes` above: the trailing
+      // `json(route, {}, 200)` would serve `{}`, the switcher would call `.find` on it,
+      // and the app would render its error boundary instead of the shell.
       if (url.pathname === "/api/control/orgs") return json(route, [])
       if (url.pathname.startsWith("/api/control/orgs/")) return json(route, [])
 
@@ -1307,7 +1246,7 @@ test.describe("core user-hosted workspace @core", () => {
     // And no tick list came with it.
     await expect(page.getByRole("checkbox", { name: /share/i })).toHaveCount(0)
   })
-  test("the rail's project view lists the host's sessions and opens one on its workspace route — behavior 8", async ({ page }) => {
+  test("the rail's project view lists the host's sessions and opens one on its workspace route", async ({ page }) => {
     test.setTimeout(120_000)
     // The central server answers NOTHING for this project (`isSessionListPath`
     // above returns an empty page), so any row the rail shows can only have
@@ -1367,27 +1306,20 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.hostPathScopes).toEqual([])
   })
 
-  // Attaching to a session that is currently running and receiving its live
-  // stream as it happens, from the web, over the relay.
+  // Attaching to a turn already running on the HOST. The frames go straight onto the
+  // session-scoped runtime-events lane, exactly as the host's runtime publishes them for
+  // a viewer who merely navigated to the session; nothing adds the reply's text to the
+  // REST message list, so a whole-turn `GET /session/:id/message` refetch cannot be what
+  // carries it.
   //
-  // The turn here is started on the HOST, not by this client's composer: the
-  // spec pushes canonical-contract frames straight onto the session-scoped
-  // runtime-events lane, exactly as the host's runtime does for a viewer who
-  // merely navigated to the session. Nothing adds the reply's text to the REST
-  // message list, so a whole-turn `GET /session/:id/message` refetch cannot be
-  // what carries it.
-  //
-  // What this pins is the LANE: it is open for the route's session before the
-  // turn's frames exist, and this client reads them as they are published. The
-  // transcript's own rendering of those deltas is a separate seam and is NOT
-  // asserted here: the projected
-  // `message.part.updated` / `message.part.delta` events are published under the
-  // live session's bare `workspaceId`
-  // (`eventDirectoryForLiveSession`, app/providers/global-sdk/live-session.ts),
-  // while the pane registers its route directory, so `event-ingress.ts`'s
-  // `input.children.has(directory)` gate routes them to the shell caches instead
-  // of the conversation.
-  test("attaching to a running session by route opens its live lane — behavior 9", async ({ page }) => {
+  // What this pins is the lane: open for the route's session before the turn's frames
+  // exist, and read as they are published. The transcript's own rendering of those deltas
+  // is a separate seam and is not asserted here — the projected `message.part.updated` /
+  // `message.part.delta` events are published under the live session's bare `workspaceId`
+  // (`eventDirectoryForLiveSession`) while the pane registers its route directory, so
+  // `event-ingress.ts`'s `input.children.has(directory)` gate routes them to the shell
+  // caches instead of the conversation.
+  test("attaching to a running session by route opens its live lane", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200], existingRuntimeSession: true })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
@@ -1454,7 +1386,7 @@ test.describe("core user-hosted workspace @core", () => {
   // be: `pty.*`, `process.*` and `worktree.*` belong to no session, and the route
   // that needs them most — a terminal — names no session at all: the `pty.created`
   // frame that registers a terminal arrives on this stream and no other.
-  test("the workspace event bus opens workspace-wide on a session-less route — behavior 10", async ({ page }) => {
+  test("the workspace event bus opens workspace-wide on a session-less route", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })

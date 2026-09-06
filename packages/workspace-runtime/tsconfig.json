@@ -5,6 +5,9 @@
     "rootDir": "./src",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // Workspace packages export `development` -> src/*.ts ahead of `types` ->
+    // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
+    "customConditions": ["development"],
     "noUncheckedIndexedAccess": false,
     "types": ["bun"],
     // DOM.Iterable for `Headers.entries()` and friends, which this package

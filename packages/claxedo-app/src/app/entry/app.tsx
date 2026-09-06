@@ -43,7 +43,7 @@ import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useSe
 import { LanguageProvider, useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { ErrorPage } from "@/app/routes/error"
-import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@/platform/api/api"
+import { getClaxedoServerUrl, isHostedAppHostname } from "@/platform/api/api"
 import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
@@ -514,8 +514,6 @@ function AuthenticatedLayout(
   })()
 
   const resolveDefaultUrl = () => {
-    // Demo mode: use current origin so MSW service worker intercepts all requests
-    if (isDemoMode()) return window.location.origin
     // e2e-only: let a spec force a non-loopback default server so the
     // signed-auth redirect boundary (CloudAuthGate → /login for an anonymous
     // principal on a non-loopback transport) is provable. Gated to the dev
@@ -568,12 +566,11 @@ export function AppInterface(props: {
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
 }) {
-  const base = isDemoMode() ? "/demo" : undefined
   const RouterComponent = props.router ?? Router
   const OAuthConsentRoute = props.oauthConsent ?? (() => <Navigate href="/" />)
 
   return (
-    <RouterComponent base={base}>
+    <RouterComponent>
       <Route
         path="/login"
         component={() => (

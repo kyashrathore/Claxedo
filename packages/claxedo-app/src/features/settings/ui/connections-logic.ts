@@ -211,10 +211,10 @@ export type ConnectFlowState = {
    * The device-flow code the user must type at the provider's verification page.
    *
    * A device grant is not a redirect: opening `url` lands the user on
-   * github.com/login/device, which asks for a code that ONLY this response
-   * carries. Dropping it — as this flow used to — left the UI spinning
-   * "Waiting for authorization…" next to a page the user could not get past,
-   * so the flow could never complete no matter how long it polled.
+   * github.com/login/device, which asks for a code that only this response
+   * carries. Without it, the UI spins "Waiting for authorization…" next to a
+   * page the user cannot get past, and the flow never completes no matter how
+   * long it polls.
    */
   userCode: string | undefined
   /** The verification page to open; kept so the user can re-open it. */
@@ -267,7 +267,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
     userCode: undefined,
     verificationUrl: undefined,
   })
-  // Bumped by reset(); in-flight oauth polling stops when its generation is stale.
+  // Bumped by reset(); submission and polling results belong to their original flow.
   let generation = 0
 
   const setField = (id: string, value: string) => setState("fields", id, value)
@@ -313,6 +313,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
         return
       }
       const body = await jsonOf(response)
+      if (generation !== myGeneration) return
       if (body.status === "pending") {
         if (typeof body.intervalMs === "number" && body.intervalMs > 0) interval = body.intervalMs
         continue
@@ -333,6 +334,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   }
 
   async function submit(mode: "key" | "oauth", confirmReplace: boolean) {
+    const myGeneration = generation
     const body: Record<string, unknown> = {
       ...(confirmReplace ? { confirmReplace: true } : {}),
       ...(options.personalScopeEnabled ? { scope: state.scope } : {}),
@@ -358,11 +360,14 @@ export function createConnectFlow(options: ConnectFlowOptions) {
         body: JSON.stringify(body),
       })
     } catch (err) {
+      if (generation !== myGeneration) return
       setState({ phase: "form", error: err instanceof Error ? err.message : String(err) })
       return
     }
 
+    if (generation !== myGeneration) return
     const payload = await jsonOf(response)
+    if (generation !== myGeneration) return
     if (response.status === 409 && payload.code === "connection_exists") {
       setState({ phase: "confirm-replace", error: undefined, pendingMode: mode })
       return
@@ -420,7 +425,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
     setState({ phase: "form", error: undefined, pendingMode: undefined })
   }
 
-  /** Clears everything (including the secret) and cancels in-flight polling. */
+  /** Clears everything (including the secret) and cancels pending flow results. */
   const reset = () => {
     generation++
     setState({

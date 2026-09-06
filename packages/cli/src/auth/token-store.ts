@@ -1,7 +1,9 @@
 import path from "node:path"
 import { config, url } from "../config"
 import { requestJson } from "../http"
-import { number, object, readJsonFile, text, writePrivateJson } from "../json"
+import { object, readOptionalJsonFile, writePrivateJson } from "../json"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { asFiniteNumber } from "@claxedo/helpers/guards"
 
 export type Credentials = {
   controlPlaneUrl: string
@@ -18,26 +20,26 @@ function credentialsPath() {
 
 function credentials(input: unknown): Credentials | undefined {
   const row = object(input)
-  const accessToken = text(row.accessToken) ?? text(row.access_token)
+  const accessToken = trimToUndefined(row.accessToken) ?? trimToUndefined(row.access_token)
   if (!accessToken) return undefined
   return {
-    controlPlaneUrl: text(row.controlPlaneUrl) ?? config().controlPlaneUrl,
+    controlPlaneUrl: trimToUndefined(row.controlPlaneUrl) ?? config().controlPlaneUrl,
     accessToken,
-    ...((text(row.refreshToken) ?? text(row.refresh_token))
-      ? { refreshToken: text(row.refreshToken) ?? text(row.refresh_token) }
+    ...((trimToUndefined(row.refreshToken) ?? trimToUndefined(row.refresh_token))
+      ? { refreshToken: trimToUndefined(row.refreshToken) ?? trimToUndefined(row.refresh_token) }
       : {}),
-    ...((text(row.tokenType) ?? text(row.token_type))
-      ? { tokenType: text(row.tokenType) ?? text(row.token_type) }
+    ...((trimToUndefined(row.tokenType) ?? trimToUndefined(row.token_type))
+      ? { tokenType: trimToUndefined(row.tokenType) ?? trimToUndefined(row.token_type) }
       : {}),
-    ...(number(row.expiresAt) ? { expiresAt: number(row.expiresAt) } : {}),
-    ...(text(row.identity) ? { identity: text(row.identity) } : {}),
+    ...(asFiniteNumber(row.expiresAt) ? { expiresAt: asFiniteNumber(row.expiresAt) } : {}),
+    ...(trimToUndefined(row.identity) ? { identity: trimToUndefined(row.identity) } : {}),
   }
 }
 
 export async function readCredentials(): Promise<Credentials | undefined> {
-  const fromFile = credentials(await readJsonFile(credentialsPath()))
+  const fromFile = credentials(await readOptionalJsonFile(credentialsPath()))
   if (fromFile) return fromFile
-  const token = text(process.env.CLAXEDO_DEV_TOKEN) ?? text(process.env.CLAXEDO_ACCESS_TOKEN)
+  const token = trimToUndefined(process.env.CLAXEDO_DEV_TOKEN) ?? trimToUndefined(process.env.CLAXEDO_ACCESS_TOKEN)
   if (!token) return undefined
   return {
     controlPlaneUrl: config().controlPlaneUrl,
@@ -60,14 +62,14 @@ function needsRefresh(input: Credentials) {
 
 function tokenResponse(input: unknown, current: Credentials): Credentials {
   const row = object(input)
-  const accessToken = text(row.access_token) ?? text(row.accessToken)
+  const accessToken = trimToUndefined(row.access_token) ?? trimToUndefined(row.accessToken)
   if (!accessToken) throw new Error("Token response is missing access_token")
-  const expiresIn = number(row.expires_in) ?? number(row.expiresIn)
+  const expiresIn = asFiniteNumber(row.expires_in) ?? asFiniteNumber(row.expiresIn)
   return {
     controlPlaneUrl: current.controlPlaneUrl,
     accessToken,
-    refreshToken: text(row.refresh_token) ?? text(row.refreshToken) ?? current.refreshToken,
-    tokenType: text(row.token_type) ?? text(row.tokenType) ?? current.tokenType,
+    refreshToken: trimToUndefined(row.refresh_token) ?? trimToUndefined(row.refreshToken) ?? current.refreshToken,
+    tokenType: trimToUndefined(row.token_type) ?? trimToUndefined(row.tokenType) ?? current.tokenType,
     ...(expiresIn ? { expiresAt: Date.now() + expiresIn * 1000 } : {}),
     ...(current.identity ? { identity: current.identity } : {}),
   }

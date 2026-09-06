@@ -4,13 +4,6 @@ import { useAuthSession } from "./auth-session"
 import { IdentityProvider, type Principal } from "./identity-provider"
 import { readString } from "@/lib/record"
 
-/**
- * The user id a signed principal carries until the profile lookup names it.
- * Consumers that compare principals must treat it as "same session, not yet
- * named", never as a distinct person.
- */
-export const UNNAMED_SIGNED_USER_ID = "signed-user"
-
 export type SignedAccountSource = () => { userId: string } | undefined
 
 export function PrincipalProvider(
@@ -30,25 +23,29 @@ export function PrincipalProvider(
   const principal = (): Principal => {
     if (auth.status() === "signed") {
       const userId = readString(auth.user(), "id")
+      // No id on a signed session is `signed-unresolved`, not a signed user
+      // under a placeholder id: a fabricated id would earn real grants.
+      if (!userId) return { kind: "signed-unresolved" }
       const organization = auth.organization()
       if (organization?.id) {
         return {
           kind: "org-member",
-          userId: userId ?? UNNAMED_SIGNED_USER_ID,
+          userId,
           orgId: organization.id,
           memberships: [],
         }
       }
       return {
         kind: "signed",
-        userId: userId ?? UNNAMED_SIGNED_USER_ID,
+        userId,
       }
     }
     const signedAccount = props.signedAccount?.()
     if (signedAccount) {
+      if (!signedAccount.userId) return { kind: "signed-unresolved" }
       return {
         kind: "signed",
-        userId: signedAccount.userId || UNNAMED_SIGNED_USER_ID,
+        userId: signedAccount.userId,
       }
     }
     if (!props.authEnabled) return { kind: "local", deviceId: "local" }

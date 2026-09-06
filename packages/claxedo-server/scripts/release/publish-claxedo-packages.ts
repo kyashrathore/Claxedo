@@ -1,30 +1,28 @@
 /**
- * Publisher for the 13 public `@claxedo/*` packages.
+ * The one publisher for the 13 public `@claxedo/*` packages.
  *
- * Why this exists alongside `publish-runtime-packages.ts`: that script only
- * knows the seven-package runtime family, and it takes the release version as a
- * CLI argument and stamps it into every package.json as a side effect of
- * publishing. The other six (channels, connections, mcp, sandbox-contract,
- * sandbox-manager, wakes) had no automation at all — they were published by a human
- * typing `npm publish` out of `script/PUBLISH-ORDER.md`, with no dry run and
- * no idempotency check.
+ * Policy this script encodes:
  *
- * Two deliberate differences from the runtime script:
+ *   1. **Versions are read from the repo, never passed in.** A release is a
+ *      reviewed version-bump commit, and `--dry-run` is a meaningful check of
+ *      the repo's actual state (which is what CI runs on `dev` and on PRs).
+ *   2. **Sibling dependencies are `workspace:*` in the repo.** Bun resolves them
+ *      to the checkout, so a version bump can never flip a sibling to the
+ *      registry, and there is no cross-pin to keep in sync by hand.
+ *   3. **Pins are materialized at pack time.** Right before `npm pack` /
+ *      `npm publish`, every `workspace:` specifier is replaced by that
+ *      package's exact in-repo version and the original manifest is restored
+ *      afterwards. npm does not rewrite `workspace:` itself (only `bun publish`
+ *      does), and a `workspace:` that survives into a published `dependencies`
+ *      block fails every downstream `npm install` with EUNSUPPORTEDPROTOCOL.
+ *   4. **A published version is immutable.** `check-published-versions.ts`
+ *      fails the run when a package's directory changed after its version was
+ *      last set and that version is already on npm — the bump is missing.
  *
- *   1. **Versions are read from the repo, never passed in.** The version bump
- *      is a reviewable commit, not a workflow input somebody types wrong, and
- *      a `--dry-run` becomes a meaningful check of the repo's actual state
- *      (which is what the CI job on `dev` runs).
- *   2. **Cross-pins are asserted, not rewritten.** Every `@claxedo/*`
- *      dependency of a public package must already equal that package's
- *      in-repo version. Rewriting at publish time hides a stale pin; asserting
- *      turns it into a failure you can fix in the diff.
- *
- * Every package goes through the same gates `script/publish-preflight.sh`
- * encodes — build, `npm pack`, no `workspace:`/`catalog:` specifier in any
- * consumer-facing dependency section of the *packed* package.json, README.md
- * and LICENSE present in the tarball — and is skipped when its exact version
- * is already on the registry.
+ * Every package is built (with its `@claxedo/*` dependencies first), packed,
+ * and the packed tarball inspected — README.md and LICENSE present, no
+ * `workspace:`/`catalog:` specifier in any consumer-facing section — before
+ * anything is published. A version already on the registry is skipped.
  */
 import { execFileSync } from "node:child_process"
 import fs from "node:fs"
@@ -33,8 +31,9 @@ import path from "node:path"
 import { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "../../src/platform/json/index"
+import { publishedVersionDrift } from "./check-published-versions"
 
-export type PackageTrack = "runtime" | "apps" | "wakes"
+export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -45,57 +44,38 @@ export type ClaxedoPackage = {
    * did not individually earn.
    */
   readonly track: PackageTrack
-  /**
-   * True when `publish-runtime-packages.ts` already publishes this package.
-   * Kept so `--track all` can run over the full set without double-publishing
-   * being ambiguous: the npm-view skip makes a second pass a no-op either way.
-   */
-  readonly runtimeFamily: boolean
 }
 
 /**
- * All 12 public packages, in dependency order (`@claxedo/*` edges only).
- * Tier 0 has no `@claxedo/*` dependencies; tier 1 depends on tier 0; tier 2 on
- * tiers 0 and 1. `agent-runtime-contract` is tier 0 because `agent-event-runtime`
- * now re-exports its canonical session/event contracts. Publishing out of this order can leave a package on npm whose
+ * All 13 public packages, in dependency order (`@claxedo/*` edges only).
+ * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
+ * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
  */
 export const claxedoPackages: readonly ClaxedoPackage[] = [
   // Tier 0
-  { name: "@claxedo/agent-runtime-contract", dir: "packages/agent-runtime-contract", track: "runtime", runtimeFamily: true },
-  { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime", runtimeFamily: true },
-  { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime", runtimeFamily: false },
+  { name: "@claxedo/helpers", dir: "packages/claxedo-helpers", track: "helpers" },
+  { name: "@claxedo/agent-runtime-contract", dir: "packages/agent-runtime-contract", track: "runtime" },
+  { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime" },
+  { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes" },
   // Tier 1
-  { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime", runtimeFamily: true },
-  { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime", runtimeFamily: false },
-  { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps", runtimeFamily: false },
-  { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps", runtimeFamily: false },
-  { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes", runtimeFamily: false },
-  { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime", runtimeFamily: true },
-  { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime", runtimeFamily: true },
+  { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime" },
+  { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime" },
+  { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps" },
+  { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps" },
+  { name: "@claxedo/mcp", dir: "packages/claxedo-mcp", track: "apps" },
+  { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },
   // Tier 2
-  { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime", runtimeFamily: true },
+  { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime" },
+  { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime" },
   // Tier 3
-  { name: "@claxedo/mcp", dir: "packages/claxedo-mcp", track: "apps", runtimeFamily: false },
+  { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
 ]
 
-export type PackageSelector = "all" | "others" | "runtime-family" | PackageTrack
+export type PackageSelector = "all" | PackageTrack
 
-/**
- * `others` is the D2 set: everything `publish-runtime-packages.ts` does not
- * already cover.
- */
 export function selectPackages(selector: PackageSelector): readonly ClaxedoPackage[] {
-  switch (selector) {
-    case "all":
-      return claxedoPackages
-    case "others":
-      return claxedoPackages.filter((item) => !item.runtimeFamily)
-    case "runtime-family":
-      return claxedoPackages.filter((item) => item.runtimeFamily)
-    default:
-      return claxedoPackages.filter((item) => item.track === selector)
-  }
+  return selector === "all" ? claxedoPackages : claxedoPackages.filter((item) => item.track === selector)
 }
 
 const CONSUMER_SECTIONS = ["dependencies", "peerDependencies", "optionalDependencies"] as const
@@ -107,9 +87,7 @@ const repoRoot = path.resolve(import.meta.dirname, "../../../..")
 
 /**
  * `workspace:` / `catalog:` specifiers in sections a consumer actually
- * installs. npm does not rewrite these (only `bun publish` does), so one that
- * survives into a published `dependencies` block fails every downstream
- * `npm install` with EUNSUPPORTEDPROTOCOL. devDependencies are reported
+ * installs, as found in a PACKED manifest. devDependencies are reported
  * separately because npm never installs a published package's devDependencies
  * — a `catalog:` there is cosmetic, not breaking.
  */
@@ -128,24 +106,46 @@ export function protocolSpecifiers(pkg: PackageJson) {
   return { breaking, cosmetic }
 }
 
+export const WORKSPACE_PIN = "workspace:*"
+
 /**
- * Every `@claxedo/*` dependency of a public package must be an exact pin equal
- * to that package's in-repo version. This is the check that would have caught
- * "workspace-runtime shipped pinned to @claxedo/agent-sdk-runtime 0.3.0 while
- * the repo moved agent-sdk-runtime to 0.4.0".
+ * Every `@claxedo/*` dependency of a public package must be exactly
+ * `workspace:*` in the repo. Any literal version — `0.7.0`, `workspace:0.7.0`,
+ * `^0.7.0` — is a pin that has to be kept in sync by hand and that Bun stops
+ * resolving to the checkout the moment the sibling's version moves (a stale pin
+ * once shipped workspace-runtime against an older agent-sdk-runtime).
  */
-export function crossPinViolations(pkg: PackageJson, versions: ReadonlyMap<string, string>) {
+export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<string>) {
   const bad: string[] = []
-  for (const section of CONSUMER_SECTIONS) {
+  for (const section of ALL_SECTIONS) {
     for (const [dep, spec] of Object.entries(pkg[section] ?? {})) {
-      const expected = versions.get(dep)
-      if (expected === undefined) continue
-      if (spec !== expected) {
-        bad.push(`${section}.${dep}=${spec} (expected ${expected})`)
-      }
+      if (!publicNames.has(dep)) continue
+      if (spec !== WORKSPACE_PIN) bad.push(`${section}.${dep}=${spec} (expected ${WORKSPACE_PIN})`)
     }
   }
   return bad
+}
+
+/**
+ * The manifest npm sees: every `workspace:` specifier replaced by the exact
+ * in-repo version of that package. A `workspace:` reference to a package that
+ * is not public cannot be materialized and is an error, not a silent pass.
+ */
+export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap<string, string>): PackageJson {
+  const next: PackageJson = { ...pkg }
+  for (const section of ALL_SECTIONS) {
+    const deps = pkg[section]
+    if (!deps) continue
+    next[section] = Object.fromEntries(
+      Object.entries(deps).map(([dep, spec]) => {
+        if (typeof spec !== "string" || !spec.startsWith("workspace:")) return [dep, spec]
+        const version = versions.get(dep)
+        if (!version) throw new Error(`${pkg.name ?? "package"}: ${section}.${dep}=${spec} references a package that is not published`)
+        return [dep, version]
+      }),
+    )
+  }
+  return next
 }
 
 export function repoVersions(root: string, packages: readonly ClaxedoPackage[] = claxedoPackages) {
@@ -233,6 +233,21 @@ export function npmVersionPublished(name: string, version: string, run: CommandR
   }
 }
 
+/**
+ * Run `fn` with the package's manifest rewritten to its published shape, and
+ * put the original bytes back whether or not `fn` throws. The repo never
+ * carries materialized pins; only the tarball does.
+ */
+function withMaterializedManifest<T>(file: string, materialized: PackageJson, fn: () => T): T {
+  const original = fs.readFileSync(file, "utf8")
+  fs.writeFileSync(file, `${JSON.stringify(materialized, null, 2)}\n`)
+  try {
+    return fn()
+  } finally {
+    fs.writeFileSync(file, original)
+  }
+}
+
 export type PublishOptions = {
   selector?: PackageSelector
   /** Explicit package names, overriding `selector`. */
@@ -261,14 +276,19 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
 
   const selected = options.only
     ? claxedoPackages.filter((item) => options.only?.includes(item.name) || options.only?.includes(item.dir.replace("packages/", "")))
-    : selectPackages(options.selector ?? "others")
+    : selectPackages(options.selector ?? "all")
 
   if (selected.length === 0) throw new Error("no packages selected")
 
-  // Cross-pins are validated against every public package's version, not just
-  // the selected subset — publishing `mcp` alone must still prove its
-  // `@claxedo/*` pins match the repo.
+  // Pins and drift are validated against every public package, not just the
+  // selected subset — publishing `mcp` alone must still prove the whole
+  // public set is releasable.
   const versions = repoVersions(root)
+  const publicNames = new Set(versions.keys())
+  const drift = publishedVersionDrift(root, claxedoPackages, run)
+  if (drift.length > 0) {
+    throw new Error(`published versions with unreleased changes (bump the version):\n${drift.map((line) => `  - ${line}`).join("\n")}`)
+  }
 
   const workDir = options.workDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-publish-"))
   const cleanup = options.workDir === undefined
@@ -290,9 +310,9 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
         continue
       }
 
-      const pins = crossPinViolations(pkg, versions)
+      const pins = crossPinViolations(pkg, publicNames)
       if (pins.length > 0) {
-        failures.push(`${item.name}: stale @claxedo/* cross-pin(s): ${pins.join(", ")}`)
+        failures.push(`${item.name}: sibling dependency is not ${WORKSPACE_PIN}: ${pins.join(", ")}`)
         continue
       }
 
@@ -314,79 +334,82 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
         }
       }
 
-      // Pack and inspect the real tarball — reading package.json is not proof
-      // of what npm will ship.
-      const packDir = path.join(workDir, item.name.replace("/", "__"))
-      fs.mkdirSync(packDir, { recursive: true })
-      let packed: ReturnType<typeof parsePackJson>[number]
+      let materialized: PackageJson
       try {
-        packed = parsePackJson(run("npm", ["pack", "--json", "--pack-destination", packDir], path.join(root, item.dir)))[0]!
+        materialized = materializeWorkspacePins(pkg, versions)
       } catch (error) {
-        failures.push(`${item.name}: npm pack failed: ${commandFailureReason(error)}`)
-        continue
-      }
-      log(`    pack                         ok (${packed.filename})`)
-
-      const extractDir = path.join(packDir, "extract")
-      fs.mkdirSync(extractDir, { recursive: true })
-      // The archive name stays relative to the cwd: an absolute Windows path in
-      // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
-      // with "Cannot connect". -C is not parsed that way and may stay absolute.
-      run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
-      const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
-
-      const specifiers = protocolSpecifiers(packedPkg)
-      if (specifiers.breaking.length > 0) {
-        failures.push(`${item.name}: packed tarball has workspace:/catalog: specifier(s) consumers install: ${specifiers.breaking.join(", ")}`)
-        continue
-      }
-      log(`    workspace:/catalog: specifiers ok${specifiers.cosmetic.length > 0 ? ` (devDependencies only: ${specifiers.cosmetic.join(", ")})` : ""}`)
-
-      const missing = missingTarballFiles(packed.files.map((entry) => entry.path))
-      if (missing.length > 0) {
-        failures.push(`${item.name}: tarball missing ${missing.join(", ")}`)
-        continue
-      }
-      log("    README.md/LICENSE in tarball ok")
-
-      if (packedPkg.version !== version) {
-        failures.push(`${item.name}: packed version ${packedPkg.version} != repo version ${version}`)
+        failures.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`)
         continue
       }
 
-      if (npmVersionPublished(item.name, version, run, root)) {
-        log(`    registry                     ${version} already published, skipping`)
-        outcomes.push({ name: item.name, version, action: "skipped-already-published" })
-        continue
-      }
+      const outcome = withMaterializedManifest(file, materialized, (): PublishOutcome | string => {
+        // Pack and inspect the real tarball — reading package.json is not proof
+        // of what npm will ship.
+        const packDir = path.join(workDir, item.name.replace("/", "__"))
+        fs.mkdirSync(packDir, { recursive: true })
+        let packed: ReturnType<typeof parsePackJson>[number]
+        try {
+          packed = parsePackJson(run("npm", ["pack", "--json", "--pack-destination", packDir], path.join(root, item.dir)))[0]!
+        } catch (error) {
+          return `${item.name}: npm pack failed: ${commandFailureReason(error)}`
+        }
+        log(`    pack                         ok (${packed.filename})`)
 
-      if (dryRun) {
-        log(`    registry                     ${version} not published — would publish`)
-        outcomes.push({ name: item.name, version, action: "would-publish" })
-        continue
-      }
+        const extractDir = path.join(packDir, "extract")
+        fs.mkdirSync(extractDir, { recursive: true })
+        // The archive name stays relative to the cwd: an absolute Windows path in
+        // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
+        // with "Cannot connect". -C is not parsed that way and may stay absolute.
+        run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
+        const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
 
-      try {
-        run("npm", [
-          "publish",
-          "--workspace",
-          item.name,
-          "--access",
-          "public",
-          ...(options.provenance === false ? [] : ["--provenance"]),
-          "--tag",
-          tag,
-        ], root)
-      } catch (error) {
-        failures.push(`${item.name}: publish failed: ${commandFailureReason(error)}`)
-        continue
-      }
-      if (!npmVersionPublished(item.name, version, run, root)) {
-        failures.push(`${item.name}: npm did not expose ${version} after publish`)
-        continue
-      }
-      log(`    registry                     published ${version}`)
-      outcomes.push({ name: item.name, version, action: "published" })
+        const specifiers = protocolSpecifiers(packedPkg)
+        if (specifiers.breaking.length > 0) {
+          return `${item.name}: packed tarball has workspace:/catalog: specifier(s) consumers install: ${specifiers.breaking.join(", ")}`
+        }
+        log(`    workspace:/catalog: specifiers ok${specifiers.cosmetic.length > 0 ? ` (devDependencies only: ${specifiers.cosmetic.join(", ")})` : ""}`)
+
+        const missing = missingTarballFiles(packed.files.map((entry) => entry.path))
+        if (missing.length > 0) return `${item.name}: tarball missing ${missing.join(", ")}`
+        log("    README.md/LICENSE in tarball ok")
+
+        if (packedPkg.version !== version) {
+          return `${item.name}: packed version ${packedPkg.version} != repo version ${version}`
+        }
+
+        if (npmVersionPublished(item.name, version, run, root)) {
+          log(`    registry                     ${version} already published, skipping`)
+          return { name: item.name, version, action: "skipped-already-published" }
+        }
+
+        if (dryRun) {
+          log(`    registry                     ${version} not published — would publish`)
+          return { name: item.name, version, action: "would-publish" }
+        }
+
+        try {
+          run("npm", [
+            "publish",
+            "--workspace",
+            item.name,
+            "--access",
+            "public",
+            ...(options.provenance === false ? [] : ["--provenance"]),
+            "--tag",
+            tag,
+          ], root)
+        } catch (error) {
+          return `${item.name}: publish failed: ${commandFailureReason(error)}`
+        }
+        if (!npmVersionPublished(item.name, version, run, root)) {
+          return `${item.name}: npm did not expose ${version} after publish`
+        }
+        log(`    registry                     published ${version}`)
+        return { name: item.name, version, action: "published" }
+      })
+
+      if (typeof outcome === "string") failures.push(outcome)
+      else outcomes.push(outcome)
     }
   } finally {
     if (cleanup) fs.rmSync(workDir, { recursive: true, force: true })
@@ -405,7 +428,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "others", "runtime-family", "runtime", "apps", "wakes"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track") ?? "others"

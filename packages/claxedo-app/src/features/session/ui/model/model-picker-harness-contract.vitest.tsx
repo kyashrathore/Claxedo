@@ -59,7 +59,7 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("the model picker's Connect action opens Settings → Providers", () => {
-  test("pi sessions redirect to providers settings", async () => {
+  test("Connect redirects to providers settings", async () => {
     const { container } = render(() => (
       <ModelSelectorPopover model={pickerState()} actions>
         <span data-slot="model-trigger">model</span>
@@ -69,13 +69,4 @@ describe("the model picker's Connect action opens Settings → Providers", () =>
     await openConnect(container)
   })
 
-  test("opencode sessions redirect to providers settings", async () => {
-    const { container } = render(() => (
-      <ModelSelectorPopover model={pickerState()} actions>
-        <span data-slot="model-trigger">model</span>
-      </ModelSelectorPopover>
-    ))
-
-    await openConnect(container)
-  })
 })

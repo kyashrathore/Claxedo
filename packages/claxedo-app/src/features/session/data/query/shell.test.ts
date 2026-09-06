@@ -1,8 +1,10 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
 import { commandListQuery, normalizeCommandList } from "./shell"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+
+afterEach(() => queryClient.clear())
 
 function command(name: string, description = ""): Command {
   return {
@@ -80,11 +82,10 @@ describe("shell query helpers", () => {
     await query.queryFn()
     expect(resolves).toBe(1)
 
-    // Routing identity does not expire: age the one shared entry past the
-    // window this call site used to impose and read again.
+    // Routing identity does not expire: age the one shared entry well past
+    // staleness and read again.
     const key = queryKeys.runtime.workspace({ baseUrl: "http://example.test", directory: "/tmp/ws" })
-    const state = queryClient.getQueryCache().find({ queryKey: key })!.state as { dataUpdatedAt: number }
-    state.dataUpdatedAt = Date.now() - 5 * 60 * 1000
+    queryClient.setQueryData(key, queryClient.getQueryData(key), { updatedAt: Date.now() - 5 * 60 * 1000 })
 
     await query.queryFn()
     expect(resolves).toBe(1)

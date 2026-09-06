@@ -3,12 +3,6 @@ import { cleanup, fireEvent } from "@solidjs/testing-library"
 import { mountWorkbench } from "./dom-helpers"
 import { workbenchDrag } from "../pointer-drag"
 
-// Pointer-events drag-and-drop (WP-C3). The native HTML5 DnD input layer was
-// replaced by a hand-rolled pointer controller (mouse + touch + pen); the split
-// GEOMETRY contract (`computeDropEdge` + `wb.split.split`) is unchanged, so
-// these assertions still pin split behavior — only the event synthesis migrated
-// from `DragEvent`/`DataTransfer` to pointer events + the shared drag store.
-
 function stubRect(el: Element, width: number, height: number) {
   el.getBoundingClientRect = () =>
     ({ left: 0, top: 0, right: width, bottom: height, width, height, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
@@ -50,11 +44,8 @@ afterEach(() => {
 })
 
 describe("H. drag & drop (pointer)", () => {
-  test("the pane-drag grip actually receives pointer input (not the dead pointer-events:none wrapper)", () => {
-    // WP-C3a regression guard: the drag source was previously attached to the
-    // full-pane wrapper, which is `pointer-events:none`, so it could never fire a
-    // real pointerdown — the desktop pane-drag path was dead. The source now lives
-    // on a small grip (pointer-events:auto) inside a pointer-events:none wrapper.
+  test("the pane-drag grip is pointer-events:auto inside a pointer-events:none wrapper", () => {
+    // A source on the pointer-events:none wrapper never receives pointerdown.
     const h = mountWorkbench()
     h.api().contents.add("a")
     h.api().navigation.show("a")

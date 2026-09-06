@@ -3,12 +3,10 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 /**
  * The bearer this transport is given, and how it was asked for.
  *
- * `api.ts` used to import `getAuthToken` from `@/platform/auth/auth-client`,
- * and this file used to `mock.module` that import away. Both are gone: the
- * transport now takes a bearer source through `configureApiRuntime`, so the
- * test installs a real one instead of replacing a module it no longer imports.
- * `tokenRequests` records the options each call carried, which is what proves
- * the force-refresh retry actually asks for a fresh JWT rather than the cached
+ * The transport takes a bearer source through `configureApiRuntime`, installed
+ * below as a real function rather than a mocked module. `tokenRequests`
+ * records the options each call carried, which is what proves the
+ * force-refresh retry actually asks for a fresh JWT rather than the cached
  * one it was just told is invalid.
  */
 let token: string | null = null
@@ -40,8 +38,6 @@ const {
   getConfiguredClaxedoServerUrl,
   getDefaultBaseUrl,
   isHostedAppHostname,
-  isDemoMode,
-  isDemoPath,
   isEmbedMode,
   resetApiRuntime,
 } = await import(`${import.meta.dir}/api.ts?test`)
@@ -53,27 +49,24 @@ function setServerEnv(input: { claxedo?: string }) {
 }
 
 /**
- * Put the DOM in the shape the PACKAGED desktop renderer actually has.
+ * Put the DOM in the shape the packaged desktop renderer actually has.
  *
  * The desktop main process loads the window with `win.loadFile(...)`, so the
- * renderer is a file:// page. Setting `location.href` alone is NOT enough to
+ * renderer is a file:// page. Setting `location.href` alone does not
  * reproduce it: happy-dom serializes a file:// page's origin as the string
  * "null" (the spec's opaque-origin serialization), but real Chromium/Electron
  * reports the literal string "file://" with an empty hostname — measured
  * directly in the shipped app's devtools console.
  *
- * That one-value divergence is why this bug shipped. `getClaxedoServerUrl()`
- * only rejected the origin spelled "null" and only bailed on a loopback
- * *hostname*, so under happy-dom the guard fired and the suite stayed green,
- * while in the real app the app handed back its own "file://" origin as the API
- * base — every call then resolved to `file:///session?...` /
- * `file:///api/workspace/resolve?...` and failed with ERR_FILE_NOT_FOUND, so no
- * session would start and no harness would switch.
+ * `getClaxedoServerUrl()` only rejects the origin spelled "null" and only
+ * bails on a loopback *hostname*, so a test that trusts happy-dom's origin
+ * would stay green while the real app treats "file://" as its own API base —
+ * every call would resolve against a malformed `file:///session` URL.
  *
  * So pin `origin` to the browser-truthful value rather than trusting the
- * test DOM. Do NOT call `configureApiRuntime()` alongside this: production
+ * test DOM. Do not call `configureApiRuntime()` alongside this: production
  * never calls it, and setting `cfg.base` short-circuits the entire fallback
- * chain — which is why the pre-existing file:// test above never caught this.
+ * chain.
  */
 function asPackagedDesktopRenderer() {
   window.location.href = "file:///Applications/Claxedo.app/Contents/Resources/app.asar/out/renderer/index.html"
@@ -127,27 +120,10 @@ afterAll(() => {
   window.__CLAXEDO__ = originalOpencode
 })
 
-describe("demo routing", () => {
-  test("matches only the demo path prefix", () => {
-    expect(isDemoPath("/")).toBe(false)
-    expect(isDemoPath("/demo")).toBe(true)
-    expect(isDemoPath("/demo/")).toBe(true)
-    expect(isDemoPath("/demo/foo")).toBe(true)
-    expect(isDemoPath("/foo/demo")).toBe(false)
-  })
 
-  test("ignores the old demo query on the live root", () => {
-    window.location.href = "http://localhost/?demo=1"
-    expect(isDemoMode()).toBe(false)
-  })
-
-  test("enables demo mode under /demo", () => {
-    window.location.href = "http://localhost/demo/?demo=1"
-    expect(isDemoMode()).toBe(true)
-  })
-
+describe("runtime routing", () => {
   test("keeps embed detection query-based", () => {
-    window.location.href = "http://localhost/demo/?embed=1"
+    window.location.href = "http://localhost/?embed=1"
     expect(isEmbedMode()).toBe(true)
   })
 
@@ -196,7 +172,7 @@ describe("authFetch", () => {
     // The local product's shape. `app/entry/local.tsx` calls no
     // `configureApiRuntime({ bearerToken })`, which is the whole reason it can
     // ship without an identity provider in its bundle. A token is deliberately
-    // available here: if this transport had ANY other route to one, the header
+    // available here: if this transport had any other route to one, the header
     // below would carry it.
     resetApiRuntime()
     token = "tok_123"
@@ -219,7 +195,7 @@ describe("authFetch", () => {
   })
 
   /**
-   * `authFetch` is also the egress for the RELAY, which is a different origin
+   * `authFetch` is also the egress for the relay, which is a different origin
    * and authenticates with a Runtime Access Token, not our cookie. A
    * credentialed cross-origin request requires
    * `Access-Control-Allow-Credentials: true` in the preflight response, which a
@@ -241,14 +217,12 @@ describe("authFetch", () => {
   })
 
   /**
-   * On a hosted deployment the app and the control plane are DIFFERENT hosts —
+   * On a hosted deployment the app and the control plane are different hosts —
    * `app-<id>.claxedo.dev` serves the page, `cf-<id>.claxedo.dev` serves the
    * API — and `main.tsx` does not pass a `baseUrl`, so the control plane is
-   * known only through `getClaxedoServerUrl()`.
-   *
-   * The first version of the scoping above used the page's own origin as the
-   * control plane, which withheld the cookie from the API on exactly this
-   * topology and turned every request into a 401. Caught live, on staging.
+   * known only through `getClaxedoServerUrl()`. Scoping credentials to the
+   * page's own origin would withhold the cookie from the API on exactly this
+   * topology and turn every request into a 401.
    */
   test("sends the cookie to a control plane on a different host from the page", async () => {
     setServerEnv({ claxedo: "https://cf-deployment.example.test" })
@@ -388,10 +362,10 @@ describe("authFetch", () => {
  * header themselves rather than going through `authFetch`.
  *
  * `project-actions.tsx` (destroying a cloud sandbox) and
- * `agent-runtime-client.ts` (the signed control-plane init) used to import
- * `getAuthToken` for one call each, which is how the identity provider reached the LOCAL
- * bundle through two modules the local shell needs. They read this instead, so
- * "no build bound a source" has to be a first-class ANSWER here, not a throw.
+ * `agent-runtime-client.ts` (the signed control-plane init) cannot import the
+ * identity provider directly: that would pull it into the local bundle
+ * through two modules the local shell needs. They read this instead, so
+ * "no build bound a source" has to be a first-class answer here, not a throw.
  */
 describe("apiBearerToken", () => {
   test("resolves null when the build bound no source", async () => {

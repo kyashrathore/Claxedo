@@ -1,6 +1,6 @@
 import path from "node:path"
+import { assertRecord } from "@claxedo/helpers/guards"
 import { PRIMARY_AGENT_APP_METRICS } from "./agent-metrics"
-import { isRecord } from "./json-fields"
 
 export const AGENT_APP_DRIVER_PROTOCOL_VERSION = 1 as const
 
@@ -92,13 +92,13 @@ export function decodeDriverRequest(line: string): AgentDriverRequest {
   } catch {
     throw new Error("driver request must be valid JSON")
   }
-  const input = record(value, "driver request")
+  const input = assertRecord(value, "driver request")
   exactKeys(input, ["protocolVersion", "kind", "correlationId", "method", "params"])
   if (input.protocolVersion !== 1) throw new Error(`unsupported protocolVersion: ${String(input.protocolVersion)}`)
   if (input.kind !== "request") throw new Error("driver request kind must be request")
   const correlationId = identifier(input.correlationId, "correlationId")
   const method = identifier(input.method, "method")
-  const params = record(input.params, "params")
+  const params = assertRecord(input.params, "params")
   const base = { protocolVersion: 1 as const, kind: "request" as const, correlationId }
 
   if (method === "hello") {
@@ -157,11 +157,6 @@ export function decodeDriverRequest(line: string): AgentDriverRequest {
     return { ...base, method, params: { reason: boundedText(params.reason, "reason") } }
   }
   throw new Error(`unsupported method: ${method}`)
-}
-
-function record(value: unknown, name: string): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error(`${name} must be an object`)
-  return value
 }
 
 function exactKeys(input: Record<string, unknown>, allowed: string[]) {

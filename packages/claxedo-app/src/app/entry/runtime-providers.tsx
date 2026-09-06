@@ -58,14 +58,14 @@ export function RuntimeProviders(props: ParentProps) {
   const started = performance.now()
   const AppShell = claxedoAppShell()
   const principal = usePrincipal()
+  const principalGeneration = installPrincipalDataIsolation({ principal })
   installQueryPersister({
     quietDelay: fastSessionSwitchAnyQuietDelay,
     scope: () => principalDataScope(principal()),
+    generation: principalGeneration,
   })
-  installPrincipalDataIsolation({ principal })
-  // No UI reads its result, so it starts as soon as the provider tree itself
-  // mounts, alongside the rest of wave 1 — it does not wait on the lazy
-  // app-shell-bootstrap import above.
+  // No UI reads its result, so it starts as soon as the provider tree mounts,
+  // without waiting on the lazy app-shell-bootstrap import above.
   onMount(() => onCleanup(installUsageOutboxWakeups()))
   let didSignalPaint = false
 
@@ -112,7 +112,7 @@ export function RuntimeProviders(props: ParentProps) {
  * other providers is what makes that reachable — and what makes a surface
  * physically unable to start a second reconciler.
  *
- * It sits HERE and not beside `RemoteAccessMarkerRecorder` in `app.tsx` for a
+ * It sits here and not beside `RemoteAccessMarkerRecorder` in `app.tsx` for a
  * provider-ordering reason, not a taste one: the project inventory comes from
  * `useShellQueryOptions()`, which reads `GlobalSyncProvider` — and that
  * provider is mounted below `AuthenticatedProviders`, where the marker

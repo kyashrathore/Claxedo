@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { config, url } from "../config"
 import { requestJson } from "../http"
-import { number, object, text } from "../json"
+import { object } from "../json"
 import { requireAccessToken } from "../auth/token-store"
 import { enrollmentPayload, heartbeatPayloadV2, loadMachineHostKey, type MachineHostKey } from "../keys/host-key"
 import { readHostState } from "./state"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { asFiniteNumber } from "@claxedo/helpers/guards"
 
 export type RegisteredHost = {
   workspaceId: string
@@ -61,18 +63,18 @@ function repoName(directory: string) {
 
 function hostTunnel(input: unknown): HostTunnel {
   const row = object(input)
-  const token = text(row.hostTunnelToken)
+  const token = trimToUndefined(row.hostTunnelToken)
   if (!token) throw new Error("Control plane response is missing hostTunnel.hostTunnelToken")
   return {
     hostTunnelToken: token,
-    ...(number(row.tokenExpiresAt) ? { tokenExpiresAt: number(row.tokenExpiresAt) } : {}),
-    ...(text(row.relayUrl) ? { relayUrl: text(row.relayUrl) } : {}),
+    ...(asFiniteNumber(row.tokenExpiresAt) ? { tokenExpiresAt: asFiniteNumber(row.tokenExpiresAt) } : {}),
+    ...(trimToUndefined(row.relayUrl) ? { relayUrl: trimToUndefined(row.relayUrl) } : {}),
   }
 }
 
 function workspaceId(input: unknown) {
   const row = object(input)
-  return text(row.workspace_id) ?? text(row.workspaceId)
+  return trimToUndefined(row.workspace_id) ?? trimToUndefined(row.workspaceId)
 }
 
 async function existingWorkspaceForDirectory(directory: string, token: string) {
@@ -83,7 +85,7 @@ async function existingWorkspaceForDirectory(directory: string, token: string) {
     }),
   )
   const workspaces = Array.isArray(response.workspaces) ? response.workspaces : []
-  return workspaces.map((item) => object(item)).find((item) => text(item.remote_directory) === directory)
+  return workspaces.map((item) => object(item)).find((item) => trimToUndefined(item.remote_directory) === directory)
 }
 
 /**
@@ -103,8 +105,8 @@ async function enrollMachine(input: { key: MachineHostKey; displayName: string; 
       body: { hostId: input.key.hostId },
     }),
   )
-  const requestId = text(request.request_id)
-  const nonce = text(request.nonce)
+  const requestId = trimToUndefined(request.request_id)
+  const nonce = trimToUndefined(request.nonce)
   if (!requestId || !nonce) throw new Error("Enrollment request response is missing request_id or nonce")
   await requestJson({
     url: url(cfg.controlPlaneUrl, "/api/claxedo/host/enrollments"),
@@ -148,7 +150,7 @@ export async function registerHost(options: RegisterOptions): Promise<Registered
   const existingWorkspace = await existingWorkspaceForDirectory(directory, token)
   const workspace = workspaceId(existingWorkspace) ?? existingRecord?.workspaceId ?? id("ws")
   const displayName =
-    options.name ?? text(existingWorkspace?.display_name) ?? existingRecord?.displayName ?? repoName(directory)
+    options.name ?? trimToUndefined(existingWorkspace?.display_name) ?? existingRecord?.displayName ?? repoName(directory)
   const key = await loadMachineHostKey()
   const gitBranch = git(directory, ["rev-parse", "--abbrev-ref", "HEAD"])
   const repoUrl = git(directory, ["config", "--get", "remote.origin.url"])

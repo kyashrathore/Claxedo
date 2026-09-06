@@ -258,15 +258,6 @@ describe("workspace runtime request", () => {
       .toHaveLength(1)
   })
 
-  test("keeps runtime relay transport promises in Query instead of a private WeakMap cache", async () => {
-    const source = await Bun.file(new URL("./workspace-runtime-request.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("relayConnections = new WeakMap")
-    expect(source).not.toContain("function connectionCache")
-    expect(source).toContain("workspace-runtime-relay")
-    expect(source).toContain("queryClient.setQueryData(key, pending)")
-  })
-
   test("keeps relay transport caches isolated by injected relay request", async () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {

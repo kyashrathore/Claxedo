@@ -1,11 +1,10 @@
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import { scopeUrl } from "@/lib/url"
-import { isRecord } from "@/lib/record"
 import { createSignal, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
-import { isDemoMode } from "@/lib/runtime-mode"
 import { eraseStoreTuple, restoreStoreTuple } from "@/platform/persistence/solid-store-erasure"
+import { isRecord } from "@claxedo/helpers/guards"
 
 type InitType = Promise<string> | string | null
 type PersistedWithReady<T> = [Store<T>, SetStoreFunction<T>, InitType, Accessor<boolean>]
@@ -31,7 +30,6 @@ type PersistTarget = {
 const LEGACY_STORAGE = "default.dat"
 const LOCAL_PREFIX = "claxedo."
 const fallback = { disabled: false }
-const demo = new Map<string, string>()
 
 const CACHE_MAX_ENTRIES = 500
 const CACHE_MAX_BYTES = 8 * 1024 * 1024
@@ -202,20 +200,14 @@ function expectsJson(defaults: unknown) {
   return Array.isArray(defaults) || isRecord(defaults)
 }
 
-function storageName(name: string) {
-  if (!isDemoMode()) return name
-  if (!name.startsWith(LOCAL_PREFIX)) return `${LOCAL_PREFIX}demo.${name}`
-  return `${LOCAL_PREFIX}demo.${name.slice(LOCAL_PREFIX.length)}`
-}
-
 function globalStorage() {
-  return storageName("claxedo.global.dat")
+  return "claxedo.global.dat"
 }
 
 function workspaceStorage(dir: string) {
   const head = ((dir ?? "").slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
   const sum = checksum(dir) ?? "0"
-  return storageName(`claxedo.workspace.${head}.${sum}.dat`)
+  return `claxedo.workspace.${head}.${sum}.dat`
 }
 
 function serverWorkspaceStorage(serverUrl: string, dir: string) {
@@ -229,7 +221,7 @@ function serverWorkspaceStorage(serverUrl: string, dir: string) {
   const serverSum = checksum(scoped) ?? "0"
   const dirHead = ((dir ?? "").slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
   const dirSum = checksum(dir) ?? "0"
-  return storageName(`claxedo.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`)
+  return `claxedo.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`
 }
 
 function localStorageWithPrefix(prefix: string): SyncStorage {
@@ -324,43 +316,12 @@ function localStorageDirect(): SyncStorage {
   }
 }
 
-function memoryWithPrefix(prefix: string): SyncStorage {
-  const base = `${prefix}:`
-  const item = (key: string) => base + key
-  return {
-    getItem: (key) => demo.get(item(key)) ?? null,
-    setItem: (key, value) => {
-      demo.set(item(key), value)
-    },
-    removeItem: (key) => {
-      demo.delete(item(key))
-    },
-  }
-}
-
-function memoryDirect(): SyncStorage {
-  return {
-    getItem: (key) => demo.get(key) ?? null,
-    setItem: (key, value) => {
-      demo.set(key, value)
-    },
-    removeItem: (key) => {
-      demo.delete(key)
-    },
-  }
-}
-
 function webStorage(storage?: string): SyncStorage {
-  if (isDemoMode()) {
-    if (!storage) return memoryDirect()
-    return memoryWithPrefix(storage)
-  }
   if (!storage) return localStorageDirect()
   return localStorageWithPrefix(storage)
 }
 
 function webLegacy(): SyncStorage {
-  if (isDemoMode()) return memoryDirect()
   return localStorageDirect()
 }
 
@@ -402,10 +363,6 @@ export const Persist = {
   },
 }
 
-export function resetDemoPersisted() {
-  demo.clear()
-}
-
 export function setPersisted(target: { storage?: string; key: string }, value: unknown) {
   webStorage(target.storage).setItem(target.key, JSON.stringify(value))
 }
@@ -441,10 +398,10 @@ export function persisted<T>(
   const defaults = snapshot(store[0])
   const legacy = config.legacy ?? []
 
-  const isDesktop = platform.platform === "desktop" && !!platform.storage
+  const desktopStorage = platform.platform === "desktop" ? platform.storage : undefined
 
   const storage = (() => {
-    if (!isDesktop) {
+    if (!desktopStorage) {
       // The web path is `webStorage`/`webLegacy` by construction; both are
       // synchronous, so this branch never had to claim it.
       const current = webStorage(config.storage)
@@ -529,9 +486,8 @@ export function persisted<T>(
     // The desktop `storage` port may hand back either shape. Every use below
     // awaits, which is correct for both, so the branch declares what it needs
     // rather than asserting the port returned the async one.
-    const current: AwaitableStore = platform.storage?.(config.storage) ?? memoryDirect()
-    const legacyStore: AwaitableStore | undefined =
-      config.storage ? platform.storage?.(LEGACY_STORAGE) : platform.storage?.()
+    const current: AwaitableStore = desktopStorage(config.storage)
+    const legacyStore: AwaitableStore = config.storage ? desktopStorage(LEGACY_STORAGE) : desktopStorage()
 
     // Mirror the sync-path pre-scan: on desktop we can persist via async storage,
     // and a corrupted JSON payload (truncated write) should not get "stuck"
@@ -573,8 +529,6 @@ export function persisted<T>(
           if (raw !== next) await current.setItem(key, next)
           return next
         }
-
-        if (!legacyStore) return null
 
         for (const legacyKey of legacy) {
           const legacyRaw = await legacyStore.getItem(legacyKey)

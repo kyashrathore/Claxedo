@@ -4,8 +4,8 @@ import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { txt } from "./route-support"
+import { asRecord } from "@claxedo/helpers/guards"
 import { controlPlaneRateLimitError } from "./runtime-token-guards"
-import { asRecord } from "../platform/json/index"
 
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const workspace = asRecord(asRecord(result)?.workspace)

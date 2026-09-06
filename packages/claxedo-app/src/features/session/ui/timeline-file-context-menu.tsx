@@ -1,7 +1,5 @@
-// File context menu for timeline file links/paths (T11): right-click a file
-// reference in the timeline → Open / Copy path / Reveal in Finder. Pure
-// overlay UI over injected callbacks — path resolution and panel opening stay
-// with the timeline that owns them.
+// Pure overlay UI over injected callbacks: path resolution and panel opening
+// stay with the timeline that owns them.
 import { Show } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 

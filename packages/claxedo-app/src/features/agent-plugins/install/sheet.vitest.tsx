@@ -78,6 +78,8 @@ function harness(input: {
   mode?: "signed" | "unsigned"
   plugin?: PluginCandidate
   organizationManager?: boolean
+  canManageOrganizationDefaults?: boolean
+  canManageOrganizationConnections?: boolean
   reconciliation?: { state: string; message?: string }
   withConnections?: boolean
 } = {}) {
@@ -112,8 +114,8 @@ function harness(input: {
         revision: 4,
         projects: [{ id: "project-1", label: "Project One" }, { id: "project-2", label: "Project Two" }],
         supportedHarnesses: HARNESSES,
-        canManageOrganizationDefaults: input.organizationManager === true,
-        canManageOrganizationConnections: input.organizationManager === true,
+        canManageOrganizationDefaults: input.canManageOrganizationDefaults ?? input.organizationManager === true,
+        canManageOrganizationConnections: input.canManageOrganizationConnections ?? input.organizationManager === true,
         organizationName: "Claxedo Acceptance Staging",
       }}
       api={api}
@@ -228,12 +230,16 @@ describe("install sheet — authentication", () => {
     expect(screen.getByText("Who authenticates composio")).toBeVisible()
   })
 
-  test("Enterprise is disabled without both organization capabilities", async () => {
-    harness({ plugin: candidate({ oauth: true }) })
+  test.each([
+    [false, false, "Only an organization admin can share a connection with the organization"],
+    [false, true, "Only an organization admin can set an organization default"],
+    [true, false, "Only an organization admin can share a connection with the organization"],
+  ] as const)("Enterprise requires both organization capabilities (defaults %s, connections %s)", async (canManageOrganizationDefaults, canManageOrganizationConnections, reason) => {
+    harness({ plugin: candidate({ oauth: true }), canManageOrganizationDefaults, canManageOrganizationConnections })
 
     await click("Next: Authentication")
     expect(screen.getByRole("radio", { name: /Enterprise/ })).toBeDisabled()
-    expect(screen.getByText("Only an organization admin can share a connection with the organization")).toBeVisible()
+    expect(screen.getByText(reason)).toBeVisible()
   })
 
   test("Enterprise runs activation, then organizationDefault, then a team connection", async () => {
@@ -263,6 +269,7 @@ describe("install sheet — authentication", () => {
     }))
     expect(activation.mock.calls[0][0].expectedRevision).toBe(4)
     expect(onDone).toHaveBeenCalledWith({ installed: true, revision: 9 })
+    expect(closeDialog).not.toHaveBeenCalled()
   })
 
   test("Personal connects with the personal scope and no organization default", async () => {
@@ -278,6 +285,7 @@ describe("install sheet — authentication", () => {
     expect(organizationDefault).not.toHaveBeenCalled()
     expect(open.mock.calls[0][0]).toEqual(expect.objectContaining({ scope: "personal" }))
     expect(onDone).toHaveBeenCalledWith({ installed: true, revision: 8 })
+    expect(closeDialog).not.toHaveBeenCalled()
   })
 
   test("Connect later installs without opening a connection", async () => {

@@ -6,7 +6,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-// Point the data dir at a temp root BEFORE importing the route module: it pulls
+// Point the data dir at a temp root before importing the route module: it pulls
 // in ClaxedoDB, which opens (and migrates) the database on first use. Without
 // this the cases below run migrations against the developer's real
 // ~/.claxedo/claxedo.db. Same idiom as session-meta.test.ts.
@@ -116,10 +116,8 @@ describe("provider-auth gate (signed mode)", () => {
 
   test("the refusal codes describe what actually happened", async () => {
     // The gate's two signed-mode refusals must stay distinguishable: a caller
-    // that sent nothing is told the token is MISSING, one that sent something
-    // unverifiable is told it is INVALID. The unsigned-local block below exists
-    // because this router used to answer `missing_bearer_token` to a request
-    // that plainly carried a bearer.
+    // that sent nothing is told the token is missing, one that sent something
+    // unverifiable is told it is invalid.
     const app = mountProvider(signedConfig)
     const missing = await app.request("/provider/auth")
     expect(await missing.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
@@ -139,16 +137,12 @@ describe("provider-auth gate (signed mode)", () => {
 // In unsigned-local (`CLAXEDO_SIGNED_CLOUD_AUTH` unset) this gate cannot
 // evaluate a bearer at all: `controlPlaneAuthContext` short-circuits on
 // `!config.enabled` and returns `unsigned-local`, so no token can ever produce
-// `mode === "signed"`. The gate used to skip its pass-through the moment ANY
-// Authorization header was present and then fall into that unsatisfiable
-// branch, so a request WITH a bearer got 401 `missing_bearer_token` while the
-// same request WITHOUT one was served. That is not a gate — the caller just
-// drops the header and walks in — and the code it reported was untrue.
+// `mode === "signed"`.
 //
 // The real gate in this posture is the global `unsignedLocalRequestGuard`
 // (loopback-only, 403 `unsigned_local_loopback_required` off-box). So the
 // bearer is ignored here, matching `network-policy.ts`'s `routeAuth`, which
-// already resolves the same case to an anonymous pass. Two postures must NOT
+// already resolves the same case to an anonymous pass. Two postures must not
 // change: `misconfigured` still fails closed with 503, and signed mode still
 // requires a verified identity (above).
 describe("provider-auth gate (unsigned local)", () => {

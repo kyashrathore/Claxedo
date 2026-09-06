@@ -42,7 +42,7 @@ describe("MCP OAuth Connections integration", () => {
       callbackUrl: "https://claxedo.example/api/connections/callback",
       fetch: vi.fn(),
     })
-    const url = await integration.impl.authorize("state", "verifier")
+    const url = await integration.impl.auth.authorize("state", "verifier")
     expect(url.origin + url.pathname).toBe("https://login.example/authorize")
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
       response_type: "code",
@@ -65,8 +65,8 @@ describe("MCP OAuth Connections integration", () => {
       fetch: vi.fn(),
     })
 
-    expect(integration.impl.attemptContext).not.toHaveProperty("scopes")
-    expect((await integration.impl.authorize("state", "verifier")).searchParams.has("scope")).toBe(false)
+    expect(integration.impl.auth.attemptContext).not.toHaveProperty("scopes")
+    expect((await integration.impl.auth.authorize("state", "verifier")).searchParams.has("scope")).toBe(false)
   })
 
   it("freezes discovery into the attempt, validates response issuer, and exchanges without leaking token data", async () => {
@@ -88,7 +88,7 @@ describe("MCP OAuth Connections integration", () => {
       fetch,
       now: () => 1_000,
     })
-    await expect(integration.impl.callback("code", "verifier", integration.impl.attemptContext, { issuer: "https://login.example" })).resolves.toMatchObject({
+    await expect(integration.impl.auth.callback("code", "verifier", integration.impl.auth.attemptContext, { issuer: "https://login.example" })).resolves.toMatchObject({
       accessToken: "access",
       refreshToken: "refresh",
       expiresAt: 61_000,
@@ -117,9 +117,9 @@ describe("MCP OAuth Connections integration", () => {
       callbackUrl: "https://claxedo.example/api/connections/callback",
       fetch,
     })
-    await expect(integration.impl.callback("code", "verifier", { ...integration.impl.attemptContext, resource: "https://evil.example" }, { issuer: "https://login.example" })).rejects.toThrow("no longer matches")
-    await expect(integration.impl.callback("code", "verifier", integration.impl.attemptContext)).rejects.toThrow("omitted")
-    await expect(integration.impl.callback("code", "verifier", integration.impl.attemptContext, { issuer: "https://evil.example" })).rejects.toThrow("mismatch")
+    await expect(integration.impl.auth.callback("code", "verifier", { ...integration.impl.auth.attemptContext, resource: "https://evil.example" }, { issuer: "https://login.example" })).rejects.toThrow("no longer matches")
+    await expect(integration.impl.auth.callback("code", "verifier", integration.impl.auth.attemptContext)).rejects.toThrow("omitted")
+    await expect(integration.impl.auth.callback("code", "verifier", integration.impl.auth.attemptContext, { issuer: "https://evil.example" })).rejects.toThrow("mismatch")
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -136,7 +136,7 @@ describe("MCP OAuth Connections integration", () => {
       callbackUrl: "https://claxedo.example/api/connections/callback",
       fetch,
     })
-    await expect(integration.impl.refresh("old-refresh")).resolves.toEqual({ accessToken: "next" })
+    await expect(integration.impl.auth.refresh("old-refresh")).resolves.toEqual({ accessToken: "next" })
     expect(Object.fromEntries(formBody(calls[0]?.[1]))).toEqual({
       grant_type: "refresh_token",
       refresh_token: "old-refresh",
@@ -166,16 +166,16 @@ describe("MCP OAuth Connections integration", () => {
     const reconstructed = await createMcpOAuthIntegrationFromAttempt({
       integrationId: original.decl.id,
       serverName: "docs",
-      attemptContext: original.impl.attemptContext,
+      attemptContext: original.impl.auth.attemptContext,
       preRegistered: { "https://login.example": { clientId: "claxedo", clientSecret: "secret" } },
       fetch,
     })
 
     expect(reconstructed.decl.id).toBe(original.decl.id)
-    await expect(reconstructed.impl.callback(
+    await expect(reconstructed.impl.auth.callback(
       "code",
       "verifier",
-      original.impl.attemptContext,
+      original.impl.auth.attemptContext,
       { issuer: "https://login.example" },
     )).resolves.toMatchObject({
       accessToken: "access",
@@ -195,7 +195,7 @@ describe("MCP OAuth Connections integration", () => {
     await expect(createMcpOAuthIntegrationFromAttempt({
       integrationId: original.decl.id,
       serverName: "docs",
-      attemptContext: original.impl.attemptContext,
+      attemptContext: original.impl.auth.attemptContext,
       preRegistered: { "https://login.example": { clientId: "different" } },
       fetch: vi.fn(),
     })).rejects.toThrow("pre-registration no longer matches")
@@ -215,20 +215,20 @@ describe("MCP OAuth Connections integration", () => {
       callbackUrl: "https://claxedo.example/api/connections/callback",
       fetch,
     })
-    expect(original.impl.attemptContext.client_kind).toBe("dynamic")
-    expect(JSON.stringify(original.impl.attemptContext)).not.toContain("issued")
+    expect(original.impl.auth.attemptContext.client_kind).toBe("dynamic")
+    expect(JSON.stringify(original.impl.auth.attemptContext)).not.toContain("issued")
 
     const reconstructed = await createMcpOAuthIntegrationFromAttempt({
       integrationId: original.decl.id,
       serverName: "docs",
-      attemptContext: original.impl.attemptContext,
+      attemptContext: original.impl.auth.attemptContext,
       dynamicRegistration: { lookup: async () => ({ clientId: "dyn-1", clientSecret: "issued" }) },
       fetch,
     })
-    await expect(reconstructed.impl.callback(
+    await expect(reconstructed.impl.auth.callback(
       "code",
       "verifier",
-      original.impl.attemptContext,
+      original.impl.auth.attemptContext,
       { issuer: "https://login.example" },
     )).resolves.toMatchObject({ accessToken: "access" })
     const body = formBody(calls[0]?.[1])
@@ -251,7 +251,7 @@ describe("MCP OAuth Connections integration", () => {
     await expect(createMcpOAuthIntegrationFromAttempt({
       integrationId: original.decl.id,
       serverName: "docs",
-      attemptContext: original.impl.attemptContext,
+      attemptContext: original.impl.auth.attemptContext,
       ...(lookup ? { dynamicRegistration: { lookup } } : {}),
       fetch: vi.fn(),
     })).rejects.toThrow("dynamic registration no longer matches")

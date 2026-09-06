@@ -30,7 +30,7 @@ import {
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 import { terminalAgentStatusFromEventType } from "../../core/terminal-agent-status"
-import { urlRoutingEnabled } from "@/lib/runtime-mode"
+import { writeBrowserRoute } from "@/lib/browser-history"
 
 /** See the note on the same alias in `app/workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
@@ -177,8 +177,7 @@ function TerminalContentInner(props: {
     // Solid Router navigation remounts the pane and drops the live PTY stream;
     // a quiet history replace keeps the URL aligned without tearing down xterm.
     if (oldId.startsWith("pending-")) {
-      if (!urlRoutingEnabled()) return
-      window.history.replaceState(window.history.state, "", next)
+      writeBrowserRoute(next, { replace: true, notify: false })
       return
     }
     navigate(next, { replace: true })

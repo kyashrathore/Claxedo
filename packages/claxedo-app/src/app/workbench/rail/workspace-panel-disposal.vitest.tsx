@@ -164,6 +164,7 @@ beforeEach(() => {
 afterEach(() => {
   setReviewWorkspaceActiveTab(undefined)
   cleanup()
+  vi.useRealTimers()
 })
 
 const project = { id: "project-1", worktree: "/repo/main", name: "Main" } satisfies ProjectItem
@@ -284,10 +285,6 @@ function closePanel() {
   fireEvent.click(screen.getAllByRole("button", { name: "Close workspace panel" })[0])
 }
 
-function delay(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
 describe("closed workspace disposal and reconstruction", () => {
   test("unmounts the panel body after the close grace and rebuilds it from the retained working set", async () => {
     renderRail()
@@ -395,7 +392,6 @@ describe("closed workspace disposal and reconstruction", () => {
     state().wb.navigation.show(otherWorkspaceSurface.id)
 
     await waitFor(() => expect(mounts()).toHaveLength(2), { timeout: 10_000 })
-    await delay(200)
     // Exactly one construction. The outgoing body owns one directory and stops
     // projecting a pane that has left it, so it cannot build the destination
     // scope on its way out and have the panel build it a second time.
@@ -461,9 +457,11 @@ describe("closed workspace disposal and reconstruction", () => {
     await openPanel()
     mounts()[0].publish(substantialWorkingSet)
 
+    vi.useFakeTimers()
     closePanel()
-    await delay(Math.floor(WORKSPACE_PANEL_CLOSE_GRACE_MS / 2))
-    await openPanel()
+    await vi.advanceTimersByTimeAsync(Math.floor(WORKSPACE_PANEL_CLOSE_GRACE_MS / 2))
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+    await vi.advanceTimersByTimeAsync(WORKSPACE_PANEL_CLOSE_GRACE_MS)
 
     // Rapid reopen cancels disposal, so the identity is the same mount: no
     // teardown, no reconstruction, no second review root. One workspace was

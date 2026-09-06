@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 
@@ -48,8 +49,6 @@ export function decodeSourceMap(raw: string): DecodedMap {
   // `sources` or `mappings` cannot attribute anything, and saying so here beats
   // failing later inside the VLQ loop.
   const parsed: unknown = JSON.parse(raw)
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === "object" && value !== null && !Array.isArray(value)
   if (!isRecord(parsed) || !Array.isArray(parsed.sources) || typeof parsed.mappings !== "string") {
     throw new Error("source map is missing sources or mappings")
   }

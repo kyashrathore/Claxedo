@@ -5,18 +5,15 @@
  * ## Why a shared store at all
  *
  * `createFixedWindowConnectionRateLimiter` keeps buckets in a per-isolate
- * `Map`. Cloudflare runs many isolates per deployment, so the effective budget
- * was `configured × live isolates` — the limit LOOSENED exactly under the load
- * it exists to bound. `createLayeredRateLimiter` closes that by consulting a
- * shared store after the local fuse.
+ * `Map`. Cloudflare runs many isolates per deployment, so on its own its
+ * effective budget is `configured × live isolates` — loosening exactly under
+ * the load it exists to bound. `createLayeredRateLimiter` closes that by
+ * consulting a shared store after the local fuse.
  *
- * ## DECISION: Cloudflare's native rate-limiting binding, not a counter DO
+ * ## Cloudflare's native rate-limiting binding, not a counter DO
  *
- * Chosen: the native binding (`[[ratelimits]]` in wrangler.toml, `RateLimit`
- * API, `env.<NAME>.limit({ key })`).
- *
- * Verified against the Cloudflare docs on 2026-07-30 rather than assumed — and
- * the plan's own description was stale on two points worth recording:
+ * The binding is `[[ratelimits]]` in wrangler.toml, the `RateLimit` API,
+ * `env.<NAME>.limit({ key })`. Two details of it are easy to get wrong:
  *   - The config block is `[[ratelimits]]`, NOT `[[unsafe.bindings]]`. The
  *     unsafe form was the beta shape; wrangler 4.114.0 (this package's pin)
  *     ships a first-class `ratelimits` key in its config schema.
@@ -41,20 +38,20 @@
  *
  * What we give up, stated plainly: the binding is per-Cloudflare-location, so a
  * distributed attacker spread across N colos gets `limit × N`. That is strictly
- * better than the status quo (`limit × isolates`, unbounded within one colo)
- * and is the documented, accepted trade for abuse limiting. If an exact global
+ * better than the fuse alone (`limit × isolates`, unbounded within one colo)
+ * and is the accepted trade for abuse limiting. If an exact global
  * budget is ever needed for a specific route (a billing-relevant quota, say),
  * that route can take a counter-DO `SharedRateLimitStore` implementation
  * without touching this interface — which is why the store is a port.
  *
  * ## Degrading on Node / self-host
  *
- * `hosted-node.ts` and `server.ts` have no Cloudflare bindings. `sharedStore`
+ * A Node process has no Cloudflare bindings. `sharedStore`
  * is therefore optional everywhere: absent, `createLayeredRateLimiter` is the
  * in-memory fuse and nothing else. A single Node box has ONE process, so the
  * per-process fuse IS the global limit there — the degraded mode is correct for
  * that topology rather than merely tolerable. Multi-instance Node is a known
- * gap (see `docs/plans/2026-07-18-001`); it would need a real shared store.
+ * gap; it would need a real shared store.
  *
  * ## Relationship to `@claxedo/channels`' limiter
  *
@@ -226,7 +223,7 @@ export function cloudflareRateLimitStore(
  * primitive (Cloudflare's binding exposes none), so a refunded request returns
  * local budget and leaves the shared counter spent. That is the conservative
  * direction — over-counting an abuse budget slightly is safe; under-counting is
- * the bug this workstream exists to fix.
+ * the bug the shared store exists to fix.
  */
 export type LayeredRateLimiter = {
   check(input: { key: string }): Promise<RateLimitResult>

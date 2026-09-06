@@ -20,7 +20,7 @@
  * over the message — so classifying costs nothing and leaks nothing. The
  * accompanying test asserts the exact key set for this reason.
  */
-import { sessionRecoveryClass, type FirstTurnMessage, type SessionErrorClass } from "../onboarding/first-turn-recovery"
+import { isSettledTurnAssistant, sessionRecoveryClass, type FirstTurnMessage, type SessionErrorClass } from "../onboarding/first-turn-recovery"
 
 export type TurnOutcomeEvent = {
   name: "turn_completed" | "turn_failed"
@@ -31,16 +31,6 @@ export type TurnOutcomeEvent = {
     duration_ms?: number
     failure_class?: SessionErrorClass
   }
-}
-
-/**
- * A turn is settled exactly when the assistant either finished or failed —
- * the same condition `firstTurnOutcome` uses. An assistant message that is
- * still streaming has neither `time.completed` nor `error`, and must not be
- * reported: emitting there would count every in-flight turn as complete.
- */
-function settled(assistant: Extract<FirstTurnMessage, { role: "assistant" }>): boolean {
-  return typeof assistant.time.completed === "number" || assistant.error !== undefined
 }
 
 /**
@@ -58,10 +48,9 @@ export function turnOutcomeEvents(
 ): TurnOutcomeEvent[] {
   const assistantByParent = new Map<string, Extract<FirstTurnMessage, { role: "assistant" }>>()
   for (const message of messages) {
-    // First assistant reply wins: a retried turn appends another assistant
-    // message under the same parent, and the turn's outcome is the first one
-    // that settled, not the latest render.
-    if (message.role === "assistant" && !assistantByParent.has(message.parentID)) {
+    // The first settled reply wins; earlier streaming/tool-step messages have
+    // no authority to finish the turn or hide its eventual outcome.
+    if (isSettledTurnAssistant(message) && !assistantByParent.has(message.parentID)) {
       assistantByParent.set(message.parentID, message)
     }
   }
@@ -74,7 +63,7 @@ export function turnOutcomeEvents(
     index += 1
     if (emitted.has(message.id)) continue
     const assistant = assistantByParent.get(message.id)
-    if (!assistant || !settled(assistant)) continue
+    if (!assistant) continue
 
     const completed = assistant.time.completed
     // Clock skew between client and server can make this negative; a negative

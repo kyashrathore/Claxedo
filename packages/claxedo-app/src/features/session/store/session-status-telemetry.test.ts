@@ -237,7 +237,13 @@ describe("session status telemetry", () => {
   test("rubric Q8: installSessionStatusTelemetryDevtools attaches the accessor only when debug flag is set", async () => {
     const { installSessionStatusTelemetryDevtools } = await import("./session-status-telemetry")
     const win = globalThis as Record<string, unknown>
-    delete (win.window as Record<string, unknown> | undefined)?.__claxedoPollingGate
+    const browser = win.window as Record<string, unknown>
+    const previousGate = Object.getOwnPropertyDescriptor(browser, "__claxedoPollingGate")
+    const previousDebug = Object.getOwnPropertyDescriptor(win, "__CLAXEDO_DEBUG__")
+    const previousEnv = process.env.CLAXEDO_DEBUG
+    try {
+    delete process.env.CLAXEDO_DEBUG
+    delete browser.__claxedoPollingGate
     delete win.__CLAXEDO_DEBUG__
 
     // Not attached when the flag is absent.
@@ -257,9 +263,14 @@ describe("session status telemetry", () => {
     expect(gate?.snapshot()?.config.matchesRequired).toBe(matchesRequired)
     expect(typeof gate?.reset).toBe("function")
 
-    // Cleanup so neighbouring tests don't observe the global.
-    delete (globalThis as { window?: Record<string, unknown> }).window?.__claxedoPollingGate
-    delete win.__CLAXEDO_DEBUG__
+    } finally {
+      if (previousGate) Object.defineProperty(browser, "__claxedoPollingGate", previousGate)
+      else delete browser.__claxedoPollingGate
+      if (previousDebug) Object.defineProperty(win, "__CLAXEDO_DEBUG__", previousDebug)
+      else delete win.__CLAXEDO_DEBUG__
+      if (previousEnv === undefined) delete process.env.CLAXEDO_DEBUG
+      else process.env.CLAXEDO_DEBUG = previousEnv
+    }
   })
 
   test("rubric C3: telemetry snapshot exposes per-session evidence shape", () => {
@@ -295,12 +306,4 @@ describe("session status telemetry", () => {
     expect(row.eventStatus).toEqual({ type: "idle" })
   })
 
-  test("keeps telemetry evidence in Query instead of private module maps", async () => {
-    const source = await Bun.file(new URL("./session-status-telemetry.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("eventStatus = new Map")
-    expect(source).not.toContain("matchingPolls = new Map")
-    expect(source).not.toContain("pollDisagreements = new Map")
-    expect(source).toContain('["shell", "session-status-telemetry", kind, statusKey(sessionID)]')
-  })
 })

@@ -47,7 +47,7 @@ export function restoredOpenDiffs(input: {
 }) {
   const live = new Set(input.files)
   const retained = (input.retained ?? []).filter((path) => live.has(path))
-  if (retained.length === 0) return input.focused ? [input.focused] : []
+  if (retained.length === 0) return input.focused && live.has(input.focused) ? [input.focused] : []
   if (input.focused && live.has(input.focused) && !retained.includes(input.focused)) {
     return [...retained, input.focused]
   }

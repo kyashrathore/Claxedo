@@ -1,3 +1,5 @@
+import { isRecord } from "@claxedo/helpers/guards"
+
 export type DiagnosticsBinding = {
   pid: number
   launchId: string
@@ -99,7 +101,7 @@ type OwnerEventOf<T extends DiagnosticsOwnerEvent["type"]> = Extract<Diagnostics
 
 function ownerRegistered(input: unknown): input is OwnerEventOf<"owner-registered"> {
   return (
-    record(input) &&
+    isRecord(input) &&
     exact(input, ["type", "at", "binding", "descriptor"]) &&
     timestamp(input.at) &&
     binding(input.binding) &&
@@ -109,7 +111,7 @@ function ownerRegistered(input: unknown): input is OwnerEventOf<"owner-registere
 
 function ownerUpdated(input: unknown): input is OwnerEventOf<"owner-updated"> {
   return (
-    record(input) &&
+    isRecord(input) &&
     exactOptional(input, ["type", "at", "binding", "ownerId", "ownerGeneration", "lifecycle"], ["pid"]) &&
     timestamp(input.at) &&
     binding(input.binding) &&
@@ -122,7 +124,7 @@ function ownerUpdated(input: unknown): input is OwnerEventOf<"owner-updated"> {
 
 function ownerExited(input: unknown): input is OwnerEventOf<"owner-exited"> {
   return (
-    record(input) &&
+    isRecord(input) &&
     exactOptional(
       input,
       ["type", "at", "binding", "ownerId", "ownerGeneration", "reason", "observedLifetimeMs"],
@@ -140,7 +142,7 @@ function ownerExited(input: unknown): input is OwnerEventOf<"owner-exited"> {
 
 function operationRequest(input: unknown): input is DiagnosticsOperationRequest {
   return (
-    record(input) &&
+    isRecord(input) &&
     exact(input, ["type", "binding", "requestId", "ownerOperationId", "ownerGeneration", "operation", "identity"]) &&
     binding(input.binding) &&
     identifier(input.requestId) &&
@@ -153,7 +155,7 @@ function operationRequest(input: unknown): input is DiagnosticsOperationRequest 
 
 function operationResult(input: unknown): input is DiagnosticsOperationResult {
   return (
-    record(input) &&
+    isRecord(input) &&
     exact(input, ["type", "binding", "requestId", "result"]) &&
     binding(input.binding) &&
     identifier(input.requestId) &&
@@ -171,7 +173,7 @@ function operationResult(input: unknown): input is DiagnosticsOperationResult {
 export function parseDiagnosticsTransportMessage(input: unknown):
   | { success: true; data: DiagnosticsTransportMessage }
   | { success: false; error: string } {
-  if (!record(input)) return invalid()
+  if (!isRecord(input)) return invalid()
   switch (input.type) {
     case "owner-registered":
       return ownerRegistered(input) ? valid(input) : invalid()
@@ -197,7 +199,7 @@ export function matchesDiagnosticsBinding(binding: DiagnosticsBinding, expected:
 }
 
 function descriptor(input: unknown): input is DiagnosticsOwnerDescriptor {
-  if (!record(input)) return false
+  if (!isRecord(input)) return false
   if (
     !exactOptional(
       input,
@@ -243,7 +245,7 @@ function descriptor(input: unknown): input is DiagnosticsOwnerDescriptor {
       input.attributionConfidence !== undefined &&
       !oneOf(input.attributionConfidence, ["direct", "inferred", "not-process-backed"])
     ) ||
-    !record(input.capabilities) ||
+    !isRecord(input.capabilities) ||
     !exact(input.capabilities, ["stopGracefully", "killOwnedTree"]) ||
     typeof input.capabilities.stopGracefully !== "boolean" ||
     typeof input.capabilities.killOwnedTree !== "boolean"
@@ -253,7 +255,7 @@ function descriptor(input: unknown): input is DiagnosticsOwnerDescriptor {
 
 function binding(input: unknown): input is DiagnosticsBinding {
   return (
-    record(input) &&
+    isRecord(input) &&
     exact(input, ["pid", "launchId", "generation"]) &&
     pid(input.pid) &&
     identifier(input.launchId) &&
@@ -263,7 +265,7 @@ function binding(input: unknown): input is DiagnosticsBinding {
 
 function identity(input: unknown) {
   return (
-    record(input) &&
+    isRecord(input) &&
     exact(input, ["pid", "creation"]) &&
     pid(input.pid) &&
     identifier(input.creation)
@@ -276,10 +278,6 @@ function valid<T extends DiagnosticsTransportMessage>(data: T) {
 
 function invalid() {
   return { success: false as const, error: "invalid-diagnostics-transport-message" }
-}
-
-function record(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
 }
 
 function exact(input: Record<string, unknown>, required: string[]) {

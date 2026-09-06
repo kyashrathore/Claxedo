@@ -1,33 +1,21 @@
 /**
  * One owner per route family, checked at composition time.
  *
- * Unit 7 splits the signed control-plane routes from the boot wrapper, so the
- * same app will be assembled from a shared core plus deployment-specific
- * adapters. That is exactly the arrangement where two contributors mount the
- * same path and nobody notices.
+ * An app is assembled from shared route modules plus deployment-specific
+ * adapters, which is the arrangement where two contributors mount the same
+ * path and nobody notices. Hono resolves the collision silently: handlers
+ * match in registration order and the first to terminate the chain wins, so a
+ * duplicate does not fail — one implementation becomes dead code, and which
+ * one depends on the order the composition happens to run its mounts in.
  *
- * Hono resolves the collision silently: handlers match in registration order
- * and the first to terminate the chain wins. So a duplicate does not fail — it
- * produces an app where one of the two implementations is dead code, and which
- * one depends on the order a composition function happens to run its mounts in.
- * Rebuilding that composition in a different order changes behaviour with no
- * diff to any handler.
+ * Deliberately not a test-only check: a composition error stops the process at
+ * boot, where it is one line of output, rather than at the first request that
+ * reaches the losing handler.
  *
- * The failure this prevents is not hypothetical for this refactor: the
- * self-hosted app is being recomposed from pieces that currently live in one
- * file, and "the local-execution adapter also mounts /api/claxedo/config" is
- * the shape of the mistake.
- *
- * Deliberately not a test-only check. A composition error should stop the
- * process at boot, where it is one line of output, rather than at the first
- * request that happens to reach the losing handler.
- *
- * Lives at the `deployments/` root rather than inside `hosted-shared/` because
- * both compositions install it — `createSignedControlPlaneApp` as
- * "hosted-shared" and `createSelfHostedApp` as "self-hosted-node". A
- * self-hosted deployment importing its composition guard out of a directory
- * named for the cloud one is the wrong dependency direction for a rule that
- * belongs to no single deployment.
+ * Lives at the `deployments/` root because both compositions install it —
+ * `createSignedControlPlaneApp` as "hosted-shared" and `createSelfHostedApp`
+ * as "self-hosted-node" — and a rule that belongs to no single deployment does
+ * not live in a directory named for one.
  */
 
 /** A mounted family: the prefix, and who mounted it. */

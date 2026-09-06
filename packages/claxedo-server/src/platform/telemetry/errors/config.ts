@@ -1,4 +1,4 @@
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
+import { trimToUndefined } from "@claxedo/helpers/string"
 /**
  * Env → observability init options. PostHog carries product analytics AND
  * error tracking for every runtime, so one key resolves both planes and there
@@ -56,7 +56,7 @@ export const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
  * accepted alias — vendor-named release variables are deliberately not read.
  */
 export function resolveRelease(env: ObservabilityEnv): string | undefined {
-  return clean(env.CLAXEDO_RELEASE) ?? clean(env.GIT_SHA)
+  return trimToUndefined(env.CLAXEDO_RELEASE) ?? trimToUndefined(env.GIT_SHA)
 }
 
 /**
@@ -71,7 +71,7 @@ export function resolveRelease(env: ObservabilityEnv): string | undefined {
  * loudly like the boot path does.
  */
 export function deploymentModeTag(env: ObservabilityEnv): string {
-  return clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local"
+  return trimToUndefined(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local"
 }
 
 /**
@@ -87,7 +87,7 @@ export function deploymentModeTag(env: ObservabilityEnv): string {
  * that sends anything") literally true.
  */
 export function telemetryEnabled(env: ObservabilityEnv): boolean {
-  return clean(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() === "on"
+  return trimToUndefined(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() === "on"
 }
 
 /**
@@ -103,12 +103,12 @@ export function telemetryEnabled(env: ObservabilityEnv): boolean {
  */
 export function resolveTelemetryKey(env: ObservabilityEnv): string | undefined {
   if (!telemetryEnabled(env)) return undefined
-  return clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
+  return trimToUndefined(env.CLAXEDO_POSTHOG_KEY) ?? trimToUndefined(env.POSTHOG_KEY)
 }
 
 /** Trailing slashes are stripped: sinks append absolute paths like `/capture/`. */
 export function resolveTelemetryHost(env: ObservabilityEnv): string {
-  const host = clean(env.CLAXEDO_POSTHOG_HOST) ?? clean(env.POSTHOG_HOST) ?? DEFAULT_POSTHOG_HOST
+  const host = trimToUndefined(env.CLAXEDO_POSTHOG_HOST) ?? trimToUndefined(env.POSTHOG_HOST) ?? DEFAULT_POSTHOG_HOST
   return host.replace(/\/+$/, "")
 }
 

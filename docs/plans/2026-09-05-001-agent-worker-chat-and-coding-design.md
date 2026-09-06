@@ -25,7 +25,7 @@ The recommended first delivery supports chat, plugins, restricted code-mode tool
 
 Keep **Cloud** as the destination and show **Worker / Sandbox** as its placement choice in the existing composer. Use **Repository** and **Coding environment** for the attached resources. Defaults make ordinary sending require no repeated placement decision.
 
-Companion: [Chat, tools, and coding environments — draft user guide](../../docs/guides/chat-tools-and-coding-environments.md). It explains the machine as a tool and the proposed extended-Pi worker setup. Both documents describe the target experience, not currently shipped features.
+Companion: Chat, tools, and coding environments — draft user guide (draft guide retired with the superseded proposal; see git history). It explains the machine as a tool and the proposed extended-Pi worker setup. Both documents describe the target experience, not currently shipped features.
 
 ## 2. What the code does today
 

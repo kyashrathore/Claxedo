@@ -1,6 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { createPromptInputKeyDown, type PromptInputKeyEvent } from "./editor-keymap"
+
+const editors: HTMLElement[] = []
+afterEach(() => {
+  for (const editor of editors.splice(0)) editor.remove()
+  document.getSelection()?.removeAllRanges()
+})
 
 type Mode = "normal" | "shell"
 type Popover = "at" | "slash" | null
@@ -34,6 +40,7 @@ function editorWithText(text = "") {
   const editor = document.createElement("div")
   editor.textContent = text
   document.body.appendChild(editor)
+  editors.push(editor)
   setCursorPosition(editor, 0)
   return editor
 }
@@ -200,6 +207,7 @@ describe("prompt input keymap", () => {
 
     const allowed = keyEvent({ key: "ArrowDown" })
     harness.state.promptText = "abc"
+    harness.editor.textContent = "abc"
     harness.state.historyActive = true
     setCursorPosition(harness.editor, 3)
     harness.handleKeyDown(allowed.event)

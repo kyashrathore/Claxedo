@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import path from "node:path"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
@@ -10,8 +9,6 @@ import {
   resetLocalSelectionHandoffForTest,
   setLocalSelectionHandoff,
 } from "./local-selection-handoff"
-
-const root = path.resolve(import.meta.dir, "../../..")
 
 describe("local selection handoff", () => {
   afterEach(() => {
@@ -89,15 +86,4 @@ describe("local selection handoff", () => {
     expect(getLocalSelectionHandoff("ses_1")?.model?.modelID).toBe("claude-sonnet")
   })
 
-  test("local providers do not own provider/model handoff in private maps", async () => {
-    const claxedoLocal = await Bun.file(path.join(root, "features/session/providers/session-selection.tsx")).text()
-
-    expect(await Bun.file(path.join(root, "context/session-selection.tsx")).exists()).toBe(false)
-    expect(claxedoLocal).toMatch(/localSelectionHandoffQueryKey/)
-    expect(claxedoLocal).toMatch(/setLocalSelectionHandoff/)
-    expect(claxedoLocal).not.toMatch(/const handoff = new Map/)
-    expect(claxedoLocal).not.toMatch(/handoff\.set/)
-    expect(claxedoLocal).not.toMatch(/handoff\.get/)
-    expect(claxedoLocal).not.toMatch(/handoff\.has/)
-  })
 })

@@ -88,13 +88,8 @@ export type WorkspaceRuntimeEvent =
    *
    * The auto-title (agent-sdk-runtime `runtime.ts`, `method:"auto-title"`)
    * renames a session from the "New Session" placeholder to one derived from
-   * the first prompt, and publishes exactly this event — but it used to be
-   * dropped at the runtime's bridge, so the rail kept the placeholder (in the
-   * wrong sort position, since the row's `updated` moved too) until some
-   * unrelated refetch happened to land. Measured before the fix: zero
-   * `session.updated` frames on `/api/wr/events` across a full
-   * create-and-complete cycle, while every `session.lifecycle`, `agent.lifecycle`
-   * and `pty.*` frame arrived.
+   * the first prompt, and publishes exactly this event so the rail picks up
+   * the rename and the row's new sort position.
    *
    * `properties` is the compat payload shape (`{ info: Session }`) the app's
    * `directory-event-projector` already reads — it is passed through untouched

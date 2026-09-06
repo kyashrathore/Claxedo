@@ -24,9 +24,9 @@ export interface IFallbackLink {
  * These are mainly designed to catch paths with spaces or special tool output formats.
  */
 // Ordered specific → generic. `detectFallbackLinks` stops at the first matcher
-// that hits, so the generic C++ formats MUST come last: their unanchored greedy
-// paths used to bind Rust/Go/Node/Ruby/Swift/ESLint lines first and swallow the
-// surrounding text (arrows, "at ...", "from ...") into the path.
+// that hits, so the generic C++ formats have to come last — their unanchored
+// greedy paths would otherwise bind Rust/Go/Node/Ruby/Swift/ESLint lines first
+// and swallow the surrounding text (arrows, "at ...", "from ...") into the path.
 // All matchers carry the `d` flag so link positions come from match indices
 // rather than a textual `indexOf` (which finds the wrong occurrence when the
 // link text also appears earlier in the match).

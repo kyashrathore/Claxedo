@@ -15,7 +15,6 @@ import {
   host,
   ids,
   now,
-  rec,
   root,
   sessionMetaSyncRow,
   storedSessionRef,
@@ -27,6 +26,7 @@ import {
   sessionMetaMapBySessionId,
 } from "./read"
 import type { Workspace } from "../../workspace/store"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
 export type {
@@ -389,13 +389,13 @@ export function applySessionMeta(input: Array<Record<string, unknown>>) {
       if (!id) return item
       const hit = meta.get(id)
       const parentID = txt(item.parentID) ?? hit?.parentID
-      const archived = rec(item.time)?.archived ?? hit?.archived
+      const archived = asRecord(item.time)?.archived ?? hit?.archived
       return {
         ...item,
         ...(hit?.projectID ? { projectID: hit.projectID } : {}),
         ...(parentID ? { parentID } : {}),
         rootID: root(id, links),
-        ...(archived !== undefined ? { time: { ...rec(item.time), archived } } : {}),
+        ...(archived !== undefined ? { time: { ...asRecord(item.time), archived } } : {}),
         tags: hit?.tags ?? [],
         attachments: hit?.attachments ?? [],
       }

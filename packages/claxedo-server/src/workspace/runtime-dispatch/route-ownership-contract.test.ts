@@ -6,8 +6,8 @@
  * - current handler: where the request is handled today
  *
  * Some config-shaped APIs still route through workspace-runtime today. Those
- * entries are intentionally visible in this map so Phase 2 can move them into
- * Agent Config Registry without rediscovering the proxy contract.
+ * entries stay visible in this map so a future move into Agent Config
+ * Registry does not have to rediscover the proxy contract.
  */
 
 import { Hono } from "hono"
@@ -249,15 +249,15 @@ describe("route ownership", () => {
 })
 
 /**
- * `localWorkspaceRelayProxy` serves BROWSER-ORIGINATED traffic — on a loopback
+ * `localWorkspaceRelayProxy` serves browser-originated traffic — on a loopback
  * server URL it is the path the app actually takes for a relay-backed workspace
- * (`workspace-runtime-request.ts:223`) — and for a cloud workspace it forwards
+ * (`workspace-runtime-request.ts`) — and for a cloud workspace it forwards
  * with a `subject:"control-plane"`, `role:"owner"` Relay Host Token minted on
  * the caller's behalf.
  *
  * The only thing gating that mint is `isLoopbackLocalRequest`, which fails
- * closed on forwarded headers. These tests pin the ORDERING structurally: the
- * gate runs BEFORE any mint, so a request carrying a forwarded-client claim can
+ * closed on forwarded headers. These tests pin the ordering structurally: the
+ * gate runs before any mint, so a request carrying a forwarded-client claim can
  * never cause an owner token to be issued. A refactor that moved the mint ahead
  * of the gate — or relaxed the gate to trust a forwarded claim — would hand out
  * owner tokens to anything that can reach the port with a spoofed header.
@@ -292,9 +292,6 @@ describe("local workspace relay proxy loopback gate", () => {
 
       expect(res.status).toBe(401)
       expect((await res.json()).error?.code).toBe("workspace_relay_local_loopback_required")
-      // The load-bearing assertion: not merely "denied", but denied without a
-      // token ever existing. A mint here would mean an owner-role credential was
-      // created for a request the gate rejected.
       expect(minted, "a forwarded-client request must never reach the owner-token mint").toBe(0)
     })
   }

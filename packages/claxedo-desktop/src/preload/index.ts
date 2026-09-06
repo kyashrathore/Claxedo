@@ -228,8 +228,8 @@ const api: ElectronAPI = {
    * The account, entirely by name.
    *
    * No method here takes a url, a path, or headers — `run` takes an operation
-   * NAME from the reviewed set and main decides the request. That is what lets
-   * the credential live in main: this bridge cannot be used to spend it on a
+   * name from a fixed set and main decides the request. That is what lets the
+   * credential live in main: this bridge cannot be used to spend it on a
    * route nobody wrote down.
    */
   /**
@@ -238,7 +238,7 @@ const api: ElectronAPI = {
    * Four operations, none of which takes an argument. The renderer cannot pass
    * a url, a path, a method, a body or even a label — main holds the account
    * bearer and a machine signing key that does not expire, so the only thing a
-   * message may carry is WHICH of four reviewed things should happen.
+   * message may carry is which of four fixed operations should happen.
    *
    * `status` reads. `start` publishes this machine and is the one place the
    * enrollment handshake can begin, which is why the desktop enrolls nothing at

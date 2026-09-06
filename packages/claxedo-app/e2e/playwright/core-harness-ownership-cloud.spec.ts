@@ -42,11 +42,8 @@ function workspaceRoute(sessionId?: string) {
   return sessionId ? `/w/${encodeURIComponent(WORKSPACE_ID)}/session/${sessionId}` : `/w/${encodeURIComponent(WORKSPACE_ID)}/session`
 }
 
-/**
- * The signed lane reserves the session id it is about to create
- * (`reservePrivateSession`) and the mock creates the session under that id, so
- * the route the app lands on names the reservation, not a mock-chosen id.
- */
+/** The signed lane reserves the session id before creating it, so the landing route
+ * names the reservation, not a mock-chosen id. */
 function reservedSessionId(mock: MockRuntimeHandles) {
   const sessionId = mock.requests.sessionReservations.at(-1)?.sessionId
   if (!sessionId) throw new Error("no session reservation reached the mock before the URL assertion")
@@ -75,10 +72,8 @@ async function openProjectFromChip(page: Page, directory: string, projectName: s
   await row.click()
 }
 
-// Every draft-default record currently in localStorage, key -> raw JSON. The key is
-// `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, so a
-// DISTINCT key per (server, workspace directory) pair — which is exactly the per-directory
-// scoping behavior 5 has to prove, hence key-level (not `some()`-over-all-values) checks.
+// Every draft-default record, key -> raw JSON. The key is per (server, workspace
+// directory), so checks are key-level rather than over all values.
 function readDraftDefaults(page: Page) {
   return page.evaluate(() =>
     Object.fromEntries(
@@ -89,14 +84,8 @@ function readDraftDefaults(page: Page) {
   )
 }
 
-/**
- * The harness a stored draft-default record opens a new draft with, decoded by
- * the app's OWN reader (`decodeDraftDefaultRecord`).
- *
- * Not a substring match on the raw JSON: the record is
- * `{version, byHarness, lastHarness}`, and a raw-string match would assert the
- * shape rather than the fact this test means to prove.
- */
+/** The harness a draft-default record opens with, decoded by the app's own reader
+ * rather than a substring match on the raw JSON. */
 function draftDefaultHarness(raw: string | undefined) {
   const selection = raw === undefined ? undefined : decodeDraftDefaultRecord(raw)?.lastHarness
   if (!selection) return undefined
@@ -112,15 +101,8 @@ function visibleHarnessTrigger(page: Page, harness: Harness) {
   return page.locator(`[data-action="prompt-harness-model"][data-harness="${selectionId}"]:visible`)
 }
 
-// `:visible` (not a bare count): a same-pane cross-workspace navigation (behavior
-// 5) keeps the PRIOR pane's composer mounted-but-hidden behind the new one rather
-// than unmounting it (confirmed via a live DOM probe — the stale node has a real,
-// non-zero layout rect and is still `isConnected`, scoped to the old local
-// directory) — a bare `toHaveCount` sees that stale node too and false-fails even
-// though only one model control is ever user-visible at a time. `:visible` is
-// Playwright's own CSS extension (real visibility, not DOM-order guesswork like
-// `.last()`), so this stays exactly as strict for every other (single-pane) call
-// site in this file.
+// `:visible`: a same-pane cross-workspace navigation leaves the prior pane's composer
+// mounted but hidden, so a bare count sees two controls.
 async function expectOnlyHarnessModelControl(page: Page, modelName: string | RegExp) {
   await expect(page.locator('[data-action="prompt-harness-model"]:visible').last()).toContainText(modelName, { timeout: 20_000 })
   await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(0)
@@ -144,15 +126,14 @@ async function expectHarnessSwitchable(page: Page, harness: Harness) {
 }
 
 test.describe("core harness ownership (cloud) @core", () => {
-  // Generic connections use their configured labels (for example
-  // `claude-acp`); the exact Claude/Codex/Cursor labels below identify native
-  // SDK modules and their canonical data-harness ids are claude/codex/cursor.
+  // The exact Claude/Codex/Cursor labels name native SDK modules (data-harness
+  // claude/codex/cursor); generic connections use their configured labels.
   for (const harnessCase of [
     { harness: "claude-sdk" as Harness, option: /^Claude$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude", modelID: "claude-sonnet-4-6" },
     { harness: "codex-app-server" as Harness, option: /^Codex$/, optionIndex: 0, modelLabel: /GPT-5\.5|gpt-5\.5/i, providerID: "codex", modelID: "gpt-5.5" },
     { harness: "cursor-sdk" as Harness, option: /^Cursor$/, optionIndex: 0, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor", modelID: "cursor-auto" },
   ] as const) {
-    test(`${harnessCase.harness} owns harness label, model, and payload through cloud draft, sends, and reload over the relay; locked after creation — behavior 1`, async ({ page }) => {
+    test(`${harnessCase.harness} owns harness label, model, and payload through cloud draft, sends, and reload over the relay; locked after creation`, async ({ page }) => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         projectId: PROJECT_ID,
@@ -238,7 +219,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     expect(mock.requests.cloudHarnessOptionsHarnesses).toContain("pi")
   })
 
-  test("relay harness-config-options requests are scoped per harness — switching resolves each harness's own model, never a stale one — behavior 3", async ({ page }) => {
+  test("relay harness-config-options requests are scoped per harness — switching resolves each harness's own model, never a stale one", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       projectId: PROJECT_ID,
@@ -259,17 +240,13 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expectOnlyHarnessModelControl(page, /GPT-5\.5|gpt-5\.5/i)
     await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("codex-app-server"), { timeout: 10_000 }).toBe(true)
 
-    // Every request the mock recorded named the harness it was actually resolving for
-    // (a real cross-harness leak would show a request for "codex-app-server" answered
-    // with claude's model, which expectOnlyHarnessModelControl above already ruled out
-    // for the currently-rendered control) — this asserts the REQUEST side of that
-    // scoping: no request for one harness's options ever went out unlabeled/blank.
+    // Every recorded request named its harness; none went out blank.
     expect(mock.requests.cloudHarnessOptionsHarnesses.every((h) => h.length > 0)).toBe(true)
 
     expect(mock.requests.harnessPostCount).toBe(0)
   })
 
-  test("selecting a configurable harness on a cloud draft sends zero POSTs to the local harness-status endpoint — behavior 4", async ({ page }) => {
+  test("selecting a configurable harness on a cloud draft sends zero POSTs to the local harness-status endpoint", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       projectId: PROJECT_ID,
@@ -287,13 +264,10 @@ test.describe("core harness ownership (cloud) @core", () => {
     }
     await expect.poll(() => mock.requests.cloudHarnessOptionsCount, { timeout: 10_000 }).toBeGreaterThan(0)
 
-    // The local readiness POST is the endpoint spec 3's local matrix relies on for
-    // draft-time readiness — deterministic proof it was never called for this cloud
-    // draft, across three separate harness switches.
     expect(mock.requests.harnessPostCount).toBe(0)
   })
 
-  test("a cloud workspace draft starts on its own, unchosen state while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
+  test("a cloud workspace draft starts on its own, unchosen state while the local draft's Claude choice is preserved per-directory", async ({ page }) => {
     await page.addInitScript(() => {
       const writes: string[] = []
       const pushState = window.history.pushState.bind(window.history)
@@ -325,12 +299,9 @@ test.describe("core harness ownership (cloud) @core", () => {
     await switchDraftHarness(page, /^Claude$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
-    // Snapshot the draft-default records while the LOCAL directory is the only one ever
-    // visited: every key present now is, by construction, the local directory's own. That
-    // is what makes the post-navigation checks below key-scoped rather than a blind
-    // "somewhere in localStorage" match — the storage key embeds a hash of the workspace
-    // directory, so it cannot be reconstructed in the test, but it CAN be pinned by
-    // observing it before the second directory exists.
+    // Snapshot while only the local directory has been visited, so every key present is
+    // its own. The key embeds a directory hash and cannot be reconstructed, so it is
+    // pinned by observation.
     await expect
       .poll(async () => Object.values(await readDraftDefaults(page)).filter((value) => draftDefaultHarness(value) === "claude-sdk").length, {
         timeout: 20_000,
@@ -341,8 +312,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     expect(localKeys).toHaveLength(1)
     const localDraftDefaultKey = localKeys[0]
 
-    // Client-side navigate the SAME pane to the cloud workspace's own top-level project
-    // entry via the empty-draft header's project picker (no page reload).
+    // Same-pane client-side navigation to the cloud workspace, no reload.
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
 
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
@@ -350,12 +320,8 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(0)
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk")).toBe(false)
 
-    // ...and the user's local Claude choice is NOT lost — it stays under the LOCAL
-    // directory's own storage key, byte-identical to what was written before the
-    // navigation, while NO other draft-default key (i.e. nothing the cloud directory
-    // writes) ever carries "claude-sdk". That pair of checks is the per-directory scoping
-    // claim: a change to the key SHAPE that merged both directories into one record would
-    // fail the second half instead of silently passing a substring search.
+    // The local choice stays under its own key, byte-identical, and no other key
+    // carries "claude-sdk".
     const afterNavigation = await readDraftDefaults(page)
     expect(afterNavigation[localDraftDefaultKey]).toBe(localDraftDefaults[localDraftDefaultKey])
     expect(draftDefaultHarness(afterNavigation[localDraftDefaultKey])).toBe("claude-sdk")
@@ -365,20 +331,14 @@ test.describe("core harness ownership (cloud) @core", () => {
         .filter(([, value]) => draftDefaultHarness(value) === "claude-sdk"),
     ).toEqual([])
 
-    // "Preserved per-directory" means RESTORED, not merely retained — so navigate the same
-    // pane back to the local project and prove the local draft comes back on Claude with
-    // its harness-owned model control, then return to the cloud draft (which must still be
-    // on its own OpenCode default) before sending.
+    // Preserved means restored: going back must bring Claude and its model control back.
     await page.evaluate(() => {
       const writes = (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites
       if (writes) writes.length = 0
     })
     await openProjectFromChip(page, DIR, PROJECT_NAME)
-    // Project-chip navigation resolves the local directory through project inventory
-    // before the first history write. The physical path never appears and then swaps;
-    // `/w/` is keyed by the opaque workspace ID from the start — the project's root
-    // workspace row (`workspaceRouteIdentity` prefers a workspace id over the
-    // project id when the inventory carries both for one directory).
+    // The route is keyed by the workspace id from the first history write; the physical
+    // path never appears.
     await expect(page).toHaveURL(new RegExp(`/w/${mock.session.workspaceId}/session$`), { timeout: 20_000 })
     const historyWrites = await page.evaluate(
       () => (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites ?? [],
@@ -395,13 +355,11 @@ test.describe("core harness ownership (cloud) @core", () => {
     await switchDraftHarness(page, /^OpenCode$/, 0)
     await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
 
-    // `filter({visible: true})`, not `.last()`: the round trip above leaves the prior
-    // directories' composers mounted-but-hidden, and DOM order does not guarantee the live
-    // one is last.
+    // `filter({visible: true})`, not `.last()`: the prior directories' composers stay
+    // mounted but hidden, and DOM order does not put the live one last.
     const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).filter({ visible: true })
     await expect(cloudInput).toHaveCount(1, { timeout: 20_000 })
-    // The cloud draft is on OpenCode (picked above) but does not invent a catalog
-    // model default — pick Big Pickle the same way a user would before send.
+    // OpenCode does not invent a catalog model default; pick one before sending.
     const text = "core harness cloud own-default turn"
     await cloudInput.click()
     await cloudInput.fill(text)

@@ -6,19 +6,21 @@ import { recordPromptSubmission } from "./post-submit"
 describe("recordPromptSubmission", () => {
   test("runs onSubmit + saveSessionConfig + refreshDirectory + capture in order", async () => {
     const seen: string[] = []
-    let saveResolved = false
-    await recordPromptSubmission({
+    let release!: () => void
+    const saved = new Promise<void>((resolve) => { release = resolve })
+    const pending = recordPromptSubmission({
       onSubmit: () => seen.push("submit"),
       saveSessionConfig: async () => {
         seen.push("config-start")
-        await new Promise<void>((r) => setTimeout(r, 1))
+        await saved
         seen.push("config-end")
-        saveResolved = true
       },
       refreshDirectory: () => seen.push("refresh"),
       capture: () => seen.push("capture"),
     })
-    expect(saveResolved).toBe(true)
+    expect(seen).toEqual(["submit", "config-start"])
+    release()
+    await pending
     expect(seen).toEqual(["submit", "config-start", "config-end", "refresh", "capture"])
   })
 
@@ -33,18 +35,13 @@ describe("recordPromptSubmission", () => {
     expect(captures).toBe(1)
   })
 
-  test("saveSessionConfig rejection bubbles", async () => {
-    let caught: unknown
-    try {
-      await recordPromptSubmission({
-        saveSessionConfig: async () => {
-          throw new Error("persist failed")
-        },
-        capture: () => undefined,
-      })
-    } catch (err) {
-      caught = err
-    }
-    expect((caught as Error).message).toBe("persist failed")
+  test("save rejection prevents refresh and capture", async () => {
+    const afterSave: string[] = []
+    await expect(recordPromptSubmission({
+      saveSessionConfig: async () => { throw new Error("persist failed") },
+      refreshDirectory: () => { afterSave.push("refresh") },
+      capture: () => { afterSave.push("capture") },
+    })).rejects.toThrow("persist failed")
+    expect(afterSave).toEqual([])
   })
 })

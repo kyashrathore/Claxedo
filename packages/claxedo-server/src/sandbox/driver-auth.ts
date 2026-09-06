@@ -1,4 +1,3 @@
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { getCredentialByProvider, resolveSecret } from "@claxedo/server-core/credentials/registry"
 import {
   sandboxDriverAuth,
@@ -10,6 +9,7 @@ import {
   type SandboxDriverConfig,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 
 
@@ -58,7 +58,7 @@ function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): San
       ? Object.fromEntries(
           fields.flatMap((field) => {
             const raw = parsed[field.key]
-            const value = typeof raw === "string" ? clean(raw) : undefined
+            const value = typeof raw === "string" ? trimToUndefined(raw) : undefined
             return value ? [[field.key, value]] : []
           }),
         )
@@ -76,6 +76,6 @@ function singleFieldLegacyValues(
   secret: string,
 ): Record<string, string> {
   if (fields.length !== 1) return {}
-  const value = clean(secret)
+  const value = trimToUndefined(secret)
   return value ? { [fields[0].key]: value } : {}
 }

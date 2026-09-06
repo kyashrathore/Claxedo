@@ -14,14 +14,13 @@ async function compose(input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
-test("packaged Windows app completes a real Codex-authenticated session @live @surface-desktop", async () => {
+test("packaged app completes a real Codex-authenticated session @live @surface-desktop", async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-windows-live-codex-")))
-  await execFileAsync("git", ["init"], { cwd: directory })
-  await fs.writeFile(path.join(directory, "README.md"), "Real Windows Codex desktop proof.\n")
-
   let packaged: PackagedApp | undefined
   try {
+    await execFileAsync("git", ["init"], { cwd: directory })
+    await fs.writeFile(path.join(directory, "README.md"), "Real Codex desktop proof.\n")
     packaged = await launchPackagedApp({
       timeoutMs: 60_000,
       env: { CODEX_HOME: path.join(os.homedir(), ".codex") },
@@ -97,7 +96,6 @@ test("packaged Windows app completes a real Codex-authenticated session @live @s
       packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker }),
       "the real Codex session did not render its authenticated response",
     ).toBeVisible({ timeout: 180_000 })
-    await packaged.page.waitForTimeout(8_000)
   } finally {
     await packaged?.close()
     await fs.rm(directory, { recursive: true, force: true })

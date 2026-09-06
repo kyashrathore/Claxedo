@@ -98,8 +98,7 @@ describe("latest-turn is the complete latest turn", () => {
       indexOfMessageID,
       role: alwaysAssistantAfterBoundary,
     })
-    expect(page.indexes.at(0)).toBe(790)
-    expect(page.indexes.at(-1)).toBe(799)
+    expect(page.indexes).toEqual([790, 791, 792, 793, 794, 795, 796, 797, 798, 799])
     expect(page.surface).toBe(false)
     expect(page.cursor).toBe("msg_perf_790")
   })

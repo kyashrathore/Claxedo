@@ -1,10 +1,16 @@
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { RemoteAccessSurface, type RemoteAccessSurfaceProps } from "./remote-access-surface"
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,qr") } }))
 
-afterEach(() => cleanup())
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+beforeEach(() => vi.clearAllMocks())
+afterEach(() => {
+  cleanup()
+  if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor)
+  else Reflect.deleteProperty(navigator, "clipboard")
+})
 
 function mount(props: Partial<RemoteAccessSurfaceProps> = {}) {
   const merged: RemoteAccessSurfaceProps = {
@@ -132,7 +138,10 @@ describe("connecting a device", () => {
     const { default: QRCode } = await import("qrcode")
     mount({ serving: 2, deviceLink: "https://app.claxedo.test/" })
 
-    expect(QRCode.toDataURL).toHaveBeenCalledWith("https://app.claxedo.test/", expect.anything())
+    await vi.waitFor(() => {
+      expect(QRCode.toDataURL).toHaveBeenCalledTimes(1)
+      expect(QRCode.toDataURL).toHaveBeenCalledWith("https://app.claxedo.test/", expect.anything())
+    })
   })
 })
 

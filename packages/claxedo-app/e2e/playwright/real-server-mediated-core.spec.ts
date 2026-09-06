@@ -57,10 +57,6 @@ async function createSession(workspace: { id: string; directory: string }, title
   })) as { id: string; title: string; directory: string; time?: { archived?: number } }
 }
 
-function inventoryId(item: { id?: string; sessionID?: string; session_id?: string }) {
-  return item.id ?? item.sessionID ?? item.session_id
-}
-
 test.describe.configure({ mode: "serial" })
 test.describe("server-mediated core promotions @core @tier-real @surface-web", () => {
   test.skip(!TIER_REAL, "Tier R requires CLAXEDO_TIER_REAL_E2E=1")
@@ -96,7 +92,8 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
       const inventory = await body(await fetch(
         `${real.url}/api/control/session-list?scope=workspace&archived=active&directory=${encodeURIComponent(workspace.directory)}`,
       )) as { items?: Array<{ sessionId: string }> }
-      return inventory.items?.some((item) => item.sessionId === session.id) ?? false
+      expect(inventory.items).toEqual(expect.any(Array))
+      return inventory.items!.some((item) => item.sessionId === session.id)
     }).toBe(false)
 
     await expect.poll(async () => {
@@ -121,7 +118,7 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
       `${real.url}/api/workspace/resolve?directory=${encodeURIComponent(workspace.directory)}&create=true`,
     )) as { workspaceId: string; directory: string }
     expect(recreated.directory).toBe(workspace.directory)
-    expect(recreated.workspaceId).not.toBe("")
+    expect(recreated.workspaceId).toMatch(/\S/)
   })
 
   test("core-processes: process config CRUD persists through the real workspace process routes", async () => {
@@ -156,7 +153,7 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
     }).configs.some((item) => item.id === "proc_real")).toBe(false)
   })
 
-  test("core-terminal: PTY create, list, and delete reach a real child process", async () => {
+  test("core-terminal: the real server owns PTY create, list, and delete", async () => {
     const workspace = await real.makeWorkspace("terminal")
     const created = await body(await fetch(`${real.url}/api/wr/pty`, {
       method: "POST",
@@ -195,6 +192,8 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
       body: JSON.stringify({ permission }),
     })) as { permission?: unknown }
     expect(updated.permission).toEqual(permission)
+    const restored = await body(await fetch(`${real.url}/session/${session.id}?${query(workspace)}`)) as { permission?: unknown }
+    expect(restored.permission).toEqual(permission)
   })
 
   test("core-dead-workspace-sessions: control-plane inventory survives workspace runtime removal", async () => {
@@ -203,15 +202,15 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
     await expect.poll(async () => {
       const inventory = await body(await fetch(
         `${real.url}/api/control/sessions?directory=${encodeURIComponent(workspace.directory)}`,
-      )) as { sessions: Array<{ id?: string; sessionID?: string; session_id?: string }> }
-      return inventory.sessions.some((item) => inventoryId(item) === session.id)
+      )) as { sessions: Array<{ sessionID: string }> }
+      return inventory.sessions.some((item) => item.sessionID === session.id)
     }).toBe(true)
 
     expect((await fetch(`${real.url}/api/workspace/${workspace.id}`, { method: "DELETE" })).status).toBe(200)
     const inventory = await body(await fetch(
       `${real.url}/api/control/sessions?directory=${encodeURIComponent(workspace.directory)}`,
-    )) as { sessions: Array<{ id?: string; sessionID?: string; session_id?: string; title?: string }> }
-    expect(inventory.sessions.find((item) => inventoryId(item) === session.id)).toMatchObject({
+    )) as { sessions: Array<{ sessionID: string; title?: string }> }
+    expect(inventory.sessions.find((item) => item.sessionID === session.id)).toMatchObject({
       title: "Persisted after runtime",
     })
   })

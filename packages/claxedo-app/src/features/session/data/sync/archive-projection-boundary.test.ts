@@ -67,6 +67,8 @@ describe("archive projection boundary", () => {
     })
     const reads = [
       tracked(queryKeys.shell.sessionList("http://other.test", { scope: "project" }), "list"),
+      tracked(queryKeys.directory.sessionCache("/other-repo"), "other-directory"),
+      tracked(["shell", "session", "ses_other", "config-raw"], "other-session"),
       tracked(["shell", "local-control-sessions", "http://other.test", "/repo"], "local-source"),
       tracked(["shell", "global-sync", "workspace-groups", "http://other.test/experimental/session?groupBy=workspace", "request"], "group-source"),
       tracked(["shell", "global-sync", "signed-workspace-snapshot", "http://other.test", "usr_1"], "snapshot-source"),

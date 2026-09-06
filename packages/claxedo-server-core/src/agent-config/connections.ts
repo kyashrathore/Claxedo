@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   AGENT_HARNESS_IDS,
   ConnectionProviderError,
@@ -48,7 +49,7 @@ export function createHarnessConnectionSchema(
   } {
     const accepted: Record<string, HarnessConnectionDescriptor> = {}
     const problems: HarnessConnectionProblem[] = []
-    const rows = objectRecord(input)
+    const rows = asRecord(input)
     if (!rows) {
       return {
         accepted,
@@ -57,7 +58,7 @@ export function createHarnessConnectionSchema(
     }
 
     for (const [mapKey, value] of Object.entries(rows)) {
-      const row = objectRecord(value)
+      const row = asRecord(value)
       if (!row) {
         problems.push({ connectionId: mapKey, problem: "connection descriptor must be an object" })
         continue
@@ -156,12 +157,6 @@ function descriptorCandidate(
 function providerProblem(error: unknown) {
   if (error instanceof ConnectionProviderError) return error.message
   return error instanceof Error ? error.message : "connection descriptor is invalid"
-}
-
-/** A shallow copy of a JSON object, so a caller can keep it without aliasing the parsed value. */
-function objectRecord(input: unknown): Record<string, unknown> | undefined {
-  const row = jsonRecord(input)
-  return row && { ...row }
 }
 
 function stringRecord(input: unknown): Record<string, string> | undefined {

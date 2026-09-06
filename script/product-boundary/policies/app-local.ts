@@ -147,13 +147,9 @@ export const appLocal: Policy = {
   // Goal authority cache/query/controller, runtime Goal client/event ingress,
   // the active-Goal dock, and the review-pass Stop fallback + shared JSON
   // reader: thirteen modules.
-  // Plan 150 section E named a machine-routing module owned by the retired
-  // marketplace feature; that whole feature is gone, so it contributes nothing
-  // to this closure any more.
-  // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
-  // catalog owner) in the same slice: one more module, no package edge.
-  // Plan 150 section C makes Settings a (workspace, harness) surface: the
-  // Settings feature gains its scope owner (`features/settings/scope/
+  // `features/workspaces/data/workspace-catalog.ts` (the single catalog owner):
+  // one more module, no package edge.
+  // Settings scope: the Settings feature gains its scope owner (`features/settings/scope/
   // settings-scope.tsx` and its pure `settings-scope-options.ts`) and the
   // picker that drives it (`features/settings/ui/scope-selector.tsx`). All
   // three are owned by the settings feature and reachable only through the
@@ -216,7 +212,15 @@ export const appLocal: Policy = {
   // Every edge stays inside packages already in the closure — the package count
   // is unchanged at 37 — so this is the same code under a name, not new reach.
   // Re-measured, no headroom.
-  ceilings: { modules: 963, packages: 37 },
+  // +1 package (2026-09-06): @claxedo/helpers enters the closure. Reviewed
+  // owner: packages/claxedo-helpers, the canonical home for helpers the
+  // repository had been re-defining per file; this product reaches it through
+  // the zero-import `/guards` subpath, so the edge adds one package and no
+  // host-API surface. The package edge is paid once for the whole product no
+  // matter how many call sites migrate. Re-measured after the test-quality
+  // audit merge, which retired the per-file readers those sites replaced:
+  // 958 modules, 38 packages, no headroom.
+  ceilings: { modules: 958, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

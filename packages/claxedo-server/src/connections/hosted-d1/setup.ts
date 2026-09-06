@@ -25,7 +25,6 @@ import {
   createIntegrationRegistry,
   createIntegrationsRoutes,
   linearIntegration,
-  type CredentialStorePort,
   type IntegrationCapability,
   type IntegrationDeclaration,
   type IntegrationImpl,
@@ -42,9 +41,10 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
 import { signedOrError } from "../../workspace/route-support"
 import { hostedOrgCredentials } from "../../credentials/worker/index"
+import { createCredentialStoreAdapter } from "../credential-store-adapter"
 import { githubIntegrationForEnv } from "../github-oauth"
 import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConnectionAttempts } from "./attempts"
-import { createD1ConnectionStore, HostedConnectionExistsError } from "./connection-store"
+import { createD1ConnectionStore } from "./connection-store"
 import type { HostedDynamicConnectionIntegrations } from "./types"
 import { contentfulStatus } from "../../platform/http/status"
 import { asRecord, stringField } from "../../platform/json/index"
@@ -183,18 +183,6 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
       teamWriteGate: (context) =>
         TEAM_WRITE_ROLES.has(membership.role) ? null : context.json({ code: "connections_org_admin_required" }, 403),
       ownerlessRows: "refuse",
-    })
-    // Two concurrent connects both find no existing row, both mint a fresh id,
-    // and the loser trips the partition's unique index. The kit decides
-    // `connection_exists` from a RETURNED code, so a store that discovers the
-    // duplicate only at write time can reach the client no other way than this
-    // — and without it the race surfaced as a bare 500. Anything else is a real
-    // fault and is rethrown to the enclosing app unchanged.
-    routes.onError((cause, context) => {
-      if (cause instanceof HostedConnectionExistsError) {
-        return context.json({ ok: false, code: "connection_exists" }, 409)
-      }
-      throw cause
     })
     const url = new URL(c.req.url)
     url.pathname = subpath
@@ -442,12 +430,7 @@ async function hostedConnectionsService(
   request: HostedConnectionsServiceRequest,
 ) {
   const { ownerUserId, orgId, integrationId, auth, attemptContext, owner } = request
-  const connections = createD1ConnectionStore({
-    database: input.database,
-    orgId,
-    ownerUserId,
-    ...(input.now ? { now: input.now } : {}),
-  })
+  const connections = createD1ConnectionStore({ database: input.database, orgId, ownerUserId })
   // A callback and a runtime resolution arrive with no caller context, so the
   // dynamic provider rebuilds its refresh behavior from the stored row's public
   // canonical fields instead.
@@ -484,7 +467,7 @@ async function hostedConnectionsService(
   }
   return createConnectionsService({
     registry,
-    credentials: credentialStore(input.credentials?.(orgId) ?? hostedOrgCredentials(orgId, input.env)),
+    credentials: createCredentialStoreAdapter(input.credentials?.(orgId) ?? hostedOrgCredentials(orgId, input.env)),
     connections,
     // The service is built PER REQUEST, so the kit's default in-memory attempt
     // store is empty on every call after the one that created the attempt:
@@ -496,47 +479,4 @@ async function hostedConnectionsService(
     newId: () => crypto.randomUUID(),
     ...(input.now ? { now: input.now } : {}),
   })
-}
-
-/** Adapts the per-org encrypted credential surface to the kit's credential port. */
-function credentialStore(credentials: ControlPlaneCredentials): CredentialStorePort {
-  const resolveSecret = credentials.resolveCredentialSecret
-  if (!resolveSecret) throw new Error("Hosted Connections requires credential secret resolution")
-  // The status-independent read seam. In this per-org store the metadata id IS
-  // the provider id (`credentials/worker/index.ts`), so a provider id addresses
-  // the record directly.
-  const readSecretById = credentials.resolveCredentialSecretById
-  if (!readSecretById) throw new Error("Hosted Connections requires status-independent credential reads")
-  return {
-    async put(value) {
-      await credentials.putCredential({
-        provider_id: value.providerId,
-        kind: value.kind,
-        source: "managed",
-        secret: value.secret,
-        ...(value.expiresAt === undefined ? {} : { expires_at: value.expiresAt }),
-      })
-    },
-    async get(providerId) {
-      const value = await credentials.getCredentialByProvider(providerId)
-      if (!value || (value.kind !== "api_key" && value.kind !== "oauth_token")) return undefined
-      return {
-        kind: value.kind,
-        status: value.status,
-        ...(value.expires_at === null || value.expires_at === undefined ? {} : { expiresAt: value.expires_at }),
-      }
-    },
-    resolveSecret,
-    // The port defines this as "the stored secret regardless of status" and
-    // re-verify is its only caller. Reading it must therefore not decide the
-    // credential is healthy: flipping a revoked or errored row to `available`
-    // made a failing re-verify LOOK like a repair, and left the token path
-    // serving a credential the provider had already rejected.
-    readSecret: (providerId) => readSecretById(providerId),
-    async setStatus(providerId, status, lastError) {
-      const value = await credentials.getCredentialByProvider(providerId)
-      if (value) await credentials.updateCredentialStatus(value.id, status, lastError)
-    },
-    deleteByProvider: async (providerId) => { await credentials.deleteCredentialsByProvider(providerId) },
-  }
 }

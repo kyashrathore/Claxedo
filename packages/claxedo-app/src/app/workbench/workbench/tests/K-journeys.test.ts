@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { harness } from "./state-harness"
 
 describe("K. user journeys", () => {
-  test("J1–J6: empty → click A → refresh → drop B → navigate C → restore A", () => {
+  test("empty → open A → split B → navigate C → restore A and B", () => {
     const h = harness()
     // J1: empty
     expect(h.state().panes).toEqual([])
@@ -11,7 +11,7 @@ describe("K. user journeys", () => {
     h.api.navigation.show("a")
     expect(h.state().panes).toHaveLength(1)
     expect(h.state().panes[0].contentId).toBe("a")
-    // J3: simulate refresh — state preserved (we just assert no mutation needed)
+    // Keep A's pane as the target of the following split.
     const aPane = h.state().panes[0].id
     expect(h.api.selectors.contentPane("a")).toBe(aPane)
     // J4: drop B side-by-side

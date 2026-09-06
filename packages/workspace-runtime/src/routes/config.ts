@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
 import { isAgentHarnessId, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { WorkspaceRuntimeManagementAuth, WorkspaceRuntimeManagementTarget } from "../management-auth"
@@ -94,7 +95,7 @@ type AuthCtx = {
 type AuthVerdict = { ok: true } | { ok: false; code: string; message: string; status: 401 | 403 }
 
 function stringRecord(input: unknown): input is Record<string, string> {
-  return record(input) && Object.values(input).every((item) => typeof item === "string")
+  return isRecord(input) && Object.values(input).every((item) => typeof item === "string")
 }
 
 function normalizeSelection(input: unknown): RuntimeHarnessSelection | undefined {
@@ -165,9 +166,9 @@ const RUNTIME_SNAPSHOT_KEYS = new Set([
 
 export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot | undefined {
   if (
-    !record(input)
+    !isRecord(input)
     || input.version !== 3
-    || !record(input.mcp)
+    || !isRecord(input.mcp)
     || !Array.isArray(input.connections)
     || !stringRecord(input.auth)
   ) return undefined

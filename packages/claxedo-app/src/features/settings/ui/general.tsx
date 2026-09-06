@@ -164,10 +164,9 @@ export const SettingsGeneral: Component = () => {
   const sans = () => sansInput(settings.appearance.uiFont())
   const terminal = () => terminalInput(settings.appearance.terminalFont())
 
-  // Terminal screen-reader mode is a persisted preference (WP-B7) that had no
-  // Settings surface — the only way to set it was poking localStorage. This
-  // signal mirrors that preference so the toggle reflects/writes it; new
-  // terminals seed `screenReaderMode` from it in `createTerminalInstance`.
+  // Mirrors the persisted terminal screen-reader preference so the toggle
+  // reflects and writes it; new terminals seed `screenReaderMode` from it in
+  // `createTerminalInstance`.
   const [screenReaderTerminal, setScreenReaderTerminal] = createSignal(getScreenReaderModePreference())
 
   return (

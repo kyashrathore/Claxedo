@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
+import { mcpPort } from "@claxedo/connections"
 import type { IntegrationDeclaration, IntegrationImpl } from "@claxedo/connections"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
@@ -168,25 +169,27 @@ const keyIntegration: { decl: IntegrationDeclaration; impl: IntegrationImpl } = 
     id: "context7",
     name: "Context7",
     methods: ["key"],
-    capabilities: ["mcp"],
     prompts: [{ id: "token", label: "API key", secret: true }],
     // The token service refuses an api_key credential whose declaration does
     // not say how the key is presented on the wire.
     keyTokenType: "bearer",
   },
-  impl: { verify: async () => ({ ok: true, accountLabel: "context7-account" }) },
+  impl: { actions: { mcp: mcpPort }, auth: { verify: async () => ({ ok: true, accountLabel: "context7-account" }) } },
 }
 
 const oauthIntegration: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
-  decl: { id: "composio", name: "Composio", methods: ["oauth"], capabilities: ["mcp"] },
+  decl: { id: "composio", name: "Composio", methods: ["oauth"] },
   impl: {
-    authorize: (state) => new URL(`https://composio.example.test/authorize?state=${state}`),
-    callback: async () => ({ accessToken: "composio-access" }),
+    actions: { mcp: mcpPort },
+    auth: {
+      authorize: (state: string) => new URL(`https://composio.example.test/authorize?state=${state}`),
+      callback: async () => ({ accessToken: "composio-access" }),
+    },
   },
 }
 
 /**
- * Two real users in ONE organization.
+ * Two real users in one organization.
  *
  * The `user-deployed` product is what makes that shape reachable: it owns a
  * single deployment organization and admits members into it, so both callers
@@ -223,7 +226,7 @@ async function rig(options: RigOptions = {}) {
   // The setup's clock, movable so an attempt TTL is crossed exactly rather
   // than waited out.
   let clock = NOW
-  // The setup reads nothing else off `services`; the authority IS the
+  // The setup reads nothing else off `services`; the authority is the
   // membership oracle this composition is built on.
   const services = { authority } as unknown as ControlPlaneServices
   let actor: SignedControlPlaneAuth | undefined = owner
@@ -392,7 +395,7 @@ describe("hosted D1 Connections setup", () => {
     expect(attempt.url).toContain(attempt.attemptId)
 
     // A second setup over the same database stands in for the next request's
-    // isolate — the one that used to read an empty Map and answer 404.
+    // isolate, which would read an empty in-memory Map and answer 404.
     const next = createHostedD1ConnectionsSetup(test.input)
     const polled = await next.request(`/attempts/${attempt.attemptId}`)
     expect(polled.status).toBe(200)
@@ -459,17 +462,17 @@ describe("hosted D1 Connections setup", () => {
     })
   })
   test("polling an attempt is refused unless the attempt is the caller's own", async () => {
-    // `GET /attempts/:state` is served from the CALLER's partitions and the
+    // `GET /attempts/:state` is served from the caller's partitions and the
     // kit's route knows nothing about orgs, so without a gate here a signed
     // caller holding any state token reads another tenant's attempt — and for a
-    // device grant, polling is what ADVANCES it.
+    // device grant, polling is what advances it.
     const test = await rig()
     test.as(test.member)
     const started = await connect(test.app, "composio", { method: "oauth", scope: "personal" })
     const attempt = (await started.json()) as { attemptId: string }
     expect((await test.app.request(`/attempts/${attempt.attemptId}`)).status).toBe(200)
 
-    // A different signed user in the SAME organization, holding the token.
+    // A different signed user in the same organization, holding the token.
     test.as(test.owner)
     const foreign = await test.app.request(`/attempts/${attempt.attemptId}`)
     expect(foreign.status).toBe(404)
@@ -599,10 +602,13 @@ describe("hosted D1 Connections setup", () => {
     const flaky: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
       decl: keyIntegration.decl,
       impl: {
-        verify: async () =>
-          healthy
-            ? { ok: true as const, accountLabel: "context7-account" }
-            : { ok: false as const, reason: "unauthorized" as const },
+        actions: { mcp: mcpPort },
+        auth: {
+          verify: async () =>
+            healthy
+              ? { ok: true as const, accountLabel: "context7-account" }
+              : { ok: false as const, reason: "unauthorized" as const },
+        },
       },
     }
     const test = await rig({ integrations: [flaky] })
@@ -622,7 +628,7 @@ describe("hosted D1 Connections setup", () => {
     expect(test.credentials.statusOf(providerId)).toBe("error")
 
     // Re-verify is the only caller of `readSecret`, and the port defines that
-    // as a status-INDEPENDENT read. Reading must not decide the credential is
+    // as a status-independent read. Reading must not decide the credential is
     // healthy: flipping it to `available` on the way in made a still-failing
     // re-verify look like a repair and put the token path back on a credential
     // the provider had already rejected.

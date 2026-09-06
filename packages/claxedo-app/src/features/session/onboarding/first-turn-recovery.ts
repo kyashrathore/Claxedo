@@ -14,7 +14,7 @@ import { asRecord } from "@/lib/record"
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
 export type FirstTurnMessage =
   | { id: string; role: "user"; time: { created: number } }
-  | { id: string; role: "assistant"; parentID: string; time: { created: number; completed?: number }; error?: unknown }
+  | { id: string; role: "assistant"; parentID: string; time: { created: number; completed?: number }; finish?: string; error?: unknown }
 
 export function nextHarnessRecoveryModel(
   selection: Pick<HarnessSelectionSnapshot, "harness" | "models" | "selectedModelKey">,
@@ -113,11 +113,18 @@ export function isTurnAdmissionConflict(error: unknown) {
     data?.message === "Session is already processing a message"
 }
 
+/** A completed tool step can precede the turn's actual answer under the same parent. */
+export function isSettledTurnAssistant(message: FirstTurnMessage): message is Extract<FirstTurnMessage, { role: "assistant" }> {
+  if (message.role !== "assistant") return false
+  if (message.error !== undefined) return true
+  return typeof message.time.completed === "number" && message.finish !== "tool-calls" && message.finish !== "unknown"
+}
+
 export function firstTurnOutcome(messages: FirstTurnMessage[]) {
   const first = messages.find((message): message is Extract<FirstTurnMessage, { role: "user" }> => message.role === "user")
   if (!first) return undefined
   const assistant = messages.find((message): message is Extract<FirstTurnMessage, { role: "assistant" }> =>
-    message.role === "assistant" && message.parentID === first.id,
+    isSettledTurnAssistant(message) && message.parentID === first.id,
   )
   if (!assistant || (typeof assistant.time.completed !== "number" && !assistant.error)) return undefined
   if (!assistant.error) return { name: "first_turn_ok" as const }

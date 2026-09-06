@@ -57,33 +57,24 @@ const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
 
 /**
- * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
- * verbatim in `the host-enrollment authority`.
- *
- * The two authorities are two implementations of one contract, so the numbers
- * are not adapter defaults to be tuned independently: a self-hosted SQLite
- * deployment and the authority Cloud must retire the same row at the same age or
- * "same bounds" is a claim nobody checks.
+ * Machine-enrollment retention bounds, shared with the hosted host-enrollment
+ * authority: the two are implementations of one contract and must retire the
+ * same row at the same age, so these are not adapter defaults to tune.
  *
  * ENROLLMENT_CHALLENGE_TTL_MS — how long an unconsumed nonce may be signed.
- *   60s, deliberately STRICTER than the plan's two minutes. The nonce is
- *   already one-use, owner-bound and host-bound, so its lifetime is
- *   defence-in-depth rather than the primary control; what the number really
- *   buys is a bound on how many live unconsumed rows an attacker can hold at
- *   once (steady-state rows = per-account budget x TTL). A client that takes
- *   longer than a minute — a first enrollment blocked on an OS keychain prompt,
- *   say — simply asks for another nonce, and `POST /requests` mutates no
- *   enrollment, so the retry is free. See the plan's Unit 6 retention bullet.
+ *   The nonce is one-use, owner-bound and host-bound, so the TTL is a bound on
+ *   how many live unconsumed rows an attacker can hold (per-account budget x
+ *   TTL), not the primary control. A client that takes longer — a first
+ *   enrollment blocked on an OS keychain prompt — asks for another nonce;
+ *   `POST /requests` mutates no enrollment, so the retry is free.
  *
- * ENROLLMENT_CONSUMED_RETENTION_MS — how long a CONSUMED request row is kept.
- *   The evidence a future exact-retry answer would be reconstructed from, so
- *   the sweep must never collect a consumed row earlier than this. Implemented
- *   by pushing `expires_at` out at consumption (see `enrollHost`), which is the
- *   same device `the connection-attempts authority` uses for its retention window.
+ * ENROLLMENT_CONSUMED_RETENTION_MS — how long a consumed request row is kept,
+ *   as the evidence an exact-retry answer is reconstructed from. Implemented by
+ *   pushing `expires_at` out at consumption (`enrollHost`).
  *
- * ENROLLMENT_REQUEST_SWEEP_LIMIT — rows one prune may retire. Level-triggered:
- *   a saturated pass leaves the rest for the next writer, and nothing is
- *   skipped forever because an expired row stays expired.
+ * ENROLLMENT_REQUEST_SWEEP_LIMIT — rows one prune may retire. A saturated pass
+ *   leaves the rest for the next writer; an expired row stays expired, so
+ *   nothing is skipped forever.
  */
 const ENROLLMENT_CHALLENGE_TTL_MS = 60_000
 const ENROLLMENT_CONSUMED_RETENTION_MS = 10 * 60_000

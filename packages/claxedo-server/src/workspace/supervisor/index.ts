@@ -56,8 +56,8 @@ const log = Log.create({ service: "workspace-supervisor" })
 export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) {
   configureWorkspaceSupervisorOptions(input)
   // The supervisor owns sandbox leases, so it is the one that can teach the
-  // workspace store to read them. The store used to import the lease table
-  // directly, which put the cloud sandbox graph inside the closure of every
+  // workspace store to read them. Wiring the store to import the lease table
+  // directly would put the cloud sandbox graph inside the closure of every
   // module that reads local workspace inventory. A composition without a
   // supervisor has no cloud workspaces, so it needs no reader.
   configureWorkspaceStore({ sandboxLease: (workspaceId) => getSupervisorSandboxLease(workspaceId) })
@@ -307,11 +307,11 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
       return { released: releaseSupervisorSandboxLease(workspaceId) }
     },
     // The local supervisor has no provider to enumerate: every sandbox it knows
-    // about IS a lease in its own state, so "provider state the lease table has
+    // about is a lease in its own state, so "provider state the lease table has
     // no record of" is not a representable condition here. It reports
     // `listingUnsupported` for the same reason the Cloudflare driver does — not
     // because listing failed, but because there is nothing independent to list,
-    // so `kept` below is a lease inventory and NOT evidence that nothing is
+    // so `kept` below is a lease inventory and not evidence that nothing is
     // orphaned. Without this flag the four arrays read as a clean sweep, which
     // is the silent success this exists to remove.
     async garbageCollect() {
@@ -347,7 +347,7 @@ export function injectRuntime(ws: Workspace, url: string) {
     holds: [],
     remote: true,
     sandbox_target: {
-      // The workspace row's `sandbox_id` column is NOT the runtime host
+      // The workspace row's `sandbox_id` column is not the runtime host
       // location authority (that lives on the lease, e.g. sandboxTargetFromLease).
       // `injectRuntime` is a direct-injection seam given the runtime URL outright,
       // so the workspace id is the synthetic host identity here.

@@ -35,11 +35,10 @@ describe("workspace-runtime public API manifest", () => {
       manifest.routePrefixes.sort(),
     )
     expect(Object.values(WorkspaceRuntimeRoutes).map(String).sort()).toEqual(manifest.routePrefixes.sort())
-    // Every path under `/api/wr/`, with no exceptions. Hosted capability
-    // routes that used to sit here belonged to a hosted capability the runtime
-    // happened to mount; they now arrive as a host route contribution.
-    // A product capability reappearing in this manifest means the runtime has
-    // taken ownership of something above it again.
+    // Every path lives under `/api/wr/`: a host route contribution, not the
+    // runtime, owns any hosted capability that needs mounting. A capability
+    // reappearing in this manifest means the runtime has taken ownership of
+    // something above it again.
     expect(WorkspaceRuntimeRouteManifest.every((item) => item.path.startsWith("/api/wr/"))).toBe(true)
   })
 

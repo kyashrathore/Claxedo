@@ -1,4 +1,3 @@
-// target-layer: data — Phase 1/2 will absorb
 import { createEffect, createMemo, createSignal, on, onCleanup, type ParentProps } from "solid-js"
 import { sessionPerf } from "@/platform/performance/session-perf"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"

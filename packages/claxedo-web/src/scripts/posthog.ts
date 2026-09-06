@@ -1,8 +1,7 @@
 /**
- * The PostHog provider for the public site — the half that `analytics.ts` has
- * always been missing. That module builds and validates conversion events and
- * hands them to `window.claxedoAnalytics.track`; until this file existed
- * nothing ever assigned that global, so every event was dropped on unload.
+ * The PostHog provider for the public site. `analytics.ts` builds and
+ * validates conversion events and hands them to
+ * `window.claxedoAnalytics.track`; this file is what assigns that global.
  *
  * Three properties of this integration are deliberate and load-bearing:
  *
@@ -14,10 +13,10 @@
  *    and nothing says so). Key presence is the whole gate.
  *
  * 2. **No cookies.** `sessionStorage` rather than the default
- *    `localStorage+cookie`: no consent banner is required, and the site keeps
- *    the zero-cookie posture it shipped with. `memory` would have been the
- *    obvious "cookieless" pick and is the wrong one — Astro is an MPA, so every
- *    navigation is a fresh page load and memory persistence would mint a new
+ *    `localStorage+cookie`: no consent banner is required, and the site stays
+ *    cookie-free. `memory` would have been the obvious "cookieless" pick and
+ *    is the wrong one — Astro is an MPA, so every navigation is a fresh page
+ *    load and memory persistence would mint a new
  *    distinct id per page, turning a two-page funnel into two unrelated people.
  *    The accepted cost is that a visitor returning next week counts as new.
  *
@@ -81,7 +80,7 @@ function isExternal(value: unknown): boolean {
 
 /**
  * The `sanitize_properties` hook, extracted as a pure function so the privacy
- * property is testable without a browser or a live client. Runs on EVERY
+ * property is testable without a browser or a live client. Runs on every
  * captured event, including PostHog's own `$pageview` and `$autocapture`-class
  * events, which is why it is the right layer for this rather than the capture
  * call sites.

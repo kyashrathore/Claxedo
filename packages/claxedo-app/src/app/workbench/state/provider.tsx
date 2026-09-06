@@ -290,8 +290,10 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
     return id && id !== "new" ? id : undefined
   }
   // Owns remember/restore for every focus change (rail click, URL, command,
-  // tab). Rail used to snapshot after `onSessionSelect` had already focused
-  // the destination, so every session inherited the last open panel.
+  // tab). The previous focused id must come from this effect's own last run,
+  // not from re-reading rail state: by the time rail forwards a selection it
+  // has already focused the destination, so re-reading would return the same
+  // id twice and every session would inherit the last-open panel.
   createEffect((previous: { id: string | undefined } | undefined) => {
     const next = focusedSessionId()
     if (!previous) return { id: next }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Prompt } from "@/features/session/providers/prompt"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 
 const {
   createSubmit,
@@ -52,6 +52,8 @@ describe("Harness + demo dispatch and abort", () => {
 
     expect(armed).toBe(1)
     expect(sessionCreateCalls).toHaveLength(0)
+    expect(harnessClaimCalls).toEqual([])
+    expect(h.hostedOperationCalls).toEqual([])
     expect(runtimeCalls.some((call) => call.input.includes("/goal"))).toBe(false)
     expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
     expect(promptCalls.set.some((call) => call.prompt.every((part) => part.type !== "text"))).toBe(true)
@@ -142,7 +144,7 @@ describe("Harness + demo dispatch and abort", () => {
       recovery: "none",
       optionalFields: [],
     }
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     const submit = createSubmit({
       goalArmed: () => true,
@@ -162,39 +164,19 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
   })
 
-  test("uses the shared demo helper to send sync prompts", async () => {
-    const submit = createPromptSubmit({
-      info: () => undefined,
-      imageAttachments: () => [],
-      commentCount: () => 0,
-      autoAccept: () => false,
-      mode: () => "normal",
-      working: () => false,
-      editor: () => undefined,
-      queueScroll: () => undefined,
-      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
-      addToHistory: () => undefined,
-      resetHistoryNavigation: () => undefined,
-      setMode: () => undefined,
-      setPopover: () => undefined,
-      onSubmit: () => undefined,
-      navigateOnCreate: () => false,
-      setBooting: (value) => boots.push(value),
-    })
-
-    await submit.handleSubmit(submitEvent())
-    await waitForSubmitEffect(() =>
-      calls.prompt === 1 || runtimeCalls.some((call) => call.input.includes("/message"))
-    )
-
-    expect(calls.prompt + runtimeCalls.filter((call) => call.input.includes("/message")).length).toBe(1)
-    expect(calls.async).toBe(0)
-  })
-
   test("harness draft submit claims its session with the complete initial config", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
+    const controller = h.testHarnessController()
+    const harnessScopes: string[] = []
+    const modelScopes: string[] = []
     const submit = createPromptSubmit({
+      harnessScope: () => "draft:picker-authority",
+      harnessController: {
+        ...controller,
+        harness: (scope) => { harnessScopes.push(scope); return controller.harness(scope) },
+        modelKeyForSubmit: (scope) => { modelScopes.push(scope); return controller.modelKeyForSubmit(scope) },
+      },
       info: () => undefined,
       imageAttachments: () => [],
       commentCount: () => 0,
@@ -217,6 +199,8 @@ describe("Harness + demo dispatch and abort", () => {
     await settleSubmitEffects()
     await waitForSubmitEffect(() => calls.transportAsync > 0)
 
+    expect(harnessScopes[0]).toBe("draft:picker-authority")
+    expect(modelScopes[0]).toBe("draft:picker-authority")
     expect(calls.create).toBe(0)
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
@@ -250,7 +234,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("harness submit uses the harness-selected model instead of stale local provider state", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     state.localCurrentModel = { id: "stale-provider-model", provider: { id: "anthropic" } }
     state.harnessSubmitModel = { key: { providerID: "codex-app-server", modelID: "gpt-5.5" }, name: "GPT-5.5" }
@@ -272,7 +256,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("connection-backed submit does not leak an unrelated local-provider variant", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
 
     const submit = createSubmit({
@@ -295,7 +279,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("existing harness follow-up preserves its persisted harness variant", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.localSessionConfig = {
       harness: { id: "claude-team", access: "connection" },
       agent: "build",
@@ -331,7 +315,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("harness draft submit refuses unresolved provider/model state", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     state.harnessSubmitModel = undefined
     const submit = createSubmit({
@@ -352,7 +336,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("stale harness boot callbacks do not update a newer composer scope", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     let resolveClaim: (session: { id: string }) => void = () => undefined
     let scope = "old"
@@ -376,7 +360,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("harness claim failure does not invoke an alternate direct-create path", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     state.harnessClaimSession = undefined
     const submit = createSubmit({
@@ -394,7 +378,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("signed harness draft submit uses Workspace Runtime transport instead of old session compatibility", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
 
     const submit = createPromptSubmit({
@@ -441,7 +425,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("signed harness submit ignores stale shell mode and sends a chat prompt", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
 
     const modes: Array<"normal" | "shell"> = []
@@ -489,7 +473,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("signed harness existing session sends from its canonical runtime config when session hydration misses", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     state.transportGetSession = false
     state.runtimeSessionConfig = {
@@ -528,7 +512,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("signed control-plane abort reaches the workspace runtime transport", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const submit = createPromptSubmit({
       info: () => ({ id: "session-1" }),
@@ -565,7 +549,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
   test("empty active submit aborts without history or send side effects", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     promptValue.splice(0, promptValue.length, { type: "text", content: "   ", start: 0, end: 3 })
     const histories: Prompt[] = []
 

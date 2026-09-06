@@ -171,10 +171,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     })
     const runtimePromptClient: PromptDispatchInput["client"] = {
       session: {
-        prompt: (payload) =>
-          runtimeClient.sendMessage({ ...payload, mode: "sync" }),
-        promptAsync: (payload) =>
-          runtimeClient.sendMessage({ ...payload, mode: "async" }),
+        promptAsync: (payload) => runtimeClient.sendMessage(payload),
       },
     }
     return {

@@ -1,5 +1,5 @@
 import * as i18n from "@solid-primitives/i18n"
-import { isRecord } from "../../shared/json-read"
+import { asRecord } from "@claxedo/helpers/guards"
 import { desktopApi } from "../api"
 
 import { dict as desktopEn } from "./en"
@@ -95,10 +95,6 @@ function parseLocale(value: unknown): Locale | null {
   return LOCALES.find((locale) => locale === value) ?? null
 }
 
-function parseRecord(value: unknown) {
-  return isRecord(value) ? value : null
-}
-
 function parseStored(value: unknown) {
   if (typeof value !== "string") return value
   try {
@@ -112,7 +108,7 @@ function pickLocale(value: unknown): Locale | null {
   const direct = parseLocale(value)
   if (direct) return direct
 
-  const record = parseRecord(value)
+  const record = asRecord(value)
   if (!record) return null
 
   return parseLocale(record.locale)

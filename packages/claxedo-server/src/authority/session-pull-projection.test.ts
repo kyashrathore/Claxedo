@@ -2,16 +2,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "./services"
 
-// Unit 6 characterization pins for the CENTRAL storage boundary: the two
-// session-pull flows (`http-session-pull.ts` local-cloud + `hosted-session-pull.ts`
-// Worker) write pulled runtime state through the `ProjectionStore` port, and the
-// "only update when newer" ordinal/snapshot skip rules are pinned exactly as the
-// code implements them today. These pins protect the seam while later work dissolves the
-// SyncDB bag into `createSqliteCentralStore()`.
+// Both session-pull flows (`http/session-pull.ts` local-cloud and
+// `hosted-session-pull.ts` Worker) write pulled runtime state through the
+// `ProjectionStore` port. These tests pin the "only update when newer"
+// ordinal/snapshot skip rules at that port, so they hold for the SQLite and
+// Worker stores alike.
 //
-// Authority is kept PRESENT (stubbed) or out of play (unsigned/undefined auth) so
-// authority error codes never appear in these assertions — another agent is
-// renaming those codes concurrently.
+// Authority is stubbed present or left out of play (unsigned auth) so no
+// authority error code appears in an assertion; the subject is projection writes.
 
 const mocks = vi.hoisted(() => ({
   resolveWorkspace: vi.fn(),
@@ -137,8 +135,6 @@ describe("central projection: pulled session metadata", () => {
   })
 
   test("http pull writes pulled session meta through ProjectionStore.sync_session_meta", async () => {
-    // http-session-pull.ts:82 — a successful pull always writes the pulled
-    // runtime session payload through the projection port for the resolved ws.
     const svc = services()
     const result = await pullControlSession(
       svc,
@@ -161,8 +157,6 @@ describe("central projection: pulled session metadata", () => {
   })
 
   test("hosted pull writes pulled session meta through ProjectionStore.sync_session_meta", async () => {
-    // hosted-session-pull.ts:203 — the Worker pull flow writes the pulled
-    // runtime session payload through the projection port (authority present).
     const svc = services()
     svc.authority = presentAuthority() as never
     stubHostedTransport(svc, (path) => {
@@ -230,8 +224,8 @@ describe("central projection: pulled session metadata", () => {
   )
 })
 
-// The exact snapshot skip rules, pinned once per flow. Both flows share identical
-// logic; each rule is exercised against http and hosted pull.
+// The snapshot skip rules, one test per rule against each flow (both flows
+// share the logic):
 //
 //   currentOrdinal = projectionStore.read_session_max_event_ordinal(sessionId)
 //   currentMessages = projectionStore.read_session_messages(sessionId)
@@ -580,8 +574,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
   })
 
   test("RULE 3 boundary http: equal ordinal but STRICTLY LONGER payload WRITES", async () => {
-    // Pins the exact equal-ordinal behavior: equal is skipped only when the
-    // snapshot is not longer. A strictly longer equal-ordinal snapshot writes.
+    // Equal ordinal is skipped only when the snapshot is not longer.
     const svc = services()
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 12)
     svc.projectionStore.read_session_messages = vi.fn(() => messages) // length 1

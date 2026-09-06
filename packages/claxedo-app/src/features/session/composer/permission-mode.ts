@@ -15,7 +15,7 @@ import { permissionModeDeliverable, type PermissionModeApplied } from "@/feature
  * A single row as the picker renders it: the mode, plus whether it can actually be
  * chosen and why not.
  *
- * `selectable` is NOT cosmetic. Several modes are real in the harness but have no
+ * `selectable` is not cosmetic. Several modes are real in the harness but have no
  * delivery implemented on our side yet, and offering one as choosable would make the
  * picker claim a policy is active when nothing was ever sent — the failure the
  * `not-wired` result exists to expose. `permissionModeDeliverable` is the single
@@ -79,11 +79,11 @@ export function createComposerPermissionMode(input: {
   /**
    * The stored choice, or the default derived from what the harness reported.
    *
-   * The default is computed per session rather than being a constant, because it
-   * depends on the harness's own answer — including which mode it says is ALREADY
-   * current, which on a resumed session is the mode genuinely in force. A constant
-   * could only ever name a Claxedo mode, which is how the picker previously showed
-   * a label with no relationship to what the harness was doing.
+   * Computed per session rather than a constant, because it depends on the
+   * harness's own answer — including which mode it says is already current,
+   * which on a resumed session is the mode genuinely in force. A constant
+   * could only ever name a Claxedo mode, unrelated to what the harness is
+   * actually doing.
    */
   const selection = createMemo<PermissionSelection | undefined>(() => {
     const stored = input.selection()

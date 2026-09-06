@@ -6,6 +6,7 @@ import type { SwitcherItem } from "./switcher-items"
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
 })
 
 // items[0] inactive, items[1] active — mirrors the shared fixture.
@@ -32,14 +33,15 @@ const items: SwitcherItem[] = [
   },
 ]
 
-// SWITCH_COMMIT_DELAY_MS is 48ms inside the component; wait comfortably past it.
-const PAST_COMMIT = 90
+// Commit policy is 48ms; advancing its deadline must not revive cancelled selections.
+const COMMIT_DELAY = 48
 
 describe("CompactSwitcher — pending-select cancellation (regression guard)", () => {
   // BUG 1: Clicking a non-active tab schedules a debounced select. If the user
   // then closes that same tab before the 48ms commit fires, close() never clears
   // the pending timer, so onSelect fires for a tab that is being destroyed.
   test("closing a tab cancels its pending select", async () => {
+    vi.useFakeTimers()
     const onSelect = vi.fn()
     const onClose = vi.fn()
     render(() => <CompactSwitcher items={items} onSelect={onSelect} onClose={onClose} />)
@@ -50,7 +52,7 @@ describe("CompactSwitcher — pending-select cancellation (regression guard)", (
     fireEvent.click(screen.getByRole("button", { name: "Close Build fix" }))
     expect(onClose).toHaveBeenCalledWith("content-session")
 
-    await new Promise((resolve) => setTimeout(resolve, PAST_COMMIT))
+    await vi.advanceTimersByTimeAsync(COMMIT_DELAY)
 
     // The tab is gone; selecting it afterwards is a stale navigation.
     expect(onSelect).not.toHaveBeenCalled()
@@ -61,6 +63,7 @@ describe("CompactSwitcher — pending-select cancellation (regression guard)", (
   // without clearing the pending timer, so the stale select fires AFTER the
   // explicit click and wins — the user lands on the wrong tab.
   test("clicking the active tab cancels a pending select of another tab", async () => {
+    vi.useFakeTimers()
     const onSelect = vi.fn()
     render(() => <CompactSwitcher items={items} onSelect={onSelect} />)
 
@@ -69,7 +72,7 @@ describe("CompactSwitcher — pending-select cancellation (regression guard)", (
     // Then explicitly click the active tab -> commits immediately.
     fireEvent.click(screen.getByRole("button", { name: "Dev server" }))
 
-    await new Promise((resolve) => setTimeout(resolve, PAST_COMMIT))
+    await vi.advanceTimersByTimeAsync(COMMIT_DELAY)
 
     // The user's last intent was the active tab; the stale scrub must not override it.
     expect(onSelect).toHaveBeenCalledTimes(1)

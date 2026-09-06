@@ -119,23 +119,6 @@ describe("sdk runtime request cache", () => {
     expect(cachedSdkRuntimeRequest(input)).not.toBe(first)
   })
 
-  test("keeps SDK runtime request dedupe out of private maps", async () => {
-    for (const file of ["./sdk.tsx", "./runtime-request.ts"]) {
-      const source = await Bun.file(new URL(file, import.meta.url)).text()
-
-      expect(source).not.toContain("runtimeRequests = new Map")
-      expect(source).not.toContain("const runtimeRequests")
-    }
-  })
-
-  test("keeps SDK runtime routing off the gateway facade", async () => {
-    for (const file of ["./sdk.tsx", "./runtime-request.ts"]) {
-      const source = await Bun.file(new URL(file, import.meta.url)).text()
-
-      expect(source).not.toContain("RuntimeGateway.")
-    }
-  })
-
   test("stamps the SDK directory scope onto typed runtime file requests", () => {
     const scoped = scopeRuntimeRequestUrl(new URL("http://127.0.0.1:3001/api/wr/file?path=src"), { directory: "/repo/main" })
     expect(scoped.pathname).toBe("/api/wr/file")
@@ -147,21 +130,5 @@ describe("sdk runtime request cache", () => {
 
     const request = scopeRuntimeRequestUrl(new Request("http://127.0.0.1:3001/api/wr/find/file?query=a"), { directory: "/repo/main" })
     expect(request.searchParams.get("directory")).toBe("/repo/main")
-  })
-
-  test("routes typed runtime file requests through the directory scope", async () => {
-    const source = await Bun.file(new URL("./sdk.tsx", import.meta.url)).text()
-
-    expect(source).toContain("sdkFetch(scopeRuntimeRequestUrl(request, { directory: dir }), init)")
-  })
-
-  test("uses the typed workspace runtime file client without SDK proxies", async () => {
-    const source = await Bun.file(new URL("./sdk.tsx", import.meta.url)).text()
-
-    expect(source).toContain("createWorkspaceRuntimeClient")
-    expect(source).not.toContain("createOpencodeClient")
-    expect(source).not.toContain("new Proxy(")
-    expect(source).toContain("workspaceId: workspace.workspaceId")
-    expect(source).toContain("signal: options?.signal")
   })
 })

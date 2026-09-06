@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
-import { cleanup, render } from "@solidjs/testing-library"
+import { describe, expect, test } from "vitest"
 import { createComputed, createRoot, createSignal } from "solid-js"
 import {
   createCommandPresence,
@@ -9,15 +8,6 @@ import {
   projectCommandRegistrations,
   resolveEffectiveKeybind,
 } from "./command-palette"
-
-afterEach(cleanup)
-
-// The command palette's discoverability contract (WP-C2): each command entry
-// lists the ACTIVE keybinding next to it, where "active" means the user's custom
-// rebind wins over the registered default and the "none" sentinel hides the
-// binding. `select-file.tsx` renders exactly `formatKeybind(option.keybind)`
-// where `option.keybind` is the effective binding produced by
-// `resolveEffectiveKeybind`. These tests exercise that same composition.
 
 describe("resolveEffectiveKeybind", () => {
   test("custom rebind wins over the registered default", () => {
@@ -118,30 +108,13 @@ describe("narrow command projections", () => {
   })
 })
 
-// Mirrors select-file.tsx's keybind cell: <Keybind>{formatKeybind(effective)}</Keybind>
-function KeybindCell(props: { custom?: string; registeredDefault?: string }) {
-  const effective = () => resolveEffectiveKeybind(props.custom, props.registeredDefault)
-  return <span data-testid="keybind">{formatKeybind(effective() ?? "")}</span>
-}
-
-describe("command palette keybind cell", () => {
-  test("renders the registered default binding next to a command", () => {
-    const view = render(() => <KeybindCell registeredDefault="mod+shift+p" />)
-    const text = view.getByTestId("keybind").textContent ?? ""
-    // Platform-dependent modifier glyphs, but the command key is always shown.
-    expect(text).toContain("P")
-    expect(text.length).toBeGreaterThan(1)
-  })
-
-  test("renders the user's active rebind, not the default", () => {
-    const view = render(() => <KeybindCell custom="mod+k" registeredDefault="mod+shift+p" />)
-    const text = view.getByTestId("keybind").textContent ?? ""
-    expect(text).toContain("K")
-    expect(text).not.toContain("P")
-  })
-
-  test("renders an empty cell when the command is unbound", () => {
-    const view = render(() => <KeybindCell custom="none" registeredDefault="mod+shift+p" />)
-    expect(view.getByTestId("keybind").textContent).toBe("")
+describe("formatKeybind", () => {
+  test("formats a default binding and an effective override", () => {
+    const original = formatKeybind(resolveEffectiveKeybind(undefined, "mod+shift+p") ?? "")
+    const rebound = formatKeybind(resolveEffectiveKeybind("mod+k", "mod+shift+p") ?? "")
+    expect(original).toContain("P")
+    expect(rebound).toContain("K")
+    expect(rebound).not.toContain("P")
+    expect(formatKeybind(resolveEffectiveKeybind("none", "mod+shift+p") ?? "")).toBe("")
   })
 })

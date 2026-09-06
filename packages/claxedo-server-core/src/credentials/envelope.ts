@@ -2,7 +2,7 @@
  * Envelope encryption above the `SecretBackend` seam.
  *
  * The Cloudflare KV byte store (and any future hosted byte store) holds
- * OPAQUE CIPHERTEXT ONLY. This module supplies the mandatory wrapper that
+ * opaque ciphertext only. This module supplies the mandatory wrapper that
  * turns any `SecretBackend` into an encrypting one:
  *
  *   - Per-org subkeys: HKDF-SHA-256(KEK, salt = fixed domain string,
@@ -11,7 +11,7 @@
  *     can become a key-destruction operation.
  *   - Key-id-prefixed ciphertext so KEK rotation is "add new KEK, new writes
  *     use it, reads accept any known key-id" instead of a migration event.
- *   - Web Crypto ONLY (global `crypto.subtle`) — this module must run inside
+ *   - Web Crypto only (global `crypto.subtle`) — this module must run inside
  *     the Cloudflare Worker bundle; `node:crypto` is forbidden there
  *     (enforced by src/worker.import-graph.test.ts).
  *
@@ -24,17 +24,17 @@
  *   - iv        12 random bytes
  *   - tag       16 bytes, appended to the ciphertext by AES-GCM
  *
- * Additional authenticated data (adversarial review): the GCM tag also
- * covers `<key-id>:<credential-id>` — the credential's storage identity — as
- * AAD (NOT stored in the value; re-derived on read). The credential-id is the
- * segment of the backend ref after its `<scheme>:` prefix (backends store under
- * `cf:<id>` / `local:<id>` / …; `put` is given the raw `<id>` and `get` the
- * full ref). This BINDS each ciphertext to its slot: a within-org relocation or
- * rollback of a blob to a different credential id fails GCM authentication even
- * though it decrypts under the same per-org key — closing the "leaked KV token
- * can shuffle blobs between slots" gap.
+ * The GCM tag also covers `<key-id>:<credential-id>` — the credential's
+ * storage identity — as AAD (not stored in the value; re-derived on read).
+ * The credential-id is the segment of the backend ref after its `<scheme>:`
+ * prefix (backends store under `cf:<id>` / `local:<id>` / …; `put` is given
+ * the raw `<id>` and `get` the full ref). This binds each ciphertext to its
+ * slot: a within-org relocation or rollback of a blob to a different
+ * credential id fails GCM authentication even though it decrypts under the
+ * same per-org key — closing the "leaked KV token can shuffle blobs between
+ * slots" gap.
  *
- * Reads FAIL CLOSED: a stored value that is not a well-formed envelope, uses
+ * Reads fail closed: a stored value that is not a well-formed envelope, uses
  * an unknown key-id, or fails GCM authentication (tamper, wrong org
  * partition, wrong KEK, or a relocated/rolled-back slot) throws — it is never
  * returned as a secret.
@@ -48,12 +48,13 @@
  * throws at construction time — absent KEK in a hosted context means the
  * credential store refuses to exist.
  *
- * ROTATION IS A DRAIN, NOT A SWAP. "New writes use the new key-id" alone never
- * retires anything: every value written before the rotation stays readable ONLY
- * under the old KEK, so the old KEK must stay configured forever and a
- * suspected-compromised key can never actually be taken out of service. The
- * `EnvelopeAdmin` surface below is what closes that: it exposes the key-id a
- * stored value carries WITHOUT decrypting it, so `credentials/rotate.ts` can
+ * Rotation is a drain, not a swap: "new writes use the new key-id" alone never
+ * retires anything, since every value written before the rotation stays
+ * readable only under the old KEK, so the old KEK must stay configured
+ * forever and a suspected-compromised key can never actually be taken out of
+ * service. The `EnvelopeAdmin` surface below is what closes that: it exposes
+ * the key-id a stored value carries without decrypting it, so
+ * `credentials/rotate.ts` can
  * sweep every stored ciphertext, re-encrypt it under the current KEK, and then
  * answer the only question that gates removing the old key from configuration —
  * "is any ciphertext still under the retired key-id?".
@@ -94,7 +95,7 @@ export interface EnvelopeKeyProvider {
   lookup(keyId: string): Promise<EnvelopeBytes | undefined>
 }
 
-/** What a storage slot currently holds, established WITHOUT decrypting it. */
+/** What a storage slot currently holds, established without decrypting it. */
 export type StoredEnvelopeState =
   /** Nothing stored at this ref. */
   | { state: "absent" }
@@ -112,7 +113,7 @@ export type StoredEnvelopeState =
  *
  * Deliberately minimal: it reveals the KEY-ID a slot was written under (public
  * metadata that is already the ciphertext's plaintext prefix) and nothing else.
- * It does NOT expose the raw byte store, the ciphertext, or the KEK, so it
+ * It does not expose the raw byte store, the ciphertext, or the KEK, so it
  * cannot be used to reopen the "reach the bytes unencrypted" hole this
  * module closes — `credentials/rotate.ts` re-encrypts through the ordinary
  * `get`/`put` pair, which never lets plaintext touch the inner store.
@@ -233,7 +234,7 @@ function decodeKekEnv(raw: string | undefined, name: string): EnvelopeBytes | un
 }
 
 /**
- * KEK provider from env / Worker secrets. FAILS CLOSED: throws when
+ * KEK provider from env / Worker secrets. Fails closed: throws when
  * `CLAXEDO_CREDENTIALS_KEK` is absent or malformed. `CLAXEDO_CREDENTIALS_KEK_NEXT`
  * is an optional second accepted decrypt key for rotation.
  */
@@ -292,7 +293,7 @@ function parseEnvelope(stored: string): ParsedEnvelope {
 /**
  * The key-id a stored value carries, or undefined when the value is not a
  * well-formed envelope. Non-throwing on purpose: rotation must be able to
- * CLASSIFY every slot (including foreign/corrupt ones) before deciding what to
+ * classify every slot (including foreign/corrupt ones) before deciding what to
  * do with it, where `parseEnvelope`'s fail-closed throw is the read path's job.
  */
 export function envelopeKeyIdOf(stored: string): string | undefined {

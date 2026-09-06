@@ -42,7 +42,6 @@ async function stopServer() {
   scripted = undefined
 }
 
-/** Harvested from live-real-harness-smoke.spec.ts's resolveBinary(). */
 async function resolveBinary(name: string, envVar: string) {
   const override = process.env[envVar]?.trim()
   const binary = override || name
@@ -61,9 +60,8 @@ async function resolveBinary(name: string, envVar: string) {
 }
 
 /**
- * Behavior 9's asymmetry in one place: absent binary is a contributor's local
- * reality (visible skip) but a broken CI job (loud GATING throw), because the
- * lane installs both CLIs itself. Neither path is ever silent.
+ * A missing binary is a contributor's ordinary local reality (visible skip) but a broken CI
+ * job (loud GATING throw), because the lane installs both CLIs itself. Neither path is silent.
  */
 function requireBinary(binary: string | undefined, name: string, hint: string) {
   if (binary) return
@@ -123,18 +121,14 @@ function sessionUrlPattern() {
 }
 
 /**
- * Selects a harness on a DRAFT composer, and proves the selection actually
- * landed before returning.
+ * Selects a harness on a draft composer and proves the selection landed before returning.
  *
- * The current composer has one combined picker, and every harness this lane
- * drives has a built-in row in it: the picker's ACP group is discovery-driven
- * over the operator's configured connections (agent-harness-selector's
- * BUILTIN_HARNESS_OPTIONS carries the native harnesses only), and this lane
- * configures none.
+ * The composer has one combined picker, and every harness this lane drives has a built-in row
+ * in it: the picker's ACP group is discovery-driven over the operator's configured
+ * connections, and this lane configures none.
  *
- * The selected row itself is the setup oracle. A non-empty model label is not:
- * the previous Workspace Pi model can remain visible while the asynchronous switch
- * is still pending, which used to let this setup return on the wrong harness.
+ * The selected row is the oracle, not a non-empty model label — the previous harness's model
+ * can still be showing while the asynchronous switch is pending.
  */
 function harnessPickerTarget(harnessKey: string) {
   if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: 0 }
@@ -163,15 +157,10 @@ async function switchDraftHarness(page: Page, harnessKey: string) {
 }
 
 /**
- * 45s, not the 30s `live-real-harness-smoke` uses: `claude` resolves its
- * catalog through `ClaudeDriver.fetchModels`
- * (`packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:224`), a
- * short-lived probe query whose own `MODEL_LIST_TIMEOUT_MS` is exactly 30_000
- * (driver.ts:48) before it falls back to the static catalog. Waiting 30s for a
- * control whose worst case IS 30s makes the assertion a race against the
- * fallback rather than a check of it, which is how this first showed up as a
- * "Loading models" failure. The wait is still deterministic — it polls the
- * control's real text, never sleeps.
+ * 45s, not 30s: `claude` resolves its catalog through `ClaudeDriver.fetchModels`, a probe
+ * query whose own `MODEL_LIST_TIMEOUT_MS` is exactly 30_000 before it falls back to the static
+ * catalog. Waiting 30s for a control whose worst case is 30s races the fallback instead of
+ * checking it. The wait polls the control's real text and never sleeps.
  */
 async function waitForHarnessReady(page: Page) {
   await expect(page.locator('[data-action="prompt-harness-model"]').last()).not.toContainText(
@@ -230,20 +219,16 @@ async function deleteGoalFromDock(page: Page, dock: Locator) {
 }
 
 /**
- * Behavior 6. The load-bearing half is the LOWER bound: at least one scripted
- * call per turn on the scenario's own dialect. Zero there means the reply on
- * screen came from a provider this spec never pointed at — the exact
- * false-green the tier exists to catch, and one this suite actually hit (see
- * HARNESS NOTES' codex caveat: 3 correct markers, 0 scripted requests).
+ * The load-bearing half is the lower bound: at least one scripted call per turn on the
+ * scenario's own dialect. Zero there means the reply on screen came from a provider this file
+ * never pointed at — the false green this tier exists to catch, and one a correct-looking set
+ * of reply markers cannot rule out on its own.
  *
- * The upper bound is deliberately loose, because "one HTTP call per turn" is
- * not a real contract. Measured directly against the scripted endpoint with the
- * real binaries: the engine adds one title call per session, and the claude CLI
- * issues TWO messages calls for a single one-token turn (the second carries a
- * `system-reminder` context block). Pinning a tight ceiling would assert the
- * harnesses' current internal chattiness, which is theirs to change — so the
- * ceiling only catches a runaway loop, and the cross-dialect check below is
- * what actually pins routing.
+ * The upper bound is deliberately loose, because "one HTTP call per turn" is not a contract:
+ * the engine adds a title call per session, and the claude CLI issues two messages calls for a
+ * single one-token turn. A tight ceiling would pin the harnesses' internal chattiness, which
+ * is theirs to change, so it only catches a runaway loop and the cross-dialect check below is
+ * what pins routing.
  */
 const CALLS_PER_TURN_CEILING = 3
 
@@ -289,34 +274,17 @@ type HarnessCase = {
 )
 
 /**
- * The rail oracle: a session the user just started must be FINDABLE and
- * LEGIBLE in the sidebar while it runs, without a reload.
+ * A session the user just started must be findable and legible in the sidebar while it runs,
+ * without a reload. Both signals cross a seam only a real server exercises. The working dot
+ * needs the runtime's `agent.lifecycle` frames to reach the chat row's status source rather
+ * than the terminal status map — for a native-SDK harness the server sets `tabId` to the
+ * session id and no `terminalId`, and `agent-status-listener` computes `terminalId || tabId`.
+ * The real title needs `session.updated` bridged out of workspace-runtime when the server
+ * replaces the "New Session" placeholder as the turn completes; unbridged, the rail keeps the
+ * placeholder, in the wrong sort position, until an unrelated refetch lands.
  *
- * All three assertions were reproduced by hand against a real server on
- * 2026-08-06 before being written down here:
- *   - row present: the `session.lifecycle` "created" frame does reach the
- *     client and inserts the row (this one passes today).
- *   - working dot: for the native-SDK harness the server publishes
- *     `agent.lifecycle` Busy with `tabId` = the SESSION id and NO `terminalId`.
- *     `agent-status-listener.ts:164` computes `terminalId || tabId` and writes
- *     it into the TERMINAL status map, which no chat row reads; meanwhile the
- *     chat row's own source, `GET /session/status`, never lists a native-SDK
- *     session at all (measured absent across a 30s poll during a live turn).
- *     So the dot never lights.
- *   - real title: the server replaces the "New Session" placeholder at the
- *     moment the turn completes (measured: title and `lastTurn.status
- *     ="completed"` both appear at +6.6s) with one derived from the first
- *     prompt (`fallbackSessionTitle`, session-title.ts:12) and publishes
- *     `session.updated` for it. That frame used to be dropped by
- *     `bridgeLifecycleEvent` (workspace-runtime `routes/session.ts`) — 0 such
- *     frames on the wire across a full cycle — so the rail kept the
- *     placeholder, in the wrong sort position, until an unrelated refetch
- *     happened to land. Now bridged; this assertion is the end-to-end guard
- *     that it stays bridged against a REAL server, which the mocked lane
- *     cannot prove.
- *
- * Asserted on the shared `[data-sidebar-status]` contract and the row's own
- * title slot, so a fix is free to route the signal any way it likes.
+ * Asserted on the shared `[data-sidebar-status]` contract and the row's own title slot, so a
+ * fix is free to route the signal any way it likes.
  */
 async function expectRailRowTracksTheSession(
   page: Page,
@@ -456,11 +424,9 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
         await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
         const sessionId = /(?:\/s\/|\/session\/)([^/]+)$/.exec(new URL(page.url()).pathname)?.[1]
         expect(sessionId, "session route did not expose the created session id").toBeTruthy()
-        // The rail is the surface the user navigates by, and until now this lane
-        // — the ONLY one that runs a real harness against a real claxedo-server —
-        // asserted nothing about it. Three separate rail defects shipped behind
-        // that gap, all of them invisible to the mocked Tier M proofs because
-        // those inject events straight onto the bus.
+        // The rail is the surface the user navigates by, and this is the only lane running a
+        // real harness against a real claxedo-server: the mocked tier injects events straight
+        // onto the bus and cannot see this seam.
         await expectRailRowTracksTheSession(page, decodeURIComponent(sessionId!), promptText, () =>
           scripted?.setReplyDelayMs(0),
         )
@@ -516,7 +482,7 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
 
   await expectUsageDashboardWorks(page)
 
-  // Behavior 6, asserted last so a reload-time re-fetch cannot inflate it.
+  // Asserted last so a reload-time re-fetch cannot inflate the count.
   expect(scripted!.requests.filter((request) => request.dialect === harness.dialect
     && request.reply.kind === "text" && markers.includes(request.reply.text))).toHaveLength(TURNS)
   expectScriptedTraffic(harness.dialect, TURNS)
@@ -903,10 +869,11 @@ test.describe("real harness journeys @core @tier-real", () => {
     "Tier R: set CLAXEDO_TIER_REAL_E2E=1 to run real-harness-local against a real claxedo-server + real harness " +
       "binaries pointed at the scripted model endpoint. This lane bakes its own backend origin " +
       "(VITE_CLAXEDO_SERVER_URL) into the app build, so it cannot ride a sharded core run — it has its own CI job. " +
-      "Unset -> loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
+      "Unset -> loud, visible skip, never a silent no-op.",
   )
 
-  test.beforeAll(async (_fixtures, testInfo) => {
+  test.beforeAll(async () => {
+    const testInfo = test.info()
     if (!TIER_REAL) return
     // waitForHealth owns a 90-second clean-runner boot budget. Keep the hook's
     // outer deadline longer so a real health failure reports its server-log
@@ -920,13 +887,15 @@ test.describe("real harness journeys @core @tier-real", () => {
     await stopServer()
   })
 
-  test.beforeEach(async (_fixtures, testInfo) => {
+  test.beforeEach(async () => {
+    const testInfo = test.info()
     // The scripted endpoint answers instantly, but subprocess spawn plus the
     // ACP handshake still costs real seconds on each scenario's first turn.
     testInfo.setTimeout(240_000)
   })
 
-  test.afterEach(async (_fixtures, testInfo) => {
+  test.afterEach(async () => {
+    const testInfo = test.info()
     // The server's stdout/stderr is buffered into `serverLog` and otherwise
     // surfaced only on GATING boot failures. On a FAILED test it is the only
     // record of what the engine actually did (or refused to do) on a CI
@@ -948,7 +917,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
-  test("pi-workspace harness completes exact turns, reload, and visible usage — behaviors 1,6,9,11", async ({ page }) => {
+  test("pi-workspace harness completes exact turns, reload, and visible usage", async ({ page }) => {
     const dir = await makeWorkspace("pi-workspace")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "pi-workspace", dialect: "responses" })
@@ -994,7 +963,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
-  test("local new-worktree session receives its first reply — behaviors 1,6,9,12", async ({ page }) => {
+  test("local new-worktree session receives its first reply", async ({ page }) => {
     scripted?.resetCounts()
     const dir = await makeWorkspace("new-local-worktree")
     await seedOneProject(page, dir)
@@ -1059,7 +1028,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     expect(listed.stdout).toContain(`worktree ${canonicalDirectory}`)
   })
 
-  test("timeline turn picker previews one seeded turn and appears only after 10 — behavior 10", async ({
+  test("timeline turn picker previews one seeded turn and appears only after 10", async ({
     page,
   }, testInfo) => {
     testInfo.setTimeout(600_000)
@@ -1152,7 +1121,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     await demoBeat(page)
   })
 
-  test("claude native SDK harness completes exact turns, reload, and visible usage — behaviors 3,6,8,9,11", async ({
+  test("claude native SDK harness completes exact turns, reload, and visible usage", async ({
     page,
   }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
@@ -1187,10 +1156,9 @@ test.describe("real harness journeys @core @tier-real", () => {
         const dock = await startGoalFromComposer(page, input, entry, `Prove Claude ${entry} Goal Stop`)
 
         await expect(goalStatus(dock, "Active")).toBeVisible()
-        // A native Claude Goal runs inside the provider session, so Claxedo
-        // cannot pause or resume it — but it CAN drop its own record of one,
-        // which `createNativeGoalResource` advertises per session for an
-        // available driver. Delete is therefore the only control on this dock.
+        // A native Claude Goal runs inside the provider session, so Claxedo cannot pause or
+        // resume it — but it can drop its own record of one, which `createNativeGoalResource`
+        // advertises per session for an available driver. Delete is the only control here.
         await expect(dock.getByRole("button", { name: /Pause|Resume/ })).toHaveCount(0)
         await expect(dock.getByRole("button", { name: "Delete", exact: true })).toHaveCount(1)
         if (entry === "slash") {
@@ -1317,7 +1285,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
-  test("codex native SDK harness completes exact turns, reload, and visible usage — behaviors 5,6,8,9,11", async ({
+  test("codex native SDK harness completes exact turns, reload, and visible usage", async ({
     page,
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
@@ -1372,7 +1340,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
-  test("codex pending approval survives session switches without duplicate prompt, rail, or hydration regressions — behavior 13", async ({
+  test("codex pending approval survives session switches without duplicate prompt, rail, or hydration regressions", async ({
     page,
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
@@ -1515,15 +1483,13 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
-  test("cursor harness materializes without silently routing through another provider — behavior 7", async ({
+  test("cursor harness materializes without silently routing through another provider", async ({
     page,
   }) => {
-    // Cursor cannot be redirected at the scripted endpoint (proprietary API, no
-    // base-URL knob — see HARNESS NOTES), so this scenario runs no turn. What it
-    // proves is the invariant-4 half that a scripted turn could never prove
-    // anyway: selecting Cursor either locks in as itself or reports itself
-    // unavailable, and in NEITHER case does anything leak onto a provider this
-    // spec pointed elsewhere.
+    // Cursor cannot be redirected at the scripted endpoint (proprietary API, no base-URL
+    // knob), so this scenario runs no turn. What it proves instead: selecting Cursor either
+    // locks in as itself or reports itself unavailable, and in neither case does anything leak
+    // onto a provider this file pointed elsewhere.
     await runCursorHarnessBoundary(page)
   })
 

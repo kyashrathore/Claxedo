@@ -125,20 +125,20 @@ describe("SessionRef", () => {
     expect(
       localSessionRef({ cwd: "/repo",
         sessionId: "ses_central",
-        harness: { id: "acp:claude", binary: "/tmp/claude-agent-acp" },
+        harness: { kind: "connection", connectionId: "acp:claude", binary: "/tmp/claude-agent-acp" },
       }),
     ).toMatchObject({
-      harness: { id: "acp:claude", binary: "/tmp/claude-agent-acp" },
+      harness: { kind: "connection", connectionId: "acp:claude", binary: "/tmp/claude-agent-acp" },
     })
     expect(
       sessionRefForWorkspaceSession({
         sessionId: "ses_workspace",
         directory: "opaque-directory",
         workspace: { workspaceId: "ws_real", kind: "cloud" },
-        harness: { id: "acp:codex" },
+        harness: { kind: "connection", connectionId: "acp:codex" },
       }),
     ).toMatchObject({
-      harness: { id: "acp:codex" },
+      harness: { kind: "connection", connectionId: "acp:codex" },
     })
     expect(
       localSessionRef({
@@ -179,12 +179,12 @@ describe("SessionRef", () => {
           host: "workspace",
           workspaceId: "ws_real",
           toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud" },
-          harness: { id: "acp:cursor", binary: "/tmp/cursor-agent" },
+          harness: { kind: "connection", connectionId: "acp:cursor", binary: "/tmp/cursor-agent" },
         },
       }),
     ).toMatchObject({
       sessionId: "ses_next",
-      harness: { id: "acp:cursor", binary: "/tmp/cursor-agent" },
+      harness: { kind: "connection", connectionId: "acp:cursor", binary: "/tmp/cursor-agent" },
     })
   })
 

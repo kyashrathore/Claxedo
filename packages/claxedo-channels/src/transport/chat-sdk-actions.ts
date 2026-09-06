@@ -1,5 +1,6 @@
+import { trimToUndefined } from "@claxedo/helpers/string"
 import type { ApprovalDecision } from "../envelope"
-import { record, text } from "../json"
+import { asRecord } from "@claxedo/helpers/guards"
 
 function bool(input: unknown): boolean | undefined {
   return typeof input === "boolean" ? input : undefined
@@ -7,14 +8,14 @@ function bool(input: unknown): boolean | undefined {
 
 function firstText(...input: unknown[]): string | undefined {
   for (const item of input) {
-    const value = text(item)
+    const value = trimToUndefined(item)
     if (value) return value
   }
   return undefined
 }
 
 function nested(input: Record<string, unknown> | undefined, key: string) {
-  return record(input?.[key])
+  return asRecord(input?.[key])
 }
 
 function decisionValue(input: Record<string, unknown>): boolean | undefined {
@@ -88,7 +89,7 @@ export function chatSdkApprovalDecision(
   input: unknown,
   options: { threadKey?: string } = {},
 ): ApprovalDecision | undefined {
-  const row = record(input)
+  const row = asRecord(input)
   if (!row) return undefined
   const nextCallId = callId(row)
   const nextToken = token(row)

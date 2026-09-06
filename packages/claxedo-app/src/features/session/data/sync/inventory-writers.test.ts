@@ -352,6 +352,9 @@ describe("session inventory writers", () => {
 
     const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessionOrder).toEqual(["ses_b"])
+    expect(inventory.workspaceMeta?.["/repo/stale"]).toBeUndefined()
+    expect(inventory.workspaceState["/repo/stale"]).toBeUndefined()
+    expect(inventory.workspaceOrder).toEqual(["/repo/b"])
     expect(inventory.byProject.project_b.map((item) => item.id)).toEqual(["ses_b"])
     expect(inventory.byWorkspace["/repo/b"].total).toBe(7)
     expect(inventory.byWorkspace["/repo/b"].nextCursor).toBe(3)

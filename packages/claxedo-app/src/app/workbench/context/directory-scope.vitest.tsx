@@ -229,10 +229,6 @@ vi.mock("@/platform/sync/keys", () => ({
 }))
 
 vi.mock("@opencode-ai/ui/utils/encode", () => ({
-  base64Encode: (input: string) => input,
-}))
-
-vi.mock("@opencode-ai/ui/utils/encode", () => ({
   base64Decode: (input: string) => input,
   base64Encode: (input: string) => input,
 }))
@@ -907,6 +903,7 @@ describe("DirectoryScope bootstrap gating", () => {
   })
 
   test("keeps a routed local session mounted when its directory cache fails to warm", async () => {
+    state.refreshDirectory.mockRejectedValueOnce(new Error("directory refresh failed"))
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory="/repo/broken"

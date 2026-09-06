@@ -1,13 +1,11 @@
 /**
  * Renderer-only replay of canonical presentation fixtures.
  *
- * These tests inject already-projected message parts, not raw provider traffic.
- * They verify timeline renderers, lifecycle updates, and dock presentation, but
- * do not prove adapter translation, authentication, or external connectivity.
- * Fixture names describe provenance, not current provider capabilities: question
- * and live subagent fixtures exercise generic rendering even when the external
- * OpenCode adapter does not advertise those features. Protocol coverage belongs
- * to the adapter tests in packages/opencode-server-adapter.
+ * These tests inject already-projected message parts, so they cover timeline
+ * renderers, lifecycle updates, and dock presentation — not adapter translation,
+ * auth, or connectivity. A fixture name records where a trace came from, not what
+ * that provider advertises today. Protocol coverage lives in the adapter tests in
+ * packages/opencode-server-adapter.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
@@ -26,28 +24,14 @@ const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtur
 type Envelope = { directory: string; payload: unknown }
 
 /**
- * ACP-family fixtures (claude-acp/codex-acp/cursor-acp — verified via
- * `python3 -c "..." | sort -u` over every `messageID` field in each committed
- * `e2e/fixtures/harness-traces/<harness>.json`) carry a MIX of two message
- * IDs: `msg_assistant_1` (correctly stamped on `message.completed`/
- * `todo.updated`-type envelopes) and the ACP adapter's OWN internally
- * generated id, literally `"message-1"` (on every real `message.part.*`
- * envelope — the translation this spec exists to replay verbatim, so this is
- * NOT something to "fix" at the generator/translation layer). Native-SDK
- * fixtures (claude-sdk/codex-app-server/cursor-sdk) and the hand-authored
- * opencode/pi fixtures use `msg_assistant_1` uniformly and are unaffected.
- * Since the client attaches parts to the assistant row by exact `messageID`
- * match against the row `installMockRuntime`'s `driveTurn` already created
- * during priming (the FIXTURE FILES use `msg_assistant_1` uniformly —
- * `generate-harness-fixtures.ts`'s `identity()` documents that convention —
- * while driveTurn's live row id follows the production `${userMessageID}_r`
- * convention, exposed as `mock.requests.promptBodies[n].assistantID`), a part
- * carrying any OTHER `messageID` orphans it — it is parsed and accepted by
- * the client (confirmed via network trace: 200, correct JSON) but never
- * attaches to any rendered row, so the whole trace is silently invisible.
- * Remapped HERE, in-memory, at load time — never hand-editing the committed
- * fixture JSON (DoD #4's "a script regenerates them; hand-edited fixtures are
- * rejected" governs the FILES, not this in-memory replay adaptation).
+ * Normalizes every `messageID` in a trace onto the primed assistant row id.
+ *
+ * The client attaches a part only when its `messageID` matches the row id, and a
+ * mismatched part is accepted silently and never rendered — so the whole trace goes
+ * invisible. ACP fixtures carry two ids (`msg_assistant_1` on lifecycle envelopes,
+ * the adapter's own `"message-1"` on every `message.part.*`), and the live row id
+ * follows the production `${userMessageID}_r` shape either way. The rewrite happens
+ * in memory: the committed fixtures are script-generated and never hand-edited.
  */
 function remapMessageIds<T>(value: T, canonicalId: string): T {
   if (Array.isArray(value)) return value.map((item) => remapMessageIds(item, canonicalId)) as never
@@ -102,18 +86,10 @@ function sessionUrlPattern(sessionId: string) {
 }
 
 /**
- * Filters `mock.requests.console` down to genuine page-level errors, matching the
- * convention already established by `core-boot-deep-links-home.spec.ts`'s
- * `nonProviderConsole`. This app runs an always-on, session-independent central-relay
- * connection (`src/context/global-sdk.tsx`'s "central" stream, `src/providers/
- * claxedo-events`) that defaults to `http://127.0.0.1:3001` (`src/index.tsx:96`) when
- * no real backend is present — `installMockRuntime`/`seedOneProject` mock only the
- * session-scoped routes on the page's own origin, not this independent background
- * probe, so it legitimately logs "Failed to load resource"/connection-refused noise
- * in every Tier M spec that doesn't run a real backend. That noise is not this
- * spec's concern (behavior 8 only cares whether `session.diff` adds a phantom
- * timeline row); a real rendering exception still surfaces as an uncaught
- * `pageerror:` entry, which this filter does NOT swallow.
+ * Drops the console noise from the always-on central-relay probe. That connection is
+ * session-independent, targets 127.0.0.1:3001, and is outside every same-origin route
+ * mock here, so it logs connection-refused with no backend running. Uncaught
+ * `pageerror:` entries are not filtered.
  */
 function nonBackgroundNoiseConsole(entries: string[]) {
   return entries.filter(
@@ -179,9 +155,7 @@ async function primeHarness(
       childSessions: subagents.children,
       runtimeEventAuthorizeParent: subagents.runtimeEventAuthorizeParent,
     } : {}),
-    // Pin opencode to GPT-5 in the mock catalog. Drafts no longer invent a default
-    // model — primeHarness must pick explicitly before the first send (same convention
-    // as core-first-prompt-local and turn-oracle's ensureComposerModelSelected).
+    // A draft has no default model, so opencode needs a catalog entry to select.
     ...(harness === "opencode" ? { harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] } } : {}),
   })
   await seedOneProject(page, dir)
@@ -190,9 +164,7 @@ async function primeHarness(
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-  // A fresh draft has no implicit agent. Select the configured connection or native
-  // SDK explicitly so this matrix exercises the same structured target contract as
-  // production instead of relying on the removed OpenCode fallback.
+  // A draft has no implicit agent; there is no fallback, so pick one explicitly.
   const agentName = harness === "claude-sdk"
     ? "Claude"
     : harness === "codex-app-server"
@@ -220,16 +192,11 @@ async function primeHarness(
   const assistantId = mock.requests.promptBodies[0]?.assistantID
   if (!assistantId) throw new Error("primeHarness: no prompt dispatch recorded — cannot derive the assistant row id")
 
-  // Wait for the primed turn to SETTLE (driveTurn stamps `time.completed` a tick
-  // after the reply's final part — reply visibility above races it), capture the
-  // settled assistant info row, then RE-OPEN it. Since the settled-message part
-  // guard (opencode-conversation.ts's `settledAssistantMessage`, 69c6977757) a
-  // completed assistant message rejects part events for part ids it does not
-  // already have — so every test here (whether it drives parts through
-  // `replay()` or emits them directly) needs the row deterministically open
-  // before it delivers fixture parts. Waiting first makes the re-open
-  // deterministic (no race against driveTurn's async settle); re-opening here,
-  // once, covers direct-emit tests that never call `replay()`.
+  // A completed assistant message rejects part events for part ids it does not already
+  // have (`settledAssistantMessage`, opencode-conversation.ts), so the row must be open
+  // before any fixture part arrives. Wait for `time.completed` first — reply visibility
+  // races driveTurn's settle — then re-open once, which also covers the tests that emit
+  // parts directly instead of through `replay`.
   let assistantInfo: Record<string, unknown> | undefined
   await expect.poll(async () => {
     const rows = await page.evaluate(async (id) => {
@@ -264,15 +231,9 @@ async function primeHarness(
 }
 
 /**
- * Replays a fixture trace onto the primed assistant row. The row is already
- * SETTLED (`time.completed` — primeHarness waits for it), and settled assistant
- * messages reject part events for unknown part ids (the duplicate-reply race
- * fix in `opencode-conversation.ts`). So the replay brackets the trace with two
- * `message.updated` events: first re-open the row (same info, `time.completed`
- * stripped) so the fixture parts attach, then re-settle it with the original
- * persisted info — deterministic signals only, no wall-clock waits, and the
- * final state (settled turn carrying the fixture parts) matches what these
- * assertions always exercised.
+ * Replays a fixture trace onto the primed assistant row, bracketed by a re-open (the
+ * same info with `time.completed` stripped) and a re-settle with the original info,
+ * because a settled row rejects parts it does not already hold.
  */
 async function replay(
   mock: MockRuntimeHandles,
@@ -398,13 +359,9 @@ function completeSubagent(
   sessionId: string,
   subagentKey: string,
 ) {
-  // `subagent-updated` is a contract-v4 RuntimeEventEnvelope. The real producers
-  // (agent-sdk-runtime's subagent-admission `publish` → RuntimeEventHub) put it on
-  // `/api/wr/runtime-events` ONLY, and the app consumes it only there
-  // (global-sdk provider's runtime loop → applySubagentRuntimeEventEnvelope).
-  // `emitRuntime` is the mock's canonical publisher for that family — `emitFlat`
-  // would land the frame on the compat channels the real runtime never carries
-  // it on, where nothing applies it.
+  // `subagent-updated` travels on `/api/wr/runtime-events` only, both in the runtime
+  // and in the app. `emitRuntime` publishes there; `emitFlat` would put the frame on
+  // compat channels where nothing applies it.
   mock.emitRuntime({
     directory,
     sessionId,
@@ -420,12 +377,9 @@ function completeSubagent(
 const assistantContent = () => SELECTORS.assistantContentVisible
 
 /**
- * Reasoning summaries are an opt-in feed setting
- * (`settings.general.showReasoningSummaries`, default `false` —
- * `src/platform/settings/provider.tsx`); `renderablePart`
- * (`message-timeline.data.ts`) drops every reasoning part while it is off. Flip it on
- * through the real settings UI — the setting is reactive, so already-streamed reasoning
- * parts appear as soon as the dialog closes.
+ * Reasoning summaries are opt-in and off by default, and `renderablePart`
+ * (`message-timeline.data.ts`) drops every reasoning part while the setting is off. The
+ * setting is reactive, so parts that already streamed appear once the dialog closes.
  */
 async function enableReasoningSummaries(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
@@ -440,35 +394,18 @@ async function enableReasoningSummaries(page: Page) {
 }
 
 /**
- * SESSION-TIMELINE REDESIGN (2026-07-18) — three behaviors this file's
- * assertions now account for, verified against
- * the live DOM (`message-timeline.tsx`/`message-timeline.data.ts`):
- *  (a) TURN FOLD — an assistant turn with more than a couple of part groups collapses
- *      its middle groups behind a `[data-component="turn-fold"]` toggle ("Worked for …").
- *      Every tool group beyond the fold threshold is absent from the DOM until the fold
- *      is expanded (this is why a many-tool trace like opencode's renders only its
- *      leading/trailing text until unfolded). `revealTurn()` clicks it open.
- *  (b) WORK GROUPS — consecutive "work" tools (bash/command/shell/local_shell,
- *      edit/edit_file/write/write_file/apply_patch, webfetch, websearch/web_search)
- *      with ≥2 members fold into ONE closed-by-default `[data-component=
- *      "work-group-trigger"]` collapsible (summary e.g. "Edited 1 file · ran 1 command");
- *      a LONE work tool stays a standalone `[data-component="tool-part-wrapper"]` row
- *      whose subtitle is already visible. `revealTurn()` also opens every work- and
- *      context-group trigger so each member's own detail slot is reachable.
- *  (c) SHELL VOCABULARY — the harness-native shell tool names `shell` (Cursor SDK) and
- *      `command` (Codex app-server) are now normalized into the bash renderer
- *      (`shell-submessage-value` = the literal command, title shimmer "Ran"), NOT the
- *      generic MCP fallback they hit before this redesign — so behavior 4 asserts the
- *      command text, not a `basic-tool-tool-title` carrying the raw name.
+ * Opens an assistant turn until every tool's own detail slot is reachable.
+ *
+ * The timeline collapses in two places. A turn with more than a couple of part groups
+ * hides its middle groups behind a `[data-component="turn-fold"]` toggle, and two or
+ * more consecutive work tools (bash/edit/webfetch/websearch families) fold into one
+ * closed `[data-component="work-group-trigger"]` collapsible. A lone work tool stays a
+ * standalone `[data-component="tool-part-wrapper"]` row with its subtitle visible.
  */
 async function revealTurn(page: Page) {
-  // The fold and the tool DOM race the trace replay in BOTH directions: the leading
-  // text anchor renders before the turn folds (so a single up-front fold check can run
-  // too early and skip a fold that mounts a beat later), and late part updates can
-  // re-cross the fold threshold and re-collapse an already-opened fold, unmounting the
-  // group triggers mid-expansion. A one-shot click sequence therefore flakes under CI
-  // load. Converge instead: keep (re)opening the fold until the tool DOM is visible,
-  // and keep (re)opening each group until its Collapsible reports expanded.
+  // The fold races the replay in both directions: it can mount a beat after the leading
+  // text renders, and a late part update can re-cross the threshold and re-collapse it,
+  // unmounting group triggers mid-expansion. Converge instead of clicking once.
   const fold = page.locator('[data-component="turn-fold"] button').first()
   const toolDom = page.locator(
     '[data-component="tool-part-wrapper"], [data-component="work-group-trigger"], [data-component="context-tool-group-trigger"], [data-component="task-tool-card"]',
@@ -484,11 +421,8 @@ async function revealTurn(page: Page) {
       async () => {
         await foldOpen()
         if (!(await toolDom.isVisible().catch(() => false))) return false
-        // Stability re-check: the fold can MOUNT (closed) a beat after the
-        // tools first render — returning on the first visible sample let the
-        // fold collapse the tools right after this helper resolved (the exact
-        // race the header documents). Hold the condition across a short gap,
-        // re-opening a just-mounted fold before the final verdict.
+        // The fold can mount closed just after the tools render, so hold the condition
+        // across a gap and re-open before the verdict.
         await page.waitForTimeout(350)
         await foldOpen()
         return toolDom.isVisible().catch(() => false)
@@ -496,17 +430,14 @@ async function revealTurn(page: Page) {
       { timeout: 30_000, intervals: [250, 500, 1_000] },
     )
     .toBe(true)
-  // Expand every work/context group so each grouped tool's own detail slot is reachable;
-  // a lone work tool has no trigger (its subtitle is already visible).
+  // A lone work tool has no trigger — its subtitle is already visible.
   for (const sel of ['[data-component="work-group-trigger"]', '[data-component="context-tool-group-trigger"]']) {
     const triggers = page.locator(sel)
     for (let i = 0; i < (await triggers.count()); i++) {
       const trigger = triggers.nth(i)
-      // `aria-expanded` lives on the Collapsible's BUTTON, which wraps this inner div —
-      // read/assert it there, not on the div (the div never has the attribute). Read
-      // state BEFORE clicking each round so a just-opened group is never re-clicked
-      // closed, and re-open the fold first in case a re-render collapsed it and hid
-      // this trigger.
+      // `aria-expanded` sits on the Collapsible button wrapping this trigger, never on
+      // the trigger itself. Read the state before each click so an open group is not
+      // toggled shut, and re-open the fold in case a re-render hid the trigger.
       const expander = trigger.locator("xpath=ancestor-or-self::*[@aria-expanded][1]")
       const expanded = () => trigger.isVisible().catch(() => false).then(async (visible) =>
         visible ? (await expander.getAttribute("aria-expanded", { timeout: 1_000 }).catch(() => null)) === "true" : false,
@@ -531,16 +462,15 @@ async function revealTurn(page: Page) {
 }
 
 test.describe("core harness rendering matrix @core", () => {
-  test("renderer-only canonical fixture — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
+  test("renderer-only canonical fixture — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
-    // behavior 1: the injected extra text part renders verbatim (a leading part, shown
-    // even while the rest of this many-tool turn is folded — also the delivery anchor
-    // that proves the fixture trace reached the store before we unfold).
+    // Delivery anchor: a leading text part renders even while the turn is folded, so
+    // its arrival proves the trace reached the store before anything is unfolded.
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
 
     await revealTurn(page)
@@ -548,23 +478,19 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-component="context-tool-group-list"]').first()).toBeVisible({ timeout: 10_000 })
 
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "config.json" }).first()).toBeVisible({ timeout: 45_000 })
-    // list: grouped context-tool items don't carry an individual `data-timeline-part-id`
-    // (only the group's `Collapsible` wrapper carries a PLURAL, comma-joined
-    // `data-timeline-part-ids`) — assert via that instead, now that the group is
-    // expanded above.
+    // A grouped context tool has no `data-timeline-part-id` of its own; only the group
+    // wrapper carries the comma-joined `data-timeline-part-ids`.
     await expect(content.locator('[data-timeline-part-ids*="msg_assistant_1-list"]')).toBeVisible({ timeout: 45_000 })
     await expect(content.locator('[data-slot="basic-tool-tool-arg"]', { hasText: "pattern=**/*.json" })).toBeVisible()
     await expect(content.getByRole("link", { name: "https://example.com/docs" })).toBeVisible()
     await expect(content.getByText("opencode config schema")).toBeVisible()
     await expect(content.locator('[data-slot="message-part-title-filename"]', { hasText: "config.json" })).toBeVisible()
-    // skill (title = literal input.name, untranslated — rendered via
-    // `[data-slot="basic-tool-tool-title"] class="capitalize agent-title"`, so the
-    // rendered text is "Pdf" even though the underlying string is the verbatim lowercase
-    // "pdf" — match case-insensitively, scoped to the tool title slot).
+    // The skill title is `input.name` untranslated, but the slot capitalizes it in CSS,
+    // so the rendered text reads "Pdf" for the lowercase "pdf" — match case-insensitively.
     await expect(content.locator('[data-slot="basic-tool-tool-title"]').filter({ hasText: /pdf/i })).toBeVisible()
   })
 
-  test("renderer-only canonical fixture — apply_patch dedicated renderer, GenericTool fallback, compaction divider — behaviors 3,4,7,16", async ({ page }) => {
+  test("renderer-only canonical fixture — apply_patch dedicated renderer, GenericTool fallback, compaction divider", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -575,21 +501,17 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
     await revealTurn(page)
 
-    // behavior 3/16: opencode's own native "apply_patch" tool reaches the dedicated
-    // apply_patch renderer (single-file layout — filename visible). It is a LONE work
-    // tool here (preceded by the `skill` part, followed by the `compaction` part) so it
-    // stays a standalone tool row rather than folding into a work group.
+    // Native `apply_patch` reaches its dedicated single-file renderer. It sits between
+    // the skill and compaction parts, so it is a lone work tool with no group of its own.
     await expect(content.locator('[data-slot="apply-patch-filename"], [data-slot="message-part-title-filename"]', { hasText: "app.ts" }).first()).toBeVisible({ timeout: 45_000 })
 
-    // behavior 4: a deliberately-unregistered tool name (`custom_mcp_tool`, in none of
-    // the context/work/hidden vocabularies) still falls back to GenericTool — the raw
-    // tool string appears verbatim in the title, and the subtitle is the first matching
-    // literal input field.
+    // An unregistered tool name falls back to GenericTool: the raw name becomes the
+    // title and the first matching input field becomes the subtitle.
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "custom_mcp_tool" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "vector search" })).toBeVisible()
   })
 
-  test("renderer-only canonical fixture — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
+  test("renderer-only canonical fixture — compaction divider renders on the assistant timeline", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -598,13 +520,12 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
     await revealTurn(page)
 
-    // The assistant `compaction` part reaches its dedicated divider renderer
-    // (PART_MAPPING["compaction"] -> MessageDivider) inline in the assistant timeline —
-    // distinct from session-turn.tsx's separate user-message compaction TurnDivider.
+    // The assistant `compaction` part gets its own inline divider, which is a different
+    // renderer from the user-message compaction divider in session-turn.tsx.
     await expect(content.locator('[data-component="compaction-part"] [data-slot="compaction-part-divider"]')).toBeVisible({ timeout: 45_000 })
   })
 
-  test("renderer-only canonical fixture — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
+  test("renderer-only canonical fixture — question tool hidden while pending, visible once answered", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo) // ends with the question part PENDING
@@ -612,9 +533,8 @@ test.describe("core harness rendering matrix @core", () => {
     const content = page.locator(assistantContent())
     const questionText = "Which environment should I target?"
 
-    // Delivery anchor, then fully unfold/expand the turn so the pending-question absence
-    // below is proven by `renderable`'s pending-hide (message-timeline.data.ts) — NOT
-    // merely by the turn fold hiding every tool.
+    // Unfold fully, so the pending question's absence below comes from the renderer
+    // hiding it rather than from the turn fold hiding every tool.
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
     await revealTurn(page)
 
@@ -626,15 +546,14 @@ test.describe("core harness rendering matrix @core", () => {
     const fixture = loadFixtureFile("opencode", assistantId) as { questionAnswered: Envelope }
     mock.emit(fixture.questionAnswered.payload as never, fixture.questionAnswered.directory || dir)
 
-    // The answered question mounts as a new standalone part in the (already unfolded)
-    // turn; revealTurn again in case the added part re-crossed the fold threshold.
+    // The answer mounts as a new part, which can re-cross the fold threshold.
     await revealTurn(page)
     await expect(content.getByText(questionText)).toBeVisible({ timeout: 45_000 })
     await expect(content.locator('[data-component="question-answers"]')).toBeVisible()
     await expect(content.locator('[data-slot="answer-text"]', { hasText: "staging" })).toBeVisible()
   })
 
-  test("renderer-only canonical fixture — todowrite never renders a tool row — behavior 9", async ({ page }) => {
+  test("renderer-only canonical fixture — todowrite never renders a tool row", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"]').count()
@@ -649,7 +568,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect.poll(async () => content.locator('[data-component="tool-part-wrapper"]').count(), { timeout: 20_000 }).toBe(before)
   })
 
-  test("renderer-only canonical fixture — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
+  test("renderer-only canonical fixture — tool lifecycle pending -> running -> completed -> error", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
     const content = page.locator(assistantContent())
@@ -666,18 +585,15 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("bun test")).toBeVisible({ timeout: 30_000 })
 
     mock.emit(fixture.lifecycle.error.payload as never, fixture.lifecycle.error.directory || dir)
-    // error card replaces the tool body (`ToolErrorCard`,
-    // packages/session-ui/src/components/tool-error-card.tsx) — closed by
-    // default (`defaultOpen ?? false`), so its `state.error` detail text only
-    // reaches the DOM/becomes visible once its own `Collapsible.Trigger` is
-    // expanded.
+    // The error card replaces the tool body and is closed by default, so `state.error`
+    // reaches the DOM only after its own trigger is expanded.
     const errorTrigger = content.locator('[data-component="tool-trigger"]').filter({ has: page.locator('[data-component="tool-error-card-icon"]') }).last()
     await expect(errorTrigger).toBeVisible({ timeout: 30_000 })
     await errorTrigger.click()
     await expect(content.getByText("exit code 1")).toBeVisible({ timeout: 30_000 })
   })
 
-  test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
+  test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"], [data-component="text-part"], [data-component="reasoning-part"]').count()
@@ -692,7 +608,7 @@ test.describe("core harness rendering matrix @core", () => {
     expect(nonBackgroundNoiseConsole(mock.requests.console.filter((line) => /error/i.test(line)))).toEqual([])
   })
 
-  test("pi — shares the native rendering path (text renders) — behavior 1", async ({ page }) => {
+  test("pi — shares the native rendering path (text renders)", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"pi")
     const trace = loadTrace("pi", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -701,7 +617,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
   })
 
-  test("pi — one dedicated tool renderer (config.json subtitle) — behavior 3", async ({ page }) => {
+  test("pi — one dedicated tool renderer (config.json subtitle)", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"pi")
     const trace = loadTrace("pi", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -716,9 +632,8 @@ test.describe("core harness rendering matrix @core", () => {
     ).toBeVisible({ timeout: 45_000 })
   })
 
-  test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, unbound Task omitted — behaviors 1,3,9,15,16", async ({ page }) => {
-    // The longest trace in the matrix; on CI's 2-core runners the replay alone
-    // crowds the 60s default and the run dies mid-revealTurn. slow() = 3x.
+  test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, unbound Task omitted", async ({ page }) => {
+    // The longest trace here; on a 2-core runner the replay alone crowds the 60s default.
     test.slow()
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-acp")
     const trace = loadTrace("claude-acp", assistantId)
@@ -726,26 +641,19 @@ test.describe("core harness rendering matrix @core", () => {
 
     const content = page.locator(assistantContent())
 
-    // behavior 1: delta ACCUMULATION — the fixture's two deltas ('Building the ' +
-    // 'feature now.') concatenate to the final text once, with no re-appended prefix.
-    // NOT snapshot dedup: the adapter already converted the raw cumulative snapshots
-    // ("Building the " / "Building the feature now.",
-    // generate-harness-fixtures.ts:155,160) into these incremental deltas upstream — see
-    // the FIXTURE PRE-BAKING note in the SPEC block.
-    // (Leading text part, shown even while the rest of the turn is folded — the
-    // delivery anchor before we unfold.)
+    // The fixture's two deltas concatenate once, with no re-appended prefix. The
+    // adapter turned the provider's cumulative snapshots into deltas before the trace
+    // was recorded, so this checks accumulation, not snapshot dedup. Also the delivery
+    // anchor: leading text renders while the turn is still folded.
     await expect(content.getByText("Building the feature now.", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("Building the Building the", { exact: false })).toHaveCount(0)
 
     await revealTurn(page)
 
-    // behavior 16: the fixture's `part.tool: "bash"` (the ACP registry already mapped
-    // Claude's raw "Terminal" title upstream — the raw string is NOT in the fixture, see
-    // FIXTURE PRE-BAKING) dispatches to the bash renderer. A LONE work tool (between the
-    // text and the read), so it stays a standalone row whose command subtitle is visible.
-    // Converged, not asserted once — same rationale and pattern as the cursor-acp
-    // test's lone-row poll below: a late re-render can re-collapse the fold AFTER
-    // revealTurn returns, hiding this row until re-revealed.
+    // The ACP registry normalized Claude's raw "Terminal" title to `bash` before the
+    // trace was recorded, so this dispatches to the bash renderer. It is a lone work
+    // tool, hence a standalone row. Re-reveal inside the poll: a late re-render can
+    // re-collapse the fold after `revealTurn` returns and hide the row again.
     await expect
       .poll(
         async () => {
@@ -758,88 +666,70 @@ test.describe("core harness rendering matrix @core", () => {
       )
       .toBe(true)
 
-    // behavior 3: the fixture's `part.tool: "read"` (raw "Read File" already normalized
-    // upstream) hits the dedicated read renderer. Even a SINGLE context-group tool renders inside
-    // the closed-by-default `ContextToolGroup` collapsible (opened by `revealTurn`).
+    // Raw "Read File" was normalized to `read` upstream, so this reaches the dedicated
+    // read renderer.
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "index.ts" })).toBeVisible()
 
-    // behavior 15: fixture translation alone carries no authoritative host spawn edge,
-    // so it renders no subagent surface. The U13 matrix below supplies the durable host
-    // association and proves the open path.
+    // A translated trace carries no host spawn edge, so no subagent surface renders. The
+    // subagents matrix below supplies that association.
     await expect(content.getByText("Review the auth module")).toHaveCount(0)
 
-    // behavior 9: "Update TODOs" never became a tool row.
+    // "Update TODOs" never becomes a tool row.
     await expect(content.getByText("Ship the fix")).toHaveCount(0)
   })
 
-  test("codex-acp — Permission fake tool routes to the dock (not a tool row); apply_patch resolves to edit; bash — behaviors 3,12,16", async ({ page }) => {
+  test("codex-acp — Permission fake tool routes to the dock (not a tool row); apply_patch resolves to edit; bash", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"codex-acp")
     const trace = loadTrace("codex-acp", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
-    // behavior 12: the permission dock renders, driven by permission.asked.
+    // `permission.asked` drives the dock.
     await expect(page.locator('[data-slot="permission-header-title"]')).toBeVisible({ timeout: 45_000 })
     const content = page.locator(assistantContent())
 
-    // SESSION-TIMELINE REDESIGN: the apply_patch->edit and the bash are two consecutive
-    // "work" tools, so they fold into ONE closed-by-default work group (summary "Edited 1
-    // file · ran 1 command"); open it so each member's own row is reachable.
+    // apply_patch->edit and bash are consecutive work tools, so they share one group.
     await expect(content.locator('[data-component="work-group-trigger"]')).toBeVisible({ timeout: 45_000 })
     await revealTurn(page)
 
     await expect(content.locator('[data-slot="message-part-title-filename"]', { hasText: "app.ts" })).toBeVisible()
     await expect(page.locator('[data-component="apply-patch-tool"]')).toHaveCount(0)
 
-    // behavior 3: bash via kind-only classification.
+    // bash is classified by kind alone.
     await expect(content.getByText("git status")).toBeVisible()
 
-    // behavior 12 (exact proof, not vacuous): exactly the 2 REAL tool parts (the
-    // apply_patch->edit and the bash, now the two members of the opened work group) ever
-    // became tool-part-wrapper rows — the Permission tool_call never added a 3rd.
+    // Only the two real tools become rows; the Permission tool_call never adds a third.
     await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(2)
   })
 
-  test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task omitted, todowrite hidden — behaviors 9,13,14,15,16", async ({ page }) => {
+  test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task omitted, todowrite hidden", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"cursor-acp")
     const trace = loadTrace("cursor-acp", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
-    // behavior 13: the fixture's incremental deltas ('A' then '1' — the adapter's
-    // post-dedup output for the raw "A"/"A1" snapshots at
-    // generate-harness-fixtures.ts:317-318) accumulate to "A1" exactly once, no "AA1".
-    // The dedup itself happened upstream; see the FIXTURE PRE-BAKING note.
-    // (Leading text — the delivery anchor before we unfold.)
+    // The adapter deduped Cursor's cumulative snapshots into deltas before the trace was
+    // recorded, so the deltas here must accumulate to "A1" once, not "AA1".
     await expect(content.getByText("A1", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("AA1")).toHaveCount(0)
 
-    // behavior 14: the "Error: RetriableError: WritableIterable is closed" transport tail.
-    // The DOM assertion alone is VACUOUS — `grep -c WritableIterable
-    // e2e/fixtures/harness-traces/cursor-acp.json` is 0, so the string is not in the
-    // replayed trace and `toHaveCount(0)` would pass on a blank page. The swallow happens
-    // UPSTREAM (`isCursorWritableIterableTail`, agent-event-runtime
-    // harnesses/acp/translate-session-update.ts:152,216-223), and the generator DOES feed
-    // the raw chunk through the real adapter (generate-harness-fixtures.ts:324) — so the
-    // discriminating proof available to a fixture replay is that the TRANSLATED trace
-    // carries no trace of the sentinel. Fixtures are regenerated by script, so an adapter
-    // regression that stopped swallowing it would fail HERE at the next regeneration.
+    // The generator feeds Cursor's "WritableIterable is closed" transport tail through
+    // the real adapter, which swallows it. Asserting on the DOM alone would pass on a
+    // blank page, so the discriminating check is that the translated trace carries no
+    // sentinel — which fails here the next time fixtures are regenerated against an
+    // adapter that stopped swallowing it.
     expect(JSON.stringify(trace), "the translated cursor-acp trace must not carry the swallowed transport tail").not.toContain(
       "WritableIterable",
     )
-    // Corollary (kept, but not the proof): nothing renders it either.
+    // Corollary, not the proof: nothing renders it either.
     await expect(page.getByText("WritableIterable is closed")).toHaveCount(0)
 
     await revealTurn(page)
 
-    // behavior 16: the fixture's `part.tool: "bash"` (Cursor's raw "Terminal" title was
-    // normalized upstream — see FIXTURE PRE-BAKING) hits the bash renderer. A LONE work
-    // tool -> standalone row, command visible. Converged, not asserted once:
-    // revealTurn's own header documents that late part updates can re-collapse the
-    // fold AFTER the converge returns, and this lone-row assertion sits exactly in
-    // that window — it flaked ~1/3 under load (CI shard 4, and locally under
-    // --repeat-each). Re-converge until the row is visible, same pattern as the
-    // helper itself.
+    // Cursor's raw "Terminal" title was normalized to `bash` upstream. It is a lone work
+    // tool, hence a standalone row. Re-reveal inside the poll: a late part update can
+    // re-collapse the fold after `revealTurn` returns, and this assertion sits in that
+    // window.
     await expect
       .poll(
         async () => {
@@ -852,29 +742,29 @@ test.describe("core harness rendering matrix @core", () => {
       )
       .toBe(true)
 
-    // behavior 15: Cursor ACP exposes no authoritative host association, so it renders
-    // no subagent surface instead of manufacturing a transcript identity from tool state.
+    // Cursor ACP exposes no host association, so no subagent surface renders rather than
+    // a transcript identity invented from tool state.
     await expect(content.getByText("Investigate flaky test")).toHaveCount(0)
 
-    // behavior 9: "Update TODOs" never became a tool row.
+    // "Update TODOs" never becomes a tool row.
     await expect(content.getByText("Fix flake")).toHaveCount(0)
   })
 
-  test("claude-sdk (native) — raw \"Grep\" falls back to GenericTool, TodoWrite hidden — behaviors 4,9", async ({ page }) => {
+  test("claude-sdk (native) — raw \"Grep\" falls back to GenericTool, TodoWrite hidden", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-sdk")
     const content = page.locator(assistantContent())
     const trace = loadTrace("claude-sdk", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
-    // behavior 4: raw native "Grep" (capitalized) does not match the "grep"
-    // ToolRegistry key -> GenericTool fallback, raw name verbatim in the title.
+    // Native "Grep" does not match the lowercase registry key, so it falls back to
+    // GenericTool with the raw name as the title.
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "Grep" })).toBeVisible({ timeout: 45_000 })
 
-    // behavior 9: TodoWrite intercepted before ever becoming a tool-start.
+    // TodoWrite is intercepted before it can become a tool-start.
     await expect(content.getByText("Ship it", { exact: true })).toHaveCount(0)
   })
 
-  test("claude-sdk (native) — reasoning part renders, diagnostics add zero extra rows — behaviors 2,17", async ({ page }) => {
+  test("claude-sdk (native) — reasoning part renders, diagnostics add zero extra rows", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-sdk")
     const trace = loadTrace("claude-sdk", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -884,16 +774,13 @@ test.describe("core harness rendering matrix @core", () => {
     const content = page.locator(assistantContent())
     await revealTurn(page)
 
-    // behavior 2: the reasoning part (message.part.updated text:"" + message.part.delta)
-    // reaches its dedicated renderer once reasoning summaries are on. It mounts as a
-    // collapsed "Thought" accordion — expanding it reveals the delta-accumulated text.
+    // With summaries on, the reasoning part mounts as a collapsed "Thought" accordion;
+    // its delta-accumulated text is behind the expander.
     const reasoning = content.locator('[data-component="reasoning-part"]')
     await expect(reasoning).toBeVisible({ timeout: 45_000 })
-    // Expand until the detail is actually revealed: a single click can land
-    // mid-mount while the delta text is still streaming and get swallowed by
-    // a re-render, leaving the accordion collapsed for the whole wait
-    // (run 369). Visible text short-circuits, so an open accordion is never
-    // toggled shut.
+    // A single click can land mid-mount while the delta is still streaming and be
+    // swallowed by a re-render. Visible text short-circuits, so an open accordion is
+    // never toggled shut.
     await expect(async () => {
       const detail = content.getByText("Let me check the grep results.")
       if (await detail.isVisible()) return
@@ -901,70 +788,58 @@ test.describe("core harness rendering matrix @core", () => {
       await expect(detail).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 45_000 })
 
-    // behavior 17: the trailing runtime.diagnostic envelope (a claude_sdk.unmapped_event
-    // diagnostic, not a Part) adds no timeline row of its own — the assistant turn's
-    // rendered content is exactly the reasoning part, the text part, and the one Grep
-    // tool row, with no phantom diagnostic/error row.
+    // The trailing `runtime.diagnostic` envelope is not a Part, so the turn holds only
+    // the reasoning part, the text, and the one Grep row.
     await expect(content.getByText("Searching the repo.")).toBeVisible()
     await expect(content.locator('[data-component="reasoning-part"]')).toHaveCount(1)
     await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(1)
     await expect(content.locator('[data-component="tool-error-card"]')).toHaveCount(0)
   })
 
-  test("codex-app-server (native) — proposed plan renders as plain text, \"command\" normalizes to the bash renderer — behaviors 4,11,17", async ({ page }) => {
+  test("codex-app-server (native) — proposed plan renders as plain text, \"command\" normalizes to the bash renderer", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"codex-app-server")
     const trace = loadTrace("codex-app-server", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
-    // behavior 11: the plan stream is ordinary paced text — no plan-specific
-    // component/dock exists, so it shows up as literal markdown text.
+    // No plan-specific component exists, so a plan stream is ordinary markdown text.
     await expect(content.getByText("inspect tests")).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("run suite")).toBeVisible()
 
-    // behavior 4 (SESSION-TIMELINE REDESIGN): the harness-native `command` tool name is
-    // now normalized INTO the bash/shell renderer (the literal command shows in
-    // `shell-submessage-value`; the title shimmer reads "Ran"), NOT the generic MCP
-    // fallback it hit before this redesign — so no `basic-tool-tool-title` carries the
-    // raw "command" string. A lone work tool, so it stays a standalone visible row.
+    // The native `command` tool name normalizes into the shell renderer, so the literal
+    // command lands in `shell-submessage-value` and no title carries the raw name.
     await expect(content.locator('[data-slot="shell-submessage-value"]', { hasText: "git status" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "command" })).toHaveCount(0)
   })
 
-  test("cursor-sdk (native) — assistant snapshot dedup, \"shell\" normalizes to the bash renderer, updateTodos hidden — behaviors 1,4,9", async ({ page }) => {
+  test("cursor-sdk (native) — assistant snapshot dedup, \"shell\" normalizes to the bash renderer, updateTodos hidden", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"cursor-sdk")
     const trace = loadTrace("cursor-sdk", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
-    // behavior 1: the fixture's deltas 'Hel' + 'lo there' (the adapter's post-dedup
-    // output for the raw "Hel"/"Hello there" snapshots, generate-harness-fixtures.ts:
-    // 350-351) accumulate to "Hello there" once, no "HelHello" — see FIXTURE PRE-BAKING.
+    // The adapter deduped Cursor's cumulative snapshots into deltas before the trace was
+    // recorded, so the deltas here must accumulate to "Hello there" once, not "HelHello".
     await expect(content.getByText("Hello there", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("HelHello")).toHaveCount(0)
 
-    // behavior 4 (SESSION-TIMELINE REDESIGN): the harness-native `shell` tool name is now
-    // normalized INTO the bash/shell renderer (literal command in `shell-submessage-value`,
-    // title shimmer "Ran"), NOT the generic MCP fallback it hit before — so no
-    // `basic-tool-tool-title` carries the raw "shell" string. A lone work tool -> a
-    // standalone visible row.
+    // The native `shell` tool name normalizes into the shell renderer, so the literal
+    // command lands in `shell-submessage-value` and no title carries the raw name.
     await expect(content.locator('[data-slot="shell-submessage-value"]', { hasText: "bun test" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "shell" })).toHaveCount(0)
 
-    // behavior 9: updateTodos intercepted, never a tool row.
+    // updateTodos is intercepted and never becomes a tool row.
     await expect(content.getByText("Ship adapter")).toHaveCount(0)
   })
 
-  // U13 closes the cross-harness subagent loop at the translated runtime/UI
-  // boundary. Adapter-level suites prove how each provider discovers the row;
-  // these scenarios deliberately start from the durable host row plus canonical
-  // `subagent-updated` event that every adapter feeds to the app. The association
-  // is the explicit spawn edge (`toolCallId`), never tool metadata, session titles,
-  // provider ids, or transcript refs.
+  // These scenarios start from the durable host row plus the `subagent-updated` event
+  // every adapter feeds the app; how a provider discovers the row belongs to the adapter
+  // suites. Parent and child are associated by the spawn edge (`toolCallId`) alone —
+  // never by tool metadata, session title, provider id, or transcript ref.
   for (const input of subagentHarnessCases) {
-    test(`subagents — ${input.name} ${input.openable ? "opens its child transcript" : "is explicitly unavailable"} — behavior 15`, async ({ page }) => {
+    test(`subagents — ${input.name} ${input.openable ? "opens its child transcript" : "is explicitly unavailable"}`, async ({ page }) => {
       test.slow()
       const scenario = subagentScenario(input)
       const primed = await primeHarness(page, input.harness, scenario.fixture)
@@ -1012,7 +887,7 @@ test.describe("core harness rendering matrix @core", () => {
     })
   }
 
-  test("subagents — narrow child surface is read-only and returns focus to its spawn card — behavior 15", async ({ page }) => {
+  test("subagents — narrow child surface is read-only and returns focus to its spawn card", async ({ page }) => {
     test.slow()
     await page.setViewportSize({ width: 700, height: 900 })
     const input = subagentHarnessCases.find((item) => item.name === "Canonical live transcript fixture")!
@@ -1050,13 +925,13 @@ test.describe("core harness rendering matrix @core", () => {
     await expectAssistantReplyVisible(page, "ack 1: matrix probe opencode")
   })
 
-  test("subagents — bare Pi capability emits no synthetic task card — behavior 15", async ({ page }) => {
+  test("subagents — bare Pi capability emits no synthetic task card", async ({ page }) => {
     const { mock } = await primeHarness(page, "pi")
     await expect(page.locator('[data-component="task-tool-card"]')).toHaveCount(0)
     expect(mock.requests.badResponses).toEqual([])
   })
 
-  test("subagents — unauthorized parent runtime stream is rejected before subscription — behavior 15", async ({ page }) => {
+  test("subagents — unauthorized parent runtime stream is rejected before subscription", async ({ page }) => {
     await primeHarness(page, "opencode", {
       rows: [],
       runtimeEventAuthorizeParent: (parentSessionId) => parentSessionId !== "parent-denied",
@@ -1068,7 +943,7 @@ test.describe("core harness rendering matrix @core", () => {
     expect(response).toEqual({ status: 403, body: { error: "Forbidden" } })
   })
 
-  test("assistant file-type parts (image/audio/resource-link) render — behavior 6", async ({ page }) => {
+  test("assistant file-type parts (image/audio/resource-link) render", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const sessionID = "ses_harness_matrix_opencode"
     const filePart = (id: string, mime: string, url: string, filename: string, source?: unknown) =>
@@ -1084,7 +959,7 @@ test.describe("core harness rendering matrix @core", () => {
         dir,
       )
 
-    // 1x1 transparent PNG (image → inline + preview-on-click)
+    // 1x1 transparent PNG
     filePart(
       "msg_assistant_1-file-image",
       "image/png",
@@ -1097,7 +972,7 @@ test.describe("core harness rendering matrix @core", () => {
       "data:audio/mpeg;base64,SUQzAAAAAAAA",
       "clip.mp3",
     )
-    // MCP resource link (neither image nor audio → link row)
+    // MCP resource link — neither image nor audio
     filePart(
       "msg_assistant_1-file-resource",
       "text/html",

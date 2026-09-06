@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+
+const clients = new Set<QueryClient>()
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
@@ -77,12 +79,15 @@ import { UsageDashboard } from "./usage-dashboard"
 
 afterEach(() => {
   cleanup()
+  for (const client of clients) client.clear()
+  clients.clear()
   mocks.fetchUnifiedUsage.mockClear()
 })
 
 describe("UsageDashboard", () => {
   test("defaults to Total local usage, 7 days, and Tokens; compact switchers select one detail surface", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
     render(() => (
       <QueryClientProvider client={client}>
         <UsageDashboard />
@@ -118,22 +123,31 @@ describe("UsageDashboard", () => {
 
   test("sends a distinct nonce for a manual refresh", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
     render(() => (
       <QueryClientProvider client={client}>
         <UsageDashboard />
       </QueryClientProvider>
     ))
     await screen.findByRole("heading", { name: "By provider" })
-    fireEvent.click(screen.getByRole("button", { name: "Refresh usage" }))
-    await waitFor(() =>
-      expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => (request.refreshNonce ?? 0) > 0)).toBe(true),
-    )
-    const refreshed = mocks.fetchUnifiedUsage.mock.calls.find(([request]) => (request.refreshNonce ?? 0) > 0)?.[0]
-    expect(refreshed?.refreshNonce).not.toBe(0)
+    const time = vi.spyOn(Date, "now").mockReturnValue(100_000)
+    try {
+      const refresh = screen.getByRole("button", { name: "Refresh usage" })
+      await waitFor(() => expect(refresh).toBeEnabled())
+      fireEvent.click(refresh)
+      await waitFor(() => expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.refreshNonce === 100_000)).toBe(true))
+      await waitFor(() => expect(refresh).toBeEnabled())
+      time.mockReturnValue(100_001)
+      fireEvent.click(refresh)
+      await waitFor(() => expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.refreshNonce === 100_001)).toBe(true))
+    } finally {
+      time.mockRestore()
+    }
   })
 
   test("requests the selected sort metric from the first breakdown page", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
     render(() => (
       <QueryClientProvider client={client}>
         <UsageDashboard />
@@ -164,6 +178,7 @@ describe("UsageDashboard", () => {
     )
     try {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
       render(() => (
         <QueryClientProvider client={client}>
           <UsageDashboard />
@@ -183,6 +198,7 @@ describe("UsageDashboard", () => {
   test("shows an unavailable state instead of zero-valued usage after an initial failure", async () => {
     mocks.fetchUnifiedUsage.mockRejectedValueOnce(new Error("scanner offline"))
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
     render(() => (
       <QueryClientProvider client={client}>
         <UsageDashboard />

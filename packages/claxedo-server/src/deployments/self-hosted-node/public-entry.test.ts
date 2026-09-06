@@ -5,8 +5,8 @@ import path from "node:path"
 /**
  * What the package hands out.
  *
- * Unit 7's rule is that a deployment cannot reach a composition that skipped
- * its posture check. `startServer` composes without one — it is the inner call
+ * The rule is that a deployment cannot reach a composition that skipped its
+ * posture check. `startServer` composes without one — it is the inner call
  * `startSelfHostedServer` makes after the gate passes — so re-exporting it
  * would put an ungated path on the public surface, and a future consumer would
  * reach for the shorter name.
@@ -32,9 +32,8 @@ describe("the package's public entry", () => {
   })
 
   test("offers no `createApp`, under any spelling", () => {
-    // The old public name. The plan requires removal with no forwarding
-    // export, so a deployment cannot silently keep running the mixed
-    // composition.
+    // The old public name; no forwarding export, so nothing can keep booting
+    // the mixed composition under it.
     expect(index).not.toMatch(/\bcreateApp\b/)
   })
 

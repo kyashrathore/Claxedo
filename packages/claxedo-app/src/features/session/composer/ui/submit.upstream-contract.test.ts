@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 
 const {
   createSubmit,
@@ -30,7 +30,7 @@ afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("upstream contract", () => {
   test("keeps reading the latest worktree accessor value per submit", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     let selected = "/repo/worktree-a"
     state.syncProject = {
       id: "project-1",
@@ -61,7 +61,7 @@ describe("upstream contract", () => {
   })
 
   test("keeps applying auto-accept to newly created sessions", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const submit = createSubmit({
       autoAccept: () => true,
@@ -75,7 +75,7 @@ describe("upstream contract", () => {
   })
 
   test("keeps the selected variant on optimistic prompts", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
 
     const submit = createSubmit({
       info: () => ({ id: "session-1" }),
@@ -92,7 +92,7 @@ describe("upstream contract", () => {
   })
 
   test("existing follow-up submits keep the persisted session config after reload", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     state.localCurrentModel = { id: "stale-model", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
@@ -129,7 +129,7 @@ describe("upstream contract", () => {
   })
 
   test("existing connection-backed follow-up keeps its authoritative config", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = { id: "big-pickle", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
@@ -167,7 +167,7 @@ describe("upstream contract", () => {
   })
 
   test("existing workspace-runtime follow-up uses cached session config when info config is not hydrated", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
     state.localCurrentModel = { id: "big-pickle", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
@@ -202,12 +202,12 @@ describe("upstream contract", () => {
       agent: "build",
       model: { providerID: "acp:codex", modelID: "gpt-5.5" },
     })
-    expect(runtimeCalls.filter((call) => call.input.includes("/config") && call.method === "PATCH")).toEqual([])
+    expect(runtimeCalls.filter((call) => call.input.includes("/config"))).toEqual([])
     expect(harnessSetCalls).toEqual([])
   })
 
   test("the authoritative session config wins over stale session-list model metadata", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = true
     state.localSessionConfig = {
       harness: { id: "claude", access: "native" },
@@ -238,10 +238,18 @@ describe("upstream contract", () => {
   })
 
   test("keeps upstream ordering by adding the optimistic prompt only after session creation", async () => {
-    state.demoMode = false
+    state.runtimeSessionUrl = "http://runtime.example.com"
+    let resolveClaim!: (session: { id: string }) => void
+    state.harnessClaimSession = new Promise((resolve) => { resolveClaim = resolve })
     const submit = createSubmit()
 
-    await submit.handleSubmit(submitEvent())
+    const submitting = submit.handleSubmit(submitEvent())
+    await waitForSubmitEffect(() => harnessClaimCalls.length === 1)
+    expect(harnessClaimCalls).toHaveLength(1)
+    expect(optimisticAdds).toEqual([])
+
+    resolveClaim({ id: "session-1" })
+    await submitting
     await settleSubmitEffects()
 
     expect(calls.create).toBe(0)

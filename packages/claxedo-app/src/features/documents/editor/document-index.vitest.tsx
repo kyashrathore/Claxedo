@@ -21,7 +21,10 @@ const events = vi.hoisted(() => ({
   unsubscribes: [] as Array<{ calls: number }>,
 }))
 
-vi.mock("../data/documents-api", () => ({ documentsApi: api }))
+vi.mock("../data/documents-api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../data/documents-api")>(),
+  documentsApi: api,
+}))
 vi.mock("../app-ports", () => ({ claxedoEventsPort: () => () => events }))
 
 import { PageIndex } from "./document-index"
@@ -273,8 +276,8 @@ describe("PageIndex", () => {
   })
 })
 
-// The standalone index used to send one query for `projects[0]` and present that
-// project's documents as if they were every project's.
+// "all" scope fans out one query per project rather than a single query for
+// `projects[0]` presented as if it covered every project.
 describe("PageIndex project grouping", () => {
   const projects = [
     { id: "project_1", worktree: "/code/alpha", workspaceId: "workspace_1" },
@@ -335,10 +338,8 @@ describe("PageIndex project grouping", () => {
 })
 
 /**
- * Status used to be a per-row control that opened onto the server's allowed
- * transitions. It was removed — it read as a redundant tag on every card — and
- * the vocabulary `listStatuses` returns now surfaces in one place only: the
- * Status filter above the list. These tests follow it there, because nothing
+ * The vocabulary `listStatuses` returns surfaces in one place only: the
+ * Status filter above the list. These tests follow it there because nothing
  * else covers that fetch reaching the UI at all.
  */
 describe("PageIndex status vocabulary", () => {

@@ -1,10 +1,8 @@
+import { bearerToken } from "@claxedo/helpers/string"
 import { runtimeEnvText } from "../env"
 import { rec } from "../json-value"
-export function bearerToken(header: string | null | undefined): string | undefined {
-  if (!header) return undefined
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
-  return match?.[1]?.trim() || undefined
-}
+
+export { bearerToken }
 
 export function errorBody(code: string, message: string, details?: Record<string, unknown>) {
   return {

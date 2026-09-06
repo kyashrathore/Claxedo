@@ -9,7 +9,7 @@ relay or runtime measurements to Electron.
 ## Install and verify
 
 From the repository root, install with `bun install --frozen-lockfile` and build the
-workspace dependencies with `bun run build:claxedo-runtime-deps`. This shared build
+workspace dependencies with `bun run build:packages`. This shared build
 recipe prepares the complete diagnostics lane in both GitHub and Crabbox.
 
 This nested harness has its own manifest and lockfile; the root workspace install does

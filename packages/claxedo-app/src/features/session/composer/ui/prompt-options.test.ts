@@ -89,7 +89,10 @@ describe("prompt popover controller", () => {
       commandOptions: [{ id: "session.help", title: "Help", slash: "help" }],
     })
 
-    expect(commands.filter((command) => command.trigger === "help")).toHaveLength(2)
+    expect(commands.filter((command) => command.trigger === "help").map((command) => ({ id: command.id, type: command.type }))).toEqual([
+      { id: "custom.help", type: "custom" },
+      { id: "session.help", type: "builtin" },
+    ])
   })
 
   test("builds document picker options from content-free index metadata", () => {

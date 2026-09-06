@@ -49,16 +49,8 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit) {
   throw new Error(`unexpected request: ${request.method} ${request.url}`)
 }
 
-vi.mock("@claxedo/app", () => ({
-  usePlatform: () => ({ fetch: fakeFetch }),
-}))
-
 vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ fetch: fakeFetch }),
-}))
-
-vi.mock("@/app/providers/global-sdk/provider", () => ({
-  useGlobalSDK: () => ({ url: "http://127.0.0.1:3001" }),
 }))
 
 vi.mock("@/features/settings/app-ports", () => ({
@@ -99,10 +91,10 @@ describe("NetworkPolicySettings role gate", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Add" })).not.toBeDisabled())
     fireEvent.click(screen.getByRole("button", { name: "Add" }))
 
-    await waitFor(() => expect(calls.some((call) =>
-      call.method === "POST" &&
-      new URL(call.url).pathname === "/api/claxedo/network-policy" &&
-      (call.body as { workspace_id?: string } | undefined)?.workspace_id === "ws_1"
-    )).toBe(true))
+    await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toEqual([{
+      method: "POST",
+      url: "http://127.0.0.1:3001/api/claxedo/network-policy",
+      body: { workspace_id: "ws_1", target: "api2.example.com", kind: "host" },
+    }]))
   })
 })

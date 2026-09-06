@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test"
 import { setupResizeHandlers } from "./resize-handlers"
+import { createParserIdleGate, wrapWrite } from "../parser-idle-gate"
+import { TERMINAL_FIT_EVENT as FIT_EVENT } from "../fit-event"
+import { SETTLE_MS } from "../config"
 import type { TerminalRendererRef } from "./renderer"
 import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
@@ -108,13 +111,19 @@ function makeContainer(clientWidth = 100, clientHeight = 40) {
   return el
 }
 
-type FakeXterm = XTerm & { refresh: ReturnType<typeof vi.fn>; options: { fontSize: number } }
+type FakeXterm = XTerm & { refresh: ReturnType<typeof vi.fn>; options: { fontSize: number }; fontSizeWrites: number[] }
 
 function makeXterm(rendererReady: boolean, cols = 80, rows = 24): FakeXterm {
+  let fontSize = 14
+  const fontSizeWrites: number[] = []
   return {
     cols,
     rows,
-    options: { fontSize: 14 },
+    options: {
+      get fontSize() { return fontSize },
+      set fontSize(value: number) { fontSizeWrites.push(value); fontSize = value },
+    },
+    fontSizeWrites,
     refresh: vi.fn(),
     write: vi.fn(),
     buffer: { active: { type: "normal" } },
@@ -142,6 +151,7 @@ function makeRenderer(): TerminalRendererRef & { current: { clearTextureAtlas: R
 beforeEach(installFakes)
 afterEach(() => {
   restoreFakes()
+  delete document.documentElement.dataset.terminalResizeSuspended
   document.body.innerHTML = ""
 })
 
@@ -174,6 +184,7 @@ describe("setupResizeHandlers — ResizeObserver + fontSize nudge", () => {
     clearSpy.mockClear()
     fireResize(100, 40)
     expect(fitSpy).toHaveBeenCalledTimes(1)
+    expect(xterm.fontSizeWrites).toEqual([14.001, 14])
     expect(clearSpy).toHaveBeenCalledTimes(1)
     expect(xterm.refresh).toHaveBeenCalled()
 
@@ -263,5 +274,87 @@ describe("setupResizeHandlers — cleanup", () => {
     expect(disconnectSpy).toHaveBeenCalledTimes(1)
     // The mount (50/250ms) and retry (200ms) timers are cleared on cleanup.
     expect(timers.some((t) => t.ms === 50 || t.ms === 250 || t.ms === 200)).toBe(false)
+  })
+})
+
+
+describe("setupResizeHandlers — suspension and parser safety", () => {
+  test("defers a split's font nudge and fit until the drag releases", () => {
+    const container = makeContainer(600, 400)
+    const xterm = makeXterm(true)
+    const fit = makeFitAddon(() => ({ cols: 80, rows: 24 }))
+    const renderer = makeRenderer()
+    const handlers = setupResizeHandlers(container, xterm, fit, vi.fn(), renderer)
+    try {
+      fireResize(600, 400)
+      handlers.coordinator.flush()
+      fit.fit.mockClear()
+      xterm.refresh.mockClear()
+      renderer.current.clearTextureAtlas.mockClear()
+      xterm.fontSizeWrites.length = 0
+
+      document.documentElement.dataset.terminalResizeSuspended = "1"
+      Object.defineProperty(container, "clientWidth", { value: 300, configurable: true })
+      fireResize(300, 400)
+      drainTimers(SETTLE_MS)
+      expect(fit.fit).not.toHaveBeenCalled()
+      expect(xterm.fontSizeWrites).toEqual([])
+      expect(xterm.refresh).not.toHaveBeenCalled()
+      expect(renderer.current.clearTextureAtlas).not.toHaveBeenCalled()
+
+      delete document.documentElement.dataset.terminalResizeSuspended
+      window.dispatchEvent(new Event(FIT_EVENT))
+      drainTimers(SETTLE_MS)
+      expect(fit.fit).toHaveBeenCalledTimes(1)
+      expect(xterm.fontSizeWrites).toEqual([14.001, 14])
+    } finally {
+      handlers.cleanup()
+    }
+  })
+
+  test("waits for parse completion before a split remeasures or fits", async () => {
+    const container = makeContainer(600, 400)
+    const xterm = makeXterm(true)
+    const fit = makeFitAddon(() => ({ cols: 80, rows: 24 }))
+    const gate = createParserIdleGate()
+    const handlers = setupResizeHandlers(container, xterm, fit, vi.fn(), makeRenderer(), gate)
+    let finishParse!: () => void
+    const write = wrapWrite(gate, (_data, done) => { finishParse = done! })
+    try {
+      fireResize(600, 400)
+      handlers.coordinator.flush()
+      fit.fit.mockClear()
+      xterm.fontSizeWrites.length = 0
+
+      write("async parser input")
+      fireResize(300, 400)
+      // The coordinator and immediate path must share the same pending metric
+      // invalidation even if a scheduled settle supersedes the parked callback.
+      drainTimers(SETTLE_MS)
+      expect(fit.fit).not.toHaveBeenCalled()
+      expect(xterm.fontSizeWrites).toEqual([])
+      finishParse()
+      await Promise.resolve()
+      expect(fit.fit).toHaveBeenCalledTimes(1)
+      expect(xterm.fontSizeWrites).toEqual([14.001, 14])
+    } finally {
+      handlers.cleanup()
+    }
+  })
+
+  test("cleanup cancels a fit parked behind an unfinished parser write", async () => {
+    const container = makeContainer(600, 400)
+    const xterm = makeXterm(true)
+    const fit = makeFitAddon(() => ({ cols: 80, rows: 24 }))
+    const gate = createParserIdleGate()
+    let finishParse!: () => void
+    wrapWrite(gate, (_data, done) => { finishParse = done! })("pending")
+    const handlers = setupResizeHandlers(container, xterm, fit, vi.fn(), makeRenderer(), gate)
+    fireResize(600, 400)
+    handlers.cleanup()
+    finishParse()
+    await Promise.resolve()
+    expect(fit.fit).not.toHaveBeenCalled()
+    expect(xterm.fontSizeWrites).toEqual([])
   })
 })

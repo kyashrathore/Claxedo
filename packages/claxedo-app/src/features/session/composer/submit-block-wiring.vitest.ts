@@ -108,10 +108,9 @@ describe("createComposerSubmitBlockWiring", () => {
   })
 
   describe("stale draft-default choose-model regression", () => {
-    // Regression: HY3 Free (or any explicit pick) showed in the picker while
-    // harness-store draftDefaultState stayed "choose-model". needsModelSelection
-    // used to hard-block Send and reopen the picker even though the toolbar
-    // had already resolved a submittable model.
+    // A stale harness-store draftDefaultState of "choose-model" must not
+    // hard-block Send once the toolbar has already resolved a submittable
+    // model (e.g. HY3 Free).
     test("does not no-model block once the toolbar resolves HY3 Free", () => {
       const { submitBlock, submitInertBlocked } = opencodeWiring()
 

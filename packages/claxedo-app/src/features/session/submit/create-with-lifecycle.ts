@@ -72,6 +72,7 @@ export async function createSessionWithLifecycle(input: {
   })
 
   const grace = input.recoveryGraceMs ?? DEFAULT_RECOVERY_GRACE_MS
+  let timer: ReturnType<typeof setTimeout> | undefined
 
   try {
     const result = await input.perform()
@@ -89,7 +90,7 @@ export async function createSessionWithLifecycle(input: {
     // pretending the create succeeded.
     const failureRace = await Promise.race([
       failurePromise.then(() => "failed" as const),
-      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), grace)),
+      new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), grace) }),
     ])
     if (failureRace === "failed" && failure) {
       if (input.draftId) markRolledBackDraft(input.draftId)
@@ -97,16 +98,27 @@ export async function createSessionWithLifecycle(input: {
     }
     return result
   } catch (err) {
+    // A created event may precede a terminal initialization failure. Once the
+    // server reports failure, that earlier identity cannot recover the create.
+    if (failure) {
+      markRolledBackDraft(input.draftId)
+      throw new Error(failure, { cause: err })
+    }
     if (recovered) return recovered
     const settled = await Promise.race([
       lifecyclePromise,
-      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), grace)),
+      failurePromise.then(() => undefined),
+      new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), grace) }),
     ])
+    if (failure) {
+      markRolledBackDraft(input.draftId)
+      throw new Error(failure, { cause: err })
+    }
     if (settled) return settled
     if (input.draftId) markRolledBackDraft(input.draftId)
-    if (failure) throw new Error(failure, { cause: err })
     throw err
   } finally {
+    if (timer !== undefined) clearTimeout(timer)
     unsubscribe()
   }
 }

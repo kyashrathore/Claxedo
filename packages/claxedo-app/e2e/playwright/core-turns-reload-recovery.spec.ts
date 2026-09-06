@@ -1,147 +1,35 @@
 /**
- * SPEC: Multi-turn local sessions — reload recovery, prompt history, and send failure
- *       recovery
+ * A local session's life after its first turn: sending further turns, reloading
+ * mid-conversation, recalling and editing already-sent prompts, recovering from a failed
+ * send, and the client-side window that keeps only recent turns mounted. The first turn
+ * itself belongs to core-first-prompt-local.spec.ts.
  *
- * PURPOSE — everything that has to keep working once a session has more than one turn:
- * sending a second/third message without disturbing earlier ones, reloading the browser
- * mid-conversation without duplicating or losing anything, recalling and editing
- * previously-sent prompts from history, and cleanly recovering the composer when a send
- * fails outright. This spec owns the session's LIFE AFTER the first turn; the first turn
- * itself (draft → first send → session creation) is `core-first-prompt-local`'s territory.
+ * The timeline is server-authoritative. `GET /session/:id/message` is the truth; the client
+ * renders the user's own turn optimistically and reconciles against the server row. Nothing
+ * about a sent turn lives only in memory, so a reload must reproduce the same rows exactly
+ * once and reuse the same session.
  *
- * STATE MODEL —
- *   Timeline/messages: server-authoritative. `GET /session/:id/message` is the source of
- *     truth; the client optimistically renders the user's own turn immediately
- *     (`addRegisteredConversationMessage`, `src/shell/chat/conversation-registry.ts`) and
- *     reconciles against the server row once it arrives. A reload re-fetches
- *     `/session`, `/session/:id`, and `/session/:id/message` fresh — nothing about
- *     already-sent turns lives only in memory, so reload must reproduce the exact same
- *     rows with no duplication (`src/session/store/session-controller.ts`
- *     `syncCompatSession`, which calls `hydrateConversationPage`).
- *   History window: only a bounded number of recent turns are rendered at once.
- *     `createSessionHistoryWindow` (`src/pages/session/history-window.ts`) keeps
- *     `turnStart`/`turnInit=4`/`turnBatch=8`/`turnScrollThreshold=200` state that is
- *     PURELY client-side (not persisted, reset on session switch); it slices
- *     `visibleUserMessages()` (all turns the client has fetched) down to
- *     `renderedUserMessages()` (what's actually mounted in the DOM). Scrolling near the
- *     top either (a) reveals more of the already-fetched turns for free
- *     (`backfillTurns`, pure client-side re-slicing) or, once every fetched turn is
- *     already rendered and the server has more (`historyMore()` — a cursor-based flag
- *     driven by the `x-next-cursor` response header on `/session/:id/message`), (b)
- *     fetches an older page (`fetchOlderMessages` → `sessionController.loadMore`).
- *     Rendered/visible counts are exposed for tests as
- *     `data-session-rendered-user-count` / `data-session-visible-user-count` on
- *     `[data-testid="session-page-root"]` (`src/pages/session.tsx`).
- *   Prompt history (ArrowUp/ArrowDown recall): a GLOBAL (not per-session) stack persisted
- *     to `localStorage` via `Persist.global` as
- *     `claxedo.global.dat:prompt-history` — written by
- *     `createPromptHistoryController` (`src/components/prompt-input/history-controller.ts`).
- *     Every submit attempt calls `input.addToHistory(currentPrompt, userMode)`
- *     (`src/components/prompt-input/submit.ts:295`) BEFORE the network call — so an entry
- *     is recorded even if the dispatch later fails. Which stack is read/written is
- *     selected by the composer's CURRENT mode (`normal` vs `shell`) at the moment of
- *     ArrowUp/ArrowDown, not by the mode the entry was originally sent in. Navigation
- *     state (`historyIndex`, `savedPrompt` — the in-progress draft captured the moment
- *     history navigation starts) lives in component-local Solid store, not persisted;
- *     only the entries themselves survive reload.
- *   Composer draft (text + image attachments + context items): scoped per
- *     `(directory, sessionId)` (`promptViewScope`), held in the `usePrompt()` context
- *     store. On successful dispatch it's cleared (`clearInput`); on a THROWN dispatch —
- *     failed `POST /session/:id/prompt_async` — it is fully restored byte-for-byte
- *     (`restoreInput`, `restoreCommentItems`) by `rollbackPromptDispatch`
- *     (`src/session/submit/send.ts:58-67`), along with removing the optimistic user row
- *     (`removeSubmittedPrompt`) that had already been added to the timeline.
+ * `createSessionHistoryWindow` (src/pages/session/history-window.ts) slices the fetched
+ * turns down to what is mounted — turnInit=4, turnBatch=8, turnScrollThreshold=200, all
+ * purely client-side and reset on session switch. `[data-testid="session-page-root"]`
+ * carries `data-session-visible-user-count` (fetched) and `data-session-rendered-user-count`
+ * (mounted). Scrolling near the top re-slices already-fetched turns; the server-cursor path
+ * (`historyMore()` / `x-next-cursor` / `sessionController.loadMore`) is unreachable through
+ * the shared mock's non-paginated `/session/:id/message` and is not exercised here.
  *
- * ANATOMY —
- *   `[data-claxedo]` — shell root.
- *   `[role="textbox"][aria-label*="Ask anything"]` — composer editor (contenteditable).
- *   `[data-action="prompt-submit"]` — send/stop button (`data-icon="stop"` while busy).
- *   `[data-slot="session-turn-message-content"]` — a user turn's rendered content.
- *   `[data-slot="session-turn-assistant-content"]` — an assistant turn's rendered
- *     content (oracle target).
- *   `[data-testid="session-page-root"]` — carries `data-session-visible-user-count`
- *     (all fetched user turns) and `data-session-rendered-user-count` (currently
- *     windowed/mounted subset) as plain string-integer attributes
- *     (`src/pages/session.tsx:1341-1342`).
- *   `input[type="file"]` (hidden) — the composer's image-attachment file input
- *     (`src/components/prompt-input/frame.tsx:230-241`); attachments render as
- *     `<img alt="<filename>">` thumbnails via `PromptImageAttachments`
- *     (`src/components/prompt-input/image-attachments.tsx`) once added.
- *   `[data-slot="toast-title"]` — toast title text (`packages/ui/src/components/toast.tsx`).
- *   `[data-scrollable]` — the message timeline's scroll viewport
- *     (`packages/ui/src/components/scroll-view.tsx`); the one that also contains
- *     `[data-slot="session-turn-message-content"]` rows is the message list's own
- *     scroller (there can be other `[data-scrollable]` regions elsewhere on the page).
+ * Prompt history is one global stack (`claxedo.global.dat:prompt-history`), not per session.
+ * `input.addToHistory(...)` writes it before the network call, so a failed send still
+ * records its entry, and ArrowUp reads whichever stack the composer's mode selects at that
+ * moment. There is no Edit control on a sent row — `UserActions` exposes only fork/revert —
+ * so recall-then-edit is the edit affordance.
  *
- * BEHAVIORS —
- *   1. A second prompt sent in an already-created local session dispatches and renders
- *      its own assistant reply (oracle) without disturbing the first turn's rendered
- *      content; the timeline ends with exactly 2 user rows + 2 assistant rows and no
- *      duplicated text.
- *   2. Reloading a session with existing turns re-renders every prior turn exactly once
- *      (zero duplicate rows), issues no new `POST /session` (the same server session is
- *      reused, `createSessionCount` stays at 1), and shows no runaway request growth once
- *      the app has settled (no endpoint keeps re-firing after initial load — no polling
- *      storm).
- *   3. A third prompt sent after reload dispatches into the SAME (reused) session and its
- *      reply renders via the oracle; the session is still not re-created.
- *   4. `ArrowUp`/`ArrowDown` at an empty, caret-at-start composer recalls previously-
- *      submitted normal-mode prompts in LIFO order (most-recently-sent first), exactly
- *      restoring each entry's text; continuing past the oldest entry with `ArrowDown`
- *      returns to (and never leaves stuck on) a state that contains neither recalled
- *      entry's text (the pre-navigation draft is restored).
- *   5. The recalled prompt text is fully editable, not read-only — appending text and
- *      resubmitting (`Enter`) fires a new, independent turn carrying the edited text. This
- *      is the "edit a previously sent message" affordance: there is no separate Edit
- *      button on a sent user row (`UserActions` in
- *      `packages/session-ui/src/components/message-part.tsx:174-177` only exposes
- *      `fork`/`revert`) — recall-then-edit via history IS the mechanism.
- *   6. Prompt history is persisted to `localStorage`
- *      (`claxedo.global.dat:prompt-history`) and survives a reload: `ArrowUp`
- *      immediately after reload still recalls prompts that were sent before the reload.
- *   7. A forced `prompt_async` dispatch failure removes the optimistic user row that was
- *      added before the request settled, restores the exact composer state that was in
- *      flight (text AND any image attachment) back into the composer, and shows an error
- *      toast (`prompt.toast.promptSendFailed.title` = "Failed to send prompt"). The user
- *      can immediately resubmit the restored content by pressing Send again — there is no
- *      dedicated "Retry" action/button (`showSendFailed` passes no `actions`,
- *      `packages/ui/src/components/toast.tsx:108-116`); the restored composer plus its own
- *      Send control IS the retry affordance, and that retry succeeds as an ordinary new
- *      turn.
- *   8. When a session has more turns than the initial render window (`turnInit = 4` user
- *      turns worth of rows), scrolling the timeline up to within `turnScrollThreshold`
- *      (200px) of the top reveals the remaining, already-fetched-but-windowed-out turns
- *      (`backfillTurns`) without duplicating any row, and the scroll position is adjusted
- *      to preserve the pre-reveal visual anchor (`preserveScroll` in
- *      `src/pages/session/history-window.ts`) rather than jumping.
+ * A thrown `POST /session/:id/prompt_async` runs `rollbackPromptDispatch`: the optimistic
+ * user row is removed and the composer's text, image attachments, and context items are
+ * restored byte-for-byte. No Retry action is attached to the toast; the restored composer's
+ * own Send control is the retry.
  *
- * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
- *   e2e/INVARIANTS.md) — every reply proven here, including ones re-proven after reload,
- *   goes through the shared oracle; the selected harness (opencode, fixed for this spec)
- *   owns the submit payload at every stage per invariant #1, though the harness matrix
- *   itself is `core-harness-ownership-local`'s territory.
- *
- * HARNESS NOTES — none; like the pilot, this spec fixes the harness to `opencode` (the
- *   mock's default) to keep multi-turn/reload/history mechanics isolated from harness
- *   selection, which `core-harness-ownership-local` and `core-harness-ownership-cloud`
- *   own.
- *
- * OUT OF SCOPE — first turn / session creation (`core-first-prompt-local`); harness
- *   switching, model/effort controls (`core-harness-ownership-local`,
- *   `core-model-effort-agent-controls`); busy/abort/escalation UI
- *   (`core-busy-abort-errors`); @-mention popover mechanics, drag-drop/paste attachment
- *   UX, slash commands (`core-composer-modes` — this spec only needs ONE attachment and
- *   zero @-mentions to prove the RESTORE mechanism, not the full attach/mention UX);
- *   revert/fork and the `SessionComposerRegion` `followup`-dock "edit queued message"
- *   prop (`src/pages/session/composer/session-composer-region.tsx:35-40` — note: as of
- *   this writing `followup` is never actually passed by `src/pages/session.tsx`, so that
- *   queued-followup edit path is unreachable from the live UI today; see this spec's
- *   findings) belong to `core-session-actions`; server-side network-fetched pagination
- *   (`historyMore()` / `x-next-cursor` / `sessionController.loadMore`) is NOT exercised
- *   here — behavior 9 exercises the purely-client-side `backfillTurns` windowing path,
- *   which is the only "load older" path the shared mock's non-paginated
- *   `/session/:id/message` response can reach; true server-cursor pagination would need a
- *   spec-owned mock extension and is left as a finding.
+ * The harness is fixed to `opencode` throughout — harness selection belongs to
+ * core-harness-ownership-local.spec.ts.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
@@ -150,19 +38,13 @@ import { expectAssistantReplyVisible, ensureComposerModelSelected, expectTurnCou
 const DIR = "/tmp/e2e-core-turns-reload-recovery"
 const SESSION_ID = "ses_core_turns_reload_recovery"
 
-// The mock's DEFAULT opencode model is the `big-pickle` placeholder
-// (`signed-workspace-model.ts` `SIGNED_WORKSPACE_DEFAULT_MODEL`), which the app
-// deliberately filters out of `firstConnectedModelInfo`/`selectRuntimeModel`
-// (`src/features/session/composer/model-strategy.ts`) so it can never be picked
-// as a real default — composer submit stays blocked with "Choose a model to
-// continue" (`no-model`, `submit-block-reason.ts`) until a real model is
-// connected. Every send in this spec needs a real, non-placeholder model
-// available, matching the pattern `core-first-prompt-local.spec.ts` already
-// uses for its own send test.
+// The mock's default opencode model is the `big-pickle` placeholder, which
+// `model-strategy.ts` filters out of the auto-selected default so it can never be
+// picked — submit stays blocked with `no-model` until a real model is connected.
+// Every send here needs one.
 const HARNESS_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
-// A 1x1 transparent PNG, inlined so this spec makes zero filesystem/network calls for
-// its attachment fixture.
+// 1x1 transparent PNG, inlined so the attachment fixture needs no file on disk.
 const PNG_1X1_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 
@@ -171,14 +53,10 @@ function slug(value: string) {
 }
 
 async function seedOneProject(page: Page, dir: string) {
-  // `addInitScript` re-runs on EVERY navigation the page makes, including `page.reload()` —
-  // not just the first `page.goto()`. An unconditional `localStorage.clear()` here would
-  // wipe out exactly the localStorage-backed state (prompt history,
-  // `claxedo.global.dat:prompt-history`) this spec's reload-survival tests (behaviors 6,7)
-  // exist to prove persists across reload, defeating the scenario on every reload. Guard the
-  // clear behind a same-origin sentinel so it fires once, at the very first load, and every
-  // later reload in the same test only re-asserts the `__CLAXEDO__` window global (which a
-  // reload legitimately does wipe, being in-memory) without touching localStorage again.
+  // `addInitScript` re-runs on every navigation, `page.reload()` included. An unconditional
+  // `localStorage.clear()` would wipe the prompt history this file reloads to prove persists,
+  // so the clear sits behind a same-origin sentinel and fires only on the first load; later
+  // loads just re-assert the in-memory `__CLAXEDO__` global, which a reload does wipe.
   await page.addInitScript((d: string) => {
     if (!localStorage.getItem("__e2e_seeded__")) {
       localStorage.clear()
@@ -215,13 +93,10 @@ async function openDraftPrompt(page: Page, dir: string) {
 }
 
 function composer(page: Page) {
-  // NOT role+accessible-name: the composer's aria-label is
-  // `promptDesignPlaceholder()` (src/session-client/composer/role-gate.ts:14-18), which
-  // changes to the shell placeholder text ("Enter shell command...") once shell mode is
-  // entered (`!` at cursor 0) — a role/name locator captured before the mode switch would
-  // stop matching on every subsequent interaction and hang until timeout. `data-component`
-  // is on the same contenteditable node (src/components/prompt-input/frame.tsx:190) and is
-  // mode-independent, so this locator stays valid across normal/shell transitions.
+  // Not role+name: the composer's aria-label is its placeholder, which becomes "Enter shell
+  // command..." once shell mode is entered (`!` at cursor 0), so a name-based locator
+  // captured beforehand stops matching and hangs until timeout. `data-component` is on the
+  // same contenteditable node and is mode-independent.
   return page.locator('[data-component="prompt-input"]').last()
 }
 
@@ -243,7 +118,7 @@ function sessionUrlPattern(sessionId: string) {
 }
 
 test.describe("core turns, reload recovery, history & send-failure recovery (local) @core", () => {
-  test("2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3", async ({
+  test("2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern", async ({
     page,
   }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
@@ -254,26 +129,23 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID), { timeout: 20_000 })
     expect(mock.requests.createSessionCount).toBe(1)
 
-    // Behavior 1: turn 2 renders its own reply; turn 1's content is untouched.
+    // Turn 2 renders its own reply; turn 1's content is untouched.
     await sendAndProve(page, "core turns second message", "ack 2: core turns second message")
     await expectAssistantReplyVisible(page, "ack 1: core turns first message")
     await expectTurnCounts(page, { user: 2, assistant: 2 })
     await expectNoDuplicateRows(page)
     expect(mock.requests.createSessionCount).toBe(1)
 
-    // Behavior 2: reload — track raw request traffic from this point so we can prove
-    // no endpoint keeps re-firing once the app has settled (a real signal, not a
-    // fixed-sleep guess — see e2e/INVARIANTS.md authoring rule #3).
+    // Track raw request traffic from here so the reload can prove no endpoint keeps
+    // re-firing once the app has settled.
     const seen = new Map<string, number>()
     page.on("request", (request) => {
       const type = request.resourceType()
       if (type !== "fetch" && type !== "xhr") return
       const url = new URL(request.url())
-      // Event streams are excluded on purpose: they are long-lived connections that
-      // re-establish by design, so a reconnect is not the polling loop this guard
-      // looks for. `/api/wr/events` is the workspace-runtime bus stream and belongs
-      // with the other two — it was missing here, and its reconnects were the only
-      // traffic that ever pushed this assertion over its bound.
+      // Event streams are excluded: they are long-lived connections that re-establish by
+      // design, so a reconnect is not the polling loop this guard looks for.
+      // `/api/wr/events` is the workspace-runtime bus stream and belongs with the other two.
       if (
         url.pathname === "/event" ||
         url.pathname === "/global/event" ||
@@ -294,23 +166,17 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expectNoDuplicateRows(page)
     expect(mock.requests.createSessionCount).toBe(1)
 
-    // This guard is about rate, not total: some endpoints legitimately poll at a
-    // low frequency, so the question is whether traffic is proportional to elapsed
-    // time (a storm) or roughly flat (settled + the occasional slow poll). Measure
-    // over a window wide enough that a real loop is unmistakable — a runaway
-    // re-fetch produces tens to hundreds of requests here, so a handful of trailing
-    // stragglers is not evidence of one. The old `<= 2` over 2.5s sat close enough
-    // to normal settle traffic that a loaded runner crossed it with three.
-    //
-    // Settle buffer alongside the real per-endpoint delta assertion (never the
-    // sole guard — e2e/INVARIANTS.md authoring rule #3).
+    // Rate, not total: some endpoints legitimately poll slowly, so the question is whether
+    // traffic scales with elapsed time. The window is wide enough and the bound loose enough
+    // that a loaded runner's trailing stragglers cannot cross it, while a runaway re-fetch
+    // (tens to hundreds of requests here) is unmistakable. The wait is only the settle
+    // window; the per-endpoint delta below is the assertion.
     const afterSettle = new Map(seen)
     const settleWindowMs = 5_000
     await page.waitForTimeout(settleWindowMs)
-    // Iterate what was seen AFTER the window, not before it: keying off the
-    // pre-window snapshot means an endpoint that only starts firing once the app
-    // has settled is absent from the map and checked by nobody. A loop that begins
-    // late is exactly the loop worth catching, and this guard used to miss it.
+    // Iterate the post-window map, not the snapshot: an endpoint that only starts firing
+    // after settle is absent from the snapshot and would be checked by nobody, and a loop
+    // that begins late is exactly the loop worth catching.
     for (const [key, after] of seen) {
       const before = afterSettle.get(key) ?? 0
       expect(
@@ -319,7 +185,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       ).toBeLessThanOrEqual(8)
     }
 
-    // Behavior 3: a 3rd send after reload dispatches into the SAME session.
+    // A 3rd send after reload dispatches into the same session.
     await sendAndProve(page, "core turns third message", "ack 3: core turns third message")
     await expectTurnCounts(page, { user: 3, assistant: 3 })
     await expectNoDuplicateRows(page)
@@ -327,7 +193,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     expect(mock.requests.promptCount).toBe(3)
   })
 
-  test("ArrowUp/ArrowDown recall sent prompts in LIFO order and the recalled text can be edited and resent — behaviors 4,5", async ({
+  test("ArrowUp/ArrowDown recall sent prompts in LIFO order and the recalled text can be edited and resent", async ({
     page,
   }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
@@ -340,7 +206,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     const input = composer(page)
     await input.click()
 
-    // Behavior 4: LIFO recall — most recently sent prompt first.
+    // LIFO recall — most recently sent prompt first.
     await input.press("ArrowUp")
     await expect(input).toContainText("core turns history beta")
     await expect(input).not.toContainText("core turns history alpha")
@@ -359,12 +225,11 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(input).not.toContainText("core turns history alpha")
     await expect(input).not.toContainText("core turns history beta")
 
-    // Behavior 5: recall once more and prove the recalled text is editable+resendable.
+    // Recall once more: the recalled text is editable and resendable.
     await input.press("ArrowUp")
     await expect(input).toContainText("core turns history beta")
-    // Prefer a full replace over End+type: under suite load, End does not reliably
-    // place the caret at the end of this contenteditable, and Playwright's `type`
-    // then inserts mid-string (observed: "itedcore turns history beta ed").
+    // Full replace rather than End+type: under load, End does not reliably place the caret
+    // at the end of this contenteditable, and `type` then inserts mid-string.
     await input.fill("core turns history beta edited")
     await expect(input).toContainText("core turns history beta edited")
     await input.press("Enter")
@@ -374,7 +239,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expectNoDuplicateRows(page)
   })
 
-  test("prompt history is persisted and survives a reload — behavior 6", async ({ page }) => {
+  test("prompt history is persisted and survives a reload", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
@@ -394,7 +259,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(input).toContainText("core turns persisted before reload")
   })
 
-  test("a forced dispatch failure restores composer text + attachment, toasts, and a resend succeeds — behavior 8", async ({
+  test("a forced dispatch failure restores composer text + attachment, toasts, and a resend succeeds", async ({
     page,
   }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
@@ -404,11 +269,9 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await sendAndProve(page, "core turns dispatch failure setup", "ack 1: core turns dispatch failure setup")
 
     // Layer a fail-once override on top of the shared mock's prompt_async route. Playwright
-    // runs the most-recently-registered matching route first; calling route.fallback()
-    // hands control back to installMockRuntime's own handler, so only THIS one attempt is
-    // forced to fail — the shared mock's real dispatch/turn-driving logic is reused for
-    // every other attempt, per e2e/INVARIANTS.md authoring rule #1 (extend, don't hand-roll
-    // a parallel mock).
+    // runs the most-recently-registered matching route first, and `route.fallback()` hands
+    // control back to installMockRuntime's own handler, so only this attempt fails and every
+    // other one reuses the shared mock's real dispatch and turn-driving logic.
     let forceFailure = false
     let forcedFailureCount = 0
     await page.route("**/session/*/prompt_async**", async (route) => {
@@ -426,13 +289,10 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await input.fill(failingText)
     await expect(input).toContainText(failingText, { timeout: 10_000 })
 
-    // `.last()`, not `.first()`: two `input[type="file"]` nodes exist in the DOM (the
-    // active composer's own hidden file input plus an inactive/off-screen duplicate
-    // composer instance's) — `.first()` non-deterministically attached the file to
-    // whichever renders first in DOM order, which is not reliably the visible composer,
-    // leaving `attach.png` attached-but-not-rendered where the test could see it. Every
-    // other composer-scoped locator in this spec already uses `.last()` for the same
-    // reason (see `composer()`/`submitControl()` above) — this was the one that didn't.
+    // `.last()`: two `input[type="file"]` nodes exist — the active composer's hidden input
+    // plus an inactive off-screen duplicate composer's — and DOM order does not reliably put
+    // the visible one first, so `.first()` can attach the file where nothing renders it.
+    // Same reason `composer()`/`submitControl()` above use `.last()`.
     const fileInput = page.locator('input[type="file"]').last()
     await fileInput.setInputFiles({ name: "attach.png", mimeType: "image/png", buffer: Buffer.from(PNG_1X1_BASE64, "base64") })
     await expect(page.getByAltText("attach.png")).toBeVisible({ timeout: 10_000 })
@@ -440,8 +300,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     forceFailure = true
     await submitControl(page).click()
 
-    // The forced 500 is the real, deterministic signal that the failure round-trip has
-    // actually happened (never a bare sleep — e2e/INVARIANTS.md authoring rule #3).
+    // The forced 500 is the deterministic signal that the failure round-trip happened.
     await expect.poll(() => forcedFailureCount, { timeout: 10_000 }).toBe(1)
     await expect
       .poll(() => mock.requests.badResponses.some((entry) => entry.includes("prompt_async")), { timeout: 10_000 })
@@ -458,8 +317,8 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(input).toContainText(failingText, { timeout: 10_000 })
     await expect(page.getByAltText("attach.png")).toBeVisible({ timeout: 10_000 })
 
-    // Retry affordance: no dedicated Retry button — the restored composer's own Send
-    // control resubmits the exact same content, and this time it succeeds.
+    // No dedicated Retry button: the restored composer's own Send control resubmits the
+    // same content, and this time it succeeds.
     await submitControl(page).click()
     await expectAssistantReplyVisible(page, "ack 2: core turns dispatch failure message")
     await expectTurnCounts(page, { user: 2, assistant: 2 })
@@ -467,7 +326,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     expect(mock.requests.promptCount).toBe(2) // the forced-failed attempt never reached the real handler
   })
 
-  test("a forced dispatch failure restores a context-item chip into the composer — behavior 8", async ({
+  test("a forced dispatch failure restores a context-item chip into the composer", async ({
     page,
   }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
@@ -476,12 +335,9 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
 
     await sendAndProve(page, "core turns chip dispatch failure setup", "ack 1: core turns chip dispatch failure setup")
 
-    // Stub the composer's @-mention file-search endpoint (`searchFilesAndDirectories` ->
-    // `GET /api/wr/find/file`, src/app/providers/file.tsx). installMockRuntime's own default
-    // (mock-runtime.ts) answers every query with `[]`; this override, registered AFTER
-    // install, wins per Playwright's last-registered-first matching — same pattern as
-    // core-composer-modes.spec.ts's overrideMentionAgents for the agent half of the same
-    // popover.
+    // Stub the composer's @-mention file-search endpoint (`GET /api/wr/find/file`).
+    // installMockRuntime's default answers every query with `[]`; registering after install
+    // wins under Playwright's last-registered-first matching.
     const MENTION_FILE_PATH = "src/chip-context-file.ts"
     await page.route("**/api/wr/find/file**", (route) => {
       const url = new URL(route.request().url())
@@ -519,8 +375,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     forceFailure = true
     await submitControl(page).click()
 
-    // The forced 500 is the real, deterministic signal that the failure round-trip has
-    // actually happened (never a bare sleep — e2e/INVARIANTS.md authoring rule #3).
+    // The forced 500 is the deterministic signal that the failure round-trip happened.
     await expect.poll(() => forcedFailureCount, { timeout: 10_000 }).toBe(1)
     await expect
       .poll(() => mock.requests.badResponses.some((entry) => entry.includes("prompt_async")), { timeout: 10_000 })
@@ -538,8 +393,8 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(pill).toBeVisible({ timeout: 10_000 })
     await expect(input).toContainText("please look", { timeout: 10_000 })
 
-    // Retry affordance: no dedicated Retry button — the restored composer's own Send
-    // control resubmits the exact same content, and this time it succeeds.
+    // No dedicated Retry button: the restored composer's own Send control resubmits the
+    // same content, and this time it succeeds.
     await submitControl(page).click()
     await expectAssistantReplyVisible(page, /^ack 2: /)
     await expectTurnCounts(page, { user: 2, assistant: 2 })
@@ -547,36 +402,23 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     expect(mock.requests.promptCount).toBe(2) // the forced-failed attempt never reached the real handler
   })
 
-  test("scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor — behavior 9", async ({
+  test("scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor", async ({
     page,
   }) => {
-    // Shrink the viewport so 6 short turns genuinely overflow the message list — the
-    // history window's auto-reveal (scheduleHistoryFill in src/pages/session.tsx) only
-    // stays windowed when the content actually overflows the viewport; on a tall/default
-    // viewport all 6 turns would fit and get auto-revealed regardless of scroll. 460px
-    // (not the more aggressive ~300px) leaves enough headroom under the timeline's
-    // `sticky top-0 z-30` session-title bar (`data-session-title`,
-    // src/pages/session/message-timeline.tsx) that turns rendered near the top of a short
-    // conversation don't land underneath it — an ordinary, real CSS stacking interaction
-    // (the sticky header legitimately sits above whatever scrolls under it) that the
-    // oracle's geometric hit-test correctly flags as a covering overlay when it happens.
+    // Shrink the viewport so 6 short turns genuinely overflow the message list:
+    // `scheduleHistoryFill` reveals everything whenever the content fits, so on a default
+    // viewport nothing stays windowed. 460px rather than ~300px keeps turns near the top of
+    // the list clear of the timeline's `sticky top-0 z-30` session-title bar, which the
+    // oracle's hit-test would otherwise flag as a covering overlay.
     await page.setViewportSize({ width: 1280, height: 460 })
 
-    // Exactly one filler line per reply sizes the hydrate-time window (turnInit=4,
-    // history-window.ts) into the narrow band this test needs (measured locally:
-    // ~515px of windowed content vs the ~275px scroller; unpadded single-line
-    // replies measure ~260px):
-    //   - ABOVE the auto-reveal trigger: scheduleHistoryFill (session-screen.tsx)
-    //     reveals everything whenever scrollHeight <= clientHeight + 1, and with
-    //     unpadded replies the windowed content sits right at that line — whether
-    //     the check samples estimated (60px/row) or measured row heights decides
-    //     the outcome, so renderedBefore<turnCount flakily failed before the
-    //     scroll gesture ever happened. ~515px clears it under both timings.
-    //   - BELOW ~2 viewports: the timeline virtualizer (message-timeline.tsx)
-    //     only mounts rows near the viewport (overscan 3), so a window tall
-    //     enough that the wheel can't cross it in one tick leaves the
-    //     top-of-window turn unmounted and outside the viewport for the whole
-    //     test — no DOM anchor or in-viewport witness survives that.
+    // Exactly one filler line per reply sizes the hydrate-time window (turnInit=4) between
+    // two bounds. Tall enough that `scheduleHistoryFill` does not immediately reveal
+    // everything — it reveals whenever scrollHeight <= clientHeight + 1, and unpadded
+    // single-line replies sit right at that line, where estimated (60px/row) and measured
+    // heights disagree. Short enough that one wheel tick can cross it — the virtualizer only
+    // mounts rows near the viewport, so a window over ~2 viewports tall leaves the
+    // top-of-window turn unmounted, with no anchor or witness surviving the gesture.
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -592,72 +434,48 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     }
     expect(mock.requests.promptCount).toBe(turnCount)
 
-    // Reload before measuring the window:
-    // `initialTurnStart` (src/pages/session/history-window.ts:42) — the thing that
-    // actually produces `renderedBefore < turnCount` — is only applied at
-    // session-hydrate time, on the `[sessionID, messagesReady]` transition
-    // (history-window.ts:199-208), NOT reactively as new turns are appended to an
-    // already-open session. Building all 6 turns live (as this test used to do
-    // right up to this point, with no reload) never re-engages it:
-    // `scheduleHistoryFill` (src/pages/session.tsx:1072-1088) greedily sets
-    // `turnStart` back to 0 any time the rendered content doesn't yet overflow the
-    // viewport, and once every turn currently in existence gets un-windowed,
-    // nothing ever re-applies `initialTurnStart` again for the rest of that same
-    // continuously-open session — only a fresh hydrate does. Confirmed empirically:
-    // without this reload, `data-session-rendered-user-count` was `"6"` (all
-    // rendered, no windowing) even at the 460px viewport, so the old
-    // `renderedBefore < turnCount` assertion failed before the scroll gesture ever
-    // happened.
+    // Reload before measuring the window. `initialTurnStart` — the thing that produces
+    // `renderedBefore < turnCount` — is applied only at session-hydrate time, on the
+    // `[sessionID, messagesReady]` transition, not as turns are appended to an already-open
+    // session. Building all 6 turns live never engages it: `scheduleHistoryFill` sets
+    // `turnStart` back to 0 while the rendered content does not yet overflow, and once every
+    // existing turn is un-windowed nothing re-applies `initialTurnStart` for the rest of that
+    // session.
     //
-    // A full `page.reload()`, NOT an in-app SPA hop: this shell is a WORKBENCH —
-    // leaving a session for the draft view and coming back is a tab refocus, and
-    // the backgrounded tab's whole component tree (including its
-    // `createSessionHistoryWindow` instance, whose `sessionID()` never changes)
-    // stays mounted the entire time, so no re-entry hydrate ever fires (confirmed
-    // empirically: after "New Session" → history-back onto the session URL, the
-    // draft tab's empty `session-page-root` was still in the DOM next to the
-    // session's, and `data-session-rendered-user-count` stayed "6" — no
-    // windowing re-engaged). Only a document reload tears the tab down and
-    // re-runs the hydrate transition this behavior depends on — which is also
-    // this spec's own theme: reload recovery of an existing conversation.
+    // It has to be a document reload, not an in-app hop. This shell is a workbench: leaving
+    // the session for the draft view backgrounds the tab without unmounting it, so its
+    // `createSessionHistoryWindow` instance survives with an unchanged `sessionID()` and no
+    // hydrate fires. Only a reload tears the tab down.
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // `.filter({ visible: true })` guards against any backgrounded/stale
-    // `session-page-root` coexisting with the live one (the same non-determinism
-    // this spec's `.last()` convention exists for, made stricter: only the
-    // focused tab's root is visible).
+    // `.filter({ visible: true })` guards against a backgrounded `session-page-root`
+    // coexisting with the live one; only the focused tab's root is visible.
     const root = page.locator('[data-testid="session-page-root"]').filter({ visible: true }).last()
     await expect(root).toHaveAttribute("data-session-visible-user-count", String(turnCount), { timeout: 15_000 })
-    // turnInit=4 (src/pages/session/history-window.ts) — the window should be showing
-    // fewer than all fetched turns while unscrolled, proving windowing (and overflow) is
-    // actually engaged.
+    // With turnInit=4 the window shows fewer than all fetched turns while unscrolled, which
+    // is what proves windowing (and therefore overflow) is engaged.
     const renderedBefore = Number(await root.getAttribute("data-session-rendered-user-count"))
     expect(renderedBefore).toBeLessThan(turnCount)
     await expectNoDuplicateRows(page)
 
-    // In-viewport witness: the turn just BELOW the old window's top — what the
-    // user is actually looking at after the wheel clamps to the top of the
-    // windowed content. (The window's literal top turn sits a few px above the
-    // compensated scroll position by construction, so it is not a robust
-    // in-viewport witness; the next turn down is.) Asserted only AFTER the
-    // reveal — the virtualizer unmounts off-viewport rows, so no DOM row is
-    // measurable across the whole gesture.
+    // In-viewport witness: the turn just below the old window's top, which is what the user
+    // is looking at once the wheel clamps. The window's literal top turn sits a few px above
+    // the compensated scroll position by construction, so it is not a robust witness.
+    // Asserted only after the reveal — the virtualizer unmounts off-viewport rows, so no row
+    // stays measurable across the whole gesture.
     const witness = page
       .locator(SELECTORS.userMessageContent)
       .getByText(`core turns load older message ${turnCount - renderedBefore + 2}`, { exact: true })
     const scroller = page.locator('[data-scrollable]:has([data-slot="session-turn-message-content"])').first()
 
-    // Instrument the scroller BEFORE the gesture: record every scroll event's
-    // (scrollTop, scrollHeight) plus the exact sample where the rendered-count
-    // attribute flips to `turnCount`. The `preserveScroll` contract is checked
-    // from these samples after settle — element anchors are unreliable here
-    // because the virtualizer unmounts off-viewport rows and estimates unmounted
-    // row heights at 60px (estimateSize, message-timeline.tsx), but scroll
-    // coordinates themselves are virtualization-immune. The MutationObserver's
-    // microtask timing captures the pre-compensation position: it flushes after
-    // the reveal's synchronous DOM update but before preserveScroll's rAF
-    // scrollTop write.
+    // Instrument the scroller before the gesture: every scroll event's (scrollTop,
+    // scrollHeight) plus the sample where the rendered-count attribute flips. The
+    // `preserveScroll` contract is checked from these samples rather than element anchors,
+    // because the virtualizer unmounts off-viewport rows and estimates unmounted heights,
+    // while scroll coordinates are virtualization-immune. The MutationObserver flushes after
+    // the reveal's synchronous DOM update but before preserveScroll's rAF scrollTop write,
+    // which is what captures the pre-compensation position.
     await page.evaluate(() => {
       const el = document.querySelector('[data-scrollable]:has([data-slot="session-turn-message-content"])')
       const rootEl = document.querySelector('[data-testid="session-page-root"]')
@@ -681,34 +499,26 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       sample("init")
     })
 
-    // Real wheel-scroll gesture (not a programmatic scrollTop write, which the app's
-    // gesture-tracking treats as non-user and snaps back to bottom — see
-    // shouldMarkBoundaryGesture / handleListWheel in src/pages/session/message-timeline.tsx).
+    // A real wheel gesture, not a programmatic scrollTop write, which the app's
+    // gesture-tracking treats as non-user and snaps back to the bottom.
     //
-    // Stop the INSTANT the reveal has fired (rendered-count flips to `turnCount`), not
-    // once `scrollTop` merely crosses some threshold: `turnScrollThreshold` in
-    // history-window.ts is 200px, and `onScrollerScroll` reveals everything in ONE
-    // shot the first time `scrollTop` dips under it (`turnBatch=8` > the 2 remaining
-    // windowed-out turns here) — so continuing to send wheel deltas after that point
-    // just keeps physically scrolling the now-taller content further, which has
-    // nothing to do with `preserveScroll`'s compensation.
+    // Stop the instant the reveal fires rather than when scrollTop crosses a threshold:
+    // `onScrollerScroll` reveals everything in one shot the first time scrollTop dips under
+    // turnScrollThreshold, and further wheel deltas after that just scroll the now-taller
+    // content, which has nothing to do with `preserveScroll`'s compensation.
     await scroller.hover()
     for (let attempt = 0; attempt < 30; attempt++) {
-      // Check BEFORE dispatching another wheel. Under load the attribute flip can
-      // already be visible from the previous wheel's processing; queueing one more
-      // delta after that is the trailing-gesture failure mode this loop exists to
-      // avoid (see d3edd35049 — compensation wins, then an in-flight wheel undoes it).
+      // Check before dispatching another wheel: under load the flip can already be visible
+      // from the previous wheel's processing, and a queued extra delta undoes the
+      // compensation this test is measuring.
       if ((await root.getAttribute("data-session-rendered-user-count")) === String(turnCount)) break
       const topBefore = await scroller.evaluate((el) => (el as HTMLElement).scrollTop)
-      // Smaller delta than -400: the wheel that crosses `turnScrollThreshold` still
-      // applies its full delta in the same gesture, and -400 after compensation was
-      // enough to drag the mid-list witness fully off-screen (viewport ratio 0)
-      // while leaving settled.top just above the >100 lower bound.
+      // Smaller than -400: the wheel that crosses turnScrollThreshold still applies its full
+      // delta in the same gesture, and -400 dragged the mid-list witness off-screen.
       await page.mouse.wheel(0, -160)
-      // `mouse.wheel` resolves when the input is DISPATCHED, not once the page
-      // has actually scrolled (Playwright's documented wheel caveat). Wait until
-      // either scrollTop moved or the reveal attribute flipped, then a double rAF
-      // so the same-task reveal flush is visible before the next iteration.
+      // `mouse.wheel` resolves when the input is dispatched, not once the page has scrolled.
+      // Wait for scrollTop to move or the reveal attribute to flip, then a double rAF so the
+      // same-task reveal flush is visible to the next iteration.
       await page
         .waitForFunction(
           ({ scrollSel, top, count }) => {
@@ -734,16 +544,13 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       if ((await root.getAttribute("data-session-rendered-user-count")) === String(turnCount)) break
     }
 
-    // Behavior 9: the older, previously-windowed-out turns get revealed — a real,
-    // deterministic wait on the rendered-count attribute (never a bare sleep).
+    // The older, previously-windowed-out turns get revealed.
     await expect(root).toHaveAttribute("data-session-rendered-user-count", String(turnCount), { timeout: 10_000 })
     await expectNoDuplicateRows(page)
 
-    // The DOM row count flips as soon as the prepended turns mount, but
-    // `preserveScroll`'s compensating `scrollTop` write (src/pages/session/history-
-    // window.ts) can land a frame or two later — a real, deterministic wait for the
-    // scroller's scrollTop to stop moving (never a bare sleep) so the anchor measurement
-    // below samples the settled layout, not a mid-compensation one.
+    // The row count flips as soon as the prepended turns mount, but `preserveScroll`'s
+    // compensating scrollTop write can land a frame or two later, so wait for the scroller
+    // to stop moving and measure settled layout rather than a mid-compensation one.
     await page.waitForFunction(
       (sel) => {
         const el = document.querySelector(sel) as HTMLElement | null
@@ -762,26 +569,13 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       { timeout: 5_000, polling: "raf" },
     )
 
-    // Scroll anchor preserved. The TRUE `preserveScroll` contract
-    // (src/features/session/ui/history-window.ts:77-91): when the reveal prepends
-    // content, `scrollTop` is compensated by exactly the scroller's `scrollHeight`
-    // growth — i.e. by the height of what got prepended — so the user's viewport
-    // does not visually jump. The assertion compares the pre-gesture init sample
-    // with the settled post-reveal geometry (instrumented samples showed an
-    // autoscroll bottom-snap landing TRANSIENTLY mid-reveal before the
-    // compensating write wins, so no mid-gesture sample is a stable reference):
-    //   - the content must have GROWN by roughly the revealed turns (the reveal
-    //     really prepended);
-    //   - compensation silently no-ops or snaps to the very top → settled
-    //     scrollTop stays in the <200px trigger zone the wheel left behind →
-    //     fails the lower bound;
-    //   - autoscroll snaps back to bottom for good → settled scrollTop ≈
-    //     maxScroll → fails the upper bound.
-    // No pixel-exact equality on purpose: the virtualizer estimates unmounted
-    // prepended rows at 60px until they mount and measure, so the compensation's
-    // input (scrollHeight growth) is approximate and gets corrected as rows
-    // measure. Measured BEFORE the oracle-proof nudge below so that intentional,
-    // temporary scroll doesn't skew this independent assertion.
+    // Scroll anchor preserved: when the reveal prepends content, `preserveScroll` bumps
+    // scrollTop by the scroller's scrollHeight growth so the viewport does not visually jump.
+    // Only the settled post-reveal geometry is a stable reference — an autoscroll bottom-snap
+    // lands transiently mid-reveal before the compensating write wins. Nothing is
+    // pixel-exact: the virtualizer estimates unmounted prepended rows until they mount, so
+    // the compensation's input is approximate and corrects itself as rows measure. Sampled
+    // before the nudge below, whose temporary scroll would skew it.
     const samples = await page.evaluate(() => {
       const w = window as typeof window & {
         __e2eScrollSamples?: Array<{ kind: string; top: number; height: number; rendered: string | null }>
@@ -789,19 +583,14 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       return w.__e2eScrollSamples ?? []
     })
     const settled = await scroller.evaluate((el) => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }))
-    // "The reveal really prepended" is proven by the rendered-user-count flip
-    // (renderedBefore -> turnCount, asserted above), zero duplicate rows, and
-    // the in-viewport witness below — NOT by comparing raw scrollHeights across
-    // the gesture. The pre-gesture scrollHeight counts every unmounted windowed
-    // row at the virtualizer's ESTIMATE (timelineInitialEstimatedItemSize,
-    // ~180px) while these single-line turns measure ~65-74px once mounted, so
-    // the init sample is inflated by more than the two prepended turns add:
-    // measured content genuinely grew 871 -> 1082 real px in the recorded
-    // failure while the raw delta read -428. Estimates converge to measurements
-    // as rows mount, which makes any cross-gesture height delta a comparison of
-    // two different measurement regimes. The settled geometry must still
-    // OVERFLOW (windowing + reveal only make sense on overflowing content), and
-    // the samples ride the failure message for diagnosis.
+    // That the reveal really prepended is proven by the rendered-count flip above, zero
+    // duplicate rows, and the in-viewport witness below — not by a cross-gesture scrollHeight
+    // delta, which compares two measurement regimes: the pre-gesture sample counts unmounted
+    // windowed rows at the virtualizer's ~180px estimate while these single-line turns
+    // measure ~65-74px once mounted, so the delta can read negative while the content grew.
+    // What is left to assert is that the settled geometry still overflows, and that scrollTop
+    // sits neither back in the <200px trigger zone (compensation no-oped or jumped to the
+    // top) nor at maxScroll (autoscroll snapped back). The samples ride the failure messages.
     expect(
       settled.height,
       `revealed content must still overflow the scroller. samples=${JSON.stringify(samples)} settled=${JSON.stringify(settled)}`,
@@ -816,15 +605,12 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     ).toBeLessThan(settled.height - settled.client - 100)
     await expect(witness).toBeInViewport()
 
-    // Bring the oldest turn into the virtualizer's mounted range with real wheel
-    // gestures to the very top: with TIMELINE_OVERSCAN=3 (timeline-virtualization.ts)
-    // rows only exist in the DOM near the viewport, and the oracle's
-    // scrollIntoViewIfNeeded cannot reach a row that was never mounted. At
-    // scrollTop 0 the first reply is fully in view with its center clear of the
-    // timeline's `sticky top-0 z-30` session-title bar (`data-session-title`,
-    // message-timeline.tsx), so no header-clearing nudge is needed. No further
-    // reveal can fire here: turnStart is already 0 and a real gesture keeps
-    // autoScroll's userScrolled latched, so nothing snaps back to the bottom.
+    // Wheel to the very top so the oldest turn enters the virtualizer's mounted range: with
+    // TIMELINE_OVERSCAN=3 rows only exist in the DOM near the viewport, and the oracle's
+    // scrollIntoViewIfNeeded cannot reach a row that was never mounted. At scrollTop 0 the
+    // first reply's center clears the sticky session-title bar, so no extra nudge is needed,
+    // and no further reveal can fire — turnStart is already 0 and a real gesture keeps
+    // autoScroll's userScrolled latched.
     await scroller.hover()
     for (let attempt = 0; attempt < 30; attempt++) {
       const top = await scroller.evaluate((el) => el.scrollTop)
@@ -832,8 +618,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       await page.mouse.wheel(0, -400)
     }
 
-    // The earliest turn (previously hidden entirely) is now genuinely rendered — full
-    // oracle proof, not just a count.
+    // The earliest turn, previously windowed out entirely, is now genuinely rendered.
     await expectAssistantReplyVisible(page, "ack 1: core turns load older message 1")
   })
 })

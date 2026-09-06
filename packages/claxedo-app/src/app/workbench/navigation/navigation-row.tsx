@@ -11,18 +11,12 @@ import {
 
 /**
  * Shared row shell for the sidebar navigation islands (session rows and
- * terminal-surface rows). Both islands previously reimplemented the identical
- * activation + `draggable` + workbench drag-mime wiring; this primitive owns
- * that shell so a keyboard-nav or drag fix lands in one place. Per-island
- * content (title, status, trailing action) is passed as children.
+ * terminal-surface rows): activation, drag source, and engagement in one
+ * place; per-island content is passed as children.
  *
- * WP-C1 semantics: the row's activate target is a real native `<button>`
- * (Enter/Space handled by the platform, not a hand-rolled `role="button"` +
- * keydown div) carrying `aria-current` for the active row. It's an
- * absolutely-positioned overlay covering the row, so per-island trailing
- * controls (archive / close) stay as SIBLINGS above it rather than interactive
- * descendants of a button (`nested-interactive`). Those controls just need to
- * sit above the overlay (`relative z-10`).
+ * The activate target is a native `<button>` overlaying the whole row, so
+ * trailing controls (archive / close) stay siblings above it (`relative z-10`)
+ * rather than interactive descendants of a button.
  */
 
 const ROW_SHELL_CLASS =
@@ -43,7 +37,7 @@ export type NavigationRowProps = {
   active?: boolean
   /**
    * Fires when the row becomes (or stops being) the pointer or keyboard target,
-   * so an island can MOUNT its hover-only affordances instead of parking them
+   * so an island can mount its hover-only affordances instead of parking them
    * in the DOM behind `opacity: 0`.
    *
    * The rail is the app's most repeated chrome: every mounted element in a row
@@ -56,7 +50,7 @@ export type NavigationRowProps = {
    * which mounts the trailing controls, so the next Tab lands on them exactly
    * as it did when they were always mounted.
    *
-   * The two are tracked independently and the row is engaged while EITHER
+   * The two are tracked independently and the row is engaged while either
    * holds, so losing focus never withdraws an affordance the pointer is still
    * resting on, and leaving with the pointer never withdraws one the keyboard
    * is still inside.
@@ -68,8 +62,8 @@ export type NavigationRowProps = {
   /** The domain row used to build the typed drag payload. */
   dragRow: SessionNavigationRow | TerminalSurfaceRow
   /**
-   * Resolve the workbench content id to seed into the drag `dataTransfer`.
-   * Return `undefined` to skip seeding (session rows without a live content id).
+   * Resolve the workbench content id the drag carries. Return `undefined` to
+   * skip (session rows without a live content id).
    */
   prepareContentId?: () => string | undefined
   onDragStart?: (input: NavigationDragStart) => void
@@ -79,12 +73,8 @@ export type NavigationRowProps = {
 export function NavigationRow(props: NavigationRowProps) {
   const activate = () => props.onActivate()
 
-  // Pointer-driven drag source (mouse + touch + pen), replacing native HTML5
-  // `draggable`/`onDragStart` so sidebar rows can be dragged onto a workbench
-  // pane on touch devices too (WP-C3). `prepareContentId` still resolves (and
-  // side-effect-mints) the workbench content id the drag carries; the typed
-  // `NavigationDragStart` is still emitted on begin. The controller owns the
-  // in-memory payload, so there is no `DataTransfer` to seed anymore.
+  // The drag controller holds the payload in memory, so `setWorkbenchDragData`
+  // has nothing to seed.
   const registerDrag = (el: HTMLElement) => {
     const dispose = useDragSource(el, {
       contentId: () => props.prepareContentId?.(),
@@ -123,13 +113,9 @@ export function NavigationRow(props: NavigationRowProps) {
       onFocusIn={engagement.handlers.onFocusIn}
       onFocusOut={engagement.handlers.onFocusOut}
     >
-      {/* Native activate control. Absolute overlay (ROW_SHELL_CLASS is
-          `relative`) so the row's own trailing buttons remain siblings, not
-          nested interactive descendants. `touch-pan-y` matches the container
-          drag source's `touch-action` (WP-C3a finding 2): the overlay covers the
-          whole row, so it must leave vertical panning to the browser too — else
-          the sidebar's touch scroll dies on top of the drag engine, which only
-          begins on an intentional long-press. */}
+      {/* `touch-pan-y` must match the row's drag-source `touch-action`: the
+          overlay covers the whole row, so `none` here kills sidebar touch
+          scrolling. */}
       <button
         type="button"
         data-slot="navigation-row-activate"
@@ -147,20 +133,19 @@ export function NavigationRow(props: NavigationRowProps) {
 /**
  * The single glyph column that precedes a nested row's label.
  *
- * ONE column, shared by every row type, is the whole point. The rail is an
- * indented tree — workspace, then section, then rows — and in a tree a row's
- * own mark belongs at its own indent step, immediately before its label. An
- * earlier attempt parked the status dot at the far-left edge of the row
- * (`left-1.5`, x≈11), which put it LEFT of the workspace icon above it: the
- * deepest item in the tree ended up with the outermost mark, inverting the
- * hierarchy, and it read as debris floating in the margin rather than as part
- * of the row.
+ * A single column, shared by every row type, is the whole point. The rail is
+ * an indented tree — workspace, then section, then rows — and in a tree a
+ * row's own mark belongs at its own indent step, immediately before its label.
+ * Parking the dot at the row's far-left edge (`left-1.5`, x≈11) would put it
+ * left of the workspace icon above it: the deepest item in the tree would
+ * carry the outermost mark, inverting the hierarchy and reading as debris
+ * floating in the margin rather than as part of the row.
  *
- * Sized and placed to match the terminal glyph that already lived here
+ * Sized and placed to match the terminal glyph that already lives here
  * (`left-4`, `size-4` → x 21-37 against a title at 41), so glyphs and labels
  * form two clean vertical columns down the whole list. Absolute, so a row with
- * no glyph still starts its title at exactly the same x — alignment is what
- * makes a dense list read as calm.
+ * no glyph still starts its title at the same x — alignment is what makes a
+ * dense list read as calm.
  *
  * Nested rows only: a top-level row indents 12px, which cannot hold a glyph
  * without crowding its own label, so those keep their inline layout.
@@ -181,7 +166,7 @@ export function NavigationRowGlyph(props: { children: JSX.Element }) {
  * so a terminal row can put its own icon in the same column when idle.
  */
 export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
-  // `<Show>`, NOT an early `if (props.status === "idle") return null`. A Solid
+  // `<Show>`, not an early `if (props.status === "idle") return null`. A Solid
   // component body runs exactly once, so an early return would capture whatever
   // status the row had at mount — idle, for every row that has not started work
   // yet — and the glyph would never appear when that row later went busy.

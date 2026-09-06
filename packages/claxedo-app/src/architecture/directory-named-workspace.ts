@@ -1,19 +1,12 @@
 import { walkProdSources, walkTestSources, type SourceFile } from "./scanners"
 
 /**
- * WP-D5 lock-in scanner. The disambiguation refactor renamed the four conflation
- * identifiers that named a directory path a "workspace(Id)" (VOCABULARY.md sense
- * 1) to their honest `directory` names:
- *
- *   activeWorkspaceId      -> activeDirectory
- *   routeWorkspaceId       -> routeDirectory
- *   resolveActiveWorkspaceId -> resolveActiveDirectory
- *   shellRouteWorkspaceKey -> shellRouteDirectory
- *
- * These names must never come back: a `workspaceId`-named symbol that holds a
- * directory is exactly the sense-1/sense-2 conflation the brands (`DirectoryRef`
- * / `WorkspaceId`) exist to prevent. This guard flags any reintroduction as a
- * whole-word identifier, in prod OR test sources.
+ * Retired identifiers that named a directory path a "workspace(Id)" (see
+ * VOCABULARY.md), now `activeDirectory`, `routeDirectory`,
+ * `resolveActiveDirectory`, `shellRouteDirectory`. A `workspaceId`-named symbol
+ * holding a directory is the conflation the `DirectoryRef` / `WorkspaceId`
+ * brands exist to prevent, so these may not reappear as whole-word identifiers
+ * in prod or test sources.
  */
 const RETIRED_CONFLATION_NAMES = [
   "activeWorkspaceId",

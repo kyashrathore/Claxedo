@@ -5,6 +5,7 @@ import {
   type BoundDesktopCredential,
   type DesktopCredentialBinding,
 } from "./auth-descriptor"
+import { createIdentityResolver } from "./identity"
 import { createAccountService } from "./account-service"
 import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
 import type { DesktopNativeAuth } from "./desktop-native-auth"
@@ -267,55 +268,79 @@ describe("bound desktop account lifecycle", () => {
     expect(h.service.state()).toMatchObject({ status: "signed" })
   })
 
-  /** A failed profile lookup must not leave the rail spinning forever: still signed, lookup failed. */
-  test("a failed identity lookup stays signed and says the lookup failed", async () => {
-    const h = harness({ store: memoryStore(CREDENTIAL) })
-    const service = createAccountService({
-      auth: h.auth.auth,
-      store: h.store,
-      now: () => 1_000,
-      fetch: async () => Response.json({ ok: true }),
-      resolveIdentity: async () => {
-        throw new Error("userinfo failed: 401")
-      },
-    })
-    await service.restore()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(service.state()).toEqual({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })
-  })
-
-  test("a failed identity lookup is retried with backoff and the name lands when the network recovers", async () => {
+  test("real userinfo failure is retried and publishes only the returned canonical subject", async () => {
     const h = harness({ store: memoryStore(CREDENTIAL) })
     const scheduled: Array<{ run: () => void; delayMs: number }> = []
+    let retryScheduled!: () => void
+    const failed = new Promise<void>((resolve) => { retryScheduled = resolve })
+    let named!: () => void
+    const resolvedIdentity = new Promise<void>((resolve) => { named = resolve })
     let attempts = 0
     const service = createAccountService({
       auth: h.auth.auth,
       store: h.store,
       now: () => 1_000,
       fetch: async () => Response.json({ ok: true }),
-      resolveIdentity: async () => {
-        attempts += 1
-        if (attempts === 1) throw new Error("userinfo timed out")
-        return { userId: "user-1", displayName: "Yash" }
+      resolveIdentity: createIdentityResolver({
+        userInfoUrl: "https://id.test/oauth/userinfo",
+        fetch: async () => {
+          attempts += 1
+          if (attempts === 1) return new Response("unavailable", { status: 503 })
+          return Response.json({ sub: "user-1", name: "Yash" })
+        },
+      }),
+      onStateChange: (state) => {
+        if (state.status === "signed" && state.identity.userId === "user-1") named()
       },
       scheduleRevalidation: (run, delayMs) => {
         scheduled.push({ run, delayMs })
-        return setTimeout(() => {}, 0)
+        retryScheduled()
+        return 0 as unknown as ReturnType<typeof setTimeout>
       },
     })
     await service.restore()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(service.state()).toMatchObject({ status: "signed", identityLookup: "failed" })
-    const retry = scheduled.find((entry) => entry.delayMs === 15_000)
-    expect(retry, "the first retry is scheduled 15 s out").toBeDefined()
-    retry!.run()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(service.state()).toMatchObject({ status: "signed", identity: { userId: "user-1", displayName: "Yash" } })
+    await failed
+    expect(service.state()).toEqual({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })
+    expect(scheduled.map((entry) => entry.delayMs)).toEqual([15_000])
+    scheduled[0].run()
+    await resolvedIdentity
+    expect(service.state()).toEqual({ status: "signed", identity: { userId: "user-1", displayName: "Yash" } })
     expect(attempts).toBe(2)
+  })
+
+  test("a userinfo retry cannot republish identity after sign-out", async () => {
+    const h = harness({ store: memoryStore(CREDENTIAL) })
+    let entered!: () => void
+    const requested = new Promise<void>((resolve) => { entered = resolve })
+    let resolveBody!: (value: unknown) => void
+    const body = new Promise<unknown>((resolve) => { resolveBody = resolve })
+    let completed!: () => void
+    const lookupCompleted = new Promise<void>((resolve) => { completed = resolve })
+    const resolver = createIdentityResolver({
+      userInfoUrl: "https://id.test/oauth/userinfo",
+      fetch: async () => {
+        entered()
+        return { ok: true, json: () => body } as Response
+      },
+    })
+    const published: string[] = []
+    const service = createAccountService({
+      auth: h.auth.auth,
+      store: h.store,
+      now: () => 1_000,
+      fetch: async () => Response.json({ ok: true }),
+      resolveIdentity: (token) => resolver(token).finally(completed),
+      onStateChange: (state) => { published.push(state.status) },
+    })
+    await service.restore()
+    await requested
+    await service.signOut()
+    const count = published.length
+    resolveBody({ sub: "old-user" })
+    await lookupCompleted
+    await Promise.resolve()
+    expect(published).toHaveLength(count)
+    expect(service.state().status).toBe("unsigned")
   })
 
   test("a blip while already signed suspends, then returns to signed on the next success", async () => {

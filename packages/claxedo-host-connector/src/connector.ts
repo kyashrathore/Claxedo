@@ -6,7 +6,7 @@
  * design put here — which projects are shared, what a workspace id is, when to
  * register a new one — is now decided by the control plane at request time.
  *
- * What this deliberately does NOT do:
+ * What this deliberately does not do:
  *
  *   - **Serve anything.** The connector is a client. A laptop that listens is a
  *     laptop with an attack surface, and the Relay already provides the inbound
@@ -270,13 +270,13 @@ export function createHostConnector(options: ConnectorOptions) {
       // the guard that actually decides the outcome.
       //
       // `enrollment` is captured for a narrower reason and changes no behaviour
-      // while that guard stands: the narrowing on line above does NOT survive
-      // the await at runtime, only in the compiler. Reading `state.enrollment`
-      // after the await type-checked, and when the response landed on a
-      // `stopped` state — which carries no enrollment — it spread `undefined`,
-      // which is how the reversal produced a machine enrolled with an expiry,
-      // no id and no host id. Reading it while the narrowing is still true
-      // means no future edit can reintroduce that shape by weakening a guard.
+      // while that guard stands: the narrowing above does not survive the
+      // await at runtime, only in the compiler. Reading `state.enrollment`
+      // after the await type-checks, but if the response lands on a `stopped`
+      // state — which carries no enrollment — it would spread `undefined`,
+      // producing a machine enrolled with an expiry, no id and no host id.
+      // Reading it while the narrowing is still true means no future edit can
+      // reintroduce that shape by weakening a guard.
       const startedIn = era
       const enrollment = state.enrollment
       try {
@@ -328,21 +328,18 @@ export function createHostConnector(options: ConnectorOptions) {
         // A beat can fail for two completely different reasons, and treating
         // them alike is what made remote access fragile.
         //
-        // A DECISION — the control plane no longer recognises this machine
+        // A decision — the control plane no longer recognises this machine
         // (revoked, paused past expiry, enrolled elsewhere) — must stop the
         // connector. Re-enrolling itself would be overruling the user.
         //
-        // A DISRUPTION — the control plane was briefly unreachable or was mid
-        // release — must not. Observed live and repeatedly: deploying the
-        // control plane makes it answer
-        // `503 deployment_candidate_unavailable` for the seconds between the
-        // upload and the phase opening, and every beat in that window used to
-        // stop the machine permanently, with `revoked` on the panel. The
-        // laptop went on reporting `serving: true` with open relay sockets
-        // (its credential lease had not expired yet) while the control plane
-        // refused to route to it and the app said "Workspace host is
-        // offline" — the same symptom as a genuine revocation, with none of
-        // the same cause. Every deploy silently took remote access down.
+        // A disruption — the control plane briefly unreachable, or mid
+        // release — must not revoke. Deploying the control plane can make it
+        // answer `503 deployment_candidate_unavailable` for the seconds
+        // between the upload and the phase opening; treating that as
+        // revocation would stop the machine permanently even while its
+        // credential lease has not expired and its relay sockets are still
+        // open — the same "Workspace host is offline" symptom as a genuine
+        // revocation, with none of the same cause.
         //
         // So a disruption keeps the enrollment and lets the next beat retry.
         // The lease is the backstop: if the control plane really is gone, the

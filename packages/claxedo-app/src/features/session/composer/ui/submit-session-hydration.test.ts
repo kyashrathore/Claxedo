@@ -3,7 +3,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import type { ComposerMode } from "../mode"
 import { buildRequestParts } from "./build-request-parts"
-import * as h from "./submit.harness.test"
+import * as h from "./test-support/submit-harness"
 const realBuildRequestParts = buildRequestParts
 
 const PI = { kind: "native", harnessId: "pi" } as const
@@ -85,7 +85,7 @@ test("an existing session waits for its authoritative config and never submits w
   await h.waitForSubmitEffect(() => h.calls.transportAsync === 1)
   expect(h.calls.transportAsync).toBe(1)
   expect(h.toasts).toEqual([])
-  expect(h.runtimeCalls.filter((call) => call.method === "POST" && call.input.includes("/message"))).toHaveLength(1)
+  expect(h.runtimeCalls.filter((call) => call.method === "POST" && call.input.includes("/prompt_async"))).toHaveLength(1)
   expect(h.unsignedCalls.filter((call) => call.method === "PATCH")).toEqual([])
   expect(queryClient.getQueryData(sessionConfigRawQueryKey({
     sessionID: "session-1", directory: "/repo/main", serverUrl: "http://localhost:3001",

@@ -2,16 +2,15 @@
  * BOOT OBSERVER — catches boot-time failures that sampled screenshots miss.
  *
  * WHY THIS EXISTS: the "Failed to load sessions for {project}" toast
- * (packages/claxedo-app/src/app/boot/data/bootstrap-orchestrator.ts:356-364) fires
- * during boot off a rejected `queryClient.fetchQuery` and is rendered by whatever
- * toast component `showToast` mounts — which auto-dismisses on its own timer. A
- * spec that takes a screenshot on a `setTimeout`/`page.waitForTimeout` sample, or
- * even one that asserts on final DOM state, can watch the toast appear and vanish
- * between samples and see nothing. That exact mistake was made twice in one day
- * chasing this bug before this file existed. The only reliable way to catch a
- * transient DOM node is to observe continuously from before the first paint.
+ * (packages/claxedo-app/src/app/boot/data/bootstrap-orchestrator.ts) fires during
+ * boot off a rejected `queryClient.fetchQuery` and is rendered by whatever toast
+ * component `showToast` mounts — which auto-dismisses on its own timer. A spec
+ * that takes a screenshot on a `setTimeout`/`page.waitForTimeout` sample, or even
+ * one that asserts on final DOM state, can watch the toast appear and vanish
+ * between samples and see nothing. The only reliable way to catch a transient DOM
+ * node is to observe continuously from before the first paint.
  *
- * MECHANISM: `page.addInitScript` runs in the page's own JS context BEFORE any of
+ * MECHANISM: `page.addInitScript` runs in the page's own JS context before any of
  * the app's bundled scripts execute (Playwright guarantees init scripts run prior
  * to the document's inline/module scripts on every navigation). That ordering is
  * load-bearing here: `window.fetch` must be monkey-patched before the app's own
@@ -148,25 +147,14 @@ export async function installBootObserver(target: Page | BrowserContext): Promis
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         mutation.addedNodes.forEach((node) => {
-          // Fine-grained reactive frameworks (this app is Solid.js) frequently
-          // update text by swapping a bare `Text` node into an already-mounted
-          // element's children (remove old Text node, insert new Text node) —
-          // NOT by setting `.data` on an existing node (that would be a
-          // `characterData` mutation, handled below) and NOT by mounting a new
-          // wrapper `Element` (handled by `recordIfMatch(node)` a few lines
-          // down). An earlier version of this observer only checked
-          // `node instanceof Element` here, so a toast whose title/description
-          // renders as a direct Text-node child of an already-existing wrapper
-          // would be silently invisible to this observer. This is defensive
-          // hardening based on Solid's general update strategy, NOT something
-          // directly confirmed against the "Failed to load sessions" toast
-          // specifically — in the live repro run (see spec used to chase this
-          // bug) the toast never rendered at all even with this fix in place
-          // (see investigation notes), so this branch is unverified for that
-          // exact toast and should be re-checked if this file is used to chase
-          // a similar transient-toast bug again. Route bare Text-node
-          // insertions through the parent element's full text, same as the
-          // characterData branch below.
+          // Solid.js frequently updates text by swapping a bare `Text` node into an
+          // already-mounted element's children, rather than setting `.data` on an
+          // existing node (a `characterData` mutation, handled below) or mounting a
+          // new wrapper `Element` (handled by `recordIfMatch(node)` a few lines
+          // down). Checking only `node instanceof Element` here would miss a toast
+          // whose title/description renders as a direct Text-node child of an
+          // already-existing wrapper. Route bare Text-node insertions through the
+          // parent element's full text, same as the characterData branch below.
           if (node instanceof Text) {
             if (node.parentElement) recordIfMatch(node.parentElement)
             return
@@ -209,16 +197,15 @@ export async function readBootObserver(page: Page): Promise<BootObserverState> {
 }
 
 /**
- * PERMANENT ASSERTION — asserts boot produced no error toast and no non-2xx
- * server response. Intentionally NOT wired into any existing spec here (other
- * agents own those files); the caller decides where in their boot flow to invoke
+ * Asserts boot produced no error toast and no non-2xx server response. Not wired
+ * into any spec directly — the caller decides where in their boot flow to invoke
  * it, after `installBootObserver` + navigation + whatever wait the spec already
  * does for boot to settle.
  *
- * Kept as a hand-rolled assertion (not `expect(...).toBe(...)`) so the failure
- * message can enumerate every observed toast/failure/network-error, not just
- * report a count mismatch — the whole point of this file is that these events
- * are otherwise invisible, so the assertion failure needs to BE the evidence.
+ * A hand-rolled assertion (not `expect(...).toBe(...)`) so the failure message
+ * can enumerate every observed toast/failure/network-error instead of just a
+ * count mismatch: these events are otherwise invisible once the toast
+ * auto-dismisses, so the assertion failure needs to be the evidence.
  */
 export async function expectNoBootErrors(page: Page): Promise<void> {
   const state = await readBootObserver(page)

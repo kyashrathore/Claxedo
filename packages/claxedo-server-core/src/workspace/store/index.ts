@@ -8,6 +8,7 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { isJsonRecord, jsonRecord, jsonString, jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const execFileAsync = promisify(execFile)
 
@@ -115,11 +116,6 @@ function notifyWorkspaceChanges() {
   }
 }
 
-function trim(input?: string) {
-  const txt = input?.trim()
-  return txt ? txt : undefined
-}
-
 function file() {
   return path.join(dataDir(), "workspaces.json")
 }
@@ -160,7 +156,7 @@ function workspaceKey(row: Workspace) {
 }
 
 export function workspaceIdFromDirectoryRef(input: string | undefined) {
-  const value = trim(input)
+  const value = trimToUndefined(input)
   return value && /^ws_[A-Za-z0-9_-]+$/.test(value) ? value : undefined
 }
 
@@ -178,7 +174,7 @@ function projectWorktree(row: Workspace) {
 async function gitCmd(dir: string, args: string[]): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync("git", ["-C", dir, ...args])
-    return trim(stdout)
+    return trimToUndefined(stdout)
   } catch {
     return undefined
   }
@@ -193,8 +189,8 @@ async function git(dir: string) {
   const repo_root = norm(root)
   const repo_key = key ? norm(path.resolve(dir, key)) : repo_root
   const repo_name = remote
-    ? trim(path.basename(remote.replace(/\/+$/, "")).replace(/\.git$/, ""))
-    : trim(path.basename(repo_root))
+    ? trimToUndefined(path.basename(remote.replace(/\/+$/, "")).replace(/\.git$/, ""))
+    : trimToUndefined(path.basename(repo_root))
   return {
     repo_key,
     repo_root,
@@ -256,8 +252,8 @@ async function load(target: string) {
       return Array.isArray(value) ? value.filter(isJsonRecord) : []
     }
     for (const item of rows("projects")) {
-      const id = trim(jsonString(item.id))
-      const name = trim(jsonString(item.name))
+      const id = trimToUndefined(jsonString(item.id))
+      const name = trimToUndefined(jsonString(item.name))
       if (!id || !name) continue
       projectsById.set(id, {
         id,
@@ -272,31 +268,31 @@ async function load(target: string) {
       if (!id) continue
       const kind = item.kind === "cloud" ? "cloud" : "local"
       const directory = jsonString(item.directory)
-      const repoKey = trim(jsonString(item.repo_key))
-      const repoRoot = trim(jsonString(item.repo_root))
-      const remoteDirectory = trim(jsonString(item.remote_directory))
-      const storedDirectory = kind === "cloud" ? (remoteDirectory ?? trim(directory) ?? "/workspace") : directory
+      const repoKey = trimToUndefined(jsonString(item.repo_key))
+      const repoRoot = trimToUndefined(jsonString(item.repo_root))
+      const remoteDirectory = trimToUndefined(jsonString(item.remote_directory))
+      const storedDirectory = kind === "cloud" ? (remoteDirectory ?? trimToUndefined(directory) ?? "/workspace") : directory
       if (!storedDirectory) continue
       const ws: Workspace = {
         id,
-        org_id: trim(jsonString(item.org_id)),
-        project_id: trim(jsonString(item.project_id)) || id,
-        project_name: trim(jsonString(item.project_name)),
+        org_id: trimToUndefined(jsonString(item.org_id)),
+        project_id: trimToUndefined(jsonString(item.project_id)) || id,
+        project_name: trimToUndefined(jsonString(item.project_name)),
         project_icon: textFields(item.project_icon, ["color", "override"]),
         project_commands: textFields(item.project_commands, ["start"]),
-        workspace_name: trim(jsonString(item.workspace_name)),
+        workspace_name: trimToUndefined(jsonString(item.workspace_name)),
         directory: kind === "cloud" ? storedDirectory : directoryKey(storedDirectory),
         kind,
         driver: driverId(item.driver),
-        repo_url: trim(jsonString(item.repo_url)),
+        repo_url: trimToUndefined(jsonString(item.repo_url)),
         repo_key: kind === "cloud" ? repoKey : repoKey ? norm(repoKey) : undefined,
         repo_root: kind === "cloud" ? repoRoot : repoRoot ? norm(repoRoot) : undefined,
-        repo_name: trim(jsonString(item.repo_name)),
-        git_branch: trim(jsonString(item.git_branch)),
-        git_remote: trim(jsonString(item.git_remote)),
-        sandbox_id: trim(jsonString(item.sandbox_id)),
+        repo_name: trimToUndefined(jsonString(item.repo_name)),
+        git_branch: trimToUndefined(jsonString(item.git_branch)),
+        git_remote: trimToUndefined(jsonString(item.git_remote)),
+        sandbox_id: trimToUndefined(jsonString(item.sandbox_id)),
         remote_directory: remoteDirectory,
-        status: trim(jsonString(item.status)),
+        status: trimToUndefined(jsonString(item.status)),
         created_at: storedTime(item.created_at),
         updated_at: storedTime(item.updated_at),
       }
@@ -395,7 +391,7 @@ export async function getWorkspace(id: string) {
 
 export async function getProjectWorkspace(id: string) {
   await boot()
-  const rows = [...byId.values()].filter((row) => row.project_id === trim(id))
+  const rows = [...byId.values()].filter((row) => row.project_id === trimToUndefined(id))
   return rows.length ? main(rows) : undefined
 }
 
@@ -430,7 +426,7 @@ export async function ensureWorkspace(input: EnsureWorkspaceInput) {
   if ((input.kind ?? "local") !== "local") return ensureWorkspaceUncoalesced(input)
 
   const directory = directoryKey(input.directory)
-  if (isRejectedDir(directory) || trim(input.workspaceId) || byDir.has(directory)) {
+  if (isRejectedDir(directory) || trimToUndefined(input.workspaceId) || byDir.has(directory)) {
     return ensureWorkspaceUncoalesced(input)
   }
 
@@ -452,9 +448,9 @@ export async function ensureWorkspace(input: EnsureWorkspaceInput) {
 async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   await boot()
   const kind = input.kind ?? "local"
-  const requestedId = trim(input.workspaceId)
+  const requestedId = trimToUndefined(input.workspaceId)
   const directory = kind === "cloud"
-    ? trim(input.remote_directory) || trim(input.directory) || "/workspace"
+    ? trimToUndefined(input.remote_directory) || trimToUndefined(input.directory) || "/workspace"
     : directoryKey(input.directory)
   if (kind !== "cloud" && isRejectedDir(directory)) return undefined
   let hit = requestedId && byId.has(requestedId)
@@ -476,8 +472,8 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     : await git(directory)
   // For cloud workspaces with no local git, derive repo_name from repo_url
   if (!knownDirectory && !info.repo_name && input.repo_url) {
-    info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
-    info.git_remote = trim(input.repo_url)
+    info.repo_name = trimToUndefined(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
+    info.git_remote = trimToUndefined(input.repo_url)
   }
   // Git discovery above is asynchronous. Two first-touch requests for the same
   // local directory can both observe a miss before either finishes discovery;
@@ -487,19 +483,19 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   const now = Date.now()
   if (hit) {
     const ws = byId.get(hit)!
-    const org_id = trim(input.org_id) || ws.org_id
-    const project_id = trim(input.project_id) || ws.project_id || (info.repo_key ? projectId(info.repo_key) : undefined) || ws.id
-    const project_name = trim(input.project_name) || ws.project_name
-    const workspace_name = trim(input.workspace_name) || ws.workspace_name
+    const org_id = trimToUndefined(input.org_id) || ws.org_id
+    const project_id = trimToUndefined(input.project_id) || ws.project_id || (info.repo_key ? projectId(info.repo_key) : undefined) || ws.id
+    const project_name = trimToUndefined(input.project_name) || ws.project_name
+    const workspace_name = trimToUndefined(input.workspace_name) || ws.workspace_name
     const driver = input.driver ?? ws.driver
-    const repo_url = trim(input.repo_url) || ws.repo_url
+    const repo_url = trimToUndefined(input.repo_url) || ws.repo_url
     const repo_key = info.repo_key ?? ws.repo_key
     const repo_root = info.repo_root ?? ws.repo_root
     const repo_name = info.repo_name ?? ws.repo_name
-    const git_branch = trim(input.git_branch) || info.git_branch || ws.git_branch
+    const git_branch = trimToUndefined(input.git_branch) || info.git_branch || ws.git_branch
     const git_remote = info.git_remote ?? ws.git_remote
-    const remote_directory = trim(input.remote_directory) || ws.remote_directory
-    const status = trim(input.status) || ws.status
+    const remote_directory = trimToUndefined(input.remote_directory) || ws.remote_directory
+    const status = trimToUndefined(input.status) || ws.status
     const same =
       ws.directory === directory &&
       ws.org_id === org_id &&
@@ -549,21 +545,21 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   const id = requestedId || randomUUID()
   const ws = upsert({
     id,
-    org_id: trim(input.org_id),
-    project_id: trim(input.project_id) || (info.repo_key ? projectId(info.repo_key) : undefined) || id,
-    project_name: trim(input.project_name),
-    workspace_name: trim(input.workspace_name),
+    org_id: trimToUndefined(input.org_id),
+    project_id: trimToUndefined(input.project_id) || (info.repo_key ? projectId(info.repo_key) : undefined) || id,
+    project_name: trimToUndefined(input.project_name),
+    workspace_name: trimToUndefined(input.workspace_name),
     directory,
     kind,
     driver: input.driver,
-    repo_url: trim(input.repo_url),
+    repo_url: trimToUndefined(input.repo_url),
     repo_key: info.repo_key,
     repo_root: info.repo_root,
     repo_name: info.repo_name,
-    git_branch: trim(input.git_branch) || info.git_branch,
+    git_branch: trimToUndefined(input.git_branch) || info.git_branch,
     git_remote: info.git_remote,
-    remote_directory: trim(input.remote_directory),
-    status: trim(input.status),
+    remote_directory: trimToUndefined(input.remote_directory),
+    status: trimToUndefined(input.status),
     created_at: now,
     updated_at: now,
   })
@@ -639,7 +635,7 @@ export async function updateProjectMetadata(projectId: string, patch: ProjectMet
   if (!root) return undefined
   upsert({
     ...root,
-    ...(patch.name !== undefined ? { project_name: trim(patch.name) } : {}),
+    ...(patch.name !== undefined ? { project_name: trimToUndefined(patch.name) } : {}),
     ...(patch.icon ? { project_icon: { ...root.project_icon, ...patch.icon } } : {}),
     ...(patch.commands ? { project_commands: { ...root.project_commands, ...patch.commands } } : {}),
     updated_at: Date.now(),
@@ -787,7 +783,7 @@ export async function listProjectRecords(): Promise<Project[]> {
 
 export async function getProjectRecord(id: string | undefined): Promise<Project | undefined> {
   await boot()
-  const key = trim(id)
+  const key = trimToUndefined(id)
   return key ? projectsById.get(key) : undefined
 }
 
@@ -801,8 +797,8 @@ export async function findProjectRecordByName(name: string): Promise<Project | u
 /** Creates or renames a project record; the workspace rows carrying `id` are its executions. */
 export async function upsertProjectRecord(input: { id: string; name: string; env?: Record<string, string> }): Promise<Project> {
   await boot()
-  const id = trim(input.id)
-  const name = trim(input.name)
+  const id = trimToUndefined(input.id)
+  const name = trimToUndefined(input.name)
   if (!id || !name) throw new Error("project id and name are required")
   const now = Date.now()
   const existing = projectsById.get(id)

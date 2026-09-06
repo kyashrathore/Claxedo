@@ -50,10 +50,18 @@ describe("isNarrowViewport", () => {
     expect(isNarrowViewport(1440)).toBe(false)
   })
 
-  test("undefined width (SSR) is treated as not-narrow", () => {
-    expect(isNarrowViewport(undefined)).toBe(false)
-  })
-})
+  test("omitted width reads the current browser viewport", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, "innerWidth")
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: BP_MD - 1 })
+      expect(isNarrowViewport()).toBe(true)
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: BP_MD })
+      expect(isNarrowViewport()).toBe(false)
+    } finally {
+      if (descriptor) Object.defineProperty(window, "innerWidth", descriptor)
+      else Reflect.deleteProperty(window, "innerWidth")
+    }
+  })})
 
 describe("mediaQueryBelow", () => {
   test("BP_MD produces the max-width complement of the 768px min-width boundary", () => {

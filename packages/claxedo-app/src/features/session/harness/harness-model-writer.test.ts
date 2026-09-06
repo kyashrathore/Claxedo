@@ -18,7 +18,6 @@ let dropped: string[]
 let posts: { url: string; body: unknown }[]
 let remembered: Array<{ scope: string; model: { providerID: string; modelID: string }; directory?: string }>
 let publishedConfigs: unknown[]
-let useLocal: boolean
 
 beforeEach(() => {
   state = {}
@@ -29,7 +28,6 @@ beforeEach(() => {
   posts = []
   remembered = []
   publishedConfigs = []
-  useLocal = true
 })
 
 describe("harness model writer", () => {
@@ -174,24 +172,21 @@ describe("harness model writer", () => {
     }])
   })
 
-  test("updates the canonical session config for existing non-local sessions", async () => {
-    useLocal = false
-    await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
+  test("rejects an ineligible draft model before changing selection or dropping a prepared session", async () => {
+    await writerFor(false).setModel(scope, { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "new" })
 
-    expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
-    expect(posts).toEqual([{
-      url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
-      body: { model: { providerID: "anthropic", modelID: "opus" } },
-    }])
+    expect(selectedModels).toEqual([])
+    expect(dropped).toEqual([])
+    expect(remembered).toEqual([])
+    expect(posts).toEqual([])
   })
-
 })
 
-function writerFor() {
+function writerFor(acceptsDraftModel = true) {
   return createHarnessModelWriter({
     base: "http://server",
     seed: (scope) => seeds.push(scope),
-    acceptsDraftModel: () => true,
+    acceptsDraftModel: () => acceptsDraftModel,
     setSelectedModel: (_scope, model) => selectedModels.push(model),
     dropPrepared: (scope) => dropped.push(scope),
     rememberDraftModel: (scope, model, input) => remembered.push({
@@ -201,7 +196,6 @@ function writerFor() {
     }),
     publishSessionConfig: (_input, config) => publishedConfigs.push(config),
     runtime: {
-      useLocalHarnessConfig: () => useLocal,
       harnessSessionFetch: () => async (url, init) => {
         posts.push({
           url: requestUrl(url),

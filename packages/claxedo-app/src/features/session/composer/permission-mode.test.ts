@@ -81,9 +81,6 @@ describe("what the picker offers", () => {
     })
   })
 
-  // Every harness row is selectable now. This is the assertion that would have
-  // caught the shipped state where Claude and Codex rendered rows nobody could
-  // choose, because the app had no delivery for them.
   test("every reported row can actually be chosen", () => {
     for (const id of ALL) {
       createRoot((dispose) => {
@@ -109,10 +106,10 @@ describe("what the picker offers", () => {
     })
   })
 
-  // An unidentified harness must not flash Claxedo rows globally — tier-real
-  // behavior 13 records every visible permission trigger from first navigation,
-  // including background composers beside a Codex draft. Withhold the picker until
-  // the harness is named; local answering cannot produce a ruleset write anyway.
+  // An unidentified harness must not flash Claxedo rows: every composer on the page
+  // has a permission trigger, including background ones beside a Codex draft. The
+  // picker stays hidden until the harness is named; local answering cannot produce a
+  // ruleset write anyway.
   test("an unidentified harness hides the picker until the harness is named", () => {
     createRoot((dispose) => {
       const { control } = harness({})
@@ -122,8 +119,8 @@ describe("what the picker offers", () => {
     })
   })
 
-  // The state that shipped as a permanent "Waiting for … to report its modes".
-  // Undefined now means genuinely in flight, and the copy says loading.
+  // Undefined means genuinely in flight, so the harness group shows loading
+  // copy rather than an empty list.
   test("before the fetch lands the harness group reads as loading", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "acp:claude" })

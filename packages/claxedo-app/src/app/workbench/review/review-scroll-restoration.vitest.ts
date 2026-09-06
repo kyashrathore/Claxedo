@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 import {
-  createReviewScrollRestoration,
+  createReviewScrollRestoration as createRestoration,
   REVIEW_SCROLL_DIAGNOSTIC_PROPERTY,
   type ReviewScrollDiagnostic,
   type ReviewScrollPosition,
@@ -23,12 +23,36 @@ function fixture() {
   return { anchor, viewport }
 }
 
-afterEach(() => vi.unstubAllGlobals())
+const frames = new Map<number, FrameRequestCallback>()
+const restorations: ReturnType<typeof createRestoration>[] = []
+let frameId = 0
+function createReviewScrollRestoration(input: Parameters<typeof createRestoration>[0]) {
+  const restoration = createRestoration(input)
+  restorations.push(restoration)
+  return restoration
+}
+beforeEach(() => {
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId })
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id))
+})
+afterEach(() => {
+  for (const restoration of restorations.splice(0)) restoration.dispose()
+  frames.clear()
+  vi.unstubAllGlobals()
+})
+async function flushFrames(count = 2) {
+  // Deliver pending MutationObserver records before the next rendered frame.
+  await Promise.resolve()
+  for (let index = 0; index < count; index++) {
+    const callbacks = [...frames.values()]
+    frames.clear()
+    for (const callback of callbacks) callback(index * 16)
+    await Promise.resolve()
+  }
+}
 
 describe("review scroll restoration", () => {
   test("restores a semantic file anchor after the hidden viewport clamps to zero", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     const { viewport } = fixture()
     const changes: ReviewScrollPosition[] = []
     const restoration = createReviewScrollRestoration({
@@ -39,7 +63,7 @@ describe("review scroll restoration", () => {
 
     restoration.bind(viewport)
     viewport.addEventListener("scroll", restoration.remember)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     viewport.scrollTop = 1_000
     viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
@@ -51,28 +75,26 @@ describe("review scroll restoration", () => {
 
     viewport.scrollTop = 0
     restoration.restore()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
 
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })
 
   test("waits for a progressively rendered anchor before restoring", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     const { anchor, viewport } = fixture()
     const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
 
     restoration.bind(viewport)
     viewport.addEventListener("scroll", restoration.remember)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     viewport.scrollTop = 1_000
     viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
     anchor.remove()
     viewport.scrollTop = 0
     restoration.restore()
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await flushFrames(1)
     // The anchor row is not in the DOM yet (the windowed file list only
     // materializes rows near the scroll position), so restoration parks on the
     // recorded pixel top immediately -- that is the scroll that makes the
@@ -81,7 +103,7 @@ describe("review scroll restoration", () => {
 
     viewport.scrollTop = 700
     viewport.append(anchor)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     // Once the anchor exists, the precise anchor-offset correction wins over
     // the approximate pixel top.
     expect(viewport.scrollTop).toBe(1_000)
@@ -89,8 +111,6 @@ describe("review scroll restoration", () => {
   })
 
   test("flushes a pending anchor capture synchronously on dispose", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     const { viewport } = fixture()
     const changes: ReviewScrollPosition[] = []
     const restoration = createReviewScrollRestoration({
@@ -101,7 +121,7 @@ describe("review scroll restoration", () => {
 
     restoration.bind(viewport)
     viewport.addEventListener("scroll", restoration.remember)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     viewport.scrollTop = 1_000
     viewport.dispatchEvent(new Event("scroll"))
     // The scroll handler published the pixel top and scheduled the anchor
@@ -117,13 +137,11 @@ describe("review scroll restoration", () => {
 
     // The flushed frame is cancelled: nothing fires after cleanup and the
     // anchor is captured exactly once.
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     expect(changes).toHaveLength(2)
   })
 
   test("settles on the clamped pixel top when the anchor left the corpus", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     const { viewport } = fixture()
     Object.defineProperty(viewport, "scrollHeight", { value: 1_500 })
     Object.defineProperty(viewport, "clientHeight", { value: 500 })
@@ -152,7 +170,7 @@ describe("review scroll restoration", () => {
     // normally and the capture replaces the dead anchor with a live one.
     viewport.scrollTop = 300
     viewport.dispatchEvent(new Event("scroll"))
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     expect(changes.at(-1)).toEqual({
       top: 300,
       anchorPath: "src/generated/file-350.ts",
@@ -162,8 +180,6 @@ describe("review scroll restoration", () => {
   })
 
   test("re-applies the semantic anchor when the viewport width changes", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     let resize: ((entries: Array<{ contentRect: { width: number } }>) => void) | undefined
     vi.stubGlobal(
       "ResizeObserver",
@@ -181,28 +197,26 @@ describe("review scroll restoration", () => {
 
     restoration.bind(viewport)
     viewport.addEventListener("scroll", restoration.remember)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     viewport.scrollTop = 1_000
     viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
 
     // The first observation only records the width; it must not scroll.
     resize?.([{ contentRect: { width: 800 } }])
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     expect(viewport.scrollTop).toBe(1_000)
 
     // A navigator squeezing the panel reflows the rows; the drifted pixel
     // position is corrected back to the recorded semantic anchor.
     viewport.scrollTop = 900
     resize?.([{ contentRect: { width: 500 } }])
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await flushFrames()
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })
 
   test("does not replace the visible snapshot after the Review body is hidden", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     const { viewport } = fixture()
     let visible = true
     const changes: ReviewScrollPosition[] = []
@@ -214,7 +228,7 @@ describe("review scroll restoration", () => {
 
     restoration.bind(viewport)
     viewport.addEventListener("scroll", restoration.remember)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     viewport.scrollTop = 1_000
     viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
@@ -234,15 +248,13 @@ describe("review scroll restoration", () => {
 
     visible = true
     restoration.restore()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
 
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })
 
   test("does not capture an unobserved layout clamp while Review is still visible", async () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
     const { viewport } = fixture()
     const changes: ReviewScrollPosition[] = []
     const restoration = createReviewScrollRestoration({
@@ -253,7 +265,7 @@ describe("review scroll restoration", () => {
 
     restoration.bind(viewport)
     viewport.addEventListener("scroll", restoration.remember)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     viewport.scrollTop = 1_000
     viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
@@ -267,7 +279,7 @@ describe("review scroll restoration", () => {
     })
 
     restoration.restore()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await flushFrames()
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })

@@ -5,9 +5,9 @@ import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
 import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop } from "../shared/goal-stop-order"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
-  record,
   text,
   type JsonRecord,
   type SdkRuntimeDriverHost,
@@ -114,7 +114,7 @@ export class CodexGoalController {
   ) {
     return startTurnWithThreadRecovery({
       startTurn: async () => {
-        const response = record(await proc.request(method, params))
+        const response = asRecord(await proc.request(method, params))
         if (!response) throw new Error(`Codex app-server did not return a ${method} response`)
         return response
       },
@@ -258,7 +258,7 @@ export class CodexGoalController {
   }
 
   private handleGoalNotification(method: string, params: JsonRecord) {
-    const threadId = text(params.threadId) ?? text(record(params.goal)?.threadId)
+    const threadId = text(params.threadId) ?? text(asRecord(params.goal)?.threadId)
     if (!threadId) return
     const binding = this.resolveBinding(threadId)
     if (!binding) return
@@ -274,12 +274,12 @@ export class CodexGoalController {
   handleProcessMessage(message: JsonRecord) {
     const method = text(message.method)
     if (!method) return
-    const params = record(message.params) ?? {}
+    const params = asRecord(message.params) ?? {}
     if (method === "thread/goal/updated" || method === "thread/goal/cleared") {
       this.handleGoalNotification(method, params)
       return
     }
-    const directThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
+    const directThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
     if (!directThreadId) return
     const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
     // A child only needs an owner while that owner has a Goal turn to route
@@ -299,7 +299,7 @@ export class CodexGoalController {
       // receiving its frames below so `turn/completed` can end its queue —
       // otherwise pausing mid-turn strands the runtime turn busy forever.
       if (this.statusByThread.get(threadId) !== "active") return
-      const turnId = text(record(params.turn)?.id)
+      const turnId = text(asRecord(params.turn)?.id)
       if (!turnId) return
       const queue = new GoalTurnEventQueue()
       this.turnQueues.set(threadId, { turnId, queue })
@@ -330,7 +330,7 @@ export class CodexGoalController {
               input,
               threadId,
               eventMethod,
-              record(event.payload) ?? {},
+              asRecord(event.payload) ?? {},
               event,
             )
           }

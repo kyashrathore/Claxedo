@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { readdirSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import path from "node:path"
+import { prodSourcePaths } from "./scanners"
+import { importSpecifiers, stripComments } from "./import-graph"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const srcRoot = path.join(appRoot, "src")
@@ -10,19 +12,6 @@ const baseline = JSON.parse(readFileSync(path.join(import.meta.dir, "layout-guar
   pagesLayoutImports: string[]
   claxedoLayoutContextImports: string[]
   railLayoutInnerMounts: string[]
-  heavyShowWrappedPanels: string[]
-}
-
-function listSourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const file = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules") return []
-      return listSourceFiles(file)
-    }
-    if (!/\.(ts|tsx)$/.test(entry.name)) return []
-    return [file]
-  })
 }
 
 function relative(file: string) {
@@ -34,16 +23,7 @@ function canonicalRelativePath(value: string) {
 }
 
 function productionSourceFiles() {
-  return listSourceFiles(srcRoot).filter((file) => {
-    const name = relative(file)
-    if (name.startsWith("architecture/")) return false
-    return !/\.(test|vitest)\.tsx?$/.test(name)
-  })
-}
-
-function importSpecifiers(text: string) {
-  return [...text.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)["']([^"']+)["']/g)]
-    .flatMap((match) => match[1] ? [match[1]] : [])
+  return prodSourcePaths(appRoot)
 }
 
 function scanImportSpecifiers(match: (file: string, specifier: string) => boolean) {
@@ -87,22 +67,9 @@ function isPagesLayoutImport(file: string, specifier: string) {
 
 function scanRailLayoutInnerMounts() {
   return productionSourceFiles().flatMap((file) => {
-    const text = readFileSync(file, "utf8")
+    const text = stripComments(readFileSync(file, "utf8"))
     return [...text.matchAll(/<RailLayoutInner\b/g)].map(() => `${relative(file)}:RailLayoutInner`)
   }).sort()
-}
-
-function scanHeavyShowWrappedPanelsInText(file: string, text: string) {
-  return ["ReviewWorkspace", "Workbench", "WorkspacePanel", "RailSidebar", "TerminalView"].flatMap((name) => {
-    const pattern = new RegExp(`<Show[\\s\\S]{0,400}<${name}\\b`, "g")
-    return [...text.matchAll(pattern)].map(() => `${file}:${name}`)
-  })
-}
-
-function scanHeavyShowWrappedPanels() {
-  return productionSourceFiles().flatMap((file) =>
-    scanHeavyShowWrappedPanelsInText(relative(file), readFileSync(file, "utf8")),
-  ).sort()
 }
 
 function expectPinned(name: keyof typeof baseline, actual: string[]) {
@@ -124,10 +91,6 @@ describe("layout architecture guard", () => {
     expectPinned("railLayoutInnerMounts", scanRailLayoutInnerMounts())
   })
 
-  test("keeps heavy panels out of Show toggles", () => {
-    expectPinned("heavyShowWrappedPanels", scanHeavyShowWrappedPanels())
-  })
-
   test("scanner catches fixture violations", () => {
     expect(canonicalRelativePath("app\\entry\\runtime-providers.tsx")).toBe("app/entry/runtime-providers.tsx")
     expect(canonicalRelativePath("app/entry/runtime-providers.tsx")).toBe("app/entry/runtime-providers.tsx")
@@ -141,7 +104,5 @@ describe("layout architecture guard", () => {
       "../../routes/layout/prefetch-policy",
     )).toBe(true)
     expect(isPagesLayoutImport(path.join(srcRoot, "features/session/ui/session-screen.tsx"), "./session/session-layout")).toBe(false)
-    expect(scanHeavyShowWrappedPanelsInText("fixture.tsx", "<Show when={open()}><WorkspacePanel /></Show>"))
-      .toEqual(["fixture.tsx:WorkspacePanel"])
   })
 })

@@ -21,6 +21,7 @@ describe("package boundary", () => {
       "@claxedo/agent-event-runtime",
       "@claxedo/agent-runtime-contract",
       "@claxedo/agent-sdk-runtime",
+      "@claxedo/helpers",
     ])
   })
 

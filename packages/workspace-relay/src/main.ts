@@ -6,6 +6,7 @@ import {
   importPKCS8,
   importSPKI,
 } from "jose"
+import { trimToUndefined } from "@claxedo/helpers/string"
 import {
   createWorkspaceRelayBun,
   WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
@@ -37,22 +38,17 @@ const BUN_TARGET_CACHE_TTL_MS_DEFAULT = 30_000
 const BUN_REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
 const BUN_RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function positiveInteger(input: string | undefined) {
-  const parsed = Number(clean(input))
+  const parsed = Number(trimToUndefined(input))
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
 }
 
 function pem(input: string | undefined) {
-  return clean(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 function requireEnv(name: string) {
-  const value = clean(process.env[name])
+  const value = trimToUndefined(process.env[name])
   if (!value) {
     console.error(`[workspace-relay] missing required env: ${name}`)
     process.exit(2)
@@ -61,19 +57,17 @@ function requireEnv(name: string) {
 }
 
 /**
- * W2c (2026-07-28-001): PostHog is the relay's error sink — one vendor
- * carries error tracking for every runtime behind one distinct_id space.
+ * PostHog is the relay's error sink — one vendor carries error tracking for
+ * every runtime behind one distinct_id space.
  *
  * Sending requires two independent opt-ins: `CLAXEDO_TELEMETRY_MODE=on` AND
  * `CLAXEDO_POSTHOG_KEY` (`POSTHOG_KEY` accepted as a fallback — the same
- * unprefixed name claxedo-server's posthog.ts already reads). Any other
- * combination → no `PostHog` client is ever constructed: zero SDK overhead,
- * zero network — a clean no-op safe to ship before the telemetry account
- * exists. Host defaults to `https://us.i.posthog.com` (the canonical ingest
- * host — NOT the legacy `app.posthog.com` default some SDKs ship). Release =
- * git SHA passed by the D11 deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA`
- * accepted as alias); captures are tagged unit=relay + deployment_mode
- * (absent → "local", mirroring D9's default).
+ * unprefixed name claxedo-server's posthog.ts reads). Any other combination
+ * constructs no `PostHog` client: zero SDK overhead, zero network. Host
+ * defaults to `https://us.i.posthog.com` (the ingest host, not the legacy
+ * `app.posthog.com` default some SDKs ship). Release is the git SHA from
+ * `CLAXEDO_RELEASE` (`GIT_SHA` accepted as alias); captures are tagged
+ * unit=relay + deployment_mode (absent → "local").
  *
  * `posthog-node` runs fine on Bun (`Bun.serve`), unlike the Cloudflare
  * Worker, which keeps it off its import graph entirely (see worker.ts).
@@ -106,17 +100,17 @@ export type RelayTelemetryOptions = {
  * Exported for tests.
  */
 export function relayTelemetryOptions(env: RelayObservabilityEnv): RelayTelemetryOptions | undefined {
-  if (clean(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() !== "on") return undefined
-  const key = clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
+  if (trimToUndefined(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() !== "on") return undefined
+  const key = trimToUndefined(env.CLAXEDO_POSTHOG_KEY) ?? trimToUndefined(env.POSTHOG_KEY)
   if (!key) return undefined
-  const release = clean(env.CLAXEDO_RELEASE) ?? clean(env.GIT_SHA)
+  const release = trimToUndefined(env.CLAXEDO_RELEASE) ?? trimToUndefined(env.GIT_SHA)
   return {
     key,
-    host: clean(env.CLAXEDO_POSTHOG_HOST) ?? "https://us.i.posthog.com",
+    host: trimToUndefined(env.CLAXEDO_POSTHOG_HOST) ?? "https://us.i.posthog.com",
     ...(release ? { release } : {}),
     tags: {
       unit: "relay",
-      deployment_mode: clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local",
+      deployment_mode: trimToUndefined(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local",
     },
   }
 }
@@ -181,9 +175,9 @@ export type ValidateProductionEnvResult =
   | { ok: false; exitCode: 2; message: string }
 
 export function validateProductionEnv(env: ValidateProductionEnvInput): ValidateProductionEnvResult {
-  const isProduction = clean(env.NODE_ENV) === "production"
+  const isProduction = trimToUndefined(env.NODE_ENV) === "production"
   if (!isProduction) return { ok: true }
-  const resolverToken = clean(env.CLAXEDO_RELAY_RESOLVER_TOKEN)
+  const resolverToken = trimToUndefined(env.CLAXEDO_RELAY_RESOLVER_TOKEN)
   if (!resolverToken) {
     return {
       ok: false,
@@ -209,7 +203,7 @@ export type LoadRuntimeAccessKeyEnv = {
 }
 
 export async function loadRuntimeAccessKeyOrJwks(env: LoadRuntimeAccessKeyEnv): Promise<RelayKey> {
-  const jwksUrl = clean(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
+  const jwksUrl = trimToUndefined(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
   if (jwksUrl) {
     // Throws TypeError on malformed URL — surfaced to the caller.
     return createRemoteJWKSet(new URL(jwksUrl))
@@ -245,17 +239,10 @@ export async function loadRuntimeAccessKeyOrJwks(env: LoadRuntimeAccessKeyEnv): 
  */
 export type LoadRelayHostKeyMaterialEnv = {
   /**
-   * Used to gate the production fail-closed check for the RHT signing key.
-   * If `production` and no signing key PEM is configured, the loader exits
-   * with code 2 rather than silently generating an ephemeral key (which
-   * would be different on every instance and break verification across a
-   * multi-instance deploy).
-   *
-   * Note: T2's `validateProductionEnv` is the canonical home for top-level
-   * env validation, but this check lives here because the loader already
-   * inspects the signing-key env var and the failure mode is local. The
-   * boot path could optionally re-route through `validateProductionEnv` in
-   * a future refactor.
+   * Gates the production fail-closed check: with no signing-key PEM in
+   * `production` the loader exits 2 instead of generating an ephemeral key.
+   * The check lives here rather than in `validateProductionEnv` because the
+   * loader already inspects the signing-key env var.
    */
   NODE_ENV?: string | undefined
   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM?: string | undefined
@@ -278,11 +265,11 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
   if (privatePem) {
     privateKey = (await importPKCS8(privatePem, "EdDSA", { extractable: true }))
   } else {
-    // T7: refuse to boot in production with an ephemeral key. Each instance
+    // Refuse to boot in production with an ephemeral key. Each instance
     // would generate a different key, so RHTs minted by one instance would
     // be unverifiable by another, and the public JWKS would lie about which
     // key is in use.
-    if (clean(env.NODE_ENV) === "production") {
+    if (trimToUndefined(env.NODE_ENV) === "production") {
       console.error(
         "[workspace-relay] CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM required in production; refusing to start with an ephemeral key",
       )
@@ -307,14 +294,14 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
     publicKey = await deriveRelayHostPublicKey(privateKey)
   }
 
-  const explicitCurrentKid = clean(env.CLAXEDO_RELAY_HOST_KID)
+  const explicitCurrentKid = trimToUndefined(env.CLAXEDO_RELAY_HOST_KID)
   const currentKid = explicitCurrentKid ?? (await deriveRelayHostKid(publicKey))
 
   const nextPem = pem(env.CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM)
   let next: RelayHostPublicKey | undefined
   if (nextPem) {
-    const nextPublicKey = (await importSPKI(nextPem, "EdDSA", { extractable: true }))
-    const explicitNextKid = clean(env.CLAXEDO_RELAY_HOST_NEXT_KID)
+  const nextPublicKey = (await importSPKI(nextPem, "EdDSA", { extractable: true }))
+  const explicitNextKid = trimToUndefined(env.CLAXEDO_RELAY_HOST_NEXT_KID)
     next = {
       publicKey: nextPublicKey,
       kid: explicitNextKid ?? (await deriveRelayHostKid(nextPublicKey)),
@@ -329,7 +316,7 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
 }
 
 /**
- * T16: parse `CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE` into a number in [0, 1].
+ * Parse `CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE` into a number in [0, 1].
  * Falls back to a NODE_ENV-gated default (production: 0.1, dev/test: 1.0) if
  * unset, empty, or out of range. Exported for tests.
  */
@@ -339,9 +326,9 @@ export type ParseAuditAcceptSampleRateEnv = {
 }
 
 export function parseAuditAcceptSampleRate(env: ParseAuditAcceptSampleRateEnv): number {
-  const isProduction = clean(env.NODE_ENV) === "production"
+  const isProduction = trimToUndefined(env.NODE_ENV) === "production"
   const fallback = isProduction ? 0.1 : 1
-  const raw = clean(env.CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE)
+  const raw = trimToUndefined(env.CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE)
   if (!raw) return fallback
   const value = Number(raw)
   if (!Number.isFinite(value)) return fallback
@@ -350,7 +337,7 @@ export function parseAuditAcceptSampleRate(env: ParseAuditAcceptSampleRateEnv): 
 }
 
 /**
- * T31: parse the `CLAXEDO_RELAY_METRICS_TOKEN` env var. Returns `undefined`
+ * Parse the `CLAXEDO_RELAY_METRICS_TOKEN` env var. Returns `undefined`
  * for missing/empty/whitespace-only values so the relay can fall back to its
  * loopback-only `/metrics` access policy.
  */
@@ -359,7 +346,7 @@ export type ParseMetricsTokenEnv = {
 }
 
 export function parseMetricsToken(env: ParseMetricsTokenEnv): string | undefined {
-  return clean(env.CLAXEDO_RELAY_METRICS_TOKEN)
+  return trimToUndefined(env.CLAXEDO_RELAY_METRICS_TOKEN)
 }
 
 export type RuntimeAccessTokenCacheEnv = {
@@ -493,7 +480,7 @@ async function runBoundedTeardown(
 }
 
 /**
- * T9: graceful SIGTERM drain wiring.
+ * Graceful SIGTERM drain wiring.
  *
  * On `SIGTERM` (or `SIGINT` for local dev) the relay must:
  *   1. Flip the drain flag so `/health` reports 503 and Fly removes the
@@ -502,7 +489,7 @@ async function runBoundedTeardown(
  *   2. Wait up to `drainTimeoutMs` (default 30 s, override via
  *      `CLAXEDO_RELAY_DRAIN_TIMEOUT_MS`) for the in-flight tunnel HTTP
  *      response map to empty across every connected host tunnel.
- *   3. Release the directory's TTL sweep timer (T18 added `dispose()`) so
+ *   3. Release the directory's TTL sweep timer via `directory.dispose()` so
  *      the process can exit cleanly without a dangling `setInterval`.
  *   4. Exit with code 0.
  *
@@ -597,7 +584,7 @@ export type FatalProcessHandlerOptions = {
   log?: (message: string) => void
   register?: boolean
   /**
-   * W2c: error-tracker hook, invoked (and awaited) before teardown so a fatal
+   * Error-tracker hook, invoked (and awaited) before teardown so a fatal
    * crash reaches PostHog before the process exits. Failures are logged and
    * never block the exit path. Defaults to none (tests, key-absent runs).
    */
@@ -663,9 +650,9 @@ export function installFatalProcessHandlers(options: FatalProcessHandlerOptions)
 }
 
 async function main() {
-  // W2c: PostHog first — everything after this (env validation exits report
-  // their reason on stderr already; runtime errors are the tracker's job).
-  // No-op unless CLAXEDO_TELEMETRY_MODE=on AND a key is set.
+  // PostHog first so every later runtime error reaches the tracker; env
+  // validation failures already report on stderr. No-op unless both opt-ins
+  // are set.
   const observability = initRelayObservability(process.env)
   if (observability.enabled) {
     console.log("[workspace-relay] posthog error tracking enabled")
@@ -680,14 +667,14 @@ async function main() {
     process.exit(validation.exitCode)
   }
 
-  const port = Number(clean(process.env.CLAXEDO_WORKSPACE_RELAY_PORT) ?? "7777")
+  const port = Number(trimToUndefined(process.env.CLAXEDO_WORKSPACE_RELAY_PORT) ?? "7777")
   if (!Number.isFinite(port) || port <= 0) {
     console.error(`[workspace-relay] invalid CLAXEDO_WORKSPACE_RELAY_PORT: ${process.env.CLAXEDO_WORKSPACE_RELAY_PORT}`)
     process.exit(2)
   }
-  const hostname = clean(process.env.CLAXEDO_WORKSPACE_RELAY_HOST) ?? "127.0.0.1"
+  const hostname = trimToUndefined(process.env.CLAXEDO_WORKSPACE_RELAY_HOST) ?? "127.0.0.1"
   const resolverUrl = requireEnv("CLAXEDO_RELAY_RESOLVER_URL")
-  const resolverToken = clean(process.env.CLAXEDO_RELAY_RESOLVER_TOKEN)
+  const resolverToken = trimToUndefined(process.env.CLAXEDO_RELAY_RESOLVER_TOKEN)
 
   let runtimeAccessKey: RelayKey
   try {
@@ -721,8 +708,8 @@ async function main() {
     CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS,
   }))
 
-  // T18: directory holds a TTL sweep `setInterval`. We construct it here so
-  // T9's shutdown handler can call `directory.dispose()` when SIGTERM fires
+  // The directory holds a TTL sweep `setInterval`. We construct it here so
+  // the shutdown handler can call `directory.dispose()` when SIGTERM fires
   // and the process can exit cleanly without a dangling timer.
   const directory = createWorkspaceRelayDirectory()
 
@@ -731,7 +718,7 @@ async function main() {
     NODE_ENV: process.env.NODE_ENV,
   })
 
-  // T31: token-protect /metrics in production (loopback-only otherwise).
+  // Token-protect /metrics in production (loopback-only otherwise).
   const metricsToken = parseMetricsToken({
     CLAXEDO_RELAY_METRICS_TOKEN: process.env.CLAXEDO_RELAY_METRICS_TOKEN,
   })
@@ -742,7 +729,7 @@ async function main() {
     CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY: process.env.CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY,
   })
 
-  const allowedOrigins = parseAllowedOrigins(clean(process.env.CLAXEDO_RELAY_ALLOWED_ORIGINS))
+  const allowedOrigins = parseAllowedOrigins(trimToUndefined(process.env.CLAXEDO_RELAY_ALLOWED_ORIGINS))
 
   const handler = createWorkspaceRelayBun({
     runtimeAccessKey,
@@ -790,24 +777,24 @@ async function main() {
   })
   console.log(`[workspace-relay] listening on http://${hostname}:${port} resolver=${resolverUrl}`)
 
-  // T9: install the SIGTERM/SIGINT drain. Default 30 s, override via
+  // Install the SIGTERM/SIGINT drain. Default 30 s, override via
   // `CLAXEDO_RELAY_DRAIN_TIMEOUT_MS` (parsed leniently — invalid values fall
   // back to the default rather than crashing the deploy).
-  const rawDrainTimeout = clean(process.env.CLAXEDO_RELAY_DRAIN_TIMEOUT_MS)
+  const rawDrainTimeout = trimToUndefined(process.env.CLAXEDO_RELAY_DRAIN_TIMEOUT_MS)
   const parsedDrainTimeout = rawDrainTimeout ? Number(rawDrainTimeout) : NaN
   const drainTimeoutMs = Number.isFinite(parsedDrainTimeout) && parsedDrainTimeout > 0
     ? parsedDrainTimeout
     : 30_000
-  // T10: synthetic end-to-end probe. Runs against the relay's own /health to
+  // Synthetic end-to-end probe. Runs against the relay's own /health to
   // give us an independent liveness signal that does not depend on Prometheus
   // metrics. Disabled via `CLAXEDO_RELAY_SYNTHETIC_PROBE_DISABLED=1`. Cadence
   // tunable via `CLAXEDO_RELAY_SYNTHETIC_PROBE_INTERVAL_MS` (default 60_000).
   // Authenticated workspace probes belong with the Control Plane, which owns
   // Runtime Access Token issuance; this process only verifies the Relay path.
   let syntheticProbe: SyntheticProbe | undefined
-  const syntheticDisabled = clean(process.env.CLAXEDO_RELAY_SYNTHETIC_PROBE_DISABLED) === "1"
+  const syntheticDisabled = trimToUndefined(process.env.CLAXEDO_RELAY_SYNTHETIC_PROBE_DISABLED) === "1"
   if (!syntheticDisabled) {
-    const rawProbeInterval = clean(process.env.CLAXEDO_RELAY_SYNTHETIC_PROBE_INTERVAL_MS)
+    const rawProbeInterval = trimToUndefined(process.env.CLAXEDO_RELAY_SYNTHETIC_PROBE_INTERVAL_MS)
     const parsedProbeInterval = rawProbeInterval ? Number(rawProbeInterval) : NaN
     const probeIntervalMs = Number.isFinite(parsedProbeInterval) && parsedProbeInterval > 0
       ? parsedProbeInterval
@@ -840,8 +827,7 @@ async function main() {
     drain: handler.drain,
     directory,
     log: (message) => console.error(message),
-    // W2c: fatal crashes are exactly the events a solo operator never sees in
-    // a log buffer — flush them to PostHog (no-op when no key) before exiting.
+    // Flush fatal crashes to PostHog (no-op without a key) before exiting.
     report: (error) => reportFatal(error),
     stopServer: async () => {
       // `stop()` is async in Bun: awaiting it means `stopServer` resolves only once
@@ -859,7 +845,7 @@ async function main() {
 if (import.meta.main) {
   main().catch(async (err) => {
     console.error("[workspace-relay] startup failed:", err)
-    // W2c: startup failures past env validation (which exits itself) should
+    // Startup failures past env validation (which exits itself) should
     // reach the error tracker too. No-op without a key.
     await reportFatal(err)
     process.exit(1)

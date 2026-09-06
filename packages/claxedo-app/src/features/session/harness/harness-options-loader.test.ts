@@ -290,55 +290,33 @@ describe("harness options loader", () => {
     })
   })
 
-  // Reproduces the Tier R `real-harness-local` failure where the composer's
-  // model control sat on "Loading models" forever: the harness changes while a
-  // load is in flight (a fast harness switch, or a hydration that lands after
-  // the user picked something else), so the response is correctly discarded as
-  // stale — but `optionsLoading` was set true on entry and every one of these
-  // abandon paths returned without ever setting it back to false. The control
-  // reads `optionsLoading` and has no other way out, so it renders "Loading
-  // models" until the scope is torn down. Whoever owns the scope NOW is
-  // responsible for its next patch; the abandoning load must still release the
-  // flag it raised.
-  test("releases the loading flag when a superseded load is abandoned", async () => {
-    const loader = loaderFor({
-      fetch: async () => {
-        // The switch happens while the request is in flight.
-        harness = connectionHarness("codex-acp")
-        return optionsResponse({ source: "harness", stale: false, options: [] })
-      },
+  for (const outcome of ["success", "http-error", "network-error"] as const) {
+    test(`a superseded ${outcome} response cannot clear a newer pending load`, async () => {
+      const requests: Array<{ resolve: (response: Response) => void; reject: (error: Error) => void }> = []
+      const loader = loaderFor({
+        fetch: () => new Promise((resolve, reject) => requests.push({ resolve, reject })),
+      })
+      const abandoned = loader.load(scope, connectionHarness("claude-acp"))
+      harness = connectionHarness("codex-acp")
+      const current = loader.load(scope, harness)
+      expect(loading).toEqual([true, true])
+
+      if (outcome === "network-error") requests[0].reject(new Error("stale network error"))
+      else requests[0].resolve(outcome === "http-error"
+        ? new Response("stale failure", { status: 500 })
+        : optionsResponse({ source: "harness", stale: false, options: [] }))
+      await abandoned
+
+      expect(loading).toEqual([true, true])
+      expect(patches).toEqual([])
+
+      requests[1].resolve(optionsResponse({ source: "harness", stale: false, options: [] }))
+      await current
+      expect(patches.at(-1)).toMatchObject({ optionsLoading: false })
     })
+  }
 
-    await loader.load(scope, connectionHarness("claude-acp"))
-
-    expect(loading).toEqual([true, false])
-  })
-
-  test("releases the loading flag when an abandoned load fails", async () => {
-    const loader = loaderFor({
-      fetch: async () => {
-        harness = connectionHarness("codex-acp")
-        return new Response("nope", { status: 500 })
-      },
-    })
-
-    await loader.load(scope, connectionHarness("claude-acp"))
-
-    expect(loading).toEqual([true, false])
-  })
-
-  // The codex-acp Tier R repro. Switching a draft harness fires TWO loads for
-  // the SAME harness on the same scope: `switchDraftHarness` calls
-  // `fetchConfigOptions` directly, and the `refresh` it awaits immediately
-  // after reaches `applyStatus`, which fires a second one
-  // (harness-switcher.ts:116/148 -> harness-status-actions.ts:79). Only the
-  // later `nextSeq` wins. When the loser is the one that resolves LAST — the
-  // normal case for a slow harness, codex-acp's options endpoint takes ~4s
-  // against a real binary — it must not stomp the winner's settled state, and
-  // it must still release the loading flag. Before the abandon fix, the loser
-  // returned without clearing it and the control read "Loading models" forever
-  // even though the winner had already delivered a real catalog.
-  test("a slow duplicate load for the same harness releases the flag without stomping the winner", async () => {
+  test("a slow duplicate load cannot change the settled winner", async () => {
     let release: (() => void) | undefined
     const first = loaderFor({
       fetch: async () => {
@@ -368,7 +346,7 @@ describe("harness options loader", () => {
     await slow
 
     expect(patches.at(-1)).toBe(settled)
-    expect(loading.at(-1)).toBe(false)
+    expect(loading).toEqual([true, true])
   })
 
   test("releases the loading flag when an abandoned load throws", async () => {
@@ -403,6 +381,7 @@ describe("harness options loader", () => {
   })
 
   test("does not overwrite a settled harness runtime error with a later live options response", async () => {
+    harness = nativeHarness("cursor")
     selectedModel = ""
     const loader = loaderFor({
       fetch: async () => optionsResponse({

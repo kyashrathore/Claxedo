@@ -197,11 +197,10 @@ describe("process metrics worker", () => {
   })
 
   test("without the optional addon, reconcile still reports the roots so sampling is not blinded", async () => {
-    // The addon is an optionalDependency bun may skip. Returning NO entries
+    // The addon is an optionalDependency bun may skip. Returning no entries
     // here silently blinds the whole Windows source: `entries` is the set the
     // caller samples, so no process reaches a snapshot and every owner looks
-    // unregistered — which is exactly how the release smoke failed with
-    // {"found":false} and no other signal.
+    // unregistered.
     const worker = createWindowsProcessMetricsWorker({
       query: async (pids) => pids.map((pid) => ({
         pid,

@@ -39,16 +39,22 @@ describe("uniqueSummaryDiffs", () => {
     expect(result[2]).toBe(newBeta)
   })
 
-  test("scales linearly for large duplicated summaries", () => {
-    const input = Array.from({ length: 50_000 }, (_, index) => diff(`file_${index % 500}.ts`, index))
+  test("deduplicates large summaries with bounded file-path reads", () => {
+    let fileReads = 0
+    const input = Array.from({ length: 50_000 }, (_, index) => ({
+      ...diff(`file_${index % 500}.ts`, index),
+      get file() {
+        fileReads += 1
+        return `file_${index % 500}.ts`
+      },
+    }))
 
-    const start = performance.now()
     const result = uniqueSummaryDiffs(input)
-    const elapsed = performance.now() - start
 
-    expect(result.length).toBe(500)
-    // The previous result.some(...) scan was quadratic; this budget only
-    // passes when membership checks are O(1).
-    expect(elapsed).toBeLessThan(200)
+    // A scan of prior results for each input repeatedly reads those paths.
+    // Count that work directly so machine load cannot change the verdict.
+    expect(fileReads).toBeLessThanOrEqual(input.length * 3)
+    expect(result).toEqual(input.slice(-500))
+    expect(result.every((item, index) => item === input[49_500 + index])).toBe(true)
   })
 })

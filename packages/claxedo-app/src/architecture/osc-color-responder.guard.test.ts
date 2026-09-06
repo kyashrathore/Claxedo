@@ -4,10 +4,8 @@ import { CAPABILITY_RESPONDER_FILE, oscColorEscapesOutsideResponder, walkProdSou
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 
-// OSC 10/11 (terminal fg/bg color) query detection and their magic RGB response
-// literals must live in exactly one production module. A dead duplicate that
-// once lived in backend/xterm.ts was removed in Wave 1; this guard keeps it
-// removed and forbids the escapes from reappearing anywhere else.
+// OSC 10/11 (terminal fg/bg color) query handling and its RGB response literals
+// live in one production module; a dead duplicate once sat in backend/xterm.ts.
 
 describe("OSC 10/11 single-owner guard", () => {
   test("no production file outside capability-responder.ts handles OSC 10/11 escapes", () => {

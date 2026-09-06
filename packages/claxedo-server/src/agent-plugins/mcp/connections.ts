@@ -9,6 +9,7 @@ import {
   createMcpOAuthIntegration,
   createMcpOAuthIntegrationFromAttempt,
   mcpOAuthDeclaration,
+  MCP_BROKERED_PORT,
 } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import type { AgentPluginHttpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { HostedDynamicConnectionIntegrations } from "../../connections/hosted-d1/types"
@@ -121,11 +122,16 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
         }),
       }
     }))).filter((value): value is NonNullable<typeof value> => value !== undefined)
-    if (!context.integrationId) return declarations.map(({ decl }) => ({ decl, impl: {} }))
+    // These two paths build no auth, but they still carry the port: the
+    // registry reads an integration's capability set off its ports, so an impl
+    // without one resolves for nothing.
+    if (!context.integrationId) {
+      return declarations.map(({ decl }) => ({ decl, impl: { actions: MCP_BROKERED_PORT } }))
+    }
     const selected = declarations.find(({ decl }) => decl.id === context.integrationId)
     if (!selected) return []
     const discovered = await discovery(input.oauth, selected.server, await requestedIssuer(context.request))
-    if (discovered.status === "public") return [{ decl: selected.decl, impl: {} }]
+    if (discovered.status === "public") return [{ decl: selected.decl, impl: { actions: MCP_BROKERED_PORT } }]
     return [await createMcpOAuthIntegration({
       pluginInstanceId: selected.server.pluginInstanceId,
       serverName: selected.server.server.name,

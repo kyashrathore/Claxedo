@@ -8,7 +8,7 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
  * This package ships one Node entry — the single-binary
  * (`self-hosted-node`) that runs local workspaces — plus the Better Auth +
  * D1 worker compositions. Entries share `src/`, so the only
- * thing keeping them apart is which modules each entry can REACH — and
+ * thing keeping them apart is which modules each entry can reach — and
  * reachability is not visible in a composition file, which lists what a
  * deployment mounts rather than what its graph drags along.
  *
@@ -18,11 +18,11 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 
  *   - `@claxedo/local-server`'s own `self-hosted-execution.test.ts` already
  *     forbids every production file in this package from reaching a deep
- *     `@claxedo/local-server/...` path — but it constrains WHICH subpath, not
- *     WHICH deployment. Under that rule a cloud entry could import the desktop
+ *     `@claxedo/local-server/...` path — but it constrains which subpath, not
+ *     which deployment. Under that rule a cloud entry could import the desktop
  *     product's execution surface through the blessed subpath and pass.
  *   - `local-product-contract.test.ts` / `hosted-core-app.test.ts`
- *     pin the mounted ROUTE inventories, which is a different question from
+ *     pin the mounted route inventories, which is a different question from
  *     the import graph: a module can be reached without mounting a route.
  *
  * So what is left, and what this file adds, is: the Node cloud entry had no
@@ -33,7 +33,7 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 const ROOT = path.resolve(import.meta.dirname, "../..")
 
 /**
- * Baselines measured 2026-08-08 from the entries themselves, with
+ * Baselines are measured directly from the entries themselves, with
  * `runtimeOnly: true` — the edges that survive compilation, i.e. what the
  * deployment can actually execute. The ceilings are the measured values with
  * no headroom on purpose: a ceiling that leaves slack lets a closure grow by a
@@ -41,44 +41,40 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
  * it gets read when it changes. Growth is a deliberate one-line bump; a fall
  * should lower the number with it.
  */
-// +1 package on hosted-node and self-hosted-node on 2026-08-09:
-// `@claxedo/sandbox-contract`, the dependency-neutral driver identity and
-// credential schema those compositions already used from sandbox-manager.
-// The edge moved so local/server-core no longer reach lifecycle code; workerd's
-// entry does not reach the config/credential consumers and therefore did not
-// move. No module or provider SDK was added to either closure.
 const ENTRIES = [
-  // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
-  // the composition guard the self-hosted app now installs alongside the
-  // hosted core. One dependency-free module, no new package.
-  // +12 modules (141 -> 153) for the same canonical usage path plus the
-  // self-host-only history/provenance adapters, durable outbox, and the
-  // ledger adapter. The one package edge is the pinned, read-only
-  // `tokentracker-cli` scanner/pricing library. Combined with dev's
-  // sandbox-contract split, then runtime authority reaches the canonical
-  // `@claxedo/workspace-relay-protocol` lease TTL contract. The private-session
-  // reservation route is the reviewed source owner. These exact 150/35 values
-  // are measurements, not headroom.
-  // +1 module (measured 149 -> 151, ceiling raised by 1 to 151):
-  // `session/list.ts`'s new `hostedSessions()` path (`fix(session-list): list
-  // a user-hosted workspace's sessions from its host`) reaches `authority/
-  // hosted-session-pull.ts` — self-hosted-node also answers `/api/control/
-  // sessions` for workspaces this single-binary control plane routes to a
-  // remote host, not only ones it runs locally — and the same `authority/
-  // relay-token-record.ts` dedup as the two hosted entries above (self-hosted
-  // mints relay runtime tokens through the identical owner now). hosted-shared's
-  // `hosted-remote-access-service.ts` is not reached here: self-hosted-node keeps its own
-  // full `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`,
-  // which also enrolls this machine) and its own usage ledger.
-  // No new package.
-  // +4 modules (151 -> 155): the same workspace SessionEnv split into focused
-  // factory, protocol, runtime-env, and admission owners. No new package.
-  // +2 packages (35 -> 37) on 2026-09-05, the generic-harness + Agent Plugins
-  // merge: `@claxedo/opencode-server-adapter` (the self-hosted composition
-  // registers it for operator-configured external OpenCode connections; no
-  // engine is bundled) and the local signed web composition's Better Auth
-  // native-client reach. Measured, not summed.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 37 },
+  // self-hosted-node's closure reaches `@claxedo/sandbox-contract` (the
+  // dependency-neutral driver identity and credential schema shared with
+  // sandbox-manager), `deployments/route-ownership.ts` (the composition guard
+  // installed alongside the hosted core), the self-host-only
+  // history/provenance adapters, durable outbox, and ledger adapter, the
+  // pinned read-only `tokentracker-cli` scanner/pricing library, and the
+  // canonical `@claxedo/workspace-relay-protocol` lease TTL contract reached
+  // through runtime authority.
+  //
+  // It also reaches `session/list.ts`'s `hostedSessions()` path into
+  // `authority/hosted-session-pull.ts`: this single-binary control plane
+  // answers `/api/control/sessions` for workspaces it routes to a remote
+  // host, not only ones it runs locally, and shares the `authority/
+  // relay-token-record.ts` dedup with the hosted entries (self-hosted mints
+  // relay runtime tokens through the same owner). It does not reach
+  // hosted-shared's `hosted-remote-access-service.ts`: self-hosted-node keeps
+  // its own full `RemoteAccessService`
+  // (`self-hosted-node/remote-access-service.ts`, which also enrolls this
+  // machine) and its own usage ledger.
+  //
+  // The workspace `SessionEnv` is split into focused factory, protocol,
+  // runtime-env, and admission modules. `@claxedo/opencode-server-adapter` is
+  // registered for operator-configured external OpenCode connections (no
+  // engine bundled), and the local signed-web composition's Better Auth
+  // native-client is reached as well.
+  //
+  // `@claxedo/helpers` is the canonical owner of the record-narrowing guards
+  // that `workspace/signed-access.ts`, `workspace/routes/index.ts`,
+  // `workspace/runtime-token-guards.ts`, `workspace/local-host.ts`, and
+  // `hosts/workspace-runtime/workspace-session-admission.ts` each used to
+  // define privately. Its `/guards` subpath has zero imports and no host APIs,
+  // so it adds one package name and no transitive edges.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 38 },
 ] as const
 
 /** The remaining cloud compositions. */
@@ -134,22 +130,20 @@ describe("server deployment entry closures", () => {
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
     // The release operator, release identity, paired-recovery proof, and their
-    // dependency-neutral gate modules are now explicit fail-closed edges.
-    // +1 settled-composition-cache.ts (2026-08-31): the per-isolate rule that a
-    // Better Auth composition may be reused only after its lazy init settled —
-    // the fix for the live wedged-isolate outage; reviewed owner of that rule.
-    // +1 platform/json/index.ts (2026-09-06): the package's one owner of
-    // boundary narrowing. `better-auth-d1-operator.cf.ts` reads the operator
-    // request body through it instead of asserting `JSON.parse` into a record.
-    // The module imports nothing, so it adds one file and no packages — the
-    // `packages.length` ceiling below is unchanged, which is what keeps this
-    // edge dependency-neutral.
-    expect(result.modules.length).toBeLessThanOrEqual(15)
-    // +1 dependency-neutral package: the release identity now reads the
-    // canonical empty-service manifest ID from @claxedo/service-contract
-    // instead of owning a second string. No service implementation enters the
-    // locked graph; the forbidden-package assertions below enforce that half.
-    expect(result.packages.length).toBeLessThanOrEqual(7)
+    // dependency-neutral gate modules are explicit fail-closed edges, as is
+    // `settled-composition-cache.ts`: the per-isolate rule that a Better Auth
+    // composition may be reused only after its lazy init settles.
+    expect(result.modules.length).toBeLessThanOrEqual(14)
+    // The release identity reads its empty-service manifest ID from the
+    // dependency-neutral `@claxedo/service-contract` rather than owning a
+    // second string. No service implementation enters the locked graph; the
+    // forbidden-package assertions below enforce that half.
+    //
+    // `@claxedo/helpers` enters through `better-auth-d1-operator.cf.ts`, which
+    // narrows an operator request body with the canonical `assertRecord`. The
+    // `@claxedo/helpers/guards` subpath has zero imports and no host APIs, so
+    // it stays workerd-valid and adds no transitive edge of its own.
+    expect(result.packages.length).toBeLessThanOrEqual(8)
     expect(result.packages).toContain("@claxedo/service-contract")
 
     const forbiddenFiles = files.filter((file) =>
@@ -283,7 +277,7 @@ describe("server deployment entry closures", () => {
   })
 
   it("keeps the desktop package out of both cloud entries", () => {
-    // `@claxedo/local-server` IS the desktop product: PTY proxying, the local
+    // `@claxedo/local-server` is the desktop product: PTY proxying, the local
     // credential store, the embedded Workspace Runtime, the OpenCode compat
     // routes. `self-hosted-node` reaches it on purpose and only through the
     // `self-hosted-execution` port, because the single binary genuinely runs

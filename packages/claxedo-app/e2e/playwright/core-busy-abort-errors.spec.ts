@@ -107,12 +107,9 @@ async function neutralizeStatusPoll(page: Page) {
   })
 }
 
-/** Bypasses the shared mock's driveTurn entirely (204-accepts the dispatch but never
- * emits any follow-up SSE events) so a busy turn stays busy until the test itself
- * intervenes — removes the race between "does the test click Stop/inject an event
- * before driveTurn's own timers fire" and this shared, sometimes heavily contended,
- * machine's actual wall-clock speed. Used by scenarios that need a turn to stay busy
- * indefinitely (behaviors 3, 5, 8) rather than "busy for long enough". */
+/** Accepts `prompt_async` with 204 and emits nothing after it, so the turn stays busy
+ * until the test intervenes. Register after `installMockRuntime`: Playwright tries the
+ * most recently added route first. */
 async function silencePromptAsync(page: Page) {
   const state: { count: number; lastMessageID?: string } = { count: 0 }
   await page.route("**/session/*/prompt_async**", async (route) => {
@@ -167,23 +164,16 @@ async function waitForDispatchReceived(promptState: { count: number }) {
 }
 
 test.describe("core busy / abort / errors @core", () => {
-  // This shared box runs several sibling e2e suites concurrently; page loads and
-  // reactive updates can lag well beyond a quiet-machine budget. Every assertion
-  // below is a real DOM-state poll (never waitForTimeout as the sole guard), so a
-  // longer ceiling only affects how long a genuinely stuck state takes to be
-  // reported, not correctness.
+  // Sibling suites share this machine; every assertion polls DOM state, so a longer
+  // ceiling only delays reporting a stuck state.
   test.describe.configure({ timeout: 120_000 })
-  test("Thinking renders while busy, then gives way to the visible reply — behavior 1", async ({ page }) => {
+  test("Thinking renders while busy, then gives way to the visible reply", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
       harnessModels: PIN_MODELS,
-      // A wide `delta` sizes the REAL busy window (driveTurn's own timers run on
-      // Node-side wall clock regardless of how slow the browser is): busy state ends
-      // when the first assistant content lands, at roughly `busy + pending + delta/2`,
-      // so 12s leaves ~6s for the Thinking-row/"stop"-icon assertions to resolve under
-      // sibling-suite contention while still letting the whole turn settle well inside
-      // the oracle's own 20s window.
+      // Busy ends when the first assistant content lands (~busy + pending + delta/2), so
+      // a wide delta leaves room for the busy assertions under contention.
       timingsMs: { busy: 60, pending: 150, delta: 12_000, completed: 300, idle: 150 },
     })
     await neutralizeStatusPoll(page)
@@ -203,7 +193,7 @@ test.describe("core busy / abort / errors @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("stale-busy: completed reply stays visible and status reconciles without user action — behavior 2 (PERMANENT)", async ({
+  test("stale-busy: completed reply stays visible and status reconciles without user action", async ({
     page,
   }) => {
     const mock = await installMockRuntime(page, {
@@ -219,29 +209,20 @@ test.describe("core busy / abort / errors @core", () => {
     const promptText = "stale busy regression reply must stay visible"
     await sendPrompt(page, input, promptText)
 
-    // The oracle's three layers include "submit control back to ready" — this is the
-    // exact claim the historical regression broke. `session.idle` is never sent by
-    // this mock; the canonical live-status route settles after message completion,
-    // and accepted-prompt reconciliation must observe that producer without user action.
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("Stop click aborts the turn and status reconciles optimistically before the network responds — behavior 3", async ({
+  test("Stop click aborts the turn and status reconciles optimistically before the network responds", async ({
     page,
   }) => {
-    // `holdAbort` — the abort response is withheld until `mock.releaseAbort()` below, so
-    // the "BEFORE the network responds" half of this behavior is actually under test
-    // rather than assumed (see MockRuntimeOptions.holdAbort's doc comment).
+    // The abort response is held until `releaseAbort()`, so ready-before-response is under test.
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
       harnessModels: PIN_MODELS,
       holdAbort: true,
     })
-    // Registered AFTER installMockRuntime: Playwright resolves the most-recently-added
-    // matching route first, so this must come after the shared mock's own
-    // prompt_async handler to actually take precedence over it.
     const promptState = await silencePromptAsync(page)
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)
@@ -254,11 +235,8 @@ test.describe("core busy / abort / errors @core", () => {
 
     await submitIcon(page).click()
 
-    // Order matters, and is the whole point of behavior 3: first prove the abort request
-    // has genuinely reached the network (count incremented) — its response is still being
-    // held open by the route's gate — and only THEN assert the submit control is back to
-    // ready. Inside that window the only thing that could have moved the control is the
-    // client-optimistic `session.status: idle` write, never the round trip.
+    // The abort has reached the network and its response is still held, so only the
+    // optimistic idle write can have moved the control.
     await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     await expect(
       submitIcon(page),
@@ -266,14 +244,12 @@ test.describe("core busy / abort / errors @core", () => {
     ).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
     expect(promptState.count).toBe(1)
 
-    // Let the held response resolve so the page tears down cleanly and the abort's own
-    // follow-up reconciliation is not left permanently pending.
+    // Release the held response so teardown is clean.
     mock.releaseAbort()
   })
 
-  test("an aborted assistant message renders an Interrupted divider at its position — behavior 5", async ({ page }) => {
+  test("an aborted assistant message renders an Interrupted divider at its position", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
-    // Registered AFTER installMockRuntime — see the note in the previous test.
     const promptState = await silencePromptAsync(page)
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)
@@ -325,26 +301,20 @@ test.describe("core busy / abort / errors @core", () => {
     await expect(dividerLabel, "Interrupted divider never rendered").toBeVisible({ timeout: 20_000 })
     await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
 
-    // Evidence for a non-oracle claim: this turn intentionally never produces
-    // assistant reply text, so we capture the divider directly instead of routing
-    // through expectAssistantReplyVisible (which requires assistant text to exist).
+    // No assistant text exists here, so the evidence capture is the divider itself.
     await dividerLabel.scrollIntoViewIfNeeded()
     await page.screenshot({
       path: "test-results/evidence/core-busy-abort-errors/interrupted-divider-at-abort-part-index.png",
     })
   })
 
-  test("Enter on a blank composer while busy is an intentional no-op — behavior 4", async ({ page }) => {
+  test("Enter on a blank composer while busy is an intentional no-op", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
       harnessModels: PIN_MODELS,
-      // This test has the longest probe sequence in the file (two "stop" icon checks
-      // separated by the blank-Enter probe and its request-count assertions), and the
-      // busy window it needs is REAL now that driveTurn's events are delivered: busy
-      // survives until the first assistant content lands, at ~`busy + pending + delta/2`
-      // = ~8s here, with the whole turn settling ~16.5s after dispatch — still inside the
-      // oracle's 20s window measured from its call site near the END of this test.
+      // Busy must outlast the blank-Enter probe and its request-count checks while the
+      // turn still settles inside the oracle's 20s window.
       timingsMs: { busy: 60, pending: 150, delta: 16_000, completed: 300, idle: 150 },
     })
     await neutralizeStatusPoll(page)
@@ -357,14 +327,12 @@ test.describe("core busy / abort / errors @core", () => {
     await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
     await waitForDispatchReceived({ get count() { return mock.requests.promptCount } })
 
-    // Composer is cleared on submit — confirm it is genuinely blank before probing
-    // the guard, then press Enter while the turn is still busy.
+    // Submit clears the composer; confirm it is blank before probing the guard.
     await expect(input).toHaveText("", { timeout: 20_000 })
     await input.click()
     await page.keyboard.press("Enter")
 
-    // Neither submit nor abort fired: bounded request counts, proven via the mock's
-    // request log (never waitForTimeout as the sole guard of this negative).
+    // Give a stray request time to land before checking the counts.
     await page.waitForTimeout(400)
     expect(mock.requests.promptCount, "Enter-on-blank must not submit a second prompt").toBe(1)
     expect(mock.requests.abortCount, "Enter-on-blank must not call session.abort").toBe(0)
@@ -373,7 +341,7 @@ test.describe("core busy / abort / errors @core", () => {
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
   })
 
-  test("a retry/ACP-recovery status renders the retry banner, then the turn recovers and completes — behavior 6", async ({
+  test("a retry/ACP-recovery status renders the retry banner, then the turn recovers and completes", async ({
     page,
   }) => {
     const mock = await installMockRuntime(page, {
@@ -424,11 +392,6 @@ test.describe("core busy / abort / errors @core", () => {
     // during the oracle below, so this can never mask the oracle's "submit control back to
     // ready" layer.
     const retryBanner = page.locator(SELECTORS_retry.banner)
-    // The message is asserted INSIDE the poll: the banner only lives for the
-    // pre-assistant-row stretch (`pending`), and on a starved CI runner the
-    // poll can first see it near the end of that window — a separate
-    // toBeVisible afterwards then races the banner's own removal and fails on
-    // an already-proven render.
     await expect
       .poll(
         async () => {
@@ -444,7 +407,7 @@ test.describe("core busy / abort / errors @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("a non-abort assistant error renders an error card with the JSON envelope unwrapped — behavior 7", async ({
+  test("a non-abort assistant error renders an error card with the JSON envelope unwrapped", async ({
     page,
   }) => {
     const errorEnvelope = JSON.stringify({
@@ -475,9 +438,6 @@ test.describe("core busy / abort / errors @core", () => {
     await expect(errorCard).toHaveAttribute("data-recovery-class", "unknown")
     await expect(errorCard).toContainText("overloaded_error: The server is overloaded, please retry later.")
 
-    // Submit control returns to ready even though no assistant text ever rendered —
-    // both the SSE session.error path and the REST reconciliation path
-    // (conversationHasAssistantMessage sees `error`) drive this.
     await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
     expect(mock.requests.promptCount).toBe(1)
 
@@ -523,12 +483,10 @@ test.describe("core busy / abort / errors @core", () => {
   })
 
   test(
-    "escalation ladder: a genuinely silent server surfaces pending then long, and Cancel aborts — behavior 8",
+    "escalation ladder: a genuinely silent server surfaces pending then long, and Cancel aborts",
     async ({ page }) => {
       test.setTimeout(300_000)
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
-      // Registered AFTER installMockRuntime — see the note in behavior 3's test:
-      // Playwright resolves the most-recently-added matching route first.
       await silencePromptAsync(page)
 
       // Simulate a backend that accepts the dispatch and then goes completely silent: no
@@ -547,9 +505,7 @@ test.describe("core busy / abort / errors @core", () => {
       await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible({ timeout: 20_000 })
 
       const stage = page.getByTestId("session-status-stage")
-      // OPTIMISTIC_STATUS_PENDING_MS=20s measured from the optimistic-busy-set moment
-      // (right after send, above) — not from here — so a generous ceiling absorbs both
-      // that head start and this box's contention rather than assuming a tight budget.
+      // The 20s pending timer starts at send, not here; the ceiling absorbs contention.
       await expect(stage, "pending stage (~20s) never appeared").toBeVisible({ timeout: 90_000 })
       await expect(stage).toHaveAttribute("data-stage", "pending")
       await expect(stage).toContainText("Still working")
@@ -565,7 +521,7 @@ test.describe("core busy / abort / errors @core", () => {
   )
 
   test(
-    "escalation ladder reaches the failed/unresponsive stage with Cancel and Retry — behavior 8",
+    "escalation ladder reaches the failed/unresponsive stage with Cancel and Retry",
     async ({ page }) => {
       // The "failed" stage otherwise fires at OPTIMISTIC_STATUS_FAILURE_MS =
       // 5 * 60_000 of real wall-clock (session-status-dispatcher.ts), impractical
@@ -589,38 +545,19 @@ test.describe("core busy / abort / errors @core", () => {
       await seedOneProject(page, DIR)
       const input = await openDraftPrompt(page, DIR)
 
-      // First send creates the session and moves the URL onto its route. The Retry
-      // affordance is only meaningful once the composer's scope is stable: the
-      // draft→session handoff replaces the draft ("new-session" variant) composer
-      // with the session ("dock" variant) one, and the "last submitted prompt"
-      // snapshot that Retry restores lives per composer instance — it is dropped by
-      // the instance swap and re-armed by `createPromptInputSubmitRetry`'s `resetKey`
-      // effect (`src/features/session/composer/ui/submit-ui-state.ts`, keyed on
-      // `composerBootScope`) on every scope change. So we drive the realistic
-      // hang→cancel→resend flow: the SECOND send below arms the snapshot on the
-      // already-settled session composer.
+      // The Retry snapshot lives per composer instance and the draft→session handoff
+      // swaps instances, so the first send settles the scope and a second send arms Retry.
       await sendPrompt(page, input, "is anyone still there")
       await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
-      // The URL moving is NOT the same event as the composer's own scope settling —
-      // it is the app-shell route that follows the handoff, and the composer swap can
-      // land after it on a slow runner. Assert the composer surface itself has left
-      // draft mode (`data-component`, `composer/ui/frame.tsx`, driven by the same
-      // `modeSnapshot` memo that feeds `composerBootScope`): without this precondition
-      // the second send's Retry snapshot can be armed on the draft instance and then
-      // dropped by the swap, leaving the failed-stage banner with Cancel but no Retry.
+      // The composer swap can land after the URL moves; wait for the session composer
+      // itself, or the second send arms Retry on the draft instance.
       await expect(
         page.locator('[data-component="session-new-composer"]'),
         "draft composer never handed off to the session composer",
       ).toHaveCount(0, { timeout: 20_000 })
       await expect(page.locator('[data-component="session-composer"]').last()).toBeVisible({ timeout: 20_000 })
-      // See waitForDispatchReceived's doc comment: Stop clicked inside the
-      // pre-dispatch window takes the local `takePendingPrompt` short-circuit and the
-      // turn's own send pipeline never runs to completion — its late continuation
-      // (`sendPromptRequest`'s post-dispatch reconcile, `src/features/session/submit/
-      // send.ts`) would then land during the SECOND turn and clear its optimistic
-      // status meta, which is what silently deletes the escalation banner mid-ladder.
-      // Wait for the mock to have actually received turn one's dispatch so the cancel
-      // below is the "abort an already-dispatched turn" path this scenario intends.
+      // A Stop before dispatch leaves the first send's late reconcile to land during the
+      // second turn and clear its status meta.
       await waitForDispatchReceived(promptState)
 
       await submitIcon(page).click()
@@ -628,25 +565,16 @@ test.describe("core busy / abort / errors @core", () => {
 
       await input.click()
       await input.fill("still nothing?")
-      // The submit button and the editor are the same form; assert the editor has
-      // actually committed the text before submitting, so the click cannot land on an
-      // empty composer (a blank submit arms no Retry snapshot and starts no turn).
+      // A blank submit arms no Retry snapshot, so confirm the text committed first.
       await expect(input).toContainText("still nothing?", { timeout: 10_000 })
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
-      // The escalation ladder below only measures the intended scenario once the
-      // second turn has genuinely reached the (silent) server: a turn still inside the
-      // pre-dispatch window is optimistically busy but not yet dispatched.
+      // Optimistic busy precedes dispatch; the ladder is measured from a dispatched turn.
       await expect.poll(() => promptState.count, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
 
       const stage = page.getByTestId("session-status-stage")
-      // The banner appears (pending/long — proven as a stepped ladder by the
-      // sibling behavior-8 test above at real timers) and then reaches the terminal
-      // "failed" stage. We assert the terminal stage directly rather than pinning the
-      // pending→long transitions here: setup latency (send → thinking) is NOT scaled,
-      // so on a slow runner the intermediate stages can already have elapsed before
-      // these checks run. "failed" is stable (rank 4, never advances) until Cancel, so
-      // this is deterministic regardless of runner speed.
+      // Setup latency is not scaled, so pending/long may already have elapsed; "failed"
+      // is terminal and stable until Cancel.
       await expect(stage, "escalation banner never appeared").toBeVisible({ timeout: 30_000 })
       await expect(stage).toHaveAttribute("data-stage", "failed", { timeout: 30_000 })
       await expect(stage).toContainText("unresponsive")

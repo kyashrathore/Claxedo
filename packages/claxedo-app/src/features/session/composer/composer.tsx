@@ -306,11 +306,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const [placeholderIndex, setPlaceholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
-  // The composer's INPUT ENGINE (plan 2026-07-25-005 W3/T3.1): either Claxedo's
-  // own editor/popover/history machinery (default) or upstream's vendored
-  // `createPromptInputV2Controller`, behind `v2/engine-contract.ts`. Only one is ever
-  // built; the draft itself belongs to neither, which is why the flip is lossless.
-  // Everything defined later in this component is passed as a thunk.
+  // Input engine: Claxedo's own editor/popover/history machinery or upstream's
+  // vendored `createPromptInputV2Controller`, behind `v2/engine-contract.ts`.
+  // The draft belongs to neither, so switching is lossless. Values defined
+  // later in this component are passed as thunks.
   const engine = createComposerEngine({
     editor: () => editorRef,
     prompt,
@@ -489,10 +488,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
    */
   const permissionHarness = () => {
     const snapshot = harnessSelectionController?.read(scope())
-    // Withhold until the selection controller has a real answer. The bare
+    // Withhold until the selection controller has a real answer; the bare
     // opencode default otherwise flashes Claxedo permission rows on Codex
-    // drafts during hydration (tier-real behavior 13 records every visible
-    // `[data-action="prompt-permission-mode"]` from first navigation).
+    // drafts during hydration.
     if (toolbarHarnessMode(scope())) {
       const selected = snapshot?.harness
       return selected ? harnessSelectionValue(selected) : undefined
@@ -524,8 +522,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     permission,
   })
 
-  // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
-  // derivation plus the model-picker intent action that resolves a missing model.
   const { roleSubmitBlocked, submitBlock, submitInertBlocked, openModelPicker } =
     createComposerSubmitBlockWiring({
       workspaceId: props.workspaceId,

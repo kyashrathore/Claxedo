@@ -262,16 +262,15 @@ describe("layout project catalog", () => {
 })
 
 // These four functions are the decision cores of the four createEffect blocks
-// in context/layout.tsx that used to hold this logic inline (audit gap: "the
-// two createEffect blocks inside layout.tsx have no direct test").
+// in context/layout.tsx.
 
 describe("shouldStoreOpenedProject (persisting the open-project intent)", () => {
   const valid = () => true
 
   test("stores a project the API catalog does not know yet", () => {
-    // The regression: /project is populated asynchronously and is empty until a
-    // directory is registered, so gating the WRITE on the catalog silently
-    // dropped the project and it was gone after a restart.
+    // `/project` is populated asynchronously and is empty until a directory is
+    // registered, so gating the write on the catalog would silently drop the
+    // project and lose it after a restart.
     expect(
       shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], isLocal: true, valid }),
     ).toBe(true)
@@ -306,7 +305,7 @@ describe("shouldStoreOpenedProject (persisting the open-project intent)", () => 
     })
     expect(catalog.list).toEqual([])
 
-    // Once the server confirms the project, the SAME stored entry renders.
+    // Once the server confirms the project, the same stored entry renders.
     const healed = projectCatalog({
       api: [project({ id: "proj_formlink", worktree: "/Users/me/formlink" })],
       current: [{ worktree: "/Users/me/formlink", expanded: true }],

@@ -40,6 +40,8 @@ import {
 } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
 import { asRecord, isRecord } from "../../platform/json/index"
+import { isFiniteNumber } from "@claxedo/helpers/guards"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 type WorkerCredentialEnv = Record<string, unknown> & {
   CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
@@ -58,19 +60,15 @@ export class HostedCredentialRecordError extends Error {
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
 
 export function hostedCredentialsEnabled(env: WorkerCredentialEnv = process.env): boolean {
-  return stringValue(env[HOSTED_CREDENTIALS_FLAG]) === "1"
+  return trimToUndefined(env[HOSTED_CREDENTIALS_FLAG]) === "1"
 }
 
 /**
- * The ONLY sanctioned path to hosted credential bytes: envelope-encrypted
- * Cloudflare KV, partitioned to one org. Throws (fail closed) when the KEK
- * or KV configuration is missing. Later waves resolve `orgId` from the
- * authenticated principal (Decision 1 org partitioning) and call this
- * per-request or per-org — never the raw KV store.
+ * The only path to hosted credential bytes: envelope-encrypted Cloudflare KV,
+ * partitioned to one org. Throws when the KEK or KV configuration is missing.
  *
- * Carries the `EnvelopeAdmin` surface so a KEK rotation drain
- * (`credentials/rotate.ts`) can classify each slot's key-id without the
- * backend having to be reconstructed a second way.
+ * Carries `EnvelopeAdmin` so a KEK rotation drain (`credentials/rotate.ts`)
+ * can classify each slot's key-id without rebuilding the backend a second way.
  */
 export function createHostedOrgSecretBackend(
   orgId: string,
@@ -89,17 +87,13 @@ export function createHostedOrgSecretBackend(
 function assertHostedCredentialConfig(env: WorkerCredentialEnv) {
   if (!env.CLAXEDO_CREDENTIALS) {
     for (const name of ["CLAXEDO_CF_KV_URL", "CLAXEDO_CF_KV_TOKEN"] as const) {
-      if (!stringValue(env[name])) {
+      if (!trimToUndefined(env[name])) {
         throw new Error(`${HOSTED_CREDENTIALS_FLAG}=1 but ${name} is not configured — refusing to start`)
       }
     }
   }
   // Throws naming CLAXEDO_CREDENTIALS_KEK when absent or malformed.
   envelopeKeyProviderFromEnv(stringEnvironment(env))
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value.trim() || undefined : undefined
 }
 
 function stringEnvironment(env: WorkerCredentialEnv): Record<string, string | undefined> {
@@ -350,8 +344,8 @@ function parseStoredCredential(
     invalidStoredCredential(expected.providerId, "meta.health is unsupported")
   }
   if (
-    !finiteNumber(meta.created_at) ||
-    !finiteNumber(meta.updated_at) ||
+    !isFiniteNumber(meta.created_at) ||
+    !isFiniteNumber(meta.updated_at) ||
     !nullableFiniteNumber(meta.expires_at) ||
     !nullableFiniteNumber(meta.last_validated_at) ||
     !nullableFiniteNumber(meta.last_used_at)

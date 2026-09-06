@@ -1,10 +1,5 @@
 import { base64Encode } from "@opencode-ai/ui/utils/encode"
-import {
-  ACP_SAFE_TOOL_KINDS,
-  IN_PROJECT_WRITE_PERMISSIONS,
-  INTERACTIVE_PERMISSIONS,
-  SAFE_READ_PERMISSIONS,
-} from "@/features/session/permission/modes"
+import { CLAXEDO_AUTO_ANSWERS } from "@/features/session/permission/modes"
 
 /**
  * The permission types "Approve for me" may answer on the user's behalf.
@@ -20,24 +15,11 @@ import {
  * subagent ids, shell tool ids are all dynamic), and a denylist would
  * silently auto-approve every future or third-party tool.
  *
- * Deliberately a scan over the readonly tiers rather than a module-scope `Set`:
- * a handful of entries makes the lookup cost irrelevant, and a module-level Set
- * is mutable shared state.
+ * The picker description and runtime decision share one canonical allowlist.
  */
 export function isAutoApprovablePermission(permission: string | undefined) {
   if (!permission) return false
-  // Must stay the same set as `CLAXEDO_AUTO_ANSWERS` in modes.ts — that constant
-  // describes what Auto approves and this function decides it, so a divergence
-  // means the documented behaviour and the running behaviour disagree. It did:
-  // `question` (the agent asking the USER something, never worth gating) was in
-  // the constant but missing here.
-  const tiers: readonly string[][] = [
-    [...SAFE_READ_PERMISSIONS],
-    [...ACP_SAFE_TOOL_KINDS],
-    [...INTERACTIVE_PERMISSIONS],
-    [...IN_PROJECT_WRITE_PERMISSIONS],
-  ]
-  return tiers.some((tier) => tier.includes(permission))
+  return (CLAXEDO_AUTO_ANSWERS as readonly string[]).includes(permission)
 }
 
 export function acceptKey(sessionID: string, directory?: string) {
@@ -83,7 +65,7 @@ function sessionLineage(session: { id: string; parentID?: string }[], sessionID:
  *
  * Two independent conditions, both required:
  *   1. the switch is on for this session (or an ancestor, or the directory), and
- *   2. the request is for a permission type in `AUTO_APPROVABLE`.
+ *   2. the request is for a permission type in `CLAXEDO_AUTO_ANSWERS`.
  *
  * Condition 2 is what makes this "Approve for me" rather than "approve
  * everything". Callers that only want to know whether the SWITCH is on — the

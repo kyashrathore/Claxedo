@@ -43,10 +43,9 @@ describe("ClaxedoSessionReview", () => {
       },
     )
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      setTimeout(() => callback(performance.now()), 0)
-      return 1
+      return window.setTimeout(() => callback(performance.now()), 0)
     })
-    vi.stubGlobal("cancelAnimationFrame", vi.fn())
+    vi.stubGlobal("cancelAnimationFrame", (handle: number) => window.clearTimeout(handle))
   })
 
   afterEach(() => {
@@ -117,23 +116,27 @@ describe("ClaxedoSessionReview", () => {
     await waitFor(() => expect(onDiffContentRequired).toHaveBeenCalledWith(["src/big.ts"]))
   })
 
-  test("honors a caller-owned forced set so a remounted review keeps its large diffs rendered", async () => {
-    const onDiffContentRequired = vi.fn()
-    render(() => (
-      <FileComponentProvider component="div">
+  test("a caller-owned forced set renders a loaded large diff instead of its guard", async () => {
+    const [forced, setForced] = createSignal<string[]>([])
+    const Diff = () => <div data-testid="forced-diff-body" />
+    const view = render(() => (
+      <FileComponentProvider component={Diff}>
         <ClaxedoSessionReview
-          diffs={[{ file: "src/big.ts", additions: 501, deletions: 0, status: "modified" }]}
+          diffs={[{ file: "src/big.ts", patch: "@@ -1 +1 @@\n-before\n+after", additions: 501, deletions: 1, status: "modified" }]}
           focusedFile="src/big.ts"
           open={["src/big.ts"]}
-          forcedFiles={["src/big.ts"]}
-          onDiffContentRequired={onDiffContentRequired}
+          forcedFiles={forced()}
         />
       </FileComponentProvider>
     ))
-
-    // Without the retained force this diff stays behind the large-diff gate
-    // (the test above); with it, content is requested on the first mount.
-    await waitFor(() => expect(onDiffContentRequired).toHaveBeenCalledWith(["src/big.ts"]))
+    await waitFor(() => expect(view.container.querySelector("[data-slot='session-review-large-diff']")).not.toBeNull())
+    expect(view.queryByTestId("forced-diff-body")).toBeNull()
+    setForced(["src/big.ts"])
+    await waitFor(() => expect(view.getByTestId("forced-diff-body")).toBeVisible())
+    expect(view.container.querySelector("[data-slot='session-review-large-diff']")).toBeNull()
+    setForced([])
+    await waitFor(() => expect(view.container.querySelector("[data-slot='session-review-large-diff']")).not.toBeNull())
+    expect(view.queryByTestId("forced-diff-body")).toBeNull()
   })
 
   test("reports the file a user chooses to render past the large-diff limit", async () => {

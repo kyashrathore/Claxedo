@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/helpers": "workspace:*",
     "@kobalte/core": "catalog:",
     "@opencode-ai/ui": "workspace:*",
     "@pierre/diffs": "catalog:",

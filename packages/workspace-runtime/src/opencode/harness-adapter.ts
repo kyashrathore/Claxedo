@@ -15,6 +15,7 @@ import type {
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
 import type { OpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
@@ -105,7 +106,7 @@ function stringList(input: unknown): string[] {
 }
 
 function stringRecord(input: unknown): Record<string, string> | undefined {
-  const row = record(input)
+  const row = asRecordOrEmpty(input)
   const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
   return entries.length === Object.keys(row).length && entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
@@ -119,7 +120,7 @@ function stringRecord(input: unknown): Record<string, string> | undefined {
 function snapshotMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
   const servers: Record<string, Mcp.ServerConfig> = {}
   for (const [name, value] of Object.entries(input)) {
-    const row = record(value)
+    const row = asRecordOrEmpty(value)
     const disabled = row.disabled === true ? { disabled: true } : {}
     const environment = stringRecord(row.env)
     const headers = stringRecord(row.headers)
@@ -163,12 +164,12 @@ function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.Se
 }
 
 function eventSessionID(event: ProjectedEvent): string | undefined {
-  const data = record(event.data)
+  const data = asRecordOrEmpty(event.data)
   return typeof data.sessionID === "string" ? data.sessionID : undefined
 }
 
 function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
-  const data = record(event.data)
+  const data = asRecordOrEmpty(event.data)
   if (event.type === "session.execution.succeeded") return { type: "finish", sessionId: sessionID, harness: "opencode" }
   if (event.type === "session.execution.interrupted") return { type: "finish", sessionId: sessionID, harness: "opencode" }
   if (event.type === "session.execution.failed") {
@@ -180,7 +181,7 @@ function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamE
 }
 
 function projectTurnEvent(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
-  const data = record(event.data)
+  const data = asRecordOrEmpty(event.data)
   if (event.type === "session.execution.started") return { type: "session-status", status: "busy", harness: "opencode" }
   if (event.type === "session.text.delta" && typeof data.delta === "string") {
     return { type: "text-delta", delta: data.delta, harness: "opencode" }
@@ -204,7 +205,7 @@ function prompt(input: PromptInput) {
   const text: string[] = []
   const files: Array<{ ref: string; name?: string }> = []
   for (const item of input.parts) {
-    const row = record(item)
+    const row = asRecordOrEmpty(item)
     if (row.type === "text" && typeof row.text === "string") {
       text.push(row.text)
       continue
@@ -232,14 +233,14 @@ function scopedId(id: string, what: string) {
 
 function formQuestions(fields: readonly unknown[] | undefined): AgentQuestion["questions"] {
   return (fields ?? []).map((field) => {
-    const row = record(field)
+    const row = asRecordOrEmpty(field)
     const key = typeof row.key === "string" ? row.key : typeof row.name === "string" ? row.name : "answer"
     const options = Array.isArray(row.options) ? row.options : []
     return {
       header: typeof row.label === "string" ? row.label : key,
       question: typeof row.description === "string" ? row.description : typeof row.label === "string" ? row.label : key,
       options: options.map((option) => {
-        const value = record(option)
+        const value = asRecordOrEmpty(option)
         const label = typeof value.label === "string" ? value.label : typeof value.value === "string" ? value.value : String(option)
         return { label, description: typeof value.description === "string" ? value.description : "" }
       }),
@@ -354,7 +355,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     try {
       return session(await runtime.sessions.get(this.scope(binding.directory), binding.sessionId))
     } catch (error) {
-      if (record(error)._tag === "SessionNotFoundError") return null
+      if (asRecordOrEmpty(error)._tag === "SessionNotFoundError") return null
       throw error
     }
   }

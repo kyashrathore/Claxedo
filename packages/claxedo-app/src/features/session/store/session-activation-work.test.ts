@@ -15,7 +15,7 @@ describe("activation-owned cold-path work", () => {
     expect(activationRelativeDelay({ activationAt: 1_000, earliestMs: 100, now: 1_050 })).toBe(50)
   })
 
-  test("scheduled activation work performs zero work through 50 ms and eventually runs exactly once", () => {
+  test("activation work schedules the 100 ms delay and runs once when its callback fires", () => {
     let callback: (() => void) | undefined
     let scheduledDelay = -1
     let runs = 0

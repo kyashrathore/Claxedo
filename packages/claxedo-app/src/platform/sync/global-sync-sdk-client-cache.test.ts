@@ -98,6 +98,12 @@ describe("global sync server client cache", () => {
     }))).toBeUndefined()
     expect(cachedGlobalSyncServerClient({
       owner: "sync-a",
+      directory: "/repo/main",
+      workspaceId: "ws_1",
+      create: () => client("repo-next"),
+    })).not.toBe(repo)
+    expect(cachedGlobalSyncServerClient({
+      owner: "sync-a",
       directory: "/repo/plain",
       create: () => client("plain-next"),
     })).toBe(plain)
@@ -114,7 +120,6 @@ describe("global sync server client cache", () => {
       directory: "/repo/plain",
       create: () => client("plain-next"),
     })).not.toBe(plain)
-    expect(repo).toBe(repo)
   })
 
   test("clears all entries for one provider owner", () => {

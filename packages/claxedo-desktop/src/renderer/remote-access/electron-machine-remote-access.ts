@@ -179,13 +179,12 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
       }
     },
 
-    // `devices` stays ABSENT here, as the port documents. Enumerating the
-    // account's machines is not one of the closed operations, and the synthetic
-    // "this machine" row that used to stand in for it existed only to carry
-    // `sharedWorkspaceIds` to the share surface. That fact now travels on
-    // `status()` where it belongs, so the row would be a second, weaker source
-    // for the same truth — and it made a one-machine desktop render an
-    // "Enrolled machines" list it cannot actually enumerate.
+    // `devices` stays absent here, as the port documents. Enumerating the
+    // account's machines is not one of the closed operations, and a synthetic
+    // "this machine" row would be a second, weaker source for
+    // `sharedWorkspaceIds` than `status()`, which already carries it — and it
+    // would make a one-machine desktop render an "Enrolled machines" list it
+    // cannot actually enumerate.
 
     subscribe(listener) {
       return bridge.onStatus((snapshot) => listener(machineRemoteAccessStatus(snapshot)))

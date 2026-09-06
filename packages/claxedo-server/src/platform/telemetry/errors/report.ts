@@ -1,26 +1,23 @@
 /**
- * Runtime-neutral error-reporting seam (ops-floor decision: unattended
- * detection and grouping is the binding requirement for a solo-operator
- * on-call).
+ * Runtime-neutral error-reporting seam.
  *
- * The Worker, the Node server, and tests all share this module; none of them
- * import an SDK from here (this file must stay Worker-safe — the import-graph
- * guard walks it, and `posthog-node` is a forbidden Worker import). Each
- * entrypoint registers its own sink at boot: worker.ts → a fetch-based
- * `$exception` POST, server.ts → `posthog-node` (via observability/node.ts).
- * With no sink registered — which is exactly what happens when no PostHog key
- * is configured — every report is a clean no-op: no network, no throw.
+ * The Worker, the Node server, and tests share this module, and none of them
+ * import an SDK from here: the file must stay Worker-safe (the import-graph
+ * guard walks it, and `posthog-node` is a forbidden Worker import). Only the
+ * Node server registers a sink (`posthog-node`, via `./node.ts`); the Worker
+ * reports through `platform/auth/worker-telemetry.ts` without this seam. With
+ * no sink registered, which is also what no PostHog key means, every report is
+ * a no-op.
  *
- * Page classes (exactly TWO per the ADR): payment-path errors carry
- * `page_class=payment` so a single alert rule can page the phone on them; the
- * external-uptime page class lives outside this process entirely. Everything
- * else lands in the daily digest.
+ * Two page classes: payment-path errors carry `page_class=payment` so one
+ * alert rule can page on them; the external-uptime class lives outside this
+ * process. Everything else lands in the daily digest.
  */
 
 export type ErrorReportContext = {
   /** Extra tags attached to the event (merged over the unit/mode base tags). */
   tags?: Record<string, string>
-  /** Non-indexed extra payload. NEVER include credential values or PII (I-5). */
+  /** Non-indexed extra payload. Never include credential values or PII. */
   extra?: Record<string, unknown>
 }
 
@@ -46,12 +43,8 @@ export function reportError(error: unknown, context: ErrorReportContext = {}): v
 }
 
 /**
- * Payment-path page class (ADR §4: one of exactly two page classes).
- *
- * Wave-2 billing code (Polar webhook route, checkout, seat sync) calls THIS
- * instead of reportError so the events carry `page_class=payment`; the alert
- * rule that pages the phone matches on that property. Everything reported
- * through plain reportError stays digest-tier.
+ * Billing code reports through this instead of `reportError` so the event
+ * carries `page_class=payment`, the property the paging alert rule matches on.
  */
 export function reportPaymentError(error: unknown, context: ErrorReportContext = {}): void {
   reportError(error, {

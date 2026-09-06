@@ -1,18 +1,18 @@
 import type { Workspace } from "./store/index"
 
 /**
- * How a shared module reaches a LOCAL workspace's embedded runtime.
+ * How a shared module reaches a local workspace's embedded runtime.
  *
- * Three call sites used to do this with a dynamic import written as a VARIABLE
- * plus `@vite-ignore`, deliberately, to keep the local deployment out of the
- * Worker bundle. The intent was right and the mechanism was not: such an edge is
- * invisible to the typechecker, to import rewriters, and to every import-graph
- * gate in this repository. One of them survived a package move silently and
- * broke at runtime while the graph looked clean.
+ * A dynamic import written as a variable plus `@vite-ignore` would keep the
+ * local deployment out of the Worker bundle, but that edge is invisible to
+ * the typechecker, import rewriters, and every import-graph gate in this
+ * repository — a package move can silently break it while the graph looks
+ * clean.
  *
- * A port achieves the same separation and is visible. The composition that owns
- * embedded runtimes installs it; a Worker never does, and a call there fails by
- * name instead of resolving a module that was never meant to be there.
+ * A port achieves the same separation and is visible. The composition that
+ * owns embedded runtimes installs it; a Worker never does, and a call there
+ * fails by name instead of resolving a module that was never meant to be
+ * there.
  */
 export type LocalWorkspaceRuntimePort = {
   /** Dispatch a request into the workspace's embedded runtime. */

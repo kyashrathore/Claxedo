@@ -9,13 +9,10 @@
  * rather than a type the code claimed but never verified.
  */
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { asRecord } from "@claxedo/helpers/guards"
 
-export function record(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
+export { isRecord } from "@claxedo/helpers/guards"
+export { asRecord as record }
 
 /** A non-empty string, or undefined. */
 export function text(value: unknown): string | undefined {
@@ -32,7 +29,7 @@ export function bool(value: unknown): boolean | undefined {
 
 /** The string-valued entries of an object; anything else is dropped. */
 export function stringRecord(value: unknown): Record<string, string> {
-  const row = record(value)
+  const row = asRecord(value)
   if (!row) return {}
   return Object.fromEntries(Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }

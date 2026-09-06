@@ -155,7 +155,7 @@ describe("terminal persistence behavior", () => {
   })
 
   describe("close flow", () => {
-    test("closing a terminal before create .then() resolves should not re-add it", async () => {
+    test("closing a created terminal persists its removal across session recreation", async () => {
       const sdk = createMockSDK()
       const restoreFetch = installFetchMock(sdk)
       const { session, dispose } = createSession(sdk)
@@ -210,10 +210,8 @@ describe("terminal persistence behavior", () => {
 
       // Verify storage is clean
       const raw = storage.getItem(CURRENT_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        expect(parsed.all).toHaveLength(0)
-      }
+      expect(raw).not.toBeNull()
+      expect(JSON.parse(raw!).all).toHaveLength(0)
 
       dispose()
       restoreFetch()

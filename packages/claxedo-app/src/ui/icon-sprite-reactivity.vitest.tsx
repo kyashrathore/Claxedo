@@ -1,13 +1,17 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon, setIconLibrary } from "@opencode-ai/ui/icon"
+import { Icon, iconLibraryPreference, setIconLibrary, setIconLibraryPreference } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { createSignal } from "solid-js"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+
+let previousPreference = iconLibraryPreference()
+beforeEach(() => { previousPreference = iconLibraryPreference() })
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  setIconLibraryPreference(previousPreference)
 })
 
 describe("lazy icon sprites", () => {

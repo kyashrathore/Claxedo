@@ -12,16 +12,13 @@
  * These readers are the single place that decision is made: they never throw,
  * never assert, and return `undefined` for anything that is not present in
  * the expected shape. Callers compose them into one parse per payload.
+ *
+ * The record predicates are the workspace-wide ones, re-exported so callers
+ * keep one import for the whole reader set.
  */
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-/** The record form of {@link isRecord}, for composing into an expression. */
-export function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
-}
+export { asRecord, isRecord } from "@claxedo/helpers/guards"
 
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0

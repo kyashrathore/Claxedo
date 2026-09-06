@@ -1,6 +1,8 @@
+import { stopChild as stopOwnedChild } from "./child-process"
 /** Real signed relay fixture, production web build, and shared browser interaction helpers. */
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { e2eAppViteEnvironment } from "../auth-mode"
 import path from "node:path"
 import { promisify } from "node:util"
 import { SELECTORS as RAIL_SELECTORS } from "./rail-oracle"
@@ -27,6 +29,13 @@ export type RelayFixtureInfo = {
   relayUrl: string
   workspaceId: string
   hostId: string
+  /**
+   * The session the fixture registered through the real private-session
+   * protocol (reserve -> register -> turn admission -> fenced snapshot).
+   * Managed workspace-runtime routes are session-scoped, so PTY creation
+   * needs this id rather than a literal restated by a spec.
+   */
+  sessionId: string
   runtimeAccessToken: string
   directory: string
   role: string
@@ -49,40 +58,8 @@ export type RunningRelayFixture = {
   close(): Promise<void>
 }
 
-const childStops = new WeakMap<ChildProcess, Promise<void>>()
+const stopChild = (child: ChildProcess | undefined) => stopOwnedChild(child, { processGroup: true })
 
-function signalChildTree(child: ChildProcess, signal: NodeJS.Signals) {
-  if (process.platform !== "win32" && child.pid) {
-    try {
-      process.kill(-child.pid, signal)
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
-    }
-  }
-  child.kill(signal)
-}
-
-async function stopChild(child: ChildProcess | undefined) {
-  if (!child || child.exitCode !== null || child.signalCode) return
-  const current = childStops.get(child)
-  if (current) return current
-  const stopping = new Promise<void>((resolve) => {
-    const timeout = setTimeout(() => {
-      signalChildTree(child, "SIGKILL")
-      resolve()
-    }, 8_000)
-    child.once("exit", () => {
-      clearTimeout(timeout)
-      resolve()
-    })
-    signalChildTree(child, "SIGTERM")
-  })
-  childStops.set(child, stopping)
-  await stopping
-}
-
-/** Boots signed control plane, relay, and native harnesses; only the model HTTP endpoint is scripted. */
 export async function startSignedRelayFixture(opts: {
   access: SignedRelayAccess
   backendPort: number
@@ -148,7 +125,19 @@ export async function startSignedRelayFixture(opts: {
           if (settled || !line.trim()) continue
           try {
             const parsed = JSON.parse(line) as RelayFixtureInfo
-            if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.controlPlaneToken) continue
+            // Every field a consumer reads gates readiness: a fixture that
+            // regresses and stops printing one would otherwise resolve with
+            // `undefined` and fail 60s later inside a page gate instead of here.
+            if (
+              !parsed.backendUrl ||
+              !parsed.relayUrl ||
+              !parsed.workspaceId ||
+              !parsed.sessionId ||
+              !parsed.runtimeAccessToken ||
+              !parsed.controlPlaneToken
+            ) {
+              continue
+            }
             settled = true
             clearTimeout(timeout)
             resolve(parsed)
@@ -215,14 +204,12 @@ export async function buildAndServeWebApp(opts: {
         cwd: APP_DIR,
         env: {
           ...process.env,
+          // The one build-environment owner every e2e vite launcher reads
+          // (`e2e/auth-mode.ts`): the adapter selection and the e2e-only seams
+          // (test-auth bypass, the `/__e2e/*` routes) that stay alive in this
+          // production bundle and are tree-shaken out of every other build.
+          ...e2eAppViteEnvironment(),
           VITE_CLAXEDO_SERVER_URL: url,
-          VITE_CLAXEDO_AUTH_ADAPTER: "better-auth",
-          // Keeps the e2e-only harness seams (test-auth bypass via
-          // `__CLAXEDO_TEST_AUTH_TOKEN__`, the `/__e2e/*` routes) alive in the
-          // production bundle — tree-shaken out of any build that does NOT
-          // set this flag, so real production is unaffected
-          // (`playwright.config.ts`'s own production-preview comment).
-          VITE_CLAXEDO_E2E: "1",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -250,9 +237,8 @@ export async function buildAndServeWebApp(opts: {
       cwd: APP_DIR,
       env: {
         ...process.env,
+        ...e2eAppViteEnvironment(),
         VITE_CLAXEDO_SERVER_URL: url,
-        VITE_CLAXEDO_AUTH_ADAPTER: "better-auth",
-        VITE_CLAXEDO_E2E: "1",
       },
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
@@ -433,8 +419,10 @@ export async function seedWorkspace(
   )
 }
 
-export function sessionRoute(info: RelayFixtureInfo) {
-  return `/w/${encodeURIComponent(info.workspaceId)}/session`
+/** The workspace-scoped draft route, or that workspace's route for one session. */
+export function sessionRoute(info: RelayFixtureInfo, sessionId?: string) {
+  const workspace = `/w/${encodeURIComponent(info.workspaceId)}/session`
+  return sessionId ? `${workspace}/${encodeURIComponent(sessionId)}` : workspace
 }
 
 /** Behavior common to every scenario: the connect gate reaches a usable, non-provisioning composer. */
@@ -663,8 +651,9 @@ export async function waitForNewTerminalId(page: Page, before: string[], timeout
 export async function ensureRailPinnedOpen(page: Page) {
   const sidebar = page.locator('[data-testid="rail-sidebar"]')
   // rail-sidebar.tsx sets `data-pinned={docked() ? "" : undefined}` — presence
-  // means pinned (empty string), not the literal `"true"`. Treating `""` as
-  // unpinned used to click Hide Sidebar and collapse the rail mid-journey.
+  // means pinned (empty string), not the literal `"true"`. Treating `""` as falsy
+  // reads a pinned rail as unpinned and clicks Hide Sidebar, collapsing it
+  // mid-journey.
   if ((await sidebar.getAttribute("data-pinned")) !== null) return
 
   // When unpinned, the in-rail Hide control is unmounted; the workbench header

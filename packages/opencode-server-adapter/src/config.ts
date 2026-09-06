@@ -1,4 +1,5 @@
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
+import { isRecord } from "@claxedo/helpers/guards"
 import { OpenCodeServerAdapterError } from "./errors"
 
 export type OpenCodeServerAuthRef =
@@ -202,10 +203,6 @@ function parseDeadlines(input: unknown) {
     requestMs: integer(value.requestMs, "deadlines.requestMs", 1, 120_000),
     streamIdleMs: integer(value.streamIdleMs, "deadlines.streamIdleMs", 1, 300_000),
   }
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
 }
 
 function object(input: unknown, field: string): Record<string, unknown> {

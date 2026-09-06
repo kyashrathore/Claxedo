@@ -62,17 +62,9 @@ async function json(route: import("@playwright/test").Route, body: unknown, stat
 }
 
 /**
- * Every custom route this spec registers (credentials, integrations, sandbox
- * providers, network policy, cli/exchange) targets `getClaxedoServerUrl()`
- * (credentials/integrations/cli-exchange) or a deliberately-forced
- * `window.__CLAXEDO__.serverUrl` (the sandbox read-only-lock scenario) — both
- * genuinely cross-origin relative to the Playwright test page, through
- * `authFetch`/`api.*`, which always attach `Authorization`/`Content-Type`
- * headers. A real browser performs a real CORS preflight (`OPTIONS`) against
- * those before the actual request, even though the response is mocked — an
- * unhandled preflight (e.g. falling through to a catch-all 404) fails the
- * real GET/PUT/DELETE that follows. Wrap every custom handler so `OPTIONS`
- * short-circuits with a 2xx + CORS headers.
+ * Wraps a handler so `OPTIONS` short-circuits with a 2xx and CORS headers. The routes
+ * here are cross-origin to the test page and carry `Authorization`/`Content-Type`, so the
+ * browser preflights them for real; an unhandled preflight fails the request behind it.
  */
 function withCors(handler: (route: import("@playwright/test").Route) => Promise<void> | void) {
   return async (route: import("@playwright/test").Route) => {
@@ -149,12 +141,9 @@ function continueButtonFlashed(page: Page) {
   return page.evaluate(() => (window as typeof window & { __continueButtonSeen__?: boolean }).__continueButtonSeen__ === true)
 }
 
-/** Reads the `__claxedoSignInCalls` e2e seam (`src/platform/auth/browser-auth-test-bypass.ts`,
- * DEV || VITE_CLAXEDO_E2E gated) — every `auth.signIn()` invocation with the
- * `redirectUrl` it was given. The `/login` "Continue triggers sign-in" test
- * below asserts a POSITIVE count through this same seam, which is this file's
- * proof the seam is live and therefore that the zero-call assertions elsewhere
- * are not vacuous. */
+/** Reads the `__claxedoSignInCalls` seam: every `auth.signIn()` call with the
+ * `redirectUrl` it was given. The Continue-triggers-sign-in test asserts a non-zero count
+ * through it, which is what keeps the zero-call assertions elsewhere from being vacuous. */
 function signInCalls(page: Page) {
   return page.evaluate(
     () => (window as typeof window & { __claxedoSignInCalls?: { redirectUrl?: string }[] }).__claxedoSignInCalls ?? [],
@@ -236,8 +225,8 @@ function notificationRequestCount(page: Page) {
   )
 }
 
-/** How many `new Notification(...)` the app actually constructed — the positive
- * control that `platform.notify`'s body RAN (see installMockNotificationApi). */
+/** How many `new Notification(...)` the app constructed — the control that
+ * `platform.notify`'s body ran at all. */
 function notificationInstanceCount(page: Page) {
   return page.evaluate(
     () => (window as typeof window & { __notificationInstanceCount__?: number }).__notificationInstanceCount__ ?? 0,
@@ -262,16 +251,11 @@ async function driveOneTurn(page: Page, promptText: string) {
   const userBubble = page.getByText(promptText, { exact: true }).last()
   const bubbleCountBefore = await page.getByText(promptText, { exact: true }).count()
   await submit.click()
-  // Turn START gets the same budget as turn completion below. Three CI runs
-  // (354, 361, 365 — the last with a 15s budget) saw the same stall: the
-  // click clears the composer and then NO turn ever starts, the button
-  // sitting disabled+"send" with the empty-composer label the whole window.
-  // That is a dropped send, not a slow one, so re-submit once — the first
-  // click provably started no turn, so a second cannot double-send. A turn
-  // that DID start (icon "stop", or the user bubble landed) is never retried.
-  //
-  // Fast mock turns can finish before Playwright samples data-icon="stop";
-  // treat a new exact user bubble as proof the send landed.
+  // A click can clear the composer and start no turn at all, leaving the button disabled
+  // on the empty-composer label. That is a dropped send rather than a slow one, so it is
+  // re-submitted once; a turn that did start is never retried, so this cannot double-send.
+  // Fast mock turns can also finish before `data-icon="stop"` is ever sampled, so a new
+  // user bubble counts as proof the send landed.
   const turnStarted = async () => {
     if ((await submit.getAttribute("data-icon")) === "stop") return true
     return (await page.getByText(promptText, { exact: true }).count()) > bubbleCountBefore
@@ -552,7 +536,7 @@ function mockSandboxDrivers(page: Page, initial: { default_driver: string; drive
 
 test.describe("core settings + auth @core", () => {
   test.describe("settings dialog: tabs, gating, mobile nav", () => {
-    test("General is active by default; switching tabs shows exactly one panel — behavior 1", async ({ page }) => {
+    test("General is active by default; switching tabs shows exactly one panel", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -575,7 +559,9 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
     })
 
-    test("the Sandbox preview flag exposes its settings tab — behavior 2", async ({ page }) => {
+    // The core browser command explicitly enables the preview entry point; the
+    // underlying sandbox authorization and mutation contracts remain separate.
+    test("the Sandbox preview flag exposes its settings tab", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockSandboxDrivers(page, { default_driver: "docker", drivers: [] }).install()
@@ -587,7 +573,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("heading", { name: "Sandbox Providers", exact: true })).toBeVisible()
     })
 
-    test("mobile viewport: menu mode by default, tab selection drills into content, back returns to menu — behavior 3", async ({ page }) => {
+    test("mobile viewport: menu mode by default, tab selection drills into content, back returns to menu", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -602,16 +588,9 @@ test.describe("core settings + auth @core", () => {
 
       await expect(dialog.locator(".settings-mobile-menu")).toHaveCount(1)
       await expect(dialog.locator('[data-slot="tabs-list"]')).toBeVisible()
-      // NOT `:not([hidden])` (used for the desktop one-panel-at-a-time checks
-      // above): Kobalte's Tabs.Content only toggles the `hidden` ATTRIBUTE on
-      // the INACTIVE panels — the active panel never gets `hidden` from
-      // Kobalte itself. Menu mode additionally hides the active panel too,
-      // but purely via the app's own CSS class rule
-      // (`.settings-mobile-menu > [data-slot="tabs-content"] { display: none
-      // !important }`, `src/claxedo-ui/claxedo-layout.css`), which never
-      // touches the `hidden` attribute — so `:not([hidden])` still matches
-      // the (CSS-hidden) active panel and this assertion would always see 1,
-      // never 0. `:visible` checks actual computed visibility instead.
+      // `:visible`, not `:not([hidden])`: Kobalte marks only inactive panels `hidden`, and
+      // menu mode hides the active one through a CSS rule instead, so an attribute query
+      // would always see one panel here.
       await expect(dialog.locator('[data-slot="tabs-content"]:visible')).toHaveCount(0)
 
       await tabTrigger(page, "shortcuts").click()
@@ -627,7 +606,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("General: account section + sign-out", () => {
-    test("runner auth mode exposes the declared account principal — behavior 33", async ({ page }) => {
+    test("runner auth mode exposes the declared account principal", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -646,7 +625,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("test@claxedo.test")).toHaveCount(0)
     })
 
-    test("account section renders for the default signed test-bypass principal, with identity + sign-out — behavior 4", async ({ page }) => {
+    test("account section renders for the default signed test-bypass principal, with identity + sign-out", async ({ page }) => {
       await stampTestAuth(page.context())
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
@@ -658,7 +637,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible()
     })
 
-    test("account section still renders for an anonymous principal, without an identity row — behavior 4", async ({ page }) => {
+    test("account section still renders for an anonymous principal, without an identity row", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await disableTestAuthBypass(page)
@@ -670,13 +649,10 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("test@claxedo.test")).toHaveCount(0)
     })
 
-    // `isSignedIn()` is unconditionally true under Playwright
-    // (`navigator.webdriver`), which would bounce `/login` straight back to the
-    // workbench. `signOut()` therefore sets `__CLAXEDO_TEST_SIGNED_OUT__`,
-    // which `testAuth()` honours to report an anonymous principal — a
-    // dev/e2e-only seam in `src/platform/auth/browser-auth-test-bypass.ts`, not
-    // a production behavior change.
-    test("Log out signs out, purges persisted auth state, and stays on /login — behavior 5", async ({ page }) => {
+    // The webdriver bypass otherwise reports every principal as signed, so `signOut()`
+    // sets `__CLAXEDO_TEST_SIGNED_OUT__`, which `testAuth()` honours in dev/e2e builds
+    // only; without it `/login`'s redirect-if-signed guard bounces straight back.
+    test("Log out signs out, purges persisted auth state, and stays on /login", async ({ page }) => {
       await stampTestAuth(page.context())
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
@@ -691,12 +667,8 @@ test.describe("core settings + auth @core", () => {
       await expect(logout).toBeVisible()
       await logout.click()
 
-      // The synthetic principal is now signed OUT, so `/login`'s
-      // redirect-if-already-signed guard no longer bounces back to the
-      // workbench — landing (and staying) on /login proves the principal is
-      // anonymous (a still-signed principal would bounce to "/"). Generous
-      // timeout: LoginPage is a lazily code-split route whose chunk import is
-      // slow under a loaded dev server (never a wall-clock sleep).
+      // Landing and staying on /login is what proves the principal went anonymous: a
+      // still-signed one bounces to "/". The long budget covers LoginPage's lazy chunk.
       await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 })
       // The anonymous login page's "Continue" CTA renders. A CSS/text locator,
       // not getByRole: the Settings dialog stays in the app-wide DialogProvider
@@ -710,7 +682,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("General: appearance preview/commit + notifications + updates", () => {
-    test("hovering a color scheme option live-previews, moving off cancels, selecting commits — behavior 6", async ({ page }) => {
+    test("hovering a color scheme option live-previews, moving off cancels, selecting commits", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -721,11 +693,9 @@ test.describe("core settings + auth @core", () => {
       await openSelect(page, "settings-color-scheme")
       const darkOption = selectOption(page, "Dark")
       await expect(darkOption).toBeVisible()
-      // Previewing reapplies the global theme and can replace the option node
-      // while a physical-pointer hover is still running. Dispatch the exact
-      // pointer-enter event owned by Select instead of forcing Playwright's
-      // actionability engine through that intentional replacement; the
-      // resulting document scheme below remains the product-level oracle.
+      // Previewing reapplies the global theme and can replace the option node mid-hover,
+      // so the pointer-enter event Select owns is dispatched directly rather than driven
+      // through Playwright's actionability engine.
       await darkOption.dispatchEvent("pointerenter", { pointerType: "mouse" })
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe("dark")
 
@@ -737,15 +707,13 @@ test.describe("core settings + auth @core", () => {
       // click and dismisses only the popover.
       await page.getByRole("heading", { name: "General", exact: true }).click()
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe(committedBefore)
-      // Wait for the popover to be FULLY gone (not just the preview reverted)
-      // before reopening it — reopening while its close transition is still
-      // in flight is flaky.
+      // Reopening while the close transition is still in flight is flaky, so wait for the
+      // popover to be gone rather than just for the preview to revert.
       await expect(page.locator('[data-slot="select-select-item"]')).toHaveCount(0)
 
       await openSelect(page, "settings-color-scheme")
-      // `{ force: true }`: same continuous-re-render churn as the hover
-      // above — clicking still passes the cursor over the option first,
-      // triggering the same `onHighlight` → store-write → re-render loop.
+      // `{ force: true }`: the click passes the cursor over the option first and sets off
+      // the same highlight → store-write → re-render churn as the hover above.
       await selectOption(page, "Dark").click({ force: true })
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe("dark")
       // The EXACT committed value, not merely "something was written":
@@ -758,15 +726,14 @@ test.describe("core settings + auth @core", () => {
       expect(persisted).toBe("dark")
     })
 
-    test("all three notification switches toggle and write through to useSettings().notifications.* — behavior 7", async ({ page }) => {
+    test("all three notification switches toggle and write through to useSettings().notifications.*", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
       await openSettings(page)
 
-      // All THREE named switches, not just "agent" — behavior 7 names
-      // agent/permissions/errors and a per-switch mis-wiring (e.g. two rows
-      // bound to the same setter) is invisible if only one is exercised.
+      // All three switches: two rows bound to the same setter is invisible if only one
+      // is exercised.
       for (const key of ["agent", "permissions", "errors"] as const) {
         const box = page.locator(`[data-action="settings-notifications-${key}"] input[type="checkbox"]`)
         const before = await box.isChecked()
@@ -794,15 +761,14 @@ test.describe("core settings + auth @core", () => {
       }
     })
 
-    test("Notification permission is requested at most once, only from enabling the toggle, never from turn completion — behavior 32", async ({ page }) => {
+    test("Notification permission is requested at most once, only from enabling the toggle, never from turn completion", async ({ page }) => {
       await installMockNotificationApi(page)
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
 
-      // Agent notifications default ON (`defaultSettings.notifications.agent`,
-      // src/context/settings.tsx) — turn it OFF first so the first driven
-      // turn below proves the "setting off" half of the contract.
+      // Agent notifications default on; turning them off first lets the turn below cover
+      // the setting-off half.
       await openSettings(page)
       const agentSwitch = page.locator('[data-action="settings-notifications-agent"] input[type="checkbox"]')
       const agentControl = page.locator('[data-action="settings-notifications-agent"] [data-slot="switch-control"]')
@@ -818,8 +784,7 @@ test.describe("core settings + auth @core", () => {
       // constructed either.
       expect(await notificationInstanceCount(page)).toBe(0)
 
-      // Turning the toggle ON is the ONLY point a permission request may
-      // fire — assert it fires exactly once, from this click.
+      // Enabling the toggle is the only point a permission request may fire.
       await openSettings(page)
       if (!(await agentSwitch.isChecked())) await agentControl.click()
       await expect.poll(() => agentSwitch.isChecked()).toBe(true)
@@ -832,19 +797,15 @@ test.describe("core settings + auth @core", () => {
       // (src/app/entry/main.tsx) calls `Notification.requestPermission()`
       // itself while permission is still "default".
       await driveOneTurn(page, "notification setting on turn")
-      // POSITIVE CONTROL FIRST: prove `platform.notify`'s body actually RAN
-      // this time (it constructed a Notification) — otherwise the zero-new-
-      // requests assertion below would be satisfied by the notify path never
-      // executing at all, which is exactly the false-positive shape this test
-      // exists to avoid. `installMockNotificationApi` forces the in-view
-      // early-return false so the body is reachable at all.
+      // Control first: a constructed Notification shows `platform.notify` ran, so the
+      // zero-new-requests assertion below is not satisfied by a path that never executed.
       await expect.poll(() => notificationInstanceCount(page), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-      // ...and STILL exactly one permission request in total: notify read the
-      // (already "granted") permission and never re-requested it.
+      // ...and still one permission request in total: notify read the granted permission
+      // rather than asking again.
       expect(await notificationRequestCount(page)).toBe(1)
     })
 
-    test("update-check affordances are disabled on the web platform (no platform.checkUpdate) — behavior 8", async ({ page }) => {
+    test("update-check affordances are disabled on the web platform (no platform.checkUpdate)", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -856,7 +817,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("Shortcuts: search, rebind, conflict, reset", () => {
-    test("search filters the list; a no-match query shows the empty state — behavior 9", async ({ page }) => {
+    test("search filters the list; a no-match query shows the empty state", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -871,7 +832,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("No shortcuts found")).toBeVisible()
     })
 
-    test("rebinding a shortcut records the next keydown as its new binding — behaviors 9,10", async ({ page }) => {
+    test("rebinding a shortcut records the next keydown as its new binding", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -903,7 +864,7 @@ test.describe("core settings + auth @core", () => {
       expect(await row.textContent()).not.toBe(originalBinding)
     })
 
-    test("rebinding to a combo already used elsewhere shows a conflict toast and changes nothing — behavior 11", async ({ page }) => {
+    test("rebinding to a combo already used elsewhere shows a conflict toast and changes nothing", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -957,7 +918,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.locator('[data-keybind-id="command.palette"]')).toHaveText(paletteBinding ?? "")
     })
 
-    test("Reset to defaults is disabled until an override exists, then clears overrides — behavior 12", async ({ page }) => {
+    test("Reset to defaults is disabled until an override exists, then clears overrides", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -980,7 +941,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("Providers: connect, disconnect, env-locked, custom validation", () => {
-    test("connecting a popular API-key provider PUTs credentials and marks it connected — behavior 13", async ({ page }) => {
+    test("connecting a popular API-key provider PUTs credentials and marks it connected", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
@@ -1009,7 +970,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("Anthropic connected")).toBeVisible()
     })
 
-    test("an env-sourced connected provider has no Disconnect button; API-key Disconnect DELETEs credentials and engine auth — behavior 14", async ({ page }) => {
+    test("an env-sourced connected provider has no Disconnect button; API-key Disconnect DELETEs credentials and engine auth", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
@@ -1112,7 +1073,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("Connections: status states, connect flow, OAuth polling, secret hygiene, disconnect", () => {
-    test("integration rows show status chips and the right action set per status — behavior 16", async ({ page }) => {
+    test("integration rows show status chips and the right action set per status", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const mock = mockIntegrations(page, {
@@ -1129,7 +1090,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("button", { name: "Reconnect" })).toBeVisible()
     })
 
-    test("connecting a key-method integration POSTs /connect and reloads the list on success — behavior 17", async ({ page }) => {
+    test("connecting a key-method integration POSTs /connect and reloads the list on success", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const mock = mockIntegrations(page, {
@@ -1153,7 +1114,7 @@ test.describe("core settings + auth @core", () => {
       await expect(dialog).toBeHidden()
     })
 
-    test("a 409 connection_exists response switches to confirm-replace instead of erroring — behavior 17", async ({ page }) => {
+    test("a 409 connection_exists response switches to confirm-replace instead of erroring", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const mock = mockIntegrations(page, {
@@ -1180,7 +1141,7 @@ test.describe("core settings + auth @core", () => {
       await expect(dialog).toBeHidden()
     })
 
-    test("an OAuth-only integration opens the URL and polls attempts until complete — behavior 18", async ({ page }) => {
+    test("an OAuth-only integration opens the URL and polls attempts until complete", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       let polls = 0
@@ -1215,9 +1176,8 @@ test.describe("core settings + auth @core", () => {
       await dialog.getByRole("button", { name: "Continue with OAuth" }).click()
 
       await expect(dialog.getByText("Waiting for authorization")).toBeVisible()
-      // The exact authorization URL the server returned was handed to
-      // `window.open` — asserted BEFORE the success poll so a failure here is
-      // attributed to the open step, not to polling.
+      // The authorization URL the server returned reached `window.open`. Asserted before
+      // the success poll so a failure lands on the open step, not on polling.
       await expect
         .poll(
           () => page.evaluate(() => (window as typeof window & { __openedUrls__?: string[] }).__openedUrls__ ?? []),
@@ -1229,15 +1189,12 @@ test.describe("core settings + auth @core", () => {
       expect(mock.attemptCalls.length).toBeGreaterThanOrEqual(2)
     })
 
-    // This cannot prove "the pasted secret is cleared from the in-memory flow":
-    // `createConnectFlow` runs INSIDE the component body
-    // (`src/app/dialogs/connect-integration.tsx`), so its store is per-instance
-    // and dies with the component. A reopened dialog is a brand-new instance
-    // with a brand-new empty store, so everything below holds identically with
-    // `onCleanup(() => flow.reset())` deleted. What it does prove is that no
-    // secret survives in any input's value and that nothing was sent; the
-    // externally-visible half of `reset()` is pinned by the next test.
-    test("closing the connect dialog leaves no secret in any input and sends nothing — behavior 19 (partial: see header)", async ({ page }) => {
+    // The title stops at what a spec can falsify. `createConnectFlow` runs inside the
+    // component body, so its store is per-instance and dies with the component either way:
+    // a reopened-and-empty assertion observes disposal, not the cleanup. What is asserted
+    // is that no input holds the secret and nothing was sent; the cleanup's one observable
+    // effect is pinned by the next test.
+    test("closing the connect dialog leaves no secret in any input and sends nothing", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const mock = mockIntegrations(page, {
@@ -1276,8 +1233,8 @@ test.describe("core settings + auth @core", () => {
       // Positive precondition: the field actually re-rendered. Without it, an
       // empty-value assertion on a locator that matched nothing is vacuous.
       await expect(reopenedSecret).toHaveCount(1)
-      // `toHaveValue` reads the input's `value` PROPERTY (the only place a
-      // password input's contents ever live) — a rendered-text query cannot.
+      // `toHaveValue` reads the `value` property, the only place a password input's
+      // contents live; a text query cannot see them.
       await expect(reopenedSecret).toHaveValue("")
 
       const secretLeakedIntoAField = await page.evaluate((needle: string) => {
@@ -1293,16 +1250,11 @@ test.describe("core settings + auth @core", () => {
       expect(JSON.stringify(mock.connectCalls)).not.toContain("leaked-if-not-cleared")
     })
 
-    // The DISCRIMINATING half of behavior 19. `onCleanup(() => flow.reset())`
-    // (`src/app/dialogs/connect-integration.tsx`) does two things: it clears
-    // the store (unobservable — the store dies with the component either way,
-    // see the test above) and it bumps `generation`, which is the ONLY thing
-    // that stops `pollAttempt`'s loop
-    // (`src/features/settings/ui/connections-logic.ts`). That loop is a plain
-    // async function, not owned by Solid and not tied to the component's
-    // lifetime, so without that cleanup it would keep issuing
-    // `GET /attempts/:id` forever after the dialog is gone.
-    test("closing the connect dialog mid-OAuth cancels the attempt poll loop — behavior 19", async ({ page }) => {
+    // The connect dialog's cleanup bumps `generation`, which is the only thing that stops
+    // `pollAttempt`'s loop. That loop is a plain async function tied to nothing in Solid's
+    // lifecycle, so without the cleanup it keeps hitting `GET /attempts/:id` forever after
+    // the dialog is gone.
+    test("closing the connect dialog mid-OAuth cancels the attempt poll loop", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const mock = mockIntegrations(page, {
@@ -1326,29 +1278,24 @@ test.describe("core settings + auth @core", () => {
       await dialog.getByRole("button", { name: "Continue with OAuth" }).click()
       await expect(dialog.getByText("Waiting for authorization")).toBeVisible()
 
-      // Prove the loop is genuinely RUNNING first — otherwise "it stopped"
-      // would be satisfied by a loop that never started (the same
-      // false-positive shape this test exists to close).
+      // Check the loop is running first, or "it stopped" is satisfied by one that never
+      // started.
       await expect.poll(() => mock.attemptCalls.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
 
       await dialog.locator('[data-slot="dialog-close-button"]').click()
       await expect(page.locator('[data-slot="dialog-container"]')).toHaveCount(0)
 
-      // `pollAttempt` re-checks `generation` immediately after each
-      // `await sleep(pollIntervalMs)` and again after each fetch resolves, so
-      // once the cleanup has run no further request is dispatched. Let one
-      // in-flight request settle, then hold an observation window several poll
-      // intervals wide (pollIntervalMs defaults to 2000ms) and require the
-      // counter to be perfectly flat across it. This is an absence-of-events
-      // observation, which is inherently time-boxed — there is no event to
-      // await for "a request that must never happen".
+      // `pollAttempt` re-checks `generation` after each sleep and each fetch, so once the
+      // cleanup runs nothing further is dispatched. One in-flight request is allowed to
+      // settle, then the counter must stay flat across several poll intervals — an absence
+      // of events has no arrival to await, so the window is time-boxed.
       await page.waitForTimeout(500)
       const afterClose = mock.attemptCalls.length
       await page.waitForTimeout(7_000)
       expect(mock.attemptCalls.length).toBe(afterClose)
     })
 
-    test("disconnect is a two-step inline confirm; Cancel sends nothing, Confirm DELETEs — behavior 20", async ({ page }) => {
+    test("disconnect is a two-step inline confirm; Cancel sends nothing, Confirm DELETEs", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const mock = mockIntegrations(page, {
@@ -1376,16 +1323,15 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("Sandbox: default provider, credential CRUD, read-only lock, network policy", () => {
-    test("switching provider offers 'Use for new workspaces', PUTs default, and clears — behavior 21", async ({ page }) => {
+    test("switching provider offers 'Use for new workspaces', PUTs default, and clears", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const sandbox = mockSandboxDrivers(page, {
         default_driver: "docker",
         drivers: [
           { id: "docker", label: "Docker", fields: [{ key: "token", label: "Token", secret: true }], configured: true, source: "config", default: true },
-          // Configured on purpose: switching the active provider without
-          // retyping a stored key is exactly what this affordance is for, and
-          // it only renders for a provider that already has credentials.
+          // Configured on purpose: the affordance only renders for a provider that already
+          // has credentials, which is the point of switching without retyping a key.
           { id: "e2b", label: "E2B", fields: [{ key: "token", label: "Token", secret: true }], configured: true, source: "config", default: false },
         ],
       })
@@ -1396,21 +1342,13 @@ test.describe("core settings + auth @core", () => {
 
       const useForNew = page.getByRole("button", { name: "Use for new workspaces" })
       await expect(useForNew).toHaveCount(0)
-      // Scoped to the ACTIVE tabs-content panel, not a bare `.first()`:
-      // inactive `Tabs.Content` panels stay mounted (Kobalte hides them via
-      // the `hidden` attribute, not removal — see the mobile-menu fix
-      // above), so an unscoped `[data-slot="select-select-trigger"]` matches
-      // selects from every mounted panel and `.first()`'s resolution is
-      // genuinely unstable across retries (verified live: consecutive polls
-      // resolved to two DIFFERENT trigger elements with different ids).
+      // Scoped to the active panel: inactive `Tabs.Content` stays mounted under a `hidden`
+      // attribute, so an unscoped trigger locator matches selects from every panel and
+      // `.first()` resolves to different elements across retries.
       await page.locator('[data-slot="tabs-content"]:not([hidden]) [data-slot="select-select-trigger"]').first().click()
-      // `{ force: true }`: this Select's options don't settle under
-      // Playwright's hover-stability check (same symptom as the
-      // color-scheme popover above — verified live, "element is not
-      // stable" then "element was detached from the DOM, retrying", never
-      // settling within the full test timeout) — a `packages/ui` Select
-      // popover behavior, not specific to this row's own `onHighlight`
-      // wiring (this Select has none).
+      // `{ force: true }`: the Select popover never settles under Playwright's
+      // hover-stability check, which is `packages/ui` Select behaviour rather than anything
+      // this row wires up.
       await page.locator('[data-slot="select-select-item"]').filter({ hasText: "E2B" }).click({ force: true })
 
       await expect(useForNew).toBeVisible()
@@ -1423,7 +1361,7 @@ test.describe("core settings + auth @core", () => {
       await expect(useForNew).toHaveCount(0)
     })
 
-    test("credential CRUD: Save PUTs auth, Remove DELETEs — behavior 22", async ({ page }) => {
+    test("credential CRUD: Save PUTs auth, Remove DELETEs", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const sandbox = mockSandboxDrivers(page, {
@@ -1449,7 +1387,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("Docker credentials removed")).toBeVisible()
     })
 
-    test("non-loopback base URL locks every sandbox mutation control and shows the read-only notice — behavior 23", async ({ page }) => {
+    test("non-loopback base URL locks every sandbox mutation control and shows the read-only notice", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR, { serverUrl: "https://cloud.claxedo-e2e-test.invalid" })
       const sandbox = mockSandboxDrivers(page, {
@@ -1471,7 +1409,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled()
     })
 
-    test("Network Policy inside the workspace-less Sandbox tab always allows adding an entry — behavior 24", async ({ page }) => {
+    test("Network Policy inside the workspace-less Sandbox tab always allows adding an entry", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const sandbox = mockSandboxDrivers(page, { default_driver: "docker", drivers: [] })
@@ -1504,7 +1442,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("/login", () => {
-    test("already-signed visitors are redirected before Continue ever renders — behavior 25", async ({ page }) => {
+    test("already-signed visitors are redirected before Continue ever renders", async ({ page }) => {
       await stampTestAuth(page.context())
       await page.route("**/api/claxedo/bootstrap**", (route) =>
         json(route, {
@@ -1525,19 +1463,16 @@ test.describe("core settings + auth @core", () => {
       // (`src/app/routes/login.tsx`) redirects and returns before the JSX
       // is ever created — the URL moves off /login.
       await expect(page).not.toHaveURL(/\/login$/, { timeout: 15_000 })
-      // ...and the "BEFORE Continue ever renders" half, which the URL check
-      // alone says nothing about: the observer installed before the app's
-      // first script never saw a Continue button attached.
+      // ...and nothing flashed on the way: the observer installed before the app's first
+      // script never saw a Continue button attached.
       expect(await continueButtonFlashed(page)).toBe(false)
     })
 
-    test("not-signed visitors see Continue, which triggers sign-in — behavior 25", async ({ page }) => {
+    test("not-signed visitors see Continue, which triggers sign-in", async ({ page }) => {
       await disableTestAuthBypass(page)
-      // POSITIVE CONTROL for the no-flash observer used by the signed-visitor
-      // test above: the same detector, on the page where Continue DOES render,
-      // must latch true. Without this pairing, that test's `toBe(false)` could
-      // be passing because the observer is broken rather than because nothing
-      // flashed.
+      // Control for the no-flash observer: the same detector must latch true on the page
+      // where Continue does render, or the other test's `false` could mean a broken
+      // observer rather than no flash.
       await recordContinueButtonFlash(page)
       await page.goto("/login")
       await page.waitForLoadState("domcontentloaded")
@@ -1549,11 +1484,9 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("link", { name: /Terms of Service/i })).toBeVisible()
 
       await continueButton.click()
-      // No provider key in this harness ⇒ the redirect is a no-op and the button's
-      // "Redirecting..." state clears within a microtask — asserting that label
-      // was racy by construction on starved runners. The race-free contract is
-      // that the click INVOKED sign-in, recorded by the e2e seam in
-      // browser-auth-test-bypass.ts (__claxedoSignInCalls, DEV || VITE_CLAXEDO_E2E gated).
+      // With no provider key the redirect is a no-op and "Redirecting..." clears within a
+      // microtask, so the race-free contract is that the click invoked sign-in at all,
+      // which the `__claxedoSignInCalls` seam records.
       await expect.poll(async () => (await signInCalls(page)).length).toBe(1)
       // `/login` passes its own `redirectUrl()`, which defaults to "/" — assert
       // the ARGUMENT too, not just that something was called.
@@ -1562,7 +1495,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("/cli-login", () => {
-    test("missing/invalid params are rejected immediately with zero auth calls — behavior 26", async ({ page }) => {
+    test("missing/invalid params are rejected immediately with zero auth calls", async ({ page }) => {
       await page.goto("/cli-login")
       await page.waitForLoadState("domcontentloaded")
       await expect(page.getByText("Claxedo CLI")).toBeVisible()
@@ -1576,17 +1509,15 @@ test.describe("core settings + auth @core", () => {
       await expect.poll(async () => (await signInCalls(page)).length, { timeout: 3_000 }).toBe(0)
     })
 
-    test("a non-loopback callback origin is rejected the same way, with zero auth calls — behavior 26", async ({ page }) => {
+    test("a non-loopback callback origin is rejected the same way, with zero auth calls", async ({ page }) => {
       await page.goto("/cli-login?callback=https%3A%2F%2Fevil.example.com%2Fcb&state=abc123")
       await page.waitForLoadState("domcontentloaded")
       await expect(page.getByText("Invalid CLI sign-in callback.")).toBeVisible()
-      // The security-relevant half: an attacker-supplied callback origin must
-      // not even start an auth handshake. See the note above on why this zero
-      // is non-vacuous.
+      // An attacker-supplied callback origin must not even start an auth handshake.
       await expect.poll(async () => (await signInCalls(page)).length, { timeout: 3_000 }).toBe(0)
     })
 
-    test("not-signed visitor with valid params calls signIn with the current URL as redirectUrl — behavior 27", async ({ page }) => {
+    test("not-signed visitor with valid params calls signIn with the current URL as redirectUrl", async ({ page }) => {
       await disableTestAuthBypass(page)
       await page.goto("/cli-login?callback=http%3A%2F%2F127.0.0.1%3A61234%2Fcb&state=abc123")
       await page.waitForLoadState("domcontentloaded")
@@ -1607,7 +1538,7 @@ test.describe("core settings + auth @core", () => {
       expect(redirectUrl).toContain("state=abc123")
     })
 
-    test("signed visitor with valid params exchanges a CLI token and auto-submits the callback form — behavior 28", async ({ page }) => {
+    test("signed visitor with valid params exchanges a CLI token and auto-submits the callback form", async ({ page }) => {
       await stampTestAuth(page.context())
       let exchangeCalls = 0
       let exchangeAuth: string | null = null
@@ -1616,12 +1547,9 @@ test.describe("core settings + auth @core", () => {
         withCors(async (route) => {
           exchangeCalls += 1
           exchangeAuth = route.request().headers()["authorization"] ?? null
-          // Real delay on the mock response (not a test-side wait — see the
-          // same fix the other mocked routes use): an instant response lets the
-          // whole approving→exchange→auto-submit→navigate chain finish
-          // before "Approving CLI sign-in..." ever paints (verified live —
-          // the assertion's own call log showed the page had ALREADY
-          // navigated to the callback URL by the time it polled).
+          // A delay on the response, not a test-side wait: answering instantly lets the
+          // whole approve → exchange → submit → navigate chain finish before "Approving CLI
+          // sign-in..." ever paints.
           await new Promise((resolve) => setTimeout(resolve, 300))
           return json(route, { access_token: "cli-access-token-xyz", token_type: "bearer", expires_in: 3600 })
         }),
@@ -1646,7 +1574,7 @@ test.describe("core settings + auth @core", () => {
       expect(callbackHit?.get("identity")).toBeTruthy()
     })
 
-    test("an exchange failure surfaces the server's error message and never submits a form — behavior 29", async ({ page }) => {
+    test("an exchange failure surfaces the server's error message and never submits a form", async ({ page }) => {
       await stampTestAuth(page.context())
       let formSubmitted = false
       await page.route(
@@ -1675,7 +1603,7 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("signed gate (CloudAuthGate)", () => {
-    test("a loopback-transport session never redirects to /login, even for an anonymous principal — behavior 30", async ({ page }) => {
+    test("a loopback-transport session never redirects to /login, even for an anonymous principal", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await disableTestAuthBypass(page)
@@ -1685,16 +1613,14 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     })
 
-    // `resolveDefaultUrl()` (`src/app/entry/app.tsx`) reads
-    // `window.__CLAXEDO_E2E_SERVER_URL__` in a dev/e2e build — baked out of
-    // production — so a spec can force ServerProvider's resolved default (hence
-    // CloudAuthGate's `server.url`) to a non-loopback host.
-    test("an anonymous principal on a non-loopback transport is force-redirected to /login — behavior 30b", async ({ page }) => {
+    // `resolveDefaultUrl()` reads `window.__CLAXEDO_E2E_SERVER_URL__` in dev/e2e builds
+    // (baked out of production), which is what lets this spec push `CloudAuthGate`'s
+    // `server.url` off loopback.
+    test("an anonymous principal on a non-loopback transport is force-redirected to /login", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await disableTestAuthBypass(page)
-      // Force the resolved default server to a NON-loopback host, so
-      // centralTransportForServer(server.url) !== "loopback" ⇒ needsSignedAuth().
+      // A non-loopback default server makes `needsSignedAuth()` true.
       await page.addInitScript(() => {
         ;(window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__ =
           "https://cloud.example.test"
@@ -1711,11 +1637,10 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("error page (top-level ErrorBoundary fallback)", () => {
-    // The `/__e2e/error-page?variant=` injection route
-    // (`src/app/routes/error-page-harness.tsx`, dev/e2e-only) mounts the real
-    // <ErrorPage> for a chosen InitError variant — the ErrorBoundary fallback
-    // content without a real render-time crash.
-    test("InitError variants render their formatted chain with Restart (and no Check-for-updates on web) — behavior 31", async ({ page }) => {
+    // `/__e2e/error-page?variant=` mounts the real `<ErrorPage>` for a chosen InitError,
+    // reaching the ErrorBoundary's fallback content without a render-time crash. The route
+    // is dev/e2e-only.
+    test("InitError variants render their formatted chain with Restart (and no Check-for-updates on web)", async ({ page }) => {
       await page.goto("/__e2e/error-page?variant=MCPFailed")
       await page.waitForLoadState("domcontentloaded")
 
@@ -1730,8 +1655,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("button", { name: "Restart" })).toBeVisible()
       await expect(page.getByRole("button", { name: "Check for updates" })).toHaveCount(0)
 
-      // A different variant re-renders a distinct cause-chain through the same
-      // route (proves the formatter's `Caused by:` nesting, not just one shape).
+      // A second variant exercises the formatter's `Caused by:` nesting, not one shape.
       await page.goto("/__e2e/error-page?variant=causeChain")
       await page.waitForLoadState("domcontentloaded")
       await expect(page.getByRole("textbox", { name: "Error Details" })).toHaveValue(

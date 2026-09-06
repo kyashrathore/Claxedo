@@ -14,9 +14,8 @@ import type { SessionRef } from "@/platform/identity/session-ref"
  * The composer's bottom row. Two clusters instead of one left-aligned strip:
  * actions and session policy on the left (`+`, auto-accept), the "who answers"
  * configuration on the right (harness, model, effort), with the submit control
- * following in `frame.tsx`. The agent and effort chips that used to sit inline
- * here are gone — agent/plan-mode moved into the `+` menu, and effort merged
- * into the model control.
+ * following in `frame.tsx`. Agent/plan-mode selection lives in the `+` menu;
+ * effort is folded into the model control rather than getting its own chip.
  */
 export function PromptToolbarControls(props: {
   fileAttachmentInput: () => JSX.Element

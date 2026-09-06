@@ -55,10 +55,6 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ fetch: vi.fn() }),
 }))
 
-vi.mock("../../../session/ui/components/session-pane-scope", () => ({
-  SessionPaneScope: (props: { children: unknown }) => <>{props.children}</>,
-}))
-
 vi.mock("../../workbench/terminal-fit", () => ({
   requestTerminalFitOnPaneChange: h.fit,
 }))
@@ -94,27 +90,6 @@ vi.mock("@/platform/runtime/transport", () => ({
 
 vi.mock("@/lib/runtime-mode", () => ({
   urlRoutingEnabled: () => h.urlRoutingEnabled,
-}))
-
-vi.mock("../../../../app/workbench/state/index", () => ({
-  useClaxedoState: () => ({
-    terminal: {
-      own: vi.fn(),
-      replaceId: vi.fn(),
-      queueCreateForContent: vi.fn(),
-      peekCreateForContent: vi.fn(() => undefined),
-      consumeCreateForContent: vi.fn(() => undefined),
-      isTracked: h.isAgentStatusTracked,
-      agentStatus: h.agentStatus,
-      setAgentStatus: h.setAgentStatus,
-    },
-    meta: {
-      patch: vi.fn(),
-    },
-    workspacePanel: {
-      open: vi.fn(),
-    },
-  }),
 }))
 
 vi.mock("@/features/terminal/app-ports", () => ({
@@ -175,6 +150,7 @@ function terminalMeta(
 describe("TerminalContent switching", () => {
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     h.ptys.splice(0, h.ptys.length, { id: "pty-one", title: "Terminal 1", cwd: "/repo" }, {
       id: "pty-two",
       title: "Terminal 2",
@@ -204,6 +180,7 @@ describe("TerminalContent switching", () => {
   })
 
   test("creates two terminal panes and keeps them mounted through repeated switches", async () => {
+    vi.useFakeTimers()
     h.ptys.splice(0)
     h.terminalNew.mockImplementation(async (options: { title?: string }) => {
       const title = options.title
@@ -227,13 +204,13 @@ describe("TerminalContent switching", () => {
       </>
     ))
 
-    await waitFor(() => expect(screen.getByTestId("terminal-pty-one")).toBeTruthy())
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await vi.advanceTimersByTimeAsync(150)
+    expect(screen.getByTestId("terminal-pty-one")).toBeTruthy()
     expect(screen.queryByTestId("terminal-pty-two")).toBeNull()
 
     setActive("two")
-    await waitFor(() => expect(screen.getByTestId("terminal-pty-two")).toBeTruthy())
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await vi.advanceTimersByTimeAsync(150)
+    expect(screen.getByTestId("terminal-pty-two")).toBeTruthy()
     expect(screen.getByTestId("terminal-pty-one")).toBeTruthy()
 
     for (const next of ["one", "two", "one", "two"] as const) {
@@ -459,5 +436,6 @@ describe("TerminalContent switching", () => {
       content: expect.objectContaining({ workspaceRouteId: "ws_selected" }),
     }))
     expect(h.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/w\/ws_selected\/terminal\/pending-/))
+    expect(h.metaPatch.mock.invocationCallOrder[0]).toBeLessThan(h.navigate.mock.invocationCallOrder[0])
   })
 })

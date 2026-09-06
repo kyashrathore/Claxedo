@@ -1,4 +1,4 @@
-import { capChunk, createStream, pushStream, takeStream } from "./terminal-stream"
+import { createStream, pushStream, takeStream } from "./terminal-stream"
 
 export type QueueKind = "pending" | "live"
 
@@ -15,9 +15,7 @@ export function createTerminalRuntimeQueue(input: {
   onThrottled?: (dropped: number) => void
 }) {
   const stream = createStream()
-  let pending: string[] = []
-  let pendingBytes = 0
-  let pendingDropped = 0
+  const pending = createStream()
   let restored = false
   let frame = 0
   let writing = false
@@ -75,41 +73,32 @@ export function createTerminalRuntimeQueue(input: {
         enqueueLive(data)
         return
       }
-      const next = capChunk(data, input.maxPendingBytes)
-      pending.push(next.value)
-      pendingBytes += next.value.length
-      if (next.trimmed) pendingDropped += 1
-      while (pendingBytes > input.maxPendingBytes && pending.length > 1) {
-        const old = pending.shift()
-        if (!old) break
-        pendingBytes -= old.length
-        pendingDropped += 1
-      }
-      if (pendingDropped >= input.maxDroppedChunks) {
+      pushStream(pending, data, input.maxPendingBytes)
+      if (pending.dropped >= input.maxDroppedChunks) {
         overloaded = true
-        input.onOverload("pending", pendingDropped)
+        input.onOverload("pending", pending.dropped)
       }
     },
     flushPending() {
       if (restored) return
       restored = true
-      if (pending.length === 0) return
-      for (const chunk of pending) {
+      if (pending.items.length === 0) return
+      for (const chunk of pending.items) {
         enqueueLive(chunk)
       }
-      pending = []
-      pendingBytes = 0
+      pending.items = []
+      pending.bytes = 0
     },
     pendingCount() {
-      return pending.length
+      return pending.items.length
     },
     dispose() {
       if (frame) input.cancelFrame(frame)
       if (writeTimeout) clearTimeout(writeTimeout)
       frame = 0
       writeTimeout = undefined
-      pending = []
-      pendingBytes = 0
+      pending.items = []
+      pending.bytes = 0
       overloaded = true
     },
   }

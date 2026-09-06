@@ -1,16 +1,11 @@
 /**
- * The ports against a REAL embedded host — one process, one SQLite file, two
- * workspace directories.
+ * The ports against a real embedded host — one process, one SQLite file, two
+ * workspace directories — through `createOpenCodeHost`, the product's public
+ * SDK entrypoint. Mocks of `client.sessions.*` pass whether or not the SDK's
+ * layer graph resolves; a real host does not.
  *
- * This is the test that would have caught the Unit 1 blocker on day one. Mocks
- * of `client.sessions.*` pass whether or not the SDK's layer graph resolves; a
- * real `OpenCode.create()` plus a real `prompt` does not. Everything here goes
- * through `createOpenCodeHost`, the product's public SDK entrypoint.
- *
- * No credentials are configured, so no turn actually runs. Admission,
- * projection, paging, revert staging and scope enforcement are all observable
- * without one, and a turn that runs is Unit 4b's integration surface, not the
- * port's.
+ * No credentials are configured, so no turn runs. Admission, projection,
+ * paging, revert staging and scope enforcement are all observable without one.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
@@ -93,9 +88,8 @@ describe("session port against a real host", () => {
     expect(admitted.id).toStartWith("msg_")
 
     const page = await sessions.messages(alpha, session.id, { limit: 10 })
-    // Admission is recorded on the inbox; the message list is the durable
-    // projection and only fills in once the turn produces one. Either way the
-    // call must ANSWER rather than 500 - that is the regression this guards.
+    // Admission is recorded on the inbox; the message list only fills once the
+    // turn produces one. Either way the call answers rather than 500s.
     expect(Array.isArray(page.messages)).toBe(true)
   })
 
@@ -104,13 +98,10 @@ describe("session port against a real host", () => {
     const admitted = await sessions.prompt(alpha, session.id, { text: "work" })
     await sessions.interrupt(alpha, session.id)
 
-    // Contract fact worth pinning, and it is a TIMING fact, not an identity
-    // one: the id `prompt` returns is the same id that later appears in
-    // `message.list` and in `session.inbox.delivered` (gate-inbox-identity.mjs).
-    // It is simply not durable yet, so staging a revert against it right after
-    // admission is rejected - MessageNotFoundError once the turn is idle,
-    // SessionBusyError while it is still running. Unit 4b holds the id from
-    // admission and waits for delivery rather than re-reading the page.
+    // The id `prompt` returns is the one that later appears in `message.list`,
+    // but it is not durable yet: a revert staged right after admission is
+    // rejected — MessageNotFoundError once the turn is idle, SessionBusyError
+    // while it still runs. The turn adapter waits for delivery instead.
     await expect(sessions.revertTo(alpha, session.id, admitted.id)).rejects.toMatchObject({
       _tag: "MessageNotFoundError",
       sessionID: session.id,
@@ -124,8 +115,7 @@ describe("session port against a real host", () => {
 
   test("fork refuses an empty session with a typed reason", async () => {
     const session = await sessions.create(alpha, { title: "original" })
-    // Another contract fact: V2 will not fork a session that has produced no
-    // durable message. The adapter must surface this as a typed failure rather
+    // V2 will not fork a session that has produced no durable message. The adapter must surface this as a typed failure rather
     // than an empty success - fabricating a fork id here would strand the UI
     // on a session that does not exist.
     await expect(sessions.fork(alpha, session.id, { type: "through" })).rejects.toMatchObject({
@@ -144,8 +134,8 @@ describe("session port against a real host", () => {
 
 describe("catalog and interaction ports", () => {
   test("catalogs answer for a workspace instead of 500ing", async () => {
-    // A bare workspace with no config has no agents or commands. The contract
-    // being tested is that the upstream-fixed SDK keeps each call resolvable.
+    // A bare workspace with no config has no agents or commands; each call must
+    // still resolve.
     expect(Array.isArray(await catalog.agents(alpha))).toBe(true)
     expect(Array.isArray(await catalog.commands(alpha))).toBe(true)
     expect(Array.isArray(await catalog.models(alpha))).toBe(true)

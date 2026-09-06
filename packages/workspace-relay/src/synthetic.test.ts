@@ -3,8 +3,7 @@ import { startSyntheticProbe } from "./synthetic"
 
 /**
  * Manual time-driver: replaces `setInterval`/`clearInterval` with hand-cranked
- * tick functions so tests stay deterministic and fast. Mirrors T18's pattern
- * in directory.test.ts where intervals are exercised by direct invocation.
+ * tick functions so tests stay deterministic and fast.
  */
 function makeTimer() {
   type Entry = { fn: () => void; ms: number; id: number }

@@ -9,6 +9,7 @@
  * Command .md files at:     ~/.claxedo/commands/<name>.md
  */
 
+import { asRecord } from "@claxedo/helpers/guards"
 import * as fs from "fs"
 import * as path from "path"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -57,7 +58,7 @@ export {
   createVmConnectionSecretResolver,
   publicConnectionUnavailable,
 } from "./connection-secrets"
-import { jsonRecord, jsonStringRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { jsonStringRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 export type {
   ConnectionSecretUnavailableReason,
   PublicConnectionUnavailable,
@@ -170,7 +171,6 @@ function sanitizeName(name: string): string {
 }
 
 const stringRecord = jsonStringRecord
-const record = jsonRecord
 
 // ── Trusted generic connections ───────────────────────────────────────────
 
@@ -255,7 +255,7 @@ function emptyUserAgentConfig(): UserAgentConfig {
 }
 
 function validateUserAgentConfig(input: unknown): UserAgentConfig {
-  const row = record(input)
+  const row = asRecord(input)
   if (!row || row.version !== 3) throw invalidSchema("version must be exactly 3")
   const allowed = new Set([
     "version",
@@ -268,7 +268,7 @@ function validateUserAgentConfig(input: unknown): UserAgentConfig {
   ])
   const unsupported = Object.keys(row).find((key) => !allowed.has(key))
   if (unsupported) throw invalidSchema(`unsupported field: ${unsupported}`)
-  const mcp = record(row.mcp)
+  const mcp = asRecord(row.mcp)
   if (!mcp) throw invalidSchema("mcp must be an object map")
   const connections = validateHarnessConnections(row.connections)
   if (connections.problems.length > 0) {
@@ -305,7 +305,7 @@ function validateUserAgentConfig(input: unknown): UserAgentConfig {
 }
 
 function validateNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, { kind: "native" }> | undefined {
-  const row = record(input)
+  const row = asRecord(input)
   if (!row || row.kind !== "native" || typeof row.harnessId !== "string" || !isNativeHarnessId(row.harnessId))
     return undefined
   if (Object.keys(row).some((key) => key !== "kind" && key !== "harnessId")) return undefined
@@ -314,7 +314,7 @@ function validateNativeDefault(input: unknown): Extract<RuntimeHarnessSelection,
 
 function mcpEntries(input: Record<string, unknown>): Record<string, UserMcpServer> {
   return Object.fromEntries(Object.entries(input).flatMap(([key, value]) => {
-    const row = record(value)
+    const row = asRecord(value)
     if (!row || (row.type !== "stdio" && row.type !== "remote")) return []
     return [[key, {
       type: row.type,
@@ -338,7 +338,7 @@ function invalidSchema(detail: string) {
 export function sandboxDriverConfig(
   config?: { sandbox_driver?: unknown },
 ): SandboxDriverConfig {
-  const row = record(config?.sandbox_driver)
+  const row = asRecord(config?.sandbox_driver)
   if (!row) return {}
   const defaultDriver = typeof row.default_driver === "string" && isSandboxDriverID(row.default_driver)
     ? row.default_driver
@@ -351,15 +351,15 @@ export function sandboxDriverConfig(
 }
 
 function sandboxDriverAuthConfig(input: unknown): SandboxDriverConfig["auth"] | undefined {
-  const row = record(input)
+  const row = asRecord(input)
   if (!row) return undefined
 
   const auth: NonNullable<SandboxDriverConfig["auth"]> = {}
-  const daytona = record(row.daytona)
-  const modal = record(row.modal)
-  const vercel = record(row.vercel)
-  const cloudflare = record(row.cloudflare)
-  const docker = record(row.docker)
+  const daytona = asRecord(row.daytona)
+  const modal = asRecord(row.modal)
+  const vercel = asRecord(row.vercel)
+  const cloudflare = asRecord(row.cloudflare)
+  const docker = asRecord(row.docker)
   const daytonaApiKey = credential(daytona, "api_key")
   const modalTokenId = credential(modal, "token_id")
   const modalTokenSecret = credential(modal, "token_secret")

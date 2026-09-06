@@ -1,6 +1,7 @@
 import fs from "fs"
 import path from "path"
 import type { McpServer } from "@agentclientprotocol/sdk"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { dataDir } from "./paths"
 import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
 import { normalizeHarnessIdentity } from "./harness-types"
@@ -72,9 +73,9 @@ const defaults = (): Record<ManagedMcpServer, Record<McpCapableAgent, boolean>> 
 /** Every capable agent, off. The registry's inner map is complete by contract. */
 const noAgents = (): Record<McpCapableAgent, boolean> => ({ claude: false, codex: false, gemini: false, cursor: false })
 
-const loadAgents = (value?: unknown): Partial<Record<McpCapableAgent, boolean>> => {
-  const root = row(value)
-  const out: Partial<Record<McpCapableAgent, boolean>> = {}
+  const loadAgents = (value?: unknown): Partial<Record<McpCapableAgent, boolean>> => {
+    const root = asRecordOrEmpty(value)
+    const out: Partial<Record<McpCapableAgent, boolean>> = {}
   for (const agent of MCP_CAPABLE_AGENTS) {
     const next = root[agent]
     if (typeof next === "boolean") out[agent] = next
@@ -83,7 +84,7 @@ const loadAgents = (value?: unknown): Partial<Record<McpCapableAgent, boolean>> 
 }
 
 const normalizeOverrides = (value?: unknown) => {
-  const root = row(value)
+  const root = asRecordOrEmpty(value)
   const out: ManagedMcpOverrides = {}
   for (const server of MANAGED_MCP_SERVERS) {
     const agents = loadAgents(root[server])

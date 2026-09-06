@@ -1,25 +1,9 @@
-// Unit coverage for `visual-evidence.ts`'s pure pixel-diff (`comparePng`) and path
-// helpers. Style/runner matches `e2e/bun/workspace-relay-connection.test.ts` — plain
-// `bun:test`, no Playwright, no browser — because `comparePng` has no Page dependency at
-// all; it only touches files on disk via `sharp`.
+// Unit coverage for `comparePng` and the path helpers. Plain `bun:test`, no browser:
+// `comparePng` only touches files via `sharp`.
 //
-// PROXY, NOT PRODUCT-LEVEL PROOF — read this before trusting what it claims. The plan's
-// Phase 5 load-bearing requirement is: "moving the rail dot back to `left-1.5` (defect
-// 11) must produce a non-zero diff." This test does NOT drive the real app, does NOT
-// screenshot a real rail row, and does NOT revert `navigation-row.tsx`'s actual fix (this
-// agent owns only `e2e/helpers/visual-evidence.ts` and `scripts/visual-adjudicate.ts` —
-// touching product code or another agent's spec file is out of scope, see the task's HARD
-// RULES). What it DOES prove is narrower and mechanical: `comparePng` is capable of
-// catching a small, purely-positional pixel shift — the exact shape of defect 11
-// (`e2e/helpers/geometry-oracle.ts`'s header: the dot "previously rendered ... at
-// `left-1.5` outside any glyph column at all" vs. the fixed in-glyph-column position) —
-// rather than only catching gross content changes. The two synthetic fixtures below are
-// NOT captured from the app; they are hand-built pixel buffers with a small square "dot"
-// painted at two different x-offsets, standing in for "golden" (fixed geometry) and
-// "actual" (regressed geometry). The real, product-level proof — golden.png captured from
-// a working rail row, actual.png captured after literally reverting the fix — is Phase
-// 2/4/5 CI wiring's job once goldens exist; this test is the narrowest thing that can be
-// proven from two owned files with no product-code access.
+// The dot fixtures are hand-built pixel buffers, not app screenshots. They prove that
+// `comparePng` catches a small purely-positional shift, not that any product screen is
+// pixel-correct.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -30,16 +14,11 @@ import { comparePng, evidencePath, goldenPath, parseEvidenceRelativePath } from 
 const WIDTH = 48
 const HEIGHT = 16
 const DOT_SIZE = 6
-// Fixed-geometry x-offset — arbitrary but distinct from BROKEN_DOT_X; stands in for the
-// dot rendered inside its glyph column (the fix).
+// Two dot x-offsets a few pixels apart.
 const FIXED_DOT_X = 11
-// `left-1.5` = 0.375rem = 6px at the default 16px root font-size — the literal broken
-// value geometry-oracle.ts's header comment names for defect 11.
 const BROKEN_DOT_X = 6
 
-/** Paints a WIDTH x HEIGHT white canvas with a solid black `DOT_SIZE`-square "status dot"
- * at horizontal offset `dotX`, vertically centered — a synthetic stand-in for the rail's
- * status-dot glyph, not a real screenshot. */
+/** A WIDTH x HEIGHT white canvas with a black `DOT_SIZE` square at x-offset `dotX`, vertically centered. */
 async function renderDotFixture(dotX: number): Promise<Buffer> {
   const channels = 4
   const buffer = Buffer.alloc(WIDTH * HEIGHT * channels, 255) // opaque white
@@ -77,15 +56,12 @@ afterAll(() => {
   rmSync(workDir, { recursive: true, force: true })
 })
 
-describe("comparePng — proxy for defect 11 (rail dot geometry)", () => {
-  test("a shifted dot (defect 11's left-1.5 regression, proxied) produces a non-zero diff", async () => {
+describe("comparePng", () => {
+  test("a shifted dot produces a non-zero diff", async () => {
     const result = await comparePng(brokenPath, fixedPath, { diffPath: null })
     expect(result.diffPixels).toBeGreaterThan(0)
     expect(result.diffRatio).toBeGreaterThan(0)
-    // Sanity bound: only the dot's footprint (and the sliver it vacated/entered) can
-    // differ between two otherwise-identical canvases — never the whole image. This
-    // catches a comparePng that degenerates to "everything differs" as loudly as it
-    // catches "nothing differs".
+    // Only the dot's footprint can differ; "everything differs" is as wrong as "nothing differs".
     expect(result.diffPixels).toBeLessThan(WIDTH * HEIGHT)
   })
 

@@ -12,14 +12,12 @@
 // caller wants reads as `undefined`, and the caller chooses the fallback in the
 // open — `?? 0` where zero is a real answer, `?? NaN` where it is not.
 //
-// Deliberately dependency-free: `compare/graded-analysis.ts` documents that it
-// must not pull the driver module graph (node:sqlite, playwright) into a
-// standalone `bun` run, and a module with no imports cannot.
+// `compare/graded-analysis.ts` runs this module standalone under `bun` and
+// must not pull the driver module graph (node:sqlite, playwright). Its only
+// import is `@claxedo/helpers/guards`, which itself imports nothing.
+import { isRecord } from "@claxedo/helpers/guards"
 
-/** Narrow an unknown value to a plain object whose fields can be read. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
+export { isRecord } from "@claxedo/helpers/guards"
 
 /** Read `key` as a string, or `undefined` when it is absent or another type. */
 export function textField(record: Record<string, unknown>, key: string): string | undefined {

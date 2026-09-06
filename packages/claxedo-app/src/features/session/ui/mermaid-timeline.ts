@@ -3,9 +3,9 @@ import { createMermaidBackend } from "./mermaid-backend"
 import { openMermaidViewer } from "./markdown-viewer"
 
 /**
- * Timeline mermaid renderer (T14). Lazily loads mermaid on the first diagram, renders with
- * `securityLevel: "strict"` and the `base` theme (themeVariables probed from the app's CSS
- * vars so diagrams match light/dark), and hands the SVG back to the session-ui markdown
+ * Lazily loads mermaid on the first diagram, renders with `securityLevel:
+ * "strict"` and the `base` theme (themeVariables probed from the app's CSS vars
+ * so diagrams follow light/dark), and hands the SVG to the session-ui markdown
  * decorator via setMermaidRenderer. Registered once at app start.
  */
 let mermaidModule: Promise<typeof import("mermaid")> | null = null

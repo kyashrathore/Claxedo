@@ -1,6 +1,6 @@
 ---
 title: "feat: OpenCode v2 worker runtime on workerd with a credential gateway"
-status: proposed
+status: superseded by ./2026-09-05-004-pi-native-harness-remove-central-plan.md (central/VM split removed by owner decision, 2026-09-05)
 date: 2026-09-05
 baseline: eefd4a8777
 supersedes: ./2026-09-05-002-pi-worker-runtime-and-gateway-plan.md (kept as the fallback if Unit 1 fails)
@@ -213,6 +213,7 @@ Nothing Claxedo owns reimplements a harness. The Pi plan's supervisor, entry tab
 
 ## Alternative Approaches Considered
 
+- **Project Think as the base-tier runtime.** Under evaluation, see [the Think evaluation](../tech-docs/project-think-evaluation-2026-09-05.md). It fits a long-lived assistant with memory and channels and has workerd recovery tests, but its sandbox tier is a stub and its code-execution tier needs the Dynamic Workers closed beta. Decided by the side-by-side spike in that document; this plan stands until then.
 - **Pi worker with a Claxedo-owned third layer (plan 002).** Kept as the fallback. Rejected as primary because upstream OpenCode v2 provides that layer and unifies the harness across placements.
 - **Real harness over RPC everywhere, no worker.** Rejected only because it costs a container per chat.
 - **Per-session Durable Objects from the start.** Deferred; per-tenant amortizes the boot and is upstream's documented shape.

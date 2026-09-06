@@ -2,22 +2,18 @@
  * The desktop-local server composition.
  *
  * Exactly the route families the split assigns to `local-server`. What it does
- * NOT mount is the point: no Documents, no Connections, no Channels, no
+ * not mount is the point: no Documents, no Connections, no Channels, no
  * hosted capability, no workspace authority, no cloud provisioning. Their absence from
  * an unsigned desktop is a composition fact here, not a runtime flag elsewhere.
  *
- * ORDER IS LOAD-BEARING. Hono matches middleware and handlers in registration
- * order and a handler terminates the chain:
+ * Registration order is load-bearing. Hono matches middleware and handlers in
+ * registration order and a handler terminates the chain:
  *   - security headers and the peer-address stamp go first, ahead of CORS and
  *     the 404/onError paths, so no response can ship bare;
- *   - the session-meta tap and `/workspaces/:workspaceId` both go BEFORE the
+ *   - the session-meta tap and `/workspaces/:workspaceId` both go before the
  *     runtime proxy — the proxy answers those routes itself, so anything
  *     registered after it never sees them;
- *   - only routes registered AFTER the proxy are subject to it.
- *
- * A first version of this file was deleted after review found six divergences
- * from the self-hosted composition it copies, none of which its route-inventory
- * test could see. Each is called out below at the line that fixes it.
+ *   - only routes registered after the proxy are subject to it.
  */
 
 import { Hono, type Context, type MiddlewareHandler } from "hono"
@@ -73,7 +69,7 @@ export function isLocalCredentialPath(path: string): boolean {
 /**
  * Which origins the desktop-local server answers.
  *
- * Loopback plus the product's own web origin. Deliberately NOT paired with
+ * Loopback plus the product's own web origin. Deliberately not paired with
  * `credentials: true` — see the cors mount below.
  */
 export function localCorsOrigin(origin: string): string | undefined {
@@ -145,10 +141,6 @@ export function localSecurityHeaders(): MiddlewareHandler {
 export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   const { services } = options
   const env = options.env ?? process.env
-  // FINDING 3: the self-hosted composition fails fast here, and the first
-  // version of this file did not — which also made an apparent
-  // `deferToHarnessRoute` divergence a non-issue, since that ternary is
-  // guaranteed true by this throw.
   if (!services.localExecution.enabled) {
     throw new Error("createLocalApp is the desktop-local composition; it requires localExecution")
   }
@@ -175,18 +167,17 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         return (options.corsOrigin ?? localCorsOrigin)(origin, c.req.path)
       },
       maxAge: 86400,
-      // FINDING 1: `credentials: true` is deliberately NOT set. The self-hosted
-      // composition never sets it, and setting it lets any origin this policy
-      // approves complete a credentialed cross-origin read — which the shape of
-      // the original made impossible regardless of policy.
+      // `credentials: true` is deliberately not set, matching the self-hosted
+      // composition: turning it on would let any origin this policy approves
+      // complete a credentialed cross-origin read.
     }),
   )
 
   app.use(unsignedLocalRequestGuard({ mode: deploymentMode(env), authConfig: services.auth.config }))
 
   app.post("/api/claxedo/track", async (c) => {
-    // FINDING 6: validated against the canonical schema, not a hand-rolled
-    // typeof check that lets any `properties` shape through.
+    // Validated against the canonical schema, not a hand-rolled typeof check
+    // that would let any `properties` shape through.
     const parsed = TrackBody.safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) {
       return c.json({ error: { code: "telemetry_invalid_body", message: "Invalid telemetry request body" } }, 400)
@@ -195,8 +186,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     return c.json({ ok: true })
   })
 
-  // FINDING 5: the same body the self-hosted composition returns. The shell
-  // reads these fields; an `{ ok: true }` stub is a silent regression.
+  // The same body the self-hosted composition returns. The shell reads these
+  // fields; an `{ ok: true }` stub would be a silent regression.
   app.get("/api/claxedo/health", (c) =>
     c.json({
       ok: true,
@@ -259,9 +250,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
-    // FINDING 2: derived from the environment, exactly as the self-hosted
-    // composition derives it. The first version made this a caller-supplied
-    // hook with no fallback, so a caller that omitted it left credential
+    // Derived from the environment, matching the self-hosted composition —
+    // never caller-supplied, since an omitted hook would leave credential
     // mutation behind only the loopback guard on a signed box.
     ...(deploymentMode(env) === "hosted" || env.CLAXEDO_SIGNED_CLOUD_AUTH === "1"
       ? {
@@ -278,8 +268,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
       : {}),
   }))
 
-  // FINDING 4: the session-meta projection tap, absent entirely from the first
-  // version. Before the runtime proxy, which answers `/session` itself.
+  // Registered before the runtime proxy, which answers `/session` itself.
   app.use(sessionMetaProjectionTap(services.projectionStore))
 
   // Before the runtime proxy on purpose — both claim `/workspaces/:workspaceId`.

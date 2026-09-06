@@ -63,7 +63,6 @@ const authorityScope = {
 }
 
 const request = {
-  client: {} as never,
   directory: scope.directory,
   sessionID: scope.sessionID,
   claxedoServerUrl: scope.serverUrl,

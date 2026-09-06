@@ -62,6 +62,31 @@ describe("terminal runtime queue", () => {
     expect(env.writes.join("")).toBe("2233")
   })
 
+  test("pending byte cap drops the oldest complete UTF-8 chunk", () => {
+    const env = makeQueue({ maxPendingBytes: 4 })
+    env.queue.push("🙂")
+    env.queue.push("🙃")
+
+    expect(env.queue.pendingCount()).toBe(1)
+    env.queue.flushPending()
+    env.runFrames()
+    expect(env.writes.join("")).toBe("🙃")
+    env.queue.dispose()
+  })
+
+  test("pending UTF-8 overflow reaches the circuit breaker", () => {
+    const env = makeQueue({ maxPendingBytes: 4, maxDroppedChunks: 2 })
+    env.queue.push("🙂")
+    env.queue.push("🙃")
+    env.queue.push("😉")
+
+    expect(env.overloads).toEqual([{ kind: "pending", dropped: 2 }])
+    env.queue.flushPending()
+    env.runFrames()
+    expect(env.writes).toEqual([])
+    env.queue.dispose()
+  })
+
   test("queue_live_overflow_trips_overload_circuit_breaker", () => {
     const env = makeQueue({ maxStreamBytes: 4, maxDroppedChunks: 2 })
     env.queue.flushPending()

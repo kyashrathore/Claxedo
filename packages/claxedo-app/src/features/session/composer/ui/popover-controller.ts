@@ -1,10 +1,7 @@
-// The LEGACY reactive controller for the composer's `@` and `/` popovers.
-//
-// Scheduled for deletion once the v2 controller path becomes the only engine
-// (plan 2026-07-25-005, W5.2). The shared, non-reactive option builders it uses
-// deliberately live in `prompt-options.ts` instead of here, so that deletion does
-// not have to take them with it — both engines build their option lists from the
-// same functions, which is what keeps the two paths producing identical lists.
+// Reactive controller for the composer's `@` and `/` popovers under the
+// "legacy" input engine. The option builders live in `prompt-options.ts`, not
+// here, so both engines build identical lists and this file can be deleted
+// once the controller engine is the only one.
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import { readWithoutSuspending } from "../suspense-safe-resource"
 import { useFilteredList } from "@opencode-ai/ui/hooks"

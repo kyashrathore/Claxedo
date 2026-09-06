@@ -153,7 +153,7 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     resolveIdentity: async (accessToken) => {
       const descriptor = await auth.discover()
       const userInfoUrl = userInfoUrlFromTokenUrl(descriptor.tokenUrl)
-      if (!userInfoUrl) return { userId: "" }
+      if (!userInfoUrl) throw new Error("The auth descriptor has no userinfo endpoint")
       return await createIdentityResolver({
         userInfoUrl,
         fetch: controlPlaneFetch,

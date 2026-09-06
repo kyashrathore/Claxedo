@@ -1,6 +1,7 @@
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { exportJWK, importJWK, importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
 import { randomToken, sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
+import { numberClaim } from "@claxedo/helpers/guards"
 
 type ExportableKey = Parameters<typeof exportJWK>[0]
 // jose's jwtVerify is overloaded — the static-key form accepts any of these.
@@ -12,6 +13,7 @@ import {
   type RelayRole,
 } from "@claxedo/workspace-relay"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export const RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA" as const
 
@@ -99,13 +101,8 @@ export type HostTunnelTokenSigner = (
   input: HostTunnelTokenSignerInput,
 ) => Promise<HostTunnelTokenSignerResult>
 
-function clean(input?: string) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 export function runtimeAccessTokenAlgorithm(env: Record<string, string | undefined>) {
-  const configured = clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM)
+  const configured = trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM)
   if (!configured || configured === RUNTIME_ACCESS_TOKEN_ALGORITHM) {
     return RUNTIME_ACCESS_TOKEN_ALGORITHM
   }
@@ -116,13 +113,13 @@ export function runtimeAccessTokenAlgorithm(env: Record<string, string | undefin
 }
 
 function ttlSeconds(env: NodeJS.ProcessEnv) {
-  const value = Number(clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_TTL_SECONDS))
+  const value = Number(trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_TTL_SECONDS))
   const { min, max } = RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS
   return Number.isFinite(value) && value >= min && value <= max ? value : 30 * 60
 }
 
 function hostTunnelTtlSeconds(env: NodeJS.ProcessEnv) {
-  const value = Number(clean(env.CLAXEDO_HOST_TUNNEL_TOKEN_TTL_SECONDS))
+  const value = Number(trimToUndefined(env.CLAXEDO_HOST_TUNNEL_TOKEN_TTL_SECONDS))
   const { min, max } = HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS
   return Number.isFinite(value) && value >= min && value <= max ? value : 5 * 60
 }
@@ -138,7 +135,7 @@ export function clampTtlSeconds(
 }
 
 function pem(input?: string) {
-  return clean(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 async function loadPrivateKey(
@@ -198,7 +195,7 @@ async function resolveMintKid(env: NodeJS.ProcessEnv, privateKey: ExportableKey)
       "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM and CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM are not the same Ed25519 key pair",
     )
   }
-  const explicit = clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_KID)
+  const explicit = trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_KID)
   if (explicit) return explicit
   return publicIdentity.kid
 }
@@ -363,11 +360,6 @@ export async function mintSupervisorBackplaneToken(
 function stringClaim(payload: Record<string, unknown>, key: string): string | undefined {
   const value = payload[key]
   return typeof value === "string" && value.length > 0 ? value : undefined
-}
-
-function numberClaim(payload: Record<string, unknown>, key: string): number | undefined {
-  const value = payload[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 export class SupervisorBackplaneAuthError extends Error {

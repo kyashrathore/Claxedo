@@ -19,10 +19,10 @@ describe("WorkspaceScopeButtons", () => {
   })
 
   /**
-   * Regression: the control used to be gated on the focused surface having a
-   * workspace, which hid it on Marketplace and Global chat — the
-   * surfaces where "which workspace?" is most worth asking. Having no workspace
-   * is what the creator is for, not a reason to withhold the way to open it.
+   * Marketplace and Global chat are exactly where "which workspace?" is most
+   * worth asking, so the terminal control is not gated on the focused surface
+   * having one — having no workspace is what the creator is for, not a reason
+   * to withhold the way to open it.
    */
   test("keeps the terminal control on global surfaces that have no workspace", () => {
     const onNewTerminalDraft = vi.fn()
@@ -80,9 +80,9 @@ describe("WorkspaceScopeButtons", () => {
 
   /**
    * The header's directory is `sidebarDir() ?? focusedPaneWorkspaceDir()` — a
-   * fallback chain rather than a choice — so no control here may start a process
-   * in it directly. The per-agent shortcuts that used to live here are tiles in
-   * the creator, which runs them only after a workspace has been picked.
+   * fallback chain rather than a choice — so no control here may start a
+   * process in it directly. Per-agent shortcuts live in the creator instead,
+   * as tiles it runs only after a workspace has been picked.
    */
   test("offers no shortcut that starts an agent in the inferred directory", () => {
     render(() => (

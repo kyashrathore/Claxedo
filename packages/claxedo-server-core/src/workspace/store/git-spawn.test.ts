@@ -7,11 +7,12 @@ import os from "node:os"
 import path from "node:path"
 
 /**
- * `ensureWorkspace` is reached by `resolveWorkspace({ create: true })` on every
- * request that carries `?directory=`, and each call used to read git identity
- * through four sequential `git` subprocesses before it looked the workspace up.
- * These cases pin the spawn count itself, because the observable result is
- * identical either way — only the subprocess cost differs.
+ * `ensureWorkspace` is reached by `resolveWorkspace({ create: true })` on
+ * every request that carries `?directory=`. A known workspace is looked up
+ * before touching git; an unseen directory reads git identity through four
+ * sequential `git` subprocesses. These cases pin the spawn count itself,
+ * because the observable result is identical either way — only the
+ * subprocess cost differs.
  *
  * The counter is a real `git` shim placed first on PATH, so it counts the
  * spawns the store actually performs rather than a mocked module boundary.

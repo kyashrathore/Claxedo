@@ -1,13 +1,11 @@
 /**
  * The terminal creator — a terminal's answer to the new-session composer.
  *
- * Why this exists: the rail's project header used to spawn a terminal on click,
- * into whatever directory `projectActionDirectory()` happened to resolve to. A
- * project section spans every worktree in the project, so that directory was a
- * fallback guess (`activeDirectory ?? directories()[0] ?? project.worktree`) the
- * user never made and could not see. The new-session button shared the same
- * guess, but handed it to the composer, which re-asks and lets you override; the
- * terminal button committed to it. This view is the missing "re-ask" step.
+ * A project section spans every worktree in the project, so there is no
+ * single directory a terminal launch can commit to without asking: the
+ * composer re-asks (project / environment / worktree) and lets you override
+ * before starting a session, and this view is the terminal's equivalent
+ * re-ask step.
  *
  * It deliberately wraps `NewSessionDesignView` rather than restating its chips:
  * project / environment / worktree are the same three questions with the same

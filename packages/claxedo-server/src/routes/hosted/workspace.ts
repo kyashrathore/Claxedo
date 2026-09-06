@@ -25,13 +25,13 @@ import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { asRecord } from "@claxedo/helpers/guards"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { asRecord } from "../../platform/json/index"
 
 // `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
@@ -326,15 +326,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
 
-        // FIRST, before the body is even read, and long before the authority
-        // round-trip or `sandboxManager.ensure` — same reasoning as the
-        // connection handler above: a flood must be rejected while it is still
-        // cheap to reject. This route is the only one in the file that
-        // provisions real infrastructure, so it was also the only one with no
-        // limiter at all before the 2026-07-27 security review (§4.3).
-        //
-        // Keyed on the caller alone (`workspaces.create`) because no workspace
-        // exists yet — the same shape the workspace LIST handler uses.
+        // Before the body is read and long before the authority round-trip or
+        // `sandboxManager.ensure`: a flood must be rejected while it is still
+        // cheap to reject. Keyed on the caller alone (`workspaces.create`)
+        // because no workspace exists yet.
         const createLimit = await controlPlaneRateLimitError(services, createWorkspaceRateLimiter, auth, {
           key: "workspaces.create",
           action: "workspace.create.denied",
@@ -408,10 +403,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (denied) return c.json(denied.body, denied.status)
         }
 
-        // Timestamp-prefixed + 80 bits of cryptographic randomness. The old
-        // `ws_${Date.now().toString(36)}` was guessable inside any plausible
-        // creation window (security review Chain A) and published its own
-        // creation time.
+        // A bare timestamp id is guessable inside any plausible creation window
+        // and publishes its own creation time; the random suffix is what makes
+        // this one unguessable.
         const workspaceId = newWorkspaceId()
         const projectId = body.projectId?.trim() || workspaceId
         const displayName =
@@ -425,7 +419,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // The rate limiter above bounds requests per minute inside ONE
           // isolate; this bounds how many sandboxes the caller can have running
           // at once, and it is the only one of the two that survives an isolate
-          // boundary (§6.7 — the limiters are per-isolate in-memory Maps). A
+          // boundary (the limiters are per-isolate in-memory Maps). A
           // slow drip that never trips a rate limit still stops here.
           //
           // Keyed on `auth.user.orgId` — the issuer org claim — because that is
@@ -468,7 +462,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           throw err
         }
 
-        // Sandbox-compute metering (metric spec §4.2): the create path is the
+        // Sandbox-compute metering: the create path is the
         // one lease-open site that holds a signed tenant, so the opening event is
         // emitted here rather than inside the manager. `started_at` is stamped
         // before `ensure` so the interval covers the cold start the user is
@@ -516,39 +510,32 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             ...((provisionSecrets?.length || runtimeSecrets.length)
               ? { secrets: [...(provisionSecrets ?? []), ...runtimeSecrets] }
               : {}),
-            // Security review 2026-07-27 §6.14 — this is the hosted, multi-tenant
-            // create path, so the sandbox it provisions runs agent-authored code
-            // over someone's private checkout. `net` was omitted here, and an
-            // omitted policy means allow-all: every hosted sandbox was running
-            // with the open internet available to it.
-            //
-            // The policy is now ALWAYS supplied here. What reaches the driver is
-            // the manager's call, per the owner directive of 2026-07-28 —
-            // "enforce where we can and document where we can't" — resolved by
+            // This is the hosted, multi-tenant create path: the sandbox runs
+            // agent-authored code over someone's private checkout, and an
+            // omitted `net` means allow-all, so the policy is always supplied.
+            // What reaches the driver is the manager's call, resolved by
             // `sandboxEgressDisposition`:
             //
             //  - a driver that can enforce (daytona, vercel) is handed the
-            //    allowlist verbatim and contains the sandbox;
+            //    allowlist and contains the sandbox;
             //  - a driver declaring `egressControl: "none"` (cloudflare — which
             //    the hosted auto-selection prefers — plus exe, the fetch bridge,
-            //    docker, modal, box) has it WITHHELD rather than handed down, and
-            //    the sandbox comes up with unrestricted egress. Withholding is
-            //    what keeps the drivers that throw on a restricted policy from
-            //    seeing one, and stops the ones that silently drop it from
-            //    pretending. That is a real exposure, so it is loud and never
-            //    silent: the manager warns, and the hosted composition also
-            //    emits `sandbox.egress_unenforced` per create
-            //    (`sandboxEgressUnenforcedSink`). See
-            //    `public-docs/sandbox-egress.md` for the operator-facing matrix.
+            //    docker, modal, box) has it withheld, and the sandbox comes up
+            //    with unrestricted egress. Withholding keeps the drivers that
+            //    throw on a restricted policy from seeing one, and stops the ones
+            //    that silently drop it from pretending. That exposure is loud:
+            //    the manager warns, and the hosted composition emits
+            //    `sandbox.egress_unenforced` per create
+            //    (`sandboxEgressUnenforcedSink`). `public-docs/sandbox-egress.md`
+            //    has the operator-facing matrix.
             //
-            // So provisioning is no longer refused for an uncontained driver.
-            // Only `sandbox_egress_policy_unenforceable` still fails closed, and
-            // it is the sole reason left that reaches the refusal branch below.
+            // Only `sandbox_egress_policy_unenforceable` fails closed; it is the
+            // sole reason that reaches the refusal branch below.
             //
-            // The allowlist is deliberately assembled from this request (its own
-            // relay/control plane, the one git host it clones from) plus the
-            // model-provider and package-registry floor. See
-            // `hostedSandboxNetworkPolicy` for what is excluded and why.
+            // The allowlist is assembled from this request (its own relay/control
+            // plane, the one git host it clones from) plus the model-provider and
+            // package-registry floor. See `hostedSandboxNetworkPolicy` for what
+            // is excluded and why.
             net: hostedSandboxNetworkPolicy({
               controlPlane: [configuredRelayUrl(options, homeRegion), new URL(c.req.url).origin],
               source,
@@ -565,19 +552,17 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // with no workspace authority configured simply records nothing.
           .then(async ({ result, runtimePreparation }) => {
             if (result.status === "ready") await options.provisionRuntime?.(workspaceId, runtimePreparation)
-            // Since the 2026-07-28 inversion the only refusal that can land here
-            // is `sandbox_egress_policy_unenforceable`: a driver that DOES
-            // enforce egress, handed an encoding it cannot express (hosts-only
-            // vercel and a CIDR-only policy). An `egressControl: "none"` driver
-            // no longer arrives — it provisions uncontained and warns instead.
-            // The prefix match is kept deliberately broad so any future
-            // `sandbox_egress_*` refusal surfaces rather than vanishing.
+            // The only refusal that lands here is
+            // `sandbox_egress_policy_unenforceable`: a driver that does enforce
+            // egress, handed an encoding it cannot express (hosts-only vercel
+            // and a CIDR-only policy). The prefix match stays broad so any
+            // future `sandbox_egress_*` refusal surfaces rather than vanishing.
             //
-            // It is a DEPLOYMENT fault, not a transient one: no retry helps and
+            // It is a deployment fault, not a transient one: no retry helps and
             // no sandbox will ever come up. `ensure` is fire-and-forget, so
             // without this the only signal an operator gets is a workspace that
-            // provisions forever. There is also no lease to attribute, so
-            // metering is skipped.
+            // provisions forever. There is no lease to attribute, so metering
+            // is skipped.
             if (result.status === "unavailable" && result.error?.startsWith("sandbox_egress_")) {
               captureWorkspaceTelemetry({
                 services,
@@ -593,11 +578,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             }
             // Two independent stamps, matching `recordTenant`'s two:
             //
-            //  - `owner_subject` ALWAYS, because it is what the concurrency cap
-            //    counts on and every signed request carries a subject. This
-            //    used to be gated behind `leaseIdentity`, so a personal-account
-            //    create stamped nothing, its lease was unattributed, and the
-            //    cap could not bind for it — the hole this closes.
+            //  - `owner_subject` always, because the concurrency cap counts on it
+            //    and every signed request carries a subject; gating it on
+            //    `leaseIdentity` left personal-account leases unattributed and
+            //    the cap unable to bind.
             //  - the metering pair only when a signed org claim produced a
             //    `leaseIdentity`. A usage fact keyed on a fabricated org (say
             //    `personal:<subject>`) would corrupt every per-org aggregate

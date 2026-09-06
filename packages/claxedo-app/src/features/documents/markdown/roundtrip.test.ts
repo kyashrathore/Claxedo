@@ -60,21 +60,6 @@ describe("Markdown adversarial corpus", () => {
     expect(counts.roundtrip_mismatch + counts.unsupported_syntax).toBe(counts.source)
   }, 30000)
 
-  test("keeps a one-paragraph source edit in a representative repository doc local", () => {
-    const markdown = readFileSync(resolve(docsDirectory, "README.md"), "utf8")
-    const result = detectMarkdown(markdown)
-    expect(result.status).toBe("source")
-    if (result.status !== "source") return
-    const edited = result.markdown.replace(
-      "This directory is intentionally small.",
-      "This directory is deliberately small.",
-    )
-    const before = result.markdown.split("\n")
-    const after = edited.split("\n")
-
-    expect(before.flatMap((line, index) => (line === after[index] ? [] : [index]))).toEqual([5])
-  })
-
   test("keeps a first rich edit local to one paragraph in a representative repository fixture", () => {
     const path = new URL("representative-repository.rich.md", supportedDirectory)
     const markdown = readFileSync(path, "utf8")

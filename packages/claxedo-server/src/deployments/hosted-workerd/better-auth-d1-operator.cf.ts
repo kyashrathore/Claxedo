@@ -17,7 +17,7 @@ import {
 } from "./better-auth-d1-cutover-gate.cf"
 import { requireDeploymentReleaseState, type DeploymentReleaseIdentity } from "./better-auth-d1-release-state.cf"
 import { requiredReleaseIdentifier } from "./better-auth-d1-release-identity.cf"
-import { asRecord } from "../../platform/json/index"
+import { assertRecord } from "@claxedo/helpers/guards"
 
 export type BetterAuthD1OperatorEnv = {
   AUTH_DB: D1Database
@@ -83,12 +83,6 @@ async function operatorSubjectHash(env: BetterAuthD1OperatorEnv) {
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`
 }
 
-function objectBody(value: unknown) {
-  const body = asRecord(value)
-  if (!body) throw new Error("operator body must be an object")
-  return body
-}
-
 function stringField(body: Record<string, unknown>, name: string) {
   if (typeof body[name] !== "string") throw new Error(`${name} must be a string`)
   return body[name]
@@ -115,7 +109,7 @@ function isDeploymentReleasePhase(phase: string): phase is DeploymentAdmissionBi
 }
 
 function parseCutoverEvidence(value: unknown): DeploymentCutoverEvidence {
-  const body = objectBody(value)
+  const body = assertRecord(value, "operator body")
   const kind = stringField(body, "kind")
   const receiptId = stringField(body, "receiptId")
   const operationId = stringField(body, "operationId")
@@ -175,7 +169,7 @@ function parseCutoverEvidence(value: unknown): DeploymentCutoverEvidence {
 }
 
 function parseAdmissionBinding(value: unknown): DeploymentAdmissionBinding {
-  const body = objectBody(value)
+  const body = assertRecord(value, "operator body")
   const adapterProfile = stringField(body, "adapterProfile")
   const productPosture = stringField(body, "productPosture")
   const sandboxPosture = stringField(body, "sandboxPosture")
@@ -222,7 +216,7 @@ export async function operatorResponse(
   if (request.method !== "POST" || request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") {
     return json(request, { error: { code: "operator_request_invalid" } }, 400)
   }
-  const body = objectBody(await request.json())
+  const body = assertRecord(await request.json(), "operator body")
   const binding = parseAdmissionBinding(body.binding)
   await admitDeploymentOperation(env.AUTH_DB, identity, {
     binding,

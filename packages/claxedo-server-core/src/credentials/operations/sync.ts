@@ -1,4 +1,3 @@
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { jsonRecord, jsonText } from "@claxedo/server-core/platform/runtime/lib/json"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
@@ -9,6 +8,7 @@ import { execFileSync } from "child_process"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 const log = Log.create({ service: "credentials-sync" })
 
@@ -91,7 +91,7 @@ function claudeCredentialsFileToken(): string | undefined {
 }
 
 function claudeCodeOAuthToken(options: CollectLocalCredentialsOptions) {
-  const env = clean(process.env.CLAUDE_CODE_OAUTH_TOKEN) ?? clean(process.env.ANTHROPIC_AUTH_TOKEN)
+  const env = trimToUndefined(process.env.CLAUDE_CODE_OAUTH_TOKEN) ?? trimToUndefined(process.env.ANTHROPIC_AUTH_TOKEN)
   if (env) return claudeCodeOAuthAccessToken(env)
   if (options.allowKeychainPrompt && process.platform === "darwin") {
     try {
@@ -120,7 +120,7 @@ function claudeCodeOAuthToken(options: CollectLocalCredentialsOptions) {
  * (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_AUTH_TOKEN`) and passes through.
  */
 function claudeCodeOAuthAccessToken(input: string): string | undefined {
-  const raw = clean(input)
+  const raw = trimToUndefined(input)
   if (!raw) return undefined
   let parsed: unknown
   try {
@@ -293,7 +293,7 @@ function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
 }
 
 function claudeOAuthItem(token: string | undefined) {
-  const accessToken = clean(token)
+  const accessToken = trimToUndefined(token)
   if (!accessToken) return undefined
   const envVar = process.env.CLAUDE_CODE_OAUTH_TOKEN
     ? "CLAUDE_CODE_OAUTH_TOKEN"
@@ -321,7 +321,7 @@ function sandboxDriverCredentialItem(
   label: string,
   secret: string | undefined,
 ) {
-  const txt = clean(secret)
+  const txt = trimToUndefined(secret)
   if (!txt) return undefined
   return {
     provider_id: driverId,
@@ -341,9 +341,9 @@ function vercelSandboxDriverCredentialItem(
     project_id?: string
   },
 ) {
-  const access_token = clean(input.access_token)
-  const team_id = clean(input.team_id)
-  const project_id = clean(input.project_id)
+  const access_token = trimToUndefined(input.access_token)
+  const team_id = trimToUndefined(input.team_id)
+  const project_id = trimToUndefined(input.project_id)
   if (!access_token || !team_id || !project_id) return undefined
   return {
     provider_id: "vercel",
@@ -373,7 +373,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   put(map, claudeOAuthItem(claudeOAuth))
 
   for (const [providerId, secret] of Object.entries(cfg.auth ?? {})) {
-    const txt = clean(secret)
+    const txt = trimToUndefined(secret)
     if (!txt) continue
     put(map, {
       provider_id: providerId,
@@ -437,7 +437,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   )
 
   for (const [providerId, name] of Object.entries(nativeHarnessEnv)) {
-    const secret = clean(process.env[name])
+    const secret = trimToUndefined(process.env[name])
     if (!secret) continue
     put(map, {
       provider_id: providerId,
@@ -454,7 +454,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   )
   put(
     map,
-    clean(process.env.MODAL_TOKEN_ID) && clean(process.env.MODAL_TOKEN_SECRET)
+    trimToUndefined(process.env.MODAL_TOKEN_ID) && trimToUndefined(process.env.MODAL_TOKEN_SECRET)
       ? {
           provider_id: "modal",
           kind: "sandbox_driver",
@@ -471,7 +471,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
     map,
     vercelSandboxDriverCredentialItem(
       "env",
-      clean(process.env.VERCEL_TOKEN) ? "Synced from VERCEL_TOKEN" : "Synced from VERCEL_OIDC_TOKEN",
+      trimToUndefined(process.env.VERCEL_TOKEN) ? "Synced from VERCEL_TOKEN" : "Synced from VERCEL_OIDC_TOKEN",
       {
         access_token: process.env.VERCEL_TOKEN ?? process.env.VERCEL_OIDC_TOKEN,
         team_id: process.env.VERCEL_TEAM_ID,
@@ -481,7 +481,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   )
   put(
     map,
-    clean(process.env.CLOUDFLARE_API_TOKEN) && clean(process.env.CLOUDFLARE_SANDBOX_WORKER_URL)
+    trimToUndefined(process.env.CLOUDFLARE_API_TOKEN) && trimToUndefined(process.env.CLOUDFLARE_SANDBOX_WORKER_URL)
       ? {
           provider_id: "cloudflare",
           kind: "sandbox_driver",

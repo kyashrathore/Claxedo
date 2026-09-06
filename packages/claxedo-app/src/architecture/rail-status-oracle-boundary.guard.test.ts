@@ -14,19 +14,15 @@ import path from "node:path"
 const appRoot = path.resolve(import.meta.dir, "../..")
 const e2eDir = path.join(appRoot, "e2e")
 
-/** The two DOM contracts `rail-oracle.ts` (header, lines 8-14) documents. Any other
- * literal spelling (a typo, a template-built variant) would already dodge this guard,
- * same residual gap `mock-route-shadowing.ts`'s header accepts for non-literal patterns
- * -- not attempted here because both attributes are written as plain string literals
- * everywhere they currently occur (verified 2026-08-06 via a plain grep across e2e/). */
+/** Matched as plain string literals; a template-built attribute name would dodge this guard. */
 const STATUS_ATTRS = ["data-sidebar-status", "data-switcher-status"] as const
 
 const ALLOWED: { file: string; reason: string }[] = [
   { file: "helpers/rail-oracle.ts", reason: "is the oracle every other file routes through" },
   { file: "helpers/rail-oracle.mutation.test.ts", reason: "constructs raw status mutations to test the rail oracle" },
-  { file: "helpers/geometry-oracle.ts", reason: "Phase 1 D3/E1 oracle -- geometry read on the same node, not a status assertion" },
+  { file: "helpers/geometry-oracle.ts", reason: "row-geometry oracle -- geometry read on the same node, not a status assertion" },
   { file: "helpers/geometry-oracle.mutation.test.ts", reason: "constructs raw status geometry to test the geometry oracle" },
-  { file: "helpers/surface-parity.ts", reason: "Phase 1 B9 oracle -- equality across both surfaces is its entire purpose" },
+  { file: "helpers/surface-parity.ts", reason: "sidebar-vs-switcher parity oracle -- equality across both surfaces is its entire purpose" },
   { file: "helpers/surface-parity.mutation.test.ts", reason: "constructs divergent raw statuses to test the parity oracle" },
   { file: "playwright/core-sidebar-tree.spec.ts", reason: "predates rail-oracle.ts; migration out of scope for this guard" },
   { file: "playwright/core-claude-native-sdk-rail.spec.ts", reason: "predates rail-oracle.ts; migration out of scope for this guard" },
@@ -35,10 +31,8 @@ const ALLOWED: { file: string; reason: string }[] = [
   { file: "playwright/real-harness-local.spec.ts", reason: "predates rail-oracle.ts; Tier R spec, migration out of scope for this guard" },
 ]
 
-/** Mirrors `scanners.ts`'s `walk`, kept local (not imported) so this guard -- like
- * `e2e-suite-tags.guard.test.ts` beside it -- has no dependency on anything scoped to
- * `src/`. `report`/`test-results` are Playwright's own generated output dirs; skipped
- * defensively even though neither currently contains a `.ts` file (verified 2026-08-06). */
+/** Local walk (not `scanners.ts`) so this guard has no `src/`-scoped dependency;
+ * `report`/`test-results` are Playwright output. */
 function walkTs(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (entry.name === "node_modules" || entry.name === "report" || entry.name === "test-results") return []
@@ -79,7 +73,7 @@ describe("rail status oracle boundary", () => {
         if (!hit) return []
         return [
           `${file}: references "${hit}" directly -- assert rail status through e2e/helpers/rail-oracle.ts ` +
-            `(expectRailRowVisible/expectRailStatus/...) or surface-parity.ts (B9), or add a reasoned entry to ` +
+            `(expectRailRowVisible/expectRailStatus/...) or surface-parity.ts (expectSurfaceParity), or add a reasoned entry to ` +
             `ALLOWED in src/architecture/rail-status-oracle-boundary.guard.test.ts if the exemption is deliberate.`,
         ]
       })

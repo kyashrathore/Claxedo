@@ -96,13 +96,3 @@ describe("checkServerHealth", () => {
     expect(calls).toBe(1)
   })
 })
-
-describe("source ownership", () => {
-  test("keeps server health cache state in the query client", async () => {
-    const source = await Bun.file(new URL("./server-health.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("healthCache = new Map")
-    expect(source).not.toContain("const healthCache")
-    expect(source).not.toContain("RuntimeGateway")
-  })
-})

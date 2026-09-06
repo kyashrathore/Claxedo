@@ -1,11 +1,8 @@
 /**
- * PromptPopover — @-mention / slash-command popup ARIA (WP-C1).
- *
- * Locks the combobox/listbox semantics the composer's `role="combobox"` depends
- * on: the popup is a named `role="listbox"` and each row is a `role="option"`
- * with a stable id and an `aria-selected` that tracks the active item. Without
- * this the popover's keyboard nav is invisible to assistive tech (the appendix's
- * top "[critical]" a11y finding).
+ * The popup is a named `role="listbox"` and each row a `role="option"` with a
+ * stable id and an `aria-selected` that tracks the active item. The composer's
+ * `role="combobox"` depends on these; without them keyboard navigation is
+ * invisible to assistive tech.
  */
 
 import { afterEach, describe, expect, test } from "vitest"

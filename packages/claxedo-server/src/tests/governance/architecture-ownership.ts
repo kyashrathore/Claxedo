@@ -314,16 +314,14 @@ export const ARCHITECTURE_OWNERSHIP = [
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
     tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
   },
-  // --- Unit 5: control-plane-owned route reorganization ---
-  // MOVE: generic control-plane route modules whose import graph is
-  // services/port-only and Worker-safe. Rehomed under authority/routes/.
+  // Worker-safe route modules: shared control plane.
   {
     area: "route",
     module: "session/routes/control-plane-session.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane session routes",
     reason:
-      "Unit 5 MOVE: imports only ControlPlaneServices, the authority port, authority/http, authority/auth, and type-only session-meta/session-list — no workspace-store, SQLite, or fs. Generic control-plane core, rehomed from routes/.",
+      "No workspace store, SQLite, or fs in its import graph, so it is Worker-safe shared control plane.",
     tests: ["session/routes/control-plane-session.test.ts"],
     routeSamples: ["/api/control/sessions/s1/gateway"],
   },
@@ -333,22 +331,18 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "control-plane JWKS route",
     reason:
-      "Unit 5 MOVE: serves control-plane signing keys; only dependency is authority/web-crypto plus jose/hono. Mounted by both self-hosted-node/app.ts and hosted-core-app.ts (already Worker-safe). Rehomed from routes/.",
+      "Depends only on web-crypto, runtime-access-token, jose and hono, so it is Worker-safe and mounted by both compositions.",
     tests: ["authority/routes/jwks.test.ts"],
     routeSamples: ["/.well-known/jwks.json"],
   },
-  // DOCUMENT: generic-in-spirit route modules that stay under routes/ because
-  // their import graph is coupled to Worker-forbidden local modules
-  // (workspace-store / workspace-supervisor / SQLite storage / process-local
-  // bus). Verdicts flipped from the provisional MOVE toward DOCUMENT with
-  // import evidence noted per Unit 5's decision rule.
+  // Route modules kept local by a Worker-forbidden import; each reason names it.
   {
     area: "route",
     module: "../../claxedo-local-server/src/session/routes/meta-routes.ts",
     status: OwnershipStatus.Canonical,
     owner: "local session-meta routes (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict flipped MOVE→DOCUMENT: imports resolveWorkspace from ../workspace-store (FORBIDDEN_LOCAL, fs/child_process/sqlite). Not Worker-safe, so it stays a local control-plane route adapter under routes/.",
+      "Imports resolveWorkspace from the workspace store (fs/child_process/SQLite), so it stays local.",
     tests: ["../../claxedo-local-server/src/session/routes/meta-routes.test.ts"],
     routeSamples: ["/api/claxedo/session/s1/meta"],
   },
@@ -358,7 +352,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local network-policy routes (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict flipped MOVE→DOCUMENT: transitively imports ../network/policy → ../adapters/storage/db (better-sqlite3 + fs). SQLite-coupled, so it stays a local control-plane route adapter under routes/.",
+      "Imports the network policy store, which reads the SQLite ClaxedoDB, so it stays local.",
     tests: ["../../claxedo-local-server/src/sandbox/network/network-policy-routes.test.ts"],
     routeSamples: ["/api/claxedo/network-policy"],
   },
@@ -377,7 +371,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local control-plane events SSE route (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict flipped VERIFY→WRAP→DOCUMENT: imports claxedoBus from ../bus → @claxedo/workspace-runtime/host (FORBIDDEN_BARE, process-local). Process-local + Worker-forbidden, so it stays in place with no barrel.",
+      "Imports claxedoBus, built on the process-local @claxedo/workspace-runtime/host, so it stays local.",
     tests: ["../../claxedo-server-core/src/platform/http/events.test.ts"],
   },
   {
@@ -386,7 +380,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local bootstrap route (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict DOCUMENT: imports local workspace and environment owners, so it stays in the local adapter.",
+      "Imports the workspace store and the runtime data paths (fs), so it stays local.",
     tests: ["../../claxedo-local-server/src/deployments/shared-routes/bootstrap.test.ts"],
     routeSamples: ["/api/claxedo/bootstrap"],
   },
@@ -396,7 +390,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local workspace routes (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict DOCUMENT: imports ../workspace-store and ../workspace-supervisor (both FORBIDDEN_LOCAL). Local-only workspace-store coupling, so the workspace* route family stays in place under routes/.",
+      "Imports the workspace store and supervisor (fs/child_process/SQLite), so it stays local.",
     tests: ["workspace/routes/index.test.ts"],
     routeSamples: ["/api/workspace"],
   },
@@ -406,7 +400,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "provider auth method service (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict WRAP→DOCUMENT: the implementation is portable (only node:timers + a type import) but it is a service, not a route, so there is no authority/routes/ home; with 2 non-test importers (routes/provider-auth.ts, routes/bootstrap.ts) a barrel is not warranted. Left in place and documented.",
+      "A service, not a route, with three local importers; it stays with the local credentials adapter rather than behind a shared barrel.",
     tests: ["../../claxedo-local-server/src/credentials/routes/provider-auth.test.ts"],
   },
   {
@@ -415,7 +409,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "Claxedo relay provider adapter",
     reason:
-      "Unit 5 verdict DOCUMENT: Claxedo relay adapter consumed via services.relay; imports @claxedo/workspace-relay and ../region. Product-specific relay decision, not generic control-plane core.",
+      "Imports @claxedo/workspace-relay and the region module behind the services.relay port; product-specific, not shared control plane.",
     tests: ["../../claxedo-server-core/src/adapters/relay/index.test.ts"],
   },
   {
@@ -424,7 +418,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local credential secret backend",
     reason:
-      "Unit 5 verdict DOCUMENT: local registry file backend (fs + crypto). The neutral port is services.credentials; this is a Worker-forbidden local adapter that stays in place.",
+      "Reads a local registry file (fs + crypto) behind the services.credentials port, so it stays local.",
     tests: ["../../claxedo-server-core/src/credentials/registry.test.ts"],
   },
 ] as const satisfies readonly ArchitectureOwnershipEntry[]

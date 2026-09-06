@@ -15,7 +15,7 @@
  * surface whose find contract this is. The match arithmetic itself is covered
  * without a DOM in `session-ui/src/pierre/file-find-content.test.ts`.
  */
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createFileFind } from "@opencode-ai/session-ui/pierre/file-find"
 
@@ -31,6 +31,9 @@ class StubHighlight {
   }
 }
 const highlights = new Map<string, StubHighlight>()
+const originalHighlight = Object.getOwnPropertyDescriptor(globalThis, "Highlight")
+const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS")
+const disposers: Array<() => void> = []
 // Both are defined rather than assigned: happy-dom exposes `CSS` as a
 // read-only accessor, and `Highlight` does not exist there at all.
 Object.defineProperty(globalThis, "Highlight", { value: StubHighlight, configurable: true, writable: true })
@@ -87,15 +90,16 @@ function createFind(
   viewer: ReturnType<typeof mountViewer>,
   options: { lines?: boolean; revealLine?: (line: number) => void } = {},
 ) {
-  return createRoot(() =>
-    createFileFind({
+  return createRoot((dispose) => {
+    disposers.push(dispose)
+    return createFileFind({
       wrapper: () => viewer.wrapper,
       overlay: () => viewer.overlay,
       getRoot: () => viewer.root,
       lines: options.lines === false ? undefined : () => FILE_LINES,
       revealLine: options.revealLine,
-    }),
-  )
+    })
+  })
 }
 
 const frames = async (count = 3) => {
@@ -117,6 +121,18 @@ async function search(find: ReturnType<typeof createFind>, query: string) {
 beforeEach(() => {
   highlights.clear()
   document.body.innerHTML = ""
+})
+
+afterEach(() => {
+  for (const dispose of disposers.splice(0)) dispose()
+  document.body.replaceChildren()
+})
+
+afterAll(() => {
+  if (originalHighlight) Object.defineProperty(globalThis, "Highlight", originalHighlight)
+  else Reflect.deleteProperty(globalThis, "Highlight")
+  if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss)
+  else Reflect.deleteProperty(globalThis, "CSS")
 })
 
 describe("file tab find over a windowed viewer", () => {

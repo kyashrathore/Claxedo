@@ -1,4 +1,5 @@
-import { isJsonRecord, jsonText } from "../../platform/runtime/lib/json"
+import { jsonText } from "../../platform/runtime/lib/json"
+import { isRecord } from "@claxedo/helpers/guards"
 import { resolveCollections } from "../catalog/resolve-collections"
 import type { AgentPluginCatalogError, AgentPluginSourceKind } from "../catalog/types"
 import type { CatalogSourceProvider } from "../ports"
@@ -88,7 +89,7 @@ export function parseAgentPluginSourceRegistration(
   value: unknown,
   options: { signed: boolean },
 ): AgentPluginSourceRegistration | undefined {
-  if (!isJsonRecord(value)) return undefined
+  if (!isRecord(value)) return undefined
   const allowed = new Set(["owner", "repository", "ref", "authority"])
   if (!Object.keys(value).every((key) => allowed.has(key))) return undefined
   const owner = jsonText(value, "owner")

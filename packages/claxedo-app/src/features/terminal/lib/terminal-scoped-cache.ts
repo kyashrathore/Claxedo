@@ -12,9 +12,6 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
  * cache-key composition, request path, and parse logic.
  */
 
-/** Trim a value to a string, or "" if it is not a string. */
-export const normalizeText = (value: unknown) => (typeof value === "string" ? value.trim() : "")
-
 /** Best-effort origin of a URL, falling back to the current window origin. */
 export const originOf = (url: string) => {
   try {

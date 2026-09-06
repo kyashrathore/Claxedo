@@ -14,6 +14,7 @@ import {
   sessionModelSyncStateKey,
 } from "./store-policy"
 import {
+  syncHarnessSessionModel,
   clearHarnessOptionsTries,
   createHarnessHydratorQueryCache,
   createHarnessOptionsQueryCache,
@@ -51,7 +52,7 @@ describe("harness query cache", () => {
     const prepared = {
       id: "ses_prepared",
       directory: "/repo",
-      harness: "claude-acp",
+      harness: { kind: "connection", connectionId: "claude-team" },
       model: "sonnet",
     } satisfies PreparedRuntimeSession
     const pending = { seq: 1, promise: Promise.resolve(prepared) }
@@ -145,3 +146,70 @@ describe("harness query cache", () => {
   })
 
 })
+
+describe("session model sync", () => {
+    test("dedupes an in-flight model write through Query", async () => {
+      let calls = 0
+      let release: (res: Response) => void
+      const request = () => {
+        calls += 1
+        return new Promise<Response>((resolve) => {
+          release = resolve
+        })
+      }
+
+      const first = syncHarnessSessionModel({ key: "server\nses_1", model: "sonnet", request })
+      const second = syncHarnessSessionModel({ key: "server\nses_1", model: "sonnet", request })
+
+      expect(second).toBe(first)
+      expect(calls).toBe(1)
+      expect(queryClient.getQueryData(sessionModelSyncStateKey("server\nses_1"))).toEqual({
+        desired: "sonnet",
+      })
+      expect(queryClient.getQueryData(sessionModelSyncRequestKey("server\nses_1", "sonnet"))).toBe(first)
+
+      release!(new Response(null, { status: 204 }))
+      await first
+
+      expect(queryClient.getQueryData(sessionModelSyncStateKey("server\nses_1"))).toEqual({
+        desired: "sonnet",
+        synced: "sonnet",
+      })
+      expect(queryClient.getQueryData(sessionModelSyncRequestKey("server\nses_1", "sonnet"))).toBeUndefined()
+    })
+
+    test("does not mark an older write synced after a newer model is desired", async () => {
+      let releaseOld: (res: Response) => void
+      let releaseNew: (res: Response) => void
+
+      const oldWrite = syncHarnessSessionModel({
+        key: "server\nses_1",
+        model: "sonnet",
+        request: () =>
+          new Promise<Response>((resolve) => {
+            releaseOld = resolve
+          }),
+      })
+      const newWrite = syncHarnessSessionModel({
+        key: "server\nses_1",
+        model: "opus",
+        request: () =>
+          new Promise<Response>((resolve) => {
+            releaseNew = resolve
+          }),
+      })
+
+      releaseOld!(new Response(null, { status: 204 }))
+      await oldWrite
+      expect(queryClient.getQueryData(sessionModelSyncStateKey("server\nses_1"))).toEqual({
+        desired: "opus",
+      })
+
+      releaseNew!(new Response(null, { status: 204 }))
+      await newWrite
+      expect(queryClient.getQueryData(sessionModelSyncStateKey("server\nses_1"))).toEqual({
+        desired: "opus",
+        synced: "opus",
+      })
+    })
+  })

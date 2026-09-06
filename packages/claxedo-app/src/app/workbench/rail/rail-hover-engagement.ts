@@ -20,8 +20,8 @@ import { createSignal, onCleanup, type Accessor } from "solid-js"
  * one the keyboard is still inside.
  *
  * `releaseDelayMs` keeps the cluster mounted for the length of its own
- * fade-out transition after disengagement, so an affordance that used to fade
- * away still fades away instead of vanishing on `pointerleave`.
+ * fade-out transition after disengagement, so the transition actually gets to
+ * play out instead of the node vanishing on `pointerleave`.
  */
 export function createHoverEngagement(input?: { releaseDelayMs?: number }): {
   engaged: Accessor<boolean>
@@ -90,7 +90,7 @@ export function createHoverEngagement(input?: { releaseDelayMs?: number }): {
         focusWithin = true
         settle()
       },
-      // `focusout` fires when focus moves BETWEEN two controls inside the same
+      // `focusout` fires when focus moves between two controls inside the same
       // row as well as when it leaves; only the second one disengages.
       onFocusOut: (event: FocusEvent) => {
         const next = event.relatedTarget

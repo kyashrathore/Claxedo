@@ -54,7 +54,7 @@ vi.mock("@/app/connection/server", () => ({
 
 vi.mock("@/platform/account/account-provider", () => ({
   useAccountPort: () => ({
-    state: () => ({ status: "signed-out" }),
+    state: () => ({ status: "unsigned" }),
     signIn: async () => undefined,
     signOut: async () => undefined,
     run: async () => undefined,
@@ -123,8 +123,11 @@ vi.mock("../../../features/session/data/query/session-list", async (importOrigin
     sessionListMocks.request(input.query),
 }))
 
+const sidebarClients: QueryClient[] = []
+
 afterEach(() => {
   cleanup()
+  for (const client of sidebarClients.splice(0)) client.clear()
   localStorage.clear()
   inventoryMocks.reloadWorkspace.mockClear()
   sessionListMocks.request.mockClear()
@@ -168,7 +171,7 @@ const twoWorkspaceProject = {
 // mounts inside a router — as it does in the app shell.
 // The sidebar's account menu reads `useAccountPort()`, which throws without a
 // provider — in the app shell `AccountPortProvider` sits above the rail
-// (src/app/entry/app.tsx). A signed-out stub is all these disclosure tests
+// (src/app/entry/app.tsx). An unsigned stub is all these disclosure tests
 // need; the account surface itself is covered in account-section.vitest.tsx.
 const stubAccountPort: AccountPort = {
   state: () => ({ status: "unsigned" }),
@@ -178,8 +181,10 @@ const stubAccountPort: AccountPort = {
 }
 
 function renderInRouter(component: () => JSX.Element) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  sidebarClients.push(client)
   return render(() => (
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <AccountPortProvider port={stubAccountPort}>
         <MemoryRouter>
           <Route path="*" component={component} />
@@ -191,6 +196,7 @@ function renderInRouter(component: () => JSX.Element) {
 
 function renderSidebar(input?: {
   group?: "project" | "workspace"
+  projects?: ProjectItem[]
   railDocked?: boolean
   onToggleSidebar?: ReturnType<typeof vi.fn>
   onWorkspaceSelect?: ReturnType<typeof vi.fn>
@@ -209,7 +215,7 @@ function renderSidebar(input?: {
     <SessionTitleProjectionProvider>
       <ClaxedoStateProvider initialState={emptyClaxedoState()}>
         <RailSidebar
-          projects={[project]}
+          projects={input?.projects ?? [project]}
           onWorkspaceSelect={input?.onWorkspaceSelect}
           onRailCancelCollapse={() => undefined}
           onRailLockChange={() => undefined}
@@ -226,6 +232,26 @@ function renderSidebar(input?: {
 }
 
 describe("RailSidebar disclosure controls", () => {
+  test("cloud workspace metadata supplies the mounted section icon and label", async () => {
+    const cloud = {
+      ...project,
+      workspaces: {
+        ...project.workspaces,
+        "workspace:ws_cloud": { id: "ws_cloud", workspaceId: "ws_cloud", directory: "workspace:ws_cloud", kind: "cloud", workspace_name: "Cloud feature" },
+      },
+    } satisfies ProjectItem
+    renderSidebar({ group: "workspace", projects: [cloud] })
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    await waitFor(() => {
+      const section = document.querySelector('[data-testid="workspace-header"][data-workspace-id="workspace:ws_cloud"]')
+      expect(section).not.toBeNull()
+      expect(section!.textContent).toContain("Cloud feature")
+      expect(section!.querySelector('[data-testid="section-kind-icon"]')).toHaveAttribute("data-icon", "cloud")
+      const local = document.querySelector('[data-testid="workspace-header"][data-workspace-id="/repo/main"]')
+      expect(local!.querySelector('[data-testid="section-kind-icon"]')).toHaveAttribute("data-icon", "laptop")
+    })
+  })
+
   test("leaves canonical inventory ownership outside the rail across focus changes", async () => {
     const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
     const [activeDirectory, setActiveDirectory] = createSignal("/repo/main")
@@ -436,7 +462,7 @@ describe("RailSidebar disclosure controls", () => {
     expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(callsAfterCollapse)
   })
 
-  test("an explicit workspace association keeps the poll on the workspace authority even under a local environment label", async () => {
+  test("a local association groups the row while polling its filesystem directory", async () => {
     // `railWorkspaceSessionBacking`: environment labels can still say `local`
     // for a user-hosted workspace (its owner executes it locally, browsers
     // reach it through the relay), so an explicit workspace row stays

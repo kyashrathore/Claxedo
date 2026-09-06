@@ -283,13 +283,12 @@ export const Terminal = (props: TerminalProps) => {
       }
       // Measure the mount width only once the terminal has actually been fitted
       // to its container. `b.cols` straight after creation is xterm's 80-column
-      // default (fonts have not settled, no fit has run), so every cold mount
-      // used to compare a real snapshot width against 80 and conclude the width
-      // had changed. That drives four branches, all destructive: the
-      // clear-screen on socket open, the live-tail cursor, the forced SIGWINCH
-      // toggle, and restoreSize. `undefined` when the container has no usable
-      // size yet — an unmeasurable width must read as "unchanged", never as
-      // "changed", so an unknown never triggers a destructive path.
+      // default (fonts have not settled, no fit has run) — reading it early
+      // would compare a real snapshot width against 80 and register a spurious
+      // change, driving four destructive branches: the clear-screen on socket
+      // open, the live-tail cursor, the forced SIGWINCH toggle, and
+      // restoreSize. `undefined` when the container has no usable size yet, so
+      // an unmeasurable width reads as unchanged, never as changed.
       const mountCols = (() => {
         try {
           b.fit()
@@ -919,9 +918,9 @@ export const Terminal = (props: TerminalProps) => {
           // Plain shells (zsh/bash) only need a single resize via scheduleOpenResize —
           // the double-toggle causes ZSH to redraw mid-query, emitting CPR / OSC color
           // responses that arrive back as echoed garbage in the prompt.
-          // Note: wasReconnect used to implicitly be false here because trim() caused a
-          // remount (resetting reconnecting=false). Now that trim() no longer remounts,
-          // we must explicitly exclude plain terminals from the forced SIGWINCH path.
+          // trim() does not remount on this path, so plain terminals have to be
+          // excluded here explicitly rather than relying on a remount to reset
+          // wasReconnect.
           const shouldForceSigwinch = likelyTui
           if (!shouldForceSigwinch) {
             holdResizeUntil = Date.now() + OPEN_RESIZE_SETTLE_MS

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../session/data/sync/queries"
@@ -14,9 +14,9 @@ beforeEach(() => configureAppPortsForTest())
 // Capture the real module through a cache-busting query so this restore can
 // never re-register a mock leaked from an earlier file, then put it back so
 // this file's shadow mock (no-op configureApiRuntime, null apiBearerToken)
-// cannot poison later suites that exercise the real runtime config — the
-// win32 unit lane hit exactly that in agent-runtime-client.test.ts, where
-// NTFS discovery order ran this file first (runs 382/383/385).
+// cannot poison later suites that exercise the real runtime config — NTFS
+// discovery order can run this file before agent-runtime-client.test.ts on
+// win32, which depends on the real module being restored.
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?project-actions-restore`)) }
 afterAll(async () => {
   await mock.module("@/platform/api/api", () => realApiModule)
@@ -140,13 +140,18 @@ beforeAll(async () => {
   createProjectActions = mod.createProjectActions
 })
 
+const originalReact = Object.getOwnPropertyDescriptor(globalThis, "React")
+afterEach(() => {
+  queryClient.clear()
+  if (originalReact) Object.defineProperty(globalThis, "React", originalReact)
+  else Reflect.deleteProperty(globalThis, "React")
+})
+
 beforeEach(() => {
   queryClient.clear()
   toasts.length = 0
   boundBearer = null
   deleteDialogProps = undefined
-  worktreeStates.clear()
-  worktreeWaiters.clear()
   mockApi.post = async () => {
     throw new Error("mock api post not configured")
   }
@@ -157,6 +162,7 @@ beforeEach(() => {
 })
 
 function make(dir: string) {
+  const order: string[] = []
   const adds: Array<{ directory: string; sessionId: string; title: string; workspaceRouteId?: string }> = []
   const acts: string[] = []
   const navs: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
@@ -197,7 +203,10 @@ function make(dir: string) {
     activeProjectId: () => "p1",
     workspaceRouteId: (directory) => directory === dir ? "ws_created" : "p1",
     projects: () => data.project,
-    navigate: (path: string) => routes.push(path),
+    navigate: (path: string) => {
+      order.push("navigate")
+      routes.push(path)
+    },
     state: {
       wb: {
         state: {
@@ -216,6 +225,7 @@ function make(dir: string) {
         recordAccess: () => undefined,
         cleanupRecency: () => undefined,
         cleanupDeletedWorktree: (directory: string, projectId?: string) => {
+          order.push("cleanup")
           cleaned.push({ directory, projectId })
           for (const [paneId, entry] of Object.entries(paneWorktrees)) {
             paneWorktrees[paneId] = {
@@ -227,6 +237,7 @@ function make(dir: string) {
       },
       layout: {
         openSession: (directory: string, sessionId: string, title: string, opts?: { workspaceRouteId?: string }) => {
+          order.push("openSession")
           adds.push({ directory, sessionId, title, workspaceRouteId: opts?.workspaceRouteId })
           acts.push("tab-new")
           return "tab-new"
@@ -280,6 +291,7 @@ function make(dir: string) {
     config: {},
     directorySessionCacheActions: {
       ensure: async (input: { directory: string }) => {
+        order.push("warmSessionCache")
         cacheEnsures.push(input.directory)
       },
       refresh: async (input: { directory: string }) => {
@@ -300,10 +312,11 @@ function make(dir: string) {
   }
 
   const nav = (path: string, reason: string, details?: Record<string, unknown>) => {
+    order.push("navigateSession")
     navs.push({ path, reason, details })
   }
 
-  return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, metas, closedContents, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
+  return { order, props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, metas, closedContents, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
 }
 
 describe("createProjectActions New Project", () => {
@@ -329,7 +342,7 @@ describe("createProjectActions", () => {
   // and core-workspace-lifecycle.spec.ts).
   test("direct local workspace creation warms the directory session cache before opening a session", async () => {
     const dir = `/workspace/feature-${Date.now().toString(36)}-direct`
-    const { props, adds, navs, nav, cacheEnsures } = make(dir)
+    const { props, adds, navs, nav, cacheEnsures, order } = make(dir)
     const progress: string[] = []
 
     const result = await createProjectActions(props, nav).handleNewLocalWorkspace(
@@ -339,6 +352,7 @@ describe("createProjectActions", () => {
     )
 
     expect(cacheEnsures).toEqual([dir])
+    expect(order).toEqual(["warmSessionCache", "openSession", "navigateSession"])
     expect(progress).toEqual(["creating", "ready", "redirecting"])
     expect(result).toEqual({
       id: dir,
@@ -371,7 +385,11 @@ describe("createProjectActions", () => {
     const { props, adds, navs, nav } = make("/workspace/main")
     const progress: string[] = []
     let listener: ((event: Extract<ClaxedoEvent, { type: "provision" }>) => void) | undefined
-    let releaseCreate: (() => void) | undefined
+    let releaseCreate!: () => void
+    let enteredCreate!: () => void
+    const createEntered = new Promise<void>((resolve) => { enteredCreate = resolve })
+    let replayed!: () => void
+    const eventsReplayed = new Promise<void>((resolve) => { replayed = resolve })
 
     props.events = {
       connected: () => true,
@@ -385,9 +403,9 @@ describe("createProjectActions", () => {
       },
     }
     mockApi.post = async () => {
-      await new Promise<void>((resolve) => {
-        releaseCreate = resolve
-      })
+      const pending = new Promise<void>((resolve) => { releaseCreate = resolve })
+      enteredCreate()
+      await pending
       return {
         workspaceId: "ws_cloud_1",
         directory: "workspace:ws_cloud_1",
@@ -396,11 +414,14 @@ describe("createProjectActions", () => {
 
     const run = createProjectActions(props, nav).handleNewCloudWorkspace(
       project({ id: "p1", worktree: "/workspace/main", sandboxes: [] }),
-      (step) => progress.push(step),
+      (step) => {
+        progress.push(step)
+        if (step === "cloning") replayed()
+      },
       "feature-cloud",
     )
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await createEntered
 
     expect(progress).toEqual([])
 
@@ -408,13 +429,14 @@ describe("createProjectActions", () => {
     listener?.({ type: "provision", workspaceId: "ws_cloud_1", step: "cloning", ts: Date.now() })
     expect(progress).toEqual([])
 
-    releaseCreate?.()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    releaseCreate()
+    await eventsReplayed
     expect(progress).toEqual(["acquiring_sandbox", "cloning"])
 
     listener?.({ type: "provision", workspaceId: "ws_cloud_1", step: "ready", ts: Date.now() })
 
     const result = await run
+    expect(listener).toBeUndefined()
 
     expect(progress).toEqual(["acquiring_sandbox", "cloning", "ready", "redirecting"])
     expect(result).toEqual({
@@ -445,7 +467,7 @@ describe("createProjectActions", () => {
   })
 
   test("removing the active project deletes it from the workspace store and navigates away", () => {
-    const { props, nav, routes, closes, removes, workspaceDeletes, cleaned } = make("/workspace/feature")
+    const { props, nav, routes, closes, removes, workspaceDeletes, cleaned, order } = make("/workspace/feature")
     props.activeProjectId = () => "/workspace/main"
 
     createProjectActions(props, nav).handleRemoveProject(project({
@@ -466,13 +488,14 @@ describe("createProjectActions", () => {
       method: "DELETE",
     }])
     expect(routes).toEqual(["/"])
+    expect(order).toEqual(["navigate", "cleanup", "cleanup", "cleanup"])
   })
 
   test("removing a project closes the tabs of every directory it owns", () => {
     const { props, nav, metas, closedContents, cleaned } = make("/workspace/feature")
     // A worktree that only ever appears under `workspaces` — never a sandbox.
-    // Walking `worktree + sandboxes` alone left its tabs open in the switcher,
-    // pointing at a project that no longer exists.
+    // Closing must walk `workspaces` too, or its tab is left open pointing at
+    // a project that no longer exists.
     metas.push(
       { id: "tab-root", directory: "/workspace/main" },
       { id: "tab-sandbox", directory: "/workspace/formlink" },
@@ -565,8 +588,8 @@ describe("createProjectActions", () => {
     expect(deleteDialogProps).toBeDefined()
     await deleteDialogProps!.onDelete("/workspace/feature")
 
-    expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.sandboxes).toEqual([])
-    expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.workspaces).toEqual({})
+    expect(queryClient.getQueryData<ProjectItem[]>(projectsQueryKey)?.[0]?.sandboxes).toEqual([])
+    expect(queryClient.getQueryData<ProjectItem[]>(projectsQueryKey)?.[0]?.workspaces).toEqual({})
     expect(queryClient.getQueryData(directorySessionCacheQueryOptions({ directory: "/workspace/feature" }).queryKey)).toBeUndefined()
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toBeUndefined()
     expect(data.project[0]?.sandboxes).toEqual(["/workspace/feature"])
@@ -608,8 +631,8 @@ describe("createProjectActions", () => {
     expect(paneWorktrees.g1).toEqual({ default: "/workspace/main", pinned: null })
     expect(cleaned).toEqual([{ directory: "/workspace/feature", projectId: "p1" }])
     expect(routes).toEqual(["/"])
-    expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.sandboxes).toEqual([])
-    expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.workspaces).toEqual({})
+    expect(queryClient.getQueryData<ProjectItem[]>(projectsQueryKey)?.[0]?.sandboxes).toEqual([])
+    expect(queryClient.getQueryData<ProjectItem[]>(projectsQueryKey)?.[0]?.workspaces).toEqual({})
   })
 
   async function destroyCloudMainWorkspace() {

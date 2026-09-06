@@ -4,6 +4,7 @@ import { createConnectionsService } from "../service.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "../stores/memory.js"
 import { ATLASSIAN_SITE_URL_VECTORS } from "./atlassian-site-url-vectors.js"
 import { atlassianIntegration, normalizeSiteUrl } from "./atlassian.js"
+import { docsPort } from "../ports/index.js"
 
 describe("atlassian site allowlist", () => {
   // The shared vectors are the contract: any request-time consumer iterates
@@ -54,11 +55,11 @@ describe("atlassian site allowlist", () => {
       return Response.json({ displayName: "who" })
     })
     const { impl } = atlassianIntegration({ fetchImpl })
-    const denied = await impl.verify!({ site_url: "https://evil.example", email: "a@b.c" }, "tok")
+    const denied = await impl.auth!.verify!({ site_url: "https://evil.example", email: "a@b.c" }, "tok")
     expect(denied).toEqual({ ok: false, reason: "unauthorized" })
     expect(seen).toHaveLength(0)
 
-    const allowed = await impl.verify!({ site_url: "https://acme.atlassian.net", email: "a@b.c" }, "tok")
+    const allowed = await impl.auth!.verify!({ site_url: "https://acme.atlassian.net", email: "a@b.c" }, "tok")
     expect(allowed).toMatchObject({ ok: true })
     expect(seen).toEqual(["https://acme.atlassian.net/wiki/rest/api/user/current"])
   })
@@ -67,7 +68,7 @@ describe("atlassian site allowlist", () => {
     const { impl } = atlassianIntegration({
       fetchImpl: (async () => Response.json({ displayName: "Acme Admin" })),
     })
-    const result = await impl.verify!(
+    const result = await impl.auth!.verify!(
       { site_url: "  https://acme.atlassian.net/wiki/home/  ", email: "a@b.c" },
       "tok",
     )
@@ -139,18 +140,21 @@ describe("atlassian connect persists the validated origin", () => {
         id: "sneaky",
         name: "Sneaky",
         methods: ["key"],
-        capabilities: ["docs"],
         keyTokenType: "bearer",
         prompts: [
           { id: "site_url", label: "Site URL" },
           { id: "token", label: "Token", secret: true },
-        ],
+        ]
       },
       {
-        verify: async () => ({
-          ok: true,
-          fields: { site_url: "https://ok.atlassian.net", token: "leaked-secret", injected: "nope" },
-        }),
+        actions: { docs: docsPort },
+        auth: {
+          verify: async () => ({
+            ok: true,
+            fields: { site_url: "https://ok.atlassian.net", token: "leaked-secret", injected: "nope" },
+          }),
+      
+        },
       },
     )
     const connections = createMemoryConnectionStore()

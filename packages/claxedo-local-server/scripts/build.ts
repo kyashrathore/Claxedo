@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 
+import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 import {
   normalizeSourceMapBuildManifest,
   readSourceMapMetadata,
@@ -31,7 +32,7 @@ const result = await runBunBuild("Local Server bundle failed", {
   // by the composition host; the SDK's asset-relative graph is staged beside
   // the bundle rather than folded into it.
   external: ["@lydell/node-pty", "better-sqlite3", "@opencode-ai/sdk"],
-  plugins: [{
+  plugins: [publishedExportsPlugin(), {
     name: "jsonc-parser-esm",
     setup(build) {
       build.onResolve({ filter: /^jsonc-parser$/ }, () => ({

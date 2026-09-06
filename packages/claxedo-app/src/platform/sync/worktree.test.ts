@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import {
   applyWorktreeLifecycleEvent,
@@ -9,6 +9,8 @@ import {
 } from "./worktree"
 
 const dir = (name: string) => `/tmp/opencode-worktree-${name}-${crypto.randomUUID()}`
+
+afterEach(() => queryClient.removeQueries({ queryKey: ["shell", "worktree"] }))
 
 describe("Worktree", () => {
   test("normalizes trailing slashes into one query state", () => {
@@ -95,14 +97,5 @@ describe("validProjectRef", () => {
     expect(validProjectRef("workspace:../ws_1")).toBe(false)
     expect(validProjectRef("workspace:ws/1")).toBe(false)
     expect(validProjectRef("workspace:")).toBe(false)
-  })
-})
-
-describe("source ownership", () => {
-  test("keeps worktree state in the query client instead of private maps", async () => {
-    const source = await Bun.file(new URL("./worktree.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("const state = new Map")
-    expect(source).not.toContain("const waiters = new Map")
   })
 })

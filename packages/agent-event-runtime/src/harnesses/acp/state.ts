@@ -1,4 +1,5 @@
-import { object, text as str } from "../../value"
+import { text as str } from "../../value"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "../../contracts/agent-runtime-event"
 import type { ToolIntent } from "../../contracts/agent-runtime-event"
@@ -56,19 +57,19 @@ export type ToolView = {
 }
 
 function parsed(raw: unknown) {
-  const item = object(raw)
+  const item = asRecord(raw)
   const value = item?.parsed_cmd ?? item?.parsedCmd
   if (!Array.isArray(value)) return []
-  return value.map(object).filter((item): item is Record<string, unknown> => !!item)
+  return value.map(asRecord).filter((item): item is Record<string, unknown> => !!item)
 }
 
 function metaName(meta: unknown) {
-  const item = object(meta)
+  const item = asRecord(meta)
   return str(item?.tool_name) ?? str(item?.toolName)
 }
 
 function name(raw: unknown, meta?: unknown) {
-  const item = object(raw)
+  const item = asRecord(raw)
   return metaName(meta) ?? str(item?._toolName) ?? str(item?.toolName) ?? str(item?.tool) ?? str(item?.name)
 }
 
@@ -111,7 +112,7 @@ function contentKey(item: ToolCallContent): string {
 }
 
 function merge(left: Record<string, unknown> | undefined, right: unknown) {
-  const next = object(right)
+  const next = asRecord(right)
   if (!left) return next
   if (!next) return left
   return { ...left, ...next }
@@ -187,7 +188,7 @@ function files(state: ToolState) {
 }
 
 function textBody(raw: unknown) {
-  const item = object(raw)
+  const item = asRecord(raw)
   return str(item?.content) ?? str(item?.text) ?? str(item?.body)
 }
 
@@ -265,7 +266,7 @@ function shell(raw: unknown): string | undefined {
     if (cmd) return cmd
   }
 
-  const row = object(raw)
+  const row = asRecord(raw)
   const direct = str(row?.command)
   if (direct) return direct
   const cmd = row?.command
@@ -337,7 +338,7 @@ function pick(state: ToolState) {
   const diff = diffPath(state.content)
   const call = state.name?.toLowerCase()
   let nextIntent = intent(kind, title)
-  const query = str(raw?.query) ?? str(raw?.q) ?? str(raw?.pattern) ?? str(object(raw?.action)?.query) ?? first(raw?.queries)
+  const query = str(raw?.query) ?? str(raw?.q) ?? str(raw?.pattern) ?? str(asRecord(raw?.action)?.query) ?? first(raw?.queries)
   const search = items.find((item) => item.type === "search")
   const list = items.find((item) => item.type === "list_files" || item.type === "glob")
   if (
@@ -364,7 +365,7 @@ function pick(state: ToolState) {
   const pattern = str(raw?.pattern) ?? str(search?.query) ?? str(list?.pattern) ?? str(base.input?.pattern)
   const path = str(raw?.path) ?? str(search?.path) ?? str(list?.path) ?? spot
   const filePath = str(raw?.filePath) ?? str(search?.path) ?? file ?? diff ?? str(base.input?.filePath)
-  const stats = object(state.rawOutput)
+  const stats = asRecord(state.rawOutput)
   const hasDiff = state.content.some((item) => item.type === "diff")
   const diffValue = filediff(state.content)
   const patchValue = patch(state.content)

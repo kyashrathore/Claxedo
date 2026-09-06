@@ -1,3 +1,4 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeHarnessSelection } from "@claxedo/server-core/agent-config/index"
 
 export class HarnessConfigContractError extends Error {
@@ -7,20 +8,14 @@ export class HarnessConfigContractError extends Error {
   }
 }
 
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
-}
-
 const NATIVE = new Set(["claude", "codex", "cursor", "pi", "opencode"])
 
 export function parseHarnessConfigRequest(rawBody: unknown, url: string): {
   selection: RuntimeHarnessSelection
   sessionId?: string
 } {
-  const body = record(rawBody)
-  const harness = record(body?.harness)
+  const body = asRecord(rawBody)
+  const harness = asRecord(body?.harness)
   const problems: string[] = []
   let selection: RuntimeHarnessSelection | undefined
 

@@ -207,6 +207,7 @@ describe("CompactSwitcher", () => {
   })
 
   test("selects an item by content id after painting the active tab", async () => {
+    vi.useFakeTimers()
     const onSelect = vi.fn()
     render(() => <CompactSwitcher items={items} onSelect={onSelect} />)
 
@@ -214,7 +215,9 @@ describe("CompactSwitcher", () => {
 
     expect(screen.getByRole("button", { name: "Build fix" })).toHaveAttribute("aria-current", "page")
     expect(onSelect).not.toHaveBeenCalled()
-    await new Promise((resolve) => setTimeout(resolve, 120))
+    await vi.advanceTimersByTimeAsync(47)
+    expect(onSelect).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith("content-session")
   })

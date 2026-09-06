@@ -1002,12 +1002,10 @@ describe("AgentRuntimeClient", () => {
   /**
    * Where the signed control plane's bearer comes from.
    *
-   * This client used to import `getAuthToken` from `@/platform/auth/auth-client`
-   * for this one header, which put the identity provider in the local product's bundle for a
-   * code path a local build never reaches. It now reads whatever the build
-   * bound through `configureApiRuntime({ bearerToken })` — the same source
-   * `authFetch` uses — so the two cases below are "hosted" and "local", not
-   * "works" and "broken".
+   * Reads whatever the build bound through `configureApiRuntime({ bearerToken })`
+   * — the same source `authFetch` uses — so the two cases below are "hosted"
+   * and "local", not "works" and "broken": the local build simply never binds
+   * one.
    *
    * `/repo/bearer-*` directories are distinct per test because `workspaceTarget`
    * caches its resolve in `queryClient` by (serverUrl, directory).
@@ -1052,8 +1050,7 @@ describe("AgentRuntimeClient", () => {
   it("sends the bearer the build bound through configureApiRuntime", async () => {
     configureApiRuntime({ bearerToken: async () => "tok_bound" })
     try {
-      // Bisects the win32-CI failure mode (runs 382/383: header observed null):
-      // a failure here means the runtime cfg did not hold the binding at all; a
+      // A failure here means the runtime cfg did not hold the binding at all; a
       // failure only below means the client's header-attach path dropped it.
       expect(await apiBearerToken()).toBe("tok_bound")
       expect(await signedResolveAuthorization("/repo/bearer-bound")).toEqual(["Bearer tok_bound"])

@@ -30,6 +30,7 @@ vi.mock("@/platform/persistence/persist", async () => {
 })
 
 import {
+  MAX_PROMPT_SESSIONS,
   promptDraftControllerInput,
   promptDraftStoreTuple,
   PromptProvider,
@@ -209,7 +210,7 @@ describe("prompt draft store tuple (upstream v2 controller inputs)", () => {
     await waitFor(() => expect(controller!.value()).toBe("abc"))
   })
 
-  test("does not evict a live scope while the LRU is under its cap", async () => {
+  test("retains an inactive scope while the LRU is under its cap", async () => {
     setSessionId("live-scope")
     mount()
     const live = latest.capture()
@@ -223,16 +224,14 @@ describe("prompt draft store tuple (upstream v2 controller inputs)", () => {
     await waitFor(() => expect(latest.capture()).toBe(live))
   })
 
-  // Characterisation, not aspiration: `createLruResourceCache` does NOT
-  // ref-count (unlike `createRefCountedResourceCache` in the same module), so a
-  // mounted controller's scope IS evictable once 20 other scopes are loaded
-  // after it. Recorded so the lifetime risk is visible rather than latent.
-  test("DOES evict a live scope once MAX_PROMPT_SESSIONS other scopes load after it", async () => {
+  // Switching the provider releases its previous scope. Unpinned draft scopes
+  // remain reusable until the bounded cache evicts them under pressure.
+  test("evicts an inactive scope once MAX_PROMPT_SESSIONS other scopes load after it", async () => {
     setSessionId("victim-scope")
     mount()
     const victim = latest.capture()
 
-    for (let index = 0; index < 20; index++) {
+    for (let index = 0; index < MAX_PROMPT_SESSIONS; index++) {
       setSessionId(`evictor-${index}`)
       await waitFor(() => expect(latest.capture()).not.toBe(victim))
     }

@@ -10,9 +10,9 @@ import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../
 /**
  * The harnesses whose provider/model catalog Claxedo owns and serves here.
  *
- * Pi's catalog is Claxedo's offline registry. OpenCode's is models.dev, the
- * same catalog the engine used to read, so the embedded-SDK harness keeps the
- * picker users see today without any raw engine control route.
+ * Pi's catalog is Claxedo's offline registry. OpenCode's is models.dev — the
+ * catalog the engine itself reads — so the embedded-SDK harness can serve the
+ * same picker without exposing a raw engine control route.
  */
 const CATALOG_HARNESSES = new Set(["pi", "opencode"])
 

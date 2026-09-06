@@ -4,16 +4,11 @@
  * Drivers all face the same problem — a provider hands back `any`, and the code
  * needs a few named fields out of it. Narrowing through these keeps the check
  * and the type in the same place, instead of each site asserting a shape it
- * never verified.
+ * never verified. The object check is `@claxedo/helpers/guards`, re-exported
+ * under the names the drivers use.
  */
 
-export function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input)
-}
-
-export function record(input: unknown): Record<string, unknown> | undefined {
-  return isRecord(input) ? input : undefined
-}
+export { asRecord as record, isRecord } from "@claxedo/helpers/guards"
 
 /** A non-empty string, or undefined — the shape almost every provider field wants. */
 export function text(input: unknown): string | undefined {

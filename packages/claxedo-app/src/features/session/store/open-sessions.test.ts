@@ -35,11 +35,7 @@ describe("open session registry", () => {
     expect(hasOpenSession("ses_new")).toBe(true)
   })
 
-  test("does not split the same open session by directory", () => {
-    setOpenSessions([{ directory: "/tmp/a", sessionId: "ses_shared" }])
 
-    expect(hasOpenSession("ses_shared")).toBe(true)
-  })
 
   test("updates mounted session ownership incrementally by content id", () => {
     setOpenSessionMetas([

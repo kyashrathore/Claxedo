@@ -332,6 +332,7 @@ describe("projectWorkspaceForRef", () => {
   test("a ref that names nothing, and no ref at all, resolve to nothing", () => {
     expect(projectWorkspaceForRef(workspaces, "workspace:ws_other")).toBeUndefined()
     expect(projectWorkspaceForRef(workspaces, undefined)).toBeUndefined()
+    expect(projectWorkspaceForRef({ sparse: {} }, undefined)).toBeUndefined()
     expect(projectWorkspaceForRef(undefined, "ws_1")).toBeUndefined()
   })
 })

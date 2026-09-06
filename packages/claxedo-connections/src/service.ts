@@ -3,7 +3,6 @@ import type { IntegrationRegistry } from "./registry.js"
 import { ConnectionTokenError, createTokenService } from "./tokens.js"
 import {
   connectionProviderId,
-  connectionWebhookSigningProviderId,
   connectionScopeOf,
   type AttemptStatus,
   type ConnectionFields,
@@ -19,6 +18,12 @@ import {
   type VerifyResult,
   type ConnectionTokenFailureCode,
 } from "./types.js"
+
+// Credential id written by the removed webhook-secret routes. Retained only
+// so that removing a connection also purges signing material a deployment may
+// still hold from before that surface was deleted; nothing writes it now.
+const orphanedWebhookSigningProviderId = (connectionId: string) =>
+  `${connectionProviderId(connectionId)}:webhook-signing`
 
 function declaredNonSecretFields(
   decl: IntegrationDeclaration,
@@ -172,7 +177,7 @@ export function createConnectionsService(deps: {
     oauthTokens: { accessToken: string; refreshToken?: string; expiresAt?: number },
   ) {
     const entry = deps.registry.byId(pending.integrationId)!
-    const verified = await entry.impl.verify?.({}, oauthTokens.accessToken).catch(() => undefined)
+    const verified = await entry.impl.auth?.verify?.({}, oauthTokens.accessToken).catch(() => undefined)
     const accountLabel = verified?.ok ? verified.accountLabel : undefined
     await storeConnection({
       integrationId: pending.integrationId,
@@ -261,14 +266,6 @@ export function createConnectionsService(deps: {
     return [...selected.values()].map((row) => capabilityHandle(row, capability, options.teamOwner))
   }
 
-  async function webhookConnection(id: string, provider?: string) {
-    const row = await deps.connections.getById(id)
-    if (!row || !row.grantedCapabilities.includes("work-source")) return undefined
-    const integrationId = row.integrationId === "atlassian" ? "jira" : row.integrationId
-    if (provider !== undefined && integrationId !== provider) return undefined
-    return row
-  }
-
   return {
     listIntegrations() {
       return deps.registry.list()
@@ -290,18 +287,18 @@ export function createConnectionsService(deps: {
       confirmReplace?: boolean
     }): Promise<ConnectResult> {
       const entry = deps.registry.byId(input.integrationId)
-      if (!entry || !entry.decl.methods.includes("key") || !entry.impl.verify) {
+      if (!entry || !entry.decl.methods.includes("key") || !entry.impl.auth?.verify) {
         return { ok: false, code: "unknown_integration" }
       }
       const existing = await deps.connections.get(input.integrationId, input.owner)
       if (existing && input.confirmReplace !== true) return { ok: false, code: "connection_exists" }
       const fields = declaredNonSecretFields(entry.decl, input.fields)
-      const verified = await entry.impl.verify(fields, input.secret)
+      const verified = await entry.impl.auth.verify(fields, input.secret)
       if (!verified.ok) return { ok: false, code: "connection_verify_failed", reason: verified.reason }
       await storeConnection({
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
-        fields: canonicalFields(entry.decl, entry.impl.canonicalFields, fields, verified.fields),
+        fields: canonicalFields(entry.decl, entry.impl.auth?.canonicalFields, fields, verified.fields),
         ...(verified.accountLabel !== undefined ? { accountLabel: verified.accountLabel } : {}),
         kind: "api_key",
         secret: input.secret,
@@ -320,8 +317,8 @@ export function createConnectionsService(deps: {
       | { ok: false; code: "unknown_integration" | "connection_exists" }
     > {
       const entry = deps.registry.byId(input.integrationId)
-      const redirect = entry?.impl.authorize && entry.impl.callback
-      const device = entry?.impl.device
+      const redirect = entry?.impl.auth?.authorize && entry.impl.auth?.callback
+      const device = entry?.impl.auth?.device
       if (!entry || !entry.decl.methods.includes("oauth") || (!redirect && !device)) {
         return { ok: false, code: "unknown_integration" }
       }
@@ -354,10 +351,10 @@ export function createConnectionsService(deps: {
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
         scope,
-        ...(entry.impl.attemptContext ? { context: { ...entry.impl.attemptContext } } : {}),
+        ...(entry.impl.auth?.attemptContext ? { context: { ...entry.impl.auth.attemptContext } } : {}),
         ...(input.attemptRouting ? { routing: { ...input.attemptRouting } } : {}),
       })
-      const url = await entry.impl.authorize!(attempt.state, attempt.verifier)
+      const url = await entry.impl.auth!.authorize!(attempt.state, attempt.verifier)
       return { ok: true, url: url.toString(), attemptId: attempt.state }
     },
 
@@ -374,7 +371,7 @@ export function createConnectionsService(deps: {
     async pollAttempt(state: string): Promise<{ status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string; intervalMs?: number } | undefined> {
       const pending = await attempts.peek(state)
       if (!pending) return attempts.status(state)
-      const device = deps.registry.byId(pending.integrationId)?.impl.device
+      const device = deps.registry.byId(pending.integrationId)?.impl.auth?.device
       if (!device) return attempts.status(state)
 
       let result
@@ -417,16 +414,16 @@ export function createConnectionsService(deps: {
         return { ok: false }
       }
       const entry = deps.registry.byId(pending.integrationId)
-      if (!entry?.impl.callback) {
+      if (!entry?.impl.auth?.callback) {
         await attempts.settle(state, false, "callback_unsupported")
         return { ok: false }
       }
       try {
-      const oauthTokens = await entry.impl.callback(code, pending.verifier, pending.context, response)
+      const oauthTokens = await entry.impl.auth.callback(code, pending.verifier, pending.context, response)
       await storeConnection({
         integrationId: pending.integrationId,
         ...(pending.owner !== undefined ? { owner: pending.owner } : {}),
-        fields: canonicalFields(entry.decl, entry.impl.canonicalFields, {}, oauthTokens.fields),
+        fields: canonicalFields(entry.decl, entry.impl.auth?.canonicalFields, {}, oauthTokens.fields),
           kind: "oauth_token",
           secret: JSON.stringify({
             access: oauthTokens.accessToken,
@@ -450,7 +447,7 @@ export function createConnectionsService(deps: {
       const row = await deps.connections.getById(id)
       if (!row) return false
       await deps.credentials.deleteByProvider(connectionProviderId(row.id))
-      await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
+      await deps.credentials.deleteByProvider(orphanedWebhookSigningProviderId(row.id))
       return deps.connections.delete(id)
     },
 
@@ -471,7 +468,7 @@ export function createConnectionsService(deps: {
         // on a team or foreign-owner row even if a store over-returns.
         if (row.owner !== owner) continue
         await deps.credentials.deleteByProvider(connectionProviderId(row.id))
-        await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
+        await deps.credentials.deleteByProvider(orphanedWebhookSigningProviderId(row.id))
         if (await deps.connections.delete(row.id)) removed++
       }
       return removed
@@ -480,18 +477,18 @@ export function createConnectionsService(deps: {
     async reverify(id: string): Promise<VerifyResult | { ok: false; reason: "unsupported" | "missing" }> {
       const row = await deps.connections.getById(id)
       const entry = row ? deps.registry.byId(row.integrationId) : undefined
-      if (!entry?.impl.verify || !row) return { ok: false, reason: entry?.impl.verify ? "missing" : "unsupported" }
+      if (!entry?.impl.auth?.verify || !row) return { ok: false, reason: entry?.impl.auth?.verify ? "missing" : "unsupported" }
       const providerId = connectionProviderId(row.id)
       const secret = await deps.credentials.readSecret(providerId)
       if (secret === null) return { ok: false, reason: "missing" }
-      const verified = await entry.impl.verify(row.fields, secret)
+      const verified = await entry.impl.auth.verify(row.fields, secret)
       if (verified.ok) {
         await deps.credentials.setStatus(providerId, "available")
         // Reverify runs the same validation as connect, so it is also the
         // repair path for a row stored before an impl started returning
         // canonical values. Only write when the canonical form actually
         // differs, so a healthy reverify stays a status-only update.
-        const canonical = canonicalFields(entry.decl, entry.impl.canonicalFields, row.fields, verified.fields)
+        const canonical = canonicalFields(entry.decl, entry.impl.auth?.canonicalFields, row.fields, verified.fields)
         if (JSON.stringify(canonical) !== JSON.stringify(row.fields)) {
           await deps.connections.upsert({ ...row, fields: canonical, updatedAt: now() })
         }
@@ -506,7 +503,8 @@ export function createConnectionsService(deps: {
         return { ok: false, status: 403, code: "capability_not_granted" }
       }
       const entry = deps.registry.byId(row.integrationId)
-      if (!entry?.impl.listRepositories) {
+      const codeHost = entry?.impl.actions["code-host"]
+      if (!codeHost) {
         return { ok: false, status: 501, code: "repository_listing_unsupported" }
       }
       const token = await getToken(id, "code-host")
@@ -514,7 +512,7 @@ export function createConnectionsService(deps: {
       try {
         return {
           ok: true,
-          repositories: await entry.impl.listRepositories(token.response.fields ?? row.fields, token.response.token),
+          repositories: await codeHost.listRepositories(token.response.fields ?? row.fields, token.response.token),
         }
       } catch (error) {
         const code = error instanceof Error && error.message === "github_repositories_unauthorized"
@@ -528,33 +526,6 @@ export function createConnectionsService(deps: {
     reportAuthFailure,
 
     resolveForCapability,
-
-    async setWebhookSigningSecret(id: string, secret: string) {
-      const row = await webhookConnection(id)
-      if (!row) return { ok: false as const, code: "webhook_not_supported" as const }
-      if (!secret.trim() || secret.length > 1024) return { ok: false as const, code: "invalid_webhook_secret" as const }
-      await deps.credentials.put({
-        providerId: connectionWebhookSigningProviderId(row.id),
-        kind: "api_key",
-        secret,
-      })
-      return { ok: true as const }
-    },
-
-    async removeWebhookSigningSecret(id: string) {
-      const row = await webhookConnection(id)
-      if (!row) return { ok: false as const, code: "webhook_not_supported" as const }
-      await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
-      return { ok: true as const }
-    },
-
-    async resolveWebhookSigningSecret(id: string, provider: string) {
-      const row = await webhookConnection(id, provider)
-      if (!row) return undefined
-      const credential = await deps.credentials.get(connectionProviderId(row.id))
-      if (credential?.status !== "available") return undefined
-      return await deps.credentials.resolveSecret(connectionWebhookSigningProviderId(row.id)) ?? undefined
-    },
 
     dispose() {
       attempts.dispose()

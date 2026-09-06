@@ -37,7 +37,7 @@ describe("github oauth env", () => {
     // GitHub does not require the secret to refresh a device-minted token, so
     // a deployment that only ever uses device flow needs no secret at all.
     const integration = githubIntegrationForEnv({ GITHUB_CLIENT_ID: "Iv1.client" })
-    expect(integration.impl.device).toBeDefined()
-    expect(integration.impl.refresh).toBeDefined()
+    expect(integration.impl.auth?.device).toBeDefined()
+    expect(integration.impl.auth?.refresh).toBeDefined()
   })
 })

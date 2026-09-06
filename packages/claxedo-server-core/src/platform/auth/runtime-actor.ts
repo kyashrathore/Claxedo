@@ -1,6 +1,7 @@
 import { jsonRecord } from "../runtime/lib/json"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { RuntimeActorIdentity, WorkspaceAuthority } from "./authority"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type RuntimeActor = RuntimeActorIdentity
 
@@ -16,10 +17,10 @@ export async function resolveRuntimeActor(
 ): Promise<RuntimeActor> {
   const row = jsonRecord(await authority.usersMe(auth))
   if (row) {
-    const actorId = stringValue(row.actor_id)
+    const actorId = trimToUndefined(row.actor_id)
     const actorKind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
-    const actorPublicId = stringValue(row.actor_public_id)
-    const actorName = stringValue(row.actor_name)
+    const actorPublicId = trimToUndefined(row.actor_public_id)
+    const actorName = trimToUndefined(row.actor_name)
     if (actorId && actorKind) return {
       actorId,
       actorKind,
@@ -27,7 +28,7 @@ export async function resolveRuntimeActor(
         ? {
             actorPublicId,
             actorName,
-            ...(stringValue(row.actor_avatar_url) ? { actorAvatarUrl: stringValue(row.actor_avatar_url) } : {}),
+            ...(trimToUndefined(row.actor_avatar_url) ? { actorAvatarUrl: trimToUndefined(row.actor_avatar_url) } : {}),
           }
         : {}),
     }
@@ -39,6 +40,3 @@ export async function resolveRuntimeActor(
   )
 }
 
-function stringValue(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}

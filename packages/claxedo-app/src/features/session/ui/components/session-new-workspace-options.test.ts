@@ -231,7 +231,9 @@ describe("findProjectForDirectory", () => {
   })
 
   test("matches the worktree and sandboxes", () => {
-    expect(findProjectForDirectory([idKeyed], ["ws_1"])).toBe(idKeyed)
+    const project = { ...idKeyed, worktree: "/project-root", sandboxes: ["/project-sandbox"] }
+    expect(findProjectForDirectory([project], ["/project-root"])).toBe(project)
+    expect(findProjectForDirectory([project], ["/project-sandbox"])).toBe(project)
   })
 
   test("returns undefined when nothing matches", () => {

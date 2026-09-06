@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import { queryClient } from "@/platform/query/query-client"
 import { createWorkspaceDiffClient } from "./workspace-diff-client"
 import { requestUrl } from "@/lib/url"
+
+afterEach(() => queryClient.clear())
 
 describe("workspace diff client relay transport", () => {
   test("strict refs preserve load failures while legacy refs consumers keep their empty fallback", async () => {

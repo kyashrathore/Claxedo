@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
+import spriteMarkup from "../../../../ui/src/assets/icons/codex/sprite.svg?raw"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ThemeProvider, useTheme } from "@opencode-ai/ui/theme"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -26,6 +27,10 @@ function Harness() {
 
 beforeEach(() => {
   localStorage.clear()
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    expect(url).toMatch(/\/icons\/codex\/sprite\.svg(?:\?|$)/)
+    return new Response(spriteMarkup, { headers: { "content-type": "image/svg+xml" } })
+  }))
   vi.stubGlobal("matchMedia", vi.fn(() => ({
     matches: false,
     media: "(prefers-color-scheme: dark)",
@@ -88,8 +93,10 @@ describe("theme-driven icon libraries", () => {
     ))
 
     await assertTheme(view, "codex", "codex")
-    expect(symbolMarkup(view, "shared-copy")).toBe(symbolMarkup(view, "app-copy"))
-    expect(symbolMarkup(view, "shared-expand")).toBe(symbolMarkup(view, "app-expand"))
+    await waitFor(() => {
+      expect(symbolMarkup(view, "shared-copy")).toBe(symbolMarkup(view, "app-copy"))
+      expect(symbolMarkup(view, "shared-expand")).toBe(symbolMarkup(view, "app-expand"))
+    })
   })
 })
 
@@ -105,5 +112,8 @@ async function assertTheme(view: ReturnType<typeof render>, theme: string, libra
 function symbolMarkup(view: ReturnType<typeof render>, id: string) {
   const href = view.getByTestId(id).querySelector("use")?.getAttribute("href")
   expect(href).toMatch(/^#.+/)
-  return document.querySelector(href!)?.innerHTML
+  const symbol = document.querySelector(href!)
+  expect(symbol, `${id} references a missing symbol`).not.toBeNull()
+  expect(symbol!.querySelector("path[d],rect,circle,polygon,polyline,line,ellipse"), `${id} has no geometry`).not.toBeNull()
+  return symbol!.innerHTML
 }

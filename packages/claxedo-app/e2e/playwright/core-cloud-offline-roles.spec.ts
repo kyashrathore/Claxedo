@@ -152,8 +152,7 @@ function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
       access: "user-hosted",
       remote_directory: UH_DIR,
       role: "owner",
-      // Listing is not reachability: behavior 3 drives the host offline through
-      // the runtime HEALTH probe, and the row stays listed either way.
+      // Listing is not reachability: the host goes offline through the health probe.
       host_online: true,
     },
   ]
@@ -225,9 +224,8 @@ function mintBody(workspaceId: string, kind: "cloud" | "user-hosted", mint: Mint
   return {
     access: kind,
     backing: kind === "cloud" ? "cloud-vm" : "local-worktree",
-    // The composition each kind's runtime actually has: a cloud sandbox
-    // delegates to the control plane's session authority (session-scoped
-    // streams only), the owner's own daemon does not.
+    // A cloud sandbox delegates session authority to the control plane; the owner's
+    // own daemon does not.
     sessionAuthority: kind === "cloud" ? "managed-private" : "local",
     workspaceId,
     role: mint.role ?? "owner",
@@ -253,9 +251,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
   page.on("requestfailed", (request) => {
     state.failed.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim())
   })
-  // Tracks EVERY request touching prompt_async regardless of how (or whether) a
-  // route handler answers it — the definitive proof that a blocked submit/Enter
-  // never dispatched a turn, independent of the catch-all's "unhandled" bucket.
+  // Every prompt_async request, whether or not a route answers it.
   page.on("request", (request) => {
     if (request.url().includes("prompt_async")) state.promptAsyncHits.push(request.url())
   })
@@ -265,11 +261,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     const request = route.request()
     const url = new URL(request.url())
 
-    // Third-party analytics (PostHog) is NOT part of this spec's surface and
-    // must reach the real network unmodified — unlike `mock-runtime.ts`'s
-    // per-path `page.route()` calls (which simply never match these URLs, so
-    // they fall through to the network automatically), this file's single
-    // `page.route("**/*")` catch-all would otherwise fake a 598 for it too.
+    // PostHog is outside this surface; the catch-all must not 598 it.
     if (url.hostname.endsWith("posthog.com")) {
       return route.continue()
     }
@@ -279,9 +271,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return
     }
 
-    // The Codex icon sprite is fetch()ed (resourceType "fetch"), so `api()` is
-    // true for it — but it is a same-origin STATIC ASSET served by
-    // vite/preview, not an API escape. Let the web server answer it.
+    // The icon sprite is fetch()ed but is a static asset; let the web server answer it.
     if (/sprite[^/]*\.svg$/.test(url.pathname)) return route.continue()
 
     if (url.pathname === "/api/claxedo/bootstrap") return json(route, bootstrapBody())
@@ -298,12 +288,8 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
         workspaces: controlPlaneWorkspaceRows(),
       }))
     }
-    // Boot-time central-server surface fired against the loopback central URL
-    // (`.env.local`'s VITE_CLAXEDO_SERVER_URL). All are tolerated by the
-    // app when they fail, but answering them keeps the unhandled ledger clean.
-    // Real routes: claxedo-local-server/src/app/local-app.ts mounts
-    // LocalUsageRoutes at /api/claxedo/usage; meta-routes.ts serves GET
-    // /api/claxedo/session.
+    // Boot-time central calls the app tolerates failing; answering them keeps the
+    // unhandled ledger clean.
     if (url.pathname === "/api/claxedo/session") return json(route, { sessions: [] })
     if (url.pathname === "/api/claxedo/usage/sync")
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
@@ -373,8 +359,6 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     }
     if (url.pathname === "/api/control/sessions") return json(route, [])
     if (isSessionListPath(url.pathname)) return json(route, { sessions: [], nextCursor: null })
-    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
-    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
     if (url.pathname === "/api/claxedo/usage/sync") {
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     }
@@ -505,8 +489,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       if (runtimePath === "/api/wr/diff/vcs" || runtimePath === "/api/claxedo/diff/vcs") return json(route, [])
       if (runtimePath === "/api/wr/process" || runtimePath === "/api/claxedo/process") {
         if (request.method() === "GET") return json(route, { configs: [], processes: [] })
-        // Defense in depth: a viewer/editor's UI never shows the control that would
-        // fire this, but if it somehow did, the runtime must not silently accept it.
+        // The UI hides this control for viewer/editor; the runtime must still refuse it.
         return json(route, { error: "read-only runtime token" }, 403)
       }
       state.unhandled.push(`${request.method()} ${url.href}`)
@@ -535,11 +518,8 @@ function debugSuffix(state: HarnessState) {
   return `\n\nunhandled:\n${state.unhandled.join("\n") || "(none)"}\n\nfailed:\n${state.failed.join("\n") || "(none)"}\n\nconsole:\n${state.console.join("\n") || "(none)"}`
 }
 
-// The composer editor's accessible name IS its design placeholder
-// (`aria-label={designPlaceholder()}` in frame.tsx) — it reads "Ask anything..."
-// only when NOT role-blocked. Select it by its stable `data-component`, never by
-// role name, so this selector works identically whether the workspace is
-// read-only or not.
+// The editor's aria-label is its placeholder, which changes when role-blocked, so
+// select by `data-component` rather than role name.
 function composerEditor(page: Page) {
   return page.locator('[data-component="prompt-input"]').last()
 }
@@ -591,14 +571,10 @@ async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes"
 const toasts = (page: Page) => page.locator('[data-component="toast"]')
 
 test.describe("core cloud offline & roles @core", () => {
-  // This shared box runs several sibling e2e suites concurrently; page loads and
-  // reactive updates can lag well beyond a quiet-machine budget (matches the
-  // documented pattern in core-busy-abort-errors.spec.ts). Every assertion below is
-  // a real DOM-state poll or network-log check (never waitForTimeout as the sole
-  // guard), so a longer ceiling only affects how long a genuinely stuck state takes
-  // to be reported, not correctness.
+  // Sibling suites share this machine; every assertion polls DOM or network state, so
+  // a longer ceiling only delays reporting a stuck state.
   test.describe.configure({ timeout: 120_000 })
-  test("mint forbidden (403) renders the access-denied terminal view, never offline/connecting, single mint attempt — behavior 1", async ({
+  test("mint forbidden (403) renders the access-denied terminal view, never offline/connecting, single mint attempt", async ({
     page,
   }) => {
     await seed(page)
@@ -619,7 +595,7 @@ test.describe("core cloud offline & roles @core", () => {
     expect(state.mintHits.filter((id) => id === WORKSPACE_ID)).toEqual([WORKSPACE_ID])
   })
 
-  test("mint 503/500 renders the offline view with reason copy, not the connecting spinner, and Retry re-drives — behavior 2", async ({
+  test("mint 503/500 renders the offline view with reason copy, not the connecting spinner, and Retry re-drives", async ({
     page,
   }) => {
     await seed(page)
@@ -643,7 +619,7 @@ test.describe("core cloud offline & roles @core", () => {
     expect(state.mintHits.filter((id) => id === WORKSPACE_ID).length).toBeGreaterThanOrEqual(2)
   })
 
-  test("mint 500 classifies as the generic failed reason with its own copy — behavior 2", async ({ page }) => {
+  test("mint 500 classifies as the generic failed reason with its own copy", async ({ page }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 500 }
@@ -655,7 +631,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(page.getByTestId("workspace-offline-retry")).toBeVisible()
   })
 
-  test("user-hosted host-offline health probe renders the no-host offline copy — behavior 3", async ({ page }) => {
+  test("user-hosted host-offline health probe renders the no-host offline copy", async ({ page }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.uhHealth = { status: 503, body: { error: { code: "user_hosted_app_offline" } } }
@@ -668,7 +644,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
   })
 
-  test("ready -> reconnecting -> ready never raises a toast and resumes without reload — behavior 4", async ({
+  test("ready -> reconnecting -> ready never raises a toast and resumes without reload", async ({
     page,
   }) => {
     await seed(page)
@@ -679,19 +655,15 @@ test.describe("core cloud offline & roles @core", () => {
     await waitForComposerReady(page, state)
     await expect(toasts(page)).toHaveCount(0)
 
-    // Dev-only escape hatch (see workspace-connection.ts's "E2E/debug escape hatch"
-    // comment) — drives the SAME transition a sustained event-stream drop would,
-    // without needing to actually starve the mocked SSE stream for the ~cooldown
-    // window the real code waits before escalating.
+    // The same transition a sustained event-stream drop causes, without starving the
+    // SSE stream for the real cooldown.
     await page.evaluate((id) => {
       ;(
         window as typeof window & { __claxedoConnections?: { markReconnecting?: (id: string) => void } }
       ).__claxedoConnections?.markReconnecting?.(id)
     }, WORKSPACE_ID)
 
-    // Await the reconnecting overlay explicitly — this is the transition, and its
-    // arrival is also the settle window that lets any (buggy) toast surface before
-    // the toasts-absent check below runs.
+    // The overlay's arrival is also the settle window for any toast.
     await expect(page.locator('[data-component="cloud-startup-view"]'), debugSuffix(state)).toBeVisible({
       timeout: RECONNECT_STATE_TIMEOUT,
     })
@@ -707,7 +679,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(toasts(page), debugSuffix(state)).toHaveCount(0)
   })
 
-  test("workspace panel shows its own pending overlay, independent of the main-pane gate — behavior 5", async ({
+  test("workspace panel shows its own pending overlay, independent of the main-pane gate", async ({
     page,
   }) => {
     await seed(page)
@@ -724,7 +696,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(pending).toContainText("isn't available")
   })
 
-  test("arm-once: ready content survives a same-key reconnect; the overlay reappears on top — behaviors 6,7", async ({
+  test("arm-once: ready content survives a same-key reconnect; the overlay reappears on top", async ({
     page,
   }) => {
     await seed(page)
@@ -751,10 +723,8 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
     await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0)
 
-    // `markWorkspaceReconnecting` silently no-ops unless the store status is
-    // exactly "ready" — the DOM ready-attribute asserted above can lead the
-    // store write under CI load, so drive-and-verify against the store itself:
-    // keep invoking until the snapshot actually reads "reconnecting".
+    // `markWorkspaceReconnecting` no-ops unless the store status is "ready", and the
+    // DOM attribute can lead the store write, so drive until the snapshot agrees.
     await expect
       .poll(
         () =>
@@ -798,7 +768,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
   })
 
-  test("viewer role locks the composer (placeholder, disabled submit, blocked Enter) and hides mutation controls — behavior 8", async ({
+  test("viewer role locks the composer (placeholder, disabled submit, blocked Enter) and hides mutation controls", async ({
     page,
   }) => {
     await seed(page)
@@ -816,9 +786,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(submit).toBeDisabled()
     await expect(submit).toHaveAttribute("aria-label", "Read-only workspace")
 
-    // Click-submit is a no-op: a native `disabled` button does not dispatch a
-    // click handler at all, even force-clicked via CDP — proving the DOM-level
-    // half of the lockout.
+    // A disabled button dispatches no click handler even when force-clicked.
     await submit.click({ force: true }).catch(() => {})
     expect(state.promptAsyncHits, debugSuffix(state)).toEqual([])
 
@@ -838,17 +806,10 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(page.getByRole("button", { name: "Add process" }), debugSuffix(state)).toHaveCount(0)
   })
 
-  // The role flip is driven through the `markRole` seam rather than a real
-  // `POST /connection/refresh`, because that request can never fire here:
-  // `refreshWorkspaceConnection`/`ensureFresh()` is only reached from the relay-direct
-  // fetch path, and `localBackendForCurrentHost` hard-routes every workspace-runtime
-  // call through the central server whenever `window.location.hostname` is a loopback
-  // host — which it always is under Playwright. So `createWorkspaceRelayConnection`,
-  // the only production caller of the refresh, is never constructed. `markRole` feeds
-  // the SAME `{type:"role"}` placement event `applyWorkspaceConnectionInfo` emits on a
-  // real refresh, so the placement state machine and the composer's role-gate
-  // reactivity are exercised for real; only the network hop is skipped.
-  test("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload — behavior 9", async ({
+  // `/connection/refresh` never fires from a loopback-served harness (runtime traffic
+  // is bridged through the central server, not sent relay-direct), so the role flip is
+  // driven through `markRole`, the same placement event a real refresh feeds.
+  test("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload", async ({
     page,
   }) => {
     await seed(page)

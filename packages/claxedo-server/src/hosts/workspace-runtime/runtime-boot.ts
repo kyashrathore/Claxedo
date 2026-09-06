@@ -78,9 +78,9 @@ function text(env: NodeJS.ProcessEnv, key: string) {
 }
 
 /**
- * Claxedo's CORS origin policy for its workspace-runtime hosts. This is HOST
- * policy — the product whitelist that used to be baked into the kit lives here
- * so the kit stays product-free. On loopback exposure it allows local dev
+ * Claxedo's CORS origin policy for its workspace-runtime hosts. This is host
+ * policy, not kit policy: the product whitelist lives here, keeping the kit
+ * product-free. On loopback exposure it allows local dev
  * origins (`http://localhost:*`, `http://127.0.0.1:*`) plus the Claxedo app on
  * the configured HTTPS origin suffixes (CLAXEDO_ALLOWED_ORIGIN_SUFFIXES,
  * default `*.claxedo.com`); every other exposure allows nothing. Both Claxedo
@@ -111,7 +111,7 @@ export function claxedoRuntimeHarnessFromEnv(env: NodeJS.ProcessEnv = process.en
  * Claxedo's exposure ladder (relay when relay-host auth is present, loopback
  * on loopback hosts, dev-unsafe otherwise).
  *
- * This ladder is HOST policy — it deliberately lives with Claxedo, not in the
+ * This ladder is host policy — it deliberately lives with Claxedo, not in the
  * kit. Other hosts define their own ladder from the same kit parsers
  * (`workspaceRelayRuntimeOptionsFromEnv`, the exposure factories).
  */

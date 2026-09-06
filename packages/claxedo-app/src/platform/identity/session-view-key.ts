@@ -13,15 +13,14 @@ export function legacyTerminalPersistScopeKey(directory?: string) {
   return legacyTerminalScopeKey(directory)
 }
 
-// The single canonical prompt-cache/persist key derivation. BOTH the composer's
+// The single canonical prompt-cache/persist key derivation. Both the composer's
 // live read (`PromptProvider.session()`) and every scoped `set`/`reset`
-// (`pick(scope)` in context/prompt.tsx) MUST route through this so the key they
-// resolve is identical. A prompt `Scope` therefore carries the RAW directory,
-// RAW session id, and RAW draft id; `sessionViewKey` is applied exactly once,
-// here. Pre-computing the key inside a scope producer (as `promptViewScope` used
-// to) double-wraps it
-// once the reset path applies `sessionViewKey` again, drifting the clear target
-// off the composer's read target and leaving the just-sent text in the composer.
+// (`pick(scope)` in context/prompt.tsx) must route through this so they resolve
+// the same key. A prompt `Scope` therefore carries the raw directory, session
+// id, and draft id, and `sessionViewKey` is applied exactly once, here: a scope
+// producer that pre-computes the key gets double-wrapped by the reset path,
+// drifting the clear target off the read target and leaving sent text in the
+// composer.
 export function promptScopeKey(scope: { dir?: string; id?: string; draftId?: string }) {
   return sessionViewKey({ directory: scope.dir, sessionId: scope.id, draftId: scope.draftId })
 }
@@ -33,12 +32,10 @@ export function sessionViewKey(input: {
   draftId?: string
 }) {
   const sessionId = input.sessionId?.trim()
-  // WP-D5: this local fuses sense-2 (a real `workspaceId`) and sense-1 (a raw
-  // `directory` path) into one scope key — whichever is present wins. It is NOT a
-  // `WorkspaceId`; it is the view-scope key that the composer's prompt cache is
-  // keyed by. The `workspace:` prefix below is the cache-key namespace, not a
-  // claim that the value is a control-plane id. Behavior is unchanged from the
-  // pre-D5 form; only the name is now honest.
+  // `scopeKey` fuses sense-2 (a real `workspaceId`) and sense-1 (a raw
+  // `directory` path); whichever is present wins. It is not a `WorkspaceId` but
+  // the view-scope key the composer's prompt cache is keyed by; the `workspace:`
+  // prefix is the cache-key namespace, not a claim about the value.
   const scopeKey = input.workspaceId?.trim() || input.directory?.trim()
   if (sessionId && sessionId !== "new") {
     if (scopeKey) return `workspace:${encodeURIComponent(scopeKey)}:session:${encodeURIComponent(sessionId)}`

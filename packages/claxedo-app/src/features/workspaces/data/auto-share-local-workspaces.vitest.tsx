@@ -1,5 +1,7 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+
+const clients = new Set<QueryClient>()
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import {
@@ -80,6 +82,7 @@ function project(worktree: string, workspaces: Record<string, { directory: strin
  */
 function mount(input: { projects: Accessor<readonly Project[] | undefined> }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
   // The reader has to run INSIDE the provider's subtree — that is the whole
   // point of the seam — so a probe component reads it and mirrors the latest
   // value out for the assertions.
@@ -108,7 +111,11 @@ beforeEach(() => {
   connector.failWith = undefined
 })
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  for (const client of clients) client.clear()
+  clients.clear()
+})
 
 describe("localWorkspaceShareCandidates", () => {
   test("keeps only what this machine can publish, once each", () => {

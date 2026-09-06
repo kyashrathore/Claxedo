@@ -11,6 +11,7 @@ import {
 } from "@/platform/identity/session-ref"
 import { placementFor } from "@/platform/runtime/placement"
 import { sessionSignedTransportAuthority } from "@/features/session/ui/session-identity"
+import { resolveWorkspaceSubmitSelection, type WorkspaceSubmitSelection, type WorkspaceSubmitSelectionInput } from "./workspace-submit-selection"
 
 export type WorkspaceCatalogKind = "local" | "cloud" | "user-hosted"
 export type WorkspaceDirectory = string
@@ -60,22 +61,11 @@ export function selectedNewSessionWorkspace(input: {
 }
 
 export type WorkspaceSubmitPlan =
-  | { status: "ready"; directory: WorkspaceDirectory }
-  | { status: "missing-workspace" }
-  | { status: "create-local-worktree"; baseDirectory?: WorkspaceDirectory }
+  | Exclude<WorkspaceSubmitSelection, { status: "resolve-remote-workspace" }>
   | { status: "prepare-remote-workspace"; directory: WorkspaceDirectory }
   | { status: "provision-cloud-workspace"; projectId: string }
 
-export type ResolveWorkspaceSubmitPlanInput = {
-  isNewSession: boolean
-  draftId?: string
-  projectDirectory?: string
-  fallbackDirectory?: string
-  defaultDirectory: string
-  worktreeSelection: string
-  // Free string for the same reason as `WorkspaceCatalogEntry["kind"]`; narrow
-  // with `knownWorkspaceKind` before comparing against a known kind.
-  workspaceKind: string
+export type ResolveWorkspaceSubmitPlanInput = WorkspaceSubmitSelectionInput & {
   projects: readonly ProjectCatalogItem[]
   runtimeWorkspaceRef?: (directory: WorkspaceDirectory | undefined) => RuntimeWorkspaceRef | undefined
 }
@@ -255,54 +245,32 @@ export function existingRemoteWorkspaceDirectory(input: {
   )?.[0]
 }
 
-// `resolveWorkspaceSubmitPlan` is the pure SUB-DECISION used by the orchestrator
-// `resolveSubmitDirectory` (session/submit/resolve.ts). It encodes the same
-// shared top-level admission tree (see resolve.ts) and additionally resolves the
-// remote branch into a concrete plan (prepare-remote / provision-cloud /
-// missing-workspace) using the project catalog. The shared branches must agree
-// with the orchestrator — `resolve-workspace-plan-agreement.test.ts` proves it.
+/** Resolve remote selections through the project catalog after the shared admission policy. */
 export function resolveWorkspaceSubmitPlan(input: ResolveWorkspaceSubmitPlanInput): WorkspaceSubmitPlan {
+  const selection = resolveWorkspaceSubmitSelection(input)
+  if (selection.status !== "resolve-remote-workspace") return selection
+
   const sessionDirectory = input.projectDirectory ?? input.fallbackDirectory
+  const selectedDirectory = input.worktreeSelection === "main" && input.runtimeWorkspaceRef?.(input.projectDirectory)
+    ? input.projectDirectory
+    : selectedWorktreeDirectory({
+        worktreeSelection: input.worktreeSelection,
+        projectDirectory: input.projectDirectory,
+        fallbackDirectory: input.fallbackDirectory,
+        projects: input.projects,
+      })
+  const existingDirectory = existingRemoteWorkspaceDirectory({
+    worktreeSelection: input.worktreeSelection,
+    directory: selectedDirectory,
+    projects: input.projects,
+    runtimeWorkspaceRef: input.runtimeWorkspaceRef,
+  })
+  if (existingDirectory) return { status: "prepare-remote-workspace", directory: existingDirectory }
+  if (isUserHostedWorkspaceKind(input.workspaceKind)) return { status: "missing-workspace" }
 
-  if (!input.isNewSession) {
-    return { status: "ready", directory: sessionDirectory ?? input.defaultDirectory }
-  }
-
-  if (input.draftId && !input.projectDirectory && input.worktreeSelection === "main") {
-    return { status: "missing-workspace" }
-  }
-
-  if (isRemoteWorkspaceKind(input.workspaceKind)) {
-    const selectedDirectory = input.worktreeSelection === "main" && input.runtimeWorkspaceRef?.(input.projectDirectory)
-      ? input.projectDirectory
-      : selectedWorktreeDirectory({
-          worktreeSelection: input.worktreeSelection,
-          projectDirectory: input.projectDirectory,
-          fallbackDirectory: input.fallbackDirectory,
-          projects: input.projects,
-        })
-    const existingDirectory = existingRemoteWorkspaceDirectory({
-      worktreeSelection: input.worktreeSelection,
-      directory: selectedDirectory,
-      projects: input.projects,
-      runtimeWorkspaceRef: input.runtimeWorkspaceRef,
-    })
-    if (existingDirectory) return { status: "prepare-remote-workspace", directory: existingDirectory }
-    if (isUserHostedWorkspaceKind(input.workspaceKind)) return { status: "missing-workspace" }
-
-    const id = projectId(projectForDirectory(input.projects, selectedDirectory ?? sessionDirectory))
-    if (!id) return { status: "missing-workspace" }
-    return { status: "provision-cloud-workspace", projectId: id }
-  }
-
-  if (input.worktreeSelection === "create") {
-    return { status: "create-local-worktree", baseDirectory: sessionDirectory }
-  }
-
-  if (input.worktreeSelection !== "main") return { status: "ready", directory: input.worktreeSelection }
-
-  if (input.draftId && !sessionDirectory) return { status: "missing-workspace" }
-  return { status: "ready", directory: sessionDirectory ?? input.defaultDirectory }
+  const id = projectId(projectForDirectory(input.projects, selectedDirectory ?? sessionDirectory))
+  if (!id) return { status: "missing-workspace" }
+  return { status: "provision-cloud-workspace", projectId: id }
 }
 
 function workspaceBacking(

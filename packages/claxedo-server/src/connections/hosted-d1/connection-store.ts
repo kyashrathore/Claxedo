@@ -14,13 +14,12 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { ConnectionRow, ConnectionStorePort } from "@claxedo/connections"
 import { errorMessage } from "../../platform/errors/index"
 import { storedCapabilities, storedFields } from "../stored-columns"
+import { ConnectionExistsError } from "@claxedo/connections"
 
 export type D1ConnectionStoreInput = Readonly<{
   database: D1Database
   orgId: string
   ownerUserId: string
-  /** Write clock. Injected so a test can pin what `updated_at` records. */
-  now?: () => number
 }>
 
 type ConnectionRecord = {
@@ -56,24 +55,16 @@ const kitIntegrationId = (integrationId: string) => (integrationId === "jira" ? 
  * the kit — `storeConnection` only ever passes back an id it read from this
  * caller's own partition, or a fresh UUID — so reaching it means an invariant
  * broke, not that a user did something ordinary. It is deliberately NOT the
- * conflict below: nothing a caller can retry differently fixes it.
+ * kit's `ConnectionExistsError`: nothing a caller can retry differently fixes
+ * it, so it must not read to a client as a duplicate connection.
  */
 export class HostedConnectionPartitionError extends Error {}
 
 /**
- * A second row for one (org, owner, integration). The kit reuses the existing
- * row's id when it finds one, so this is the RACE: two concurrent connects both
- * read no existing row, both mint a fresh id, and the second trips
- * `hosted_connections_one_per_partition`. That is exactly the state the kit
- * already has a name for, so the setup answers it `connection_exists`/409
- * instead of letting a raw `D1_ERROR` become a 500.
- */
-export class HostedConnectionExistsError extends Error {}
-
-/**
  * The partition index is the only unique constraint the upsert can trip — the
  * primary key is handled by its `on conflict` clause — so a unique failure from
- * this statement means a duplicate row for this partition and nothing else.
+ * this statement means a duplicate row for this partition and nothing else,
+ * which is the port's `ConnectionExistsError`.
  */
 function isPartitionUniqueViolation(cause: unknown): boolean {
   const text = cause instanceof Error ? `${cause.message} ${errorMessage(cause.cause)}` : String(cause)
@@ -81,7 +72,6 @@ function isPartitionUniqueViolation(cause: unknown): boolean {
 }
 
 export function createD1ConnectionStore(input: D1ConnectionStoreInput): ConnectionStorePort {
-  const now = input.now ?? Date.now
   const personalOwner = `user:${input.ownerUserId}`
   const organizationOwner = `org:${input.orgId}`
 
@@ -118,7 +108,6 @@ export function createD1ConnectionStore(input: D1ConnectionStoreInput): Connecti
         throw new HostedConnectionPartitionError("Hosted Connection owner is outside the authenticated partitions")
       }
       const integrationId = storedIntegrationId(row.integrationId)
-      const timestamp = now()
       let result
       try {
         result = await input.database
@@ -154,11 +143,11 @@ export function createD1ConnectionStore(input: D1ConnectionStoreInput): Connecti
             JSON.stringify(row.fields),
             row.accountLabel ?? null,
             row.createdAt,
-            timestamp,
+            row.updatedAt,
           )
           .run()
       } catch (cause) {
-        if (isPartitionUniqueViolation(cause)) throw new HostedConnectionExistsError("connection_exists")
+        if (isPartitionUniqueViolation(cause)) throw new ConnectionExistsError()
         throw cause
       }
       // An insert writes one row and a permitted update changes one row, so the

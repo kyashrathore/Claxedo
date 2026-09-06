@@ -132,7 +132,7 @@ jobs:
         if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
         id: playwright-version
         run: |
-          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Same key as the e2e jobs below, so this shares their cache entry.
@@ -165,19 +165,7 @@ jobs:
       # `grep -rn 'filter=@claxedo/agent-event-runtime' .github/workflows/`
       # finds every copy; keep them in sync.
       - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+        run: bun run build:packages
 
       - name: Verify embedded OpenCode on the Node runtime
         run: bun run --cwd packages/workspace-runtime test:opencode-node
@@ -280,7 +268,10 @@ jobs:
     # this in one job avoids adding another setup-dominated dependency stage.
     name: e2e reusable builds
     needs: changes
-    if: needs.changes.outputs.core_e2e == 'true'
+    # Serves every e2e lane: the core shards, onboarding and tier-real all
+    # consume the workspace dist artifact this job uploads, so they build the
+    # eleven dist-resolved packages once per run instead of once per job.
+    if: needs.changes.outputs.core_e2e == 'true' || needs.changes.outputs.onboarding == 'true' || needs.changes.outputs.tier_real == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -297,19 +288,7 @@ jobs:
           install-flags: --frozen-lockfile
 
       - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+        run: bun run build:packages
 
       - name: Upload reusable workspace dist
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -405,7 +384,7 @@ jobs:
       - name: Read Playwright version
         id: playwright-version
         run: |
-          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
@@ -432,6 +411,11 @@ jobs:
         with:
           name: claxedo-app-e2e-${{ matrix.auth-mode }}-${{ github.sha }}-${{ github.run_attempt }}
           path: packages/claxedo-app/dist
+
+      - name: Verify browser assertion helpers reject broken fixtures
+        if: matrix.shard == 1 && matrix.auth-mode == 'test-user'
+        working-directory: packages/claxedo-app
+        run: bun run test:e2e:oracles
 
       # claxedo-app's Playwright suite (packages/claxedo-app/e2e/playwright): the
       # @core-tagged specs run on every PR in these shards. Tier R (real backend +
@@ -470,7 +454,7 @@ jobs:
 
   e2e-onboarding:
     name: e2e (onboarding, ${{ matrix.auth-mode }})
-    needs: changes
+    needs: [changes, e2e-build]
     if: needs.changes.outputs.onboarding == 'true'
     strategy:
       fail-fast: false
@@ -503,7 +487,7 @@ jobs:
       - name: Read Playwright version
         id: playwright-version
         run: |
-          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
@@ -513,20 +497,11 @@ jobs:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
 
-      - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+      - name: Download reusable workspace dist
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
+          path: packages
 
       - name: Install Playwright Chromium
         working-directory: packages/claxedo-app
@@ -562,7 +537,7 @@ jobs:
   # authenticate; the scripted endpoint is the only network the model path sees.
   e2e-tier-real:
     name: e2e (tier-real)
-    needs: changes
+    needs: [changes, e2e-build]
     if: needs.changes.outputs.tier_real == 'true'
     runs-on: ubuntu-latest
     env:
@@ -590,7 +565,7 @@ jobs:
       - name: Read Playwright version
         id: playwright-version
         run: |
-          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
@@ -606,20 +581,11 @@ jobs:
       - name: Install harness CLIs
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
-      - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+      - name: Download reusable workspace dist
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
+          path: packages
 
       - name: Install Playwright Chromium
         working-directory: packages/claxedo-app

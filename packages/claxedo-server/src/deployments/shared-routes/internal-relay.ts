@@ -1,5 +1,4 @@
 import { guardedWaitUntil } from "@claxedo/server-core/platform/http/background-work"
-import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
 import { Hono } from "hono"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -8,6 +7,7 @@ import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { asRecord } from "../../platform/json/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 
 function authorized(request: Request, expected: string | undefined) {
@@ -94,7 +94,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
         }))
 
   app.use("/internal/relay/*", async (c, next) => {
-    if (!authorized(c.req.raw, clean(options.resolverToken))) {
+    if (!authorized(c.req.raw, trimToUndefined(options.resolverToken))) {
       return c.json(
         errorBody("relay_resolver_unauthorized", "Relay resolver requires loopback access or a matching bearer token"),
         401,
@@ -105,8 +105,8 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
   })
 
   app.get("/internal/relay/target", async (c) => {
-    const workspaceId = clean(c.req.query("workspaceId"))
-    const hostId = clean(c.req.query("hostId"))
+    const workspaceId = trimToUndefined(c.req.query("workspaceId"))
+    const hostId = trimToUndefined(c.req.query("hostId"))
     if (!workspaceId || !hostId) {
       return c.json(errorBody("relay_resolver_target_required", "workspaceId and hostId are required"), 400)
     }
@@ -147,9 +147,9 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
   })
 
   app.get("/internal/relay/revocation", async (c) => {
-    const jti = clean(c.req.query("jti"))
-    const workspaceId = clean(c.req.query("workspaceId"))
-    const hostId = clean(c.req.query("hostId"))
+    const jti = trimToUndefined(c.req.query("jti"))
+    const workspaceId = trimToUndefined(c.req.query("workspaceId"))
+    const hostId = trimToUndefined(c.req.query("hostId"))
     if (!jti || !workspaceId || !hostId) {
       return c.json(errorBody("relay_resolver_revocation_required", "jti, workspaceId, and hostId are required"), 400)
     }
@@ -162,7 +162,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
         if (
           result.active === false &&
           (asRecord(result) ?? {}).code === "runtime_access_token_workspace_not_found" &&
-          !clean(options.resolverToken) &&
+          !trimToUndefined(options.resolverToken) &&
           isLoopbackLocalRequest(c.req.raw) &&
           options.localTargetExists &&
           await options.localTargetExists({ workspaceId, hostId })

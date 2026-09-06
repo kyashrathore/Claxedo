@@ -15,11 +15,12 @@ import { same } from "@/lib/same"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-// NOT `File`/`Markdown` from "@/ui/session-kit": this tab is in the eager main
-// chunk (session-screen.tsx stays eager by design), and the session-kit barrel
-// statically pulls @pierre/diffs + shiki. The File render edge goes through the
-// app's FileComponentProvider (app.tsx supplies the lazy File), and Markdown
-// crosses the loadMarkdownComponent() dynamic boundary.
+// Imports `File`/`Markdown` through their lazy boundaries rather than from
+// "@/ui/session-kit": this tab is in the eager main chunk (session-screen.tsx
+// stays eager by design), and the session-kit barrel statically pulls
+// @pierre/diffs + shiki. The File render edge goes through the app's
+// FileComponentProvider (app.tsx supplies the lazy File), and Markdown crosses
+// the loadMarkdownComponent() dynamic boundary.
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { loadMarkdownComponent } from "@/ui/session-kit-loaders"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
@@ -61,8 +62,8 @@ const LazyMarkdown = lazy(() => loadMarkdownComponent().then((Markdown) => ({ de
 
 function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
   // The lazy File the app shell registered on FileComponentProvider (app.tsx);
-  // same render edge the review surface uses. Props are identical to the
-  // session-ui File component this used to import statically.
+  // same render edge the review surface uses. Props match the session-ui File
+  // component's shape, so the render call here does not need to know it is lazy.
   const File = useFileComponent()
   const file = createMemo(() => {
     const parts = props.getParts(props.message.id)

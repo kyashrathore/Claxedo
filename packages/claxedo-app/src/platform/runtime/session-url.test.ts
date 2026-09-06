@@ -32,11 +32,3 @@ describe("upstream contract", () => {
     expect(calls).toEqual(["https://control.example.com/api/control/sessions/session%2Fwith%20slash/gateway"])
   })
 })
-
-describe("Claxedo behavior", () => {
-  test("keeps session URL resolution independent from RuntimeGateway transport helpers", async () => {
-    expect(await Bun.file(new URL("./session-url.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
-  })
-
-
-})

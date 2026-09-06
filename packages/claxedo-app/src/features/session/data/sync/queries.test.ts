@@ -2,21 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { skipToken } from "@tanstack/solid-query"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
-  dbReadyQuery,
   directorySessionCacheQueryOptions,
-  sessionDiffQueryOptions,
-  sessionQueryOptions,
-  sessionRequestsQueryOptions,
   sessionRequestsCacheQueryOptions,
-  sessionStatusQueryOptions,
   sessionStatusCacheQueryOptions,
   setSessionDiffQueryData,
   setSessionRequestsQueryData,
   setSessionStatusQueryData,
   setSessionTodoQueryData,
-  sessionTodoQueryOptions,
   sessionTodoCacheQueryOptions,
-  workspaceQueryOptions,
 } from "./queries"
 import type { SessionRef } from "@/platform/identity/session-ref"
 
@@ -29,33 +22,8 @@ const ref: SessionRef = {
 }
 
 describe("shell data query factories", () => {
-  test("session keys scope only by opaque session id", async () => {
-    const query = sessionQueryOptions({
-      ref,
-      resource: "messages",
-      params: ["head"],
-      staleTime: 1000,
-      queryFn: async () => "ok",
-    })
-
-    expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "messages", "head"])
-    expect(query.staleTime).toBe(1000)
-    expect(await query.queryFn()).toBe("ok")
-  })
-
   test("session id keys do not require placement identity", () => {
     expect(shellDataKeys.sessionId("ses_shell", "row")).toEqual(["shell", "session", "ses_shell", "row"])
-  })
-
-  test("workspace keys are explicitly workspace-scoped", async () => {
-    const query = workspaceQueryOptions({
-      workspaceId: "ws_real",
-      resource: "vcs",
-      queryFn: async () => ({ branch: "dev" }),
-    })
-
-    expect(query.queryKey).toEqual(["shell", "workspace", "ws_real", "vcs"])
-    expect(await query.queryFn()).toEqual({ branch: "dev" })
   })
 
   test("directorySessionCacheQueryOptions reads the global-sync session cache key", () => {
@@ -73,30 +41,6 @@ describe("shell data query factories", () => {
     ])
     expect(() => shellDataKeys.workspaceForSession({ sessionId: "ses_no_ws", host: "workspace" }, "inventory"))
       .toThrow("workspace-scoped query requires workspaceId")
-  })
-
-  test("dbReadyQuery preserves branded key shape for later TanStack DB wrapping", async () => {
-    const query = dbReadyQuery({
-      queryKey: shellDataKeys.session(ref, "metadata"),
-      queryFn: async () => ({ title: "Shell" }),
-    })
-
-    expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "metadata"])
-    expect(await query.queryFn()).toEqual({ title: "Shell" })
-  })
-
-  test("sessionStatusQueryOptions scopes by session id and falls back to idle", async () => {
-    const query = sessionStatusQueryOptions({
-      sessionId: "ses_shell",
-      client: {
-        session: {
-          status: async () => ({ data: { other: { type: "busy" } } }),
-        },
-      },
-    })
-
-    expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "status"])
-    expect(await query.queryFn()).toEqual({ type: "idle" })
   })
 
   test("push-owned session cache readers install no transport queryFn", () => {
@@ -152,36 +96,6 @@ describe("shell data query factories", () => {
     expect(writes[0]).toBe(previous)
   })
 
-  test("sessionRequestsQueryOptions filters permission and question lists by session id", async () => {
-    const query = sessionRequestsQueryOptions({
-      sessionId: "ses_shell",
-      client: {
-        permission: {
-          list: async () => ({
-            data: [
-              { id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] },
-              { id: "perm_2", sessionID: "other", permission: "edit", patterns: [], metadata: {}, always: [] },
-            ],
-          }),
-        },
-        question: {
-          list: async () => ({
-            data: [
-              { id: "question_1", sessionID: "ses_shell", questions: [] },
-              { id: "question_2", sessionID: "other", questions: [] },
-            ],
-          }),
-        },
-      },
-    })
-
-    expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "requests"])
-    expect(await query.queryFn()).toEqual({
-      permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
-      questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
-    })
-  })
-
   test("setSessionRequestsQueryData writes through the session-scoped requests key", () => {
     const writes: Array<{ queryKey: readonly unknown[]; value: unknown }> = []
     setSessionRequestsQueryData({
@@ -217,14 +131,14 @@ describe("shell data query factories", () => {
     setSessionRequestsQueryData({
       queryClient: {
         setQueryData: (_queryKey, value) => {
-          writes.push(typeof value === "function" ? value(structuredClone(previous)) : value)
+          writes.push(typeof value === "function" ? value(previous) : value)
         },
       },
       sessionId: "ses_shell",
       requests: structuredClone(previous),
     })
 
-    expect(writes[0]).toEqual(previous)
+    expect(writes[0]).toBe(previous)
   })
 
   test("setSessionRequestsQueryData writes the new list when a permission is added", () => {
@@ -245,21 +159,6 @@ describe("shell data query factories", () => {
     })
 
     expect(writes[0]).toBe(next)
-  })
-
-  test("sessionTodoQueryOptions scopes by session id and falls back to an empty list", async () => {
-    const query = sessionTodoQueryOptions({
-      sessionId: "ses_shell",
-      client: {
-        session: {
-          todo: async () => ({}),
-        },
-      },
-    })
-
-    expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "todo"])
-    expect(query.staleTime).toBe(30_000)
-    expect(await query.queryFn()).toEqual([])
   })
 
   test("setSessionTodoQueryData writes through the session-scoped todo key", () => {
@@ -298,21 +197,6 @@ describe("shell data query factories", () => {
     })
 
     expect(writes[0]).toBe(previous)
-  })
-
-  test("sessionDiffQueryOptions scopes by session id and falls back to an empty list", async () => {
-    const query = sessionDiffQueryOptions({
-      sessionId: "ses_shell",
-      client: {
-        session: {
-          diff: async () => ({}),
-        },
-      },
-    })
-
-    expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "diff"])
-    expect(query.staleTime).toBe(30_000)
-    expect(await query.queryFn()).toEqual([])
   })
 
   test("setSessionDiffQueryData writes through the session-scoped diff key", () => {

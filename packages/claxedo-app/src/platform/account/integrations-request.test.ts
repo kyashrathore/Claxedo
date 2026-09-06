@@ -3,6 +3,7 @@ import { createIntegrationsRequest } from "./integrations-request"
 
 type Bridge = { api?: { account?: Record<string, unknown> } }
 const host = globalThis as Bridge
+const previousApi = Object.getOwnPropertyDescriptor(globalThis, "api")
 
 function installSignedBridge(run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>) {
   host.api = {
@@ -17,7 +18,8 @@ function installSignedBridge(run: (operation: string, input?: Record<string, unk
 }
 
 afterEach(() => {
-  delete host.api
+  if (previousApi) Object.defineProperty(globalThis, "api", previousApi)
+  else delete host.api
 })
 
 describe("integrations request on a signed desktop", () => {

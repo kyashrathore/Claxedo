@@ -6,6 +6,7 @@ import {
   RuntimeAccessTokenConfigurationError,
   runtimeAccessTokenAlgorithm,
 } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /**
  * JWKS endpoint for the Runtime Access Token (RAT) signing keys.
@@ -25,13 +26,8 @@ import {
  * `kid` on a freshly minted RAT always appears in the published JWKS.
  */
 
-function clean(input?: string) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
 function pem(input?: string) {
-  return clean(input)?.replaceAll("\\n", "\n")
+  return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
 async function deriveKid(jwk: JWK): Promise<string> {
@@ -67,14 +63,14 @@ function collectSources(env: JwksEnv): KeySource[] {
   if (current) {
     sources.push({
       publicPem: current,
-      explicitKid: clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_KID),
+      explicitKid: trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_KID),
     })
   }
   const next = pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_NEXT_PUBLIC_KEY_PEM)
   if (next) {
     sources.push({
       publicPem: next,
-      explicitKid: clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_NEXT_KID),
+      explicitKid: trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_NEXT_KID),
     })
   }
   return sources

@@ -1,87 +1,32 @@
 /**
- * SPEC: Dead-workspace session history (control-plane authoritative)
+ * Reading a cloud project's session history when its sandbox is dead. Those sessions sync
+ * back to the central bus and are stored in the control plane (`session_history` /
+ * `session_messages`), so a project whose VM was destroyed days ago must still show its
+ * full session list in the rail and its full transcript when a session is opened.
  *
- * PURPOSE — a cloud project's sessions sync back to the central bus and are
- * stored in the control plane (`session_history` / `session_messages`:
- * 333-360). Because that copy is central, it must remain readable when the
- * backing sandbox is stopped, destroyed, or otherwise dead: the user opens a
- * project they created days ago, its VM is long gone, and they still expect the
- * full session list in the rail sidebar and the full transcript when they open
- * one. Before the fix this surface went empty/spinning — the inventory treated
- * an empty control-plane list as "ask the live runtime instead"
- * (`fetchSignedWorkspaceSessions`, src/features/session/data/sync/
- * inventory-source.ts), which dead-ends on a workspace that cannot answer, and
- * the project-scoped list 400'd for any project id not shaped `ws_*`
- * (`sessionListWorkspaceId`, claxedo-server/src/session/routes/
- * control-plane-session.ts).
+ * Workspace liveness is the `status` from `GET /api/workspace/resolve`, sourced server-side
+ * from the supervisor lease plus the workspace row. `stopped | destroyed | unavailable |
+ * failed | offline | deleted` mean unreachable; anything else, including absent, is treated
+ * as reachable so healthy workspaces keep their runtime fallback
+ * (`workspaceRuntimeReachable`, `src/features/session/data/sync/inventory-source.ts`).
  *
- * STATE MODEL —
- *   - **Workspace liveness** is the runtime status reported by
- *     `GET /api/workspace/resolve` (`status`), sourced server-side from the
- *     supervisor lease plus the workspace row (claxedo-server/src/workspace/
- *     routes/index.ts:88). `stopped | destroyed | unavailable | failed |
- *     offline | deleted` mean unreachable; anything else (including absent)
- *     is treated as reachable, so healthy workspaces keep their runtime
- *     fallback (`workspaceRuntimeReachable`, inventory-source.ts).
- *   - **Session rows** for a section come from `GET /api/control/session-list`
- *     (TanStack Query via `sessionListQueryOptions`). This endpoint reads the
- *     central store and has NO workspace dependency — that is what makes it
- *     survive a dead sandbox.
- *   - **Transcripts** come from `GET /api/control/sessions/:id/messages`, which
- *     also reads the central store (control-plane-session.ts). Routing to it
- *     rather than to the workspace relay requires a CONFIRMED `cloud` workspace
- *     kind (`resolveSessionResourceRoute` branch C diverts unresolved-kind
- *     workspaces to the relay — src/platform/runtime/agent/placement-table.ts).
- *   - Nothing here is persisted client-side; every assertion below is served
- *     fresh from the mocked control plane.
+ * Rows come from `GET /api/control/session-list` and transcripts from
+ * `GET /api/control/sessions/:id/messages`; both read the central store and have no
+ * workspace dependency, which is what makes them survive. Routing a transcript there rather
+ * than to the workspace relay needs a confirmed `cloud` workspace kind —
+ * `resolveSessionResourceRoute` diverts unresolved-kind workspaces to the relay
+ * (`src/platform/runtime/agent/placement-table.ts`).
  *
- * ANATOMY —
- *   `[data-testid="rail-sidebar"]` — tree root.
- *   `[data-testid="rail-sidebar-session-row"][data-session-id]` — one row per
- *     session returned by the session-list endpoint.
- *   `[data-testid="rail-sidebar-session-list-loading|error|empty"]` — the
- *     per-section list-state notices. On a dead workspace with stored sessions
- *     NONE of these may be the terminal state: rows must render instead.
- *   `[data-slot="session-turn-message-content"]` / `[data-slot="session-turn-
- *     assistant-content"]` — the transcript rows, asserted through the shared
- *     turn oracle, never by bare text locators (INVARIANTS.md authoring rule 2).
+ * Every runtime route here answers 409, so anything that renders can only have come from
+ * the control plane; that is the enforcement, never a sleep. The workspace gate must let
+ * this through: a dead cloud workspace renders its surface via `hasCentralHistory`
+ * (`src/features/workspaces/data/workspace-gate.tsx`) instead of the offline panel, while
+ * user-hosted keeps the offline panel because it genuinely has no central copy. An empty
+ * list is honest only when the control plane itself returned nothing.
  *
- * BEHAVIORS —
- *   1. A cloud project whose workspace is DEAD still lists every session the
- *      control plane holds. Proof: all seeded rows render while the workspace
- *      runtime answers nothing but 409 `cloud_runtime_unavailable`, so the rows
- *      can only have come from the control plane.
- *   2. Loading terminates on a dead workspace — the section never sits on the
- *      loading notice, and never lands on the empty/error notice while the
- *      control plane has rows.
- *   3. Opening a session on a dead workspace renders its full stored
- *      transcript, served by the control-plane messages endpoint.
- *   4. The project-scoped session list works for a NON-`ws_` project id: the
- *      client sends `scope=project&projectId=<id>` with no `workspaceId`, and
- *      the server resolves the project's workspaces instead of 400ing.
- *
- * INVARIANTS —
- *   - Control-plane data is authoritative for cloud sessions whenever the
- *     workspace is unreachable: the rendered list and transcript must not
- *     depend on any runtime response. Enforced by making every runtime route
- *     409 and still asserting rows/transcript, plus a request assertion that
- *     the control-plane endpoints were actually hit — never a sleep
- *     (INVARIANTS.md rule 3).
- *   - The workspace GATE must not hide central history: a dead cloud workspace
- *     renders its surface (`hasCentralHistory`, src/features/workspaces/data/
- *     workspace-gate.tsx) rather than the offline panel. User-hosted keeps the
- *     offline panel — it genuinely has no central copy.
- *   - No silent empty state: an empty list is only honest when the control
- *     plane itself returned nothing.
- *
- * HARNESS NOTES — the cloud lane here is deliberately thin: this spec never
- * sends a turn, so it mounts no relay and no harness. It seeds already-stored
- * history and asserts the read path, which is the surface the bug lives on.
- *
- * OUT OF SCOPE — sending turns on a cloud workspace (core-harness-ownership-
- * cloud), relay role/offline mint behavior (core-cloud-offline-roles),
- * provisioning (core-cloud-provisioning), and user-hosted workspaces, which
- * genuinely have no central copy (core-user-hosted-workspace).
+ * No turn is ever sent here, so no relay and no harness is mounted. Sending turns on a
+ * cloud workspace is core-harness-ownership-cloud's, provisioning is
+ * core-cloud-provisioning's, and user-hosted workspaces are core-user-hosted-workspace's.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionListPath } from "../helpers/contracts/session-list"
@@ -90,8 +35,8 @@ import { expectAssistantReplyVisible, expectTurnCounts } from "../helpers/turn-o
 
 const DIR = "/tmp/e2e-dead-workspace"
 const WORKSPACE_ID = "ws_dead_e2e"
-// Deliberately NOT `ws_`-prefixed: this is the shape that used to 400 the
-// project-scoped session list (behavior 4).
+// Deliberately not `ws_`-prefixed: the project-scoped session list has to resolve a project
+// id of any shape to its workspaces rather than assuming a workspace id.
 const PROJECT_ID = "proj_dead_workspace_e2e"
 const PROJECT_NAME = "dead-workspace"
 const DEAD_STATUS = "stopped"
@@ -153,9 +98,9 @@ function navigationRow(session: StoredSession) {
  * The stored transcript for `ses_dead_a`, in the app's message/part row shape
  * (`{info, parts}` — see `normalizeMessageRows`, src/features/session/store/
  * message-page.ts). Ids are ordered so `compareIDs` sorts user before
- * assistant, and the assistant message carries `time.completed` so the turn is
- * SETTLED: a settled turn renders its content regardless of session.status,
- * which never arrives here (INVARIANTS.md cross-cutting invariant 3).
+ * assistant, and the assistant message carries `time.completed` so the turn is settled: a
+ * settled turn renders its content regardless of `session.status`, which never arrives
+ * here.
  */
 function storedTranscript() {
   const sessionID = STORED_SESSIONS[0].sessionId
@@ -195,21 +140,20 @@ function storedTranscript() {
 type DeadWorkspaceState = {
   /** Every `/api/control/session-list` query string, for scope/param assertions. */
   sessionListQueries: string[]
-  /** Any request that would have probed the DEAD workspace runtime for sessions. */
+  /** Any request that would have probed the dead workspace runtime for sessions. */
   runtimeSessionProbes: string[]
   /** `/api/control/sessions/:id/messages` reads, by session id. */
   transcriptReads: string[]
 }
 
 /**
- * Mounts a cloud project whose single workspace is DEAD, with sessions and one
- * transcript already stored centrally.
+ * Mounts a cloud project whose single workspace is dead, with sessions and one transcript
+ * already stored centrally.
  *
- * This spec is Tier M: every route is mocked here and nothing reaches a real
- * backend. It does not use `installMockRuntime` because that helper mounts a
- * LIVE workspace runtime (relay origin, session create, turn streaming) — the
- * precise thing that must be absent for this scenario to mean anything. A dead
- * workspace answering runtime calls would make behavior 1 unfalsifiable.
+ * Every route is mocked here and nothing reaches a real backend. `installMockRuntime` is
+ * not used because it mounts a live workspace runtime — relay origin, session create, turn
+ * streaming — which is the exact thing that must be absent: a workspace that answers
+ * runtime calls makes every assertion below unfalsifiable.
  */
 async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession[] } = {}) {
   const sessions = opts.sessions ?? STORED_SESSIONS
@@ -226,11 +170,10 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     const type = request.resourceType()
     if (type !== "fetch" && type !== "xhr") return route.continue()
 
-    // ---- The DEAD workspace runtime ----
+    // ---- The dead workspace runtime ----
     // Every relay/runtime path answers the way a stopped sandbox does: 409
-    // `cloud_runtime_unavailable` (claxedo-server/src/authority/
-    // hosted-session-pull.ts). Recorded so behavior 1 can assert the session
-    // list never depended on it.
+    // `cloud_runtime_unavailable`. Recorded so the tests can assert the rendered list never
+    // depended on any of it.
     if (path.startsWith("/api/wr/") || path.startsWith(`/workspaces/${WORKSPACE_ID}/`)) {
       if (path.endsWith("/events") || path.endsWith("/runtime-events")) return sse(route, { type: "heartbeat" })
       if (path.includes("/session")) state.runtimeSessionProbes.push(`${path}${url.search}`)
@@ -240,10 +183,10 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
       return json(route, { error: { code: "cloud_runtime_unavailable", message: "Cloud workspace runtime is unavailable" } }, 409)
     }
 
-    // ---- Workspace identity: resolvable, but reported DEAD ----
-    // The workspace still EXISTS (a deleted workspace is a different scenario);
-    // it simply has no live runtime. `status` is the signal the inventory reads
-    // to decide the control plane is authoritative.
+    // ---- Workspace identity: resolvable, but reported dead ----
+    // The workspace still exists — a deleted one is a different scenario — it simply has no
+    // live runtime. `status` is the signal the inventory reads to decide the control plane
+    // is authoritative.
     if (isWorkspaceResolvePath(path)) {
       return json(route, {
         workspaceId: WORKSPACE_ID,
@@ -380,10 +323,9 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
       return json(route, [])
     }
 
-    // Anything unmatched gets an empty, well-shaped 200 rather than escaping to
-    // a real backend (Tier M rule): the Vite dev server would answer an escape
-    // with index.html at 200, which `res.json().catch(...)` silently swallows
-    // into an empty list indistinguishable from a real empty result.
+    // Anything unmatched gets an empty, well-shaped 200 rather than escaping: the Vite dev
+    // server answers an escaped request with index.html at 200, which `res.json().catch(…)`
+    // swallows into an empty list indistinguishable from a real empty result.
     return json(route, {})
   })
 
@@ -402,11 +344,11 @@ function sessionRows(page: Page) {
 }
 
 test.describe("core dead-workspace session history @core", () => {
-  test("lists every stored session when the workspace is dead, without probing its runtime — behaviors 1,2", async ({ page }) => {
+  test("lists every stored session when the workspace is dead, without probing its runtime", async ({ page }) => {
     const state = await installDeadWorkspace(page)
     await openProject(page)
 
-    // Behavior 1: every stored session renders, keyed by its own id.
+    // Every stored session renders, keyed by its own id.
     for (const session of STORED_SESSIONS) {
       await expect(
         page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${session.sessionId}"]`),
@@ -415,23 +357,20 @@ test.describe("core dead-workspace session history @core", () => {
     }
     await expect(sessionRows(page)).toHaveCount(STORED_SESSIONS.length)
 
-    // Behavior 2: loading terminated, and the section did not fall back to the
-    // empty or error notice while the control plane had rows.
+    // Loading terminated, and the section did not fall back to the empty or error notice
+    // while the control plane had rows.
     await expect(page.locator('[data-testid="rail-sidebar-session-list-loading"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="rail-sidebar-session-list-empty"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="rail-sidebar-session-list-error"]')).toHaveCount(0)
 
-    // Behavior 1's real enforcement: the rows came from the control plane, not
-    // from the dead runtime. A request assertion, not a sleep (INVARIANTS.md
-    // rule 3). The runtime IS still contacted for other concerns (status polls,
-    // the boot inventory sweep) and every such call 409s here — the invariant
-    // is that the rendered list does not depend on any of them, which the rows
-    // above prove: the runtime answered nothing but 409, so the three visible
-    // rows can only have come from `/api/control/session-list`.
+    // The rows came from the control plane, not from the dead runtime. The runtime is still
+    // contacted for other concerns — status polls, the boot inventory sweep — and every
+    // such call 409s, so the three visible rows above can only have come from
+    // `/api/control/session-list`.
     expect(state.sessionListQueries.length).toBeGreaterThan(0)
   })
 
-  test("opens a stored session on a dead workspace and renders its full transcript — behavior 3", async ({ page }) => {
+  test("opens a stored session on a dead workspace and renders its full transcript", async ({ page }) => {
     const state = await installDeadWorkspace(page)
     await openProject(page)
 
@@ -440,8 +379,8 @@ test.describe("core dead-workspace session history @core", () => {
     await expect(row).toBeVisible({ timeout: 20_000 })
     await row.click()
 
-    // The stored assistant reply renders — through the shared oracle, which is
-    // the only sanctioned way to assert assistant text (INVARIANTS.md rule 2).
+    // The stored assistant reply renders, asserted through the shared oracle rather than a
+    // bare text locator.
     await expectAssistantReplyVisible(page, TRANSCRIPT_REPLY)
     await expectTurnCounts(page, { user: 1, assistant: 1 })
 
@@ -450,17 +389,15 @@ test.describe("core dead-workspace session history @core", () => {
     expect(state.transcriptReads).toContain(target.sessionId)
   })
 
-  test("project-scoped list works for a non-ws_ project id — behavior 4", async ({ page }) => {
+  test("project-scoped list works for a non-ws_ project id", async ({ page }) => {
     const state = await installDeadWorkspace(page)
     await openProject(page)
 
     await expect(sessionRows(page).first()).toBeVisible({ timeout: 20_000 })
 
-    // The client is allowed to send a project-scoped query carrying only a
-    // projectId — resolving it to workspaces is the SERVER's job now, so no
-    // client-side workspaceId is required for the list to succeed. When the
-    // sidebar does send one, it must be this project's own id (never a
-    // `ws_`-shaped guess derived from the project id).
+    // A project-scoped query may carry only a projectId: resolving it to workspaces is the
+    // server's job, so no client-side workspaceId is required. When the sidebar does send
+    // one it must be this project's own id, never a `ws_`-shaped guess derived from it.
     const projectScoped = state.sessionListQueries
       .map((search) => new URLSearchParams(search))
       .filter((params) => params.get("scope") === "project")
@@ -473,7 +410,7 @@ test.describe("core dead-workspace session history @core", () => {
     await expect(sessionRows(page)).toHaveCount(STORED_SESSIONS.length)
   })
 
-  test("an honestly empty control plane shows the empty notice, not a spinner — behavior 2", async ({ page }) => {
+  test("an honestly empty control plane shows the empty notice, not a spinner", async ({ page }) => {
     const state = await installDeadWorkspace(page, { sessions: [] })
     await openProject(page)
 

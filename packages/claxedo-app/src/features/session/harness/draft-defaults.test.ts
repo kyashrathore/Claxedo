@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
-import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
+import { connectionHarness, harnessSelectionKey, nativeHarness } from "@/platform/identity/harness-selection"
 import {
   createDraftDefaultPreferences,
   decodeDraftDefaultRecord,
@@ -113,7 +113,18 @@ describe("workspace draft defaults", () => {
     expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })?.harness).toEqual({ kind: "native", harnessId: "pi" })
   })
 
-  test("ignores malformed and structurally invalid records", () => {
+  test("ignores malformed records and invalid current-schema harness identity", () => {
+    for (const value of ["{", "[]", JSON.stringify({ version: 3, byHarness: {}, lastHarness: "pi" })]) {
+      expect(decodeDraftDefaultRecord(value)).toBeUndefined()
+    }
+  })
+
+  test("rejects invalid model identities and display hints inside current-schema records", () => {
+    const harness = nativeHarness("pi")
+    const key = harnessSelectionKey(harness)
+    const other = connectionHarness("team")
+    const otherKey = harnessSelectionKey(other)
+    const preserved = { model: { providerID: "provider", modelID: "valid" } }
     const invalid = [
       "{",
       "[]",
@@ -127,7 +138,13 @@ describe("workspace draft defaults", () => {
       JSON.stringify({ version: 1, harness: "pi", labels: { model: "x".repeat(121) } }),
     ]
 
-    for (const value of invalid) expect(decodeDraftDefaultRecord(value)).toBeUndefined()
+    for (const choice of invalid) {
+      expect(decodeDraftDefaultRecord(JSON.stringify({
+        version: 3,
+        lastHarness: harness,
+        byHarness: { [key]: choice, [otherKey]: preserved },
+      }))).toEqual({ version: 3, lastHarness: harness, byHarness: { [otherKey]: preserved } })
+    }
   })
 
   // The whole point of D1: two harnesses in one workspace do not share a slot.

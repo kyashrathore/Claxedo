@@ -1,4 +1,5 @@
-import { object, text } from "./json"
+import { object } from "./json"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export class ApiError extends Error {
   constructor(
@@ -14,8 +15,8 @@ function errorDetail(input: unknown, fallback: string) {
   const body = object(input)
   const error = object(body.error)
   return {
-    code: text(error.code),
-    message: text(error.message) ?? fallback,
+    code: trimToUndefined(error.code),
+    message: trimToUndefined(error.message) ?? fallback,
   }
 }
 

@@ -143,15 +143,13 @@ export function parseShellRoute(pathname: string): ShellRoute {
   return { kind: "unknown" }
 }
 
-// WP-D5: the sole type-erasure seam of the route layer. It collapses the tagged
-// `ShellRoute` union into a single scope key that every consumer treats as the
+// The sole type-erasure seam of the route layer: it collapses the tagged
+// `ShellRoute` union into one scope key that every consumer treats as the
 // active *directory* (`routeDir` / directory-session-cache key / worktree
-// compare). For `/w/:workspaceId` routes carrying a genuine control-plane id the
-// value is still consumed as a directory-shaped scope key pending the separate
-// server-side directory-shape routing fix (plan 2026-07-09-001); until that
-// lands the seam is honestly typed `DirectoryRef` — the sense all downstream code
-// actually uses — rather than the misleading `workspaceId` name it once carried.
-// The route parser is a sanctioned directory mint owner (see `brand.ts`).
+// compare). Even a `/w/:workspaceId` route carrying a genuine control-plane id
+// is consumed downstream as a directory-shaped scope key, so the return type is
+// `DirectoryRef`. The route parser is a sanctioned directory mint owner (see
+// `brand.ts`).
 export function shellRouteDirectory(route: ShellRoute): DirectoryRef | undefined {
   switch (route.kind) {
     case "workspace":

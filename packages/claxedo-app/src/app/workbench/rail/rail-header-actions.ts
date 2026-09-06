@@ -8,8 +8,8 @@ export function createRailHeaderActions(input: {
   /**
    * Open the terminal creator instead of a pty. The header's directory is
    * `sidebarDir() ?? focusedPaneWorkspaceDir(paneId)` — a fallback chain, not a
-   * choice the user made — so starting a process in it without asking is the
-   * same guess the rail's project headers used to make.
+   * choice the user made — so starting a process in it without asking would
+   * be an unconfirmed guess.
    */
   onNewTerminalDraft?: (workspaceDir: string, paneId?: string) => void
   /** Seeds the creator when no workspace is focused (Marketplace, …). */

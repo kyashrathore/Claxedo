@@ -1,12 +1,13 @@
 import { agentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { asRecord } from "@claxedo/helpers/guards"
 import { OpenCodeServerAdapterError } from "./errors"
 
 export type OpenCodeLeafEvent = { type: string; properties: Record<string, unknown> }
 
 export function openCodeEventSessionId(event: OpenCodeLeafEvent) {
-  const info = record(event.properties.info)
-  const part = record(event.properties.part)
+  const info = asRecord(event.properties.info)
+  const part = asRecord(event.properties.part)
   if (event.type === "session.updated") return string(info?.id)
   if (event.type === "message.updated") return string(info?.sessionID)
   return string(event.properties.sessionID) ?? string(part?.sessionID)
@@ -26,7 +27,7 @@ export class OpenCodeEventTranslator {
   translate(event: OpenCodeLeafEvent): AgentRuntimeEvent[] {
     if (event.type === "message.part.delta") return this.delta(event.properties)
     if (event.type === "message.part.updated") {
-      const part = record(event.properties.part)
+      const part = asRecord(event.properties.part)
       if (!part) return []
       if (part.type === "text" || part.type === "reasoning") return this.snapshot(part, part.type)
       if (part.type === "tool") return this.tool(part)
@@ -58,7 +59,7 @@ export class OpenCodeEventTranslator {
   }
 
   private tool(part: Record<string, unknown>): AgentRuntimeEvent[] {
-    const state = record(part.state)
+    const state = asRecord(part.state)
     if (!state || !["pending", "running", "completed", "error"].includes(String(state.status))) return []
     const key = partKey(part.messageID, part.id)
     const previous = this.tools.get(key)
@@ -67,7 +68,7 @@ export class OpenCodeEventTranslator {
     const toolCallId = string(part.callID)
     const toolName = string(part.tool)
     if (!toolCallId || !toolName) throw new OpenCodeServerAdapterError("invalid_event", "OpenCode tool part omitted its call ID or tool name")
-    const metadata = { ...record(part.metadata), ...record(state.metadata) }
+    const metadata = { ...asRecord(part.metadata), ...asRecord(state.metadata) }
     const detail = { ...(Object.keys(metadata).length ? { metadata } : {}), ...(typeof state.title === "string" ? { display: { summary: state.title } } : {}) }
     const events: AgentRuntimeEvent[] = []
     if (!previous) events.push(agentRuntimeEvent.toolStart({ toolCallId, toolName, ...detail }))
@@ -101,7 +102,7 @@ function translateSessionEvent(event: OpenCodeLeafEvent): AgentRuntimeEvent | un
     const todos = Array.isArray(event.properties.todos) ? event.properties.todos : []
     return agentRuntimeEvent.todoUpdate({
       todos: todos.map((item, index) => {
-        const todo = record(item) ?? {}
+        const todo = asRecord(item) ?? {}
         return {
           id: string(todo.id) ?? String(index),
           description: string(todo.content) ?? string(todo.description) ?? "",
@@ -112,7 +113,7 @@ function translateSessionEvent(event: OpenCodeLeafEvent): AgentRuntimeEvent | un
     })
   }
   if (event.type === "session.updated") {
-    const title = string(record(event.properties.info)?.title)
+    const title = string(asRecord(event.properties.info)?.title)
     return title ? agentRuntimeEvent.sessionTitle({ title }) : undefined
   }
   if (event.type === "session.agent") {
@@ -130,22 +131,14 @@ function partKey(messageId: unknown, partId: unknown) {
 }
 
 function statusType(input: unknown) {
-  const value = string(record(input)?.type) ?? string(input)
+  const value = string(asRecord(input)?.type) ?? string(input)
   if (value === "retry") return "recovering"
   return value === "busy" || value === "idle" || value === "error" || value === "recovering" ? value : undefined
 }
 
 export function errorText(input: unknown) {
-  const value = record(input)
-  return string(record(value?.data)?.message) ?? string(value?.message) ?? string(input) ?? "session error"
-}
-
-export function record(input: unknown): Record<string, unknown> | undefined {
-  return isRecord(input) ? input : undefined
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return input !== null && typeof input === "object" && !Array.isArray(input)
+  const value = asRecord(input)
+  return string(asRecord(value?.data)?.message) ?? string(value?.message) ?? string(input) ?? "session error"
 }
 
 function string(input: unknown) { return typeof input === "string" && input.length > 0 ? input : undefined }

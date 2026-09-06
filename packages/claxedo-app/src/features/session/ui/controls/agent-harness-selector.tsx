@@ -52,18 +52,14 @@ function HarnessOptionIcon(props: { harness?: HarnessType }) {
 }
 
 /*
- * Icon markup belongs in MENU ROWS, never a Kobalte Select trigger.
+ * Icon markup belongs in menu rows, never a Kobalte Select trigger.
  *
  * Kobalte names its Select trigger with `aria-labelledby` pointing at the
  * value span. With a plain string in there Chrome resolves that reference and
  * the button is named "Claude"; with icon markup in there it marks the
- * reference INVALID and computes an empty name (verified against the running
- * app through CDP's `Accessibility.getPartialAXTree`, and visible as an axe
- * `aria-command-name` violation plus a `getByRole("button", { name: /^Claude$/ })`
- * that matched nothing). The current HarnessModelPicker trigger is a Popover
- * with an explicit `aria-label`, which is why it may carry the harness mark.
- * This note outlived the Select renderer it used to sit on because the icon
- * has been put back in a trigger's value renderer twice already.
+ * reference invalid and computes an empty accessible name. The current
+ * HarnessModelPicker trigger is a Popover with an explicit `aria-label`,
+ * which is why it may carry the harness mark instead.
  */
 
 type Item = {
@@ -272,7 +268,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // A coarse boolean memo: only notifies when the polling boundary is crossed,
   // never on unrelated store writes. The re-probe effect below depends on this
   // (not a raw `selection().readiness` read) so a re-probe that re-applies the
-  // SAME "polling" status cannot re-run the effect and reset the attempt cap.
+  // same "polling" status cannot re-run the effect and reset the attempt cap.
   const isPolling = createMemo(() => selection().readiness === "polling")
   const isError = () => selection().readiness === "error"
 
@@ -444,8 +440,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return !harness() || managedDefaultModel() || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
   // Names a model, or says there is none — never reports an error. Failures are
-  // the notice row's job, and this control used to duplicate its wording
-  // ("Unavailable" here AND in the readiness pill AND in the dot's tooltip).
+  // the notice row's job: duplicating "Unavailable" here, in the readiness
+  // pill, and in the dot's tooltip would say the same thing three times.
   const modelLabel = createMemo(() => {
     if (isPolling()) return "Connecting"
     if (modelLoading()) return "Loading models"
@@ -459,7 +455,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (!hasModelOptions()) return isCatalogHarness(harness()) ? `No ${harnessDisplayLabel(harnessSelectionId(harness()!))} models available` : "Select model"
     return selection().selectedModel || "Select model"
   })
-  // Soft, non-actionable reasons the control itself is inert. These stay ON the
+  // Soft, non-actionable reasons the control itself is inert. These stay on the
   // control they explain instead of becoming a fifth widget beside it — and they
   // never escalate to the notice row, which is reserved for things that broke.
   const modelHint = createMemo(() => {
@@ -518,7 +514,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   })
   // Extracted from the old Kobalte `Select`'s inline `onSelect` so the merged
   // picker can call the same side effects. `openedViaMenu` existed because
-  // Kobalte re-fires onChange with the CURRENT value when its options
+  // Kobalte re-fires onChange with the current value when its options
   // collection changes identity; the picker only ever calls this from a real
   // click, so intent is passed explicitly.
   const applyHarness = (r: HarnessType | undefined) => {
@@ -591,12 +587,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
 
   return (
     <>
-      {/* ONE control for the three questions that are really one decision:
+      {/* One control for the three questions that are really one decision:
           harness → model → effort. See harness-model-picker.tsx. The trigger
-          keeps the harness mark AND the model name, so a live session still
+          keeps the harness mark and the model name, so a live session still
           states which harness it is on without spending a second chip on it.
 
-          Safe to put an icon in THIS trigger, unlike the Select it replaces:
+          Safe to put an icon in this trigger, unlike the Select it replaces:
           Kobalte's Select names its trigger via `aria-labelledby` pointing at
           the value span, which markup invalidates (see the note above the Item
           type). This is a Popover trigger with an explicit `aria-label`. */}
@@ -612,9 +608,9 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         onHarnessSelect={applyHarness}
         showManageModels={() => !!harness() && isCatalogHarness(harness())}
         modelError={() => {
-          // The SAME resolved notice the composer row shows, rendered inside
+          // The same resolved notice the composer row shows, rendered inside
           // the Model section too. The row explains the failure globally; the
-          // section REPLACES the list, because a working search box over zero
+          // section replaces the list, because a working search box over zero
           // rows claims "this harness has no models" when the truth is that
           // loading them failed. Only list-invalidating failures qualify — a
           // merely stale list still has usable rows and stays a hint.

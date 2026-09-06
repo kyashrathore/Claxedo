@@ -1,4 +1,5 @@
 // In-memory port implementations for tests and examples. Not durable.
+import { ConnectionExistsError } from "../types.js"
 import type {
   ConnectionRow,
   ConnectionStorePort,
@@ -56,24 +57,37 @@ export function createMemoryCredentialStore(): CredentialStorePort & {
 
 export function createMemoryConnectionStore(): ConnectionStorePort {
   const rows = new Map<string, ConnectionRow>()
+  // Every crossing of the port boundary copies the containers too. The
+  // persistent adapters serialize, so they hand back fresh objects whether
+  // they mean to or not; sharing the stored array here would let a reader
+  // grant itself a capability by pushing onto the row it was just read.
+  const copy = (row: ConnectionRow): ConnectionRow => ({
+    ...row,
+    grantedCapabilities: [...row.grantedCapabilities],
+    fields: { ...row.fields },
+  })
   return {
     async upsert(row) {
-      rows.set(row.id, { ...row })
+      const held = [...rows.values()].find(
+        (stored) => stored.integrationId === row.integrationId && stored.owner === row.owner && stored.id !== row.id,
+      )
+      if (held) throw new ConnectionExistsError()
+      rows.set(row.id, copy(row))
     },
     async get(integrationId, owner) {
       const row = [...rows.values()]
         .filter((row) => row.owner === owner)
         .find((row) => row.integrationId === integrationId)
-      return row ? { ...row } : undefined
+      return row ? copy(row) : undefined
     },
     async getById(id) {
       const row = rows.get(id)
-      return row ? { ...row } : undefined
+      return row ? copy(row) : undefined
     },
     async list(filter) {
       return [...rows.values()]
         .filter((row) => filter?.owner === undefined || (filter.owner === null ? row.owner === undefined : row.owner === filter.owner))
-        .map((row) => ({ ...row }))
+        .map(copy)
     },
     async delete(id) {
       return rows.delete(id)

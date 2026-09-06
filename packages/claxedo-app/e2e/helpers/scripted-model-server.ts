@@ -40,6 +40,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { asRecord } from "@claxedo/helpers/guards"
 import type {
   ContentBlock,
   Message,
@@ -687,17 +688,17 @@ function promptText(request: ScriptedModelBody) {
 
 function hasToolResult(request: ScriptedModelBody) {
   if (request.dialect === "responses") {
-    return Array.isArray(request.body.input) && request.body.input.some((item) => record(item)?.type === "function_call_output")
+    return Array.isArray(request.body.input) && request.body.input.some((item) => asRecord(item)?.type === "function_call_output")
   }
   if (request.dialect === "messages") {
     return request.body.messages.some((message) =>
-      Array.isArray(message.content) && message.content.some((block) => record(block)?.type === "tool_result"))
+      Array.isArray(message.content) && message.content.some((block) => asRecord(block)?.type === "tool_result"))
   }
   return request.body.messages.some((message) => message.role === "tool")
 }
 
 function modelRequestBody(dialect: ScriptedDialect, input: unknown): ScriptedModelBody {
-  const body = record(input) ?? {}
+  const body = asRecord(input) ?? {}
   const model = typeof body.model === "string" && body.model ? body.model : "scripted"
   if (dialect === "responses") {
     return {
@@ -733,8 +734,8 @@ function modelRequestBody(dialect: ScriptedDialect, input: unknown): ScriptedMod
 
 function modelTools(body: ScriptedModelBody["body"]) {
   return (body.tools ?? []).flatMap((tool) => {
-    const row = record(tool)
-    const fn = record(row?.function)
+    const row = asRecord(tool)
+    const fn = asRecord(row?.function)
     const name = typeof row?.name === "string"
       ? row.name
       : typeof fn?.name === "string"
@@ -742,10 +743,6 @@ function modelTools(body: ScriptedModelBody["body"]) {
         : undefined
     return name ? [{ name, ...(row?.input_schema ? { inputSchema: row.input_schema } : fn?.parameters ? { inputSchema: fn.parameters } : {}) }] : []
   })
-}
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
 async function readJson(incoming: IncomingMessage): Promise<unknown> {

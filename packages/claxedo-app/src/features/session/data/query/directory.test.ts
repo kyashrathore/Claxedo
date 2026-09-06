@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
   agentListQuery,
@@ -7,6 +7,8 @@ import {
 } from "./directory"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+
+afterEach(() => queryClient.clear())
 
 describe("directory query factories", () => {
   function project(id: string, worktree: string): Project {
@@ -114,12 +116,11 @@ describe("directory query factories", () => {
     await query.queryFn()
     expect(resolves).toBe(1)
 
-    // Age the shared record past every window it used to carry (the deleted
-    // 60s wrapper included). Routing identity cannot change under a running
-    // app, so the second read must answer from the one canonical entry.
+    // Age the shared cache entry well past any staleness window. Routing
+    // identity cannot change under a running app, so the second read must
+    // still answer from the one canonical entry.
     const key = queryKeys.runtime.workspace({ baseUrl: "http://example.test", directory: "/tmp/ws" })
-    const state = queryClient.getQueryCache().find({ queryKey: key })!.state as { dataUpdatedAt: number }
-    state.dataUpdatedAt = Date.now() - 5 * 60 * 1000
+    queryClient.setQueryData(key, queryClient.getQueryData(key), { updatedAt: Date.now() - 5 * 60 * 1000 })
 
     await query.queryFn()
     expect(resolves).toBe(1)

@@ -1,20 +1,22 @@
 /**
- * The SUCCESSFUL shared-workspace forward.
+ * The successful shared-workspace forward.
  *
  * `localWorkspaceRelayProxy` answers `/workspaces/:id/*` on the local server —
  * the same URL shape the hosted relay serves — so a user can share a local
- * workspace for remote access. Before this file, every relay assertion in
- * `workspace/runtime-dispatch/route-ownership-contract.test.ts` was a REFUSAL: the loopback gate rejecting a spoofed request.
- * A refusal-only suite cannot tell "the guard works" from "the path is broken",
- * and a live product surface with no success test is one refactor away from
- * silently answering 500 to every request while the guard tests stay green.
+ * workspace for remote access. Every other relay assertion in
+ * `workspace/runtime-dispatch/route-ownership-contract.test.ts` is a refusal:
+ * the loopback gate rejecting a spoofed request. A refusal-only suite cannot
+ * tell "the guard works" from "the path is broken", and a live product
+ * surface with no success test is one refactor away from silently answering
+ * 500 to every request while the guard tests stay green.
  *
  * What it pins, end to end:
  *   - the URL is rewritten so `/workspaces/ws_1/api/wr/health` reaches the
  *     runtime as `/api/wr/health` — the `:workspaceId` prefix is stripped
  *   - a relay-backed workspace forwards with the minted owner token in
- *     `authorization`, NOT the caller's own bearer (the regression that made a
- *     local cloud workspace hang on "Preparing workspace" forever)
+ *     `authorization`, not the caller's own bearer — using the caller's
+ *     bearer here would leave a local cloud workspace hanging on "Preparing
+ *     workspace" forever
  *   - `x-claxedo-directory` carries `workspace:<id>` for a relay hit rather
  *     than a filesystem path
  *   - the upstream response body and status reach the caller
@@ -126,10 +128,6 @@ describe("shared workspace endpoint — successful relay forward", () => {
   })
 
   test("forwards the MINTED owner token, not the caller's bearer", async () => {
-    // The regression this pins: the inline hit used to drop `relay`, so no
-    // token was minted and the user's own bearer went upstream. The runtime
-    // answered 401 `relay_host_token_required` and a local cloud workspace
-    // could never finish connecting.
     await sharedWorkspaceApp().request("http://127.0.0.1/workspaces/ws_1/api/wr/health", {
       headers: { authorization: "Bearer callers-own-token" },
     })

@@ -12,11 +12,10 @@
 import { sessionPerf } from "@/platform/performance/session-perf"
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
-import { createEffect, createMemo, lazy, type ParentProps } from "solid-js"
+import { createEffect, createMemo, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { AppShellLayout } from "./app-shell-layout"
 
-import { isDemoMode } from "@/platform/api/api"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
 import { ModelStoreRegistryProvider } from "../features/session/providers/models"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
@@ -33,10 +32,6 @@ import {
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 import { useGlobalSessionAccessRevocations } from "@/app/integrations/sync/global-sync-boundary"
-
-const DemoTourController = __DEMO_ENABLED__
-  ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
-  : () => null
 
 traceModuleEvaluation("runtime.appShellModuleEvaluated")
 
@@ -205,7 +200,6 @@ function ClaxedoAppShellContent(props: ParentProps) {
 export function ClaxedoAppShellInner(props: ParentProps) {
   return (
     <>
-      {isDemoMode() && <DemoTourController />}
       <ClaxedoRouteStateBridge>
         <PromptHarnessControllersProvider>
           {/* One persisted model document per (server, workspace), for the

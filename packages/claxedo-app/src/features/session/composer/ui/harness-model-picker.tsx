@@ -11,11 +11,11 @@ import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics
 /**
  * One chip, one popover, three questions — harness, model, effort.
  *
- * The composer dock used to spend three separate chips on these, which read as
- * three unrelated settings when they are in fact one decision made in order:
- * the harness decides which models exist, and the model decides whether effort
- * is offered at all. An accordion states that order literally — pick a harness
- * and it folds shut, handing you the model list it just produced.
+ * Three separate chips would read as unrelated settings when they are in fact
+ * one decision made in order: the harness decides which models exist, and the
+ * model decides whether effort is offered at all. An accordion states that
+ * order literally — pick a harness and it folds shut, handing you the model
+ * list it just produced.
  *
  * Exactly one section is open. That is what keeps the popover a FIXED height
  * (`h-80`, the same as the model picker it replaces) instead of a stack that
@@ -41,13 +41,10 @@ export type HarnessModelPickerSection = "harness" | "model" | "effort"
  * the effort options and the model list's own rows — is this one box. Same
  * width, same 10px gutter, same radius, same hover.
  *
- * The panel used to carry a 12px indent (24px before that) so its contents read
- * as nested. It went for the same reason the held header background went: a row
- * that is narrower than the row above it looks like a different KIND of row,
- * and the model list never had the indent anyway, so the two sections disagreed
- * about their own hierarchy. Depth is carried by the rotated chevron and the
- * panel's entrance animation, which are the two signals that survive a row
- * being exactly as wide as its neighbours.
+ * A row narrower than the row above it reads as a different kind of row, and
+ * the model list carries no indent of its own — so hierarchy here comes from
+ * the rotated chevron and the panel's entrance animation, the two signals that
+ * survive every row being exactly as wide as its neighbours.
  */
 const ROW_CLASS =
   "flex min-h-7 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1 text-left outline-none transition-colors duration-150 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
@@ -80,26 +77,25 @@ function SectionHeader(props: {
       class={`group/section shrink-0 disabled:pointer-events-none disabled:opacity-45 ${ROW_CLASS}`}
       onClick={props.onToggle}
     >
-      {/* Full-strength icon. At `icon-weak` on a dark surface this chevron was
-          the single most-missed control in the menu — it is the only thing
-          telling you the row opens. */}
+      {/* Full-strength icon: at `icon-weak` it fades into a dark surface, and
+          it is the only thing telling you the row opens. */}
       <Icon
         name="chevron-right"
         size="small"
         class="shrink-0 text-icon-base transition-transform duration-200 ease-out group-data-[expanded=true]/section:rotate-90"
       />
       {/* The label is what you scan for, so it carries the weight; the value is
-          the answer it currently holds and steps back. This was inverted — a
-          dim label under a bright value made the row read as its value with a
-          caption attached. Sentence case, not caps: uppercase plus wide
-          tracking turns a one-word label into a legal heading. */}
+          the answer it currently holds and steps back — a dim label under a
+          bright value would read as the row's value with a caption attached.
+          Sentence case, not caps: uppercase plus wide tracking turns a
+          one-word label into a legal heading. */}
       <span class="shrink-0 text-compact font-medium text-text-base">{props.label}</span>
       {/* The summary fades once the panel below is showing the same thing —
           still there for orientation, no longer competing with the list. */}
-      {/* Loading belongs to the SECTION whose contents are loading, not to the
-          trigger. In the trigger it reported the whole control as busy while
-          the harness chip beside it was already switched, which read as the
-          picker hanging; here it names exactly what you are waiting for. */}
+      {/* Loading belongs to the section whose contents are loading, not the
+          trigger — reporting it there would say the whole control is busy
+          while the harness chip beside it has already switched, reading as
+          the picker hanging. Here it names exactly what you are waiting for. */}
       <span class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
         <Show when={props.loading}>
           <span
@@ -203,7 +199,7 @@ export function HarnessModelPicker<H>(props: {
   harnessLabel: (harness: H) => string
   harnessSelected?: (option: H, current: H | undefined) => boolean
   /**
-   * Groups the harness rows. NOT decoration: operator ACP and native SDK rows
+   * Groups the harness rows. Not decoration: operator ACP and native SDK rows
    * label as "Claude", as do the Codex and Cursor pairs, so a flat list shows
    * three sets of identical rows with no way to tell them apart. The group
    * heading ("ACP" / "Native SDK" / "Direct") is what disambiguates them.

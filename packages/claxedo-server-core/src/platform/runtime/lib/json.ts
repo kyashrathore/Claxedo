@@ -21,7 +21,7 @@
  * test.
  */
 
-import { cleanString } from "./strings"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 /** A parsed JSON object: not null, not an array, not a primitive. */
 export function isJsonRecord(value: unknown): value is Record<string, unknown> {
@@ -79,7 +79,7 @@ export function jsonString(value: unknown): string | undefined {
 /** A record's field, trimmed, when it holds a non-blank string. */
 export function jsonText(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key]
-  return typeof value === "string" ? cleanString(value) : undefined
+  return typeof value === "string" ? trimToUndefined(value) : undefined
 }
 
 /** A present, non-blank string field. */

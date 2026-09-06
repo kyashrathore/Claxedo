@@ -26,10 +26,9 @@ import {
   resolveDeploymentMode,
   setDeploymentMode,
 } from "@/platform/telemetry/analytics"
-import { isDemoMode, isEmbedMode } from "@/platform/api/api"
-import { urlRoutingEnabled } from "@/lib/runtime-mode"
+import { isEmbedMode } from "@/platform/api/api"
+import { writeBrowserRoute } from "@/lib/browser-history"
 import { ConfigProvider } from "../providers/config"
-import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
 import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
@@ -102,17 +101,16 @@ configureApiRuntime({
 /**
  * Bind the identity provider to the app's canonical auth-session abstraction.
  *
- * `platform/auth/auth-session.ts` used to `import { useAuth }` statically. It
- * is called unconditionally from the shell's provider tree (`app/entry/app.tsx`
- * mounts it, and BOTH products render that shell), so that one import was the
- * remaining chain by which `local.tsx` reached the auth vendor:
- * `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
- * a provider implementation`. It now keeps only an `import type` edge to the
- * neutral browser-auth contract, which the bundler erases.
+ * `platform/auth/auth-session.ts` keeps only an `import type` edge to the
+ * neutral browser-auth contract, which the bundler erases. A value import
+ * would put the auth vendor on the shell's provider tree (`app/entry/app.tsx`
+ * mounts it, and both products render that shell), reaching `local.tsx`
+ * through `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
+ * a provider implementation` — and `local.tsx` can never sign in.
  *
  * `local.tsx` supplies nothing on purpose. Unbound, `useAuthSession()` returns
  * a stable anonymous session rather than throwing — an unsigned local build
- * genuinely IS anonymous, and that is the honest value for a call that happens
+ * genuinely is anonymous, and that is the honest value for a call that happens
  * during render. Same asymmetry as `configureApiRuntime` above, and unlike
  * `configureWorkspaceStartup`, whose unbound port throws because waking a
  * hosted sandbox is an operation, not a state.
@@ -150,18 +148,16 @@ startBrowserAuth({
 })
 
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
-if (!isDemoMode()) {
-  initPostHog()
-  // This entry is the web build; the desktop renderer resolves its own plane
-  // once PlatformProvider mounts (TelemetryIdentityRecorder).
-  setDeploymentMode(resolveDeploymentMode({ platform: "web", authEnabled: config.authEnabled === true }))
-  phCapture("app_launched", {
-    ...identityProps(),
-    surface: "app_shell",
-    platform: "web",
-    version: "cloud",
-  })
-}
+initPostHog()
+// This entry is the web build; the desktop renderer resolves its own plane
+// once PlatformProvider mounts (TelemetryIdentityRecorder).
+setDeploymentMode(resolveDeploymentMode({ platform: "web", authEnabled: config.authEnabled === true }))
+phCapture("app_launched", {
+  ...identityProps(),
+  surface: "app_shell",
+  platform: "web",
+  version: "cloud",
+})
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -210,14 +206,7 @@ const platform: Platform = {
         })
         notification.onclick = () => {
           window.focus()
-          // Same file:// hazard as the session-route writers: on desktop this
-          // pushed an unloadable path AND the popstate went nowhere (MemoryRouter
-          // does not listen), so skipping it loses no navigation. See
-          // `urlRoutingEnabled`.
-          if (href && urlRoutingEnabled()) {
-            window.history.pushState(null, "", href)
-            window.dispatchEvent(new PopStateEvent("popstate"))
-          }
+          if (href) writeBrowserRoute(href, { replace: false, notify: true })
           notification.close()
         }
       })
@@ -226,155 +215,6 @@ const platform: Platform = {
 }
 
 async function startApp() {
-  // In demo mode, start MSW to mock server responses before rendering
-  if (isDemoMode()) {
-    for (const key of Object.keys(localStorage)) {
-      if (!key.startsWith("claxedo.demo.")) continue
-      localStorage.removeItem(key)
-    }
-    resetDemoPersisted()
-
-    // Pre-seed the server store so the demo project auto-opens
-    const demoProject = "/home/demo/projects/my-app"
-    const featureBranch = "/home/demo/projects/my-app-feature-auth"
-    const dashboardProject = "/home/demo/projects/dashboard"
-    const serverKey = window.location.origin
-    const projects = [
-      { worktree: demoProject, expanded: true },
-      { worktree: featureBranch, expanded: true },
-      { worktree: dashboardProject, expanded: true },
-    ]
-    const pageTabId = "tab-page-demo-001"
-    const sessionTabId = "tab-ses-wt-001"
-    const baseTabs = [
-      {
-        id: pageTabId,
-        type: "page",
-        directory: demoProject,
-        title: "Project Architecture",
-        pageId: "page_demo_001",
-        closable: true,
-      },
-      {
-        id: sessionTabId,
-        type: "session",
-        directory: demoProject,
-        title: "Add Google OAuth provider",
-        sessionId: "ses_demo_001",
-        closable: true,
-      },
-      {
-        id: "tab-ses-wt-002",
-        type: "session",
-        directory: featureBranch,
-        title: "Implement refresh token rotation",
-        sessionId: "ses_wt_002",
-        closable: true,
-      },
-      {
-        id: "tab-ses-p2-001",
-        type: "session",
-        directory: dashboardProject,
-        title: "Build real-time chart component",
-        sessionId: "ses_p2_001",
-        closable: true,
-      },
-    ]
-    const tabs = baseTabs
-    const colors = {
-      [demoProject]: "#3b82f6",
-      [featureBranch]: "#a855f7",
-      [dashboardProject]: "#22c55e",
-    }
-    setPersisted(Persist.global("server"), {
-      list: [],
-      projects: {
-        [serverKey]: projects,
-      },
-      lastProject: { [serverKey]: demoProject },
-      workspaceServer: {},
-    })
-
-    const tabContentIds = tabs.map((item) => item.id)
-    const meta = Object.fromEntries(
-      tabs.map((item) => [
-        item.id,
-        item.type === "page"
-          ? {
-              id: item.id,
-              type: "page",
-              scope: "directory",
-              directory: item.directory,
-              pageId: item.pageId,
-              content: {
-                type: "page",
-                directory: item.directory,
-                pageId: item.pageId,
-                title: item.title,
-              },
-            }
-          : {
-              id: item.id,
-              type: "session",
-              scope: "directory",
-              directory: item.directory,
-              sessionId: item.sessionId,
-              content: {
-                type: "session",
-                directory: item.directory,
-                sessionId: item.sessionId,
-                title: item.title,
-              },
-            },
-      ]),
-    )
-
-    setPersisted(Persist.global("claxedo.state.v5"), {
-      workbench: {
-        panes: [{ id: "pane-demo", contentId: pageTabId }],
-        split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane-demo" } },
-        contentIds: tabContentIds,
-        contentRecency: [...tabContentIds].reverse(),
-        focusedPaneId: "pane-demo",
-        layoutSnapshots: {},
-      },
-      meta,
-      rail: { collapsed: true, hovered: false, pinned: false, locked: false },
-      workspace: {
-        paneWorktree: {
-          "pane-demo": { default: demoProject, pinned: null },
-        },
-        recency: {},
-        worktreeColor: colors,
-      },
-      workspacePanel: { open: false },
-      terminal: { owner: {}, agentStatus: {}, agentSeen: {}, lifecycle: {} },
-      processPane: {
-        toggleVersion: 0,
-        pendingOpen: false,
-        targetDirectory: null,
-        crashedWhileClosed: false,
-        pendingAction: null,
-      },
-    })
-
-    // Start MSW with a hard timeout so demo rendering is never blocked forever.
-    // The dynamic import is gated behind __DEMO_ENABLED__ (a compile-time define)
-    // so that non-web builds (desktop/electron) can tree-shake away the msw dependency.
-    if (__DEMO_ENABLED__) {
-      const mswReady = (async () => {
-        const { startWorker } = await import("../demo/browser")
-        await startWorker({ onUnhandledRequest: "warn", quiet: false })
-      })()
-      const timeout = new Promise<void>((r) => {
-        setTimeout(() => {
-          r()
-        }, 4000)
-      })
-      await Promise.race([mswReady, timeout])
-    }
-  }
-
   // Render the standard app with cloud extensions active
   render(
     () => (
@@ -391,8 +231,8 @@ async function startApp() {
 }
 
 /**
- * The last resort, for a state in which no shell can exist at all — the demo
- * fixtures could not be written, or `render()` itself threw.
+ * The last resort, for a state in which no shell can exist at all: `render()`
+ * itself threw.
  *
  * Reserved for exactly that. Anything the app can honestly represent as state
  * belongs in the shell instead: "nobody is signed in" is a session status, not

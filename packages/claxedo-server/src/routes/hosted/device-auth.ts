@@ -23,6 +23,7 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { asRecord } from "../../platform/json/index"
+import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type HostedDeviceAuthProvider = {
   issuer: string
@@ -60,10 +61,6 @@ function object(input: unknown): Record<string, unknown> {
   return asRecord(input) ?? {}
 }
 
-function clean(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
-
 function providerHeaders(provider: HostedDeviceAuthProvider) {
   return {
     "content-type": "application/json",
@@ -83,9 +80,9 @@ function codePayload(provider: HostedDeviceAuthProvider) {
 }
 
 function tokenPayload(provider: HostedDeviceAuthProvider, body: Record<string, unknown>) {
-  const deviceCode = clean(body.device_code) ?? clean(body.deviceCode)
-  const refreshToken = clean(body.refresh_token) ?? clean(body.refreshToken)
-  const grantType = clean(body.grant_type) ?? clean(body.grantType)
+  const deviceCode = trimToUndefined(body.device_code) ?? trimToUndefined(body.deviceCode)
+  const refreshToken = trimToUndefined(body.refresh_token) ?? trimToUndefined(body.refreshToken)
+  const grantType = trimToUndefined(body.grant_type) ?? trimToUndefined(body.grantType)
   return {
     ...(provider.clientId ? { client_id: provider.clientId } : {}),
     ...(deviceCode ? { device_code: deviceCode } : {}),
@@ -138,7 +135,7 @@ async function broker(provider: HostedDeviceAuthProvider, url: string, payload: 
 }
 
 function rateLimitClientKey(c: Context) {
-  return clean(c.req.header("cf-connecting-ip")) ?? clean(c.req.header("x-forwarded-for")?.split(",")[0]) ?? "anonymous"
+  return trimToUndefined(c.req.header("cf-connecting-ip")) ?? trimToUndefined(c.req.header("x-forwarded-for")?.split(",")[0]) ?? "anonymous"
 }
 
 function rateLimited(c: Context, limiter: ConnectionRateLimiter, endpoint: string) {
@@ -223,7 +220,7 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
     const limited = rateLimited(c, rateLimiter, "token")
     if (limited) return limited
     const body = object(await c.req.json().catch(() => ({})))
-    const refreshToken = clean(body.refresh_token) ?? clean(body.refreshToken)
+    const refreshToken = trimToUndefined(body.refresh_token) ?? trimToUndefined(body.refreshToken)
     if (refreshToken && options.native?.acceptsRefreshToken(refreshToken)) {
       try {
         return c.json(await options.native.refresh(refreshToken))
@@ -241,10 +238,10 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
     }
     if (!provider) return c.json(unconfigured(), 501)
     if (
-      !clean(body.device_code) &&
-      !clean(body.deviceCode) &&
-      !clean(body.refresh_token) &&
-      !clean(body.refreshToken)
+      !trimToUndefined(body.device_code) &&
+      !trimToUndefined(body.deviceCode) &&
+      !trimToUndefined(body.refresh_token) &&
+      !trimToUndefined(body.refreshToken)
     ) {
       return c.json(
         {
@@ -268,7 +265,7 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
       }, 503)
     }
     const body = object(await c.req.json().catch(() => ({})))
-    const token = clean(body.token)
+    const token = trimToUndefined(body.token)
     if (!token) {
       return c.json({ error: { code: "cli_token_required", message: "token is required" } }, 400)
     }

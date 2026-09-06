@@ -276,7 +276,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   // Shared with the terminal's file links (timeline-file-paths.ts):
   // normalizes/relativizes, parses `:line[:col]`, refuses `~`/traversal/
-  // out-of-workspace paths (which used to open blank tabs).
+  // out-of-workspace paths, which would open blank tabs.
   const fileFocus = (raw: string) => timelineFileFocus(raw, sdk.directory)
 
   // Open a file in the workspace side panel (same path terminal file links take
@@ -293,10 +293,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  // Path-kind inline-code chips in assistant markdown (T16). Anchors are handled
-  // in the capture phase below (not here) so preventDefault beats the native
-  // target="_blank" new-window, which in Electron otherwise fired alongside this
-  // bubble handler — opening the link in a browser AND in the panel.
+  // Path-kind inline-code chips in assistant markdown. Anchors are handled in
+  // the capture phase below so preventDefault beats the native target="_blank"
+  // window; in Electron a bubble-phase handler opened the link in both a
+  // browser and the panel.
   let candidateFileController: AbortController | undefined
   onCleanup(() => candidateFileController?.abort())
   createEffect(() => {
@@ -382,7 +382,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  // File context menu (T11): right-click a file link/path → Open / Copy path / Reveal.
   const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; path: string } | undefined>()
   const handleTimelineContextMenu = (event: MouseEvent) => {
     const raw = timelineFileTarget(event.target)
@@ -707,7 +706,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const row = rows[index]
       if (row?._tag !== "AssistantPart") return timelineInitialEstimatedItemSize
       // Initial bottom-anchored layout only needs precise estimates around the
-      // first visible fold. Scanning every historical Markdown body blocks the
+      // first visible fold. Scanning every older Markdown body blocks the
       // viewport callback even though those rows remain virtual and will be
       // measured when the user approaches them.
       if (index < rows.length - 50) return timelineInitialEstimatedItemSize
@@ -1007,8 +1006,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     // A pointer press on a control is an action, not a scroll gesture. Expanding
-    // the cold virtual range here used to replace the pressed row between
-    // pointerdown and click, so the browser never delivered the click to
+    // the cold virtual range here would replace the pressed row between
+    // pointerdown and click, so the browser never delivers the click to
     // timeline controls such as WorkGroup and recovery-card buttons.
     const target = event.target instanceof Element ? event.target : undefined
     if (target?.closest("button, a, input, textarea, select, [role='button'], [role='menuitem']")) return

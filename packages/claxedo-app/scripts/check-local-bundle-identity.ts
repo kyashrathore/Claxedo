@@ -31,9 +31,8 @@
  *                               the control that turns "no hits" into a result
  *                               instead of a hope.
  *
- * Use `bun run build:marker-control` (./dist-marker-control) for that control,
- * NOT the hosted `./dist`, which this comment used to recommend and which is
- * wrong anywhere the auth env is unset — i.e. on every CI runner.
+ * Use `bun run build:marker-control` (./dist-marker-control) for that control, never
+ * the hosted `./dist`, which is wrong anywhere the auth env is unset — every CI runner.
  * `better-auth-browser-auth.ts` reaches the provider only past an early return on disabled
  * auth, so a hosted build without `VITE_AUTH_ENABLED` emits no provider at all
  * and the control fails every marker. That failure is honest — the control is
@@ -51,7 +50,7 @@ import {
   isScannableAsset,
   verifyMarkersAreDetectable,
   type EmittedFile,
-} from "../src/architecture/local-bundle-identity.ts"
+} from "../src/architecture/local-bundle-identity"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(here, "..")

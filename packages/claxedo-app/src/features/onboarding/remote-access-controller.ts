@@ -16,16 +16,14 @@ import {
 /**
  * The Remote Access panel's state, over whatever mechanism this product has.
  *
- * This used to build an HTTP client here and call
- * `/api/claxedo/remote-access/*` directly. That is what broke on the desktop:
- * those routes moved to the Host Connector in Electron main, `@claxedo/local-server`
- * serves none of them, and the Enable button kept posting to a 404. A feature
- * naming a product's transport is the bug — it names the operation now, and
- * `platform/remote-access` decides the call.
+ * A feature naming a product's transport is the bug: this controller names
+ * the operation only, and `platform/remote-access` decides the call — the
+ * desktop's Host Connector, an HTTP client, or anything else a future product
+ * adds.
  *
- * The funnel events live HERE rather than inside either implementation.
+ * The funnel events live here rather than inside either implementation.
  * "Someone completed the remote-access onboarding step" is onboarding's fact,
- * not the transport's, and putting it in one implementation would have left the
+ * not the transport's, and putting it in one implementation would leave the
  * other silently un-instrumented.
  */
 export function useRemoteAccessController(input: {
@@ -37,7 +35,7 @@ export function useRemoteAccessController(input: {
    * This machine started or stopped publishing.
    *
    * Injected rather than done here, for the same reason `emit` is: what has to
-   * be re-read when the machine's publication state changes is the CALLER's
+   * be re-read when the machine's publication state changes is the caller's
    * knowledge, not this controller's. The workspaces domain owns "which
    * workspaces are published" and onboarding may not import it.
    *
@@ -124,7 +122,7 @@ export function useRemoteAccessController(input: {
     sourceClientId: remoteAccessClientId(),
   }))
   /**
-   * Whether the ACCOUNT LAYER has a usable credential right now.
+   * Whether the account layer has a usable credential right now.
    *
    * Deliberately not `status.hostedSignedIn`. That is the connector's own
    * view — "an account client is configured" — and at boot it goes true before

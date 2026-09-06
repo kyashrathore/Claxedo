@@ -24,10 +24,11 @@ describe("startBrowserAuth", () => {
     // entry that awaited this held a blank page with an empty `#root` forever.
     const { calls, adapter } = recordingAdapter(() => new Promise<void>(() => {}))
 
-    startBrowserAuth({ authEnabled: true, adapter, ...HOSTED })
+    const result = startBrowserAuth({ authEnabled: true, adapter, ...HOSTED })
 
-    // Observable only because the call already returned: it both started the
-    // work and came back while that work was still pending.
+    // A returned Promise would allow an entrypoint to await a stalled adapter.
+    // Checking only `calls` also passed for an async implementation.
+    expect(result).toBeUndefined()
     expect(calls).toEqual([{ ...HOSTED, centralTransport: "signed-web" }])
   })
 

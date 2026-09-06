@@ -2,6 +2,8 @@ import { activationSummary, defaultOutcome, pluginStatus, skillBody } from "./vi
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+
+const clients = new Set<QueryClient>()
 import type { JSX } from "solid-js"
 import { agentPluginApi, type HarnessActivation, type PluginCandidate, type PluginSkill, type PluginSource } from "../api"
 import type { AgentPluginConnectionPort } from "../connections"
@@ -196,6 +198,7 @@ async function renderDirectory(options: Parameters<typeof harness>[0] & { mode?:
   const context = harness(options)
   const onAdd = vi.fn(async () => {})
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
   const { AgentPluginDirectory } = await import("./directory")
   render(() => (
     <QueryClientProvider client={client}>
@@ -221,6 +224,8 @@ const posted = (recorded: Recorded[], path: string) => recorded.filter((entry) =
 
 afterEach(() => {
   cleanup()
+  for (const client of clients) client.clear()
+  clients.clear()
   localStorage.clear()
 })
 
@@ -694,12 +699,17 @@ describe("skill documents", () => {
 
 describe("connection status failures", () => {
   test("a failed connections list leaves the Directory standing and offers a retry in the pane", async () => {
-    await renderDirectory({ connectionsError: new Error("Connections request failed (500: could not renew the session)") })
+    const options: Parameters<typeof harness>[0] = { connectionsError: new Error("Connections request failed (500: could not renew the session)") }
+    await renderDirectory(options)
     expect(screen.getByRole("button", { name: "composio" })).toBeTruthy()
     const pane = await openPane("composio")
     expect(within(pane).getByText(/Connection status is unavailable right now/)).toBeTruthy()
     expect(within(pane).getByRole("button", { name: "Retry" })).toBeTruthy()
     expect(within(pane).queryByText(/could not renew the session/)).toBeNull()
+    options.connectionsError = undefined
+    fireEvent.click(within(pane).getByRole("button", { name: "Retry" }))
+    await waitFor(() => expect(within(pane).queryByText(/Connection status is unavailable right now/)).toBeNull())
+    expect(within(pane).queryByRole("button", { name: "Retry" })).toBeNull()
   })
 })
 

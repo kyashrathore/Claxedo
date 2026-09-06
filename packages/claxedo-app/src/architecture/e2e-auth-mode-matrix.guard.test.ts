@@ -1,11 +1,8 @@
 /**
- * GUARD: the watched browser suite must exercise every flow both with the
- * historical synthetic Test User and as a loopback visitor with no user.
- *
- * The Test User used to be implicit (`navigator.webdriver === true`), so a
- * green Playwright suite said nothing about the state real unsigned local
- * users actually run. This guard binds together the config registry, package
- * entrypoints, and CI matrix so removing any half of the pair fails loudly.
+ * The browser suite must run every flow both as the synthetic Test User and as
+ * a loopback visitor with no user; a suite that runs only signed says nothing
+ * about the state real unsigned local users see. Binds the config registry,
+ * package entrypoints, and CI matrix so dropping either half fails loudly.
  */
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
@@ -19,16 +16,15 @@ const setupBun = readFileSync(path.join(repoRoot, ".github/actions/setup-bun/act
 const crabboxCi = readFileSync(path.join(repoRoot, "script/cbx-ci-remote.sh"), "utf8")
 const crabboxShard = readFileSync(path.join(repoRoot, "script/cbx-e2e-shard.sh"), "utf8")
 const authMode = readFileSync(path.join(appRoot, "e2e/auth-mode.ts"), "utf8")
-const buildApp = readFileSync(path.join(appRoot, "scripts/build-e2e-app.ts"), "utf8")
-const serveApp = readFileSync(path.join(appRoot, "scripts/serve-e2e-app.ts"), "utf8")
-const matrixRunner = readFileSync(path.join(appRoot, "scripts/run-e2e-auth-matrix.ts"), "utf8")
+const buildApp = readFileSync(path.join(appRoot, "e2e/launch/build-e2e-app.ts"), "utf8")
+const serveApp = readFileSync(path.join(appRoot, "e2e/launch/serve-e2e-app.ts"), "utf8")
+const matrixRunner = readFileSync(path.join(appRoot, "e2e/launch/run-e2e-auth-matrix.ts"), "utf8")
 /** Every process that starts this app's vite config for the e2e suite. */
 const viteLaunchers = Object.fromEntries(
   [
-    "scripts/build-e2e-app.ts",
-    "scripts/serve-e2e-app.ts",
-    "e2e/playwright/live-user-hosted-relay.spec.ts",
-    "e2e/playwright/real-cloud-relay.spec.ts",
+    "e2e/launch/build-e2e-app.ts",
+    "e2e/launch/serve-e2e-app.ts",
+    "e2e/helpers/web-signed-relay-harness.ts",
     "e2e/helpers/desktop-signed-server.ts",
   ].map((file) => [file, readFileSync(path.join(appRoot, file), "utf8")] as const),
 )
@@ -70,7 +66,7 @@ describe("e2e auth mode matrix", () => {
   })
 
   test("default, core, and mobile entrypoints use the failure-aggregating matrix runner", () => {
-    expect(matrixRunner).toContain('import { e2eAuthModes } from "../e2e/auth-mode"')
+    expect(matrixRunner).toContain('import { e2eAuthModes } from "../auth-mode"')
     expect(matrixRunner).toContain("for (const authMode of e2eAuthModes)")
     expect(matrixRunner).toContain("if (exitCode !== 0 && firstFailure === 0)")
 

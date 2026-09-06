@@ -1701,10 +1701,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           store().updateSession(sessionId, updates)
         },
         afterDeleteSession: ({ sessionId }) => {
-          // Deletion was invalidating the transcript cache and leaving the
-          // store row in place. Harmless while listing fanned out to the
-          // adapter — the adapter no longer returned it — but a store-owned
-          // inventory would resurrect every deleted session.
+          // A store-owned inventory needs its own row removed here, or it
+          // would resurrect every deleted session on the next list.
           store().deleteSession(sessionId)
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },

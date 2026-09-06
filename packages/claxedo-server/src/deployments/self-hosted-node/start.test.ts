@@ -67,7 +67,7 @@ describe("selfHostedPosture", () => {
   })
 
   test("an environment with no embedded auth still starts", () => {
-    // The single-user self-host.  is the multi-user
+    // The single-user self-host: CLAXEDO_EMBEDDED_AUTH is the multi-user
     // opt-in, and refusing without it would break a deployment that works.
     expect(() => assertSelfHostedPosture(selfHostedPosture({ CLAXEDO_DEPLOYMENT_MODE: "local" }))).not.toThrow()
   })
@@ -173,8 +173,6 @@ describe("the self-hosted entry wiring", () => {
   })
 
   test("the process entry goes through the gated start, not startServer", () => {
-    // `startServer` had exactly one production caller left after Unit 5 — this
-    // entry. Calling it directly would skip the gate entirely.
     expect(entry).toContain("startSelfHostedServer({")
     expect(entry).not.toContain("startServer(")
   })

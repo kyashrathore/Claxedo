@@ -1,3 +1,4 @@
+import { trimToUndefined } from "@claxedo/helpers/string"
 import type { ChannelCore } from "../core/command-emit"
 import { parseChannelCommand } from "../core/channel-command"
 import type { ApprovalDecision, ChannelChatType, ChannelId, InboundEnvelope } from "../envelope"
@@ -68,7 +69,7 @@ function text(input: unknown) {
 
 function firstText(...input: unknown[]): string | undefined {
   for (const item of input) {
-    const value = text(item)
+    const value = trimToUndefined(item)
     if (value) return value
   }
   return undefined
@@ -106,8 +107,8 @@ function threadKey(input: { channel: ChannelId; thread: ChatSdkThreadIdentity })
  */
 function chatType(thread: ChatSdkBridgeThread): ChannelChatType {
   if (typeof thread.isDM === "boolean") return thread.isDM ? "dm" : "group"
-  if (text(thread.guildId) || text(thread.teamId) || text(thread.channelId)) return "group"
-  return text(thread.conversationId) ? "dm" : "group"
+  if (trimToUndefined(thread.guildId) || trimToUndefined(thread.teamId) || trimToUndefined(thread.channelId)) return "group"
+  return trimToUndefined(thread.conversationId) ? "dm" : "group"
 }
 
 function receivedAt(input: unknown) {
