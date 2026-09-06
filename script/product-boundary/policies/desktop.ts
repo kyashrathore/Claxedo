@@ -75,7 +75,18 @@ export const desktopMainComposition: Policy = {
   // user's runtime with the credential only it holds and hands it to the
   // daemon's loopback surface. Reached from `main/index.ts`; timers and fetch
   // only, so no package edge: 88/24.
-  ceilings: { modules: 88, packages: 24 },
+  // +2 modules / -1 package (2026-09-06, oxlint type-aware sweep). Two reviewed
+  // owners in `shared/`, both reached at depth 1-2 from `main/index.ts`:
+  // `shared/node-error.ts` (the one narrowing of an unknown catch to a node
+  // errno, via `shared/compile-cache.ts`) and `shared/json-read.ts` (read + parse
+  // + shape-check, which is where `main/browser/json-read.ts` moved to when the
+  // account composition needed the same thing — that module is gone, so this is
+  // +1 for the move and +1 for node-error).
+  // The package ceiling TIGHTENS 24 -> 23: `account/no-reuse-fetch.ts` stopped
+  // importing `Readable` from `node:stream` when its hand-rolled body wrapper
+  // became the global web ReadableStream, and nothing else in this composition
+  // reaches `node:stream`. Re-measured, no headroom in either number.
+  ceilings: { modules: 90, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -130,7 +141,17 @@ export const desktopAccountComposition: Policy = {
   // 2026-09-01: +1 — the account composition now reaches the host-connector
   // protocol's shared types through the supervisor's assignment ops
   // (workspace.assignHost via runAccountOperation). 17/7.
-  ceilings: { modules: 17, packages: 7 },
+  // +2 modules / -1 package (2026-09-06, oxlint type-aware sweep). The same two
+  // `shared/` owners the base composition took, reached independently here:
+  // `shared/node-error.ts` through `account/electron-seams.ts` and
+  // `shared/json-read.ts` through `account/account-service.ts`. Both are leaves
+  // over node builtins already in this closure, so they add no capability — they
+  // are the errno narrowing and the JSON read this composition already did
+  // inline, named once instead of copied.
+  // The package ceiling TIGHTENS 7 -> 6 for the same reason as the base
+  // composition: `account/no-reuse-fetch.ts` no longer imports `node:stream`.
+  // Re-measured, no headroom in either number.
+  ceilings: { modules: 19, packages: 6 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
     minModules: 10,
@@ -310,7 +331,13 @@ export const desktopRendererUnsigned: Policy = {
   // +2 modules (2026-09-05): the New Project flow rule and the
   // folder-versus-cloud chooser reached through the shared project actions
   // (see app-local.ts for the owner).
-  ceilings: { modules: 1006, packages: 56 },
+  // +8 modules / 0 packages (2026-09-06, oxlint type-aware sweep). This entry
+  // renders the same app the local product does, so it takes app-local's nine
+  // new named owners and one deletion verbatim — see the ledger in
+  // `app-local.ts` for what each one owns — plus `shared/json-read.ts`, reached
+  // here through `renderer/remote-access/electron-machine-remote-access.ts`.
+  // No new package edge: 56 is unchanged. Re-measured, no headroom.
+  ceilings: { modules: 1014, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -376,7 +403,21 @@ export const desktopHostedContribution: Policy = {
   // The 43rd module is `platform/identity/harness-selection.ts`, reached from
   // `agent-runtime-client.ts` since the generic-harness cutover made the
   // selection (native harness vs configured connection) a typed value.
-  ceilings: { modules: 42, packages: 1 },
+  // +4 modules / 0 packages (2026-09-06, oxlint type-aware sweep), on top of the
+  // 43rd above. All four are leaves with no capability of their own, which is
+  // why `renderer-entry-closure.guard.test.ts` above is unchanged: its pinned
+  // set is the `platform/account/`, `platform/runtime/cloud/` and Documents
+  // prefixes, and only one of these four lands in it — `preload-bridge.ts`,
+  // already pinned there. Reviewed owners:
+  //   claxedo-app/src/lib/record.ts — the app's one record predicate/reader set,
+  //     from `workspace-runtime-store.ts`, replacing its inline narrowing;
+  //   claxedo-app/src/lib/server-errors.ts — from `workspace-relay-connection.ts`;
+  //   claxedo-app/src/platform/account/preload-bridge.ts — the `api.account`
+  //     global read, from `hosted-control-call.ts`;
+  //   claxedo-desktop/src/shared/json-read.ts — from
+  //     `renderer/remote-access/electron-machine-remote-access.ts`.
+  // Still one package edge (`@tanstack/solid-query`). Re-measured, no headroom.
+  ceilings: { modules: 47, packages: 1 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 4,

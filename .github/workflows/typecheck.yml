@@ -66,6 +66,13 @@ jobs:
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
 
+      # Full-repo lint is ~12 s and needs the same dist outputs as typecheck
+      # (type-aware rules resolve @claxedo/* through package exports). The
+      # root .oxlintrc.json sets every enabled rule to error, so this fails on
+      # any finding, exactly like the pre-push hook (`bun run prepush`).
+      - name: Run lint
+        run: bun run lint
+
       - name: Run typecheck
         run: |
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
@@ -76,3 +83,11 @@ jobs:
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      # `bun run prepush` is lint, then typecheck, then this. The first two ran
+      # above; without this step the ratchets ran in no workflow at all and
+      # deterministic closure drift reached `dev` whenever someone pushed with
+      # the hook bypassed. It walks source from product entrypoints, so it needs
+      # no build output beyond what the job already produced.
+      - name: Run architecture ratchets
+        run: bun run test:architecture-ratchets

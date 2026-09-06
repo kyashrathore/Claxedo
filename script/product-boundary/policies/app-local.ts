@@ -202,7 +202,21 @@ export const appLocal: Policy = {
   // rule (`features/workspaces/actions/new-project-flow.ts`) and can reach the
   // folder-versus-cloud chooser (`ui/dialogs/new-project-kind.tsx`); the local
   // product opens the folder picker, the chooser only appears once signed.
-  ceilings: { modules: 956, packages: 37 },
+  // +7 modules / 0 packages (2026-09-06): the oxlint type-aware sweep replaced
+  // inline casts and duplicated helpers with named owners, and a named owner is
+  // a module the walker counts. Nine appeared and one left. Reviewed owners, all
+  // inside this package and all reached from `app/entry/local.tsx`:
+  //   lib/total-record.ts, ui/event-handler.ts,
+  //   platform/persistence/solid-store-erasure.ts, platform/account/preload-bridge.ts,
+  //   features/session/conversation/agent-conversation-codec.ts,
+  //   features/session/data/sync/session-event-info.ts,
+  //   features/session/lib/request-error-message.ts (replaces the deleted
+  //     features/session/composer/ui/submit-error-message.ts),
+  //   features/settings/ui/keybind-map.ts, features/onboarding/error-text.ts.
+  // Every edge stays inside packages already in the closure — the package count
+  // is unchanged at 37 — so this is the same code under a name, not new reach.
+  // Re-measured, no headroom.
+  ceilings: { modules: 963, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

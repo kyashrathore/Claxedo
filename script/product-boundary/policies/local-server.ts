@@ -85,7 +85,13 @@ export const localServer: Policy = {
   // authenticated Pi catalog reads control-plane credentials, not a workspace
   // engine. Shell project-routes.ts owns authorized project metadata reads and
   // edits against the existing workspace store: exactly 57 modules, 22 packages.
-  ceilings: { modules: 53, packages: 21 },
+  // 2026-09-06: +1 `platform/json.ts` — one dependency-free leaf that reads
+  // untrusted JSON (request bodies, runtime event payloads, subprocess output).
+  // It replaced the private `record`/`text` pairs eight modules in this package
+  // had each written inline, so it adds a module without adding a package edge
+  // or any new reach. Reviewed owner: local-server platform. Re-measured, not
+  // summed: 54 modules, 21 packages.
+  ceilings: { modules: 54, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
