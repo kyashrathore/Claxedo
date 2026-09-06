@@ -145,13 +145,6 @@ import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } f
 const DIR = "/tmp/e2e-core-composer-modes"
 const SESSION_ID = "ses_core_composer_modes"
 
-// MODEL PINNING — the reason is NOT what earlier copies of this comment claimed.
-// The mock's default opencode model is `big-pickle-1` (`BIG_PICKLE`,
-// mock-runtime.ts:476), a real versioned id. The submit block matches ONLY the bare
-// pair `opencode` + `big-pickle` (`isSignedWorkspaceDefaultModel`,
-// src/features/session/composer/signed-workspace-model.ts:18-20), so the mock default
-// is already submit-ready and pinning is NOT required to dispatch. Pinning here is for
-// DETERMINISM — a named model the assertions can match — not to unblock submit.
 const PIN_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
 // A minimal valid 1x1 transparent PNG, inlined so this spec needs no fixture files.
@@ -272,7 +265,6 @@ test.describe("core composer modes @core", () => {
     await page.locator('[data-slash-id="custom.build"]').click()
 
     await expect.poll(() => editor.innerText(), { timeout: 5_000 }).toBe("/build ")
-    // Selecting a custom command never fires a request — it only pre-fills the editor.
     await expect(page.locator("[data-slash-id]")).toHaveCount(0)
   })
 
@@ -328,15 +320,6 @@ test.describe("core composer modes @core", () => {
     await expect(editor).not.toHaveClass(/font-mono/)
   })
 
-  // Behavior 8 pins the Escape-cascade's abort step. Its submit-control half — the
-  // "stop" icon on a FRESH DRAFT's first-ever submit, i.e. after the composer swaps from
-  // the "new session" widget to the real-session composer — was once a genuine wiring
-  // gap: `SessionComposerRegion`'s `<PromptInput>` invocation never forwarded
-  // `status`/`activeTurn`, so `composer.tsx`'s `status` memo silently fell back to
-  // `idleSessionStatus` and the control never showed busy. That gap is FIXED —
-  // `src/features/session/ui/composer/session-composer-region.tsx:337-338` now passes
-  // both props through — so the `data-icon="stop"` assertion below is a live check of
-  // INVARIANTS.md #5, not a documented-broken one. Do not weaken it back.
   test(
     "Escape aborts an in-flight turn when not in shell mode and no popover is open — behavior 8",
     async ({ page }) => {
@@ -346,10 +329,6 @@ test.describe("core composer modes @core", () => {
       const editor = await openDraftPrompt(page, DIR)
       const submit = page.locator(SELECTORS.submitControl).last()
 
-      // `POST /session/:id/abort` is the shared mock's (`mock.requests.abortCount`). The
-      // spec-local route that used to sit here answered 204 with an empty body; the real
-      // route answers 200 with an `AbortResult` (workspace-runtime session-core.ts:769-782),
-      // and hand-rolling it violated e2e/INVARIANTS.md authoring rule 1.
       await editor.click()
       await page.keyboard.type("this will stay busy forever")
       await ensureComposerModelSelected(page)
@@ -393,7 +372,6 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator("button").filter({ hasText: /^@reviewer$/ })).toBeVisible({ timeout: 15_000 })
     await expect(page.locator("button").filter({ hasText: /^@tester$/ })).toBeVisible()
 
-    // Down then up returns to the first item — exercises both directions.
     await page.keyboard.press("ArrowDown")
     await page.keyboard.press("ArrowUp")
     await page.keyboard.press("Enter")
@@ -420,17 +398,6 @@ test.describe("core composer modes @core", () => {
     await expectAssistantReplyVisible(page, /^ack 1: @reviewer please take a look/)
   })
 
-  // Behavior 11 was once documented here as a real, source-verified bug: the
-  // raw-OpenCode-Part ⇄ chat-UIMessage-Part projection had no `type === "agent"` case in
-  // either direction, so an inline agent mention was silently dropped before the timeline
-  // ever saw it and `[data-highlight="agent"]` never rendered. That is FIXED — the
-  // projection now carries agent parts BOTH ways as a custom-typed MessagePart:
-  // `opencodePartToChatParts` (src/features/session/conversation/opencode-conversation.ts:320-327)
-  // and `chatPartToOpencodePart` (same file, :446-456). The consumer half
-  // (`UserMessageDisplay`/`HighlightedText` in
-  // `packages/session-ui/src/components/message-part.tsx`) was always correct. The
-  // highlight assertion below therefore runs live against the OPTIMISTIC message, exactly
-  // as behavior 11 states — do not weaken it back to a presence-only check.
   test(
     "the sent (optimistic) user message highlights an inline agent mention — behavior 11",
     async ({ page }) => {
@@ -516,7 +483,6 @@ test.describe("core composer modes @core", () => {
     })
     await expect(dropzoneLabel).toBeVisible({ timeout: 10_000 })
 
-    // Leaving without dropping hides the overlay and adds nothing.
     await page.evaluate(() => {
       document.dispatchEvent(new DragEvent("dragleave", { bubbles: true, cancelable: true, relatedTarget: null }))
     })
@@ -569,21 +535,6 @@ test.describe("core composer modes @core", () => {
     // agent/model/timestamp footer, so a fully-anchored regex never matches.
     await expectAssistantReplyVisible(page, /^ack 1: message 1/)
   })
-
-  // "comment-linked context chips are hidden while shell mode is active — behavior 19"
-  // — DELETED per e2e/e2e-decisions.md #15 (2026-07-20), downgraded from rec A to rec
-  // C: rec A's target (a file/diff spec with a real line-comment surface) does not
-  // exist — confirmed via `grep -rln "tab-file\|review-tab\|createLineCommentController"
-  // e2e/playwright/*.spec.ts`, zero hits outside this file's own (now-deleted) fixme
-  // comment. No known user-facing defect; the gating this would have exercised is
-  // unit-testable directly: `composer.tsx`'s `contextItems` memo (~line 388-392),
-  //   const contextItems = createMemo(() => {
-  //     const items = prompt.context.items()
-  //     if (store.mode !== "shell") return items
-  //     return items.filter((item) => !item.comment?.trim())
-  //   })
-  // — a plain filter over `PromptContextItem[]`, no DOM/editor machinery required.
-  // No unit test exists for it yet; flagged as a coverage gap, not fabricated here.
 
   test("draft text, an inline pill, and an image attachment survive a full reload — behavior 20", async ({
     page,
@@ -641,8 +592,6 @@ test.describe("core composer modes @core", () => {
     await editorA.click()
     await page.keyboard.type("draft in the new-session composer")
     await expect(editorA).toContainText("draft in the new-session composer", { timeout: 5_000 })
-    // Poll for the PERSISTED VALUE to contain the typed text, not merely that some
-    // "prompt" key exists (see behavior-20's identical fix above for why).
     await expect
       .poll(() =>
         page.evaluate(() =>

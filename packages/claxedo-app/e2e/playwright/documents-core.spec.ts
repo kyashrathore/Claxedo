@@ -1,80 +1,3 @@
-/**
- * SPEC: Documents core — deterministic browser proof
- *
- * PURPOSE — prove the complete Documents user contract in the real Claxedo UI while a
- * deterministic HTTP adapter controls durable index/placement state separately from
- * disposable runtime objects, filesystem versions, snapshots, repository
- * identity, agent hydration, and hosted placement. This is Tier M
- * browser evidence: the application, editor, routing, controller, and network contracts
- * are real; the backing server is simulated in this file. Server filesystem atomicity,
- * Git locking, object-store durability, and actual agent tool execution remain Tier L
- * evidence and must be reported separately from this suite.
- *
- * STATE MODEL — an indexed document has content-free metadata plus a versioned Markdown
- * file. Managed files survive checkout loss because their placement is the Documents
- * data directory. Repository files retain repository identity and are edited in place.
- * Opening is read-only. Human edits move idle → dirty → saving → saved; transport errors
- * move saving → failed → retry; stale If-Match moves saving → conflicted while retaining
- * both draft and disk values. An open editor does NOT live-refresh on an external write
- * (that controller was removed): the divergence surfaces as a CAS
- * conflict on the next save. Every accepted write snapshots the previous bytes, and restoration is an
- * explicit history action. Agent access hydrates the canonical file into a session path;
- * an ordinary file-tool write conditionally writes back to the indexed placement. Hosted
- * writes persist in object placement independently of the disposable hydrated VM path.
- *
- * ANATOMY — the index is `main[aria-labelledby=documents-index-title]` with a
- * `ul[aria-label=Documents]`; the editor is `main[aria-label=Document editor]`; rich and
- * source modes expose `Document rich editor` and `Document Markdown source`; persistence
- * is the editor's live `role=status`; conflicts are `role=alert` headed “Document changed
- * on disk” with Reload disk, Save as copy, Overwrite, and Compare versions; history is the
- * editor's “More” popover titled “Version history”, containing `ul[aria-label=Document
- * versions]`; `/docs`
- * opens `role=listbox[aria-label=Documents]` in the session composer.
- *
- * BEHAVIORS —
- *   1. A managed document can be created, edited as exact Markdown, reopened after a
- *      simulated app restart and checkout loss, and retains identical bytes.
- *   2. Repository intake stores only path metadata, reads/writes repository bytes in
- *      place, and never creates a managed-content copy.
- *   3. Opening and closing without an edit performs no write; unsupported Markdown opens
- *      in source mode with an explicit reason and exact bytes.
- *   4. Autosave reports unsaved/saving/saved truthfully; a failed save remains actionable
- *      and Retry recovers without dropping the draft. Rich-editor typing survives its
- *      own autosave event without remounting or switching modes.
- *   5. Two stale tabs cannot silently overwrite one another: CAS conflict UI preserves
- *      both the human draft and current disk value.
- *   6. An external write does not live-refresh an open editor; a competing write is caught
- *      as a CAS conflict on the human's next save and preserves both sides. Out-of-contract
- *      Markdown lands in source mode on reopen and the previous snapshot is restored through
- *      the visible history UI.
- *   7. Version restore is If-Match guarded and replaces the editor with the selected
- *      immutable snapshot.
- *   8. `/docs` resolves one selected document to an honest hydrated path; a causally
- *      subsequent mock file-tool edit conditionally writes back to the indexed placement
- *      and is seen on reopen (no live-refresh). Reopen, snapshot restore, follow-up, and
- *      human save retain the same identity.
- *   9. Locally emulated hosted placement survives disposal of its hydrated VM path; a
- *       reopened editor reads the object-placement value.
- *
- * INVARIANTS — list responses never contain Markdown; every PUT carries If-Match; a 409
- * never mutates server bytes; open/close never writes; geometric proof requires non-zero
- * bounds inside the viewport and a center-point hit test; every claimed visual state is
- * captured under the Playwright test's output directory for independent vision review.
- *
- * HARNESS NOTES — tests carry an `evidence-tier=mock-ui` annotation. `installMockRuntime`
- * owns the surrounding shell/session APIs; `DocumentRuntime` owns only `/documents/**`.
- * There is no document event stream any more (removed with external-change);
- * external writes only mutate durable state. “agent edit”, “restart”, “checkout loss”, and “VM loss” here validate
- * browser and wire behavior, not operating-system or deployment durability. Work
- * exact fetch/pin is companion D10 server contract evidence rather than a browser success
- * behavior because no browser UI owns that direct route. A D14 release verdict must pair
- * this file with claxedo-server conformance, the real local-session transcript (including
- * actual harness file-tool execution), hosted emulator/staged smoke, and vision review.
- *
- * OUT OF SCOPE — filesystem crash atomicity, symlink races, actual Git commands, a real
- * model invoking bash, real R2 credentials, relay capability security, and visual verdict
- * authorship. Those are D1/D4/D8/D11/D12 and the separate D14 vision-review step.
- */
 import { createHash } from "node:crypto"
 import { expect, test, type Locator, type Page, type Route, type TestInfo } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
@@ -321,8 +244,6 @@ class DocumentRuntime {
   }
 
   restartApp() {
-    // Volatile HTTP objects are discarded. Durable index metadata and placement bytes
-    // independently reconstruct fresh objects and their opaque versions.
     this.documents.clear()
     this.durableIndex.forEach((_metadata, id) => this.reconstruct(id))
   }
@@ -446,8 +367,6 @@ class DocumentRuntime {
     })
 
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent)
-    // The `/documents/events` SSE route was removed with external-change;
-    // the client never opens it, so there is nothing to mock here.
     if (request.method() === "GET" && parts[1] === "statuses") {
       return json(route, [{ id: "draft", name: "Draft", color: "gray", position: 0, transitions: [] }])
     }
@@ -610,9 +529,6 @@ async function openDraftSession(page: Page, dir: string) {
   await expect(page.locator('[data-component="prompt-input"]').last()).toBeVisible({ timeout: 20_000 })
 }
 
-// Mirrors core-cloud-offline-roles.spec.ts's `openWorkspaceNavigator` helper —
-// the workspace panel may already be open (skip the opener) or closed
-// (open it first), then toggle to the named navigator.
 async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
   const openPanel = page.getByRole("button", { name: "Open workspace panel", exact: true }).first()
   if (await openPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
@@ -1164,9 +1080,6 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const secondSource = await sourceEditor(second)
     await secondSource.fill("Heading\n=======\n\nsecond-tab draft\n")
     await firstSource.fill("Heading\n=======\n\nfirst-tab disk\n")
-    // No live-refresh exists any more, so the second tab never learns of the
-    // first tab's save until it saves itself — exactly the CAS conflict this
-    // behavior asserts.
     await page.keyboard.press("ControlOrMeta+s")
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
     const diskAfterFirstSave = runtime.inspect(document.summary.id).markdown
@@ -1181,11 +1094,6 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await second.close()
   })
 
-  // Live-refresh of an open editor was intentionally removed: an external
-  // write no longer follows into an open editor, and a competing write
-  // surfaces as a CAS conflict the next time the human saves — never a silent loss.
-  // Out-of-contract Markdown still lands in source mode on (re)load, and a previous
-  // snapshot stays restorable through the visible history UI.
   test("external write surfaces a CAS conflict on save; out-of-contract edit stays restorable — behavior 6", async ({
     page,
   }, testInfo) => {
@@ -1200,14 +1108,10 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await openDocument(page, document.summary.id)
     let source = await sourceEditor(page)
 
-    // An external write advances the durable version. The open editor does NOT
-    // follow it — that is the accepted tradeoff — so it still shows the base bytes.
     runtime.externalEdit(document.summary.id, "Heading\n=======\n\nagent competing edit\n")
     await expect(source).toHaveValue("Heading\n=======\n\nbase\n")
     await proveGeometry(page, source, testInfo, "external-write-does-not-live-refresh")
 
-    // The human edits against the stale base and saves; the stale If-Match is
-    // rejected and both sides are preserved in the conflict UI.
     await source.fill("Heading\n=======\n\nhuman dirty draft\n")
     await page.keyboard.press("ControlOrMeta+s")
     await expect(page.getByRole("heading", { name: "Document changed on disk" })).toBeVisible()
@@ -1220,8 +1124,6 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     source = await sourceEditor(page)
     await expect(source).toHaveValue("Heading\n=======\n\nagent competing edit\n")
 
-    // Out-of-contract Markdown written externally is only seen on reopen (no live
-    // refresh); it must open in source mode rather than silently rewrite.
     runtime.externalEdit(document.summary.id, "# Agent MDX\n\n<Component answer={42} />\n")
     await openDocument(page, document.summary.id)
     source = await sourceEditor(page)
@@ -1300,17 +1202,11 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await expect(composer).toContainText(`claxedo://document/${document.summary.id}`)
     await proveGeometry(page, composer, testInfo, "docs-mention-honest-reference")
 
-    // Simulate what the MCP tool does when a real agent turn later processes this
-    // reference: hydrate the canonical file into a session path (mirrors
-    // `runtime.hydrateForAgent`'s existing use elsewhere in this file for the same
-    // Tier L/Tier M split).
     const hydratedPath = runtime.hydrateForAgent(document.summary.id, SESSION_ID)
     expect(hydratedPath).toBe(`${DIR}/.claxedo/sessions/${SESSION_ID}/docs/${document.summary.id}/agent-brief.md`)
     expect(runtime.hydratedAgentFiles.get(hydratedPath)?.bytes).toBe("Heading\n=======\n\nagent base\n")
 
     await runtime.runAgentFileTool(hydratedPath, "Heading\n=======\n\nordinary agent file edit\n")
-    // The open editor no longer live-refreshes: it still
-    // shows the base bytes. The write-back is proven durable by reopening below.
     await expect(editor).toHaveValue("Heading\n=======\n\nagent base\n")
     await proveGeometry(editorPage, editor, testInfo, "agent-file-edit-not-live-refreshed")
 

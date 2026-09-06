@@ -1,114 +1,3 @@
-/**
- * SPEC: Mobile viewport smoke (narrow-width shell contract)
- *
- * PURPOSE — the app ships one codebase for web + mobile, but per the responsive
- * audit (health 4/10) genuine mobile usability of the two signature
- * multi-surface features (multipane workbench, terminal) has 0% automated coverage —
- * "there is no mobile device project in Playwright and not one E2E test sets a mobile
- * viewport, so none of this is guarded by CI." This spec is that first guard: a small
- * smoke suite that runs under the `mobile` Playwright project (`devices["iPhone 13"]`,
- * `playwright.config.ts`) and pins the handful of narrow-viewport behaviors that
- * genuinely work today, while `test.fixme`-ing the ones a real app bug or missing
- * feature makes currently unreachable — each fixme cites the exact source finding so a
- * later wave can flip it to a real test once the underlying gap is closed (LLD WP-03
- * step 1 / appendix responsive refactor-step 1: "sidebar drawer open/close,
- * WorkspacePanel full-width, chat scroll... Expect and mark known failures (multipane,
- * DnD) as test.fixme — they become Wave 3's gate").
- *
- * STATE MODEL — this spec owns no new state; it exercises the existing desktop state
- * model (`claxedo.state.v5`, `mobileSidebarOpen` signal, `WorkspacePanel`'s
- * `viewportWidth()` signal) at a narrow viewport instead of a desktop one. See
- * `core-boot-deep-links-home.spec.ts` and `core-processes.spec.ts` for the full desktop
- * versions of the state model this spec reuses unchanged.
- *
- * ANATOMY —
- *   `[data-claxedo]` — shell root (shared with every core-* spec).
- *   `[data-testid="workspace-panel-shell"]` — the workspace side panel
- *     (`src/claxedo-ui/workspace-panel/workspace-panel.tsx`); below 640px viewport
- *     width its inline `style.width` is the literal string `"100%"` (`isMobile()` at
- *     line 31, `panelStyleWidth()` at line 105) and its resize `role="separator"`
- *     handle does not render at all (`<Show when={open() && props.state.mode &&
- *     !isMobile()}>`, line 233).
- *   `[data-scrollable]:has([data-slot="session-turn-message-content"])` — the timeline
- *     scroll viewport, shared with `core-timeline-rendering-scroll.spec.ts`.
- *   `[data-testid="drop-target-<paneId>"]` / `[data-testid="pane-handle-<paneId>"]` /
- *     `[data-workbench-content][data-pane-id]` — the workbench drag-drop surfaces
- *     behavior 4 drives via touch, shared with `core-panes-split-tabs.spec.ts`'s
- *     mouse-driven coverage of the identical mechanism.
- *
- * BEHAVIORS —
- *   1. [test.fixme — dead code] The mobile sidebar drawer opens on entry, scrim-closes,
- *      and closes on session select. NOT reachable: `mobileSidebarOpen`
- *      (`src/claxedo-ui/rail/rail-shell-chrome-state.ts:18`,
- *      `createSignal(false)`) has exactly one setter anywhere in production code —
- *      `closeMobileSidebar: () => setMobileSidebarOpen(false)` (same file, line 61) —
- *      which can only ever set it to `false`. No tap/swipe/hot-zone/route-driven call
- *      site ever sets it `true`, so the drawer this behavior describes can never open
- *      from the real UI today, on any viewport. This exact dead-code path is already
- *      pinned as a `test.fixme` with full citation in
- *      `core-sidebar-tree.spec.ts:947-967` ("mobile drawer opens on entry,
- *      scrim-closes, and closes on session select — behavior 14 (dead code)"); this
- *      spec's copy exists so the `mobile` Playwright project also carries a citation of
- *      the same gap, not to duplicate the desktop project's assertion.
- *   2. The workspace side panel (opened via the header `workspace-panel-toggle`
- *      button — the narrow-width entry point, since the L2 "Open Processes" toggle
- *      `core-processes.spec.ts` uses at desktop is not rendered until a review/process
- *      context is up, which WP-C3 §3.2 no longer auto-opens here) renders at full width
- *      (`style.width === "100%"`, bounding-box width within a few px of the viewport)
- *      below the 640px `isMobile()` threshold, and its desktop-only pointer resize
- *      handle (`role="separator"`) is entirely absent from the DOM — matching the a11y
- *      appendix finding that the handle is pointer-only on desktop and simply doesn't
- *      exist here to worry a keyboard/touch user.
- *   3. A seeded session's timeline is scrollable at a narrow viewport: after driving
- *      three real turns (oracle-proven replies), the timeline's own `[data-scrollable]`
- *      viewport responds to a scroll gesture (`scrollTop` changes), proving the
- *      narrow-viewport chat surface isn't pinned/clipped in a way that defeats
- *      scrolling.
- *   4. Multipane split has a real touch equivalent, driven end to end via CDP
- *      `Input.dispatchTouchEvent` (real touch → PointerEvent synthesis, not a
- *      synthetic DOM event the engine could special-case). WP-C3 replaced native
- *      HTML5 DnD (never functional on touch) with a hand-rolled pointer-events
- *      engine — `workbench/pointer-drag.ts`'s `workbenchDrag` + `useDragSource`,
- *      adopted by the pane grip (`workbench.tsx`), the tab strip
- *      (`compact-switcher.tsx`), and sidebar rows (`navigation-row.tsx`); all
- *      three route through the SAME single drop zone (`workbench.tsx`'s
- *      `registerDropZone`), which is why dragging any of them onto a pane's edge
- *      commits the same `wb.split.split()` — there is no separate "reorder within
- *      a strip/list" mechanism, only "drop this content onto a pane edge" (see
- *      `reducers/split.ts`: dropping a pane's OWN content onto a sibling pane
- *      unbinds the source pane rather than deleting it, so a pane-grip drag reads
- *      as a rearrange even though it runs the identical split path a tab drag
- *      does). This test long-press-drags a background switcher tab onto a pane's
- *      edge (proving the tab-strip source), then a pane's own grip onto a
- *      sibling's edge (proving the pane-grip source), asserting the
- *      `drop-target-*` overlay mid-drag and the resulting pane geometry after
- *      `touchend` commits. UNOBSERVABLE at this spec's default phone viewport —
- *      below `BP_MD` (768, `workbench/collapse-projection.ts`) the workbench
- *      collapses to one full-bleed pane and hides the rest, so this one test
- *      widens its own viewport past the breakpoint (see the test body); every
- *      other scenario in this spec stays at the phone viewport the `mobile`
- *      project emulates. File-tree→prompt attach (a different drop target)
- *      intentionally stays on native DnD — out of scope here (DnD decision note
- *      §5/§8).
- *
- * INVARIANTS — none beyond the shared oracle/turn-settling invariants in
- *   `e2e/INVARIANTS.md`, reused unchanged for behavior 3's seeded-session scenario.
- *
- * HARNESS NOTES — every scenario uses the default `opencode` harness from
- *   `installMockRuntime`; harness selection itself is out of scope (see
- *   `core-harness-ownership-local.spec.ts`).
- *
- * OUT OF SCOPE — full sidebar tree behavior (`core-sidebar-tree`); terminal soft-
- *   keyboard accessory keys (appendix responsive finding, no implementation exists to
- *   test); sidebar-row (session list) touch drag onto a pane — the engine and drop
- *   zone are the SAME ones behavior 4 proves for the tab strip and pane grip
- *   (`sourceKind: "navigation-row"` in `pointer-drag.ts`, same single
- *   `registerDropZone`), and this spec's mock runtime seeds zero sidebar session
- *   rows, so there is nothing here to drag — not a gap, just an unexercised third
- *   caller of an already-proven mechanism; axe-core accessibility scanning at this
- *   viewport (`a11y-sweep.spec.ts` covers accessibility, at desktop viewport,
- *   separately).
- */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
@@ -144,11 +33,6 @@ async function openWorkbench(page: Page, dir: string) {
   await page.goto(`/${slug(dir)}/session`)
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-  // WP-C3 §3.2: the workspace review panel no longer auto-opens at narrow width
-  // (`route-intent.ts` narrow guard), so the full-screen-panel-over-composer
-  // workaround this spec used to need (`closeWorkspacePanelIfOpen`) is gone. The
-  // panel must be closed on a bare narrow boot — asserted in behavior 2b.
-  //
   // WAIT for the composer instead of probing it with a zero-wait `isVisible()`:
   // the app DOES render the composer for `/{slug}/session` at 390px (verified
   // with a standalone probe against the prebuilt preview: invisible at
@@ -332,8 +216,8 @@ async function touchLongPressDragTo(
   return touch
 }
 
-// `@core`, not `@happy`: this spec exists because "none of this is guarded by CI" (see
-// PURPOSE above), and `@happy` is a dead pre-consolidation lane no CI job selects — so
+// `@core`, not `@happy`: this spec exists because no other spec guards narrow-viewport
+// behavior, and `@happy` is a dead pre-consolidation lane no CI job selects — so
 // under `CLAXEDO_E2E_SUITE=core` the `mobile` Playwright project resolved to ZERO tests
 // and the guard guarded nothing. It is Tier M (every route mocked, zero real network),
 // 5 tests, so it belongs in the watched lane. The `mobile` project's `testMatch` still
@@ -341,11 +225,6 @@ async function touchLongPressDragTo(
 // it never also runs at desktop viewport. See the lane registry in `playwright.config.ts`.
 test.describe("mobile smoke @core", () => {
   test("mobile sidebar drawer opens via the opener and scrim-closes — behavior 1", async ({ page }) => {
-    // WP-C3 §3.1 flipped this from dead code: `openMobileSidebar`
-    // (rail-shell-chrome-state.ts) is now a real setter, reachable on a phone via
-    // the `md:hidden` opener button in rail-sidebar-shell.tsx. The desktop header
-    // "Show Sidebar" button stays `md:flex hidden`, so the phone needs its own
-    // affordance — this test exercises exactly that entry point + the scrim close.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
     await openWorkbench(page, DIR)
@@ -353,12 +232,9 @@ test.describe("mobile smoke @core", () => {
     const opener = page.locator('[data-testid="mobile-sidebar-opener"]')
     const scrim = page.locator('[data-testid="mobile-sidebar-scrim"]')
 
-    // Closed on entry: the opener is visible, the scrim/drawer are not.
     await expect(opener).toBeVisible({ timeout: 10_000 })
     await expect(scrim).toHaveCount(0)
 
-    // Opener opens the drawer (scrim appears; opener stays mounted above the
-    // drawer as a close toggle, mirroring the desktop sidebar button).
     await opener.click()
     await expect(scrim).toBeVisible({ timeout: 5_000 })
     await expect(opener).toBeVisible()
@@ -427,11 +303,9 @@ test.describe("mobile smoke @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
     const panel = page.locator('[data-testid="workspace-panel-shell"]')
-    // Either absent, or present-but-closed — never auto-opened full-screen.
     if ((await panel.count()) > 0) {
       await expect(panel).toHaveAttribute("data-open", "false", { timeout: 10_000 })
     }
-    // The composer is reachable without dismissing any panel.
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 10_000 })
   })
 
@@ -461,15 +335,6 @@ test.describe("mobile smoke @core", () => {
   test(
     "long-press-dragging a switcher tab, then a pane grip, splits the workbench via touch — behavior 4",
     async ({ page }) => {
-      // ENGINE: shipped and UNIT-PROVEN. WP-C3 replaced native HTML5 DnD with a
-      // hand-rolled pointer-events engine (mouse + touch + pen) —
-      // `workbench/pointer-drag.ts` (`workbenchDrag` + `useDragSource`), adopted
-      // by the pane grip (workbench.tsx), the tab strip (compact-switcher.tsx),
-      // and sidebar rows (navigation-row.tsx). This test drives that engine with
-      // REAL touch input (CDP `Input.dispatchTouchEvent`, see `openTouch`/
-      // `touchLongPressDragTo` above) — Chromium's own touch → PointerEvent
-      // synthesis, the same pipeline a physical touchscreen drives.
-      //
       // TABLET-WIDTH OVERRIDE (this test only): split geometry is UNOBSERVABLE
       // below BP_MD (768, `workbench/collapse-projection.ts`) — the collapse
       // projection renders exactly one full-bleed pane and hides the rest at
@@ -504,9 +369,6 @@ test.describe("mobile smoke @core", () => {
       await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[data-testid="compact-switcher-tab"]')).toHaveCount(2, { timeout: 10_000 })
 
-      // --- Part 1: long-press-drag the background (draft) switcher tab onto the
-      //     active (terminal) pane's right edge — the exact mechanism
-      //     `core-panes-split-tabs.spec.ts` behavior 1 proves with a mouse.
       const backgroundTab = backgroundTitleButtons(page).first()
       const tabBox = await backgroundTab.boundingBox()
       const terminalPane = page
@@ -533,7 +395,6 @@ test.describe("mobile smoke @core", () => {
       await tabDrag.end()
       await tabDrag.detach()
 
-      // Resulting geometry: the split actually committed via `touchend`.
       await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
       await expect(visiblePaneContents(page)).toHaveCount(2, { timeout: 10_000 })
 

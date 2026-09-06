@@ -52,10 +52,6 @@ function typeOf(value: unknown) {
   return typeof value
 }
 
-// ---------------------------------------------------------------------------
-// (1) POST /session/:sessionId/permissions/:permId — the response vocabulary
-// ---------------------------------------------------------------------------
-
 /**
  * The wire values the server's mapping ACTUALLY recognises, pinned against
  * session-core.ts:834-835 and :843.
@@ -207,7 +203,6 @@ export function parseSessionPermissionRequest(rawBody: unknown, url: string): Pe
     )
   }
 
-  // The body is cast, not parsed, so anything else is dropped on the floor server-side.
   for (const field of Object.keys(body)) {
     if (field === "response") continue
     problems.push(
@@ -219,10 +214,6 @@ export function parseSessionPermissionRequest(rawBody: unknown, url: string): Pe
   if (problems.length > 0) throw new SessionPermissionContractError(url, problems)
   return response as PermissionResponseValue
 }
-
-// ---------------------------------------------------------------------------
-// (2) POST /question/:id/reply
-// ---------------------------------------------------------------------------
 
 /**
  * `sessionId` is read from the QUERY STRING, not the body or the path:
@@ -261,7 +252,6 @@ export class QuestionReplyContractError extends Error {
   }
 }
 
-/** Canonical question reply body consumed by the adapter and published to SSE. */
 export type QuestionReplyBody = { answers: string[][] }
 
 /**
@@ -308,10 +298,6 @@ export function parseQuestionReplyRequest(rawBody: unknown, url: string): Questi
   return body as QuestionReplyBody
 }
 
-// ---------------------------------------------------------------------------
-// (3) POST /question/:id/reject
-// ---------------------------------------------------------------------------
-
 export class QuestionRejectContractError extends Error {
   constructor(url: string, problems: string[]) {
     super(
@@ -348,10 +334,6 @@ export function parseQuestionRejectRequest(rawBody: unknown, url: string): void 
   ])
 }
 
-// ---------------------------------------------------------------------------
-// (4) Responses — all three routes
-// ---------------------------------------------------------------------------
-
 /**
  * All three routes answer success with the SAME literal: `return c.json({ ok: true })`
  * (session-core.ts:845, :869, :893). Status is Hono's `c.json` default, 200 — not 204
@@ -380,9 +362,3 @@ export const SESSION_INTERACTION_UNSUPPORTED_STATUS = 409
  * read.
  */
 export const SESSION_INTERACTION_UNSUPPORTED_ERROR_CODE = "unsupported_operation"
-
-/**
- * Asserts a mocked success response matches what the real routes return, so the fixture
- * cannot drift into inventing a richer body (e.g. echoing the decision) that specs then
- * assert on and production never sends.
- */

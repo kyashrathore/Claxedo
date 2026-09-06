@@ -1,32 +1,11 @@
 /**
- * GUARD: rail/terminal status (`data-sidebar-status`, `data-switcher-status`) is
- * asserted through the shared oracles ONLY.
- *
- * WHY THIS EXISTS -- `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`
- * Phase 1 built `expectRailStatus` (`e2e/helpers/rail-oracle.ts`) specifically because a
- * bare `row.locator("[data-sidebar-status]")` cannot see defect #12: a Solid component
- * body runs ONCE, so an early `if (status === "idle") return null` freezes the glyph at
- * whatever status existed at MOUNT. A spec that queries the dot only AFTER driving it to
- * "working" passes identically against the frozen bug and the fix -- the exact failure
- * mode this suite exists to close (`e2e/INVARIANTS.md` rule 5: "an assertion that can
- * pass while the feature is unusable is a defect in the suite"). `expectRailStatus`
- * closes the hole structurally by asserting the idle-mount precondition itself
- * (`rail-oracle.ts:181-187`) before any caller can drive a transition, so a raw selector
- * written by hand can silently skip the one check that makes the proof mean anything.
- * `surface-parity.ts`'s `expectSurfaceParity`/`expectSurfaceStatus` exist for the same
- * reason on the equality side: a spec that asserts `data-sidebar-status` and
- * `data-switcher-status` as two independent presence checks (rather than one equality
- * assertion) lets the two surfaces drift apart while both stay green -- precisely the gap
- * compact-switcher.tsx's untested "kept in sync with NavigationStatusDot" comment invited
- * (`surface-parity.ts:7-12`).
- *
- * WHAT IT DOES -- greps every `.ts` file under `e2e/` for the literal attribute names. A
- * hit outside `ALLOWED` fails: either route the assertion through `rail-oracle.ts` /
- * `surface-parity.ts`, or add a reasoned entry here. This is a boundary ratchet, not a
- * shrink-only baseline (contrast `source-text-assertions-baseline.json`): `ALLOWED` names
- * every file allowed to touch the raw attribute and WHY, and a second test keeps each
- * entry honest -- an entry whose file no longer references the attribute is stale and
- * must be deleted, not left to rot into a blank check.
+ * A Solid component body runs once, so an early `if (status === "idle") return null` in the
+ * status dot freezes the glyph at whatever status existed at mount: a spec that queries the
+ * dot only after driving it to "working" passes identically against that bug and against the
+ * fix. `expectRailStatus` asserts the idle-mount precondition before any caller can drive a
+ * transition, and `expectSurfaceParity` asserts sidebar/switcher equality rather than two
+ * independent presence checks, which would let the two surfaces drift while both stay green.
+ * A hand-written raw selector silently skips both checks.
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
@@ -42,53 +21,6 @@ const e2eDir = path.join(appRoot, "e2e")
  * everywhere they currently occur (verified 2026-08-06 via a plain grep across e2e/). */
 const STATUS_ATTRS = ["data-sidebar-status", "data-switcher-status"] as const
 
-/**
- * Every file, relative to `e2e/`, allowed to reference a status attribute directly.
- *
- *   helpers/rail-oracle.ts    -- IS the oracle this guard routes everything through
- *                                (B1/B3/B5/B6/B7/B8 -- `expectRailStatus` et al.).
- *   helpers/geometry-oracle.ts -- Phase 1's D3/E1 oracle (`expectRowGeometry`); its whole
- *                                job is measuring `getBoundingClientRect()` on the SAME
- *                                `[data-sidebar-status]` node rail-oracle.ts asserts
- *                                presence/value on, so it needs the raw selector for a
- *                                geometry read the status oracle does not perform.
- *   helpers/surface-parity.ts -- Phase 1's B9 oracle (`expectSurfaceParity`/
- *                                `expectSurfaceStatus`); reads BOTH `data-sidebar-status`
- *                                and `data-switcher-status` because asserting their
- *                                equality (not presence) is its entire purpose --
- *                                routing that through rail-oracle.ts (sidebar-only) would
- *                                make the switcher half of the comparison impossible.
- *   helpers/*-oracle.mutation.test.ts -- mutation tests deliberately construct or alter
- *                                the raw status attributes to prove the shared oracles
- *                                reject broken DOM states.
- *   playwright/core-sidebar-tree.spec.ts          -- predates rail-oracle.ts (landed
- *                                2026-08-06 Phase 1); this spec's own status-dot
- *                                assertions (lines 648-745) are the ones the plan's B7/B9
- *                                scenarios were extracted FROM. Migrating it is out of
- *                                scope for this guard; it does not gain new direct
- *                                assertions going forward because THIS guard now blocks
- *                                every file that is not already on this list.
- *   playwright/core-claude-native-sdk-rail.spec.ts -- predates rail-oracle.ts; lines
- *                                396-424 are the literal sequence `expectRailStatus`'s
- *                                own doc comment (rail-oracle.ts:157-158) cites as the
- *                                pattern it generalizes. Same out-of-scope rationale.
- *   playwright/core-terminal.spec.ts               -- predates rail-oracle.ts; asserts
- *                                `data-sidebar-status` on TERMINAL rows (SELECTORS.
- *                                terminalRow), a shape `expectRailStatus` does not cover
- *                                (it is scoped to `SELECTORS.sessionRow`). Same
- *                                out-of-scope rationale; not a candidate for silent
- *                                migration since the oracle would need a terminal-row
- *                                variant first.
- *   playwright/core-panes-split-tabs.spec.ts       -- predates surface-parity.ts; asserts
- *                                `data-switcher-status` directly (lines 568-831) as part
- *                                of split/tab-pane coverage unrelated to B9's
- *                                sidebar-vs-switcher equality claim. Same out-of-scope
- *                                rationale.
- *   playwright/real-harness-local.spec.ts          -- predates rail-oracle.ts; Tier R
- *                                real-harness spec (line 938), not part of the Tier M
- *                                core suite rail-oracle.ts was built against first. Same
- *                                out-of-scope rationale.
- */
 const ALLOWED: { file: string; reason: string }[] = [
   { file: "helpers/rail-oracle.ts", reason: "is the oracle every other file routes through" },
   { file: "helpers/rail-oracle.mutation.test.ts", reason: "constructs raw status mutations to test the rail oracle" },

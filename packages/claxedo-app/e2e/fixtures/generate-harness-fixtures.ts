@@ -153,7 +153,6 @@ const CLAUDE_ACP_RAW: RawEvent[] = [
     method: "session/update",
     payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-bash-1", status: "completed", rawOutput: null },
   },
-  // "Read File" -> read (behavior 3).
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -171,7 +170,6 @@ const CLAUDE_ACP_RAW: RawEvent[] = [
     method: "session/update",
     payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-read-1", status: "completed", rawOutput: { content: "export const x = 1" } },
   },
-  // "Task" -> task, subagent tool (behavior 15).
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -272,9 +270,6 @@ const CODEX_APP_SERVER_RAW: RawEvent[] = [
   // Codex plan stream renders as ORDINARY TEXT (behavior 11 — no plan part/dock).
   { source: "codex.app-server", method: "item/plan/delta", payload: { delta: "- inspect tests\n" } },
   { source: "codex.app-server", method: "item/completed", payload: { item: { id: "plan-1", type: "plan", text: "- inspect tests\n- run suite" } } },
-  // Native tool naming ("command") does not match any ToolRegistry key -> GenericTool
-  // fallback (behavior 4) — this is the native/SDK counterpart contrast to ACP's
-  // Terminal->bash normalization (behavior 16 is ACP-only, see HARNESS NOTES).
   {
     source: "codex.app-server",
     method: "item/completed",
@@ -300,7 +295,6 @@ const CURSOR_ACP_RAW: RawEvent[] = [
     method: "session/update",
     payload: { sessionUpdate: "agent_message_chunk", messageId: "message-1", content: { type: "text", text: "\n\nError: RetriableError: WritableIterable is closed" } },
   },
-  // Terminal -> bash (behavior 16).
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "tool-bash-1", title: "Terminal", kind: "execute", rawInput: { command: "ls" } } },
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-bash-1", status: "completed", rawOutput: { stdout: "file.ts" } } },
   // "Task: Subagent task" -> task classification. Cursor ACP exposes no supported
@@ -328,8 +322,6 @@ const CURSOR_ACP_RAW: RawEvent[] = [
 const CURSOR_SDK_RAW: RawEvent[] = [
   { source: "cursor.sdk.message", payload: { type: "assistant", agent_id: "agent-1", run_id: "run-1", message: { role: "assistant", content: [{ type: "text", text: "Hel" }] } } },
   { source: "cursor.sdk.message", payload: { type: "assistant", agent_id: "agent-1", run_id: "run-1", message: { role: "assistant", content: [{ type: "text", text: "Hello there" }] } } },
-  // Raw native tool name "shell" does not match the ToolRegistry -> GenericTool
-  // fallback (behavior 4; contrast with cursor-acp's ACP-normalized "Terminal"->bash).
   {
     source: "cursor.sdk.message",
     payload: { type: "tool_call", agent_id: "agent-1", run_id: "run-1", call_id: "tool-shell-1", name: "shell", status: "completed", args: { command: "bun test", workingDirectory: "/repo" }, result: { status: "success", value: { exitCode: 0, stdout: "passed", stderr: "" } } },
@@ -383,7 +375,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
     env({ type: "message.part.delta", properties: { sessionID: sessionId, messageID: msg, partID: `${msg}-text`, field: "text", delta: "Reading the config, then editing it." } }),
     // reasoning — gated client-side by showReasoningSummaries (behavior 2).
     part({ id: `${msg}-reasoning`, sessionID: sessionId, messageID: msg, type: "reasoning", text: "First read the file to see its current shape.", time: { start: 110 } }, 110),
-    // read (behavior 3).
     part(
       {
         id: `${msg}-read`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-read-1", tool: "read",
@@ -391,7 +382,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       130,
     ),
-    // list (behavior 3).
     part(
       {
         id: `${msg}-list`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-list-1", tool: "list",
@@ -399,7 +389,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       140,
     ),
-    // glob (behavior 3).
     part(
       {
         id: `${msg}-glob`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-glob-1", tool: "glob",
@@ -407,7 +396,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       150,
     ),
-    // webfetch (behavior 3).
     part(
       {
         id: `${msg}-webfetch`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-webfetch-1", tool: "webfetch",
@@ -415,7 +403,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       160,
     ),
-    // websearch (behavior 3).
     part(
       {
         id: `${msg}-websearch`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-websearch-1", tool: "websearch",
@@ -423,7 +410,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       170,
     ),
-    // write (behavior 3).
     part(
       {
         id: `${msg}-write`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-write-1", tool: "write",
@@ -431,7 +417,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       180,
     ),
-    // skill (behavior 3).
     part(
       {
         id: `${msg}-skill`, sessionID: sessionId, messageID: msg, type: "tool", callID: "tool-skill-1", tool: "skill",
@@ -456,7 +441,6 @@ function opencodeNativeTrace(harness: "opencode" | "pi"): CompatEnvelope[] {
       },
       194,
     ),
-    // compaction divider (behavior 7).
     part({ id: `${msg}-compaction`, sessionID: sessionId, messageID: msg, type: "compaction" }, 195),
     // GenericTool fallback for a genuinely unregistered tool name (behavior 4).
     part(
@@ -506,7 +490,6 @@ function opencodeNativeQuestionAnswered(harness: "opencode" | "pi"): CompatEnvel
   }
 }
 
-/** Staged pending -> running -> completed -> error bash lifecycle (behavior 5). */
 function opencodeNativeLifecycleStages(harness: "opencode" | "pi") {
   const { sessionId, directory, assistantMessageId } = identity(harness)
   const msg = assistantMessageId
@@ -536,10 +519,6 @@ function opencodeNativeSessionDiff(harness: "opencode" | "pi"): CompatEnvelope {
     },
   }
 }
-
-// ---------------------------------------------------------------------------
-// Build + write
-// ---------------------------------------------------------------------------
 
 function build() {
   const claudeAcp = runAdapter({ harness: "claude-acp", adapter: createAcpEventTranslator({ client: "claude-acp" }), raw: CLAUDE_ACP_RAW })

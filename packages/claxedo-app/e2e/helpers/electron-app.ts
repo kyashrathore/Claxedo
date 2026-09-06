@@ -1,30 +1,3 @@
-/**
- * Launches the PACKAGED Claxedo desktop app for the `desktop-*` e2e lanes.
- *
- * WHY THIS EXISTS — no lane had ever run the packaged app. Every Playwright
- * config points a browser at an `http://localhost` dev server, and four defects
- * shipped to users in v0.0.65 through that blind spot, all four tracing to one
- * fact: *the packaged renderer is a `file://` document*. In a browser on
- * `http://localhost`, `window.location.protocol` is `https?:` and the entire
- * bug class evaporates, so those four were not merely uncaught — they were
- * structurally undetectable. See
- * `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`.
- *
- * THE LOAD-BEARING PRECONDITION — `packages/claxedo-desktop/src/main/windows.ts:177-186`:
- *
- *     const devUrl = process.env.ELECTRON_RENDERER_URL
- *     if (devUrl) { win.loadURL(...); return }      // dev  -> http://localhost
- *     win.loadFile(join(root, `../renderer/${html}`)) // packaged -> file://
- *
- * So the rule is NOT "don't launch from source" — it is that
- * `ELECTRON_RENDERER_URL` must be UNSET. A harness that leaks that variable in
- * (it is exported by `electron-vite dev`, so an inherited shell env can carry
- * it) silently downgrades the lane to an http renderer and every one of those
- * four defects becomes invisible again. {@link launchPackagedApp} therefore
- * strips it and then ASSERTS the renderer's real origin before returning,
- * rather than trusting the env manipulation to have worked.
- */
-
 import {
   _electron as electron,
   expect,
@@ -74,7 +47,6 @@ async function discoverPackagedBinary(): Promise<string[]> {
       if (!archDir.startsWith("mac")) continue
       for (const entry of await fs.readdir(abs).catch(() => [] as string[])) {
         if (!entry.endsWith(".app")) continue
-        // The executable inside a .app is the bundle name minus ".app".
         found.push(path.join(abs, entry, "Contents/MacOS", entry.replace(/\.app$/, "")))
       }
       continue

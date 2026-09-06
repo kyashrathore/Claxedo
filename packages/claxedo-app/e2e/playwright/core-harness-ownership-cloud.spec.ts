@@ -1,166 +1,3 @@
-/**
- * SPEC: Cloud/workspace-runtime session harness ownership (spec 3's matrix, over the relay)
- *
- * PURPOSE — a cloud (sandbox VM) or user-hosted workspace runs sessions through the
- * Claxedo control plane + Workspace Relay instead of the loopback OpenCode server. This
- * spec proves the SAME harness-ownership contract as `core-harness-ownership-local`
- * (spec 3) still holds once every request is routed through the workspace-scoped relay
- * lane (`/workspaces/:workspaceId/...`, same-origin path prefix, confirmed in
- * `core-cloud-provisioning.spec.ts`) — AND documents the parts of that contract that are
- * genuinely DIFFERENT for a relay-backed workspace: draft-time harness switching never
- * touches the local readiness-check endpoint, the model-options endpoint is a relay-only
- * route, and a draft pane navigated from a local directory (with a non-OpenCode harness
- * picked) into a workspace-runtime directory shows the WORKSPACE's own default rather than
- * the local selection — because the draft default is stored per-directory, not because
- * anything is force-reset (that reset hook is gone; see STATE MODEL). So a cloud/user-hosted
- * session can never silently inherit a harness/model chosen for a different (local or
- * other-workspace) scope, and the local scope's own choice is not destroyed either.
- *
- * STATE MODEL — same client-local `harnessStore` as spec 3
- * (`src/claxedo-ui/context/harness-store.ts`, scope = `panePreferenceScope`), but the
- * runtime wiring diverges once `harnessWorkspaceRuntimeRef({directory})` resolves truthy
- * (`src/session-client/harness/store-policy.ts:76-78`, backed by
- * `sessionWorkspaceRuntimeRef` reading the SIGNED PROJECT INVENTORY's `workspaces[dir].kind`,
- * `src/shell/workspace/session-workspace-key.ts:20-65` — a directory only resolves
- * `"cloud"`/`"user-hosted"` when the inventory says so, never by guessing from shape):
- *   - `shouldUseLocalHarnessConfigApi` (`store-policy.ts:169-176`) is `false` whenever
- *     `workspaceKind` is `"cloud"` or `"user-hosted"` — regardless of transport.
- *   - Draft harness switch (`switchDraftHarness`,
- *     `src/claxedo-ui/context/harness-switcher.ts:77-98`): when `useLocalHarnessConfig`
- *     is true AND `workspace.kind` is NOT cloud/user-hosted, it POSTs
- *     `/api/claxedo/agent-config/harness` and uses the response's readiness (spec 3's
- *     path). For a cloud/user-hosted directory that POST is SKIPPED entirely —
- *     `status` is hardcoded `true` (`postHarnessConfig` is never called,
- *     harness-switcher.ts:84-87) — so a cloud/user-hosted draft's harness readiness is
- *     UNCONDITIONALLY "ready" the instant it is picked; there is no draft-time
- *     "Unavailable"/"Connecting" state to observe (see HARNESS NOTES).
- *   - Model options for a configurable harness (`claude-sdk`,
- *     `codex-app-server`, `cursor-sdk`) come from a DIFFERENT endpoint once
- *     `harnessWorkspaceRuntimeRef` is truthy: `configOptionsFetch`
- *     (`src/claxedo-ui/context/harness-config-runtime.ts:126-146`) calls
- *     `workspaceHarnessTransport(params).fetch(workspaceRuntimeAgentConfigPath({resource:
- *     "api/wr/harness-config-options", directory, harnessType: type}))` instead of the
- *     local `/api/claxedo/agent-config/harness/options` — a relay request whose path is
- *     `/workspaces/:workspaceId/api/wr/harness-config-options?directory=...&harness=<type>`
- *     (`harness-config-routes.ts:41-50`, `transport.ts`'s `createTransport` +
- *     `workspace-runtime-request.ts:226` build the `/workspaces/:workspaceId` prefix).
- *   - Session create/prompt/message/config/capabilities for a relay-backed session go
- *     through the SAME session-client code as local, proxied by
- *     `workspaceHarnessTransport`/the session controller's own transport onto
- *     `/workspaces/:workspaceId/session...` — never the loopback `/session/...` paths
- *     directly (verified per-request below via the mock's path routing, not by trusting
- *     client code).
- *   - Cross-workspace isolation is PER-DIRECTORY PERSISTENCE, not a reset hook. The old
- *     `shouldResetWorkspaceDraftHarness` guard was deleted (owner decision 27) and does
- *     not exist in `src/` any more — do not re-cite it. What isolates the two drafts now
- *     is the draft-default record's STORAGE SCOPE: `createDraftDefaultPreferences`
- *     (`src/features/session/harness/draft-defaults.ts`) keys every record by
- *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, i.e.
- *     `claxedo.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v1`
- *     (`src/platform/persistence/persist.ts:223-233,382-384`) — a DIFFERENT localStorage
- *     key per (server, workspaceKey) pair. `rememberDraftHarness`
- *     (`src/features/session/harness/harness-store.ts:171-199`) writes that record when the
- *     user picks a draft harness; `beginDraftDefault` (`harness-store.ts:189-224`) re-reads
- *     it and re-seeds the scope's harness whenever the scope's `workspaceKey` changes.
- *     The scope key is `panePreferenceScope` — when a stable `draftId` (the pane's
- *     `surfaceId`) is supplied the scope is `draft:${draftId}` and does NOT change with
- *     `directory`, so a SAME-PANE, same-tab, client-side navigation (Solid Router's
- *     `navigate()`, via the empty-draft header's project chip, `openProject` in
- *     `src/features/session/ui/components/session-new-design-view.tsx:199-208`) from a
- *     local directory into a workspace-runtime directory keeps the scope but swaps the
- *     workspaceKey — so the cloud draft re-seeds from the CLOUD directory's own (absent)
- *     record and lands on `"opencode"`, while the local directory's `"claude-sdk"` record
- *     is untouched and restores on the way back. That round trip is what behavior 5
- *     asserts, key-for-key.
- *
- * ANATOMY — the unified `[data-action="prompt-harness-model"]` picker and submit control,
- *   plus:
- *   - relay lane path prefix `/workspaces/<workspaceId>/...` — every session/prompt/
- *     message/config/capabilities/provider/harness-options request for a relay-backed
- *     session lands here, never on the bare `/session/...`/`/api/claxedo/...` paths.
- *   - `/workspaces/<workspaceId>/api/wr/harness-config-options?harness=<type>` — the
- *     relay's per-harness model-options endpoint (query-param scoped, see STATE MODEL).
- *   - the empty-draft header's project picker (only rendered pre-send,
- *     `session-new-design-view.tsx`, `!runtimeMode()`) — the vehicle this spec uses to
- *     reproduce the same-pane local↔cloud navigation, since selecting an entry calls
- *     `navigate()` (client-side, no page reload). It is MID-MIGRATION between an
- *     `@opencode-ai/ui` `Select` (trigger's accessible name IS the project label, entries
- *     are real `role="option"`s) and `SessionContextRow`'s chip popover (trigger carries a
- *     STATIC `aria-label="Project"`, rows are `List` buttons with NO ARIA listbox roles),
- *     so `getByRole("button", {name: <projectName>})` / `getByRole("option", ...)` is NOT
- *     a safe address for it. `openProjectFromChip` below drives whichever shape is mounted
- *     and asserts the project label on the row either way — see its comment.
- *
- * BEHAVIORS —
- *   1. For each picker-selectable configurable harness (`claude-sdk`,
- *      `codex-app-server`, `cursor-sdk`): selecting it on a cloud
- *      workspace's draft resolves its model via the relay's
- *      `/api/wr/harness-config-options` endpoint (never the local
- *      `/api/claxedo/agent-config/harness/options` endpoint), and that harness owns the
- *      submit payload's `providerID`/`modelID`/`agent` through draft → first send
- *      (session create, relay lane) → reload → a second send — all dispatched through
- *      `/workspaces/:workspaceId/...`, never the bare `/session/...` paths. The harness
- *      picker's Harness section is disabled once the session exists, identically to local.
- *   2. Pi requests `/api/wr/harness-config-options` through the cloud workspace
- *      relay and submits the machine's native provider/model option.
- *   3. `/api/wr/harness-config-options` requests are scoped per harness: switching the
- *      draft harness selection re-issues the request with `harness=<the newly selected
- *      type>`, and the model resolved into `[data-action="prompt-harness-model"]` always
- *      matches THAT harness's catalog — never a stale/different harness's model left over
- *      from a prior selection.
- *   4. Selecting a configurable harness on a cloud workspace draft sends ZERO POSTs to the
- *      local `/api/claxedo/agent-config/harness` status endpoint — readiness resolves
- *      "ready" unconditionally pre-send (see HARNESS NOTES for the consequence).
- *   5. Picking a non-OpenCode harness while the draft pane's directory is a plain local
- *      project, then client-side-navigating (via the project chip picker, no page reload)
- *      that SAME pane to a cloud workspace's directory, leaves the cloud draft on its OWN
- *      OpenCode default BEFORE any cloud request is made: exactly one unified picker
- *      with `data-harness="opencode"` is present immediately after the navigation
- *      settles, and the prompt subsequently sent through the cloud workspace carries
- *      `providerID: "opencode"` — the local harness/model selection never reaches the
- *      relay lane. The local choice is not discarded either: it stays in ITS OWN
- *      directory-scoped draft-default localStorage key (a different key from any the
- *      cloud directory writes), and navigating the same pane BACK restores Claude plus
- *      its harness model control.
- *
- * INVARIANTS — harness ownership (#1 in e2e/INVARIANTS.md): the selected harness owns
- *   model/effort/payload at every stage, exactly one unified picker exists at a time, a
- *   harness is locked once the session is created. No silent fallback (#3): the OpenCode
- *   selection behavior 5 observes on the cloud draft is NOT a fallback at all — it is the
- *   cloud directory's OWN unset draft-default resolving to the default harness, proven by
- *   the local directory's record surviving the trip untouched. Submit gating (#4): every wait below is a
- *   deterministic DOM/request-count assertion, never a bare `waitForTimeout`.
- *
- * HARNESS NOTES — cloud/user-hosted drafts skip the local readiness POST/polling
- *   entirely (behavior 4) — so spec 3's "Unavailable" red-dot and "Connecting" pill
- *   pre-send states are structurally unreachable for a cloud DRAFT (not a bug: there is
- *   no backend call whose failure could produce them before a session exists). An
- *   ALREADY-CREATED cloud session's readiness still derives from
- *   `GET /session/:id/config` the same as local (`harnessStateFromSessionConfig`,
- *   harness-hydrator.ts:75) — re-verifying that path is spec 3-shaped and out of scope
- *   here.
- *
- * OUT OF SCOPE — the 4-step workspace-provisioning pipeline and reload-mid-provision
- *   resume (`core-cloud-provisioning`, spec 11); busy/thinking/escalation/abort UI
- *   (`core-busy-abort-errors`, spec 5); relay offline/403/viewer-role and the
- *   arm-once/reconnect contract (`core-cloud-offline-roles`, spec 13); the
- *   model/effort/variant/multi-agent selector mechanics themselves
- *   (`core-model-effort-agent-controls`, spec 4); per-harness event/tool rendering
- *   fidelity (`core-harness-rendering-matrix`, spec 10); user-hosted's distinct 3-step
- *   connect pipeline (`core-user-hosted-workspace`, spec 14) — this spec always uses
- *   `kind: "cloud"`, never `"user-hosted"`, for its workspace(s).
- *
- * MOCK — uses the shared `installMockRuntime`'s `cloud` option
- * (`e2e/helpers/mock-runtime.ts`), NOT a spec-local hand-rolled mock. The relay-lane
- * session/prompt/message/config/capabilities/provider/harness-config-options routes and
- * the connection mint (`GET /api/workspace/:workspaceId/connection`) this spec depends on
- * were ported into that shared helper from `core-cloud-provisioning.spec.ts`'s own
- * oracle-proven `installCloudRuntimeMock` — see the shared helper's own comment on its
- * `cloud` block for the exact route shapes and why they are mounted at
- * `${relayUrl}/workspaces/:workspaceId${path}` (the shape the app's own
- * `workspaceRelayConnection` follows, `src/utils/workspace-relay-connection.ts:352`).
- * The shared runtime models the cloud session lane, so every behavior below executes.
- */
 import { expect, test, type Page } from "@playwright/test"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, type Harness, type MockRuntimeHandles } from "../helpers/mock-runtime"
@@ -228,8 +65,6 @@ async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: n
   await page.keyboard.press("Escape")
 }
 
-// The canonical SessionContextRow project chip. Rows are `@opencode-ai/ui` List
-// buttons keyed by directory; the readable project name remains an asserted fact.
 async function openProjectFromChip(page: Page, directory: string, projectName: string) {
   const chip = page.locator('[data-slot="context-chip-project"]').filter({ visible: true })
   await expect(chip).toHaveCount(1, { timeout: 20_000 })
@@ -349,7 +184,6 @@ test.describe("core harness ownership (cloud) @core", () => {
       await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
-      // Harness Select is locked now that the cloud session exists.
       await expectHarnessSwitchable(page, harnessCase.harness)
 
       await page.reload({ waitUntil: "domcontentloaded" })
@@ -401,7 +235,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "pi", modelID: "openai/gpt-5.5" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
 
-    // The selected machine is the authority for Pi model discovery.
     expect(mock.requests.cloudHarnessOptionsHarnesses).toContain("pi")
   })
 
@@ -433,8 +266,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     // scoping: no request for one harness's options ever went out unlabeled/blank.
     expect(mock.requests.cloudHarnessOptionsHarnesses.every((h) => h.length > 0)).toBe(true)
 
-    // Zero POSTs to the local readiness endpoint for either switch — cloud drafts never
-    // touch it (behavior 4, asserted properly in the next test; sanity-checked here too).
     expect(mock.requests.harnessPostCount).toBe(0)
   })
 
@@ -462,14 +293,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     expect(mock.requests.harnessPostCount).toBe(0)
   })
 
-  // Owner decision 27 (harness reset removed): `shouldResetWorkspaceDraftHarness` was
-  // deleted. Investigation showed it was INERT for this same-pane local→cloud navigation:
-  // the cloud workspace draft is a distinct per-directory scope that defaults to OpenCode
-  // on its own, and the user's local Claude choice is preserved per-directory (its
-  // draft-default survives the navigation, verified below) — so removing the reset does
-  // NOT change this outcome and does NOT contradict the "keep the user's choice" contract:
-  // the cloud pane shows the WORKSPACE's own default, while nothing clobbers the local
-  // selection. A prompt sent through the cloud workspace therefore still carries OpenCode.
   test("a cloud workspace draft starts on its own, unchosen state while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
     await page.addInitScript(() => {
       const writes: string[] = []
@@ -499,7 +322,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     const localInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(localInput).toBeVisible({ timeout: 20_000 })
 
-    // Pick a non-OpenCode harness on the LOCAL draft.
     await switchDraftHarness(page, /^Claude$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
@@ -524,9 +346,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
 
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
-    // The cloud workspace draft has its OWN state — nothing chosen yet (behavior 1's
-    // rule: a draft never invents an agent), and never the local pane's "claude-sdk";
-    // no relay options are fetched for a carried-over Claude.
     await expectNoAgentSelected(page)
     await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(0)
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk")).toBe(false)
@@ -573,7 +392,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     await expectNoAgentSelected(page)
     await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(0)
-    // The cloud draft's own choice: OpenCode, picked here the way a user would.
     await switchDraftHarness(page, /^OpenCode$/, 0)
     await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
 
@@ -592,8 +410,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.locator(`${SELECTORS.submitControl}:visible`).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    // The cloud workspace draft dispatches its own OpenCode choice, never the local pane's
-    // "claude-sdk" selection (which is preserved for the local directory, not carried here).
     expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${text}`)
   })

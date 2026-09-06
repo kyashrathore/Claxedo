@@ -1,194 +1,10 @@
 /**
- * SPEC: Workspace lifecycle — project/workspace creation, editing, deletion, recovery
- *
- * PURPOSE — everything a user does to a *project* or *workspace* entry in the rail
- * sidebar that isn't sending a prompt: registering a new project directory, adding a
- * new local/cloud workspace to an existing project, renaming a project, deleting a
- * workspace (or destroying a cloud sandbox), removing a project entirely, and
- * recovering a workspace whose backing local worktree has gone missing on disk.
- *
- * STATE MODEL —
- *   - A "project" is a git worktree root the client knows about. Membership lives in
- *     TWO places that must agree: (a) `claxedo.global.dat:server` localStorage (the
- *     user-local list of open/closed project worktrees + expand state, read/written by
- *     `server.projects.*` in `src/context/server.tsx`), and (b) the server's `/project`
- *     (`GET`) list, which the client treats as the source of truth for which worktrees
- *     even exist — `projectCatalog()` (`src/context/layout-projects.ts`) requires a
- *     worktree be present in the server list (`meta.has(root)`) before it can appear in
- *     the sidebar at all, and a **cross effect prunes any localStorage-listed project
- *     whose worktree the server no longer reports** (`src/context/layout.tsx`, "Effect
- *     2: Remove sidebar projects that no longer exist in API", runs even when
- *     `server.isLocal()`). A project's `sandboxes`/`workspaces` map (secondary
- *     worktrees, cloud sandboxes, availability) comes entirely from the server's
- *     `/project` payload — nothing about them is ever persisted client-side.
- *   - `validWorktree()` (`src/utils/worktree.ts`) is the client-side gate for "is this
- *     an addressable local worktree at all": non-empty, absolute (`/...`,
- *     `C:\...`/`C:/...`, or `\\...`), no NUL byte, not `/`, not a bare drive root, no
- *     `.`/`..` path segment, and never the literal `/workspace` (the cloud sandbox
- *     container's reserved `WORKSPACE_DIR`). Because `projectCatalog()` also runs this
- *     filter when building its `meta` map (`src/context/layout-projects.ts:47`), an
- *     invalid worktree can never become a registered *project* — the ONLY place
- *     `validWorktree()` can still reject a user choice at runtime is the raw directory
- *     search inside "+ New project"'s picker, before a project is registered.
- *   - Each project's `workspaces[dir]` record (`WorkspaceInfo`, `rail-sidebar.tsx:172`)
- *     carries `kind: "local" | "cloud" | "user-hosted"` and `available?: boolean`. A
- *     `local` workspace with `available === false` is the "missing worktree" state
- *     (`missingLocalWorkspace()`, `claxedo-layout-actions/shared.ts:126`) — the backing
- *     directory existed once but is gone from disk; the sidebar still lists it, but
- *     opening a session/terminal on it routes through a recovery dialog instead.
- *   - Deleting/removing/renaming are ALL server-authoritative: the client only ever
- *     reflects what `/project` reports on the next refetch. Two of the three mutation
- *     flows are deliberately **optimistic and fire-and-forget** (see BEHAVIORS 6, 9) —
- *     the sidebar entry disappears and navigation happens synchronously, before the
- *     server call that actually performs the deletion has resolved or even been
- *     awaited by the caller; a server failure surfaces a toast but does not restore the
- *     already-removed UI state.
- *
- * ANATOMY —
- *   `[data-testid="rail-sidebar"]` — sidebar root.
- *   `button[aria-label="New Project"]` — the "+ New project" row (icon `plus-small`).
- *     Source (`src/i18n/en.ts`) defines its label key `workspace.new` as literally
- *     "New workspace", but the LIVE running app renders "New Project" — confirmed via
- *     a standalone probe against this exact dev server (see HARNESS NOTES); this
- *     spec pins the observed runtime text since that is what the test must interact
- *     with, not the static source string. Either way, the copy and the action are
- *     deliberately mismatched: clicking it raises `layout.projects.requestCreate()`
- *     and the mounted draft composer's Project chip opens its "Create project…"
- *     panel (`ProjectCreateForm`, `[data-slot="project-create-form"]`: a name, then
- *     a folder on this machine via "Select project" or a repository URL). There is
- *     no New Project dialog (docs/plans/2026-09-05-003).
- *   `DialogSelectDirectory` (`src/components/dialog-select-directory.tsx`) — title
- *     defaults to `language.t("command.project.open")`, which the cloud-branding
- *     extension override (see HARNESS NOTES) renders as "New Project", not the
- *     "Open project" `src/i18n/en.ts` defines standalone;
- *     `[data-slot="list-search-container"] input` (placeholder "Search folders") — NOT
- *     `[data-slot="list-search-input"]`, which `list.tsx` passes to `<TextField>` but
- *     `TextField` (`packages/ui/src/components/text-field.tsx`) silently discards: its
- *     `<Kobalte.Input {...others} data-slot="input-input" .../>` spreads the caller's
- *     `data-slot` first, then a hardcoded literal `data-slot="input-input"` overrides
- *     it (later JSX props win) — so `[data-slot="list-search-input"]` NEVER matches
- *     anything in the real DOM (confirmed live: `locator(...).toBeVisible()` times out
- *     100% of the time even while the input is visibly rendered on screen, per this
- *     spec's own repeated failures before the fix — a real app testability bug worth
- *     fixing upstream, not a suite flake). This search
- *     drives a fuzzy recent-projects + live filesystem search; each result is a
- *     `button[data-slot="list-item"][data-key="<absolute path>"]`; selecting one calls
- *     `onSelect(absolute)` → the form's folder (`[data-slot="project-create-folder"]`);
- *     "Create project" → `POST /api/claxedo/projects` `{name, source: {kind:
- *     "directory", directory}}`; the created checkout is refused by the composer's
- *     `onCreated` when `!validWorktree(dir)` → toast "Invalid project path"
- *     (description = the rejected path) with the panel left open; otherwise the
- *     project opens and a new session draft is navigated to.
- *   rail account menu → "View options" submenu with a "Group by" radio (`Project` /
- *     `Workspace`). "Project" (default) renders one row per project
- *     (`[data-testid="project-header"]`, always the MAIN worktree). "Workspace" renders
- *     one row per workspace directory (`[data-testid="workspace-header"][data-workspace-
- *     id="<dir>"]`), including secondary/sandbox/missing ones — this is required to
- *     reach any non-main workspace's kebab menu or hover actions.
- *   Per-row hover actions (`HeaderActions`, rendered for both header kinds) —
- *     `button[aria-label="New session in <label>"]`, `"New terminal in <label>"`,
- *     `"New Claude terminal in <label>"`, `"New Codex terminal in <label>"`, and a kebab
- *     `button[aria-label="More options for <label>"]` opening a `role="menuitem"` menu.
- *     `<label>` here is `workspaceDisplayName()`'s WORKSPACE-scoped name, not the
- *     project's display name shown in the row's own text: for the project header
- *     (default "Project" grouping), `<label>` is `workspaces[project.worktree]
- *     .workspace_name ?? "main"` — literally "main" unless that workspace record
- *     carries a custom name — even though the row text next to it shows the
- *     project's `name`/folder. A workspace-grouped row's `<label>` is
- *     `workspaces[dir].workspace_name ?? getFilename(dir)`:
- *       - "Edit" → `DialogEditProject` (title "Edit project"): a `TextField` (default
- *         value = current display name) + `PATCH /project/:projectID` on Save.
- *       - "Delete workspace" (shown when `canDelete`, i.e. any non-main workspace, or a
- *         cloud-backed MAIN workspace) → `DialogDeleteWorkspace`. The kebab MENU ITEM's
- *         own label is always the literal text "Delete workspace" — it never becomes
- *         "Destroy Sandbox" itself; only the DIALOG it opens re-labels for the
- *         cloud-main case (see below). For a non-main local
- *         workspace: title "Delete workspace", body checks `GET /file/status` for
- *         uncommitted changes and shows one of "Checking for unmerged changes...",
- *         "Unmerged changes detected in this workspace.", "No unmerged changes
- *         detected.", or "Unable to verify git status." — the primary button is
- *         disabled while that check is in flight AND again once the delete itself is
- *         in flight. For a cloud-backed MAIN workspace, the SAME dialog instead renders
- *         with title/button "Destroy Sandbox", skips the file-status check entirely,
- *         and its confirm text warns the VM and all data will be deleted.
- *       - "Remove project" (main row only) → no confirmation dialog; removes the
- *         project from the client inventory and navigates away synchronously (see
- *         BEHAVIORS 6, 9).
- *   `DialogRecoverWorkspace` (title "Worktree not found") — shown instead of a new
- *     session/terminal draft when the target workspace is `missingLocalWorkspace()`;
- *     body: `The backing worktree for "<name>" is gone.`; primary button "Continue in
- *     new worktree" re-runs worktree creation (`POST /experimental/worktree`) and waits
- *     for a `worktree.ready`/`worktree.failed` event on the central Claxedo event
- *     stream before opening the recovered session.
- *   `DialogNewProject` and `DialogCreateCloudWorkspace` (formerly under
- *     `src/components/`) were deleted as dead code — see item 8/9 below.
- *
- * BEHAVIORS —
- *   1. Selecting a directory-search result whose resolved absolute path fails
- *      `validWorktree()` (e.g. the literal blocked `/workspace`) shows an "Invalid
- *      project path" toast naming the rejected path and creates zero sessions/projects
- *      — the dialog does not even attempt a network call.
- *   2. `handleProjectSelected`'s "not a git repository" branch
- *      (`project-actions.tsx:113`) only runs when `platform.platform !== "web"`; under
- *      this Playwright tier (served by the Vite dev build, always `"web"`) it is
- *      permanently unreachable — not merely hard to set up.
- *   3. Kebab "Edit" renames a project via `PATCH /project/:projectID` and the sidebar
- *      label reflects the new name once the dialog closes.
- *   4. Kebab "Delete workspace" on a non-main local workspace shows the dirty/clean
- *      file-status copy, disables the confirm button while that check is loading and
- *      again while the delete itself is in flight, Cancel closes with zero mutation,
- *      and confirming calls `worktree.remove` and removes the row.
- *   5. Kebab "Delete workspace" on a cloud-backed MAIN workspace renders as "Destroy
- *      Sandbox" (no file-status check) and confirming calls `DELETE
- *      /api/experimental/sandbox` and navigates away with a success toast.
- *   6. Kebab "Remove project" removes the project from the sidebar and navigates away
- *      SYNCHRONOUSLY, before its background `DELETE /api/workspace/:id` call resolves —
- *      a forced server failure surfaces a "Failed to remove project" toast but the
- *      already-removed sidebar row does not come back (fire-and-forget by design).
- *   7. "New session in <label>" on a workspace whose `workspaces[dir].available` is
- *      `false` opens `DialogRecoverWorkspace` instead of a draft composer; confirming
- *      re-creates the worktree and opens a session at the recreated directory once a
- *      `worktree.ready` event names it.
- *   8/9. DELETED per e2e/e2e-decisions.md #16 (2026-07-20): `DialogNewProject`'s
- *      Local/Cloud picker, `DialogCreateCloudWorkspace`, `handleNewWorkspace` (and its
- *      hang-prone `onWorktreeCreated(..., wait=true)` branch), and the `onNewWorkspace`
- *      threading (`app-shell.tsx` → `rail-sidebar-shell.tsx` → `rail-sidebar.tsx`) were
- *      all dead code — confirmed zero reachable UI trigger and zero call sites for the
- *      wait=true branch outside the dead path. Live workspace creation goes through the
- *      session composer's environment selector (`submit-directory.ts`'s
- *      `resolveCloudSessionDirectory` for cloud; `handleNewLocalWorkspace`/
- *      `handleNewCloudWorkspace` in `project-actions.tsx` for the direct-create paths),
- *      covered by `core-cloud-provisioning.spec.ts` and this file's live tests.
- *
- * INVARIANTS — a project can never be listed with an invalid worktree (the client-side
- *   catalog gate applies to both the API-sourced `meta` map and the localStorage-
- *   sourced `current` list, per STATE MODEL); optimistic mutations (BEHAVIORS 5, 6) may
- *   diverge from server truth until the next `/project` refetch — this suite treats
- *   that divergence as intentional product behavior, not a bug, per BEHAVIOR 6.
- *
- * HARNESS NOTES — workspace lifecycle is otherwise harness-agnostic (it operates on
- *   projects/worktrees, not sessions). One real, BY-DESIGN string override worth
- *   flagging so nobody "fixes" these selectors back: `src/index.tsx` calls
- *   `setExtensions({ app: appExtensions(config), ... })`, and `appExtensions()`
- *   (`src/extensions/app.tsx`) sets `strings: cloudStrings` from
- *   `src/i18n/cloud-strings.ts` — which overrides BOTH `workspace.new` AND
- *   `command.project.open` to the literal string `"New Project"` (per-locale; the `en`
- *   entry reads `"workspace.new": "New Project", "command.project.open": "New
- *   Project"`). `src/context/language.tsx`'s `dict` memo layers `ext.app.strings?.[
- *   current]` on top of the base `en.ts`/`@opencode-ai/ui` dictionaries, so BOTH the
- *   "+ New project" button AND `DialogSelectDirectory`'s title render "New Project" —
- *   not the "New workspace"/"Open project" `src/i18n/en.ts` defines standalone. Every
- *   selector in this file pins the actual rendered (cloud-branded) string.
- *
- * OUT OF SCOPE — composer-driven create-cloud-workspace-at-submit-time pipeline and its
- *   reload-mid-provisioning/create-failure handling (`core-cloud-provisioning`);
- *   harness/config-option ownership across a cloud/relay session
- *   (`core-harness-ownership-cloud`); relay offline/403/role gating
- *   (`core-cloud-offline-roles`); user-hosted connect pipeline
- *   (`core-user-hosted-workspace`); sidebar view-options persistence/group-by mechanics
- *   beyond the minimum needed to reach a non-main workspace row (`core-sidebar-tree`
- *   owns the full view-options surface); the directory-search fuzzy-matching algorithm
- *   itself (only its `validWorktree` boundary is pinned here).
+ * `appExtensions()` (`src/features/extensions/data/app.tsx`) sets `strings:
+ * cloudStrings` (`src/platform/i18n/cloud-strings.ts`), which overrides both
+ * `workspace.new` and `command.project.open` to the literal "New Project" — so
+ * the rail's "+ New project" button and `DialogSelectDirectory`'s title both
+ * render that, not the "New workspace"/"Open project" the base `en` dictionary
+ * defines. Every selector in this file pins the rendered cloud-branded string.
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { isOrgListPath, orgListResponse } from "../helpers/contracts/org-list"
@@ -226,7 +42,6 @@ type SeedProject = {
   }>
 }
 
-/** Seeds localStorage with one open project at DIR — same shape every core-* spec uses. */
 async function seedProject(page: Page, dir: string = DIR) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
@@ -543,9 +358,6 @@ test.describe("core workspace lifecycle @core", () => {
     await seedProject(page)
     await installLifecycleMock(page)
 
-    // The directory-search backend for "/workspace": mocks the root listing so the
-    // literal blocked worktree `/workspace` (see STATE MODEL) is a selectable search
-    // result without needing a real filesystem.
     await page.route("**/file?**", (r) => {
       if (!api(r.request())) return r.continue()
       if (new URL(r.request().url()).pathname !== "/file") return r.fallback()
@@ -608,7 +420,6 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(row.first()).toBeVisible({ timeout: 10_000 })
     await row.first().click()
 
-    // The picker hands the choice back to the form; nothing is created yet.
     await expect(form.locator('[data-slot="project-create-folder"]')).toHaveText("/workspace")
     expect(createBodies).toEqual([])
 
@@ -625,13 +436,6 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(form).toBeVisible()
     expect(createSessionCount).toBe(0)
   })
-
-  // behaviors 8/9 (New workspace Local/Cloud dialog: dead trigger, hang-forever
-  // wait=true branch, and the cloud create dialog reachable only through it) —
-  // DELETED per e2e/e2e-decisions.md #16 (2026-07-20). The dead code itself
-  // (onNewWorkspace threading, handleNewWorkspace, DialogNewProject,
-  // DialogCreateCloudWorkspace) was removed from src/. See this file's ANATOMY
-  // header for what was there.
 
   test("kebab Edit renames a project — behavior 3", async ({ page }) => {
     await installLifecycleMock(page)
@@ -723,11 +527,9 @@ test.describe("core workspace lifecycle @core", () => {
 
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Delete workspace")
     const deleteButton = page.getByRole("button", { name: "Delete workspace", exact: true })
-    // Confirm button is disabled while the file-status check is in flight.
     await expect(deleteButton).toBeDisabled()
     await expect(page.getByText("Checking for unmerged changes...")).toBeVisible()
 
-    // Cancel closes with zero mutation while the check is still pending.
     await page.getByRole("button", { name: "Cancel", exact: true }).click()
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0)
     expect(removeBody).toBeUndefined()
@@ -743,7 +545,6 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(deleteButton).toBeEnabled()
 
     await deleteButton.click()
-    // Disabled again once the delete itself is in flight.
     await expect(deleteButton).toBeDisabled()
     removeResolve?.()
 
@@ -820,7 +621,6 @@ test.describe("core workspace lifecycle @core", () => {
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
 
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Destroy Sandbox")
-    // No file-status check for a cloud sandbox: no "Checking..." copy ever appears.
     await expect(page.getByText("Checking for unmerged changes...")).toHaveCount(0)
     await page.screenshot({ path: "test-results/evidence/core-workspace-lifecycle/destroy-sandbox-dialog.png" })
 

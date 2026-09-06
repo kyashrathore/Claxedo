@@ -1,54 +1,6 @@
-// CONTRACT BINDING: PATCH /session/:id/config
-//
-// Third route bound to the real server, after `./session-prompt.ts` (read its header
-// first for WHY this whole directory exists) and `./session-create.ts`.
-//
-// WHAT IS DIFFERENT ABOUT THIS ROUTE
-// ----------------------------------
-// `prompt_async` is fire-and-forget (204, empty). `POST /session` answers with a
-// session row. This route is the only one of the three whose REQUEST body and
-// RESPONSE body are the same domain object — `SessionConfigRequestUpdate` in, `SessionConfig`
-// out (`c.json(config)`, `session-core.ts:571`; the value comes from
-// `opts.updateSessionConfig`, typed `Promise<SessionConfig>` at `session-core.ts:133-139`).
-// The shared mock validates both sides through this module and stores the normalized
-// update before returning the canonical SessionConfig response.
-//
-// Three enforceable surfaces here:
-//
-//   (1) COMPILE-TIME DRIFT TRIPWIRE — `SESSION_CONFIG_PATCH_FIELDS` is declared
-//       `satisfies Record<keyof Required<SessionConfigRequestUpdate>, FieldSpec>` against the
-//       real normalizer's OUTPUT type. Add or remove a config field server-side and
-//       this file stops compiling.
-//
-//   (2) RUNTIME VALIDATION — `parseSessionConfigPatch` mirrors
-//       `normalizeSessionConfigUpdate` (`workspace-runtime/src/session-config.ts:81-96`)
-//       and rejects bodies whose fields the normalizer would SILENTLY DROP. Silent
-//       drops are worse than errors: the request 200s, the config does not change, and
-//       a spec asserting "the model was saved" passes against the mock forever.
-//
-//   (3) RESPONSE CONTRACT — both paths. Success is 200 + a `SessionConfig`
-//       (`session-core.ts:571`). The route's own failure path is 409 +
-//       `{ ok: false, error: { code: "unsupported_operation", … } }`
-//       (`harnessSwitchUnsupported`, `session-core.ts:380-392` → `unsupportedOperation`,
-//       `session-core.ts:311-334`).
-//
-// OVERLAP WITH session-create.ts
-// ------------------------------
-// `./session-create.ts:84-120` already declares `SESSION_CREATE_CONFIG_FIELDS` over the
-// SAME `SessionConfigUpdate` type, because `POST /session` runs the same normalizer
-// (`session-core.ts:448`). The two tables are deliberately NOT merged: doing so would
-// require editing `session-create.ts`, and the field SEMANTICS differ per route
-// anyway — on create, `harness` picks the harness; on PATCH, a `harness` that differs
-// from the session's current one is a hard 409 rather than a change. If these ever do
-// get merged, the shared piece is the per-field `check` functions, not the
-// `consumedBy`/`whenPresent` prose, which is route-specific.
-//
+// `SESSION_CREATE_CONFIG_FIELDS` in `./session-create.ts` covers the same type for `POST /session`, which runs the same normalizer; the tables stay separate because `harness` picks the harness on create but forces a 409 on PATCH.
 import type { SessionConfigRequestUpdate } from "@claxedo/agent-sdk-runtime"
 import { normalizeSessionConfigUpdate } from "../../../../workspace-runtime/src/session-config"
-
-// ---------------------------------------------------------------------------
-// (1) Compile-time drift tripwire
-// ---------------------------------------------------------------------------
 
 type FieldSpec = {
   /** Runtime check. Receives the raw value; returns an error string, or undefined when valid. */
@@ -195,10 +147,6 @@ export const SESSION_CONFIG_PATCH_LEGACY_FIELDS: Readonly<Record<string, FieldSp
   },
 }
 
-// ---------------------------------------------------------------------------
-// (2) Runtime validation
-// ---------------------------------------------------------------------------
-
 export class SessionConfigPatchContractError extends Error {
   constructor(url: string, problems: string[]) {
     super(
@@ -278,10 +226,6 @@ export function parseSessionConfigPatch(rawBody: unknown, url: string): SessionC
   return normalizeSessionConfigUpdate(body)
 }
 
-// ---------------------------------------------------------------------------
-// (3) Response contract — SUCCESS
-// ---------------------------------------------------------------------------
-
 /**
  * The real route's success status: `return c.json(config)` (`session-core.ts:571`) —
  * Hono's default 200, no explicit override. Pinned as a const so the mock cannot drift
@@ -342,10 +286,6 @@ export function assertSessionConfigPatchResponse(config: unknown, url: string): 
 
   if (problems.length > 0) throw new SessionConfigPatchContractError(url, problems)
 }
-
-// ---------------------------------------------------------------------------
-// (3) Response contract — FAILURE
-// ---------------------------------------------------------------------------
 
 /**
  * The route's ONE self-generated failure: a harness switch.

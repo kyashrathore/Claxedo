@@ -62,14 +62,11 @@ export type ScriptedDialect = "chat" | "messages" | "responses"
 export type ScriptedModelRequest = {
   dialect: ScriptedDialect
   path: string
-  /** Full provider request, typed from the official Anthropic/OpenAI SDK. */
   body: ChatCompletionCreateParams | MessageCreateParams | ResponseCreateParams
   model: string
   /** Flattened prompt text the reply was derived from. */
   prompt: string
-  /** What the server decided to answer. */
   reply: { kind: "text"; text: string } | { kind: "tool"; name: string; input: unknown; namespace?: string }
-  /** Tool definitions advertised by the real harness in this provider request. */
   tools: { name: string; inputSchema?: unknown }[]
 }
 
@@ -80,7 +77,6 @@ export type ScriptedModelServer = {
   url: string
   /** `${url}/v1` — what OpenAI-shaped provider configs want as baseURL. */
   v1Url: string
-  /** Native Pi profile with model overrides pointing at this server. */
   piEnv: { PI_CODING_AGENT_DIR: string; OPENAI_API_KEY: string }
   port: number
   requests: ScriptedModelRequest[]
@@ -349,7 +345,6 @@ requires_openai_auth = false
 `
 }
 
-/** Isolates Claude CLI settings and redirects its actual provider traffic to the scripted server. */
 export function claudeScriptedEnv(url: string, configDir: string) {
   return {
     ANTHROPIC_BASE_URL: url,
@@ -371,10 +366,6 @@ export function claudeScriptedEnv(url: string, configDir: string) {
     CLAUDE_CONFIG_DIR: configDir,
   }
 }
-
-// ---------------------------------------------------------------------------
-// Dialect emitters. Wire shapes are ports, not inventions — see file header.
-// ---------------------------------------------------------------------------
 
 /**
  * Splits a reply into at most `chunks` pieces, never producing an empty one —

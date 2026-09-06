@@ -408,11 +408,6 @@ function nonProviderBadResponses(entries: string[]) {
 test.describe("core boot, deep links, and home @core", () => {
   test("cold boot with zero projects paints a clean shell and the Home empty state — behaviors 1,2", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
-    // NOTE: the global SDK's central event-stream connection (zero-workspace context)
-    // is NOT interceptable from here — see the `nonProviderConsole` FINDING comment below
-    // for the full citation (it targets a hardcoded default origin the app resolves
-    // independently of any test-injected server URL, and same-origin page.route
-    // patterns — tried with and without a query string — do not catch it).
     await page.route("**/api/claxedo/bootstrap**", (route) =>
       route.fulfill({
         status: 200,
@@ -442,7 +437,6 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
     if (ONBOARDING_V1) {
-      // Behavior 2: the flagged onboarding owner renders the registry-driven shell.
       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
       // Setup is a page with one step on screen, not a checklist of four rows.
       // Without a sandbox provider token the two cloud steps do not apply, so
@@ -468,22 +462,10 @@ test.describe("core boot, deep links, and home @core", () => {
     // "No projects yet…" / "Set up Claxedo" branch assertion above.
     await expect(page.getByText("Recent projects")).not.toBeVisible()
 
-    // Behavior 1: clean boot hygiene.
     await expect(page.locator("text=/something went wrong/i")).toHaveCount(0)
-    // (A `localStorage.length < 20` proxy for "clean shell" used to sit here. It was an
-    // arbitrary magic ceiling — it neither named a key that must not be written nor
-    // could fail for any behavior this spec owns — so it is gone rather than restated.
-    // The real boot-hygiene oracles are the four network/console lists below.)
     expect(nonProviderConsole(mock.requests.console)).toEqual([])
     expect(nonProviderFailed(mock.requests.failed)).toEqual([])
     expect(nonProviderBadResponses(mock.requests.badResponses)).toEqual([])
-    // `requests.unhandled` is now a REAL list — every fetch/xhr that reached the end of
-    // the route chain without a handler. Verified live while it was being built: a
-    // deliberately-unmocked `fetch("/tripwire-scaffold-probe")` was recorded as exactly
-    // one entry ("GET http://localhost:4455/tripwire-scaffold-probe") and nothing else,
-    // and mocking the one real escape this assertion found on its first honest run
-    // (`GET /api/control/sessions`) took the list back to empty. Before that it was
-    // written to by nothing at all, so this line passed vacuously.
     expect(mock.requests.unhandled).toEqual([])
     expectConsoleMirrorsAreAccountedFor(mock.requests)
   })
@@ -668,12 +650,9 @@ test.describe("core boot, deep links, and home @core", () => {
       .poll(async () => (await readPersistedLayout(page))?.workbench?.contentIds?.length ?? 0, { timeout: 15_000 })
       .toBeGreaterThan(1)
 
-    // Behavior 6: a FRESH navigation (full page load) back to the session's own deep
-    // link discards the extra draft tab — only the URL's own content survives.
     await page.goto(primaryUrl, { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // Behavior 5: the pane that materializes is the correct session pane.
     await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]`)).toBeVisible({
       timeout: 20_000,
     })
@@ -800,8 +779,6 @@ test.describe("core boot, deep links, and home @core", () => {
       })
     })
 
-    // A fresh boot (full page load) at the session's own deep link — the server no
-    // longer has it, so the whole discovery chain (list + detail) reflects "gone".
     await page.goto(primaryUrl, { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
@@ -857,7 +834,6 @@ test.describe("core boot, deep links, and home @core", () => {
     // that have nothing to do with the gate.)
     await expect(page.locator("[data-claxedo]")).toHaveCount(0)
 
-    // Stays broken — no spurious recovery while health keeps failing.
     await page.waitForTimeout(1_500)
     await expect(page.getByText(/Could not reach/)).toBeVisible()
     await expect(page.locator("[data-claxedo]")).toHaveCount(0)
@@ -907,8 +883,6 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.getByText("Retrying automatically")).toBeVisible()
     await expect(page.getByRole("button", { name: /retry/i })).toHaveCount(0)
 
-    // Automatic recovery: no click, just the server.healthy() -> refetch() loop. Real
-    // empty-state marker (RailWorkbenchCanvas fallback — see ANATOMY finding).
     await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
     await expect(page.getByText(/Could not reach/)).toHaveCount(0)
   })

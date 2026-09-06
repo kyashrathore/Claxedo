@@ -1,156 +1,3 @@
-/**
- * SPEC: Model, effort/variant, and agent controls (plain OpenCode harness)
- *
- * PURPOSE — before/while talking to the model, the user must be able to see and change
- * *which* model answers, *how hard it thinks* (variant/effort), and *which agent
- * profile* handles the turn — and the app must refuse to silently guess when that
- * configuration is incomplete or unaffordable. This spec owns the plain-OpenCode-harness
- * composer controls that select model/variant/agent (`src/components/prompt-input/
- * toolbar-controls.tsx`, `model-control.tsx`), the mid-session config PATCH that
- * persists a change (`src/context/local.tsx#syncSessionSelection`,
- * `src/components/prompt-input/submit-transport.ts#saveSessionConfig`), the
- * "nothing is selected" submit gate (`src/session/submit/resolve.ts
- * #resolveSubmittedConfig`), and the Settings→Models visibility toggle
- * (`src/features/settings/ui/models.tsx`, `src/features/session/providers/models.tsx`) that filters what the
- * composer's model list shows. ACP/harness-owned model pickers (`AgentHarnessSelector`)
- * are `core-harness-ownership-local`'s territory, not this spec's.
- *
- * STATE MODEL —
- *   - Model/agent/variant SELECTION lives in `useLocal()` (`src/context/local.tsx`), a
- *     per-directory store persisted via `Persist.workspace(directory, "model-selection")`
- *     (localStorage key `claxedo.workspace.<dirhash>.dat:workspace:model-selection`),
- *     keyed by session id once a session exists (`saved.session[sessionId]`). Before a
- *     session exists (a fresh draft), `store.draft` holds the pick IN MEMORY ONLY — it
- *     does NOT survive reload by itself. What DOES survive reload for a fresh draft is
- *     the MODEL CATALOG's "recent" list (`useModels()`, `src/features/session/providers/models.tsx`,
- *     persisted under `.recent` in that (server, workspace)'s bucket —
- *     `Persist.serverWorkspace(server, workspace, "model")`, localStorage key
- *     `claxedo.server.<serverhash>.workspace.<dirhash>.dat:workspace:model`): picking
- *     a model calls `model.set(item, {recent:true})`, which pushes it onto
- *     `models.recent.list()`; on the next load, `currentModelKey()`'s fallback chain
- *     (`fallback = savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel()`,
- *     `src/context/local.tsx:371`) picks the most-recently-used model back up as the
- *     active model even though the draft's own scope is empty.
- *   - Model VISIBILITY (Settings→Models) lives in `useModels()`'s `store.user`, keyed by
- *     harness inside that same (server, workspace) bucket — a `.user[harness]` array of
- *     `{providerID,modelID,visibility}` rows — read by `models.visible()`
- *     (`src/features/session/providers/models.tsx`): an explicit
- *     "hide"/"show" wins; otherwise a model released within ~6 months defaults visible
- *     ("latest"), otherwise a model with a KNOWN release date older than that defaults
- *     HIDDEN, otherwise (unknown/invalid date) defaults visible. One record per
- *     (server, workspace) is shared by every surface on it (`ModelStoreRegistryProvider`,
- *     mounted in the app shell), so a Settings dialog toggle takes effect in the
- *     composer's model popover immediately, no reload needed — both read the same store,
- *     and both name the same harness for a workspace (Settings' scope selector and a new
- *     draft resolve it the same way).
- *   - The SERVER's copy of session config (`PATCH /session/:id/config`) is a *write-only*
- *     projection for this spec's purposes: `context/local.tsx#syncSessionSelection`
- *     PATCHes it immediately whenever `local.model.set()`/`local.agent.set()` commits
- *     while the session is in "opencode scope" (`isOpenCodeSessionScope`); separately,
- *     `submit-transport.ts#saveSessionConfig` PATCHes it again at send time (deduped
- *     against the canonical session-config query cache). Both are the SAME
- *     REST endpoint. An EXISTING session's `config.model` (as last read from the
- *     session's info/list query), if present, is used AS-IS for the next send
- *     (`submit.ts:441` — `existingSessionConfig?.model` short-circuits
- *     `resolveSubmittedConfig`); this spec proves the mid-session change via the
- *     immediate PATCH `syncSessionSelection` fires, not by re-sending and re-parsing a
- *     GET that a mock server would have to fake livenes for.
- *
- * ANATOMY —
- *   `[data-action="prompt-harness-model"]` — the unified harness/model/effort trigger.
- *     For this OpenCode-focused spec it opens the ordinary searchable model list.
- *   `[data-slot="list-item"]` (inside the model popover's `List`) — one row per
- *     visible+matching model; text = model name.
- *   `[data-action="prompt-add"]` — the `+` trigger (`add-menu.tsx`); `disabled` while
- *     `harnessPending()` or outside normal mode.
- *   `[data-action="prompt-agent"]` — an agent RADIO ITEM inside the `+` menu, one per
- *     agent, carrying `data-checked` on the current one. Rendered when NOT harness mode
- *     AND `agentNames().length > 0` (`shouldShowPromptAgentSelector`,
- *     `src/components/prompt-input/selector-visibility.ts`) AND the agent list is not
- *     exactly build+plan — that pair collapses into the single
- *     `[data-action="prompt-plan-mode"]` checkbox instead (`planModeAgents()`). Both sit
- *     BELOW a separator, under the four flat action entries the menu now leads with.
- *     There is no inline agent trigger any more, so the current agent is only
- *     observable by reopening the menu and reading `data-checked`.
- *   The unified popover adds an Effort section only when the current model has multiple
- *     variants. Its button rows commit the same variant carried by prompt payloads.
- *   `[data-slot="select-select-item"]` / `[data-slot="select-select-item-label"]` — agent
- *     and variant option rows once a `Select` trigger is opened.
- *   `[data-slot="toast-title"]` — toast title text (`showToast` from `@opencode-ai/ui/
- *     toast`); "Select an agent and model" for the missing-model gate
- *     (`prompt.toast.modelAgentRequired.title`), "Could not save session config" for a
- *     failed config PATCH (`prompt.toast.sessionConfigSaveFailed.title`, sourced from
- *     `src/i18n/en.ts` — see BEHAVIORS #8 / HARNESS NOTES).
- *   Settings dialog: opened via the sidebar's `Settings`-labelled icon button
- *     (rail account menu item "Settings"); `role="tab"` item named "Models"
- *     (`language.t("settings.tab.models" is actually "settings.models.title")`);
- *     `SettingsModels` renders one row per model with a `role="switch"` control whose
- *     accessible name is the model's display name (`<Switch hideLabel>{item.name}</
- *     Switch>`, `src/features/settings/ui/models.tsx:114-122`).
- *
- * BEHAVIORS —
- *   1. Selecting a paid model before the first send is reflected in that send's
- *      `prompt_async` payload (`model.providerID`/`model.modelID`).
- *   2. Selecting a variant (effort level) before the first send is reflected in that
- *      send's payload (`variant`), and the variant `Select` only renders at all once the
- *      current model exposes more than one variant option.
- *   3. Changing the model on an EXISTING (already-created) session immediately fires a
- *      `PATCH /session/:id/config` carrying the newly picked model — the mid-session
- *      write path is independent of sending another prompt.
- *   4. A freshly picked model survives a full page reload of the same draft: the model
- *      trigger shows the picked model's name again with no user action, sourced from the
- *      catalog's "recent" fallback in that (server, workspace)'s model bucket.
- *   5. With only a free (cost-0, `opencode`) provider connected, clicking the model
- *      control still opens the full model popover — no funnel dialog intercepts it.
- *   6. The plain agent `Select` renders once more than one agent profile is available,
- *      and picking a non-default agent is reflected in the next send's payload
- *      (`agent`).
- *   7. [Documented, not independently testable — see HARNESS NOTES] The agent selector's
- *      `disabled` prop tracks `harnessPending()`, but in the current wiring
- *      `showAgentSelector()` and `harnessPending()` are mutually exclusive states, so a
- *      "visible AND disabled" agent selector cannot be produced through the public
- *      composer surface today.
- *   8. Failed initial config persistence makes `POST /session` fail and keeps the new
- *      session unpublished: the draft remains intact and no prompt request is made.
- *   9. With zero resolvable model (no connected providers at all), pressing Enter to
- *      submit blocks the send: a "Select an agent and model" toast appears, the composer
- *      text is preserved verbatim, and zero `prompt_async` requests are made.
- *   10. Toggling a model's visibility off in Settings → Models removes it from the
- *       composer's model popover; toggling it back on restores it — no reload needed.
- *
- * INVARIANTS — exactly one model control exists in the DOM at a time (INVARIANTS.md #1,
- *   scoped here to plain-OpenCode mode only; the harness-owned case is spec 3's); a
- *   an existing-session config-PATCH failure must never discard composer state; the submit
- *   control's gating for "no model resolvable" is enforced
- *   both by disabling `[data-action="prompt-submit"]` AND by a defensive server-side-of-
- *   the-guard toast reachable via Enter (INVARIANTS.md #4 — "never assert readiness via a
- *   fixed sleep" honored throughout via `expect.poll`/request-log assertions).
- *
- * HARNESS NOTES —
- *   - The shared `mock-runtime.ts` always advertises the active harness's provider with
- *     `cost: {input:0, output:0}`, and its single model is not enough to exercise the
- *     picker's model/variant rows — so behaviors 1–4, 6, 10 install an additional
- *     `page.route` override (this spec file only, not the shared helper) adding a
- *     connected `anthropic` provider with priced, multi-variant models.
- *   - Behavior 8 pins the creation boundary: the complete config is part of the
- *     authoritative create operation. A create failure therefore preserves the draft
- *     instead of exposing a session whose harness/model contract is incomplete.
- *   - Behavior 7's non-testability: `showAgentSelector()` requires
- *     `toolbarHarnessMode(scope()) === false`; `harnessPending()` requires
- *     `isHarnessMode(scope()) === true` (a strictly narrower predicate than
- *     `toolbarHarnessMode`, since `toolbarHarnessMode = isComposerHarnessMode(mode) ||
- *     harnessController.isHarnessMode(scope) || harnessSelectionController?.read(scope)
- *     .isHarnessMode`, a superset of the terms `isHarnessMode` checks — see
- *     `composer.tsx:91-101`). Any scope where `isHarnessMode` is true therefore also has
- *     `toolbarHarnessMode` true, which hides the agent selector outright. The two states
- *     cannot coexist through the public composer surface as currently wired.
- *
- * OUT OF SCOPE — ACP/SDK harness model+effort pickers (`AgentHarnessSelector`,
- *   `core-harness-ownership-local`); busy/abort/error UI (`core-busy-abort-errors`);
- *   slash/shell/@-mention composer modes (`core-composer-modes`); permission/question/
- *   todo docks (`core-docks`); multi-turn reload/history mechanics beyond the single
- *   reload-persistence check in behavior 4 (`core-turns-reload-recovery`).
- */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
@@ -219,11 +66,6 @@ function paidProviderBody() {
           "big-pickle-1": {
             id: "big-pickle-1",
             name: "Big Pickle",
-            // See the `family` comment on the anthropic models below. `family` is
-            // optional on the real schema, and since the fix cited there each model
-            // without one falls back to its own id as the group key, so this could be
-            // omitted — it is kept because real catalogs carry it and the fixture should
-            // look like production data.
             family: "big-pickle",
             release_date: "2026-06-15",
             attachment: true,
@@ -244,35 +86,6 @@ function paidProviderBody() {
           "claude-sonnet-4-6": {
             id: "claude-sonnet-4-6",
             name: "Sonnet 4.6",
-            // family disambiguates each model within a provider for the
-            // catalog's "latest per family" auto-visibility computation
-            // (`src/features/session/providers/models.tsx`'s `latest` memo,
-            // lines 60-88, groups available models by `(provider.id, family)`
-            // via remeda's `groupBy`).
-            //
-            // HISTORY — FIXED IN THE APP, no longer a live bug (re-verified
-            // 2026-07-25). This fixture was originally written around a real
-            // defect: remeda's `groupBy` callback returning `undefined`
-            // EXCLUDES the item from every group instead of bucketing it under
-            // an "undefined" group (see `groupBy.d.ts`'s documented contract —
-            // "allows the callback to return `undefined` in order to exclude
-            // the item from being added to any group"). Since `family` is
-            // optional on the real model schema
-            // (`packages/core/src/models-dev.ts:50` — still `Schema.optional`),
-            // every model that omitted it silently vanished from `latestSet`
-            // and then defaulted to HIDDEN (a model with a valid, non-"latest"
-            // release_date is hidden by `models.tsx`'s `visible()`) — which is
-            // why an early version of this fixture rendered "No model results"
-            // for every paid-provider test. The app now keys the inner group by
-            // `x.family ?? x.id` (`models.tsx:77`), so an absent `family` no
-            // longer drops the model; the fix has its own source-level
-            // regression guard plus a remeda-contract reproduction in
-            // `src/features/session/providers/models.test.ts`.
-            //
-            // The distinct `family` values are therefore no longer load-bearing
-            // for visibility — they stay because real catalogs (models.dev) set
-            // them for well-known model lines, so the fixture matches production
-            // shape rather than exercising the fallback path by accident.
             family: "claude-sonnet",
             release_date: "2026-06-01",
             attachment: true,
@@ -318,10 +131,9 @@ function paidProviderBody() {
   }
 }
 
-/** Adds a connected, priced Anthropic provider. Bootstrap supplies the canonical
- * compact index (one configured default per connected provider); `/provider` supplies
- * full details for explicit detail loading. Registered after the shared runtime so both
- * routes own the catalog used by this scenario. */
+/** Registered after the shared runtime so these routes win Playwright's
+ * reverse-registration match order. Bootstrap carries only each connected provider's
+ * configured default, mirroring the real endpoint's compact index. */
 async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) {
   const body = paidProviderBody()
   const defaults: Record<string, string> = body.default
@@ -536,7 +348,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
 
   test("zero-paid-provider path still opens the standard model picker — behavior 5", async ({ page }) => {
     // Deliberately the DEFAULT mock (no paid-provider override): mock-runtime's
-    // opencode-harness provider always prices its model at cost 0 — see HARNESS NOTES.
+    // opencode-harness provider always prices its model at cost 0.
     // Having no PRICED provider used to divert this click into a Claxedo-only
     // "unpaid model" funnel dialog, which dead-ended on an empty free-model list.
     // The model control now opens the ordinary picker in every state; the picker
@@ -637,9 +449,6 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       },
     })
   })
-
-  // Behavior 7 (former fixme, deleted): the multi-agent picker is driven by the
-  // runtime's advertised agent list, independent of the selected runtime binding.
 
   test(
     "failed initial config persistence preserves the unpublished draft — behavior 8",

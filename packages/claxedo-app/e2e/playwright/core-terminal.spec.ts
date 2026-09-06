@@ -265,7 +265,6 @@ class ClaxedoEventBus {
     return this.terminalSessions.get(terminalId)
   }
 
-  /** One call = one HTTP connection: claims an idle slot (or makes a new one). */
   async drain(idleTimeoutMs: number) {
     const slot = this.slots.find((s) => !s.busy) ?? (() => {
       const created = emptySlot()
@@ -699,23 +698,11 @@ function terminalPane(page: Page, ptyId: string) {
   return page.locator(`[data-testid="terminal-pane"][data-terminal-id="${ptyId}"]`)
 }
 
-/** Waits for the pane to mount, then returns the created PTY's sidebar row + pane. */
 async function waitForTerminalMounted(page: Page, ptyId: string) {
   await expect(terminalPane(page, ptyId)).toBeVisible({ timeout: 15_000 })
   await expect(sidebarTerminalRow(page, ptyId)).toBeVisible({ timeout: 15_000 })
 }
 
-/**
- * Opens the terminal creator and presses one of its launcher tiles.
- *
- * Every terminal now starts here. The toolbar dropdown used to carry "New
- * Terminal" plus a row per configured command, and the header carried Claude
- * and Codex quick-launch buttons; both resolved their directory from a fallback
- * chain the person clicking could not see, so they started an agent somewhere
- * nobody picked. `workspace-scope-new-terminal` opens the creator instead, which
- * asks WHERE first and then offers the same roster as tiles — so the spec drives
- * the two-step surface rather than the single-click one it replaced.
- */
 async function launchFromCreator(page: Page, api: PtyApi, launcher: { id?: string; name?: string }) {
   const before = api.createdIds.length
   await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
@@ -731,7 +718,6 @@ async function launchFromCreator(page: Page, api: PtyApi, launcher: { id?: strin
   return id
 }
 
-/** Presses the creator's "Shell" tile — the plain login shell, no command. */
 async function createPlainTerminal(page: Page, api: PtyApi) {
   return launchFromCreator(page, api, { id: "shell" })
 }
@@ -767,21 +753,12 @@ async function terminalPaintSummary(page: Page, ptyId: string) {
   return { visible: box.width > 50 && box.height > 30, chromaPixels }
 }
 
-/**
- * Emits a Claxedo event onto the mocked central SSE stream that
- * `ClaxedoEventsProvider` connects to — `/api/claxedo/events`, with
- * `/api/wr/events` served by the same handler because both real servers mount
- * one handler on both spellings. See the routes registered in
- * `installAppBootMock` and the `ClaxedoEventBus` above for why this replaced
- * the `window.__claxedoEmitTestEvent` dev-only hook the app also exposes.
- */
 async function emitClaxedoEvent(page: Page, event: Record<string, unknown>) {
   const bus = claxedoEventBuses.get(page)
   expect(bus, "installAppBootMock must run before emitClaxedoEvent").toBeTruthy()
   bus!.emit(event)
 }
 
-/** Drags `contentId` onto the right edge of the pane currently hosting `hostPtyId`. */
 async function splitTerminalPaneWith(page: Page, hostPtyId: string, sourcePtyId: string) {
   // The workbench DnD is pointer-driven (WP-C3 touch-DnD rewrite,
   // src/claxedo-ui/workbench/pointer-drag.ts): native HTML5 DragEvents are no
@@ -953,11 +930,8 @@ test.describe("core terminal panel @core", () => {
     expect(beforeBox, "terminal 1 has no bounding box before the split").not.toBeNull()
 
     const id2 = await createPlainTerminal(page, api)
-    // Terminal 2 mounted (its content slot has a resolvable workbench content id).
     expect(await contentIdFor(page, id2)).not.toBe("")
 
-    // Switch back to terminal 1 so it's the pane we split, then drag terminal 2
-    // (via its sidebar row) onto terminal 1's pane right edge.
     await sidebarTerminalRow(page, id1).click()
     await expect(terminalPane(page, id1)).toBeVisible({ timeout: 10_000 })
     await splitTerminalPaneWith(page, id1, id2)
@@ -982,18 +956,12 @@ test.describe("core terminal panel @core", () => {
     expect(afterBox, "terminal 1 has no bounding box after the split").not.toBeNull()
     expect(afterBox!.width).toBeGreaterThan(0)
     expect(afterBox!.height).toBeGreaterThan(0)
-    // No clipping: the refit xterm box stays within its own pane's box on every side.
     expect(afterBox!.x).toBeGreaterThanOrEqual(paneRect!.x - 1)
     expect(afterBox!.y).toBeGreaterThanOrEqual(paneRect!.y - 1)
     expect(afterBox!.x + afterBox!.width).toBeLessThanOrEqual(paneRect!.x + paneRect!.width + 1)
     expect(afterBox!.y + afterBox!.height).toBeLessThanOrEqual(paneRect!.y + paneRect!.height + 1)
   })
 
-  // Fixed in Wave 2 (WP-B11): `reconcilePtyExit`
-  // (src/claxedo-ui/state/agent-status-listener.ts) now batches BOTH
-  // `setAgentStatus(ptyId, "idle")` AND `clearSeen(ptyId)` on `pty.exited`,
-  // matching the reconnect-reconcile path, so the stale `seen` flag no longer
-  // leaves the sidebar "done" dot stuck.
   test("an externally exited PTY clears its tracked agent status — behaviors 7", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-external-exit"
     await installAppBootMock(page, DIR)
@@ -1003,7 +971,11 @@ test.describe("core terminal panel @core", () => {
     await openWorkspaceRoute(page, DIR)
 
     const id1 = await createPlainTerminal(page, api)
-    const id2 = await createPlainTerminal(page, api) // active/focused
+    // id2 is created only to take focus: `useClearAttentionOnFocus` in
+    // agent-status-listener.ts clears the status dot of whichever tab is
+    // focused, so id1 must be backgrounded for the dot assertions below to
+    // mean anything. Deleting id2 makes them pass vacuously.
+    const id2 = await createPlainTerminal(page, api)
     const dot1 = sidebarTerminalRow(page, id1).locator("[data-sidebar-status]")
 
     // Background terminal 1 gets a tracked agent status first (`pty.exited`'s
@@ -1014,9 +986,6 @@ test.describe("core terminal panel @core", () => {
     await emitClaxedoEvent(page, { type: "agent.lifecycle", tabId: id1, terminalId: id1, eventType: "Busy" })
     await expect(dot1).toHaveAttribute("data-sidebar-status", "working", { timeout: 10_000 })
 
-    // Server pushes an external exit for terminal 1 (backgrounded, not the
-    // focused tab — see the behaviors-8 comment on why status-dot proofs need
-    // a backgrounded terminal, not the active one).
     await emitClaxedoEvent(page, { type: "pty.exited", id: id1, exitCode: 0 })
 
     // Reliable, DOM-observable proof the app registered the exit: the
@@ -1112,7 +1081,11 @@ test.describe("core terminal panel @core", () => {
     await openWorkspaceRoute(page, DIR)
 
     const id1 = await createPlainTerminal(page, api)
-    const id2 = await createPlainTerminal(page, api) // id2 is active; id1 is in the background
+    // id2 is created only to take focus: `useClearAttentionOnFocus` in
+    // agent-status-listener.ts clears the status dot of whichever tab is
+    // focused, so id1 must be backgrounded for the dot assertions below to
+    // mean anything. Deleting id2 makes them pass vacuously.
+    const id2 = await createPlainTerminal(page, api)
 
     await emitClaxedoEvent(page, { type: "agent.lifecycle", tabId: id1, terminalId: id1, eventType: "Busy" })
     await emitClaxedoEvent(page, { type: "agent.lifecycle", tabId: id1, terminalId: id1, eventType: "Idle" })
@@ -1140,7 +1113,6 @@ test.describe("core terminal panel @core", () => {
     await seedTerminalCommands(page, { custom: [{ id: "aider", name: "Aider", command: "aider --model gpt-4" }] })
     await openWorkspaceRoute(page, DIR)
 
-    // Generic title ("Terminal N") — auto-rename applies.
     const genericId = await createPlainTerminal(page, api)
     await emitClaxedoEvent(page, {
       type: "agent.lifecycle",
@@ -1152,7 +1124,6 @@ test.describe("core terminal panel @core", () => {
     })
     await expect(sidebarTerminalRow(page, genericId)).toContainText("Claude: Fix Typecheck Errors", { timeout: 10_000 })
 
-    // Custom/user title ("Aider") — the exact same shape of event must NOT clobber it.
     const customId = await createCustomTerminal(page, api, "Aider")
     const customRow = sidebarTerminalRow(page, customId)
     await expect(customRow).toContainText("Aider", { timeout: 10_000 })
@@ -1196,13 +1167,9 @@ test.describe("core terminal panel @core", () => {
           page.evaluate(() => (window as typeof window & { __e2eTerminalSockets?: number }).__e2eTerminalSockets ?? 0),
         { timeout: 10_000 },
       )
-      .toBeGreaterThanOrEqual(1) // a reconnect socket opened for the SAME pty id post-reload
+      .toBeGreaterThanOrEqual(1)
 
     expect(api.creates.length, "reload must not create a brand-new PTY").toBe(createCountBeforeReload)
   })
 
-  // "a stale process-owned terminal tab is pruned instead of resurrected on reload —
-  // behavior 12" — MOVED to core-processes.spec.ts per e2e/e2e-decisions.md #40
-  // (2026-07-20): the pruning only runs when the Process feature's data loads, which
-  // needs the Process panel mocks that live in core-processes, not here.
 })
