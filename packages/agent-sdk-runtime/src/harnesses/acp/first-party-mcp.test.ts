@@ -1,8 +1,10 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import type { McpServer } from "@agentclientprotocol/sdk"
+import type { AnyMessage, McpServer } from "@agentclientprotocol/sdk"
 import type { WithInternals } from "../../test-utils/class-internals"
-import { acpFirstPartyMcpServer } from "../../first-party-mcp"
+import { acpFirstPartyMcpServer, FIRST_PARTY_MCP_CONFIG_KEY } from "../../first-party-mcp"
+import { MemoryRuntimeStore } from "../../stores/memory"
+import { AcpHarnessAdapter, type AcpRuntimeStore } from "./index"
 import { ACPProcess } from "./process"
 
 const TOKEN = "first-party-acp-secret"
@@ -83,5 +85,78 @@ describe("ACP first-party MCP injection", () => {
     const { proc, requests, user } = acpProcess()
     await proc.newSession(path.resolve("/work"))
     expect(requests[0]?.params.mcpServers).toEqual([user])
+  })
+})
+
+/**
+ * An ACP agent on the wire: the adapter's own transport factory hands it the
+ * message stream, so a request only reaches `requests` after the real
+ * `applyConfig` → `createSession` → `session/new` path produced it.
+ */
+function scriptedAcpAgent() {
+  const requests: Array<{ method: string; params: { mcpServers?: McpServer[] } }> = []
+  let push: (message: AnyMessage) => void = () => {}
+  const readable = new ReadableStream<AnyMessage>({
+    start(controller) {
+      push = (message) => controller.enqueue(message)
+    },
+  })
+  let opened = 0
+  const writable = new WritableStream<AnyMessage>({
+    write(message) {
+      if (!("method" in message) || !("id" in message)) return
+      const { id, method, params } = message
+      requests.push({ method, params: (params ?? {}) as { mcpServers?: McpServer[] } })
+      if (method === "initialize") {
+        push({ jsonrpc: "2.0", id, result: { protocolVersion: 1, agentCapabilities: {} } })
+        return
+      }
+      if (method === "session/new") {
+        opened += 1
+        push({ jsonrpc: "2.0", id, result: { sessionId: `agent-${opened}` } })
+      }
+    },
+  })
+  return { requests, stream: { readable, writable } }
+}
+
+describe("ACP adapter first-party MCP end to end", () => {
+  test("createSession sends session/new with the claxedo entry naming that session and carrying its bearer", async () => {
+    const agent = scriptedAcpAgent()
+    const adapter = new AcpHarnessAdapter({
+      connection: { kind: "process", command: "fake-acp" },
+      harness: "openclaw",
+      store: new MemoryRuntimeStore() as unknown as AcpRuntimeStore,
+      createTransport: () => ({
+        kind: "stdio",
+        stream: agent.stream,
+        metadata: {},
+        pid: 1,
+        alive: true,
+        dispose() {},
+      }),
+    })
+    try {
+      await adapter.applyConfig({
+        mcp: { docs: { name: "docs", source: "user", transport: "stdio", command: "docs-mcp", args: [], env: {} } },
+        [FIRST_PARTY_MCP_CONFIG_KEY]: {
+          server: (sessionId: string) => ({
+            name: "claxedo",
+            url: `http://127.0.0.1:2593/api/claxedo/mcp?session=${sessionId}`,
+            headers: { Authorization: `Bearer ${TOKEN}` },
+          }),
+        },
+      })
+      await adapter.createSession(path.resolve("/work"), "First party", "session-a")
+
+      const opened = agent.requests.filter((row) => row.method === "session/new")
+      expect(opened).toHaveLength(1)
+      expect(opened[0]?.params.mcpServers).toEqual([
+        { name: "docs", command: "docs-mcp", args: [], env: [] },
+        claxedo("session-a"),
+      ])
+    } finally {
+      await adapter.dispose?.()
+    }
   })
 })

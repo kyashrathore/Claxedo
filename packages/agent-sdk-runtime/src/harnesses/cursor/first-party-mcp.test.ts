@@ -92,7 +92,7 @@ describe("Cursor first-party MCP injection", () => {
       mcp: { docs: { name: "docs", source: "user", transport: "remote", url: "http://docs.test/mcp", headers: {} } },
       [FIRST_PARTY_MCP_CONFIG_KEY]: firstPartyMcp(),
     })
-    await driver.createAgentSession({ directory: "/repo", model: "auto" })
+    await driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "session-a" })
     await driver.runTurn(turn("session-a"))
     await driver.runTurn(turn("session-b"))
 

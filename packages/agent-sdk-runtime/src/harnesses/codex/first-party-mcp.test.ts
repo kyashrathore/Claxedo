@@ -79,12 +79,7 @@ process.stdin.on("data", (chunk) => {
   return { binary, codexHome, dir, requests }
 }
 
-/** The concrete driver takes the Claxedo session id on thread creation; the adapter interface it implements is narrower. */
-type SessionAwareDriver = ReturnType<typeof createCodexAppServerDriver> & {
-  createAgentSession(input: { directory: string; model: string; sessionId?: string }): Promise<{ id: string }>
-}
-
-function driverFor(binary: string, codexHome: string): SessionAwareDriver {
+function driverFor(binary: string, codexHome: string) {
   return createCodexAppServerDriver({
     lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }) as never,
     pendingPermissions: new Map(),
@@ -96,7 +91,7 @@ function driverFor(binary: string, codexHome: string): SessionAwareDriver {
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },
-  }, { binary, codexHome }) as SessionAwareDriver
+  }, { binary, codexHome })
 }
 
 describe("Codex first-party MCP injection", () => {
@@ -116,13 +111,11 @@ describe("Codex first-party MCP injection", () => {
       })
       await driver.createAgentSession({ directory: fake.dir, model: "gpt-5-codex", sessionId: "session-a" })
       await driver.createAgentSession({ directory: fake.dir, model: "gpt-5-codex", sessionId: "session-b" })
-      await driver.createAgentSession({ directory: fake.dir, model: "gpt-5-codex" })
 
       const starts = await fake.requests()
       expect(starts.map((row) => row.params.config)).toEqual([
         { mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
         { mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-b", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
-        undefined,
       ])
       expect(await fs.promises.readdir(fake.codexHome)).toEqual([])
     } finally {

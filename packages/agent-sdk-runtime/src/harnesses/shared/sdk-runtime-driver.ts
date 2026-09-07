@@ -150,7 +150,8 @@ export type SdkRuntimeDriver = {
   }
   setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>
-  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>
+  /** `sessionId` is the Claxedo session the thread will serve; a harness scopes its per-session launch state by it. */
+  createAgentSession(input: { directory: string; title?: string; model: string; system?: string; sessionId: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
   deleteAgentSession?(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>

@@ -40,7 +40,7 @@ describe("Cursor SDK driver", () => {
       } as never),
     })
     await driver.applyConfig({ launch: { pluginRoots: ["/managed/cursor/plugin"] } })
-    await driver.createAgentSession({ directory: "/workspace", model: "auto" })
+    await driver.createAgentSession({ directory: "/workspace", model: "auto", sessionId: "session-a" })
 
     expect(created).toMatchObject([{
       local: {

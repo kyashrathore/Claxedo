@@ -61,6 +61,7 @@ import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPo
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
 import { resolvedMcpServers, toAcpMcpServers } from "../../mcp-resolver"
+import { firstPartyMcpProvider } from "../../first-party-mcp"
 import { requireWorkspaceDirectory } from "../../target"
 import type { ACPProcess } from "./process"
 import {
@@ -283,7 +284,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const processKey = this.processKey(directory)
     this.sessionProcessMap().set(id, processKey)
     const { proc } = await this.getOrSpawnProcess(id, directory)
-    const agentSessionId = await this.boot(proc, directory, title)
+    const agentSessionId = await this.boot(proc, directory, title, id)
     log.info("createSession: ACP session created", { id, agentSessionId })
     this.store.bindSession({
       sessionId: id,
@@ -310,7 +311,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const processKey = this.processKey(directory)
     this.sessionProcessMap().set(id, processKey)
     const { proc } = await this.getOrSpawnProcess(id, directory)
-    const agentSessionId = await this.boot(proc, directory, title)
+    const agentSessionId = await this.boot(proc, directory, title, id)
     this.store.bindSession({ sessionId: id, directory, title, agentSessionId, ownerKey: processKey })
     let rolledBack = false
     return {
@@ -463,15 +464,15 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const result = await this.getOrSpawnProcess(id, directory)
     const proc = result.proc
     if (result.isNew) {
-      await proc.resumeSession(agentSessionId, directory)
+      await proc.resumeSession(agentSessionId, directory, id)
     }
     if (!proc.supportsForkSession(agentSessionId)) {
       throw new Error("ACP agent does not advertise session fork support")
     }
-    const newAgentSessionId = await proc.forkSession(agentSessionId, directory)
+    const newId = childSessionId ?? randomUUID()
+    const newAgentSessionId = await proc.forkSession(agentSessionId, directory, newId)
     log.info("forkSession: ACP fork succeeded", { newAgentSessionId })
 
-    const newId = childSessionId ?? randomUUID()
     const processKey = this.sessionProcessMap().get(id)
       ?? this.store.getSessionOwnerKey?.(id)
       ?? (this.options ? this.keyForSession(id, directory) : null)
@@ -662,6 +663,10 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
+    // Read before the unchanged-config short-circuit: the provider is not part
+    // of the effective config a restart decision compares, but a launch that
+    // happens without it hands the harness no first-party entry at all.
+    this.firstPartyMcp = firstPartyMcpProvider(config)
     const mcp = resolvedMcpServers(config.mcp)
     // Gating here keeps `currentMcp` empty for the whole adapter lifetime:
     // session requests, process fingerprints, restart decisions, and process
@@ -761,7 +766,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     try {
       const proc = await wait("ACP mode probe", this.getOrSpawnProbe(directory))
       if (proc.cachedConfigOptions) return acpProcessOptions(proc)
-      await this.boot(proc, directory, undefined, probeTimeoutMs())
+      await this.boot(proc, directory, undefined, undefined, probeTimeoutMs())
       if (!proc.cachedConfigOptions) {
         const ms = probeTimeoutMs()
         await wait("ACP mode cache", new Promise<void>((resolve) => {

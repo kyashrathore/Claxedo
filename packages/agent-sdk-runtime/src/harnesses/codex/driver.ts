@@ -150,6 +150,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ensureProcess: (directory) => this.ensureProcess(directory),
       liveProcess: () => this.process,
       lease: () => this.idle.lease(),
+      firstPartyThreadConfig: (sessionId) => this.firstPartyThreadConfig(sessionId),
       activeThreads: this.activeThreads,
       projectThreadNotification: (input, threadId, method, params, frame) =>
         this.projectThreadNotification(input, threadId, method, params, frame),
@@ -227,7 +228,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.set(sessionId, modeId)
   }
 
-  async createAgentSession(input: { directory: string; model: string; system?: string; sessionId?: string }) {
+  async createAgentSession(input: { directory: string; model: string; system?: string; sessionId: string }) {
     const proc = await this.ensureProcess(input.directory)
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
@@ -241,7 +242,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
-      ...(input.sessionId ? this.firstPartyThreadConfig(input.sessionId) : {}),
+      ...this.firstPartyThreadConfig(input.sessionId),
     }).then((response) => asRecord(response) ?? {})
     const thread = asRecord(result.thread)
     const threadId = text(thread?.id)

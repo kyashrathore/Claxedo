@@ -294,6 +294,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         directory,
         title,
         model: this.currentModel,
+        sessionId,
       })
       this.bindStoreSession({
         sessionId,
@@ -319,7 +320,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const complete = this.producers.begin()
     try {
       directory = requireWorkspaceDirectory(directory)
-      const { id: agentSessionId } = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
+      const { id: agentSessionId } = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system, sessionId })
       this.bindStoreSession({ sessionId, directory, title, agentSessionId })
       let rolledBack = false
       return {
