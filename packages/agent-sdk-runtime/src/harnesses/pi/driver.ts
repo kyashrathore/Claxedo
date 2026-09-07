@@ -38,6 +38,7 @@ export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverO
 
 class PiRpcDriver implements SdkRuntimeDriver {
   readonly type = "pi" as const
+  readonly interactions = { permissions: false, questions: true } as const
   readonly goals
   private evaluators = 0
   private readonly goalController

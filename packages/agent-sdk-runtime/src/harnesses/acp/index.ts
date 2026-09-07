@@ -24,9 +24,6 @@ import {
   assertAgentExecutionBinding,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import {
-  permissionReplied,
-} from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type {
   AgentAgent,
@@ -60,6 +57,7 @@ import {
   type AcpConfigOptions,
 } from "./session"
 import { permissionOptionPreference, selectPermissionOption } from "./permission-options"
+import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
 import { resolvedMcpServers, toAcpMcpServers } from "../../mcp-resolver"
@@ -439,6 +437,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
     try {
       await proc.cancel(agentSessionId)
+      cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
       return { ok: true, status: "cancelled" }
     } catch (err) {
       log.info("abort: cancel failed; disposing session process", { id, directory, err })
@@ -598,25 +597,13 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       (item) => item.id === permId && item.sessionID === binding.sessionId,
     )
     if (!row) throw new Error(`Permission ${permId} does not belong to session ${binding.sessionId}`)
-    const clear = (): AgentInteractionResult | undefined => {
-      this.permissionOwnerMap().delete(permId)
-      if (!row) return undefined
-      const committed = this.store.appendEvent({
-        sessionId: row.sessionID,
-        payload: permissionReplied(
-          row.sessionID,
-          permId,
-          decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
-        ),
-        source: {
-          dir: "out",
-          method: "permission.reply",
-          frame: { decision },
-        },
-      })
-      return committed?.payload ? { events: [committed.payload] } : undefined
-    }
-    const proc = row ? this.permissionProcess(permId, row.sessionID) : undefined
+    const clear = () => commitPermissionReply(this.permissionReplyPort(), {
+      sessionId: row.sessionID,
+      permId,
+      reply: decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
+      source: { dir: "out", method: "permission.reply", frame: { decision } },
+    })
+    const proc = this.permissionProcess(permId, row.sessionID)
     if (!proc?.alive) {
       log.info("respondPermission: no alive process for permission session", {
         directory,
@@ -656,6 +643,10 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     })
     proc.respondPermission(permId, { outcome: { outcome: "cancelled" } })
     return clear()
+  }
+
+  private permissionReplyPort(): PermissionReplyPort {
+    return { store: this.store, owners: this.permissionOwnerMap() }
   }
 
   private permissionProcess(permId: string, sessionId: string): ACPProcess | undefined {
