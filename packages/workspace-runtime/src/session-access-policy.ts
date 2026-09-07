@@ -1,5 +1,5 @@
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
-import { errorBody } from "./routes/http"
+import { errorBody } from "./routes/error-body"
 
 export type SessionAccessActor = {
   actorId: string
