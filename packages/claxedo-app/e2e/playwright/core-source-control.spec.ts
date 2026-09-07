@@ -1,41 +1,36 @@
 /**
- * The `appearance.navigatorPlacement` preference: the Files / Changes / Processes
- * navigator as a sidebar beside the rail, the workspace panel opening at full view over
- * the pane column, the focused session floating over it, and the two-step reveal a
- * floating session keeps its history behind: the whole transcript sits collapsed under a
- * peek strip (`session-transcript-peek`, count = every visible turn), and once peeked the
- * history window still holds only the last turn, with the in-timeline
- * `timeline-previous-messages` row counting the turns above it. The collapsed transcript
- * is `max-height: 0`, so its virtualized rows do not exist in the DOM until the peek.
+ * The workspace panel's Changes navigator is `SourceControlView`: the header trio's
+ * Changes opens the panel with the commit box, Publish / Push and Create PR, the Staged
+ * Changes and Changes groups and the Graph in the panel's files column, beside the Review
+ * tab. A row click focuses that file's diff in the Review tab in the row's mode.
  *
- * The classic panel's rendered width is the panel's own `defaultWidth()` (70% of the
- * column) rather than the layout state's 520px, so the classic assertions are on the
- * shape (a px panel narrower than `main`, the overlay inside it) and not on a number.
- *
- * The preference lives in `settings.v3` (`appearance.navigatorPlacement`, default
- * `"panel"`) and is the only thing that survives a reload here; the sidebar's own tab and
- * width persist in `claxedo.state.v5`, which the seed below never writes. A seeded blob
- * skips the Settings dialog for the scenarios whose subject is not the dialog; the
- * scenario that IS about the dialog drives the real Select.
- *
- * Every session route is overridden after `installMockRuntime` (Playwright matches the
- * most recently registered route first) with four settled turns, because the floating
- * window opens at one turn and the reveal row exists only when there is history behind
- * it. Every pattern ends in `**` or has a `?**` twin: without one Playwright demands an
- * exact end-of-URL match and the app's `?directory=` suffix makes it miss silently.
- *
- * The sidebar's Changes tab is `SourceControlView`: it reads the workspace-runtime
- * `/api/wr/git/status` and `/api/wr/git/log` routes and writes through
- * `/api/wr/git/{stage,unstage,commit-staged,push}`. The shared mock serves none of the six,
- * so `installGitFixture` answers them from one in-memory repo whose staged and unstaged
- * lists, commits and upstream the writes mutate, the way `git` would. The classic
- * overlay's Changes list still reads the OpenCode `/file/status` route, and the Review
- * tab the workspace-runtime `/api/wr/diff/vcs` routes; both are seeded here from the same
- * files so the file the user clicks in Changes is the file the review focuses.
+ * The view reads the workspace-runtime `/api/wr/git/status` and `/api/wr/git/log` routes
+ * and writes through `/api/wr/git/{stage,unstage,commit-staged,push}`. The shared mock
+ * serves none of the six, so `installGitFixture` answers them from one in-memory repo whose
+ * staged and unstaged lists, commits and upstream the writes mutate, the way `git` would.
+ * The Review tab reads the workspace-runtime `/api/wr/diff/vcs` routes and the OpenCode
+ * `/file/status` summary; both are seeded here from the same files so the file the user
+ * clicks in Changes is the file the review focuses.
  *
  * Create PR reads the workspace's remote from the project catalog (`GET /project`,
  * `useWorkspaceRemoteUrl`), which the shared mock serves without a remote; the scenarios
  * that need one serve the project row with a `git.remote` of their own.
+ *
+ * The full-view scenario maximizes the panel over the pane column: the focused session
+ * floats over it and keeps its history behind a two-step reveal. The whole transcript
+ * sits collapsed under a peek strip (`session-transcript-peek`, count = every visible
+ * turn), and once peeked the history window still holds only the last turn, with the
+ * in-timeline `timeline-previous-messages` row counting the turns above it. The collapsed
+ * transcript is `max-height: 0`, so its virtualized rows do not exist in the DOM until the
+ * peek. Every session route is overridden after `installMockRuntime` (Playwright matches
+ * the most recently registered route first) with four settled turns, because the floating
+ * window opens at one turn and the reveal row exists only when there is history behind it.
+ * Every pattern ends in `**` or has a `?**` twin: without one Playwright demands an exact
+ * end-of-URL match and the app's `?directory=` suffix makes it miss silently.
+ *
+ * The classic panel's rendered width is the panel's own `defaultWidth()` (70% of the
+ * column) rather than a stored number, so the docked assertions are on the shape (a px
+ * panel narrower than `main`, the navigator column inside it) and not on a number.
  *
  * The rail reads `/api/control/session-list` (loopback spelling `/api/claxedo/session-list`),
  * which the shared mock answers EMPTY; one row for `SESSION_ID` is served here in the
@@ -47,23 +42,21 @@ import { expect, test, type Locator, type Page, type Route, type TestInfo } from
 import type { GitCommitSummary, GitStatusEntry } from "../../../workspace-runtime/src/workspace-files/git-worktree"
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectNavigatorSidebar, expectNavigatorSidebarAbsent, expectRailRowVisible } from "../helpers/rail-oracle"
+import { expectRailRowVisible } from "../helpers/rail-oracle"
 import { captureEvidence } from "../helpers/visual-evidence"
 
-const DIR = "/tmp/e2e-core-navigator-sidebar"
-const PROJECT_ID = "proj_core_navigator_sidebar"
-const SESSION_ID = "ses_core_navigator_sidebar_mock"
-const SPEC = "core-navigator-sidebar"
+const DIR = "/tmp/e2e-core-source-control"
+const PROJECT_ID = "proj_core_source_control"
+const SESSION_ID = "ses_core_source_control_mock"
+const SPEC = "core-source-control"
 const TURNS = 4
 const FOCUS_FILE = "src/index.ts"
 
-/** The full-view panel and the classic px panel are far apart, so a few px of border
+/** The full-view panel and the docked px panel are far apart, so a few px of border
  * or subpixel rounding can never blur the two. */
 const WIDTH_TOLERANCE = 4
-/** `minWidth` in `workspace-panel.tsx`: the narrowest px panel the classic layout renders. */
+/** `minWidth` in `workspace-panel.tsx`: the narrowest px panel the docked layout renders. */
 const CLASSIC_PANEL_MIN_WIDTH = 360
-
-type NavigatorPlacement = "panel" | "sidebar"
 
 const DEFAULT_BRANCH = "main"
 /** Off the default branch, with a `/` so the compare URL's encoding is exercised. */
@@ -109,7 +102,7 @@ const SEEDED_GIT = {
   ],
 } satisfies Pick<GitFixtureSeed, "branch" | "staged" | "unstaged" | "commits">
 
-/** The classic overlay's list reads OpenCode `/file/status`, which knows no untracked state. */
+/** The Review tab's summary reads OpenCode `/file/status`, which knows no untracked state. */
 const SEEDED_STATUS = [...SEEDED_GIT.staged, ...SEEDED_GIT.unstaged].map((entry) => ({
   path: entry.path,
   status: entry.status === "untracked" ? "added" : entry.status,
@@ -322,7 +315,7 @@ async function serveProjectRemote(page: Page, remote: string) {
   const row = {
     id: PROJECT_ID,
     worktree: DIR,
-    name: "navigator-sidebar",
+    name: "source-control",
     git: { remote },
     workspaces: {
       [PROJECT_ID]: { id: PROJECT_ID, workspaceId: PROJECT_ID, project_id: PROJECT_ID, kind: "local", available: true, directory: DIR },
@@ -339,33 +332,23 @@ async function serveProjectRemote(page: Page, remote: string) {
   })
 }
 
-async function seedProject(page: Page, opts: { dir: string; navigatorPlacement?: NavigatorPlacement }) {
-  await page.addInitScript(
-    ([dir, placement]: [string, NavigatorPlacement | undefined]) => {
-      // No `localStorage.clear()`: init scripts re-run on `page.reload()`, and the
-      // reload scenario asserts on what the page itself persisted.
-      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
-        serverUrl: window.location.origin,
-        activeDirectory: dir,
-      }
-      localStorage.setItem(
-        "claxedo.global.dat:server",
-        JSON.stringify({
-          list: [],
-          projects: { local: [{ worktree: dir, expanded: true }] },
-          lastProject: {},
-          workspaceServer: {},
-          closedProjects: {},
-        }),
-      )
-      // Written only when absent so a value the page persisted survives the reload's
-      // re-run of this script.
-      if (placement && localStorage.getItem("settings.v3") === null) {
-        localStorage.setItem("settings.v3", JSON.stringify({ appearance: { navigatorPlacement: placement } }))
-      }
-    },
-    [opts.dir, opts.navigatorPlacement] as [string, NavigatorPlacement | undefined],
-  )
+async function seedProject(page: Page, dir: string) {
+  await page.addInitScript((dir: string) => {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
+      serverUrl: window.location.origin,
+      activeDirectory: dir,
+    }
+    localStorage.setItem(
+      "claxedo.global.dat:server",
+      JSON.stringify({
+        list: [],
+        projects: { local: [{ worktree: dir, expanded: true }] },
+        lastProject: {},
+        workspaceServer: {},
+        closedProjects: {},
+      }),
+    )
+  }, dir)
 }
 
 function seededSessionRow() {
@@ -374,7 +357,7 @@ function seededSessionRow() {
     slug: SESSION_ID,
     projectID: PROJECT_ID,
     directory: DIR,
-    title: "navigator sidebar session",
+    title: "source control session",
     version: "2",
     time: { created: Date.now(), updated: Date.now() },
     summary: { additions: 0, deletions: 0, files: 0 },
@@ -396,7 +379,7 @@ function seededTurnRows(count: number) {
     const created = Date.now() - (count - i + 1) * 60_000
     rows.push({
       info: { id: uid, sessionID: SESSION_ID, role: "user", time: { created }, agent: "build", model: { providerID: "opencode", modelID: "big-pickle" } },
-      parts: [{ id: `${uid}_text`, sessionID: SESSION_ID, messageID: uid, type: "text", text: `navigator sidebar history message ${i}` }],
+      parts: [{ id: `${uid}_text`, sessionID: SESSION_ID, messageID: uid, type: "text", text: `source control history message ${i}` }],
     })
     rows.push({
       info: {
@@ -420,12 +403,11 @@ function seededTurnRows(count: number) {
 }
 
 /** The last seeded user turn's text, the one a floating session keeps on screen. */
-const LAST_TURN_TEXT = `navigator sidebar history message ${TURNS}`
+const LAST_TURN_TEXT = `source control history message ${TURNS}`
 
 async function installSeededWorkspace(
   page: Page,
   opts: {
-    navigatorPlacement?: NavigatorPlacement
     /** The project's git remote; absent by default, like the shared mock's project row. */
     remote?: string
     git?: Partial<Pick<GitFixtureSeed, "branch" | "upstream" | "ahead" | "pushRejected">>
@@ -437,10 +419,10 @@ async function installSeededWorkspace(
     sessionId: SESSION_ID,
     projectId: PROJECT_ID,
     workspaceId: PROJECT_ID,
-    projectName: "navigator-sidebar",
+    projectName: "source-control",
     currentBranch: branch,
   })
-  await seedProject(page, { dir: DIR, navigatorPlacement: opts.navigatorPlacement })
+  await seedProject(page, DIR)
   const git = await installGitFixture(page, { ...SEEDED_GIT, ...opts.git, branch })
   if (opts.remote) await serveProjectRemote(page, opts.remote)
 
@@ -518,8 +500,17 @@ function panelShell(page: Page) {
   return page.locator('[data-testid="workspace-panel-shell"]')
 }
 
+function panelL1Header(page: Page) {
+  return panelShell(page).locator('[data-testid="workspace-panel-l1-header"]')
+}
+
 function workbenchColumn(page: Page) {
   return page.locator('[data-testid="workbench-column"]')
+}
+
+/** The panel's files column, which hosts the Files navigator or the source-control view. */
+function navigatorColumn(page: Page) {
+  return panelShell(page).locator('[data-testid="workspace-navigator-overlay"][data-navigator="files"]')
 }
 
 function timelineScroller(page: Page) {
@@ -555,37 +546,8 @@ async function panelWidth(page: Page) {
   return box!.width
 }
 
-/** Drives the real Settings → General → Appearance Select, as a user would. */
-async function setNavigatorPlacement(page: Page, placement: NavigatorPlacement) {
-  const label = placement === "sidebar" ? "Sidebar" : "Workspace panel"
-  await page.getByTestId("rail-account-trigger").click()
-  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-  const dialog = page.locator('[data-slot="dialog-container"]').last()
-  await expect(dialog).toBeVisible({ timeout: 10_000 })
-
-  const trigger = dialog.locator('[data-action="settings-navigator-placement"] [data-slot="select-select-trigger"]')
-  await trigger.click()
-  await page.locator('[data-slot="select-select-item"]').filter({ hasText: label }).first().click()
-  await expect(trigger).toContainText(label)
-
-  await page.keyboard.press("Escape")
-  await expect(dialog).toBeHidden({ timeout: 5_000 })
-}
-
-async function persistedNavigatorPlacement(page: Page) {
-  return page.evaluate(() => {
-    const raw = localStorage.getItem("settings.v3")
-    if (!raw) return undefined
-    const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== "object" || !("appearance" in parsed)) return undefined
-    const appearance = parsed.appearance
-    if (!appearance || typeof appearance !== "object" || !("navigatorPlacement" in appearance)) return undefined
-    return appearance.navigatorPlacement
-  })
-}
-
 function sourceControlView(page: Page) {
-  return page.locator('[data-testid="navigator-sidebar"] [data-testid="source-control-view"]')
+  return panelShell(page).locator('[data-testid="source-control-view"]')
 }
 
 function changeGroup(page: Page, id: "staged" | "changes") {
@@ -608,13 +570,32 @@ function commitButton(page: Page) {
   return sourceControlView(page).getByTestId("source-control-commit")
 }
 
-/** The sidebar's Changes tab, selected and past its loading skeleton. The view is the
- * sidebar's, never the panel overlay's, so a click that opened the overlay instead would
- * fail here. */
+/** Opens the panel from the header's toggle, then selects `navigator` in the panel's own
+ * L2 trio: the trio has no home outside the panel column. */
+async function openClassicPanelNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
+  const toggle = page.locator('[data-testid="workbench-shell-header"] [data-testid="workspace-panel-toggle"]')
+  await expect(toggle).toHaveAttribute("aria-label", "Open workspace panel")
+  await toggle.click()
+  const panel = panelShell(page)
+  await expect(panel).toHaveAttribute("data-open", "true", { timeout: 15_000 })
+  await panel.getByRole("button", { name: `Open ${navigator}` }).click()
+}
+
+/** The panel's Changes navigator, selected and past its loading skeleton. Opens the panel
+ * through the header toggle when it is closed. The shell is not in the DOM before the
+ * first open, and `.getAttribute()` on a missing element auto-waits out the whole action
+ * timeout; `.count()` answers immediately. */
 async function openSourceControl(page: Page): Promise<Locator> {
-  const sidebar = await expectNavigatorSidebar({ page })
-  if ((await sidebar.getAttribute("data-tab")) !== "changes") await sidebar.locator('[role="tab"][data-tab="changes"]').click()
-  await expect(sidebar).toHaveAttribute("data-tab", "changes")
+  const panel = panelShell(page)
+  const open = (await panel.count()) > 0 && (await panel.getAttribute("data-open")) === "true"
+  if (!open) {
+    await openClassicPanelNavigator(page, "Changes")
+  } else if ((await panel.getAttribute("data-state-navigator")) !== "changes") {
+    await panel.getByRole("button", { name: "Open Changes" }).click()
+  }
+  await expect(panel).toHaveAttribute("data-state-navigator", "changes", { timeout: 15_000 })
+  await expect(navigatorColumn(page)).toHaveAttribute("data-open", "true", { timeout: 15_000 })
+  await expect(navigatorColumn(page)).toHaveAttribute("data-navigator-kind", "changes")
   const view = sourceControlView(page)
   await expect(view).toBeVisible({ timeout: 15_000 })
   await expect(view.getByTestId("source-control-loading")).toHaveCount(0, { timeout: 15_000 })
@@ -645,7 +626,7 @@ async function clickRowAction(page: Page, path: string, action: "stage" | "unsta
   await button.click()
 }
 
-async function clickChangedFileInSidebar(page: Page, path: string) {
+async function clickChangedFile(page: Page, path: string) {
   await openSourceControl(page)
   await changeRow(page, path).locator('[data-slot="open"]').click()
 }
@@ -662,8 +643,20 @@ async function attachGitRequests(git: GitFixture, testInfo: TestInfo) {
   await testInfo.attach("git-requests", { path, contentType: "application/json" })
 }
 
-/** The panel is open at full view: it covers the `role="main"` column, the pane column is
- * the floating host, and no navigator overlay sits inside the panel. */
+/** The panel is open and docked: a px panel narrower than the `role="main"` column,
+ * the column beside it shifted over by a margin, and no floating host. */
+async function expectPanelDocked(page: Page) {
+  const panel = panelShell(page)
+  await expect(panel).toHaveAttribute("data-state-open", "true", { timeout: 15_000 })
+  await expect(panel).toHaveAttribute("data-shell-settled", "true", { timeout: 15_000 })
+  await expect.poll(() => panelWidth(page), { timeout: 15_000 }).toBeGreaterThanOrEqual(CLASSIC_PANEL_MIN_WIDTH)
+  await expect.poll(async () => (await mainWidth(page)) - (await panelWidth(page)), { timeout: 15_000 }).toBeGreaterThan(WIDTH_TOLERANCE)
+  await expect(workbenchColumn(page)).not.toHaveAttribute("data-floating-host", "")
+  await expect(workbenchColumn(page)).toHaveCSS("margin-right", /^[1-9]\d*px$/)
+}
+
+/** The panel is open at full view: it covers the `role="main"` column and the pane
+ * column is the floating host. */
 async function expectPanelAtFullView(page: Page) {
   const panel = panelShell(page)
   await expect(panel).toHaveAttribute("data-state-open", "true", { timeout: 15_000 })
@@ -671,7 +664,6 @@ async function expectPanelAtFullView(page: Page) {
   await expect(panel).toHaveAttribute("data-shell-settled", "true", { timeout: 15_000 })
   await expect(workbenchColumn(page)).toHaveAttribute("data-floating-host", "", { timeout: 15_000 })
   await expect.poll(async () => Math.abs((await panelWidth(page)) - (await mainWidth(page))), { timeout: 15_000 }).toBeLessThan(WIDTH_TOLERANCE)
-  await expect(panel.locator('[data-testid="workspace-navigator-overlay"]')).toHaveCount(0)
 }
 
 /** The click landed as a review-mode, Changes-navigator panel request. */
@@ -690,17 +682,6 @@ async function expectReviewFocused(page: Page, path: string) {
   const file = panel.locator(`[data-component="session-review"] [data-review-file="${path}"]`)
   await expect(file).toBeVisible({ timeout: 15_000 })
   await expect(file, `${path} is listed but not the focused (selected) diff`).toHaveAttribute("data-selected", "", { timeout: 15_000 })
-}
-
-/** Opens the classic panel from the floating chrome's toggle, then selects `navigator`
- * in the panel's own L2 trio: the trio has no home outside the panel column. */
-async function openClassicPanelNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
-  const toggle = page.locator('[data-testid="workbench-shell-header"] [data-testid="workspace-panel-toggle"]')
-  await expect(toggle).toHaveAttribute("aria-label", "Open workspace panel")
-  await toggle.click()
-  const panel = panelShell(page)
-  await expect(panel).toHaveAttribute("data-open", "true", { timeout: 15_000 })
-  await panel.getByRole("button", { name: `Open ${navigator}` }).click()
 }
 
 async function expectSessionFloating(page: Page) {
@@ -731,55 +712,220 @@ async function attachVideoPath(page: Page, testInfo: TestInfo) {
   if (path) await testInfo.attach("video-path", { body: path, contentType: "text/plain" })
 }
 
-test.describe("core navigator sidebar placement @core", () => {
-  // Each scenario is a cold `/s/:id` navigation plus panel motion; some add a reload.
+test.describe("core source control @core", () => {
+  // Each scenario is a cold `/s/:id` navigation plus panel motion.
   test.beforeEach(() => {
     test.slow()
   })
 
-  test("default placement keeps the classic rail and mounts no navigator sidebar", async ({ page }) => {
-    await installSeededWorkspace(page)
+  test("the Changes navigator shows the commit box, both groups with status letters, the graph, and Publish Branch without Create PR off a non-GitHub remote", async ({ page }, testInfo) => {
+    const { git } = await installSeededWorkspace(page, { remote: GITLAB_REMOTE })
     await gotoSession(page)
-
     await expectRailRowVisible({ page, sessionId: SESSION_ID })
-    await expectNavigatorSidebarAbsent({ page })
-    expect(await persistedNavigatorPlacement(page)).not.toBe("sidebar")
-  })
-
-  test("Settings → Appearance → Sidebar mounts the navigator beside an unchanged rail and survives a reload", async ({ page }) => {
-    await installSeededWorkspace(page)
-    await gotoSession(page)
-    await expectNavigatorSidebarAbsent({ page })
-
-    await setNavigatorPlacement(page, "sidebar")
-
-    // Changes is the persisted default tab of a fresh `claxedo.state.v5`.
-    await expectNavigatorSidebar({ page, tab: "changes", evidence: { spec: SPEC, scenario: "sidebar-mounted" } })
-    await expectRailRowVisible({ page, sessionId: SESSION_ID })
-    await expect.poll(() => persistedNavigatorPlacement(page)).toBe("sidebar")
-
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 90_000 })
-    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    expect(await persistedNavigatorPlacement(page)).toBe("sidebar")
-    await expectNavigatorSidebar({ page, tab: "changes" })
-    await expectRailRowVisible({ page, sessionId: SESSION_ID })
-  })
-
-  test("a Changes click opens the panel at full view over a floating session whose history collapses to the last turn until revealed", async ({ page }, testInfo) => {
-    await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
     await expectSessionDocked(page)
     await expect(panelShell(page)).toHaveCount(0)
 
-    await expectNavigatorSidebar({ page, tab: "changes" })
     const view = await openSourceControl(page)
-    await expect(view.locator('[data-testid="source-control-row"]')).toHaveCount(SEEDED_GIT.staged.length + SEEDED_GIT.unstaged.length, { timeout: 15_000 })
-    for (const entry of [...SEEDED_GIT.staged, ...SEEDED_GIT.unstaged]) await expect(changeRow(page, entry.path)).toBeVisible()
+    await expectPanelDocked(page)
+    await expectSessionDocked(page)
 
-    await clickChangedFileInSidebar(page, FOCUS_FILE)
+    await expect(commitMessage(page)).toBeVisible()
+    await expect(commitMessage(page)).toHaveValue("")
+    await expect(commitButton(page)).toBeDisabled()
+    await expect(view.getByTestId("source-control-commit-menu")).toBeVisible()
+
+    await expectGroupCounts(page, 1, 3)
+    await expectRow(page, STAGED_FILE, "staged", "modified", "M")
+    await expectRow(page, UNSTAGED_FILE, "changes", "modified", "M")
+    await expectRow(page, DELETED_FILE, "changes", "deleted", "D")
+    await expectRow(page, UNTRACKED_FILE, "changes", "untracked", "U")
+
+    const rows = commitRows(page)
+    await expect(rows).toHaveCount(SEEDED_GIT.commits.length, { timeout: 15_000 })
+    for (const [index, commit] of SEEDED_GIT.commits.entries()) {
+      await expect(rows.nth(index)).toHaveAttribute("data-hash", commit.hash)
+      await expect(rows.nth(index)).toContainText(commit.subject)
+    }
+
+    // No upstream: Publish Branch, not Push; a GitLab remote: no compare link.
+    await expect(view.getByTestId("source-control-publish")).toBeVisible()
+    await expect(view.getByTestId("source-control-push")).toHaveCount(0)
+    await expect(view.getByTestId("source-control-up-to-date")).toHaveCount(0)
+    await expect(view.getByTestId("source-control-create-pr")).toHaveCount(0)
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-seeded" })
+
+    // Both reads went to the fixture.
+    expect(git.requests.map((request) => `${request.method} ${request.route}`)).toEqual(expect.arrayContaining(["GET status", "GET log"]))
+    await attachGitRequests(git, testInfo)
+  })
+
+  test("every git request names the worktree it is scoped to", async ({ page }, testInfo) => {
+    // `sdk.tsx` builds the git client over `runtimeClient(directory)`, whose fetch adds
+    // neither `?directory=` nor `x-claxedo-directory` (`transport.ts` → `unsignedFetchWith`),
+    // and the workspace-runtime client's `git` namespace takes no directory, unlike its
+    // `file` namespace. The real server resolves the workspace from exactly those two
+    // (`runtime-dispatch/internals.ts` requestWorkspace → `resolveWorkspace`, which returns
+    // undefined without a directory), so against a real runtime every Changes read and
+    // write is unscoped. The fixture answers regardless, which is why this is its own
+    // scenario: it turns green the moment the client scopes its requests.
+    const { git } = await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+    await clickRowAction(page, UNSTAGED_FILE, "stage")
+    await expectGroupCounts(page, 2, 2)
+    await attachGitRequests(git, testInfo)
+    expect(git.requests.map((request) => request.route)).toEqual(expect.arrayContaining(["status", "log", "stage"]))
+    for (const request of git.requests) {
+      expect(request.directory, `${request.method} ${request.url} names no worktree`).toBe(DIR)
+    }
+  })
+
+  test("hovering a Changes row stages it, Unstage returns it, and Stage all empties the Changes group", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page)
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+
+    await clickRowAction(page, UNSTAGED_FILE, "stage")
+    await expectGroupCounts(page, 2, 2)
+    await expectRow(page, UNSTAGED_FILE, "staged", "modified", "M")
+    expect(git.requests.filter((request) => request.route === "stage").map((request) => request.body)).toEqual([{ paths: [UNSTAGED_FILE] }])
+
+    await clickRowAction(page, UNSTAGED_FILE, "unstage")
+    await expectGroupCounts(page, 1, 3)
+    await expectRow(page, UNSTAGED_FILE, "changes", "modified", "M")
+    expect(git.requests.filter((request) => request.route === "unstage").map((request) => request.body)).toEqual([{ paths: [UNSTAGED_FILE] }])
+
+    // Stage all lives in the Changes header and is hidden until the header is hovered.
+    // The pointer still rests where the unstaged row's action was, which the shrunken
+    // Staged group has just slid the Changes header under; park it on the message box.
+    await commitMessage(page).hover()
+    const header = changeGroup(page, "changes")
+    const stageAll = header.locator('[data-action="stage-all"]')
+    await expect(stageAll).toHaveCSS("opacity", "0")
+    await header.hover()
+    await expect(stageAll).toHaveCSS("opacity", "1")
+    await stageAll.click()
+    await expectGroupCounts(page, 4, 0)
+    await expect(view.locator('[data-testid="source-control-row"][data-group="changes"]')).toHaveCount(0)
+    // Staging an untracked file adds it: the letter follows the index, as git's does.
+    await expectRow(page, UNTRACKED_FILE, "staged", "added", "A")
+    await expectRow(page, DELETED_FILE, "staged", "deleted", "D")
+    expect(git.status().staged.map((entry) => entry.path).sort()).toEqual([DELETED_FILE, UNTRACKED_FILE, STAGED_FILE, UNSTAGED_FILE].sort())
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-staged-all" })
+  })
+
+  test("Commit needs a message; committing empties Staged, tops the Graph with the subject, and clears the box", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+    await expect(commitButton(page)).toBeDisabled()
+
+    const subject = "feat: commit from the Changes navigator"
+    await commitMessage(page).fill(`${subject}\n\nA body line the graph never shows.`)
+    await expect(commitButton(page)).toBeEnabled()
+    await commitButton(page).click()
+
+    await expectGroupCounts(page, 0, 3)
+    const rows = commitRows(page)
+    await expect(rows).toHaveCount(SEEDED_GIT.commits.length + 1, { timeout: 15_000 })
+    await expect(rows.first()).toHaveAttribute("data-hash", git.commits()[0]!.hash)
+    await expect(rows.first()).toContainText(subject)
+    await expect(rows.nth(1)).toHaveAttribute("data-hash", SEEDED_GIT.commits[0]!.hash)
+    await expect(commitMessage(page)).toHaveValue("")
+    await expect(commitButton(page)).toBeDisabled()
+    expect(git.requests.filter((request) => request.route === "commit-staged").map((request) => request.body)).toEqual([
+      { message: `${subject}\n\nA body line the graph never shows.`, amend: false },
+    ])
+    expect(git.status().staged).toEqual([])
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-committed" })
+  })
+
+  test("⌘⏎ in the message box commits", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+
+    const subject = "feat: commit from the keyboard"
+    await commitMessage(page).fill(subject)
+    await commitMessage(page).press("ControlOrMeta+Enter")
+
+    await expectGroupCounts(page, 0, 3)
+    await expect(commitRows(page).first()).toContainText(subject, { timeout: 15_000 })
+    await expect(commitMessage(page)).toHaveValue("")
+    expect(git.commits()[0]?.subject).toBe(subject)
+  })
+
+  test("a staged row opens the Review tab in Staged mode and an unstaged row in Unstaged mode", async ({ page }) => {
+    await installSeededWorkspace(page)
+    await gotoSession(page)
+
+    await clickChangedFile(page, STAGED_FILE)
+    await expectPanelInReviewForChanges(page)
+    await expectReviewFocused(page, STAGED_FILE)
+    await expectReviewMode(page, "Staged")
+    await expect(changeRow(page, STAGED_FILE)).toHaveClass(/bg-surface-base-active/)
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-staged" })
+
+    await changeRow(page, UNSTAGED_FILE).locator('[data-slot="open"]').click()
+    await expectReviewFocused(page, UNSTAGED_FILE)
+    await expectReviewMode(page, "Unstaged")
+    await expect(changeRow(page, UNSTAGED_FILE)).toHaveClass(/bg-surface-base-active/)
+    await expect(changeRow(page, STAGED_FILE)).not.toHaveClass(/bg-surface-base-active/)
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-unstaged" })
+  })
+
+  test("Create PR links to the GitHub compare page for a branch off the default", async ({ page }) => {
+    await installSeededWorkspace(page, { remote: GITHUB_REMOTE, git: { branch: FEATURE_BRANCH } })
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+
+    const link = view.getByTestId("source-control-create-pr")
+    await expect(link).toBeVisible({ timeout: 15_000 })
+    await expect(link).toHaveAttribute(
+      "href",
+      `https://github.com/acme/app/compare/${DEFAULT_BRANCH}...${encodeURIComponent(FEATURE_BRANCH)}?expand=1`,
+    )
+    await expect(link).toHaveAttribute("target", "_blank")
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer")
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-create-pr" })
+  })
+
+  test("a rejected push reports git's message under the commit box", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page, { git: { pushRejected: PUSH_REJECTION } })
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+
+    await view.getByTestId("source-control-publish").click()
+    const error = view.getByTestId("source-control-error")
+    await expect(error).toBeVisible({ timeout: 15_000 })
+    await expect(error).toHaveText(`Push rejected: ${PUSH_REJECTION}`)
+    await expect(commitMessage(page)).toHaveAttribute("aria-invalid", "true")
+    // Still unpublished: the button stays, and the fixture saw one upstream-setting push.
+    await expect(view.getByTestId("source-control-publish")).toBeVisible()
+    expect(git.requests.filter((request) => request.route === "push").map((request) => request.body)).toEqual([{ setUpstream: true }])
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-push-rejected" })
+  })
+
+  test("Maximize opens the panel at full view over a floating session whose history collapses to the last turn until revealed; Restore docks it again", async ({ page }, testInfo) => {
+    await installSeededWorkspace(page)
+    await gotoSession(page)
+    await expectSessionDocked(page)
+
+    await clickChangedFile(page, FOCUS_FILE)
+    await expectPanelDocked(page)
+    await expectReviewFocused(page, FOCUS_FILE)
+
+    const l1 = panelL1Header(page)
+    await l1.getByRole("button", { name: "Maximize workspace panel" }).click()
     await expectPanelAtFullView(page)
     await expectPanelInReviewForChanges(page)
     await expectSessionFloating(page)
+    await expect(navigatorColumn(page)).toHaveAttribute("data-open", "true")
+    await expect(sourceControlView(page)).toBeVisible()
     await captureEvidence({ page, spec: SPEC, scenario: "full-view-open" })
 
     // The floating composer is the same PromptInput node, reachable over the panel.
@@ -822,283 +968,21 @@ test.describe("core navigator sidebar placement @core", () => {
     await expect(lastTurnContent(page)).toBeVisible()
     await expectScrolledToEnd(page)
     await captureEvidence({ page, spec: SPEC, scenario: "previous-messages-revealed" })
-    await attachVideoPath(page, testInfo)
-  })
 
-  test("restore docks the session beside a px-width panel; close and reopen returns to full view; the header trio drives the sidebar tab", async ({ page }, testInfo) => {
-    await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-    await clickChangedFileInSidebar(page, FOCUS_FILE)
-    await expectPanelAtFullView(page)
-    await expectSessionFloating(page)
-
-    const panel = panelShell(page)
-    const l1 = panel.locator('[data-testid="workspace-panel-l1-header"]')
+    // Restore docks the session beside a px-width panel again: the peek strip is gone
+    // and the window reopens at its full initial size, every seeded turn, no row above it.
     await l1.getByRole("button", { name: "Restore workspace panel width" }).click()
     await expect(l1.getByRole("button", { name: "Maximize workspace panel" })).toBeVisible({ timeout: 15_000 })
     await expect(workbenchColumn(page)).not.toHaveAttribute("data-floating-host", "", { timeout: 15_000 })
-    await expect.poll(async () => (await mainWidth(page)) - (await panelWidth(page)), { timeout: 15_000 }).toBeGreaterThan(WIDTH_TOLERANCE)
+    await expectPanelDocked(page)
     await expectSessionDocked(page)
-    // Docked again, the peek strip is gone and the window reopens at its full initial
-    // size: every seeded turn, no row above it.
     await expect(transcriptPeek(page)).toHaveCount(0, { timeout: 15_000 })
     await expect(collapsedTranscript(page)).toHaveCount(0)
-    await expect(sessionRoot(page)).toHaveAttribute("data-session-rendered-user-count", String(TURNS), { timeout: 15_000 })
+    await expect(root).toHaveAttribute("data-session-rendered-user-count", String(TURNS), { timeout: 15_000 })
     await expect(previousMessagesRow(page)).toHaveCount(0)
     await expect(lastTurnContent(page)).toBeVisible({ timeout: 15_000 })
+    await expect(sourceControlView(page)).toBeVisible()
     await captureEvidence({ page, spec: SPEC, scenario: "restored-docked" })
-
-    // The L1 toggle is the only one visible while the panel is open.
-    await l1.locator('[data-testid="workspace-panel-toggle"]').click()
-    await expect(panel).toHaveAttribute("data-open", "false", { timeout: 15_000 })
-
-    // Full view is the preset's base, so a reopen ignores the restored px width.
-    await clickChangedFileInSidebar(page, "src/util.ts")
-    await expectPanelAtFullView(page)
-    await expectPanelInReviewForChanges(page)
-    await expectSessionFloating(page)
-
-    // The panel's L2 trio selects the sidebar's tab in this placement instead of an overlay.
-    await panel.getByRole("button", { name: "Open Processes" }).click()
-    await expectNavigatorSidebar({ page, tab: "processes" })
-    await expect(panel.locator('[data-testid="workspace-navigator-overlay"]')).toHaveCount(0)
     await attachVideoPath(page, testInfo)
-  })
-
-  test("switching back to Workspace panel unmounts the sidebar and the header trio opens the classic panel with its overlay", async ({ page }) => {
-    await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-    await expectNavigatorSidebar({ page, tab: "changes" })
-
-    await setNavigatorPlacement(page, "panel")
-    await expectNavigatorSidebarAbsent({ page })
-    await expectRailRowVisible({ page, sessionId: SESSION_ID })
-    await expect.poll(() => persistedNavigatorPlacement(page)).toBe("panel")
-
-    await openClassicPanelNavigator(page, "Changes")
-    const panel = panelShell(page)
-    await expect(panel).toHaveAttribute("data-state-open", "true", { timeout: 15_000 })
-    await expect(panel).toHaveAttribute("data-shell-settled", "true", { timeout: 15_000 })
-    await expect(panel).toHaveAttribute("data-state-navigator", "changes")
-    // A px panel beside the column, never the full-view cover.
-    await expect.poll(() => panelWidth(page), { timeout: 15_000 }).toBeGreaterThanOrEqual(CLASSIC_PANEL_MIN_WIDTH)
-    await expect.poll(async () => (await mainWidth(page)) - (await panelWidth(page)), { timeout: 15_000 }).toBeGreaterThan(WIDTH_TOLERANCE)
-    await expect(workbenchColumn(page)).not.toHaveAttribute("data-floating-host", "")
-    await expect(workbenchColumn(page)).toHaveCSS("margin-right", /^[1-9]\d*px$/)
-    await expect(panel.locator('[data-testid="workspace-navigator-overlay"][data-navigator="files"]')).toHaveAttribute("data-open", "true", { timeout: 15_000 })
-    await expectSessionDocked(page)
-  })
-
-  test("a Changes click focuses the clicked file in the Review tab, from the sidebar and from the classic overlay alike", async ({ page }) => {
-    // Same defect as the Staged / Unstaged scenario below: the focus is consumed before
-    // `ReviewTab` reads its path, so the file is listed but never the selected diff.
-    await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-
-    await clickChangedFileInSidebar(page, FOCUS_FILE)
-    await expectPanelAtFullView(page)
-    await expectReviewFocused(page, FOCUS_FILE)
-
-    await setNavigatorPlacement(page, "panel")
-    await expectNavigatorSidebarAbsent({ page })
-    const overlay = panelShell(page).locator('[data-testid="workspace-navigator-overlay"][data-navigator="files"]')
-    if ((await overlay.getAttribute("data-open").catch(() => null)) !== "true") {
-      await panelShell(page).getByRole("button", { name: "Open Changes" }).click()
-    }
-    await expect(overlay).toHaveAttribute("data-open", "true", { timeout: 15_000 })
-    await overlay.locator(`button[data-file-tree-path="src/util.ts"]`).click()
-    await expectReviewFocused(page, "src/util.ts")
-  })
-
-  test("the Changes tab shows the commit box, both groups with status letters, the graph, and Publish Branch without Create PR off a non-GitHub remote", async ({ page }, testInfo) => {
-    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar", remote: GITLAB_REMOTE })
-    await gotoSession(page)
-    const view = await openSourceControl(page)
-
-    await expect(commitMessage(page)).toBeVisible()
-    await expect(commitMessage(page)).toHaveValue("")
-    await expect(commitButton(page)).toBeDisabled()
-    await expect(view.getByTestId("source-control-commit-menu")).toBeVisible()
-
-    await expectGroupCounts(page, 1, 3)
-    await expectRow(page, STAGED_FILE, "staged", "modified", "M")
-    await expectRow(page, UNSTAGED_FILE, "changes", "modified", "M")
-    await expectRow(page, DELETED_FILE, "changes", "deleted", "D")
-    await expectRow(page, UNTRACKED_FILE, "changes", "untracked", "U")
-
-    const rows = commitRows(page)
-    await expect(rows).toHaveCount(SEEDED_GIT.commits.length, { timeout: 15_000 })
-    for (const [index, commit] of SEEDED_GIT.commits.entries()) {
-      await expect(rows.nth(index)).toHaveAttribute("data-hash", commit.hash)
-      await expect(rows.nth(index)).toContainText(commit.subject)
-    }
-
-    // No upstream: Publish Branch, not Push; a GitLab remote: no compare link.
-    await expect(view.getByTestId("source-control-publish")).toBeVisible()
-    await expect(view.getByTestId("source-control-push")).toHaveCount(0)
-    await expect(view.getByTestId("source-control-up-to-date")).toHaveCount(0)
-    await expect(view.getByTestId("source-control-create-pr")).toHaveCount(0)
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-seeded" })
-
-    // Both reads went to the fixture.
-    expect(git.requests.map((request) => `${request.method} ${request.route}`)).toEqual(expect.arrayContaining(["GET status", "GET log"]))
-    await attachGitRequests(git, testInfo)
-  })
-
-  test("every git request names the worktree it is scoped to", async ({ page }, testInfo) => {
-    // `sdk.tsx` builds the git client over `runtimeClient(directory)`, whose fetch adds
-    // neither `?directory=` nor `x-claxedo-directory` (`transport.ts` → `unsignedFetchWith`),
-    // and the workspace-runtime client's `git` namespace takes no directory, unlike its
-    // `file` namespace. The real server resolves the workspace from exactly those two
-    // (`runtime-dispatch/internals.ts` requestWorkspace → `resolveWorkspace`, which returns
-    // undefined without a directory), so against a real runtime every Changes-tab read and
-    // write is unscoped. The fixture answers regardless, which is why this is its own
-    // scenario: it turns green the moment the client scopes its requests.
-    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-    await openSourceControl(page)
-    await expectGroupCounts(page, 1, 3)
-    await clickRowAction(page, UNSTAGED_FILE, "stage")
-    await expectGroupCounts(page, 2, 2)
-    await attachGitRequests(git, testInfo)
-    expect(git.requests.map((request) => request.route)).toEqual(expect.arrayContaining(["status", "log", "stage"]))
-    for (const request of git.requests) {
-      expect(request.directory, `${request.method} ${request.url} names no worktree`).toBe(DIR)
-    }
-  })
-
-  test("hovering a Changes row stages it, Unstage returns it, and Stage all empties the Changes group", async ({ page }) => {
-    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-    const view = await openSourceControl(page)
-    await expectGroupCounts(page, 1, 3)
-
-    await clickRowAction(page, UNSTAGED_FILE, "stage")
-    await expectGroupCounts(page, 2, 2)
-    await expectRow(page, UNSTAGED_FILE, "staged", "modified", "M")
-    expect(git.requests.filter((request) => request.route === "stage").map((request) => request.body)).toEqual([{ paths: [UNSTAGED_FILE] }])
-
-    await clickRowAction(page, UNSTAGED_FILE, "unstage")
-    await expectGroupCounts(page, 1, 3)
-    await expectRow(page, UNSTAGED_FILE, "changes", "modified", "M")
-    expect(git.requests.filter((request) => request.route === "unstage").map((request) => request.body)).toEqual([{ paths: [UNSTAGED_FILE] }])
-
-    // Stage all lives in the Changes header and is hidden until the header is hovered.
-    // The pointer still rests where the unstaged row's action was, which the shrunken
-    // Staged group has just slid the Changes header under; park it on the message box.
-    await commitMessage(page).hover()
-    const header = changeGroup(page, "changes")
-    const stageAll = header.locator('[data-action="stage-all"]')
-    await expect(stageAll).toHaveCSS("opacity", "0")
-    await header.hover()
-    await expect(stageAll).toHaveCSS("opacity", "1")
-    await stageAll.click()
-    await expectGroupCounts(page, 4, 0)
-    await expect(view.locator('[data-testid="source-control-row"][data-group="changes"]')).toHaveCount(0)
-    // Staging an untracked file adds it: the letter follows the index, as git's does.
-    await expectRow(page, UNTRACKED_FILE, "staged", "added", "A")
-    await expectRow(page, DELETED_FILE, "staged", "deleted", "D")
-    expect(git.status().staged.map((entry) => entry.path).sort()).toEqual([DELETED_FILE, UNTRACKED_FILE, STAGED_FILE, UNSTAGED_FILE].sort())
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-staged-all" })
-  })
-
-  test("Commit needs a message; committing empties Staged, tops the Graph with the subject, and clears the box", async ({ page }) => {
-    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-    await openSourceControl(page)
-    await expectGroupCounts(page, 1, 3)
-    await expect(commitButton(page)).toBeDisabled()
-
-    const subject = "feat: commit from the Changes tab"
-    await commitMessage(page).fill(`${subject}\n\nA body line the graph never shows.`)
-    await expect(commitButton(page)).toBeEnabled()
-    await commitButton(page).click()
-
-    await expectGroupCounts(page, 0, 3)
-    const rows = commitRows(page)
-    await expect(rows).toHaveCount(SEEDED_GIT.commits.length + 1, { timeout: 15_000 })
-    await expect(rows.first()).toHaveAttribute("data-hash", git.commits()[0]!.hash)
-    await expect(rows.first()).toContainText(subject)
-    await expect(rows.nth(1)).toHaveAttribute("data-hash", SEEDED_GIT.commits[0]!.hash)
-    await expect(commitMessage(page)).toHaveValue("")
-    await expect(commitButton(page)).toBeDisabled()
-    expect(git.requests.filter((request) => request.route === "commit-staged").map((request) => request.body)).toEqual([
-      { message: `${subject}\n\nA body line the graph never shows.`, amend: false },
-    ])
-    expect(git.status().staged).toEqual([])
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-committed" })
-  })
-
-  test("⌘⏎ in the message box commits", async ({ page }) => {
-    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-    await openSourceControl(page)
-    await expectGroupCounts(page, 1, 3)
-
-    const subject = "feat: commit from the keyboard"
-    await commitMessage(page).fill(subject)
-    await commitMessage(page).press("ControlOrMeta+Enter")
-
-    await expectGroupCounts(page, 0, 3)
-    await expect(commitRows(page).first()).toContainText(subject, { timeout: 15_000 })
-    await expect(commitMessage(page)).toHaveValue("")
-    expect(git.commits()[0]?.subject).toBe(subject)
-  })
-
-  test("a staged row opens the Review tab in Staged mode and an unstaged row in Unstaged mode", async ({ page }) => {
-    // `review-workspace.tsx`'s file-focus effect calls `onFocusConsumed()` before it
-    // activates the Review tab; `workspace-panel-body.tsx`'s `consumeFocus` retargets the
-    // panel with `focus: null`, so `focusPath`, `focusFileIntent` and `focusReviewMode` are
-    // already undefined when `ReviewTab` reads `focusedDiffPath` / `focusedDiffMode`. The
-    // review therefore stays in its opening mode ("Uncommitted") with no selected diff.
-    await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
-    await gotoSession(page)
-
-    await clickChangedFileInSidebar(page, STAGED_FILE)
-    await expectPanelAtFullView(page)
-    await expectPanelInReviewForChanges(page)
-    await expectReviewFocused(page, STAGED_FILE)
-    await expectReviewMode(page, "Staged")
-    await expect(changeRow(page, STAGED_FILE)).toHaveClass(/bg-surface-base-active/)
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-staged" })
-
-    await changeRow(page, UNSTAGED_FILE).locator('[data-slot="open"]').click()
-    await expectReviewFocused(page, UNSTAGED_FILE)
-    await expectReviewMode(page, "Unstaged")
-    await expect(changeRow(page, UNSTAGED_FILE)).toHaveClass(/bg-surface-base-active/)
-    await expect(changeRow(page, STAGED_FILE)).not.toHaveClass(/bg-surface-base-active/)
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-unstaged" })
-  })
-
-  test("Create PR links to the GitHub compare page for a branch off the default", async ({ page }) => {
-    await installSeededWorkspace(page, { navigatorPlacement: "sidebar", remote: GITHUB_REMOTE, git: { branch: FEATURE_BRANCH } })
-    await gotoSession(page)
-    const view = await openSourceControl(page)
-
-    const link = view.getByTestId("source-control-create-pr")
-    await expect(link).toBeVisible({ timeout: 15_000 })
-    await expect(link).toHaveAttribute(
-      "href",
-      `https://github.com/acme/app/compare/${DEFAULT_BRANCH}...${encodeURIComponent(FEATURE_BRANCH)}?expand=1`,
-    )
-    await expect(link).toHaveAttribute("target", "_blank")
-    await expect(link).toHaveAttribute("rel", "noopener noreferrer")
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-create-pr" })
-  })
-
-  test("a rejected push reports git's message under the commit box", async ({ page }) => {
-    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar", git: { pushRejected: PUSH_REJECTION } })
-    await gotoSession(page)
-    const view = await openSourceControl(page)
-
-    await view.getByTestId("source-control-publish").click()
-    const error = view.getByTestId("source-control-error")
-    await expect(error).toBeVisible({ timeout: 15_000 })
-    await expect(error).toHaveText(`Push rejected: ${PUSH_REJECTION}`)
-    await expect(commitMessage(page)).toHaveAttribute("aria-invalid", "true")
-    // Still unpublished: the button stays, and the fixture saw one upstream-setting push.
-    await expect(view.getByTestId("source-control-publish")).toBeVisible()
-    expect(git.requests.filter((request) => request.route === "push").map((request) => request.body)).toEqual([{ setUpstream: true }])
-    await captureEvidence({ page, spec: SPEC, scenario: "source-control-push-rejected" })
   })
 })

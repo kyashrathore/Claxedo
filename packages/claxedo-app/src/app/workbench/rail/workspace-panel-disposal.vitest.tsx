@@ -152,7 +152,7 @@ vi.mock("../../../features/settings/ui/terminals", () => ({
 }))
 
 vi.mock("@/platform/settings/provider", () => ({
-  useSettings: () => ({ appearance: { navigatorSide: () => "right", navigatorPlacement: () => "panel" } }),
+  useSettings: () => ({ appearance: { navigatorSide: () => "right" } }),
 }))
 
 beforeEach(() => {

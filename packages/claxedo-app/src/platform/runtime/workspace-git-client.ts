@@ -53,16 +53,16 @@ export type WorkspaceGitClient = {
 
 export function createWorkspaceGitClient(runtime: WorkspaceGitRuntime): WorkspaceGitClient {
   return {
-    status: () => normalized(() => runtime.git.status()),
-    stage: (paths) => normalized(() => runtime.git.stage({ paths })),
-    unstage: (paths) => normalized(() => runtime.git.unstage({ paths })),
-    commitStaged: (input) => normalized(() => runtime.git.commitStaged(input)),
-    push: (input) => normalized(() => runtime.git.push(input)),
-    log: (input) => normalized(() => runtime.git.log(input)),
+    status: () => withGitError(() => runtime.git.status()),
+    stage: (paths) => withGitError(() => runtime.git.stage({ paths })),
+    unstage: (paths) => withGitError(() => runtime.git.unstage({ paths })),
+    commitStaged: (input) => withGitError(() => runtime.git.commitStaged(input)),
+    push: (input) => withGitError(() => runtime.git.push(input)),
+    log: (input) => withGitError(() => runtime.git.log(input)),
   }
 }
 
-async function normalized<T>(call: () => Promise<T>): Promise<T> {
+async function withGitError<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call()
   } catch (error) {

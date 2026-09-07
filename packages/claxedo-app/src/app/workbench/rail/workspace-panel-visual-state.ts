@@ -7,7 +7,6 @@ import {
 import type { ClaxedoStateApi } from "../state/provider"
 import { isWorkspaceReady } from "../../../features/workspaces/data/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import type { NavigatorPlacement } from "@/platform/settings/provider"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
 
 export function workspacePanelMatchesFocusedPane(input: {
@@ -55,13 +54,12 @@ export function workspacePanelTopLevelOpenTarget(
 }
 
 export function useWorkspacePanelVisualState(input: {
-  claxedoState: Pick<ClaxedoStateApi, "navigator" | "workspacePanel">
+  claxedoState: Pick<ClaxedoStateApi, "workspacePanel">
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   focusedSplitPaneId: () => string | undefined
   focusedSurfaceWorkspaceToolsBlocked: () => boolean
   activeDirectory: Accessor<string | undefined>
   emptyDraftDirectory: Accessor<string | undefined>
-  navigatorPlacement: Accessor<NavigatorPlacement>
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void
   workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
@@ -173,14 +171,8 @@ export function useWorkspacePanelVisualState(input: {
   }
 
   const toggleFocusedWorkspaceNavigator = (navigator: "files" | "changes" | "processes") => {
-    // In sidebar placement the Navigator sidebar's tab is the selection, so a
-    // repeat click keeps it and the panel open rather than toggling it off.
-    const sidebar = input.navigatorPlacement() === "sidebar"
-    if (sidebar) input.claxedoState.navigator.select(navigator)
     const opened = openFocusedWorkspacePanel({
-      navigator: !sidebar && workspacePanelForFocusedTarget() && workspacePanelNavigator() === navigator
-        ? null
-        : navigator,
+      navigator: workspacePanelForFocusedTarget() && workspacePanelNavigator() === navigator ? null : navigator,
     })
     if (opened && !motion.visualOpenValue()) motion.setVisualPhase(true)
   }

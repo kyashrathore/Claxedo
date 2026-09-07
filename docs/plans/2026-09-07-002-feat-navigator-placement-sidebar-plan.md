@@ -1,6 +1,6 @@
 ---
 title: "feat: WorkspacePanelNavigator placement — files / changes / processes as a secondary left sidebar, full-view panel by default, floating composer"
-status: proposed; implementation not started
+status: superseded 2026-09-07: the secondary sidebar was removed after use; the classic workspace panel is the only placement, the floating full-view presentation and the panel behavior stay
 type: feat
 date: 2026-09-07
 baseline: 4f668ebf18
@@ -12,6 +12,8 @@ related: ../../packages/claxedo-app/src/ARCHITECTURE.md, ../../packages/claxedo-
 # feat: WorkspacePanelNavigator placement
 
 ## Overview
+
+Superseded 2026-09-07: the secondary sidebar was removed after use; the classic workspace panel is the only placement, the floating full-view presentation and the panel behavior stay.
 
 **WorkspacePanelNavigator** is the existing code name for the three workspace navigators: the Files tree, the Changes list and the Processes list (`WorkspacePanelNavigator = "files" | "changes" | "processes"`). They are one thing to the user (the trio in the workbench header) and one thing in code, so the preference and every new symbol in this plan use that name, shortened to **Navigator** in prose.
 

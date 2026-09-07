@@ -446,13 +446,6 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Objavljeno s ovog uređaja",
 
 
-  "navigator.sidebar.tab.files": "Datoteke",
-  "navigator.sidebar.tab.changes": "Promjene",
-  "navigator.sidebar.tab.processes": "Procesi",
-  "navigator.sidebar.empty": "Odaberi radni prostor za korištenje navigatora.",
-  "navigator.sidebar.resize": "Promijeni veličinu navigatora",
-
-
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Radni prostor",
   "settings.section.account": "Račun",
@@ -490,10 +483,6 @@ export const dict = {
   "settings.general.row.followup.description": "Odaberi da li upiti nadovezivanja usmjeravaju odmah ili čekaju u redu",
   "settings.general.row.followup.option.queue": "Red čekanja",
   "settings.general.row.followup.option.steer": "Usmjeri",
-  "settings.general.row.navigatorPlacement.title": "Položaj navigatora",
-  "settings.general.row.navigatorPlacement.description": "Prikaži navigator datoteka, izmjena i procesa unutar panela radnog prostora ili kao bočnu traku pored liste projekata",
-  "settings.general.row.navigatorPlacement.option.panel": "Panel radnog prostora",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Bočna traka",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 

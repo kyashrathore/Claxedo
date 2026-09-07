@@ -482,13 +482,6 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "Shared with you",
   "sidebar.workspace.publishedByThisMachine": "Published by this machine",
 
-  "navigator.sidebar.tab.files": "Files",
-  "navigator.sidebar.tab.changes": "Changes",
-  "navigator.sidebar.tab.processes": "Processes",
-  "navigator.sidebar.empty": "Select a workspace to use the navigator.",
-  "navigator.sidebar.resize": "Resize navigator",
-
-
 
 
   "settings.section.desktop": "Desktop",
@@ -528,10 +521,6 @@ export const dict = {
   "settings.general.row.followup.description": "Choose whether follow-up prompts steer immediately or wait in a queue",
   "settings.general.row.followup.option.queue": "Queue",
   "settings.general.row.followup.option.steer": "Steer",
-  "settings.general.row.navigatorPlacement.title": "Navigator placement",
-  "settings.general.row.navigatorPlacement.description": "Show the files, changes and processes navigator inside the workspace panel or as a sidebar beside the project list",
-  "settings.general.row.navigatorPlacement.option.panel": "Workspace panel",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Sidebar",
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",

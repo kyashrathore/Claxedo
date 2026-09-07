@@ -4,7 +4,6 @@ import { BP_SM } from "@/ui/controls/breakpoints"
 import { emitTerminalFit } from "@/features/workspaces/app-ports"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
-import { useSettings } from "@/platform/settings/provider"
 import { api, getDefaultBaseUrl } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
 import {
@@ -72,7 +71,6 @@ export type WorkspacePanelProps = {
 }
 
 export function WorkspacePanel(props: WorkspacePanelProps) {
-  const settings = useSettings()
   const minWidth = 360
   const minReadableContentWidth = 300
   const [viewportWidth, setViewportWidth] = createSignal(typeof window === "undefined" ? 1024 : window.innerWidth)
@@ -198,9 +196,8 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     return Math.min(width() ?? clampWidth(props.preferredWidth?.() ?? defaultWidth()), maxWidth())
   }
   const panelStyleWidth = () => isMobile() ? "100%" : `${restingPanelWidth()}px`
-  const navigatorInSidebar = () => settings.appearance.navigatorPlacement() === "sidebar"
   const pendingMode = () => {
-    if (navigatorInSidebar() || (props.state.navigator !== "files" && props.state.navigator !== "changes")) {
+    if (props.state.navigator !== "files" && props.state.navigator !== "changes") {
       if (!props.state.mode) return undefined
       // Review-shaped placeholder for the settle window between the toggle
       // click and deferred content construction: a toolbar strip and file

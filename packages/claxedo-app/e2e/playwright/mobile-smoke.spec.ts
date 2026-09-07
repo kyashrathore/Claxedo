@@ -251,23 +251,6 @@ test.describe("mobile smoke @core", () => {
     await expect(panel.locator('[role="separator"][aria-label="Resize workspace panel"]')).toHaveCount(0)
   })
 
-  test("the navigator sidebar never mounts at phone width, even with the sidebar placement persisted", async ({ page }) => {
-    // `app-shell-layout.tsx`'s `layoutPreset()` resolves to `claxedo.default` below
-    // `BP_MD` regardless of `appearance.navigatorPlacement`, so the phone keeps its
-    // drawer and sheet. Registered after `seedOneProject`, whose init script clears
-    // storage first.
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await seedOneProject(page, DIR)
-    await page.addInitScript(() => {
-      localStorage.setItem("settings.v3", JSON.stringify({ appearance: { navigatorPlacement: "sidebar" } }))
-    })
-    await openWorkbench(page, DIR)
-
-    await expect.poll(() => page.evaluate(() => localStorage.getItem("settings.v3"))).toContain('"navigatorPlacement":"sidebar"')
-    await expect(page.locator('[data-testid="navigator-sidebar"]')).toHaveCount(0)
-    await expect(page.locator('[data-testid="mobile-sidebar-opener"]')).toBeVisible({ timeout: 10_000 })
-  })
-
   test("workspace review panel does not auto-open at narrow boot", async ({ page }) => {
     // `route-intent.ts`'s `workspaceBrowse` branch guards `workspacePanel.open("review", …)`
     // on width: at phone width the panel is 100% and would bury the composer with

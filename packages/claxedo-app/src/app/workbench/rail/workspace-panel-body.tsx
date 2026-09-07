@@ -16,6 +16,7 @@ import { SessionPaneScope } from "../../../features/session/ui/components/sessio
 import { ProcessPaneProvider } from "../context/process-pane"
 import { ProcessesNavigator } from "../workspace-panel/processes-navigator"
 import { WorkspaceFilesNavigator } from "../workspace-panel/files-navigator"
+import { SourceControlView } from "../source-control/source-control-view"
 import type {
   WorkspacePanelFocus,
   WorkspacePanelMode,
@@ -329,13 +330,18 @@ export function WorkspacePanelBody(props: {
   const filesNavigatorActive = () => props.active() && filesNavigatorSelected()
   const settings = useSettings()
   const navigatorSide = () => settings.appearance.navigatorSide()
-  const navigatorInSidebar = () => settings.appearance.navigatorPlacement() === "sidebar"
   const processesNavigatorSelected = () => panelNavigator() === "processes"
   const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorSelected())
   const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorSelected())
-  const [filesNavigatorMode, setFilesNavigatorMode] = createSignal<"files" | "changes">(
+  // The files column shows one of two views and keeps both once visited, so a
+  // commit message draft or an expanded tree survives a Files <-> Changes switch.
+  const [filesColumnView, setFilesColumnView] = createSignal<"files" | "changes">(
     panelNavigator() === "changes" ? "changes" : "files",
   )
+  const [changesViewVisited, setChangesViewVisited] = createSignal(filesColumnView() === "changes")
+  const [filesViewVisited, setFilesViewVisited] = createSignal(filesColumnView() === "files")
+  const filesViewActive = () => filesNavigatorActive() && filesColumnView() === "files"
+  const changesViewActive = () => filesNavigatorActive() && filesColumnView() === "changes"
   const reviewWorkspaceKey = createMemo(() => {
     const dir = directory()
     if (!dir) return undefined
@@ -378,7 +384,9 @@ export function WorkspacePanelBody(props: {
     const navigator = panelNavigator()
     if (panelState().workspaceDir && panelState().mode) setFilesNavigatorVisited(true)
     if (navigator === "files" || navigator === "changes") {
-      setFilesNavigatorMode(navigator)
+      setFilesColumnView(navigator)
+      if (navigator === "files") setFilesViewVisited(true)
+      else setChangesViewVisited(true)
       setFilesNavigatorVisited(true)
       return
     }
@@ -430,10 +438,11 @@ export function WorkspacePanelBody(props: {
                             sits beside the tab content instead of sliding over
                             the file the user just opened. Collapse animates
                             width; the column docks per the appearance setting. */}
-                          <Show when={!navigatorInSidebar() && filesNavigatorVisited()}>
+                          <Show when={filesNavigatorVisited()}>
                             <div
                               data-testid="workspace-navigator-overlay"
                               data-navigator="files"
+                              data-navigator-kind={filesColumnView()}
                               data-open={filesNavigatorSelected() ? "true" : "false"}
                               aria-hidden={filesNavigatorSelected() ? undefined : "true"}
                               class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
@@ -449,19 +458,38 @@ export function WorkspacePanelBody(props: {
                                 "content-visibility": filesNavigatorSelected() ? "visible" : "hidden",
                               }}
                             >
-                              <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
-                                <WorkspaceFilesNavigator
-                                  mode={filesNavigatorMode()}
-                                  active={filesNavigatorActive()}
-                                  activePath={focusPath() ?? activeWorkingFilePath()}
-                                  onFileClick={(path, intent) =>
-                                    claxedoState.workspacePanel.retarget({
-                                      workspaceDir: dir,
-                                      targetPaneId: targetPaneId(),
-                                      focus: { kind: "file", path, intent },
-                                    })
-                                  }
-                                />
+                              <div class="relative h-full w-[min(280px,45cqw)] min-w-[220px]">
+                                <Show when={filesViewVisited()}>
+                                  <div class="absolute inset-0" classList={{ hidden: filesColumnView() !== "files" }}>
+                                    <WorkspaceFilesNavigator
+                                      active={filesViewActive()}
+                                      activePath={focusPath() ?? activeWorkingFilePath()}
+                                      onFileClick={(path) =>
+                                        claxedoState.workspacePanel.retarget({
+                                          workspaceDir: dir,
+                                          targetPaneId: targetPaneId(),
+                                          focus: { kind: "file", path, intent: "tab" },
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                </Show>
+                                <Show when={changesViewVisited()}>
+                                  <div class="absolute inset-0" classList={{ hidden: filesColumnView() !== "changes" }}>
+                                    <SourceControlView
+                                      active={changesViewActive()}
+                                      activePath={focusPath() ?? activeWorkingFilePath()}
+                                      onFileClick={(path, reviewMode) =>
+                                        claxedoState.workspacePanel.retarget({
+                                          workspaceDir: dir,
+                                          targetPaneId: targetPaneId(),
+                                          navigator: "changes",
+                                          focus: { kind: "file", path, intent: "review", reviewMode },
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                </Show>
                               </div>
                             </div>
                           </Show>
@@ -511,7 +539,7 @@ export function WorkspacePanelBody(props: {
                               </Show>
                             </div>
                           </Show>
-                          <Show when={!navigatorInSidebar() && processesNavigatorVisited()}>
+                          <Show when={processesNavigatorVisited()}>
                             <div
                               data-testid="workspace-navigator-overlay"
                               data-navigator="processes"

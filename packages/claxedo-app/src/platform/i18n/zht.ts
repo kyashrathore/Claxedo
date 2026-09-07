@@ -440,13 +440,6 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "已與你共用",
   "sidebar.workspace.publishedByThisMachine": "由本機發布",
 
-
-  "navigator.sidebar.tab.files": "檔案",
-  "navigator.sidebar.tab.changes": "變更",
-  "navigator.sidebar.tab.processes": "處理程序",
-  "navigator.sidebar.empty": "選擇一個工作區以使用導覽器。",
-  "navigator.sidebar.resize": "調整導覽器大小",
-
   "settings.section.desktop": "桌面",
   "settings.section.workspace": "工作區",
   "settings.section.account": "帳戶",
@@ -483,10 +476,6 @@ export const dict = {
   "settings.general.row.followup.description": "選擇後續追問提示是立即引導還是進入佇列等待",
   "settings.general.row.followup.option.queue": "佇列",
   "settings.general.row.followup.option.steer": "引導",
-  "settings.general.row.navigatorPlacement.title": "導覽器位置",
-  "settings.general.row.navigatorPlacement.description": "在工作區面板內顯示檔案、變更與程序導覽器，或作為專案清單旁的側邊欄顯示",
-  "settings.general.row.navigatorPlacement.option.panel": "工作區面板",
-  "settings.general.row.navigatorPlacement.option.sidebar": "側邊欄",
   "settings.general.row.reasoningSummaries.title": "顯示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在時間軸中顯示模型推理摘要",
 

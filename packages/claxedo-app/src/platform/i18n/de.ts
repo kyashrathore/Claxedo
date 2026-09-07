@@ -390,13 +390,6 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Host offline",
   "sidebar.workspace.sharedWithYou": "Für dich freigegeben",
   "sidebar.workspace.publishedByThisMachine": "Von diesem Gerät veröffentlicht",
-
-  "navigator.sidebar.tab.files": "Dateien",
-  "navigator.sidebar.tab.changes": "Änderungen",
-  "navigator.sidebar.tab.processes": "Prozesse",
-  "navigator.sidebar.empty": "Wählen Sie einen Arbeitsbereich, um den Navigator zu verwenden.",
-  "navigator.sidebar.resize": "Navigator-Größe ändern",
-
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Arbeitsbereich",
   "settings.section.account": "Konto",
@@ -434,10 +427,6 @@ export const dict = {
     "Wählen Sie, ob Folgefragen sofort steuern oder in einer Warteschlange warten",
   "settings.general.row.followup.option.queue": "Warteschlange",
   "settings.general.row.followup.option.steer": "Steuern",
-  "settings.general.row.navigatorPlacement.title": "Navigator-Position",
-  "settings.general.row.navigatorPlacement.description": "Zeige den Navigator für Dateien, Änderungen und Prozesse im Arbeitsbereichspanel oder als Seitenleiste neben der Projektliste",
-  "settings.general.row.navigatorPlacement.option.panel": "Arbeitsbereichspanel",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Seitenleiste",
   "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.row.reasoningSummaries.description":
     "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",

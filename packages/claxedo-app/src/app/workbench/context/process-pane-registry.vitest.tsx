@@ -46,10 +46,6 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ fetch }),
 }))
 
-vi.mock("@/platform/settings/provider", () => ({
-  useSettings: () => ({ appearance: { navigatorPlacement: () => "panel" } }),
-}))
-
 vi.mock("@/features/terminal/providers/provider", () => ({
   useOptionalTerminal: () => undefined,
 }))

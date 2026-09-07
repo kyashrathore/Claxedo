@@ -1,7 +1,6 @@
 import { createContext, onCleanup, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { useSettings } from "@/platform/settings/provider"
 import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { useClaxedoEventsOptional } from "@/app/integrations/claxedo-events"
 import { can } from "@/platform/auth/role"
@@ -33,7 +32,6 @@ export function useWorkspaceProcessPane(): WorkspaceProcessPane {
 export function ProcessPaneProvider(props: ParentProps<{ directory?: string; isOpen?: Accessor<boolean> }>) {
   const sdk = useSDK()
   const platform = usePlatform()
-  const settings = useSettings()
   const events = useClaxedoEventsOptional()
   const state = useClaxedoState()
   const terminal = useOptionalTerminal()
@@ -71,7 +69,6 @@ export function ProcessPaneProvider(props: ParentProps<{ directory?: string; isO
       request: platform.fetch,
       hostReady: state.ready,
       open: () => {
-        if (settings.appearance.navigatorPlacement() === "sidebar") state.navigator.select("processes")
         state.workspacePanel.open({ workspaceDir: directory, navigator: "processes" })
       },
       close: state.workspacePanel.close,

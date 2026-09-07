@@ -444,13 +444,6 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "Открыт вам доступ",
   "sidebar.workspace.publishedByThisMachine": "Опубликовано с этого компьютера",
 
-
-  "navigator.sidebar.tab.files": "Файлы",
-  "navigator.sidebar.tab.changes": "Изменения",
-  "navigator.sidebar.tab.processes": "Процессы",
-  "navigator.sidebar.empty": "Выберите рабочее пространство, чтобы использовать навигатор.",
-  "navigator.sidebar.resize": "Изменить размер навигатора",
-
   "settings.section.desktop": "Приложение",
   "settings.section.workspace": "Рабочее пространство",
   "settings.section.account": "Аккаунт",
@@ -489,10 +482,6 @@ export const dict = {
     "Выберите, отправлять ли уточняющие вопросы сразу или помещать их в очередь",
   "settings.general.row.followup.option.queue": "Очередь",
   "settings.general.row.followup.option.steer": "Направлять",
-  "settings.general.row.navigatorPlacement.title": "Расположение навигатора",
-  "settings.general.row.navigatorPlacement.description": "Показывать навигатор файлов, изменений и процессов внутри панели рабочего пространства или как боковую панель рядом со списком проектов",
-  "settings.general.row.navigatorPlacement.option.panel": "Панель рабочего пространства",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Боковая панель",
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 

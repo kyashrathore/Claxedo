@@ -444,13 +444,6 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "由本机发布",
 
 
-  "navigator.sidebar.tab.files": "文件",
-  "navigator.sidebar.tab.changes": "更改",
-  "navigator.sidebar.tab.processes": "进程",
-  "navigator.sidebar.empty": "选择一个工作区以使用导航器。",
-  "navigator.sidebar.resize": "调整导航器大小",
-
-
   "settings.section.desktop": "桌面",
   "settings.section.workspace": "工作区",
   "settings.section.account": "账户",
@@ -488,10 +481,6 @@ export const dict = {
   "settings.general.row.followup.description": "选择跟进提示是立即引导还是在队列中等待",
   "settings.general.row.followup.option.queue": "排队",
   "settings.general.row.followup.option.steer": "引导",
-  "settings.general.row.navigatorPlacement.title": "导航器位置",
-  "settings.general.row.navigatorPlacement.description": "在工作区面板内显示文件、更改和进程导航器，或将其作为项目列表旁的侧边栏显示",
-  "settings.general.row.navigatorPlacement.option.panel": "工作区面板",
-  "settings.general.row.navigatorPlacement.option.sidebar": "侧边栏",
   "settings.general.row.reasoningSummaries.title": "显示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在时间线中显示模型推理摘要",
   "settings.general.row.shellToolPartsExpanded.title": "展开 shell 工具部分",

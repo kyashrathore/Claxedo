@@ -440,13 +440,6 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "Delt med dig",
   "sidebar.workspace.publishedByThisMachine": "Udgivet fra denne maskine",
 
-
-  "navigator.sidebar.tab.files": "Filer",
-  "navigator.sidebar.tab.changes": "Ændringer",
-  "navigator.sidebar.tab.processes": "Processer",
-  "navigator.sidebar.empty": "Vælg et arbejdsområde for at bruge navigatoren.",
-  "navigator.sidebar.resize": "Tilpas navigatorens størrelse",
-
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Arbejdsområde",
   "settings.section.account": "Konto",
@@ -483,10 +476,6 @@ export const dict = {
   "settings.general.row.followup.description": "Vælg om opfølgende forespørgsler skal styre straks eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
-  "settings.general.row.navigatorPlacement.title": "Navigatorplacering",
-  "settings.general.row.navigatorPlacement.description": "Vis navigatoren for filer, ændringer og processer inde i arbejdsområdepanelet eller som en sidebjælke ved siden af projektlisten",
-  "settings.general.row.navigatorPlacement.option.panel": "Arbejdsområdepanel",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Sidebjælke",
   "settings.general.row.reasoningSummaries.title": "Vis tænkeoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
 

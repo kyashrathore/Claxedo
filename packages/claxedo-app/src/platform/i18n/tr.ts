@@ -451,13 +451,6 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Bu makineden yayınlandı",
 
 
-  "navigator.sidebar.tab.files": "Dosyalar",
-  "navigator.sidebar.tab.changes": "Değişiklikler",
-  "navigator.sidebar.tab.processes": "İşlemler",
-  "navigator.sidebar.empty": "Gezgini kullanmak için bir çalışma alanı seçin.",
-  "navigator.sidebar.resize": "Gezgini yeniden boyutlandır",
-
-
   "settings.section.desktop": "Masaüstü",
   "settings.section.workspace": "Çalışma alanı",
   "settings.section.account": "Hesap",
@@ -497,10 +490,6 @@ export const dict = {
     "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
   "settings.general.row.followup.option.queue": "Sıra",
   "settings.general.row.followup.option.steer": "Yönlendir",
-  "settings.general.row.navigatorPlacement.title": "Gezgin konumu",
-  "settings.general.row.navigatorPlacement.description": "Dosya, değişiklik ve süreç gezginini çalışma alanı panelinin içinde veya proje listesinin yanında kenar çubuğu olarak göster",
-  "settings.general.row.navigatorPlacement.option.panel": "Çalışma alanı paneli",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Kenar çubuğu",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",

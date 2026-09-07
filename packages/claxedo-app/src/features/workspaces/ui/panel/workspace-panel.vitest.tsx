@@ -9,10 +9,6 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
 }))
 
-const settingsMock = vi.hoisted(() => ({
-  navigatorPlacement: "panel" as "panel" | "sidebar",
-}))
-
 vi.mock("@/platform/api/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/platform/api/api")>(),
   api: apiMocks,
@@ -23,16 +19,11 @@ vi.mock("@/features/workspaces/app-ports", () => ({
   emitTerminalFit: vi.fn(),
 }))
 
-vi.mock("@/platform/settings/provider", () => ({
-  useSettings: () => ({ appearance: { navigatorPlacement: () => settingsMock.navigatorPlacement } }),
-}))
-
 const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth")
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
-  settingsMock.navigatorPlacement = "panel"
   if (originalWidth) Object.defineProperty(window, "innerWidth", originalWidth)
   else Reflect.deleteProperty(window, "innerWidth")
   window.dispatchEvent(new Event("resize"))
@@ -229,19 +220,6 @@ describe("WorkspacePanel", () => {
 
     expect(screen.getByTestId("workspace-files-navigator")).toHaveAttribute("data-file-tree-shell-ready", "true")
     expect(screen.getByTestId("workspace-files-navigator")).not.toHaveAttribute("data-file-tree-data-ready")
-  })
-
-  test("sidebar placement shows the review-shaped pending skeleton for a files navigator", () => {
-    settingsMock.navigatorPlacement = "sidebar"
-    render(() => (
-      <WorkspacePanel
-        state={{ ...openState, navigator: "files" }}
-        renderMode={() => undefined}
-      />
-    ))
-
-    expect(screen.queryByTestId("workspace-files-navigator")).not.toBeInTheDocument()
-    expect(screen.getByTestId("workspace-review-pending")).toBeInTheDocument()
   })
 
   test("does not construct the workspace tool while closed; mounts it on open after settle", async () => {

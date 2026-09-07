@@ -27,7 +27,6 @@ import { usePermission } from "@/features/session/providers/permission"
 import { useCommand } from "@/app/providers/command"
 import { useServer } from "@/app/connection/server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { useSettings } from "@/platform/settings/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-controller"
 import {
@@ -49,7 +48,6 @@ import {
   workspacePanelFullWidthCommand,
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
-import type { LayoutPreset } from "./layout/config"
 import {
   PanePresentationProvider,
   type PanePresentation,
@@ -75,11 +73,6 @@ const RailSidebarShell = lazy(() =>
 const RailWorkbenchShell = lazy(() =>
   import("./workbench/rail/rail-workbench-shell").then((module) => ({
     default: module.RailWorkbenchShell,
-  })),
-)
-const NavigatorSidebar = lazy(() =>
-  import("./workbench/navigator-sidebar/navigator-sidebar").then((module) => ({
-    default: module.NavigatorSidebar,
   })),
 )
 const DialogProcessDiagnostics = lazyDialog(() =>
@@ -287,22 +280,13 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     width: initialRailWidth,
   }
   const initialPanel = claxedoState.workspacePanel.state()
-  const settings = useSettings()
-  // `isNarrowViewport()` is a plain window read: the shell has no reactive
-  // viewport signal, so the preset re-derives on preference changes only.
-  const layoutPreset = (): LayoutPreset => {
-    if (isNarrowViewport()) return "claxedo.default"
-    return settings.appearance.navigatorPlacement() === "sidebar" ? "claxedo.navigator-sidebar" : "claxedo.default"
-  }
   const shellLayout = createShellLayoutState({
     target: () => platform.platform === "desktop" ? "desktop" : "web",
-    preset: layoutPreset,
     initialRail: initialRailLayoutState,
     initialWorkspacePanel: {
       open: initialPanel.open && !!initialPanel.mode,
       width: 520,
     },
-    initialNavigator: { width: claxedoState.navigator.width() },
   })
   const workbenchController = useRailWorkbenchController({
     activeDirectory: () => props.activeDirectory,
@@ -317,7 +301,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     // creator shows the choice as a chip and lets the user change it.
     fallbackWorkspaceDir: () => props.activeDirectory ?? props.projects[0]?.worktree,
     focusedPaneWorkspaceDir: sidebarSelection.focusedPaneWorkspaceDir,
-    navigatorPlacement: () => settings.appearance.navigatorPlacement(),
     onLastFocusedSurfaceClosed: emptyDraft.blockNextAutoOpen,
     onNewSession: props.onNewSession,
     onNewTerminal: props.onNewTerminal,
@@ -345,27 +328,21 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const sidebarPinned = () => railRegion().docked !== false
   const sidebarHidden = () => !sidebarPinned() && sidebarWidth() === 0
   const workspacePanelOpen = () => workspacePanelRegion().visible
-  // The size slot latches the state the preset's base config does not
-  // express: full view under the default preset, the px restore width under
-  // the navigator-sidebar preset (whose base is full view).
-  const workspacePanelSizeLatches = (fullWidth: boolean) =>
-    layoutConfig().presetId === "claxedo.navigator-sidebar" ? !fullWidth : fullWidth
   const toggleWorkspacePanelFullWidth = () => {
     const command = workspacePanelFullWidthCommand(layoutConfig(), shellLayout.workspacePanelWidth())
     const next = applyLayoutCommand(layoutConfig(), command)
     const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
       next.regions.workspacePanel.size.value === 100
-    shellLayout.dispatch("workspacePanelSize", workspacePanelSizeLatches(fullWidth) ? command : undefined)
-    // At full view the panel has room for its navigator; in panel placement an
-    // unselected navigator would leave that room empty.
+    shellLayout.dispatch("workspacePanelSize", fullWidth ? command : undefined)
+    // Full view has room for a navigator column; an unselected one leaves it empty.
     const panel = claxedoState.workspacePanel.state()
-    if (fullWidth && settings.appearance.navigatorPlacement() === "panel" && panel.open && !panel.navigator) {
+    if (fullWidth && panel.open && !panel.navigator) {
       claxedoState.workspacePanel.retarget({ workspaceDir: panel.workspaceDir, targetPaneId: panel.targetPaneId, navigator: "changes" })
     }
     emitTerminalFit()
   }
   const toggleWorkspacePanel = (button: HTMLButtonElement) => {
-    if (workspacePanelOpen() && workspacePanelSizeLatches(workspacePanelFullWidth())) {
+    if (workspacePanelFullWidth() && workspacePanelOpen()) {
       shellLayout.dispatch("workspacePanelSize", undefined)
     }
     workbenchController.toggleFocusedWorkspaceReview(button)
@@ -378,14 +355,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
       targetPaneId: claxedoState.workspacePanel.state().targetPaneId,
       focusedPaneId: claxedoState.wb.state.focusedPaneId,
     }),
-  }
-  const navigatorVisible = () => layoutConfig().regions.navigator?.visible
-  const navigatorWidth = () => shellLayout.navigatorWidth()
-  const resizeNavigator = (width: number) => {
-    shellLayout.setNavigatorWidth(width)
-  }
-  const commitNavigatorResize = () => {
-    claxedoState.navigator.setWidth(shellLayout.committedNavigatorWidth())
   }
   const toggleSidebar = () => {
     shellLayout.toggleRail()
@@ -537,14 +506,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onSidebarMouseLeave={handleSidebarMouseLeave}
           onToggleSidebar={toggleSidebar}
           trafficLightPad={chrome.trafficLightPad}
-          />
-        </Show>
-        <Show when={navigatorVisible() && emptyDraft.sidebarEligible()}>
-          <NavigatorSidebar
-            width={navigatorWidth}
-            onResize={resizeNavigator}
-            onResizeEnd={commitNavigatorResize}
-            target={workbenchController.focusedPanelTarget}
           />
         </Show>
         </nav>

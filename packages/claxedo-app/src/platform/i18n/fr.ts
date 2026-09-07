@@ -388,13 +388,6 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Hôte hors ligne",
   "sidebar.workspace.sharedWithYou": "Partagé avec vous",
   "sidebar.workspace.publishedByThisMachine": "Publié depuis cette machine",
-
-  "navigator.sidebar.tab.files": "Fichiers",
-  "navigator.sidebar.tab.changes": "Modifications",
-  "navigator.sidebar.tab.processes": "Processus",
-  "navigator.sidebar.empty": "Sélectionnez un espace de travail pour utiliser le navigateur.",
-  "navigator.sidebar.resize": "Redimensionner le navigateur",
-
   "settings.section.desktop": "Bureau",
   "settings.section.workspace": "Espace de travail",
   "settings.section.account": "Compte",
@@ -431,10 +424,6 @@ export const dict = {
     "Choisissez si les messages de suivi dirigent immédiatement ou attendent dans une file d'attente",
   "settings.general.row.followup.option.queue": "File d'attente",
   "settings.general.row.followup.option.steer": "Diriger",
-  "settings.general.row.navigatorPlacement.title": "Emplacement du navigateur",
-  "settings.general.row.navigatorPlacement.description": "Afficher le navigateur des fichiers, modifications et processus dans le panneau de l'espace de travail ou comme barre latérale à côté de la liste des projets",
-  "settings.general.row.navigatorPlacement.option.panel": "Panneau de l'espace de travail",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Barre latérale",
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",

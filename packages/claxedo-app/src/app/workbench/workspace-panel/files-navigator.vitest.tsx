@@ -1,10 +1,9 @@
 /**
  * WorkspaceFilesNavigator — component integration tests.
  *
- * Exercises the changed-file list rendering, the filter-input branching
- * (search vs changed-file filter), the empty states, and the file-click
- * intent (review in changes mode). The SDK and file contexts are mocked so
- * the stateful branching runs without a live backend.
+ * Exercises the hover prefetch, the active-file reveal, and the inactive
+ * retention gates. The SDK and file contexts are mocked so the stateful
+ * branching runs without a live backend.
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -26,7 +25,6 @@ vi.mock("@opencode-ai/ui/icon", async (importOriginal) => ({
   Icon: (props: any) => <span data-icon={props.name} />,
 }))
 vi.mock("@opencode-ai/ui/spinner", () => ({ Spinner: () => <span data-testid="spinner" /> }))
-vi.mock("@opencode-ai/ui/file-icon", () => ({ FileIcon: () => <span data-testid="file-icon" /> }))
 vi.mock("@/app/workbench/controls/file-tree", () => ({
   default: (props: any) => (
     <div data-testid="file-tree" data-allowed={(props.allowed ?? []).join(",")}>
@@ -34,6 +32,7 @@ vi.mock("@/app/workbench/controls/file-tree", () => ({
         data-testid="mock-file-row"
         onPointerEnter={() => props.onFilePointerEnter?.({ path: "src/hovered.ts", type: "file" })}
         onPointerLeave={() => props.onFilePointerLeave?.({ path: "src/hovered.ts", type: "file" })}
+        onClick={() => props.onFileClick?.({ path: "src/hovered.ts", type: "file" })}
       />
     </div>
   ),
@@ -99,75 +98,42 @@ afterEach(() => {
   document.body.innerHTML = ""
 })
 
-describe("WorkspaceFilesNavigator (changes mode)", () => {
-  test("renders one changed-file row per status entry with its filename", async () => {
-    statusFiles = [
-      { path: "src/app.ts", status: "added" },
-      { path: "README.md", status: "modified" },
-    ]
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
-    ))
-    await waitFor(() => expect(view.getByTestId("workspace-changed-file-list")).toBeTruthy())
-    expect(view.getByText("app.ts")).toBeTruthy()
-    expect(view.getByText("README.md")).toBeTruthy()
-  })
-
-  test("filter input narrows the changed-file list to matching paths", async () => {
-    statusFiles = [
-      { path: "src/app.ts", status: "added" },
-      { path: "README.md", status: "modified" },
-    ]
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
-    ))
-    await waitFor(() => expect(view.getByText("app.ts")).toBeTruthy())
-
-    fireEvent.input(view.getByPlaceholderText("Filter changes..."), { target: { value: "readme" } })
-
-    await waitFor(() => expect(view.queryByText("app.ts")).toBeNull())
-    expect(view.getByText("README.md")).toBeTruthy()
-  })
-
-  test("clicking a changed file requests it with the review intent", async () => {
-    statusFiles = [{ path: "src/app.ts", status: "added" }]
+describe("WorkspaceFilesNavigator", () => {
+  test("clicking a tree file requests it by path", async () => {
     const onFileClick = vi.fn()
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={onFileClick} />
-    ))
-    await waitFor(() => expect(view.getByText("app.ts")).toBeTruthy())
+    const view = renderNavigator(() => <WorkspaceFilesNavigator active onFileClick={onFileClick} />)
 
-    fireEvent.click(view.getByText("app.ts"))
-    expect(onFileClick).toHaveBeenCalledWith("src/app.ts", "review")
+    fireEvent.click(view.getByTestId("mock-file-row"))
+    expect(onFileClick).toHaveBeenCalledWith("src/hovered.ts")
   })
 
-  test("shows the empty state when there are no changed files", async () => {
-    statusFiles = []
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
-    ))
-    await waitFor(() => expect(view.getByText("No changed files")).toBeTruthy())
+  test("search narrows the tree to the search hits and reports an empty search", async () => {
+    searchHits = ["src/app.ts"]
+    const view = renderNavigator(() => <WorkspaceFilesNavigator active onFileClick={() => {}} />)
+    expect(view.getByTestId("file-tree").dataset.allowed).toBe("")
+
+    fireEvent.input(view.getByPlaceholderText("Search files..."), { target: { value: "app" } })
+    await waitFor(() => expect(view.getByTestId("file-tree").dataset.allowed).toBe("src/app.ts"))
+
+    searchHits = []
+    fireEvent.input(view.getByPlaceholderText("Search files..."), { target: { value: "missing" } })
+    await waitFor(() => expect(view.getByText("No files found")).toBeTruthy())
+    expect(view.getByTestId("file-tree")).toBeTruthy()
   })
 
-  test("does not refetch an invalidated query while the retained panel is inactive", async () => {
+  test("does not refetch an invalidated status query while the retained panel is inactive", async () => {
     const [active, setActive] = createSignal(true)
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="changes" active={active()} onFileClick={() => {}} />
-    ))
+    const view = renderNavigator(() => <WorkspaceFilesNavigator active={active()} onFileClick={() => {}} />)
     await waitFor(() => expect(statusCalls).toBeGreaterThan(0))
     const before = statusCalls
     setActive(false)
     await view.client.invalidateQueries()
     expect(statusCalls).toBe(before)
   })
-})
 
-describe("WorkspaceFilesNavigator (files mode)", () => {
   test("warms the canonical file request on deliberate hover without opening a surface", async () => {
     vi.useFakeTimers()
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="files" active onFileClick={() => {}} />
-    ))
+    const view = renderNavigator(() => <WorkspaceFilesNavigator active onFileClick={() => {}} />)
 
     fireEvent.pointerEnter(view.getByTestId("mock-file-row"))
     await vi.advanceTimersByTimeAsync(119)
@@ -185,9 +151,7 @@ describe("WorkspaceFilesNavigator (files mode)", () => {
   test("cancels hover prefetch when the retained navigator becomes inactive", async () => {
     vi.useFakeTimers()
     const [active, setActive] = createSignal(true)
-    const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="files" active={active()} onFileClick={() => {}} />
-    ))
+    const view = renderNavigator(() => <WorkspaceFilesNavigator active={active()} onFileClick={() => {}} />)
 
     fireEvent.pointerEnter(view.getByTestId("mock-file-row"))
     setActive(false)
@@ -199,7 +163,7 @@ describe("WorkspaceFilesNavigator (files mode)", () => {
 
   test("does not hydrate or reveal the retained tree while the panel is inactive", async () => {
     renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="files" active={false} activePath="src/deep/file.ts" onFileClick={() => {}} />
+      <WorkspaceFilesNavigator active={false} activePath="src/deep/file.ts" onFileClick={() => {}} />
     ))
 
     await Promise.resolve()
@@ -211,7 +175,7 @@ describe("WorkspaceFilesNavigator (files mode)", () => {
 
   test("reveals an active file after its tree row mounts", async () => {
     const view = renderNavigator(() => (
-      <WorkspaceFilesNavigator mode="files" active activePath="src/deep/file.ts" onFileClick={() => {}} />
+      <WorkspaceFilesNavigator active activePath="src/deep/file.ts" onFileClick={() => {}} />
     ))
 
     await waitFor(() => {

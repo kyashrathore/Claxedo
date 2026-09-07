@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   applyLayoutCommand,
-  navigatorResizeCommand,
   railPeekCommand,
   railToggleCommand,
   workspacePanelFullWidthCommand,
@@ -44,13 +43,6 @@ describe("layout commands", () => {
     expect(applyLayoutCommand(desktop, { type: "reset", target: "web" })).toEqual(defaultLayoutConfig({ target: "web" }))
   })
 
-  test("reset keeps the current preset", () => {
-    const sidebar = defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" })
-    const resized = applyLayoutCommand(sidebar, navigatorResizeCommand(400))
-
-    expect(applyLayoutCommand(resized, { type: "reset" })).toEqual(sidebar)
-  })
-
   test("toggles workspace panel full width through region size commands", () => {
     const config = defaultLayoutConfig()
     const fullWidth = applyLayoutCommand(config, workspacePanelFullWidthCommand(config))
@@ -58,43 +50,6 @@ describe("layout commands", () => {
 
     expect(fullWidth.regions.workspacePanel.size).toEqual({ unit: "percent", value: 100 })
     expect(restored.regions.workspacePanel.size).toEqual({ unit: "px", value: 640 })
-  })
-
-  test("full-width command inverts under the navigator-sidebar preset: percent 100 → px restore width → percent 100", () => {
-    const config = defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" })
-    expect(config.regions.workspacePanel.size).toEqual({ unit: "percent", value: 100 })
-
-    const restored = applyLayoutCommand(config, workspacePanelFullWidthCommand(config, 520))
-    expect(restored.regions.workspacePanel.size).toEqual({ unit: "px", value: 520 })
-
-    const full = applyLayoutCommand(restored, workspacePanelFullWidthCommand(restored, 520))
-    expect(full.regions.workspacePanel.size).toEqual({ unit: "percent", value: 100 })
-    expect(full.regions.navigator).toEqual(config.regions.navigator)
-  })
-
-  test("clamps navigator resizes between 260 and 520 without ever collapsing", () => {
-    const config = defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" })
-
-    expect(navigatorResizeCommand(400)).toEqual({
-      type: "region.update",
-      regionId: "navigator",
-      region: { size: { unit: "px", value: 400 } },
-    })
-    expect(applyLayoutCommand(config, navigatorResizeCommand(0)).regions.navigator).toMatchObject({
-      size: { unit: "px", value: 260 },
-      visible: true,
-      docked: true,
-    })
-    expect(applyLayoutCommand(config, navigatorResizeCommand(900)).regions.navigator.size).toEqual({ unit: "px", value: 520 })
-    expect(applyLayoutCommand(config, navigatorResizeCommand(200, { minWidth: 100, maxWidth: 300 })).regions.navigator.size)
-      .toEqual({ unit: "px", value: 200 })
-    expect(applyLayoutCommand(config, navigatorResizeCommand(400)).regions.rail).toEqual(config.regions.rail)
-  })
-
-  test("navigator resize is a no-op under the default preset, which has no navigator region", () => {
-    const config = defaultLayoutConfig()
-
-    expect(applyLayoutCommand(config, navigatorResizeCommand(400))).toBe(config)
   })
 
   test("updates workspace panel visibility without clobbering size commands", () => {

@@ -19,7 +19,7 @@ vi.mock("@/app/workbench/context/process-pane", () => ({
 }))
 vi.mock("@/app/workbench/workspace-panel/files-navigator", () => ({ WorkspaceFilesNavigator: () => null }))
 vi.mock("@/features/processes/ui", () => ({ WorkspaceProcessesNavigator: () => null }))
-vi.mock("@/platform/settings/provider", () => ({ useSettings: () => ({ appearance: { navigatorSide: () => "right", navigatorPlacement: () => "panel" } }) }))
+vi.mock("@/platform/settings/provider", () => ({ useSettings: () => ({ appearance: { navigatorSide: () => "right" } }) }))
 vi.mock("@/platform/runtime/platform-provider", () => ({ usePlatform: () => ({ fetch }) }))
 vi.mock("@/app/workbench/review/review-workspace", () => ({
   ReviewWorkspace: () => { runtime.mounts += 1; return <div data-testid="review-body" /> },

@@ -1,6 +1,6 @@
 # Source Control
 
-`SourceControlView` is the navigator sidebar's Changes tab (`../navigator-sidebar/navigator-sidebar.tsx` mounts it for `tab === "changes"`): a commit box, the publish / push / Create PR actions, the **Staged Changes** and **Changes** groups, and the **Graph** of recent commits, for the workspace directory `useSDK()` is scoped to.
+`SourceControlView` is the workspace panel's Changes navigator (`../rail/workspace-panel-body.tsx` mounts it in the files column when the panel navigator is `"changes"`): a commit box, the publish / push / Create PR actions, the **Staged Changes** and **Changes** groups, and the **Graph** of recent commits, for the workspace directory `useSDK()` is scoped to.
 
 ## What it owns
 
@@ -12,7 +12,7 @@
 
 ## Selection
 
-A row click calls `onFileClick(path, mode)` with `"staged"` or `"unstaged"`; the sidebar turns that into `workspacePanel.open("review", { focus: { kind: "file", path, intent: "review", reviewMode } })`, and `features/review/ui/review-tab.tsx` switches into that mode before revealing the file. `activePath` comes back from the panel's focus and highlights the row.
+A row click calls `onFileClick(path, mode)` with `"staged"` or `"unstaged"`; the panel body turns that into `workspacePanel.retarget({ navigator: "changes", focus: { kind: "file", path, intent: "review", reviewMode } })`, and `features/review/ui/review-tab.tsx` switches into that mode before revealing the file. `activePath` comes back from the panel's focus and highlights the row.
 
 ## Must not import
 
@@ -20,7 +20,7 @@ Rail surfaces (`rail-sidebar`, `workspace-panel-body`), routes, and feature prov
 
 ```json
 {
-  "owns": "SourceControlView: the navigator sidebar's Changes tab — commit box, publish / push / PR actions, staged and unstaged groups, commit graph",
+  "owns": "SourceControlView: the workspace panel's Changes navigator — commit box, publish / push / PR actions, staged and unstaged groups, commit graph",
   "writerOf": [],
   "mustNotImport": [
     "@/app/routes/*",

@@ -269,33 +269,11 @@ describe("state/persistence", () => {
     expect(result.state.workbench.panes[0]?.contentId ?? null).toBeNull()
   })
 
-  describe("navigator", () => {
-    test("validates navigator: width clamped 260-520, tab in the three-member union, defaults { width: 320, tab: \"changes\" }", () => {
-      expect(validate({ ...emptyClaxedoState(), navigator: { width: 100, tab: "files" } }).state.navigator)
-        .toEqual({ width: 260, tab: "files" })
-      expect(validate({ ...emptyClaxedoState(), navigator: { width: 900, tab: "processes" } }).state.navigator)
-        .toEqual({ width: 520, tab: "processes" })
-      expect(validate({ ...emptyClaxedoState(), navigator: { width: 400, tab: "changes" } }).state.navigator)
-        .toEqual({ width: 400, tab: "changes" })
-      expect(validate({ ...emptyClaxedoState(), navigator: { width: Number.NaN, tab: "review" } }).state.navigator)
-        .toEqual({ width: 320, tab: "changes" })
-    })
+  test("a persisted blob that still carries a navigator slice loads without it", () => {
+    const result = validate({ ...emptyClaxedoState(), navigator: { width: 400, tab: "files" } })
 
-    test("a v5 blob without the slice loads with defaults", () => {
-      const { navigator: _omitted, ...withoutNavigator } = emptyClaxedoState()
-
-      const result = validate(withoutNavigator)
-
-      expect(result.state.navigator).toEqual({ width: 320, tab: "changes" })
-      expect(result.dirty).toBe(false)
-      expect(result.state.rail).toEqual(withoutNavigator.rail)
-    })
-
-    test("a malformed navigator (string width, unknown tab) is coerced", () => {
-      const result = validate({ ...emptyClaxedoState(), navigator: { width: "wide", tab: "bookmarks" } })
-
-      expect(result.state.navigator).toEqual({ width: 320, tab: "changes" })
-    })
+    expect(result.state).not.toHaveProperty("navigator")
+    expect(result.dirty).toBe(false)
   })
 
   describe("surface budget", () => {

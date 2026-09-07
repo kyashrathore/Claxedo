@@ -442,13 +442,6 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "เผยแพร่จากเครื่องนี้",
 
 
-  "navigator.sidebar.tab.files": "ไฟล์",
-  "navigator.sidebar.tab.changes": "การเปลี่ยนแปลง",
-  "navigator.sidebar.tab.processes": "โปรเซส",
-  "navigator.sidebar.empty": "เลือกพื้นที่ทำงานเพื่อใช้ตัวนำทาง",
-  "navigator.sidebar.resize": "ปรับขนาดตัวนำทาง",
-
-
   "settings.section.desktop": "เดสก์ท็อป",
   "settings.section.workspace": "พื้นที่ทำงาน",
   "settings.section.account": "บัญชี",
@@ -486,10 +479,6 @@ export const dict = {
   "settings.general.row.followup.description": "เลือกว่าจะให้พร้อมท์ติดตามผลทำงานทันทีหรือรอในคิว",
   "settings.general.row.followup.option.queue": "คิว",
   "settings.general.row.followup.option.steer": "นำทาง",
-  "settings.general.row.navigatorPlacement.title": "ตำแหน่งตัวนำทาง",
-  "settings.general.row.navigatorPlacement.description": "แสดงตัวนำทางไฟล์ การเปลี่ยนแปลง และโปรเซสภายในแผงพื้นที่ทำงาน หรือเป็นแถบด้านข้างถัดจากรายการโปรเจกต์",
-  "settings.general.row.navigatorPlacement.option.panel": "แผงพื้นที่ทำงาน",
-  "settings.general.row.navigatorPlacement.option.sidebar": "แถบด้านข้าง",
   "settings.general.row.reasoningSummaries.title": "แสดงสรุปการใช้เหตุผล",
   "settings.general.row.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
   "settings.general.row.shellToolPartsExpanded.title": "ขยายส่วนเครื่องมือ shell",

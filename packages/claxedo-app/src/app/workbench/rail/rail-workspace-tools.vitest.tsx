@@ -18,10 +18,6 @@ const processOwnership = vi.hoisted(() => ({
   providers: 0,
 }))
 
-const settingsMock = vi.hoisted(() => ({
-  navigatorPlacement: "panel" as "panel" | "sidebar",
-}))
-
 vi.mock("./rail-sidebar", async () => {
   const actual = await vi.importActual<typeof import("./rail-sidebar")>("./rail-sidebar")
   return {
@@ -119,14 +115,11 @@ vi.mock("../../../features/settings/ui/terminals", () => ({
 }))
 
 vi.mock("@/platform/settings/provider", () => ({
-  useSettings: () => ({
-    appearance: { navigatorSide: () => "right", navigatorPlacement: () => settingsMock.navigatorPlacement },
-  }),
+  useSettings: () => ({ appearance: { navigatorSide: () => "right" } }),
 }))
 
 beforeEach(() => {
   processOwnership.providers = 0
-  settingsMock.navigatorPlacement = "panel"
 })
 
 afterEach(() => {
@@ -358,39 +351,65 @@ describe("RailLayout workspace tool gates", () => {
 
   })
 
-  test.each(["files", "processes"] as const)(
-    "sidebar placement renders no workspace-navigator-overlay for %s while the panel still shows the review body",
-    async (navigator) => {
-      settingsMock.navigatorPlacement = "sidebar"
-      setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
-      renderRail(
-        {
-          id: "surface-sidebar-placement",
-          type: "session",
-          scope: "directory",
-          directory: "/repo/main",
-          sessionId: "ses_sidebar_placement",
-          content: {
-            type: "session",
-            directory: "/repo/main",
-            sessionId: "ses_sidebar_placement",
-            sessionRef: {
-              sessionId: "ses_sidebar_placement",
-              host: "workspace",
-              cwd: "/repo/main",
-              toolSandbox: { kind: "local", cwd: "/repo/main" },
-            },
-          },
-        },
-        { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator },
-      )
-
-      expect(await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })).toBeTruthy()
-      const panel = screen.getByTestId("workspace-panel-shell")
-      expect(within(panel).queryAllByTestId("workspace-navigator-overlay")).toHaveLength(0)
-      expect(within(panel).queryByTestId("workspace-files-navigator")).toBeNull()
-      expect(within(panel).queryByTestId("workspace-processes-navigator")).toBeNull()
-      expect(screen.getByTestId("navigator-sidebar")).toBeTruthy()
+  const navigatorSurface = {
+    id: "surface-navigator",
+    type: "session",
+    scope: "directory",
+    directory: "/repo/main",
+    sessionId: "ses_navigator",
+    content: {
+      type: "session",
+      directory: "/repo/main",
+      sessionId: "ses_navigator",
+      sessionRef: {
+        sessionId: "ses_navigator",
+        host: "workspace",
+        cwd: "/repo/main",
+        toolSandbox: { kind: "local", cwd: "/repo/main" },
+      },
     },
-  )
+  } satisfies ContentMeta
+
+  function filesColumn() {
+    const panel = screen.getByTestId("workspace-panel-shell")
+    const column = panel.querySelector('[data-testid="workspace-navigator-overlay"][data-navigator="files"]')
+    expect(column).not.toBeNull()
+    return column!
+  }
+
+  test("the Changes navigator renders the source-control view inside the panel's navigator overlay", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail(navigatorSurface, { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" })
+
+    const review = await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })
+    await waitFor(() => expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-open")).toBe("true")
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("changes")
+    expect(within(filesColumn()).queryByTestId("workspace-files-navigator")).toBeNull()
+    expect(screen.getByRole("button", { name: "Close Changes", pressed: true })).toBeTruthy()
+
+    // Switching to Files keeps the source-control view mounted (its commit draft
+    // survives) and never rebuilds the review body.
+    fireEvent.click(screen.getByRole("button", { name: "Open Files" }))
+    await waitFor(() => expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("files")
+    expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy()
+    expect(screen.getByTestId("review-workspace")).toBe(review)
+  })
+
+  test("the Files navigator renders the files navigator", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail(navigatorSurface, { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "files" })
+
+    const review = await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })
+    await waitFor(() => expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("files")
+    expect(within(filesColumn()).queryByTestId("source-control-view")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Changes" }))
+    await waitFor(() => expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("changes")
+    expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy()
+    expect(screen.getByTestId("review-workspace")).toBe(review)
+  })
 })

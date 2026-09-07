@@ -448,13 +448,6 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Publicado desde este equipo",
 
 
-  "navigator.sidebar.tab.files": "Archivos",
-  "navigator.sidebar.tab.changes": "Cambios",
-  "navigator.sidebar.tab.processes": "Procesos",
-  "navigator.sidebar.empty": "Selecciona un espacio de trabajo para usar el navegador.",
-  "navigator.sidebar.resize": "Cambiar el tamaño del navegador",
-
-
   "settings.section.desktop": "Escritorio",
   "settings.section.workspace": "Espacio de trabajo",
   "settings.section.account": "Cuenta",
@@ -493,10 +486,6 @@ export const dict = {
     "Elige si los prompts de seguimiento se dirigen inmediatamente o esperan en una cola",
   "settings.general.row.followup.option.queue": "Cola",
   "settings.general.row.followup.option.steer": "Dirigir",
-  "settings.general.row.navigatorPlacement.title": "Ubicación del navegador",
-  "settings.general.row.navigatorPlacement.description": "Muestra el navegador de archivos, cambios y procesos dentro del panel del espacio de trabajo o como barra lateral junto a la lista de proyectos",
-  "settings.general.row.navigatorPlacement.option.panel": "Panel del espacio de trabajo",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Barra lateral",
   "settings.general.row.reasoningSummaries.title": "Mostrar resúmenes de razonamiento",
   "settings.general.row.reasoningSummaries.description":
     "Mostrar resúmenes del razonamiento del modelo en la línea de tiempo",

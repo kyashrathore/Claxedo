@@ -1,3 +1,4 @@
+import { errorMessage } from "@claxedo/helpers"
 import { Show, createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -29,10 +30,6 @@ const ERROR_KEY = {
 function errorKey(error: unknown) {
   if (!isWorkspaceGitError(error)) return undefined
   return Object.entries(ERROR_KEY).find(([code]) => code === error.code)?.[1]
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
 }
 
 const EMPTY_STATUS: GitWorktreeStatus = { ahead: 0, behind: 0, staged: [], unstaged: [] }

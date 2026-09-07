@@ -5,7 +5,7 @@ type: feat
 date: 2026-09-07
 baseline: f2284f1fdd (feat/navigator-placement-sidebar)
 package: packages/workspace-runtime, packages/claxedo-app
-backward_compatibility: none — the flat Changes list in the navigator sidebar is replaced; the panel-placement navigator column and the Review mode selector are unchanged
+backward_compatibility: none — the flat Changes list in the workspace panel's Changes column is replaced; the Files column and the Review mode selector are unchanged
 related: ./2026-09-07-002-feat-navigator-placement-sidebar-plan.md
 ---
 
@@ -13,7 +13,7 @@ related: ./2026-09-07-002-feat-navigator-placement-sidebar-plan.md
 
 ## Overview
 
-The navigator sidebar's Changes tab becomes a source-control view in the shape of VS Code's: a commit message box with a Commit button and a variants menu, Publish Branch and Create PR actions, a **Staged Changes** group and a **Changes** group with status letters and hover stage/unstage actions, and a **Graph** section listing recent commits. The user no longer picks between "uncommitted", "staged" and "unstaged" to see what is going on; both groups are always visible and a file click opens its diff in the Review panel in the matching mode.
+The workspace panel's Changes column becomes a source-control view in the shape of VS Code's: a commit message box with a Commit button and a variants menu, Publish Branch and Create PR actions, a **Staged Changes** group and a **Changes** group with status letters and hover stage/unstage actions, and a **Graph** section listing recent commits. The user no longer picks between "uncommitted", "staged" and "unstaged" to see what is going on; both groups are always visible and a file click opens its diff in the Review panel in the matching mode.
 
 ## Problem Frame
 
@@ -24,9 +24,9 @@ Today the Changes tab is a flat list built from `/api/wr/file/status`, which fol
 - One status route returns branch, upstream, ahead/behind, and separate staged and unstaged entries with per-file status and line counts, from one `git status --porcelain=v2` pass.
 - Stage, unstage, commit (with amend), and push routes on the workspace runtime, each refusing workspace viewers, each invalidating the app's file-status cache on success.
 - A commits route with author, date, refs and parents for the graph.
-- The Changes tab renders: commit box (multi-line message, ⌘⏎ commits, Commit button, menu with Commit, Commit & Push, Amend), Publish Branch (no upstream) or Push (ahead > 0), Create PR (GitHub remote only; opens the compare URL), Staged Changes (n) and Changes (n) groups with A/M/D/U/R/C letters and hover Stage / Unstage / Stage all / Unstage all, and a Graph section.
+- The workspace panel's Changes column renders: commit box (multi-line message, ⌘⏎ commits, Commit button, menu with Commit, Commit & Push, Amend), Publish Branch (no upstream) or Push (ahead > 0), Create PR (GitHub remote only; opens the compare URL), Staged Changes (n) and Changes (n) groups with A/M/D/U/R/C letters and hover Stage / Unstage / Stage all / Unstage all, and a Graph section.
 - A file click opens the Review panel focused on that file in mode `staged` or `unstaged`.
-- The classic panel-placement navigator column and the Review toolbar's mode selector are unchanged.
+- The panel's Files column and the Review toolbar's mode selector are unchanged.
 - Strings in every locale; parity test green.
 
 ## Key Technical Decisions
@@ -71,16 +71,18 @@ Errors: 400 `git_empty_message`, 400 `git_nothing_staged`, 403 viewer, 409 `git_
 
 ## Implementation Units
 
+The secondary navigator sidebar (plan 002) hosted the view first and was removed after use; the workspace panel's Changes column is the only host.
+
 - [ ] **Unit A: runtime routes and client** — owner `packages/workspace-runtime/src/{routes/git-worktree.ts (new), workspace-files/git-worktree.ts (new), client.ts, workspace/core.ts}` + tests beside the existing `git-source` tests. Status from `git status --porcelain=v2 -z --branch --untracked-files=all` plus `diff --numstat` and `diff --cached --numstat`. Log from `git log -n <limit> --format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%D%x1f%P`. Done when every route has a test against a temp repo covering the positive flow, the viewer refusal, empty message, nothing staged, and a rejected push.
 - [ ] **Unit B: app data** — owner `packages/claxedo-app/src/platform/runtime/workspace-git-client.ts (new)`, `app/providers/sdk/sdk.tsx` (expose `git`), `platform/files/workspace-git-status-query.ts (new)`, invalidation hook-up in `app/workbench/context/workspace-vcs-cache-honesty.tsx`. Done when queries and mutations exist with tests and a write refetches status, commits and the file-status cache.
-- [x] **Unit C: the view** — owner new `packages/claxedo-app/src/app/workbench/source-control/` (`source-control-view.tsx`, `commit-box.tsx`, `change-group.tsx`, `commit-graph.tsx`, `workspace-remote.ts`, `source-control.css`, vitest), `app/workbench/navigator-sidebar/navigator-sidebar.tsx` (mount it for the Changes tab), semantic icons `staged`/`commit`/`push`/`pullRequest`/`stage`/`unstage` in `ui/semantic-icon.tsx`, i18n in every locale. Done when the vitest covers: groups and counts, letters, stage/unstage calls, commit enabled only with a message and staged files, Publish vs Push vs up-to-date, Create PR hidden without a GitHub remote, ⌘⏎ commits, a file click retargets the panel with the matching mode focus, graph rows. Progress: done — 24 vitest cases in `source-control-view.vitest.tsx`; the file focus carries `reviewMode` (`workspace-panel-state.ts` → `workspace-panel-body.tsx` → `review-workspace.tsx` → `review-tab.tsx`, which switches mode before revealing the file); the strings live in `platform/i18n/source-control/<locale>.ts`, a feature dictionary like `provider-settings/`, because the base locale files sit at their size ratchets; the Create PR remote comes from the session inventory's `git.remote`, else the workspace catalog's `repo_url` / `git.remote`.
-- [ ] **Unit D: proof** — extend `core-navigator-sidebar.spec.ts` with: seeded repo with one staged and two unstaged files → groups and counts; stage one → moves group; commit with a message → both groups shrink and the graph gains the commit; Create PR hidden for a repo without a GitHub remote.
+- [x] **Unit C: the view** — owner new `packages/claxedo-app/src/app/workbench/source-control/` (`source-control-view.tsx`, `commit-box.tsx`, `change-group.tsx`, `commit-graph.tsx`, `workspace-remote.ts`, `source-control.css`, vitest), `app/workbench/rail/workspace-panel-body.tsx` (mount it in the panel's files column for `navigator === "changes"`), semantic icons `staged`/`commit`/`push`/`pullRequest`/`stage`/`unstage` in `ui/semantic-icon.tsx`, i18n in every locale. Done when the vitest covers: groups and counts, letters, stage/unstage calls, commit enabled only with a message and staged files, Publish vs Push vs up-to-date, Create PR hidden without a GitHub remote, ⌘⏎ commits, a file click retargets the panel with the matching mode focus, graph rows. Progress: done — 24 vitest cases in `source-control-view.vitest.tsx`; the file focus carries `reviewMode` (`workspace-panel-state.ts` → `workspace-panel-body.tsx` → `review-workspace.tsx` → `review-tab.tsx`, which switches mode before revealing the file); the strings live in `platform/i18n/source-control/<locale>.ts`, a feature dictionary like `provider-settings/`, because the base locale files sit at their size ratchets; the Create PR remote comes from the session inventory's `git.remote`, else the workspace catalog's `repo_url` / `git.remote`.
+- [x] **Unit D: proof** — owner `packages/claxedo-app/e2e/playwright/core-source-control.spec.ts` against the classic panel (header trio → Changes): seeded groups, letters and graph; stage → unstage → stage all; commit by button and by ⌘⏎; Create PR present for a GitHub remote and absent otherwise; a rejected push; every git request carries `?directory=`; a staged row focuses the Review tab in Staged mode and an unstaged row in Unstaged; the full-view flow (Maximize → floating session, peek, reveal, Restore).
 
 ## Definition of Done
 
 - [ ] `GET /api/wr/git/status` splits staged and unstaged with correct letters for added, modified, deleted, renamed, untracked and conflicted files, and reports branch, upstream, ahead and behind. Progress:
 - [ ] Stage, unstage, commit-staged (with amend) and push work through the runtime for a local workspace and refuse viewers. Progress:
-- [ ] The Changes tab renders the commit box, actions, both groups with hover actions, and the graph; a file click opens its diff in the matching review mode. Progress: implemented and unit-tested (Unit C); not yet proven in the running app (Unit D).
+- [x] The Changes column renders the commit box, actions, both groups with hover actions, and the graph; a file click opens its diff in the matching review mode. Progress: unit-tested (Unit C) and proven in the running app by `core-source-control.spec.ts` (Unit D).
 - [ ] Every successful write refetches the status, the commits and the file-status cache. Progress:
 - [ ] Create PR opens the compare URL only when the remote is GitHub. Progress: the link renders only for a `github.com` remote and only off the default branch (Unit C vitest); e2e proof pending (Unit D).
 - [ ] All locales carry the new strings; parity test green. Progress: 29 keys × 17 locales in `platform/i18n/source-control/`; `locale-parity.test.ts` green.

@@ -72,24 +72,9 @@ export function railResizeCommand(width: number, options: {
   }
 }
 
-export function navigatorResizeCommand(width: number, options: {
-  minWidth?: number
-  maxWidth?: number
-} = {}): LayoutCommand {
-  const minWidth = options.minWidth ?? 260
-  const maxWidth = options.maxWidth ?? 520
-  return {
-    type: "region.update",
-    regionId: "navigator",
-    region: {
-      size: { unit: "px", value: Math.min(Math.max(width, minWidth), maxWidth) },
-    },
-  }
-}
-
 export function applyLayoutCommand(config: LayoutConfig, command: LayoutCommand): LayoutConfig {
   if (command.type === "replace") return command.config
-  if (command.type === "reset") return defaultLayoutConfig({ target: command.target ?? config.target, preset: config.presetId })
+  if (command.type === "reset") return defaultLayoutConfig({ target: command.target ?? config.target })
   const current = config.regions[command.regionId]
   if (!current) return config
   return {

@@ -235,16 +235,22 @@ export const appLocal: Policy = {
   // memo rather than an effect. It imports only siblings already in this
   // closure, so the package count is unchanged at 38. Re-measured, no headroom.
   ceilings: { modules: 960, packages: 38 },
-  // +24 modules / 0 packages (2026-09-07): the navigator sidebar's Changes tab
+  // +30 modules / 0 packages (2026-09-07): the workspace panel's Changes column
   // is the source-control view (`app/workbench/source-control/`: view, commit
-  // box, change groups, commit graph, remote lookup, stylesheet = 6), which is
-  // the first reader of `app/workbench/context/workspace-git-mutations.ts`
-  // (+1), and its strings are the 17 lazy `platform/i18n/source-control/`
-  // locale dictionaries (+17), split out like provider-settings so the base
-  // locale files stay inside their size ratchets. Reviewed owner:
+  // box, change groups, commit graph, remote lookup, stylesheet = 6) with its
+  // 17 lazy `platform/i18n/source-control/` locale dictionaries, split out so
+  // the base locale files stay inside their size ratchets; its git reads and
+  // writes are `platform/runtime/workspace-git-client.ts`,
+  // `platform/files/workspace-git-status-query.ts` and
+  // `app/workbench/context/workspace-git-mutations.ts` (+3); the panel body's
+  // Processes column is `app/workbench/workspace-panel/processes-navigator.tsx`
+  // over `app/workbench/context/process-pane-registry.ts` (+2); and a session
+  // pane floating under the full-view panel is
+  // `app/workbench/workbench/pane-presentation.ts` with
+  // `features/session/ui/session-presentation.css` (+2). Reviewed owner:
   // app/workbench/source-control (this product's own surface); every edge stays
   // inside packages already in the closure. Re-measured, no headroom.
-  ceilings: { modules: 987, packages: 38 },
+  ceilings: { modules: 990, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

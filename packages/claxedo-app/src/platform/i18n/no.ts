@@ -448,13 +448,6 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Publisert fra denne maskinen",
 
 
-  "navigator.sidebar.tab.files": "Filer",
-  "navigator.sidebar.tab.changes": "Endringer",
-  "navigator.sidebar.tab.processes": "Prosesser",
-  "navigator.sidebar.empty": "Velg et arbeidsområde for å bruke navigatoren.",
-  "navigator.sidebar.resize": "Endre størrelse på navigatoren",
-
-
   "settings.section.desktop": "Skrivebord",
   "settings.section.workspace": "Arbeidsområde",
   "settings.section.account": "Konto",
@@ -491,10 +484,6 @@ export const dict = {
   "settings.general.row.followup.description": "Velg om oppfølgingsspørsmål skal kjøres umiddelbart eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
-  "settings.general.row.navigatorPlacement.title": "Navigatorplassering",
-  "settings.general.row.navigatorPlacement.description": "Vis navigatoren for filer, endringer og prosesser inne i arbeidsområdepanelet eller som en sidestolpe ved siden av prosjektlisten",
-  "settings.general.row.navigatorPlacement.option.panel": "Arbeidsområdepanel",
-  "settings.general.row.navigatorPlacement.option.sidebar": "Sidestolpe",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
