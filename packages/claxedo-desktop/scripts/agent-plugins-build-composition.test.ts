@@ -3,12 +3,10 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const ENABLED_OUT = path.join(os.tmpdir(), `claxedo-agent-plugins-enabled-${process.pid}`)
-const DISABLED_OUT = path.join(os.tmpdir(), `claxedo-agent-plugins-disabled-${process.pid}`)
+const OUT = path.join(os.tmpdir(), `claxedo-agent-plugins-bundle-${process.pid}`)
 
 afterAll(() => {
-  fs.rmSync(ENABLED_OUT, { recursive: true, force: true })
-  fs.rmSync(DISABLED_OUT, { recursive: true, force: true })
+  fs.rmSync(OUT, { recursive: true, force: true })
 })
 
 /**
@@ -25,7 +23,7 @@ function emittedText(dir: string): string {
   }).join("\n")
 }
 
-async function bundle(enabled: boolean, out: string) {
+test("desktop server bundle emits the Agent Plugins route and activation authority", async () => {
   const script = [
     'import path from "node:path"',
     'import { bundleClaxedoServer } from "./bundle-claxedo-server.ts"',
@@ -35,8 +33,7 @@ async function bundle(enabled: boolean, out: string) {
     cwd: import.meta.dir,
     env: {
       ...process.env,
-      CLAXEDO_AGENT_PLUGINS: enabled ? "1" : "0",
-      TEST_AGENT_PLUGINS_OUT: out,
+      TEST_AGENT_PLUGINS_OUT: OUT,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -47,22 +44,9 @@ async function bundle(enabled: boolean, out: string) {
     new Response(child.stderr).text(),
   ])
   expect(exitCode, `${stdout}\n${stderr}`).toBe(0)
-}
 
-test("enabled desktop build emits the Agent Plugins route and activation authority", async () => {
-  await bundle(true, ENABLED_OUT)
-
-  const text = emittedText(ENABLED_OUT)
+  const text = emittedText(OUT)
   expect(text).toContain("/api/claxedo/plugins")
   expect(text).toContain("agent_plugin_activation_meta")
   expect(text).toContain("codeload.github.com")
-}, 300_000)
-
-test("disabled desktop build contains no Agent Plugins route, storage, or catalog fetcher", async () => {
-  await bundle(false, DISABLED_OUT)
-
-  const text = emittedText(DISABLED_OUT)
-  expect(text).not.toContain("/api/claxedo/plugins")
-  expect(text).not.toContain("agent_plugin_activation_meta")
-  expect(text).not.toContain("codeload.github.com")
 }, 300_000)

@@ -298,7 +298,7 @@ export function agentPluginApi(input: { baseUrl: string; request: RequestFn }) {
     catalog(options: { refresh?: boolean; projectId?: string } = {}) {
       return input.request(url("", options)).then((response) => responseJson(response, pluginCatalog))
     },
-    /** One skill's SKILL.md from the plugin's retained artifact; 404 until the plugin is installed. */
+    /** One skill's SKILL.md from the retained artifact, or the cached catalog tree. */
     skill(options: { pluginInstanceId: string; skill: string; projectId?: string }) {
       const path = `/${encodeURIComponent(options.pluginInstanceId)}/skills/${encodeURIComponent(options.skill)}`
       return input.request(url(path, options.projectId ? { projectId: options.projectId } : {}))

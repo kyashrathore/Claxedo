@@ -64,7 +64,7 @@ function icon(manifest: AgentPluginManifest | null | undefined): AgentPluginIcon
 /**
  * A candidate its source still serves. Skills come from the retained artifact
  * whenever one is pinned, for the same reason MCP servers already do: that tree
- * is what the runtime materializes and the only tree the skill route reads.
+ * is what the runtime materializes.
  */
 export function candidatePresentation(input: {
   candidate: AgentPluginCatalogCandidate

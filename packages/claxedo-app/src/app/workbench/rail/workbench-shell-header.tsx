@@ -89,6 +89,7 @@ export function WorkbenchShellHeader(props: {
   onFloatingChromeRef: (element: HTMLElement | undefined) => void
 }) {
   onCleanup(() => props.onFloatingChromeRef(undefined))
+  const showWorkspacePanelToggle = () => !props.activeGlobal()
 
   // The compact rail header is the topmost strip when the sidebar is unpinned,
   // so it doubles as the OS titlebar. The whole bar is a drag surface (empty
@@ -106,11 +107,11 @@ export function WorkbenchShellHeader(props: {
         // floating panel-chrome, which while the panel is closed is just the
         // panel toggle: right-1 + pl-1 + a size-6 button = 28px measured in the
         // running app. It was 8rem when the Files/Changes/Processes trio still
-        // sat here; that would now hold ~6rem of dead space open. The chrome is
-        // hidden while the panel is open, so drop the reserve then and let the
-        // scope buttons sit flush against the panel divider instead.
-        "pr-10": !props.workspacePanelVisualOpen(),
-        "pr-1": props.workspacePanelVisualOpen(),
+        // sat here; that would now hold ~6rem of dead space open. Drop the
+        // reserve while the panel is open, or on a global surface that has no
+        // workspace panel toggle (Marketplace).
+        "pr-10": showWorkspacePanelToggle() && !props.workspacePanelVisualOpen(),
+        "pr-1": !showWorkspacePanelToggle() || props.workspacePanelVisualOpen(),
       }}
       style={{ "padding-left": props.trafficLightPad() && !props.sidebarPinned() ? "78px" : undefined }}
     >
@@ -184,7 +185,7 @@ export function WorkbenchShellHeader(props: {
               props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible() ? "none" : undefined,
           }}
         >
-          <Show when={!props.workspacePanelVisualOpen() || props.workspacePanelBridgeChromeVisible()}>
+          <Show when={showWorkspacePanelToggle() && (!props.workspacePanelVisualOpen() || props.workspacePanelBridgeChromeVisible())}>
             {/* The Files/Changes/Processes trio deliberately does NOT appear
                 here. It has two homes already: the panel column's own L2 strip
                 (below), and the session environment card's vertical rail, which

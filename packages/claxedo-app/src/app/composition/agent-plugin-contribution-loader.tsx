@@ -92,7 +92,7 @@ function DirectorySurface() {
   )
 }
 
-/** Build-composed Agent Plugins UI. This module is the optional chunk boundary. */
+/** Build-composed Agent Plugins UI. This module is the lazy chunk boundary. */
 export function agentPluginContributions(): AgentPluginContributionSet {
   return {
     contentSurfaces: [{

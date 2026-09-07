@@ -97,7 +97,6 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
     cert: readFileSync(new URL("cert.pem", dir)),
   }
 }
-const agentPluginsEnabled = process.env.CLAXEDO_AGENT_PLUGINS?.trim() === "1"
 
 /**
  * Cloud-specific Vite configuration for Claxedo.
@@ -116,9 +115,6 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    define: {
-      __CLAXEDO_AGENT_PLUGINS_ENABLED__: JSON.stringify(agentPluginsEnabled),
-    },
     plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
     publicDir: "public",
     server: {

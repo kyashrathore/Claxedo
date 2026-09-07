@@ -9,7 +9,6 @@ import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 import { configureProductContributions, type HostedContributionLoader } from "@/app/composition/product-contributions"
-import type { AgentPluginContributionLoader } from "@/app/composition/product-contributions"
 import {
   configureServiceContributions,
   type ServiceContributionLoaders,
@@ -51,8 +50,6 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
   loadHostedContributions?: HostedContributionLoader
   /** Independently loaded fixed services, activated only by signed bootstrap. */
   serviceContributionLoaders?: ServiceContributionLoaders
-  /** Agent Plugins UI implementation; absent from a product built without the module. */
-  loadAgentPluginContributions?: AgentPluginContributionLoader
 }
 
 /**
@@ -95,7 +92,8 @@ export function initClaxedo(config: ClaxedoConfig): void {
     register: registerContentSurface,
     unregister: unregisterContentSurface,
     loadHosted: config.loadHostedContributions,
-    loadAgentPlugins: config.loadAgentPluginContributions,
+    loadAgentPlugins: async () =>
+      (await import("@/app/composition/agent-plugin-contribution-loader")).agentPluginContributions(),
     hostedComposition: () => config.loadHostedContributions !== undefined,
   })
 
@@ -118,10 +116,8 @@ export function initClaxedo(config: ClaxedoConfig): void {
   // keeps only the parts both products share.
   if (config.loadHostedContributions) contributions.expectHosted()
 
-  if (config.loadAgentPluginContributions) {
-    contributions.expectAgentPlugins()
-    void contributions.activateAgentPlugins().catch(() => {})
-  }
+  contributions.expectAgentPlugins()
+  void contributions.activateAgentPlugins().catch(() => {})
 
   if (config.authEnabled && config.loadHostedContributions) {
     // Hosted composition: Documents arrives as one lazily

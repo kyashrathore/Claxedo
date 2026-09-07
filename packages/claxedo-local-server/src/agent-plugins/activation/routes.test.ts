@@ -143,16 +143,21 @@ describe("unsigned Agent Plugins public route contribution", () => {
     expect(first.candidates[0]).not.toHaveProperty("sourceLabel")
   })
 
-  test("serves a skill's retained markdown and keeps serving it after the source disappears", async () => {
+  test("serves a skill's catalog markdown before install and the retained copy after the source disappears", async () => {
     const subject = await fixture()
     const candidate = (await catalog(subject.app)).candidates[0]
     const skillUrl = (skill: string) =>
       `http://local.test/api/claxedo/plugins/${encodeURIComponent(candidate.pluginInstanceId)}/skills/${encodeURIComponent(skill)}`
 
-    // Nothing is retained yet: the route never falls back to the live source.
+    subject.freshCalls.length = 0
     const beforeInstall = await subject.app.request(skillUrl("triage"))
-    expect(beforeInstall.status).toBe(404)
-    expect(await beforeInstall.json()).toMatchObject({ error: { code: "agent_plugins_skill_not_found" } })
+    expect(beforeInstall.status).toBe(200)
+    expect(await beforeInstall.json()).toEqual({
+      name: "triage",
+      description: "Triage a review",
+      markdown: SKILL_MARKDOWN,
+    })
+    expect(subject.freshCalls).toEqual([false])
 
     await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
       method: "POST",

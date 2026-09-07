@@ -4,6 +4,10 @@ import type { AgentPluginApi } from "../api"
 import { GHOST_ICON_BUTTON } from "./chrome"
 import { skillBody } from "./view"
 
+type SkillLoad =
+  | { kind: "loaded"; markdown: string }
+  | { kind: "error"; message: string }
+
 /**
  * One skill, read as a document.
  *
@@ -21,12 +25,20 @@ export function SkillView(props: {
   onBack: () => void
 }) {
   const [document] = createResource(
-    () => ({ pluginInstanceId: props.pluginInstanceId, skill: props.skill, projectId: props.projectId }),
-    (options) => props.api.skill({
-      pluginInstanceId: options.pluginInstanceId,
-      skill: options.skill,
-      ...(options.projectId ? { projectId: options.projectId } : {}),
+    () => ({
+      pluginInstanceId: props.pluginInstanceId,
+      skill: props.skill,
+      projectId: props.projectId,
     }),
+    (options): Promise<SkillLoad> =>
+      props.api.skill({
+        pluginInstanceId: options.pluginInstanceId,
+        skill: options.skill,
+        ...(options.projectId ? { projectId: options.projectId } : {}),
+      }).then(
+        (loaded) => ({ kind: "loaded", markdown: loaded.markdown }),
+        (error: unknown) => ({ kind: "error", message: error instanceof Error ? error.message : String(error) }),
+      ),
   )
   return (
     <div data-component="agent-plugin-skill-view" class="flex min-h-0 flex-1 flex-col">
@@ -53,22 +65,28 @@ export function SkillView(props: {
         <span class="truncate text-text-strong">{props.skill}</span>
       </nav>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <Show when={document.error}>
-          <p class="text-12-regular text-icon-critical-base">{String(document.error)}</p>
-        </Show>
         {/* The document read suspends to the NEAREST boundary. Without this one
             it reached the surface-level Suspense in the loader, so opening a
             skill replaced the entire marketplace with "Loading…". */}
         <Suspense fallback={<p class="text-12-regular text-text-weak">Reading SKILL.md…</p>}>
-        <Show when={document()}>
-          {(loaded) => (
-            <article class="max-w-[68ch] text-14-regular text-text-base">
-              <Markdown text={skillBody(loaded().markdown)} />
-            </article>
-          )}
-        </Show>
+          <Show when={document()}>
+            {(loaded) => <SkillDocument load={loaded()} />}
+          </Show>
         </Suspense>
       </div>
     </div>
+  )
+}
+
+function SkillDocument(props: { load: SkillLoad }) {
+  if (props.load.kind === "loaded") {
+    return (
+      <article class="max-w-[68ch] text-14-regular text-text-base">
+        <Markdown text={skillBody(props.load.markdown)} />
+      </article>
+    )
+  }
+  return (
+    <p class="text-12-regular text-icon-critical-base">{props.load.message}</p>
   )
 }

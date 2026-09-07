@@ -401,16 +401,19 @@ describe("hosted Agent Plugins routes", () => {
     expect(subject.activations.listKnownCalls).toBe(1)
   })
 
-  test("serves a skill's retained markdown and reports the plugin's source is gone with its skills intact", async () => {
+  test("serves a skill's catalog markdown before install and the retained copy after the source disappears", async () => {
     const subject = await fixture()
     const catalog = await (await request(subject.app, "/")).json()
     const pluginInstanceId = catalog.candidates[0].pluginInstanceId as string
     const skillPath = (skill: string) => `/${encodeURIComponent(pluginInstanceId)}/skills/${encodeURIComponent(skill)}`
 
-    // Nothing is retained yet: the route never falls back to the live source.
     const beforeInstall = await request(subject.app, skillPath("triage"))
-    expect(beforeInstall.status).toBe(404)
-    expect(await beforeInstall.json()).toMatchObject({ error: { code: "agent_plugins_skill_not_found" } })
+    expect(beforeInstall.status).toBe(200)
+    expect(await beforeInstall.json()).toEqual({
+      name: "triage",
+      description: "Triage a review",
+      markdown: SKILL_MARKDOWN,
+    })
 
     await request(subject.app, "/activation", "member", {
       method: "POST",

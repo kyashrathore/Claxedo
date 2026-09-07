@@ -7,6 +7,7 @@ import {
   CLAXEDO_DAEMON_PROTOCOL,
   clearClaxedoDaemonDiscovery,
   readClaxedoDaemonDiscovery,
+  stopUnhealthyPublishedDaemon,
   verifyClaxedoDaemonDiscovery,
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
@@ -83,6 +84,40 @@ describe("Claxedo daemon discovery", () => {
       Response.json({ ...record, pid: record.pid + 1 }))
 
     expect(verified).toBeUndefined()
+  })
+
+  test("stops a live published pid that failed health, escalating if SIGTERM is ignored", async () => {
+    const signals: Array<{ pid: number; signal: "SIGTERM" | "SIGKILL" }> = []
+    let alive = true
+
+    const result = await stopUnhealthyPublishedDaemon(fixture({ pid: 99454 }), {
+      alive: () => alive,
+      stop: async (pid, signal) => {
+        signals.push({ pid, signal })
+        if (signal === "SIGKILL") alive = false
+      },
+      wait: async () => undefined,
+    })
+
+    expect(result).toBe("stopped")
+    expect(signals).toEqual([
+      { pid: 99454, signal: "SIGTERM" },
+      { pid: 99454, signal: "SIGKILL" },
+    ])
+  })
+
+  test("does not stop a published pid that is already gone", async () => {
+    const stopped: number[] = []
+    const result = await stopUnhealthyPublishedDaemon(fixture(), {
+      alive: () => false,
+      stop: async (pid) => {
+        stopped.push(pid)
+      },
+      wait: async () => undefined,
+    })
+
+    expect(result).toBe("absent")
+    expect(stopped).toEqual([])
   })
 
   test("only the owning generation can clear a replacement record", () => {

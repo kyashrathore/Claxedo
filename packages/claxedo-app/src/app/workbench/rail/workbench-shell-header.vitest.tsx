@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
-import { WorkspacePanelChrome, WorkspacePanelHeader } from "./workbench-shell-header"
+import { WorkspacePanelChrome, WorkbenchShellHeader, WorkspacePanelHeader } from "./workbench-shell-header"
 
 describe("WorkspacePanelChrome", () => {
   const base = {
@@ -62,6 +62,50 @@ describe("WorkspacePanelChrome", () => {
     expect(restore).toHaveAttribute("data-icon-interaction", "binary")
     expect(restore).toHaveAttribute("aria-pressed", "true")
     expect(restore.querySelector('[data-icon="collapse"]')).toBeTruthy()
+  })
+})
+
+function headerProps(overrides: Partial<Parameters<typeof WorkbenchShellHeader>[0]> = {}): Parameters<typeof WorkbenchShellHeader>[0] {
+  return {
+    activeGlobal: () => false,
+    canCreateTerminal: () => true,
+    focusedPanelTarget: () => undefined,
+    hasWorkspacePanelTarget: () => true,
+    onCloseSurface: () => {},
+    onNewSession: () => {},
+    onNewTerminalDraft: () => {},
+    onShowSidebar: () => {},
+    onSidebarHotZoneEnter: () => {},
+    onSelectSurface: () => {},
+    onToggleWorkspacePanel: () => {},
+    onToggleWorkspacePanelFullWidth: () => {},
+    sidebarPinned: () => true,
+    surfaceShortcutHints: () => [],
+    switcherItems: () => [],
+    toggleFocusedWorkspaceNavigator: () => {},
+    trafficLightPad: () => false,
+    workspacePanelBridgeChromeVisible: () => false,
+    workspacePanelForFocusedTarget: () => false,
+    workspacePanelFullWidth: () => false,
+    workspacePanelNavigator: () => undefined,
+    workspacePanelVisualOpen: () => false,
+    onFloatingChromeRef: () => {},
+    ...overrides,
+  }
+}
+
+describe("WorkbenchShellHeader", () => {
+  test("keeps the workspace panel toggle on a workspace surface", () => {
+    render(() => createComponent(WorkbenchShellHeader, headerProps()))
+    expect(screen.getByRole("button", { name: "Open workspace panel" })).toBeTruthy()
+  })
+
+  test("hides the workspace panel toggle on Marketplace and other global surfaces", () => {
+    render(() => createComponent(WorkbenchShellHeader, headerProps({ activeGlobal: () => true })))
+    expect(screen.queryByRole("button", { name: "Open workspace panel" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Close workspace panel" })).toBeNull()
+    expect(screen.getByTestId("workbench-shell-header").className).toContain("pr-1")
+    expect(screen.getByTestId("workbench-shell-header").className).not.toContain("pr-10")
   })
 })
 

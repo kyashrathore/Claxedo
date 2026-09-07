@@ -17,9 +17,8 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       // Optional VM image entry: it needs the filesystem materializer without
       // pulling the complete self-hosted server into a cloud workspace image.
       "@claxedo/local-server/agent-plugins/runtime/runtime-contribution",
-      // The self-hosted entry mounts the local Agent Plugins module behind
-      // CLAXEDO_AGENT_PLUGINS=1 (a flag-gated dynamic import in
-      // deployments/self-hosted-node/start.ts), the same module the desktop's
+      // The self-hosted entry mounts the local Agent Plugins module
+      // (deployments/self-hosted-node/start.ts), the same module the desktop's
       // server entry mounts. Only that entry may name it.
       "@claxedo/local-server/agent-plugins/local-composition",
     ])

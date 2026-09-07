@@ -133,8 +133,8 @@ describe("Agent Plugins client", () => {
       .toThrow("did not match its API contract")
     expect(() => agentPluginSkillResult({
       status: 404,
-      body: { error: { code: "agent_plugins_skill_not_found", message: "No retained artifact serves this skill" } },
-    })).toThrow("No retained artifact serves this skill")
+      body: { error: { code: "agent_plugins_skill_not_found", message: "No catalog or retained artifact serves this skill" } },
+    })).toThrow("No catalog or retained artifact serves this skill")
   })
 
   test("rejects malformed mutation receipts", async () => {

@@ -73,13 +73,8 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   // where a refusal costs nothing. The one inside the composition catches a
   // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
-  // The local Agent Plugins module (catalog, activation, machine discovery),
-  // composed the way the desktop's server entry composes it. Behind the same
-  // flag so a box that did not ask for the marketplace mounts none of it.
-  const agentPlugins = env.CLAXEDO_AGENT_PLUGINS?.trim() === "1"
-    ? await import("@claxedo/local-server/agent-plugins/local-composition")
-        .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
-    : undefined
-  await agentPlugins?.ready
-  return startServer(options.port, (agentPlugins ? { routeContributions: agentPlugins.routeContributions } : {}))
+  const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
+    .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
+  await agentPlugins.ready
+  return startServer(options.port, { routeContributions: agentPlugins.routeContributions })
 }

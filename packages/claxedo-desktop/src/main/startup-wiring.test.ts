@@ -12,6 +12,10 @@ const serverStart = entry.slice(
   entry.indexOf("async function startClaxedoServer("),
   entry.indexOf("async function setupServerConnection()"),
 )
+const setupServer = entry.slice(
+  entry.indexOf("async function setupServerConnection()"),
+  entry.indexOf("async function initialize()"),
+)
 // The same flow, on its other side. The server child owns the only stamp for
 // "able to serve", so the cold startup wiring this file pins does not fit in
 // one file.
@@ -62,6 +66,13 @@ describe("desktop cold startup wiring", () => {
     expect(prepare).toBeGreaterThan(-1)
     expect(wait).toBeGreaterThan(prepare)
     expect(verify).toBeGreaterThan(wait)
+  })
+
+  test("releases an unhealthy published daemon before starting a replacement", () => {
+    const stop = setupServer.indexOf("await stopUnhealthyPublishedDaemon(")
+    const start = setupServer.indexOf("await startClaxedoServer(serverDataDir)")
+    expect(stop).toBeGreaterThan(-1)
+    expect(start).toBeGreaterThan(stop)
   })
 
   test("still closes the child when readiness fails", () => {

@@ -35,10 +35,8 @@ const CROSS_PROJECT = "Cross-project defaults"
  * back; the install sheet is a composition concern reached through `onAdd`.
  *
  * The catalog is a query rather than a resource so that reopening the surface
- * paints the last read immediately and revalidates behind it — the same warm
- * boot the workspace catalog gets, through the same persisted `controlPlane`
- * prefix. "Refresh catalog" stays the one explicit way to make the server go
- * back to the source.
+ * paints the last read immediately. It stays fresh until "Refresh catalog" or
+ * a mutation reread; the server GitHub archive is only re-fetched on Refresh.
  */
 export function AgentPluginDirectory(props: {
   mode: "signed" | "unsigned"
@@ -73,7 +71,9 @@ export function AgentPluginDirectory(props: {
       const project = signed() ? projectId() : undefined
       return props.api.catalog({ ...(refresh ? { refresh: true } : {}), ...(project ? { projectId: project } : {}) })
     },
-    staleTime: 30_000,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
     placeholderData: keepPreviousData,
   }))
   const reread = async (options: { refresh?: boolean } = {}) => {

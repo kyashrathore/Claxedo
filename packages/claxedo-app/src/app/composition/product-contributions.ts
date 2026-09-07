@@ -83,7 +83,7 @@ export type ProductContributionsInput = {
   unregister: (surface: ContentSurfaceContribution) => void
   /** Loads the hosted set. Absent from a composition that cannot host it. */
   loadHosted?: HostedContributionLoader
-  /** Absent from a product build that must not contain Agent Plugins. */
+  /** initClaxedo always supplies this; tests of this seam may omit it. */
   loadAgentPlugins?: AgentPluginContributionLoader
   /**
    * Whether this composition may hold hosted contributions at all.
@@ -115,7 +115,7 @@ export type ProductContributions = {
   hostedActive(): boolean
   /** Load and register the hosted set, at most once. */
   activateHosted(): Promise<void>
-  /** Declare that this product artifact contains the optional Agent Plugins module. */
+  /** Declare that this composition includes the Agent Plugins catalog. */
   expectAgentPlugins(): void
   agentPluginsExpected(): boolean
   agentPluginsActive(): boolean

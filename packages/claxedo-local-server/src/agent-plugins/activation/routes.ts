@@ -11,7 +11,7 @@ import {
   candidatePresentation,
   retainedPresentation,
 } from "@claxedo/server-core/agent-plugins/catalog/presentation"
-import { readRetainedSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
+import { readPluginSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import {
@@ -164,8 +164,12 @@ async function retainedView(input: {
   }
 }
 
-async function currentCandidate(sources: CatalogSourceProvider, pluginInstanceId: string) {
-  const catalog = await resolveCollections(sources, { fresh: true })
+async function currentCandidate(
+  sources: CatalogSourceProvider,
+  pluginInstanceId: string,
+  options: { fresh: boolean } = { fresh: true },
+) {
+  const catalog = await resolveCollections(sources, options)
   return catalog.candidates.find((candidate) => candidate.pluginInstanceId === pluginInstanceId)
 }
 
@@ -223,19 +227,14 @@ export function LocalAgentPluginActivationRoutes(input: {
   app.get("/", (c) => catalog(c, false))
   app.get("/refresh", (c) => catalog(c, true))
 
-  /**
-   * One skill's SKILL.md, read from the retained artifact tree. A source read
-   * would show the caller text their harnesses do not run, so a plugin with no
-   * retained artifact has no readable skill. Machine-wide like every other
-   * unsigned route: there is no project prefix to serve.
-   */
   app.get("/:pluginInstanceId/skills/:skill", async (c) => {
     const pluginInstanceId = c.req.param("pluginInstanceId")
     const digest = input.activations.read(pluginInstanceId, SUPPORTED_AGENT_PLUGIN_HARNESSES[0]).pins.localMachine
     const retained = digest ? await input.artifacts.get(digest) : undefined
-    const document = readRetainedSkill(retained, c.req.param("skill"))
+    const candidate = await currentCandidate(input.sources, pluginInstanceId, { fresh: false })
+    const document = readPluginSkill({ retained, candidate, skill: c.req.param("skill") })
     if (!document) {
-      return c.json(errorBody("agent_plugins_skill_not_found", "No retained artifact serves this skill"), 404)
+      return c.json(errorBody("agent_plugins_skill_not_found", "No catalog or retained artifact serves this skill"), 404)
     }
     return c.json(document)
   })

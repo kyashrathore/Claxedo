@@ -1191,9 +1191,7 @@ async function main() {
     const apiOrigin = exactHttpsOrigin(process.env, `CLAXEDO_${environment.toUpperCase()}_API_ORIGIN`).origin
     await run(["bun", "run", "build:better-auth"], {
       cwd: appRoot,
-      // The browser carries the Agent Plugins UI chunk only in the same build
-      // that ships the Worker with the routes, so one flag selects both.
-      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin, ...(agentPlugins ? { CLAXEDO_AGENT_PLUGINS: "1" } : {}) },
+      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin },
     })
     await run(["bun", "scripts/browser-auth-bundle-identity.ts", "better-auth", browserDirectory], {
       cwd: appRoot,

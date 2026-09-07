@@ -71,7 +71,9 @@ import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agen
 import {
   CLAXEDO_DAEMON_PROTOCOL,
   claxedoDaemonDiscoveryPath,
+  publishedDaemonProcessIsAlive,
   readClaxedoDaemonDiscovery,
+  stopUnhealthyPublishedDaemon,
   verifyClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
 } from "./server-daemon-discovery"
@@ -508,6 +510,15 @@ async function setupServerConnection(): Promise<ServerConnection> {
       generation: discovery.generation,
     })
     return { variant: "daemon", url: daemonUrl, discovery }
+  }
+
+  if (discovery) {
+    logger.warn("stopping unhealthy claxedo daemon", { pid: discovery.pid, port: discovery.port })
+    await stopUnhealthyPublishedDaemon(discovery, {
+      alive: publishedDaemonProcessIsAlive,
+      stop: (pid, signal) => killProcessTree(pid, signal),
+      wait: delay,
+    })
   }
 
   logger.log("claxedo daemon not found, starting it")

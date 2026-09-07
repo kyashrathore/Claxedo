@@ -26,9 +26,6 @@ export function artifactUnavailable(plugin: PluginCandidate) {
     || AGENT_PLUGIN_HARNESSES.some((harness) => plugin.harnesses[harness].effective.status === "artifact-unavailable")
 }
 
-
-/** The MCP servers whose authentication is a Claxedo connection. */
-
 export function connectionFor(
   connections: readonly AgentPluginConnectionSummary[] | undefined,
   integrationId: string,

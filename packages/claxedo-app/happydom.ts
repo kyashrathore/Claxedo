@@ -25,6 +25,3 @@ await mock.module("@pierre/diffs/worker/worker.js?worker&url", () => ({
 await mock.module("../session-ui/src/components/markdown-shiki.worker.ts?worker&url", () => ({
   default: "",
 }))
-
-// Vite `define` constants — not available in Bun's test runner.
-;(globalThis as Record<string, unknown>).__CLAXEDO_AGENT_PLUGINS_ENABLED__ = false

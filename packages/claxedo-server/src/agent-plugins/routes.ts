@@ -17,7 +17,7 @@ import {
   candidatePresentation,
   retainedPresentation,
 } from "@claxedo/server-core/agent-plugins/catalog/presentation"
-import { readRetainedSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
+import { readPluginSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
@@ -108,8 +108,13 @@ function updateMutation(value: unknown): Omit<UpdateSignedArtifactPin, "artifact
   return { pluginInstanceId, authority: value.authority, expectedRevision: revision }
 }
 
-async function currentCandidate(sources: SignedSources, auth: SignedControlPlaneAuth, pluginInstanceId: string) {
-  const catalog = await resolveCollections(sources(auth), { fresh: true })
+async function currentCandidate(
+  sources: SignedSources,
+  auth: SignedControlPlaneAuth,
+  pluginInstanceId: string,
+  options: { fresh: boolean } = { fresh: true },
+) {
+  const catalog = await resolveCollections(sources(auth), options)
   return catalog.candidates.find((candidate) => candidate.pluginInstanceId === pluginInstanceId)
 }
 
@@ -457,13 +462,6 @@ export function HostedAgentPluginRoutes(input: {
   app.get("/projects/:projectId", (c) => catalog(c, { fresh: false, projectId: c.req.param("projectId") }))
   app.get("/projects/:projectId/refresh", (c) => catalog(c, { fresh: true, projectId: c.req.param("projectId") }))
 
-  /**
-   * One skill's SKILL.md, read from the retained artifact tree. A source read
-   * would show the caller text their runtime does not run, so a plugin with no
-   * retained artifact has no readable skill. The project prefix authorizes the
-   * project the way the catalog does and selects nothing else: retained
-   * artifacts are user- and organization-scoped, never project-scoped.
-   */
   const skill = async (c: Context, options: { projectId?: string }) => {
     const authResult = await authenticate(c.req.raw)
     if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
@@ -474,9 +472,10 @@ export function HostedAgentPluginRoutes(input: {
       .find((item) => item.pluginInstanceId === c.req.param("pluginInstanceId"))
     const retainedPin = known?.pins.user ?? known?.pins.organization ?? known?.pins.claxedo
     const retained = retainedPin ? await input.artifacts.get(retainedPin.digest) : undefined
-    const document = readRetainedSkill(retained, c.req.param("skill"))
+    const candidate = await currentCandidate(input.sources, auth, c.req.param("pluginInstanceId"), { fresh: false })
+    const document = readPluginSkill({ retained, candidate, skill: c.req.param("skill") })
     if (!document) {
-      return c.json(error("agent_plugins_skill_not_found", "No retained artifact serves this skill"), 404)
+      return c.json(error("agent_plugins_skill_not_found", "No catalog or retained artifact serves this skill"), 404)
     }
     return c.json(document)
   }

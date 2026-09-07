@@ -157,6 +157,7 @@ function harness(options: {
   connectionsError?: Error
   catalog?: Record<string, unknown>
   sourceAdd?: { status: number; body: unknown }
+  skill?: { status: number; body: unknown }
   connections?: Array<{ id: string; integrationId: string; scope: "personal" | "team"; status: "connected" | "degraded" | "broken" }>
 } = {}) {
   const recorded: Recorded[] = []
@@ -176,7 +177,11 @@ function harness(options: {
     }
     if (url.pathname === "/api/claxedo/plugins/machine-installed") return Response.json(MACHINE)
     if (url.pathname.startsWith("/api/claxedo/plugins/") && url.pathname.includes("/skills/")) {
-      return Response.json({ name: "docs-lookup", description: "Resolve a library id.", markdown: "# Steps\nresolve-library-id" })
+      const answer = options.skill ?? {
+        status: 200,
+        body: { name: "docs-lookup", description: "Resolve a library id.", markdown: "# Steps\nresolve-library-id" },
+      }
+      return Response.json(answer.body, { status: answer.status })
     }
     if (method === "POST") return Response.json({ revision: 5, reconciliation: { state: "applied" } })
     throw new Error(`unexpected request ${url}`)
@@ -194,10 +199,14 @@ function harness(options: {
   return { recorded, fetchMock, port, open, disconnect }
 }
 
-async function renderDirectory(options: Parameters<typeof harness>[0] & { mode?: "signed" | "unsigned" } = {}) {
-  const context = harness(options)
+async function renderDirectory(options: Parameters<typeof harness>[0] & {
+  mode?: "signed" | "unsigned"
+  client?: QueryClient
+  context?: ReturnType<typeof harness>
+} = {}) {
+  const context = options.context ?? harness(options)
   const onAdd = vi.fn(async () => {})
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = options.client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.add(client)
   const { AgentPluginDirectory } = await import("./directory")
   render(() => (
@@ -213,6 +222,14 @@ async function renderDirectory(options: Parameters<typeof harness>[0] & { mode?:
   ))
   await screen.findByRole("button", { name: "composio" })
   return { ...context, onAdd, client }
+}
+
+function catalogReads(recorded: Recorded[]) {
+  return recorded.filter((entry) => entry.method === "GET" && entry.url === "/api/claxedo/plugins")
+}
+
+function catalogRefreshes(recorded: Recorded[]) {
+  return recorded.filter((entry) => entry.method === "GET" && entry.url === "/api/claxedo/plugins/refresh")
 }
 
 async function openPane(name: string) {
@@ -310,6 +327,27 @@ describe("Agent Plugin Directory sections", () => {
   })
 })
 
+describe("Agent Plugin Directory catalog cache", () => {
+  test("reopening Marketplace reuses the cached catalog until Refresh", async () => {
+    const context = harness()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    clients.add(client)
+
+    await renderDirectory({ client, context })
+    expect(catalogReads(context.recorded)).toHaveLength(1)
+    expect(catalogRefreshes(context.recorded)).toHaveLength(0)
+
+    cleanup()
+    await renderDirectory({ client, context })
+    expect(catalogReads(context.recorded)).toHaveLength(1)
+    expect(catalogRefreshes(context.recorded)).toHaveLength(0)
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh catalog" }))
+    await waitFor(() => expect(catalogRefreshes(context.recorded)).toHaveLength(1))
+    expect(catalogReads(context.recorded)).toHaveLength(1)
+  })
+})
+
 describe("Agent Plugin Directory detail pane", () => {
   test("arrow keys walk the cards", async () => {
     await renderDirectory()
@@ -347,6 +385,28 @@ describe("Agent Plugin Directory detail pane", () => {
     // The strip precedes the prose it gives context to.
     expect(facts.compareDocumentPosition(within(pane).getByText("context7 plugin")))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  test("an uninstalled plugin's skill reads SKILL.md from the catalog", async () => {
+    const { recorded } = await renderDirectory({
+      catalog: {
+        candidates: catalogBody().candidates.map((plugin) =>
+          plugin.manifest?.name === "granola"
+            ? { ...plugin, skills: [{ name: "meeting-notes", description: "Capture meetings.", path: "skills/meeting-notes" }] }
+            : plugin
+        ),
+      },
+    })
+    const pane = await openPane("granola")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: /meeting-notes/ }))
+
+    await waitFor(() => expect(recorded.some((entry) =>
+      entry.url === `/api/claxedo/plugins/${encodeURIComponent('["src-acme","granola"]')}/skills/meeting-notes`)).toBe(true))
+    const crumbs = await within(pane).findByRole("navigation", { name: "Breadcrumb" })
+    expect(within(crumbs).getByText("granola")).toBeVisible()
+    expect(within(crumbs).getByText("meeting-notes")).toBeVisible()
+    await waitFor(() => expect(within(pane).getByText(/resolve-library-id/)).toBeVisible())
   })
 
   test("clicking a skill navigates the pane to the skill, and the breadcrumb comes back", async () => {
@@ -694,6 +754,20 @@ describe("skill documents", () => {
   test("the pane renders the SKILL.md body without its frontmatter", () => {
     expect(skillBody("---\nname: docs\ndescription: Look things up\n---\n\n# Docs\n\nBody")).toBe("# Docs\n\nBody")
     expect(skillBody("# No frontmatter\n")).toBe("# No frontmatter\n")
+  })
+
+  test("a skill 404 shows the server message instead of the request error class", async () => {
+    await renderDirectory({
+      skill: {
+        status: 404,
+        body: { error: { code: "agent_plugins_skill_not_found", message: "No catalog or retained artifact serves this skill" } },
+      },
+    })
+    const pane = await openPane("context7")
+    await fireEvent.click(within(pane).getByRole("button", { name: /docs-lookup/ }))
+
+    await waitFor(() => expect(within(pane).getByText("No catalog or retained artifact serves this skill")).toBeVisible())
+    expect(within(pane).queryByText(/AgentPluginRequestError/)).toBeNull()
   })
 })
 

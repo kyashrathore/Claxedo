@@ -32,11 +32,7 @@ import { initClaxedo, getDefaultConfig } from "./index"
 import { writeBrowserRoute } from "@/lib/browser-history"
 import { ConfigProvider } from "../providers/config"
 
-const loadAgentPluginContributions = __CLAXEDO_AGENT_PLUGINS_ENABLED__
-  ? async () => (await import("@/app/composition/agent-plugin-contribution-loader")).agentPluginContributions()
-  : undefined
-
-const config = { ...getDefaultConfig(), authEnabled: false, loadAgentPluginContributions }
+const config = { ...getDefaultConfig(), authEnabled: false }
 initClaxedo(config)
 
 const root = document.getElementById("root")

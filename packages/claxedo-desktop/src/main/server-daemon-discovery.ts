@@ -87,6 +87,37 @@ export async function verifyClaxedoDaemonDiscovery(
   }
 }
 
+export function publishedDaemonProcessIsAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A published daemon that failed health still holds the data-dir lock.
+ * Starting a replacement without releasing that process exits the new child
+ * before it can listen.
+ */
+export async function stopUnhealthyPublishedDaemon(
+  discovery: ClaxedoDaemonDiscovery,
+  runtime: {
+    alive(pid: number): boolean
+    stop(pid: number, signal: "SIGTERM" | "SIGKILL"): Promise<void>
+    wait(ms: number): Promise<unknown>
+  },
+): Promise<"absent" | "stopped"> {
+  if (!runtime.alive(discovery.pid)) return "absent"
+  await runtime.stop(discovery.pid, "SIGTERM")
+  await runtime.wait(2_000)
+  if (!runtime.alive(discovery.pid)) return "stopped"
+  await runtime.stop(discovery.pid, "SIGKILL")
+  await runtime.wait(500)
+  return "stopped"
+}
+
 /**
  * A type predicate rather than a parse-and-cast: the checks below are exactly
  * the fields `ClaxedoDaemonDiscovery` declares, so stating them as the proof
