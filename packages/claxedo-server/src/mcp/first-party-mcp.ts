@@ -25,7 +25,6 @@ export type FirstPartyMcpContributionInput = Readonly<{
   app: { request: (input: Request) => Response | Promise<Response> }
   authority: Pick<WorkspaceAuthority, "auditAllow"> | undefined
   options: FirstPartyMcpOptions
-  version: string
   /** The signed identity behind a request, or undefined when it carries none this deployment accepts. */
   signedAuth: (request: Request) => Promise<SignedControlPlaneAuth | undefined>
   /** A caller this deployment admits with no identity at all: the node's unsigned loopback. */
@@ -43,7 +42,7 @@ export function signedActorId(auth: SignedControlPlaneAuth): string {
 
 export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput): ControlPlaneRouteContribution {
   const auths = new WeakMap<McpCredential, SignedControlPlaneAuth>()
-  const routes = createClaxedoMcpRoutes({
+  const mount = createClaxedoMcpRoutes({
     mount: input.mount,
     ...(input.options.verifyRuntimeCredential ? { verifyRuntimeCredential: input.options.verifyRuntimeCredential } : {}),
     resolveUserCredential: async (request) => {
@@ -81,7 +80,6 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
     },
     ...(input.options.readOnly ? { readOnly: input.options.readOnly } : {}),
     ...(input.options.crossMachineWrites ? { crossMachineWrites: input.options.crossMachineWrites } : {}),
-    serverInfo: { name: "claxedo", version: input.version },
   })
-  return { id: FIRST_PARTY_MCP_CONTRIBUTION_ID, path: CLAXEDO_MCP_PATH, routes }
+  return { id: FIRST_PARTY_MCP_CONTRIBUTION_ID, path: CLAXEDO_MCP_PATH, routes: mount.routes }
 }

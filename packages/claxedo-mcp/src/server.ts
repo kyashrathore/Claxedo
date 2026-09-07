@@ -18,13 +18,29 @@ import {
 import { bearerToken } from "@claxedo/helpers/string"
 import type { ClaxedoFetch, ClaxedoMcpClient, WorkspaceTarget } from "./client/contract"
 import { MCP_SCOPES, type McpAuditEvent, type McpCredential, type McpToolContext } from "./context"
-import { createToolRegistry, type ToolRegistry } from "./tools/registry"
+import { createToolRegistry } from "./tools/registry"
 import { isLoopbackRequest } from "./endpoint/loopback"
 import { createMcpSessionStore } from "./endpoint/sessions"
 import { createInFlightCounter, releaseWhenSettled } from "./endpoint/in-flight"
 
+import type { McpToolGroup } from "./tools/index"
+export { CLAXEDO_MCP_TOOL_GROUPS } from "./tools/index"
+export type { McpToolGroup }
+
 export const CLAXEDO_MCP_PATH = "/api/claxedo/mcp"
 export const OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
+
+/**
+ * What every mount reports as `serverInfo`.
+ *
+ * A literal, not a read of this package's `package.json`: two of the four
+ * mounts are bundled — the Cloudflare worker has no filesystem at all and the
+ * desktop's server bundle sits beside the Electron app's `package.json`, not
+ * this one — so a read resolves to the wrong file or to nothing, which is how
+ * every mount ended up reporting `npm_package_version || "unknown"`.
+ * `server.test.ts` fails when it drifts from the package version.
+ */
+export const CLAXEDO_MCP_SERVER_INFO = { name: "claxedo", version: "0.5.0" } as const
 
 export type ClaxedoMcpMount = "loopback" | "hosted" | "node"
 
@@ -40,8 +56,6 @@ export type RuntimeCredentialClaims = Readonly<{
 export type VerifyRuntimeCredential = (
   token: string,
 ) => Promise<RuntimeCredentialClaims | undefined> | RuntimeCredentialClaims | undefined
-
-export type McpToolGroup = (registry: ToolRegistry) => void
 
 /** What a mount can offer the client factory: the runtime in this process and the control plane as the caller. */
 export type McpClientInputs = Readonly<{
@@ -79,7 +93,6 @@ export type ClaxedoMcpMountOptions = Readonly<{
   /** Read-only for a runtime credential; a user credential's read-only state is the resolver's to decide. */
   readOnly?: (credential: McpCredential) => boolean
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
-  serverInfo: Readonly<{ name: string; version: string }>
   maxInFlightPerCredential?: number
   maxSessions?: number
   sessionIdleMs?: number
@@ -144,7 +157,10 @@ function jsonRpcError(status: number, code: number, message: string) {
   return Response.json({ jsonrpc: "2.0", error: { code, message }, id: null }, { status })
 }
 
-export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
+/** A mounted endpoint and the way to release the streamable-HTTP sessions it holds open. */
+export type ClaxedoMcpMountHandle = Readonly<{ routes: Hono; dispose(): void }>
+
+export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): ClaxedoMcpMountHandle {
   if (options.mount === "loopback" && !options.verifyRuntimeCredential) {
     throw new Error("A loopback MCP mount admits only runtime credentials and was given no verifier")
   }
@@ -195,7 +211,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
 
   const createSession = async (credential: McpCredential, request: Request, key: string): Promise<McpSession> => {
     const client = await options.createClient(credential, request)
-    const server = new McpServer(options.serverInfo)
+    const server = new McpServer(CLAXEDO_MCP_SERVER_INFO)
     const inFlightCalls = new Set<RequestId>()
     const elicit = (params: ElicitRequestFormParams | ElicitRequestURLParams) => {
       const [only] = inFlightCalls
@@ -282,5 +298,5 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
     }
   }
 
-  return new Hono().all("/", (c) => handle(c.req.raw))
+  return { routes: new Hono().all("/", (c) => handle(c.req.raw)), dispose: () => sessions.closeAll() }
 }

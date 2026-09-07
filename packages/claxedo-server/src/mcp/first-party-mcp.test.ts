@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
-import { fullUserCredential, type McpClientInputs, type McpToolGroup } from "@claxedo/mcp"
+import { CLAXEDO_MCP_SERVER_INFO, fullUserCredential, type McpClientInputs, type McpToolGroup } from "@claxedo/mcp"
 import { firstPartyMcpContribution, signedActorId, type FirstPartyMcpContributionInput } from "./first-party-mcp"
 
 const stubClient: ClaxedoMcpClient = {
@@ -74,7 +74,6 @@ function compose(overrides: Partial<FirstPartyMcpContributionInput> = {}) {
       },
       registerTools: [tools],
     },
-    version: "1.2.3",
     signedAuth: async (request) => (request.headers.get("authorization") === "Bearer jwt" ? signed("user_1", "actor_9") : undefined),
     auditFallback,
     ...overrides,
@@ -102,7 +101,7 @@ describe("firstPartyMcpContribution", () => {
   test("acts as the signed principal, forwards its authorization to the control plane, and serves no runtime in-process", async () => {
     const { app, inputs } = compose()
     const client = await connect(app, { authorization: "Bearer jwt" })
-    expect(client.getServerVersion()).toEqual({ name: "claxedo", version: "1.2.3" })
+    expect(client.getServerVersion()).toEqual(CLAXEDO_MCP_SERVER_INFO)
     expect(inputs[0]).toMatchObject({
       deployment: "hosted",
       credential: { kind: "user", actorId: "actor_9", clientId: "cli", readOnly: false },

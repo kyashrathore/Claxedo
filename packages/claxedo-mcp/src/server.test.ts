@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
+import { readFileSync } from "node:fs"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -9,11 +10,14 @@ import type { ClaxedoMcpClient } from "./client/contract"
 import type { McpAuditEvent, McpCredential } from "./context"
 import {
   CLAXEDO_MCP_PATH,
+  CLAXEDO_MCP_SERVER_INFO,
   createClaxedoMcpRoutes,
   fullUserCredential,
   type ClaxedoMcpMountOptions,
   type McpToolGroup,
 } from "./server"
+
+const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version
 
 const stubClient: ClaxedoMcpClient = {
   deployment: "loopback",
@@ -62,9 +66,11 @@ function fixtureTools(gate: { release?: () => void }): McpToolGroup {
 
 const servers: Array<ReturnType<typeof serve>> = []
 const clients: Client[] = []
+const mounts: Array<{ dispose(): void }> = []
 
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close().catch(() => undefined)))
+  for (const mount of mounts.splice(0)) mount.dispose()
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
 })
 
@@ -75,10 +81,10 @@ async function listen(options: Partial<ClaxedoMcpMountOptions> & Pick<ClaxedoMcp
     createClient: () => stubClient,
     registerTools: [fixtureTools(gate)],
     audit: (event) => { audits.push(event) },
-    serverInfo: { name: "claxedo-fixture", version: "7.8.9" },
     ...options,
   })
-  const app = new Hono().route(CLAXEDO_MCP_PATH, routes)
+  const app = new Hono().route(CLAXEDO_MCP_PATH, routes.routes)
+  mounts.push(routes)
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })
   servers.push(server)
   await new Promise<void>((resolve) => server.once("listening", () => resolve()))
@@ -175,7 +181,7 @@ describe("the loopback mount", () => {
   test("lists only the runtime audience and carries the session from the URL into the audit line", async () => {
     const { url, audits } = await loopback()
     const { client } = await connect(`${url}?session=ses_parent`, { authorization: "Bearer rt-token" })
-    expect(client.getServerVersion()).toEqual({ name: "claxedo-fixture", version: "7.8.9" })
+    expect(client.getServerVersion()).toEqual({ name: "claxedo", version: packageVersion })
     expect(await toolNames(client)).toEqual(["runtime_ping", "session_send", "wait"])
     expect(await client.callTool({ name: "runtime_ping", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "runtime:runtime" }],
@@ -330,8 +336,12 @@ describe("composition", () => {
       createClient: () => stubClient,
       registerTools: [],
       audit: () => undefined,
-      serverInfo: { name: "x", version: "0" },
     })).toThrow(/no verifier/)
+  })
+
+  test("the version every mount reports is this package's own", () => {
+    expect(CLAXEDO_MCP_SERVER_INFO).toEqual({ name: "claxedo", version: packageVersion })
+    expect(packageVersion).toMatch(/^\d+\.\d+\.\d+/)
   })
 
   test("a mount with no tool groups still answers tools/list", async () => {

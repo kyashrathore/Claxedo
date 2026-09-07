@@ -49,6 +49,7 @@ async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
       directory: "/workspace",
       stateDirectory: root,
       applyHarnessLaunch,
+      fetch: (request: Request) => Promise.resolve(app.fetch(request)),
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
     },

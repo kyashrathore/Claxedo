@@ -43,6 +43,19 @@ export type WorkspaceRuntimeRouteContext = {
   /** Apply opaque launch metadata without replacing accepted model/auth/MCP state. */
   applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>): Promise<void>
   /**
+   * Call this runtime's own routes without leaving the process.
+   *
+   * A contribution that brokers tools has to reach the routes the runtime
+   * already serves, and the only alternative — an HTTP call back to the
+   * listening port — would have to authenticate as a remote caller, which
+   * means minting a credential the contribution could then leak. Requests
+   * handed here are recognised by identity, so being a direct caller is a
+   * property of having been composed into this process rather than of holding
+   * a token: the exposure and checkpoint boundaries still apply, the relay
+   * host-token boundary does not.
+   */
+  fetch(request: Request): Promise<Response>
+  /**
    * Register this contribution's tools for a session under a named group.
    *
    * Grouping matters: several contributions can register tools for the SAME

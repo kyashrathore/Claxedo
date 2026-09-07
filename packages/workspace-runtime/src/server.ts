@@ -1,5 +1,5 @@
 import { isLoopbackHostname } from "@claxedo/helpers"
-import type { WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp/index"
+import { FIRST_PARTY_MCP_PATH, type WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp/index"
 import { Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { serve } from "@hono/node-server"
@@ -39,14 +39,6 @@ import type { RuntimeEventAuthorization } from "./routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "./session-access-policy"
 import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
-import {
-  CLAXEDO_MCP_PATH,
-  createClaxedoMcpRoutes,
-  inProcessFetch,
-  mcpAuditRecord,
-  type LoopbackFirstPartyMcpOptions,
-} from "@claxedo/mcp"
-import { Log } from "./log"
 
 type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
@@ -118,16 +110,12 @@ export type WorkspaceRuntimeServerOptions = {
   /** Process-retained authority. It is never projected into a Session or child environment. */
   internalSecrets?: WorkspaceRuntimeInternalSecrets
   /**
-   * The first-party MCP endpoint for the sessions this runtime launches,
-   * served on its own loopback. The verifier is this runtime's credential
-   * issuer; the client factory receives this app's in-process fetch.
-   */
-  firstPartyMcp?: LoopbackFirstPartyMcpOptions
-  /**
    * The first-party MCP entry injected into every session this runtime
-   * launches: the loopback origin serving the endpoint above and the issuer
-   * whose `verify` that mount checks bearers with. Supplied by the same host
-   * that mounts the route; absent, no harness receives the entry.
+   * launches: the loopback origin of the process serving
+   * {@link FIRST_PARTY_MCP_PATH} and the issuer whose `verify` that mount
+   * checks bearers with. The same issuer makes a bearer for that path a
+   * trusted direct caller here, so a harness on this box reaches the endpoint
+   * without a relay host token. Absent, no harness receives the entry.
    */
   firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
 }
@@ -487,46 +475,28 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   }
 
   const relayHostAuthOptions = options.relayHostAuth ?? (options.exposure?.kind === "relay" ? options.exposure.auth : undefined)
-  // Ahead of CORS, so the route reflects no origin, and ahead of relay-host
-  // auth, which the mount's own bearer replaces. The in-process calls the
-  // tools make re-enter this app; under relay exposure they present a token
-  // only this process knows, which relay-host auth below accepts as direct.
-  const firstPartyMcpToken = options.firstPartyMcp && relayHostAuthOptions ? crypto.randomUUID() : undefined
-  if (options.firstPartyMcp) {
-    const { firstPartyMcp } = options
-    const workspace = { workspaceId: options.target?.workspaceId ?? workspaceId(), directory: options.target?.directory ?? workspaceDir() }
-    const log = Log.create({ service: "claxedo-mcp", workspaceId: workspace.workspaceId })
-    app.route(CLAXEDO_MCP_PATH, createClaxedoMcpRoutes({
-      mount: "loopback",
-      verifyRuntimeCredential: firstPartyMcp.verifyRuntimeCredential,
-      createClient: (credential, request) => firstPartyMcp.createClient({
-        deployment: "loopback",
-        credential,
-        request,
-        local: {
-          fetch: inProcessFetch(
-            (runtimeRequest) => app.fetch(runtimeRequest),
-            firstPartyMcpToken ? { authorization: `Bearer ${firstPartyMcpToken}` } : {},
-          ),
-          workspace,
-        },
-      }),
-      registerTools: firstPartyMcp.registerTools ?? [],
-      audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),
-      ...(firstPartyMcp.readOnly ? { readOnly: firstPartyMcp.readOnly } : {}),
-      ...(firstPartyMcp.crossMachineWrites ? { crossMachineWrites: firstPartyMcp.crossMachineWrites } : {}),
-      serverInfo: { name: "claxedo", version: process.env.npm_package_version || "unknown" },
-    }))
+  // Membership, not a header: a request reaches this set only by having been
+  // built inside this process and handed to the contribution seam, so it
+  // cannot be replayed, forwarded, or guessed the way a bearer could.
+  const inProcessRequests = new WeakSet<Request>()
+  const contributionFetch = (request: Request): Promise<Response> => {
+    inProcessRequests.add(request)
+    return Promise.resolve(app.fetch(request))
   }
 
   if (!enabled(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_DISABLE_CORS"))) {
     const corsOrigin = options.corsOrigin
     app.use(
       cors({
-        origin: (origin) =>
-          corsOrigin
-            ? (origin ? corsOrigin(origin, options.exposure!) : undefined)
-            : workspaceRuntimeCorsOrigin(options.exposure!, origin),
+        // The first-party MCP endpoint is reached by harness processes, never
+        // by a page. Reflecting an origin there would let a loopback page in a
+        // browser drive the session tools with the runtime's own credential.
+        origin: (origin, c) =>
+          c.req.path === FIRST_PARTY_MCP_PATH
+            ? undefined
+            : corsOrigin
+              ? (origin ? corsOrigin(origin, options.exposure!) : undefined)
+              : workspaceRuntimeCorsOrigin(options.exposure!, origin),
       }),
     )
   }
@@ -539,7 +509,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     const relayHostAuth = createRelayHostAuthMiddleware({
       ...relayHostAuthOptions,
       trustedDirectTokenForRequest: async (input) =>
-        (firstPartyMcpToken !== undefined && input.token === firstPartyMcpToken)
+        // The harness this runtime launched reaches the first-party MCP mount
+        // over its own loopback with the credential this runtime minted; it
+        // holds no relay host token and must not be issued one.
+        (input.path === FIRST_PARTY_MCP_PATH && !!options.firstPartyMcpLaunch?.issuer.verify(input.token))
         || (!!options.configToken
           && input.token === options.configToken
           && (
@@ -550,6 +523,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
         || false,
     }) as MiddlewareHandler
     app.use("*", async (c, next) => {
+      if (inProcessRequests.has(c.req.raw)) return await next()
       if (
         c.req.method === "POST"
         && c.req.path === WorkspaceRuntimeRoutes.config
@@ -655,6 +629,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       directory: options.target?.directory ?? workspaceDir(),
       stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
       applyHarnessLaunch: (harnessLaunch) => host.applyHarnessLaunch(harnessLaunch),
+      fetch: contributionFetch,
       registerSessionTools: registerSessionToolGroup,
       unregisterSessionTools: unregisterSessionToolGroup,
     },

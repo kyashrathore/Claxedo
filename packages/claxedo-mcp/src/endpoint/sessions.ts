@@ -65,6 +65,10 @@ export function createMcpSessionStore<Session>(options: McpSessionStoreOptions) 
     remove(id: string) {
       records.delete(id)
     },
+    /** Close every live session; the mount's owner calls it when the process or the runtime it serves goes away. */
+    closeAll() {
+      for (const id of [...records.keys()]) evict(id)
+    },
   }
 }
 

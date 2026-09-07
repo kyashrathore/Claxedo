@@ -39,7 +39,8 @@ import {
 } from "@claxedo/server-core/platform/http/route-contribution"
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { fullUserCredential, inProcessFetch, type FirstPartyMcpOptions } from "@claxedo/mcp"
+import { CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, inProcessFetch, type FirstPartyMcpOptions } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { bearerToken } from "@claxedo/helpers/string"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { createConnectionsHost } from "../../connections"
@@ -68,6 +69,7 @@ import {
   ensureEmbeddedWorkspaceRuntime,
   readEmbeddedWorkspaceSessionConfig,
   shutdownEmbeddedWorkspaceRuntimes,
+  verifyEmbeddedRuntimeCredential,
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
@@ -1236,7 +1238,6 @@ export function createSelfHostedApp(
         app,
         authority: services.authority,
         options: options.firstPartyMcp,
-        version: process.env.npm_package_version || "unknown",
         signedAuth: async (request) => {
           try {
             const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
@@ -1326,7 +1327,6 @@ export type ControlPlaneStackOptions = {
   processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
-  firstPartyMcp?: FirstPartyMcpOptions
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1520,6 +1520,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   configureEmbeddedWorkspaceRuntime({
     opencodeRuntime,
     connectionProviders,
+    // The origin this process serves `/api/claxedo/mcp` on; `port` is the one
+    // `startServer` binds and every caller reads back as this node's address.
+    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}` },
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
       : {}),
@@ -1586,7 +1589,14 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
-    ...(options.firstPartyMcp ? { firstPartyMcp: options.firstPartyMcp } : {}),
+    // This box runs the workspaces it serves, so it serves their sessions'
+    // first-party MCP itself; the credential a runtime minted is verified by
+    // the runtime that minted it.
+    firstPartyMcp: {
+      verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
+      createClient: (input) => createClaxedoMcpClient(input),
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+    },
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return
       localSessionProjectionReady = new Promise((resolve) => {
@@ -1639,7 +1649,6 @@ export function startServer(
   options: {
     processObserver?: ProcessObserver
     routeContributions?: readonly ControlPlaneRouteContribution[]
-    firstPartyMcp?: FirstPartyMcpOptions
   } = {},
 ) {
   return startControlPlaneStack({
@@ -1647,6 +1656,5 @@ export function startServer(
     port,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
-    ...(options.firstPartyMcp ? { firstPartyMcp: options.firstPartyMcp } : {}),
   })
 }

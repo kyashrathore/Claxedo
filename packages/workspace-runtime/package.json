@@ -139,7 +139,6 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/helpers": "workspace:*",
-    "@claxedo/mcp": "workspace:*",
     "@claxedo/workspace-relay": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
     "@hono/node-server": "1.19.11",

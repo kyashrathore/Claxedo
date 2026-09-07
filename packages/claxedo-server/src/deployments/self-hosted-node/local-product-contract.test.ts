@@ -3,6 +3,9 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { createSelfHostedApp } from "./app"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
+import { verifyEmbeddedRuntimeCredential } from "@claxedo/local-server/self-hosted-execution"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
@@ -52,6 +55,13 @@ function localApp() {
       },
       { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
+    {
+      firstPartyMcp: {
+        verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
+        createClient: (input) => createClaxedoMcpClient(input),
+        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      },
+    },
   ).app
 }
 
@@ -205,6 +215,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/integrations/connections/:id/repositories",
       "/api/claxedo/integrations/connections/:id/reverify",
       "/api/claxedo/integrations/connections/:id/token",
+      "/api/claxedo/mcp",
       "/api/claxedo/project/remote",
       "/api/claxedo/remote-access",
       "/api/claxedo/remote-access/devices",

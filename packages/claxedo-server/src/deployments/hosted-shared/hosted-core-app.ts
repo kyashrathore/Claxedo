@@ -428,7 +428,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         app,
         authority: services.authority,
         options: options.firstPartyMcp,
-        version: plane.env.npm_package_version || "unknown",
         signedAuth: async (request) => {
           const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
           return "error" in result ? undefined : result.auth

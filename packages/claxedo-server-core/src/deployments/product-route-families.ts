@@ -176,6 +176,12 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     paths: ["/api/claxedo/integrations", "/api/claxedo/integrations/"],
   },
   {
+    id: "first-party-mcp",
+    owner: "server",
+    serves: "The first-party MCP endpoint every harness installs by URL.",
+    paths: ["/api/claxedo/mcp"],
+  },
+  {
     id: "channels",
     owner: "server",
     serves: "Channel ingress webhooks and device pairing.",

@@ -28,6 +28,8 @@ import {
   createHostedCoreApp,
   type HostedCoreAppOptions,
 } from "../hosted-shared/hosted-core-app"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 
@@ -107,6 +109,13 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
       ...selected.options,
       liveSyncRoom,
       sharedRateLimitStore: cloudflareRateLimitStore(limiter, { periodSeconds: 60 }),
+      // Every profile serves the same endpoint: the control plane runs no
+      // workspace itself, so its client reaches each workspace's runtime
+      // through the relay with the caller's own credential.
+      firstPartyMcp: {
+        createClient: (input) => createClaxedoMcpClient(input),
+        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      },
     })
     app.onError((error, context) => {
       if (error instanceof HTTPException) return error.getResponse()

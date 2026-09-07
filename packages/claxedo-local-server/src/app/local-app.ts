@@ -358,8 +358,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
       audit: (event) => console.info("[claxedo-local-server] mcp.audit", mcpAuditRecord(event)),
       ...(firstPartyMcp.readOnly ? { readOnly: firstPartyMcp.readOnly } : {}),
       ...(firstPartyMcp.crossMachineWrites ? { crossMachineWrites: firstPartyMcp.crossMachineWrites } : {}),
-      serverInfo: { name: "claxedo", version: env.npm_package_version || "unknown" },
-    }))
+    }).routes)
   }
 
   return { injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => nodeWebSocket.injectWebSocket(server) }
