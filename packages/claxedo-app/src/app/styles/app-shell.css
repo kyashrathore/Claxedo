@@ -823,3 +823,27 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-ov
     background: var(--surface-raised-base-hover);
   }
 }
+
+/*
+ * Floating host: while the workspace panel covers the workbench column at full
+ * view, the column paints above the panel so a floating session stack can sit
+ * on top of it. Everything else in the column was already hidden under the
+ * panel, so it stops painting and stops catching pointer events; the floating
+ * stack re-enables both for itself (session-presentation.css).
+ */
+[data-floating-host] {
+  position: relative;
+  z-index: 40;
+  background: transparent;
+  pointer-events: none;
+}
+/* The workbench root paints its ground inline; the override has to outrank it. */
+[data-floating-host] [data-testid="workbench-root"] {
+  background-color: transparent !important;
+}
+[data-floating-host] [data-testid="workbench-shell-header"],
+[data-floating-host] [data-pane-presentation="docked"],
+[data-floating-host] [data-testid^="pane-handle-zone-"],
+[data-floating-host] [data-testid^="pane-close-zone-"] {
+  visibility: hidden;
+}

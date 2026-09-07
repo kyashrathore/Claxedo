@@ -6,6 +6,8 @@ export const HISTORY_FILL_IDLE_TIMEOUT_MS = 1_000
 type Input = {
   eligible: () => boolean
   reveal: () => void
+  /** When false, no reveal fires at all; the row above the window is the only way in. */
+  autoFill?: (() => boolean) | boolean
   now?: () => number
   scheduleTimer?: (callback: () => void, delay: number) => ScheduleToken
   cancelTimer?: (token: ScheduleToken) => void
@@ -34,6 +36,8 @@ type Input = {
  */
 export function createHistoryFill(input: Input) {
   const now = input.now ?? Date.now
+  const autoFill = typeof input.autoFill === "function" ? input.autoFill : () => input.autoFill !== false
+  const eligible = () => autoFill() && input.eligible()
   const scheduleTimer = input.scheduleTimer ?? ((callback, delay) => setTimeout(callback, delay))
   const cancelTimer = input.cancelTimer ?? ((token) => clearTimeout(token))
   const scheduleFrame = input.scheduleFrame ?? ((callback) => {
@@ -84,24 +88,24 @@ export function createHistoryFill(input: Input) {
 
   const schedule = () => {
     const key = activationKey
-    if (!key || timer !== undefined || frame !== undefined || idle !== undefined) return
+    if (!key || !autoFill() || timer !== undefined || frame !== undefined || idle !== undefined) return
 
     const ownerGeneration = generation
     timer = scheduleTimer(() => {
       timer = undefined
-      if (!owns(key, ownerGeneration) || !input.eligible()) return
+      if (!owns(key, ownerGeneration) || !eligible()) return
 
       frame = scheduleFrame(() => {
         frame = undefined
-        if (!owns(key, ownerGeneration) || !input.eligible()) return
+        if (!owns(key, ownerGeneration) || !eligible()) return
 
         frame = scheduleFrame(() => {
           frame = undefined
-          if (!owns(key, ownerGeneration) || !input.eligible()) return
+          if (!owns(key, ownerGeneration) || !eligible()) return
 
           idle = scheduleIdle(() => {
             idle = undefined
-            if (!owns(key, ownerGeneration) || !input.eligible()) return
+            if (!owns(key, ownerGeneration) || !eligible()) return
             input.reveal()
           })
         })

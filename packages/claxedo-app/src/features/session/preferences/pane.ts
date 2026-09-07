@@ -1,6 +1,14 @@
-type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
+import { createSignal } from "solid-js"
+
+/** What a pane's Review compares: the worktree against the index or HEAD, or two refs. */
+export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
+
+/** What a pane reviews: the diff mode and, in `to-from`, the two refs it compares. */
+export type ReviewSelection = { mode: ReviewMode; fromRef?: string; toRef?: string }
 
 export type PanePreferenceKind = "reviewMode"
+
+type PanePreferenceValues = { reviewMode: ReviewSelection }
 
 export type PanePreferenceScopeInput = {
   directory?: string
@@ -20,16 +28,46 @@ export const PANE_PREFERENCE_KEYS = {
 
 const PANE_PREFERENCE_KINDS = ["reviewMode"] as const satisfies readonly PanePreferenceKind[]
 
-type PanePreferenceMaps = Record<PanePreferenceKind, Record<string, string>>
+type PanePreferenceMaps = { [K in PanePreferenceKind]: Record<string, PanePreferenceValues[K]> }
 
-function parse(input: string | null): Record<string, string> {
+function isReviewMode(value: unknown): value is ReviewMode {
+  return value === "uncommitted" || value === "unstaged" || value === "staged" || value === "to-from"
+}
+
+function optionalRef(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+/** A stored entry: the object shape, or the bare mode string the key held before refs were persisted. */
+function parseReviewSelection(value: unknown): ReviewSelection | undefined {
+  if (typeof value === "string") return isReviewMode(value) ? { mode: value } : undefined
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (!isReviewMode(record.mode)) return undefined
+  const fromRef = optionalRef(record.fromRef)
+  const toRef = optionalRef(record.toRef)
+  return {
+    mode: record.mode,
+    ...(fromRef === undefined ? {} : { fromRef }),
+    ...(toRef === undefined ? {} : { toRef }),
+  }
+}
+
+const PARSE_VALUE = {
+  reviewMode: parseReviewSelection,
+} satisfies { [K in PanePreferenceKind]: (value: unknown) => PanePreferenceValues[K] | undefined }
+
+function parse<K extends PanePreferenceKind>(kind: K, input: string | null): Record<string, PanePreferenceValues[K]> {
   if (!input) return {}
   try {
-    const value = JSON.parse(input)
+    const value: unknown = JSON.parse(input)
     if (!value || typeof value !== "object" || Array.isArray(value)) return {}
-    return Object.fromEntries(
-      Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-    )
+    const map: Record<string, PanePreferenceValues[K]> = {}
+    for (const [scope, raw] of Object.entries(value)) {
+      const parsed = PARSE_VALUE[kind](raw)
+      if (parsed) map[scope] = parsed
+    }
+    return map
   } catch {
     return {}
   }
@@ -49,10 +87,6 @@ export function defaultReviewMode(_sessionId?: string): ReviewMode {
   return "uncommitted"
 }
 
-function isReviewMode(value: string | undefined): value is ReviewMode {
-  return value === "uncommitted" || value === "unstaged" || value === "staged" || value === "to-from"
-}
-
 export function reviewModePreferenceScope(input: { directory?: string; sessionId?: string }) {
   return panePreferenceScope({
     directory: input.directory,
@@ -60,23 +94,30 @@ export function reviewModePreferenceScope(input: { directory?: string; sessionId
   })
 }
 
-export function createPanePreferences(storage: PanePreferenceStorage) {
-  const maps = {
-    reviewMode: parse(storage.getItem(PANE_PREFERENCE_KEYS.reviewMode)),
-  } satisfies PanePreferenceMaps
+export type PanePreferences = ReturnType<typeof buildPanePreferences>
+
+function buildPanePreferences(storage: PanePreferenceStorage) {
+  const maps: PanePreferenceMaps = {
+    reviewMode: parse("reviewMode", storage.getItem(PANE_PREFERENCE_KEYS.reviewMode)),
+  }
+  const [version, setVersion] = createSignal(0)
 
   const save = (kind: PanePreferenceKind) => {
     storage.setItem(PANE_PREFERENCE_KEYS[kind], JSON.stringify(maps[kind]))
+    setVersion((current) => current + 1)
+  }
+
+  const get = <K extends PanePreferenceKind>(kind: K, scope: string): PanePreferenceValues[K] | undefined => {
+    version()
+    return maps[kind][scope]
   }
 
   return {
-    maps,
-    get(kind: PanePreferenceKind, scope: string) {
-      return maps[kind][scope]
-    },
-    set(kind: PanePreferenceKind, scope: string, value?: string) {
-      if (value) maps[kind][scope] = value
-      else delete maps[kind][scope]
+    get,
+    set<K extends PanePreferenceKind>(kind: K, scope: string, value?: PanePreferenceValues[K]) {
+      const map: Record<string, PanePreferenceValues[K]> = maps[kind]
+      if (value) map[scope] = value
+      else delete map[scope]
       save(kind)
     },
     promote(from: string, to: string, kinds?: PanePreferenceKind[]) {
@@ -87,10 +128,22 @@ export function createPanePreferences(storage: PanePreferenceStorage) {
         save(kind)
       }
     },
-    reviewMode(input: { directory?: string; sessionId?: string; fallback?: ReviewMode }) {
-      const stored = this.get("reviewMode", reviewModePreferenceScope(input))
-      if (isReviewMode(stored)) return stored
-      return input.fallback ?? defaultReviewMode(input.sessionId)
+    reviewSelection(input: { directory?: string; sessionId?: string; fallback?: ReviewSelection }): ReviewSelection {
+      return get("reviewMode", reviewModePreferenceScope(input)) ?? input.fallback ?? { mode: defaultReviewMode(input.sessionId) }
     },
   }
+}
+
+const instances = new WeakMap<PanePreferenceStorage, PanePreferences>()
+
+/**
+ * One instance per storage: every reader of a storage tracks the same version
+ * signal, so a write from one pane surface is observed by the others.
+ */
+export function createPanePreferences(storage: PanePreferenceStorage): PanePreferences {
+  const existing = instances.get(storage)
+  if (existing) return existing
+  const created = buildPanePreferences(storage)
+  instances.set(storage, created)
+  return created
 }

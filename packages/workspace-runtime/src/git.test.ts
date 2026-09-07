@@ -44,3 +44,12 @@ describe("bounded git runner", () => {
     await expect(git(["status"], "/repo")).rejects.toBeInstanceOf(GitTimeoutError)
   })
 })
+
+describe("default git exec", () => {
+  test("spawns git with terminal prompts disabled so a credential prompt fails instead of hanging", async () => {
+    const git = createBoundedGit()
+    // A shell alias echoes the environment git itself was started with.
+    const stdout = await git(["-c", "alias.prompt=!echo \"$GIT_TERMINAL_PROMPT\"", "prompt"], process.cwd())
+    expect(stdout.trim()).toBe("0")
+  })
+})

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { type JSX } from "solid-js"
 import { ClaxedoStateProvider } from "../state/index"
@@ -12,6 +12,7 @@ import {
 import { AppShellLayout } from "../../app-shell-layout"
 import type { ProjectItem } from "./domain-types"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+import { LanguageProvider } from "@/platform/i18n/provider"
 
 const processOwnership = vi.hoisted(() => ({
   providers: 0,
@@ -38,7 +39,7 @@ vi.mock("../context/process-pane", () => ({
     processOwnership.providers += 1
     return <>{props.children}</>
   },
-  useProcessPane: () => ({}),
+  useWorkspaceProcessPane: () => ({}),
 }))
 
 vi.mock("@/app/workbench/review/review-workspace", () => ({
@@ -47,6 +48,10 @@ vi.mock("@/app/workbench/review/review-workspace", () => ({
 
 vi.mock("../workspace-panel/files-navigator", () => ({
   WorkspaceFilesNavigator: () => <div data-testid="workspace-files-navigator" />,
+}))
+
+vi.mock("../source-control/source-control-view", () => ({
+  SourceControlView: () => <div data-testid="source-control-view" />,
 }))
 
 vi.mock("@/features/processes/ui", () => ({
@@ -128,9 +133,10 @@ const project = {
   name: "Main",
 } satisfies ProjectItem
 
-function stateWithSurface(surface: ContentMeta): ClaxedoState {
+function stateWithSurface(surface: ContentMeta, workspacePanel?: ClaxedoState["workspacePanel"]): ClaxedoState {
   return {
     ...emptyClaxedoState(),
+    ...(workspacePanel ? { workspacePanel } : {}),
     workbench: {
       panes: [{ id: "pane-1", contentId: surface.id }],
       split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane-1" } },
@@ -145,20 +151,22 @@ function stateWithSurface(surface: ContentMeta): ClaxedoState {
   }
 }
 
-function renderRail(surface: ContentMeta) {
+function renderRail(surface: ContentMeta, workspacePanel?: ClaxedoState["workspacePanel"]) {
   const queryClient = new QueryClient()
   return render(() => (
     <QueryClientProvider client={queryClient}>
-      <SessionTitleProjectionProvider>
-        <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
-          <AppShellLayout
-            projects={[project]}
-            activeProjectId={project.id}
-            activeDirectory={project.worktree}
-            suppressEmptyDraftSession
-          />
-        </ClaxedoStateProvider>
-      </SessionTitleProjectionProvider>
+      <LanguageProvider locale="en">
+        <SessionTitleProjectionProvider>
+          <ClaxedoStateProvider initialState={stateWithSurface(surface, workspacePanel)}>
+            <AppShellLayout
+              projects={[project]}
+              activeProjectId={project.id}
+              activeDirectory={project.worktree}
+              suppressEmptyDraftSession
+            />
+          </ClaxedoStateProvider>
+        </SessionTitleProjectionProvider>
+      </LanguageProvider>
     </QueryClientProvider>
   ))
 }
@@ -341,5 +349,67 @@ describe("RailLayout workspace tool gates", () => {
     expect(screen.getByTestId("review-workspace")).toBeTruthy()
     expect(processOwnership.providers).toBe(1)
 
+  })
+
+  const navigatorSurface = {
+    id: "surface-navigator",
+    type: "session",
+    scope: "directory",
+    directory: "/repo/main",
+    sessionId: "ses_navigator",
+    content: {
+      type: "session",
+      directory: "/repo/main",
+      sessionId: "ses_navigator",
+      sessionRef: {
+        sessionId: "ses_navigator",
+        host: "workspace",
+        cwd: "/repo/main",
+        toolSandbox: { kind: "local", cwd: "/repo/main" },
+      },
+    },
+  } satisfies ContentMeta
+
+  function filesColumn() {
+    const panel = screen.getByTestId("workspace-panel-shell")
+    const column = panel.querySelector('[data-testid="workspace-navigator-overlay"][data-navigator="files"]')
+    expect(column).not.toBeNull()
+    return column!
+  }
+
+  test("the Changes navigator renders the source-control view inside the panel's navigator overlay", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail(navigatorSurface, { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" })
+
+    const review = await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })
+    await waitFor(() => expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-open")).toBe("true")
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("changes")
+    expect(within(filesColumn()).queryByTestId("workspace-files-navigator")).toBeNull()
+    expect(screen.getByRole("button", { name: "Close Changes", pressed: true })).toBeTruthy()
+
+    // Switching to Files keeps the source-control view mounted (its commit draft
+    // survives) and never rebuilds the review body.
+    fireEvent.click(screen.getByRole("button", { name: "Open Files" }))
+    await waitFor(() => expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("files")
+    expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy()
+    expect(screen.getByTestId("review-workspace")).toBe(review)
+  })
+
+  test("the Files navigator renders the files navigator", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail(navigatorSurface, { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "files" })
+
+    const review = await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })
+    await waitFor(() => expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("files")
+    expect(within(filesColumn()).queryByTestId("source-control-view")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Changes" }))
+    await waitFor(() => expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy())
+    expect(filesColumn().getAttribute("data-navigator-kind")).toBe("changes")
+    expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy()
+    expect(screen.getByTestId("review-workspace")).toBe(review)
   })
 })

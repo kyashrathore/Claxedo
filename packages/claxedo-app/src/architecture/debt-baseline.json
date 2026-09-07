@@ -4,7 +4,7 @@
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
   "directoryStringParams": 296,
-  "effectStateWrites": 89,
+  "effectStateWrites": 88,
   "filesystemShapeRegexClones": 2,
   "isFilesystemDirectory": 11,
   "isLoopbackHttpUrl": 4,
@@ -22,6 +22,6 @@
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
-  "untrackCalls": 21,
+  "untrackCalls": 17,
   "userHostedComparisons": 39
 }

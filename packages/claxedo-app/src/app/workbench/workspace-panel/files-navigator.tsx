@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/solid-query"
 import FileTree from "@/app/workbench/controls/file-tree"
 import { useFile } from "@/app/providers/file"
 import { useSDK } from "@/app/providers/sdk/sdk"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import type { WorkspaceFileStatus as StatusFile } from "@claxedo/workspace-runtime/client"
@@ -23,30 +22,6 @@ function mergeKind(current: Kind | undefined, next: Kind) {
   if (!current) return next
   if (current === next) return current
   return "mix" as const
-}
-
-function getDirectory(file: string) {
-  const index = file.lastIndexOf("/")
-  if (index === -1) return ""
-  return file.slice(0, index)
-}
-
-function getFilename(file: string) {
-  const index = file.lastIndexOf("/")
-  if (index === -1) return file
-  return file.slice(index + 1)
-}
-
-function kindTextColor(kind: Kind) {
-  if (kind === "add") return "color: var(--icon-diff-add-base)"
-  if (kind === "del") return "color: var(--icon-diff-delete-base)"
-  return "color: var(--icon-diff-modified-base)"
-}
-
-function kindLabel(kind: Kind) {
-  if (kind === "add") return "A"
-  if (kind === "del") return "D"
-  return "M"
 }
 
 function buildKinds(files: readonly StatusFile[]) {
@@ -89,10 +64,9 @@ function afterVisibleWork(callback: () => void, delay = 0) {
 }
 
 export function WorkspaceFilesNavigator(props: {
-  mode: "files" | "changes"
   active: boolean
   activePath?: string
-  onFileClick: (path: string, intent: "tab" | "review") => void
+  onFileClick: (path: string) => void
 }) {
   const sdk = useSDK()
   const file = useFile()
@@ -110,7 +84,7 @@ export function WorkspaceFilesNavigator(props: {
   }
 
   const prefetchFile = (path: string) => {
-    if (!props.active || props.mode !== "files") return
+    if (!props.active) return
     cancelPendingFilePrefetch()
     const sequence = ++filePrefetchSequence
     setFilePrefetch({ path, state: "loading" })
@@ -119,7 +93,7 @@ export function WorkspaceFilesNavigator(props: {
     // while the viewer surface itself remains unmounted until click.
     filePrefetchTimer = setTimeout(() => {
       filePrefetchTimer = undefined
-      if (!props.active || props.mode !== "files" || sequence !== filePrefetchSequence) return
+      if (!props.active || sequence !== filePrefetchSequence) return
       void cachedFileReadRequest({
         runtime: { baseUrl: sdk.url, workspaceId: sdk.workspaceId, directory: sdk.directory },
         file: path,
@@ -136,7 +110,7 @@ export function WorkspaceFilesNavigator(props: {
   }
 
   createEffect(() => {
-    if (props.active && props.mode === "files") return
+    if (props.active) return
     filePrefetchSequence += 1
     cancelPendingFilePrefetch()
   })
@@ -154,19 +128,14 @@ export function WorkspaceFilesNavigator(props: {
   const status = () => statusQuery.data
 
   const changedFiles = createMemo(() => (status() ?? []).map((item) => item.path))
-  const changedStatusByPath = createMemo(() =>
-    new Map((status() ?? []).map((item) => [item.path, item.status] as const))
-  )
   const kinds = createMemo(() => buildKinds(status() ?? []))
   const query = createMemo(() => search().trim())
   const [searchResults] = createResource(query, (term) => {
-    if (props.mode === "changes") return Promise.resolve([] as string[])
     if (!term) return Promise.resolve([] as string[])
     return file.searchFiles(term)
   })
 
   createEffect(() => {
-    if (props.mode === "changes") return
     if (!props.active) return
     if (!file.ready()) return
     const stop = afterVisibleWork(() => void file.tree.list(""))
@@ -176,13 +145,12 @@ export function WorkspaceFilesNavigator(props: {
   createEffect(() => {
     if (refresh() !== undefined) return
     if (!props.active) return
-    // Change counts are decorative workspace-panel data. Do not let their
+    // Change markers are decorative workspace-panel data. Do not let their
     // comparatively expensive file-status request race a session transcript
     // when the user navigates immediately after the panel becomes visible.
     const stop = afterVisibleWork(() => setRefresh(1), Math.max(250, fastSessionSwitchAnyQuietDelay()))
     onCleanup(stop)
   })
-
 
   // Reveal the active file (opened from a link / focus): expand its ancestor
   // directories and scroll its row into view. Expanding a directory kicks off
@@ -191,7 +159,7 @@ export function WorkspaceFilesNavigator(props: {
   let treeScrollRef: HTMLDivElement | undefined
   createEffect(() => {
     const path = props.activePath
-    if (!path || !props.active || props.mode !== "files") return
+    if (!path || !props.active) return
     if (!file.ready()) return
     const segments = path.split("/").slice(0, -1)
     let dir = ""
@@ -230,53 +198,30 @@ export function WorkspaceFilesNavigator(props: {
     })
   })
 
-  const allowedList = createMemo(() => {
-    const term = query().toLowerCase()
-    const base = props.mode === "changes" ? changedFiles() : undefined
-    if (!term) return base
-    if (!base) return searchResults()
-    return base.filter((path) => path.toLowerCase().includes(term))
-  })
+  const allowedList = createMemo(() => (query() ? searchResults() : undefined))
 
-  const emptyChanges = createMemo(
-    () => props.mode === "changes" && !statusQuery.isLoading && (allowedList()?.length ?? 0) === 0,
-  )
-  const emptySearch = createMemo(
-    () => props.mode === "files" && !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0,
-  )
+  const emptySearch = createMemo(() => !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0)
   const pendingFilesShell = createMemo(() => {
-    if (props.mode !== "files") return false
     if (query()) return false
     if (!file.ready()) return true
     const root = file.tree.state("")
     return !root?.loaded && !root?.loading && file.tree.children("").length === 0
   })
-  const rootRowsVisible = createMemo(() => props.mode === "files" && !query() && file.tree.children("").length > 0)
+  const rootRowsVisible = createMemo(() => !query() && file.tree.children("").length > 0)
   const fileTreeShellReady = createMemo(() => {
     if (pendingFilesShell() || rootRowsVisible()) return true
-    if (props.mode !== "files") return false
     if (query()) return false
     return !!file.tree.state("")?.loading
   })
   const fileTreeDataReady = createMemo(() => rootRowsVisible())
 
-  const totalChanged = createMemo(() => changedFiles().length)
-
-  /**
-   * Whether the file tree is the branch this navigator should be showing —
-   * the same condition the branch chain below encodes, named once so the
-   * retained tree can be hidden by it instead of unmounted by it.
-   */
-  const showFileTree = createMemo(() =>
-    props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading) && !emptySearch()
-  )
-  /** Has the tree ever been shown? Nothing is retained before it is built. */
-  const fileTreeVisited = createMemo<boolean>((previous) =>  previous || showFileTree(), false)
+  const searchPending = createMemo(() => !!query() && searchResults.loading)
+  const showFileTree = createMemo(() => !pendingFilesShell() && !searchPending() && !emptySearch())
+  const fileTreeVisited = createMemo<boolean>((previous) => previous || showFileTree(), false)
 
   return (
     <div
       data-testid="workspace-files-navigator"
-      data-mode={props.mode}
       data-file-prefetch-path={filePrefetch()?.path}
       data-file-prefetch-state={filePrefetch()?.state}
       data-file-tree-shell-ready={fileTreeShellReady() ? "true" : undefined}
@@ -289,7 +234,7 @@ export function WorkspaceFilesNavigator(props: {
           <input
             type="text"
             value={search()}
-            placeholder={props.mode === "changes" ? "Filter changes..." : "Search files..."}
+            placeholder="Search files..."
             autofocus
             class="flex-1 min-w-0 bg-transparent text-sm text-text-base placeholder:text-text-weak/60 outline-none"
             onInput={(e) => setSearch(e.currentTarget.value)}
@@ -312,11 +257,6 @@ export function WorkspaceFilesNavigator(props: {
             <Icon name="close-small" size="small" />
           </button>
         </Show>
-        <Show when={props.mode === "changes"}>
-          <span class="shrink-0 text-xs text-text-weak">
-            {totalChanged()}
-          </span>
-        </Show>
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto" ref={treeScrollRef}>
@@ -330,65 +270,21 @@ export function WorkspaceFilesNavigator(props: {
               <div class="h-6 w-[54%] rounded-md bg-surface-base" />
             </div>
           </div>
-        ) : (props.mode === "changes" && statusQuery.isLoading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
+        ) : searchPending() ? (
           <div class="flex h-24 items-center justify-center">
             <Spinner class="h-4 w-4 text-text-weak" />
           </div>
-        ) : emptyChanges() ? (
-          <div class="px-3 py-6 text-center text-12-regular text-text-weak">No changed files</div>
         ) : emptySearch() ? (
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">No files found</div>
-        ) : props.mode === "changes" ? (
-          <div data-testid="workspace-changed-file-list" class="flex flex-col gap-0.5 p-1" data-navigator-list="changes">
-            {allowedList()?.map((path) => {
-              const status = changedStatusByPath().get(path) ?? "modified"
-              const kind = kindForStatus(status)
-              return (
-                <button
-                  type="button"
-                  data-file-tree-path={path}
-                  class="group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover active:bg-surface-base-active"
-                  classList={{
-                    "bg-surface-base-active": props.activePath === path,
-                  }}
-                  onClick={() => props.onFileClick(path, "review")}
-                >
-                  <FileIcon
-                    node={{ path, type: "file" }}
-                    class="size-4 shrink-0 filetree-icon filetree-icon--mono"
-                    style={kindTextColor(kind)}
-                    mono
-                  />
-                  <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-                    <span class="min-w-0 truncate text-text-base">{getFilename(path)}</span>
-                    <Show when={getDirectory(path)}>
-                      <span class="min-w-0 truncate text-11-regular text-text-weak/70">{getDirectory(path)}</span>
-                    </Show>
-                  </span>
-                  <span class="shrink-0 w-4 text-center text-12-medium" style={kindTextColor(kind)}>
-                    {kindLabel(kind)}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
         ) : null}
-        {/* The tree is a SIBLING of the branches above, not the last of them.
-          Files and Changes are two lists over one workspace and the user flips
-          between them; rebuilding the materialized tree on every flip is a
-          synchronous construction of every visible row — the dominant task of
-          a Changes -> Files switch, and the largest single allocation the
-          panel makes, which is also what puts a major GC inside the next
-          interaction. Once built the tree stays built, skipped by
-          `content-visibility: hidden` while another branch shows: it renders
-          nothing, hit-tests nothing, measures as zero-sized, and its own
-          effects are disabled — but coming back is a reveal instead of a
-          rebuild. */}
+        {/* Building the tree is a synchronous construction of every visible
+          row, the largest single allocation the panel makes. Once built it
+          stays mounted while a search is pending or empty, skipped by
+          `content-visibility: hidden` (renders nothing, hit-tests nothing,
+          measures as zero-sized, own effects disabled), so clearing the search
+          is a reveal instead of a rebuild. */}
         <Show when={fileTreeVisited()}>
-          <div
-            data-navigator-list="files"
-            style={{ "content-visibility": showFileTree() ? "visible" : "hidden" }}
-          >
+          <div style={{ "content-visibility": showFileTree() ? "visible" : "hidden" }}>
             <FileTree
               path=""
               enabled={props.active && showFileTree()}
@@ -400,7 +296,7 @@ export function WorkspaceFilesNavigator(props: {
               visibleLimit={24}
               onFilePointerEnter={(node) => prefetchFile(node.path)}
               onFilePointerLeave={(node) => cancelPendingFilePrefetch(node.path)}
-              onFileClick={(node) => props.onFileClick(node.path, props.mode === "changes" ? "review" : "tab")}
+              onFileClick={(node) => props.onFileClick(node.path)}
             />
           </div>
         </Show>

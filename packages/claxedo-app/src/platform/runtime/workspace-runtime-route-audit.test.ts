@@ -2111,16 +2111,14 @@ describe("workspace runtime route audit", () => {
     }
   })
 
-  test("workspace changed-file navigator exposes stable row selectors for browser performance", async () => {
+  test("workspace files navigator exposes stable row selectors for browser performance", async () => {
     const navigator = await Bun.file(path.join(root, "app/workbench/workspace-panel/files-navigator.tsx")).text()
     const fileTree = await Bun.file(path.join(root, "app/workbench/controls/file-tree.tsx")).text()
 
     expect(navigator).toMatch(/data-testid="workspace-files-navigator"/)
-    expect(navigator).toMatch(/data-mode=\{props\.mode\}/)
     expect(navigator).toMatch(/data-file-tree-shell-ready=\{fileTreeShellReady\(\) \? "true" : undefined\}/)
     expect(navigator).toMatch(/data-file-tree-data-ready=\{fileTreeDataReady\(\) \? "true" : undefined\}/)
-    expect(navigator).toMatch(/data-testid="workspace-changed-file-list"/)
-    expect(navigator).toMatch(/props\.mode === "changes" \? \(/)
+    expect(navigator).not.toMatch(/"changes"/)
     expect(fileTree).toMatch(/data-file-tree-path=\{node\.path\}/)
   })
 

@@ -1,7 +1,10 @@
 import { render, screen } from "@solidjs/testing-library"
 import { createComponent } from "solid-js"
 import { describe, expect, test } from "vitest"
-import { WorkspacePanelChrome } from "./workbench-shell-header"
+import { ClaxedoStateProvider } from "../state/index"
+import { emptyClaxedoState } from "../state/persistence"
+import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+import { WorkspacePanelChrome, WorkspacePanelHeader } from "./workbench-shell-header"
 
 describe("WorkspacePanelChrome", () => {
   const base = {
@@ -57,6 +60,33 @@ describe("WorkspacePanelChrome", () => {
 
     const restore = screen.getByRole("button", { name: "Restore workspace panel width" })
     expect(restore).toHaveAttribute("data-icon-interaction", "binary")
+    expect(restore).toHaveAttribute("aria-pressed", "true")
+    expect(restore.querySelector('[data-icon="collapse"]')).toBeTruthy()
+  })
+})
+
+describe("WorkspacePanelHeader", () => {
+  test("shows the restore control in the L1 header while the panel is at full view", () => {
+    render(() => (
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+          <WorkspacePanelHeader
+            focusedPanelTarget={() => ({ workspaceDir: "/repo", targetPaneId: "pane-1" })}
+            hasWorkspacePanelTarget={() => true}
+            workspacePanelForFocusedTarget={() => true}
+            workspacePanelNavigator={() => "changes"}
+            workspacePanelMode={() => "review"}
+            toggleFocusedWorkspaceNavigator={() => {}}
+            workspacePanelOpen={() => true}
+            workspacePanelFullWidth={() => true}
+            onToggleFullWidth={() => {}}
+            onTogglePanel={() => {}}
+          />
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
+    ))
+
+    const restore = screen.getByRole("button", { name: "Restore workspace panel width" })
     expect(restore).toHaveAttribute("aria-pressed", "true")
     expect(restore.querySelector('[data-icon="collapse"]')).toBeTruthy()
   })

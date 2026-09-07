@@ -1,3 +1,5 @@
+import type { ReviewMode } from "@/features/session/preferences/pane"
+
 export type WorkspacePanelNavigator = "files" | "changes" | "processes"
 /**
  * Mode the workspace panel is rendering in. The active mode picks the
@@ -16,13 +18,21 @@ export type WorkspacePanelMode =
 export type FileFocusIntent = "tab" | "review"
 export type WorkspacePanelFocus =
   | { kind: "review"; version: number }
-  | { kind: "file"; path: string; version: number; intent: FileFocusIntent; line?: number; col?: number }
+  | {
+      kind: "file"
+      path: string
+      version: number
+      intent: FileFocusIntent
+      line?: number
+      col?: number
+      reviewMode?: ReviewMode
+    }
   | { kind: "browser"; url: string; version: number }
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
 export type WorkspacePanelFocusTarget =
   | { kind: "review" }
-  | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number }
+  | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number; reviewMode?: ReviewMode }
   | { kind: "browser"; url: string }
   | { kind: "process"; processId: string }
   | { kind: "context"; sessionId: string }

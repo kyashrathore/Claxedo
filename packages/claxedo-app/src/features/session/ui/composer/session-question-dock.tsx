@@ -25,6 +25,7 @@ import {
   focusIndexForTab,
   isAnswered,
   mergeCustomAnswer,
+  questionPromptMaxHeight,
 } from "./session-question-dock-nav"
 
 function Mark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseEvent) => void }) {
@@ -136,18 +137,22 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     const head = scroller instanceof HTMLElement ? scroller.firstElementChild : undefined
     const top =
       head instanceof HTMLElement && head.classList.contains("sticky") ? head.getBoundingClientRect().bottom : 0
-    if (!top) {
-      root.style.removeProperty("--question-prompt-max-height")
-      return
-    }
 
     const dock = root.closest('[data-component="session-prompt-dock"]')
     if (!(dock instanceof HTMLElement)) return
+    // Present only while the pane floats its session (session-presentation.css).
+    const floatingArea = root.closest(".session-floating-root")
 
-    const dockBottom = dock.getBoundingClientRect().bottom
-    const below = Math.max(0, dockBottom - root.getBoundingClientRect().bottom)
-    const gap = 8
-    const max = Math.max(240, Math.floor(dockBottom - top - gap - below))
+    const max = questionPromptMaxHeight({
+      stickyHeadBottom: top,
+      dock: dock.getBoundingClientRect(),
+      root: root.getBoundingClientRect(),
+      floatingArea: floatingArea?.getBoundingClientRect(),
+    })
+    if (max === undefined) {
+      root.style.removeProperty("--question-prompt-max-height")
+      return
+    }
     root.style.setProperty("--question-prompt-max-height", `${max}px`)
   }
 

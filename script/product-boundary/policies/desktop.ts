@@ -354,6 +354,19 @@ export const desktopRendererUnsigned: Policy = {
   // app-local's rail session-activity owner verbatim — see that ledger.
   // Re-measured, no headroom.
   ceilings: { modules: 1011, packages: 57 },
+  // +30 modules (2026-09-07): the workspace panel's source-control Changes
+  // column, its git client, status query and mutations, the 17 lazy
+  // source-control locale dictionaries, the process-pane registry behind the
+  // Processes column, and the floating pane presentation, all reached through
+  // the shared app surface (see app-local.ts for the owner). Re-measured, no
+  // headroom.
+  // +2 modules (2026-09-07): the Compared changes group and its diff summary
+  // query, reached through the same Changes column (see app-local.ts for the
+  // owner). Re-measured, no headroom.
+  // +1 module (2026-09-07): the floating card's transcript peek reducer
+  // `features/session/ui/transcript-peek.ts` (see app-local.ts for the owner).
+  // Re-measured, no headroom.
+  ceilings: { modules: 1044, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

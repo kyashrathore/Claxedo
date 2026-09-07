@@ -10,6 +10,7 @@ import { ProcessRoutes } from "../routes/process"
 import { DiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
 import { GitSourceRoutes } from "../routes/git-source"
+import { GitWorktreeRoutes } from "../routes/git-worktree"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
@@ -74,6 +75,7 @@ export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAc
 export function mountWorkspaceFiles(app: Hono, _sessionAccessPolicy?: SessionAccessPolicy) {
   app.route(WorkspaceRuntimeRoutes.diff, DiffRoutes())
   app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes())
+  app.route(WorkspaceRuntimeRoutes.git, GitWorktreeRoutes())
   app.route(WorkspaceRuntimeApiPrefix, FileRoutes())
   // Claxedo client-presentation adapter routes. The neutral public runtime API is
   // mounted above under /api/wr.

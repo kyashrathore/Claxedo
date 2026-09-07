@@ -12,6 +12,7 @@ import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { createTransport } from "@/platform/runtime/transport"
+import { createWorkspaceGitClient } from "@/platform/runtime/workspace-git-client"
 
 /**
  * A prototype-chained override: `next` answers everything `base` does except the
@@ -100,50 +101,52 @@ const sDKContextInput = {
       })
     }
 
+    const runtimeFetch = platform.fetch ?? authFetch
+    const runtime = (dir: string) => {
+      const workspace = workspaceForDirectory(dir)
+      return cachedSdkRuntimeRequest({
+        owner: "workspace-runtime",
+        serverUrl: globalSDK.url,
+        directory: dir,
+        workspaceId: workspace?.workspaceId,
+        signedAccess: !!workspace,
+        workspace,
+        request: runtimeFetch,
+        resolveWorkspaceRuntime: async ({ directory }) => {
+          if (fastSessionSwitchAnyNetworkQuiet()) return null
+          const known = signedWorkspaceFromProjects(projects(), directory)
+          if (known) return known
+          // Workspace resolution lives on claxedo-server,
+          // NOT opencode/workspace-runtime. `globalSDK.url` is
+          // normalized to the opencode port (:4096), so hitting that
+          // host returned the HTML index page, which we then tried to
+          // JSON.parse — every file-tree request silently no-op'd
+          // because the resolver "succeeded" with garbage. Route the
+          // resolve through RuntimeGateway with `getClaxedoServerUrl()`
+          // so it hits the service that owns the route.
+          const response = await runtimeFetch(workspaceResolveUrl({ baseUrl: getClaxedoServerUrl(), scope: directory }), {
+            headers: { Accept: "application/json" },
+          })
+          if (response.status === 404) return null
+          if (!response.ok) throw new Error((await response.text()) || `workspace resolve failed: ${response.status}`)
+          return await response.json()
+        },
+      })
+    }
+
+    const runtimeClient = (dir: string, onResponse?: (response: Response) => void) => createWorkspaceRuntimeClient({
+      baseUrl: globalSDK.url,
+      fetch: async (request, init) => {
+        const response = await runtime(dir).sdkFetch(scopeRuntimeRequestUrl(request, { directory: dir }), init)
+        onResponse?.(response)
+        return response
+      },
+      headers: { Accept: "application/json" },
+    })
+
     const wrapRuntimeFileClient = (client: ReturnType<typeof globalSDK.createClient>, directory: string) => {
       if (!platform.fetch) return client
 
-      const runtime = (dir: string) => {
-        const workspace = workspaceForDirectory(dir)
-        return cachedSdkRuntimeRequest({
-          owner: "workspace-runtime",
-          serverUrl: globalSDK.url,
-          directory: dir,
-          workspaceId: workspace?.workspaceId,
-          signedAccess: !!workspace,
-          workspace,
-          request: platform.fetch,
-          resolveWorkspaceRuntime: async ({ directory }) => {
-            if (fastSessionSwitchAnyNetworkQuiet()) return null
-            const known = signedWorkspaceFromProjects(projects(), directory)
-            if (known) return known
-            // Workspace resolution lives on claxedo-server,
-            // NOT opencode/workspace-runtime. `globalSDK.url` is
-            // normalized to the opencode port (:4096), so hitting that
-            // host returned the HTML index page, which we then tried to
-            // JSON.parse — every file-tree request silently no-op'd
-            // because the resolver "succeeded" with garbage. Route the
-            // resolve through RuntimeGateway with `getClaxedoServerUrl()`
-            // so it hits the service that owns the route.
-            const response = await platform.fetch!(workspaceResolveUrl({ baseUrl: getClaxedoServerUrl(), scope: directory }), {
-              headers: { Accept: "application/json" },
-            })
-            if (response.status === 404) return null
-            if (!response.ok) throw new Error((await response.text()) || `workspace resolve failed: ${response.status}`)
-            return await response.json()
-          },
-        })
-      }
-
-      const runtimeClient = (dir: string, onResponse: (response: Response) => void) => createWorkspaceRuntimeClient({
-        baseUrl: globalSDK.url,
-        fetch: async (request, init) => {
-          const response = await runtime(dir).sdkFetch(scopeRuntimeRequestUrl(request, { directory: dir }), init)
-          onResponse(response)
-          return response
-        },
-        headers: { Accept: "application/json" },
-      })
       const runtimeResponse = async <T,>(
         dir: string,
         request: (client: ReturnType<typeof createWorkspaceRuntimeClient>) => Promise<T>,
@@ -213,6 +216,7 @@ const sDKContextInput = {
         directory(),
       ),
     )
+    const git = createMemo(() => createWorkspaceGitClient(runtimeClient(directory())))
 
     const emitter = createGlobalEmitter<SDKEventMap>()
 
@@ -234,6 +238,9 @@ const sDKContextInput = {
       },
       get client() {
         return client()
+      },
+      get git() {
+        return git()
       },
       event: emitter,
       get url() {

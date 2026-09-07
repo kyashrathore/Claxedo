@@ -9,6 +9,50 @@ import {
 } from "./config"
 
 describe("LayoutConfig", () => {
+  test("default config is byte-identical to today's config", () => {
+    const today = {
+      version: 1,
+      target: "web",
+      regions: {
+        rail: {
+          slot: "rail",
+          side: "left",
+          size: { unit: "px", value: 260 },
+          visible: true,
+          collapsible: true,
+          docked: true,
+          order: 0,
+        },
+        workbench: {
+          slot: "workbench",
+          side: "center",
+          size: { unit: "fr", value: 1 },
+          visible: true,
+          collapsible: false,
+          order: 0,
+        },
+        workspacePanel: {
+          slot: "workspacePanel",
+          side: "right",
+          size: { unit: "px", value: 520 },
+          visible: false,
+          collapsible: true,
+          order: 0,
+        },
+      },
+      slots: {
+        rail: { regionId: "rail", order: 0 },
+        workbench: { regionId: "workbench", order: 0 },
+        workspacePanel: { regionId: "workspacePanel", order: 0 },
+      },
+      sessionMode: "tab",
+      presetId: "claxedo.default",
+    }
+
+    expect(JSON.stringify(defaultLayoutConfig())).toBe(JSON.stringify(today))
+    expect(JSON.stringify(defaultLayoutConfig({ target: "desktop" }))).toBe(JSON.stringify({ ...today, target: "desktop" }))
+  })
+
   test("default config is serializable and keeps workbench as the center region", () => {
     const config = JSON.parse(JSON.stringify(defaultLayoutConfig({ target: "desktop" })))
 

@@ -269,6 +269,13 @@ describe("state/persistence", () => {
     expect(result.state.workbench.panes[0]?.contentId ?? null).toBeNull()
   })
 
+  test("a persisted blob that still carries a navigator slice loads without it", () => {
+    const result = validate({ ...emptyClaxedoState(), navigator: { width: 400, tab: "files" } })
+
+    expect(result.state).not.toHaveProperty("navigator")
+    expect(result.dirty).toBe(false)
+  })
+
   describe("surface budget", () => {
     const sessionAt = (index: number) => ({
       id: `content_${index}`,

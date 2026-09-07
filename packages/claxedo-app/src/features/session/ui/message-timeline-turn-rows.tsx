@@ -1,8 +1,9 @@
 // Standalone presentational rows for the message timeline: the thinking
-// shimmer, the "Worked for Xs" turn-fold header, and the per-turn diff summary
-// (with its accordion, hover preview, and undo affordance). These render purely
-// from props — no timeline, virtualizer, or session state — which is why they
-// live beside message-timeline.tsx rather than inside it.
+// shimmer, the "Worked for Xs" turn-fold header, the "N previous messages"
+// reveal row, and the per-turn diff summary (with its accordion, hover
+// preview, and undo affordance). These render purely from props — no
+// timeline, virtualizer, or session state — which is why they live beside
+// message-timeline.tsx rather than inside it.
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -78,6 +79,44 @@ export function TurnFoldRow(props: {
         <Show when={footer()}>
           <span class="ml-auto text-12-regular text-text-weaker tabular-nums">{footer()}</span>
         </Show>
+      </button>
+      <div class="h-px w-full bg-border-weak-base" aria-hidden="true" />
+    </div>
+  )
+}
+
+export function PreviousMessagesRow(props: {
+  count: number
+  onReveal: () => void
+  /** When set, the row is a toggle: `true` shows the collapse label instead of the count. */
+  expanded?: boolean
+  testId?: string
+}) {
+  const language = useLanguage()
+  const label = () =>
+    props.expanded
+      ? language.t("session.timeline.collapseTranscript")
+      : language.t(
+          props.count === 1 ? "session.timeline.previousMessages.one" : "session.timeline.previousMessages.other",
+          { count: props.count },
+        )
+  return (
+    <div data-component="previous-messages" class="w-full">
+      <button
+        type="button"
+        data-testid={props.testId ?? "timeline-previous-messages"}
+        data-count={props.count}
+        aria-expanded={props.expanded ? "true" : "false"}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onReveal()
+        }}
+        class="group/previous-messages flex items-center gap-1.5 h-8 rounded-sm px-1 -mx-1 text-text-weak hover:text-text-strong focus-visible:text-text-strong focus-visible:outline-none transition-colors"
+      >
+        <span class="text-14-medium tabular-nums">{label()}</span>
+        <span class="inline-flex items-center opacity-60 group-hover/previous-messages:opacity-100">
+          <Icon name={props.expanded ? "chevron-down" : "chevron-right"} size="small" />
+        </span>
       </button>
       <div class="h-px w-full bg-border-weak-base" aria-hidden="true" />
     </div>

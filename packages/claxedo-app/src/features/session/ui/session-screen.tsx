@@ -12,7 +12,7 @@ import {
   createComputed,
   on,
   untrack,
-} from "solid-js"
+  type Accessor, createSignal } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/features/session/providers/session-selection"
@@ -20,6 +20,7 @@ import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import {
   isWorkspaceReady,
+  type PanePresentation,
   useClaxedoState,
   useConfigOptional,
   useGlobalSDK,
@@ -41,11 +42,14 @@ import { useComments } from "@/platform/comments/provider"
 import { pickProjectFolderWith } from "./components/session-pick-project-folder"
 import { NewSessionDesignView, SessionHeader } from "@/features/session/ui/components"
 import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { PreviousMessagesRow } from "./message-timeline-turn-rows"
+
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
 import { same } from "@/lib/same"
 import { isRuntimeAgentMessage } from "@/features/session/conversation/agent-conversation-codec"
-import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
+import { createSessionHistoryWindow, emptyUserMessages, type HistoryWindowSnapshot } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
+import { transcriptPeekStep, type TranscriptPeekState } from "@/features/session/ui/transcript-peek"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
@@ -118,7 +122,7 @@ import {
   sessionMarkdownTimelineGate,
 } from "@/features/session/ui/content/session-markdown-preload"
 import { trackSessionOpen } from "@/features/session/ui/session-open-perf"
-export default function SessionPage() {
+export default function SessionPage(props: { presentation: Accessor<PanePresentation> }) {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
@@ -495,6 +499,7 @@ export default function SessionPage() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const centered = createMemo(() => isDesktop())
+  const floating = createMemo(() => props.presentation() === "floating")
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
@@ -1027,7 +1032,53 @@ export default function SessionPage() {
     onAfterLoad: () => restoreHistoryAnchor(),
     onBeforeReveal: () => captureHistoryAnchor(),
     onAfterReveal: () => restoreHistoryAnchor(),
+    turnInit: () => (floating() ? 1 : 4),
+    autoFill: () => !floating(),
   })
+
+  // The floating card keeps its transcript collapsed until the user peeks or
+  // sends a new prompt; a reply the user just asked for must not land hidden.
+  // Derived from the previous snapshot rather than written by effects.
+  const [peekToggles, setPeekToggles] = createSignal(0)
+  const [promptSends, setPromptSends] = createSignal(0)
+  const onPromptSubmit = () => {
+    setPromptSends((count) => count + 1)
+    comments.clear()
+    resumeScroll()
+  }
+  const transcriptPeek = createMemo<TranscriptPeekState>((previous) =>
+    transcriptPeekStep(previous, {
+      floating: floating(),
+      toggles: peekToggles(),
+      sends: promptSends(),
+      sessionId: sessionID(),
+      loaded: messageState()?.value !== undefined,
+      turns: visibleUserMessages().length,
+    }),
+  )
+  const transcriptPeeked = () => transcriptPeek().peeked
+  const transcriptCollapsed = createMemo(() => floating() && !transcriptPeeked())
+  // A window that has already committed does not follow `turnInit`, so the
+  // presentation flip moves it explicitly: floating collapses to the last turn
+  // and docking again restores the window the user had. A list of one turn is
+  // left alone: there is nothing to collapse, and committing it would pin a
+  // zero window over history that is still arriving.
+  let dockedWindow: HistoryWindowSnapshot | undefined
+  createEffect(
+    on(
+      () => props.presentation(),
+      (presentation, previous) => {
+        if (presentation === "floating") {
+          dockedWindow = historyWindow.captureWindow()
+          if (visibleUserMessages().length > 1) historyWindow.collapseToLastTurn()
+          return
+        }
+        if (previous === "floating") historyWindow.restoreWindow(dockedWindow)
+      },
+      { defer: true },
+    ),
+  )
+
 
   // See `createHistoryFill` for why the decision is confirmed across two frames.
   const historyFill = createHistoryFill({
@@ -1043,6 +1094,7 @@ export default function SessionPage() {
       return true
     },
     reveal: () => void historyWindow.loadAndReveal(),
+    autoFill: () => !floating(),
   })
 
   const scheduleHistoryFill = () => historyFill.schedule()
@@ -1177,6 +1229,7 @@ export default function SessionPage() {
   return (
     <div
       class="relative bg-background-base size-full overflow-hidden flex flex-col"
+      classList={{ "session-floating-root": floating() }}
       data-testid="session-page-root"
       data-session-id={sessionID() ?? ""}
       data-session-directory={dir()}
@@ -1188,10 +1241,32 @@ export default function SessionPage() {
       data-session-rendered-user-count={String(historyWindow.renderedUserMessages().length)}
       data-session-info-title={resolvedTitle() ?? ""}
     >
-      <SessionHeader />
+      <Show when={!floating()}>
+        <SessionHeader />
+      </Show>
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3">
-          <div class="flex-1 min-h-0 overflow-hidden">
+        <div
+          class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3"
+          classList={{ "session-floating-overlay": floating() }}
+        >
+          <Show when={floating()}>
+            <div class="session-floating-peek">
+              <PreviousMessagesRow
+                count={visibleUserMessages().length}
+                expanded={transcriptPeeked()}
+                testId="session-transcript-peek"
+                onReveal={() => setPeekToggles((count) => count + 1)}
+              />
+            </div>
+          </Show>
+          <div
+            class="flex-1 min-h-0 overflow-hidden"
+            classList={{
+              "session-floating-timeline": floating(),
+              "session-floating-timeline-collapsed": transcriptCollapsed(),
+            }}
+            data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
+          >
             <Switch>
               <Match when={gate.open}>
                 <NewSessionDesignView
@@ -1286,6 +1361,9 @@ export default function SessionPage() {
                         }}
                         historyShift={false}
                         userMessages={historyWindow.renderedUserMessages()}
+                        hiddenTurnCount={historyWindow.hiddenTurnCount}
+                        hideTitle={floating}
+                        onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                         navMessages={visibleUserMessages()}
                         currentMessage={activeMessage()}
                         onMessageSelect={(message) => {
@@ -1368,10 +1446,7 @@ export default function SessionPage() {
                     signedControlPlane={signedControlPlane}
                     workspaceId={signedWorkspaceId}
                     workspaceKind={resolvedWorkspaceKind}
-                    onSubmit={() => {
-                      comments.clear()
-                      resumeScroll()
-                    }}
+                    onSubmit={onPromptSubmit}
                   />
                 </NewSessionDesignView>
               </Match>
@@ -1379,11 +1454,21 @@ export default function SessionPage() {
           </div>
 
           <Show when={!gate.open && !newSession()}>
-            <Suspense fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}>
+            <Suspense
+              fallback={
+                <div
+                  aria-hidden="true"
+                  class="h-44 shrink-0"
+                  classList={{ "session-floating-dock": floating() }}
+                  data-component="session-prompt-dock-loading"
+                />
+              }
+            >
               <SessionComposerRegion
               state={composerState}
               ready={!store.deferRender && messagesReady()}
               centered={centered()}
+              presentation={props.presentation()}
               sessionID={sessionID()}
               parentID={info()?.parentID}
               onNavigateParent={navigateParent}
@@ -1415,10 +1500,7 @@ export default function SessionPage() {
               }}
               newSessionWorktree={newSessionWorktree()}
               onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
-              onSubmit={() => {
-                comments.clear()
-                resumeScroll()
-              }}
+              onSubmit={onPromptSubmit}
               onResponseSubmit={() => {
                 resumeScroll()
               }}

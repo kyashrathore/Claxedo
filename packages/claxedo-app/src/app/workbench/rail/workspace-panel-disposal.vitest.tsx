@@ -58,7 +58,7 @@ vi.mock("../../../features/session/ui/components/session-pane-scope", () => ({
 
 vi.mock("../context/process-pane", () => ({
   ProcessPaneProvider: (props: { children: JSX.Element }) => <>{props.children}</>,
-  useProcessPane: () => ({}),
+  useWorkspaceProcessPane: () => ({}),
 }))
 
 // Stands in for the real ReviewWorkspace: records the working set each mount was

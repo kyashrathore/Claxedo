@@ -71,7 +71,7 @@ const meta = (sessionId: string | undefined): ContentMeta => ({
 }) as ContentMeta
 
 const renderContent = (sessionId: string | undefined) =>
-  render(() => <SessionContent meta={meta(sessionId)} ctx={{ paneId: "pane-1", isVisible: () => true }} />)
+  render(() => <SessionContent meta={meta(sessionId)} ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }} />)
 
 describe("SessionContent — environment card mounting", () => {
   // The reported bug: the card rode along on the new-session screen, where its
@@ -104,7 +104,7 @@ describe("SessionContent — environment card mounting", () => {
 
   test("passes the canonical pane visibility accessor through to the retained card", async () => {
     const [visible, setVisible] = createSignal(true)
-    render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible }} />)
+    render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible, presentation: () => "docked" }} />)
 
     const card = await screen.findByTestId("envcard-mounted")
     expect(envcardCalls.active).toHaveBeenCalledWith(visible)
@@ -117,7 +117,7 @@ describe("SessionContent — environment card mounting", () => {
   test("does not mount hidden retained card chrome until the pane stays active past the quiet delay", async () => {
     vi.useFakeTimers()
     const [visible, setVisible] = createSignal(false)
-    render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible }} />)
+    render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible, presentation: () => "docked" }} />)
 
     await vi.advanceTimersByTimeAsync(300)
     expect(screen.queryByTestId("envcard-mounted")).toBeNull()
@@ -127,6 +127,27 @@ describe("SessionContent — environment card mounting", () => {
     expect(screen.queryByTestId("envcard-mounted")).toBeNull()
     await vi.advanceTimersByTimeAsync(1)
     await vi.waitFor(() => expect(screen.getByTestId("envcard-mounted")).toBeTruthy())
+  })
+
+  test("floating presentation mounts no card and reserves no gutter, and docking again brings both back", async () => {
+    const [presentation, setPresentation] = createSignal<"docked" | "floating">("floating")
+    render(() => (
+      <SessionContent
+        meta={meta("ses_real")}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation }}
+      />
+    ))
+
+    const shell = screen.getByTestId("session-content")
+    expect(shell).toHaveAttribute("data-session-presentation", "floating")
+    expect(shell).not.toHaveAttribute("data-session-envcard")
+    // Past the card's own quiet delay, so absence is the gate and not timing.
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(screen.queryByTestId("envcard-mounted")).toBeNull()
+
+    setPresentation("docked")
+    expect(shell).toHaveAttribute("data-session-envcard", "collapsed")
+    expect(await screen.findByTestId("envcard-mounted")).toBeTruthy()
   })
 
   test("reserves a collapsed gutter on a real session before the lazy card mounts", () => {

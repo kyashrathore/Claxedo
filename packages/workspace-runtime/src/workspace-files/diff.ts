@@ -66,7 +66,7 @@ function parseNumstatValue(value: string | undefined) {
   return parseInt(value ?? "0", 10) || 0
 }
 
-function parseNumstat(output: string) {
+export function parseNumstat(output: string) {
   const stats = new Map<string, { additions: number; deletions: number }>()
   const parts = output.split("\0").filter(Boolean)
   for (let i = 0; i < parts.length; i++) {
@@ -117,7 +117,7 @@ async function numstatFiles(
 }
 
 async function existsRef(runtime: DiffRuntime, ref: string, directory: string): Promise<boolean> {
-  return optionalGit(runtime, ["rev-parse", "--verify", "--end-of-options", ref + "^{commit}"], directory).then((out) => !!out)
+  return optionalGit(runtime, ["rev-parse", "--verify", "--end-of-options", ref + "^{tree}"], directory).then((out) => !!out)
 }
 
 export async function diffBaseTargets(runtime: DiffRuntime, directory: string) {

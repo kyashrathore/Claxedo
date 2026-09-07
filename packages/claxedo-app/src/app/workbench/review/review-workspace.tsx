@@ -31,7 +31,7 @@ import { getFilename } from "@opencode-ai/ui/utils/path"
 import { SessionContextTab } from "@/features/session/ui/components/session-context-tab"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
-import { useProcessPane } from "@/app/workbench/context/process-pane"
+import { useWorkspaceProcessPane } from "@/app/workbench/context/process-pane"
 import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-panel"
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
@@ -83,6 +83,8 @@ export type ReviewWorkspaceProps = {
   focusVersion?: number
   focusFileIntent?: "tab" | "review"
   focusLine?: number
+  /** With a `review` intent: the mode the review switches into before revealing the file. */
+  focusReviewMode?: ReviewMode
   focusProcessId?: string
   focusProcessVersion?: number
   focusContextSessionId?: string
@@ -107,7 +109,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const file = useFile()
   const language = useLanguage()
   const dialog = useDialog()
-  const processPane = useProcessPane()
+  const processPane = useWorkspaceProcessPane()
   const claxedoState = useClaxedoState()
   const sdk = useSDK()
   const queryOptions = useQueryOptions()
@@ -340,6 +342,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
 
+  // The panel clears a file focus as soon as it is consumed, and the Review
+  // tab mounts lazily, so the last review-intent request is latched here.
+  const reviewFocus = createMemo<
+    { path: string; mode: typeof props.focusReviewMode; version: typeof props.focusVersion } | undefined
+  >((previous) => {
+    const path = props.focusPath
+    if (!path || props.focusFileIntent !== "review") return previous
+    return { path, mode: props.focusReviewMode, version: props.focusVersion }
+  })
   createEffect(on(
     () => props.focusReviewVersion,
     (version) => {
@@ -353,12 +364,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     () => [props.focusVersion, props.focusPath] as const,
     ([, path]) => {
       if (!path) return
+      // Consuming the request clears it upstream, so read the intent first.
+      const intent = props.focusFileIntent
+      const line = props.focusLine
       props.onFocusConsumed?.()
-      if (props.focusFileIntent === "review") {
+      if (intent === "review") {
         activateTab(REVIEW_TAB_ID)
         return
       }
-      openFileTab(path, props.focusLine)
+      openFileTab(path, line)
     },
   ))
 
@@ -621,8 +635,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           onRetainedChange={(surface) =>
             workingSet.publishSurface(surface, store.tabs, store.activeTabId)
           }
-          focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
-          focusedDiffVersion={props.focusVersion}
+          focusedDiffPath={reviewFocus()?.path}
+          focusedDiffVersion={reviewFocus()?.version}
+          focusedDiffMode={reviewFocus()?.mode}
           onOpenFile={openFileTab}
           scrollRef={reviewScroll.bind}
           onScroll={reviewScroll.remember}

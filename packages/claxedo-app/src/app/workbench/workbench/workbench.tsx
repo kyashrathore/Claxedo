@@ -23,6 +23,7 @@ import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { DropTargetOverlay } from "./drop-target-overlay"
+import { usePanePresentation, type PanePresentation } from "./pane-presentation"
 
 export type PaneCtx = {
   paneId: string
@@ -30,6 +31,7 @@ export type PaneCtx = {
   isVisible: () => boolean
   requestClose: (opts?: { destroyContent: boolean }) => void
   requestFocus: () => void
+  presentation: () => PanePresentation
 }
 
 export type WorkbenchProps = {
@@ -58,6 +60,7 @@ export type WorkbenchProps = {
 export function Workbench(props: WorkbenchProps): JSX.Element {
   const wb = useWorkbench()
   const ctx = useWorkbenchContext()
+  const panePresentation = usePanePresentation()
   const mountPolicy = () => props.mountPolicy ?? "always"
 
   // -- container ref + ResizeObserver
@@ -613,6 +616,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 const pid = paneId()
                 if (pid) wb.split.focus(pid)
               },
+              presentation: () => panePresentation.presentationFor(paneId() ?? ""),
             }
             // `data-pane-id` on the slot lets hit-testing route a drop over
             // rendered content up to its owning pane (elementFromPoint → slot).
@@ -620,6 +624,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               <div
                 data-workbench-content={contentId}
                 data-pane-id={paneId() ?? undefined}
+                data-pane-presentation={paneCtx.presentation()}
                 // Absence is the canonical exposed state. Avoid installing a
                 // redundant `aria-hidden="false"` attribute on every cold mount;
                 // hidden retained slots still carry the explicit true state.

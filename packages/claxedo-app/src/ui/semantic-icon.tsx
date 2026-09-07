@@ -42,6 +42,18 @@ export const SEMANTIC_ICON = {
   repository: "github",
   /** Opens a destination outside the app (external / web link). */
   openExternal: "square-arrow-top-right",
+  /** The index — files already staged for the next commit. */
+  staged: "check-small",
+  /** Recording a commit. */
+  commit: "circle-check",
+  /** Sending local commits to the remote (push / publish). */
+  push: "arrow-up",
+  /** A pull request on the hosting forge. */
+  pullRequest: "fork",
+  /** Adding a file to the index. */
+  stage: "plus-small",
+  /** Removing a file from the index. */
+  unstage: "dash",
 } as const satisfies Record<string, IconName>
 
 export type SemanticIconConcept = keyof typeof SEMANTIC_ICON

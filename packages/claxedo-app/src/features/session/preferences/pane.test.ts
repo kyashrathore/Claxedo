@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createEffect, createRoot } from "solid-js"
 import {
   createPanePreferences,
   defaultReviewMode,
@@ -7,6 +8,7 @@ import {
   PANE_PREFERENCE_KEYS,
   reviewModePreferenceScope,
   type PanePreferenceStorage,
+  type ReviewSelection,
 } from "./pane"
 
 function memoryStorage(seed?: Record<string, string>) {
@@ -24,6 +26,8 @@ function memoryStorage(seed?: Record<string, string>) {
   }
 }
 
+const stored = (data: Map<string, string>) => JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)
+
 describe("pane preferences", () => {
   test("builds session and draft scopes", () => {
     expect(panePreferenceScope({ directory: "/tmp/proj", sessionId: "ses_1" })).toBe("session:ses_1")
@@ -33,72 +37,78 @@ describe("pane preferences", () => {
     expect(isDraftPaneScope("session:ses_1")).toBe(false)
   })
 
-  test("reads and persists review scope values", () => {
+  test("persists a review selection with its refs under the review-mode key", () => {
     const { data, storage } = memoryStorage()
     const prefs = createPanePreferences(storage)
 
-    prefs.set("reviewMode", "draft:one", "to-from")
+    prefs.set("reviewMode", "draft:one", { mode: "to-from", fromRef: "main", toRef: "HEAD" })
 
-    expect(prefs.get("reviewMode", "draft:one")).toBe("to-from")
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({ "draft:one": "to-from" })
+    expect(prefs.get("reviewMode", "draft:one")).toEqual({ mode: "to-from", fromRef: "main", toRef: "HEAD" })
+    expect(stored(data)).toEqual({ "draft:one": { mode: "to-from", fromRef: "main", toRef: "HEAD" } })
 
-    prefs.set("reviewMode", "draft:one", "")
+    prefs.set("reviewMode", "draft:one")
     expect(prefs.get("reviewMode", "draft:one")).toBeUndefined()
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({})
+    expect(stored(data)).toEqual({})
   })
 
-  test("ignores malformed and non-string stored values", () => {
+  test("reads a bare mode string stored before refs were persisted as a selection without refs", () => {
+    const { storage } = memoryStorage({
+      [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({ "session:ses_1": "staged" }),
+    })
+    const prefs = createPanePreferences(storage)
+
+    expect(prefs.get("reviewMode", "session:ses_1")).toEqual({ mode: "staged" })
+    expect(prefs.reviewSelection({ directory: "/tmp/proj", sessionId: "ses_1" })).toEqual({ mode: "staged" })
+  })
+
+  test("drops malformed entries, unknown modes, and empty refs", () => {
     const { storage } = memoryStorage({
       [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({
         "draft:one": "staged",
         "draft:two": 42,
+        "draft:three": "everything",
+        "draft:four": { mode: "to-from", fromRef: "", toRef: 7 },
+        "draft:five": { mode: "sideways" },
+        "draft:six": ["to-from"],
       }),
     })
     const prefs = createPanePreferences(storage)
 
-    expect(prefs.get("reviewMode", "draft:one")).toBe("staged")
+    expect(prefs.get("reviewMode", "draft:one")).toEqual({ mode: "staged" })
     expect(prefs.get("reviewMode", "draft:two")).toBeUndefined()
+    expect(prefs.get("reviewMode", "draft:three")).toBeUndefined()
+    expect(prefs.get("reviewMode", "draft:four")).toEqual({ mode: "to-from" })
+    expect(prefs.get("reviewMode", "draft:five")).toBeUndefined()
+    expect(prefs.get("reviewMode", "draft:six")).toBeUndefined()
   })
 
   test("promotes draft review preferences into a session scope", () => {
     const { data, storage } = memoryStorage({
-      [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({ "draft:one": "unstaged" }),
+      [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({ "draft:one": { mode: "unstaged" } }),
     })
     const prefs = createPanePreferences(storage)
 
     prefs.promote("draft:one", "session:ses_1")
 
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({
-      "draft:one": "unstaged",
-      "session:ses_1": "unstaged",
+    expect(stored(data)).toEqual({
+      "draft:one": { mode: "unstaged" },
+      "session:ses_1": { mode: "unstaged" },
     })
   })
 
-  test("resolves review mode from stored preference with sensible fallback", () => {
+  test("resolves the selection from the stored preference, then the fallback, then the default", () => {
     const { storage } = memoryStorage({
       [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({
-        [reviewModePreferenceScope({ directory: "/tmp/proj", sessionId: "ses_1" })]: "to-from",
+        [reviewModePreferenceScope({ directory: "/tmp/proj", sessionId: "ses_1" })]: { mode: "to-from", fromRef: "dev", toRef: "HEAD" },
       }),
     })
     const prefs = createPanePreferences(storage)
 
     expect(defaultReviewMode("ses_1")).toBe("uncommitted")
     expect(defaultReviewMode()).toBe("uncommitted")
-    expect(prefs.reviewMode({ directory: "/tmp/proj", sessionId: "ses_1" })).toBe("to-from")
-    expect(prefs.reviewMode({ directory: "/tmp/proj", sessionId: "ses_2" })).toBe("uncommitted")
-    expect(prefs.reviewMode({ directory: "/tmp/proj", fallback: "staged" })).toBe("staged")
-  })
-
-  test("ignores invalid stored review modes", () => {
-    const { storage } = memoryStorage({
-      [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({
-        [reviewModePreferenceScope({ directory: "/tmp/proj", sessionId: "ses_1" })]: "everything",
-      }),
-    })
-    const prefs = createPanePreferences(storage)
-
-    expect(prefs.reviewMode({ directory: "/tmp/proj", sessionId: "ses_1" })).toBe("uncommitted")
-    expect(prefs.reviewMode({ directory: "/tmp/proj", sessionId: "ses_1", fallback: "staged" })).toBe("staged")
+    expect(prefs.reviewSelection({ directory: "/tmp/proj", sessionId: "ses_1" })).toEqual({ mode: "to-from", fromRef: "dev", toRef: "HEAD" })
+    expect(prefs.reviewSelection({ directory: "/tmp/proj", sessionId: "ses_2" })).toEqual({ mode: "uncommitted" })
+    expect(prefs.reviewSelection({ directory: "/tmp/proj", fallback: { mode: "staged" } })).toEqual({ mode: "staged" })
   })
 
   test("promote deletes stale destination values when the source has no value", () => {
@@ -109,6 +119,30 @@ describe("pane preferences", () => {
 
     prefs.promote("draft:missing", "session:ses_1")
 
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({})
+    expect(stored(data)).toEqual({})
+  })
+
+  test("one storage has one instance, and a tracked read re-runs on that instance's writes", () => {
+    const { storage } = memoryStorage()
+    const prefs = createPanePreferences(storage)
+    expect(createPanePreferences(storage)).toBe(prefs)
+    expect(createPanePreferences(memoryStorage().storage)).not.toBe(prefs)
+
+    const seen: ReviewSelection[] = []
+    const dispose = createRoot((dispose) => {
+      createEffect(() => {
+        seen.push(createPanePreferences(storage).reviewSelection({ directory: "/tmp/proj", sessionId: "ses_1" }))
+      })
+      return dispose
+    })
+    prefs.set("reviewMode", "session:ses_1", { mode: "to-from", fromRef: "main", toRef: "HEAD" })
+    prefs.set("reviewMode", "session:other", { mode: "staged" })
+    dispose()
+
+    expect(seen).toEqual([
+      { mode: "uncommitted" },
+      { mode: "to-from", fromRef: "main", toRef: "HEAD" },
+      { mode: "to-from", fromRef: "main", toRef: "HEAD" },
+    ])
   })
 })

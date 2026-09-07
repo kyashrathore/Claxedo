@@ -31,6 +31,7 @@ export function useRailWorkbenchController(input: {
   roleBlocksTerminal?: Accessor<boolean>
   sidebarDir: () => string | undefined
   state: ClaxedoStateApi
+  workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
   worktreeInfo: (workspaceDir: string) => RailWorktreeInfo | undefined
 }) {
@@ -97,6 +98,7 @@ export function useRailWorkbenchController(input: {
     activeDirectory: input.activeDirectory,
     emptyDraftDirectory: input.emptyDraftDirectory,
     onWorkspacePanelVisibilityChange: input.onWorkspacePanelVisibilityChange,
+    workspacePanelFullWidth: input.workspacePanelFullWidth,
     workspacePanelWidth: input.workspacePanelWidth,
   })
 

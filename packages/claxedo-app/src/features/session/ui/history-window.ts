@@ -1,6 +1,7 @@
 import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 export type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
-import { createEffect, createMemo, on } from "solid-js"
+import { createEffect, createMemo, on, type Accessor } from "solid-js"
+
 import { createStore } from "solid-js/store"
 import { same } from "@/lib/same"
 
@@ -19,7 +20,23 @@ type Input = {
   onAfterLoad?: () => void
   onBeforeReveal?: () => void
   onAfterReveal?: () => void
+  /**
+   * Turns rendered on first paint; the window opens at `length - turnInit`.
+   * Read live until the window commits (see the commit effect below), so a
+   * pane whose presentation changes before its history lands opens at the
+   * right size without a second pass.
+   */
+  turnInit?: Accessor<number> | number
+  /**
+   * Whether scrolling to the top reveals hidden turns. When false, hidden turns
+   * are only revealed explicitly (`loadAndReveal`, `revealTurn`); once nothing
+   * is hidden the scroller still pages older server history.
+   */
+  autoFill?: Accessor<boolean> | boolean
 }
+
+/** A committed window, taken before a presentation flip so it can be put back after. */
+export type HistoryWindowSnapshot = { sessionID: string; turnStart: number }
 
 /**
  * Maintains the rendered history window for a session timeline.
@@ -28,7 +45,10 @@ type Input = {
  * small batches while scrolling upward, and prefetches older history near top.
  */
 export function createSessionHistoryWindow(input: Input) {
-  const turnInit = 4
+  const turnInitInput = input.turnInit
+  const turnInit: Accessor<number> = typeof turnInitInput === "function" ? turnInitInput : () => turnInitInput ?? 4
+  const autoFill: Accessor<boolean> =
+    typeof input.autoFill === "function" ? input.autoFill : () => input.autoFill !== false
   const turnBatch = 8
   const turnScrollThreshold = 200
   const turnPrefetchBuffer = 16
@@ -42,7 +62,7 @@ export function createSessionHistoryWindow(input: Input) {
     prefetchNoGrowth: 0,
   })
 
-  const initialTurnStart = (len: number) => (len > turnInit ? len - turnInit : 0)
+  const initialTurnStart = (len: number) => (len > turnInit() ? len - turnInit() : 0)
 
   const turnStart = createMemo(() => {
     const id = input.sessionID()
@@ -62,6 +82,51 @@ export function createSessionHistoryWindow(input: Input) {
       return
     }
     setState({ turnID: id, turnStart: next })
+  }
+
+  /** Turns above the window: `turnStart` is the index of the first rendered turn. */
+  const hiddenTurnCount: Accessor<number> = turnStart
+
+  const collapseToLastTurn = () => {
+    setTurnStart(Math.max(0, input.visibleUserMessages().length - 1))
+  }
+
+  /**
+   * The committed window for the current session, or undefined while the
+   * window is still derived from `turnInit` (nothing to restore then).
+   */
+  const captureWindow = (): HistoryWindowSnapshot | undefined => {
+    const id = input.sessionID()
+    if (!id || state.turnID !== id) return undefined
+    return { sessionID: id, turnStart: state.turnStart }
+  }
+
+  /**
+   * Puts back a window captured by `captureWindow` for the same session;
+   * anything else returns to the first-paint window. The memo above clamps a
+   * start the list has since shrunk below.
+   */
+  const restoreWindow = (snapshot: HistoryWindowSnapshot | undefined) => {
+    if (snapshot && snapshot.sessionID === input.sessionID()) {
+      setTurnStart(snapshot.turnStart)
+      return
+    }
+    resetToInitialWindow()
+  }
+
+  /**
+   * Returns the window to what first paint would have opened for the current
+   * list, the way the commit effect below does: committed when the list is
+   * longer than `turnInit`, otherwise left uncommitted so the memo keeps
+   * deriving it while history is still arriving.
+   */
+  const resetToInitialWindow = () => {
+    const len = input.visibleUserMessages().length
+    if (len <= turnInit()) {
+      setState({ turnID: undefined, turnStart: 0 })
+      return
+    }
+    setTurnStart(initialTurnStart(len))
   }
 
   const renderedUserMessages = createMemo(
@@ -121,14 +186,22 @@ export function createSessionHistoryWindow(input: Input) {
     preserveScroll(() => setTurnStart(nextStart))
   }
 
-  const loadAndReveal = async () => {
+  /**
+   * Reveals every cached turn, then pages one batch of older server history
+   * when the session has more. `target` is the turn index the window settles
+   * at after paging (`0` keeps everything the page delivered revealed); when
+   * omitted the window settles one batch above the turns rendered before the
+   * call, which is what the short-viewport fill wants.
+   */
+  const loadAndReveal = async (target?: number) => {
     const id = input.sessionID()
     if (!id) return
 
     const start = turnStart()
     const beforeVisible = input.visibleUserMessages().length
 
-    if (start > 0) setTurnStart(0)
+    if (target !== undefined) preserveScroll(() => setTurnStart(target))
+    else if (start > 0) setTurnStart(0)
 
     if (!input.historyMore() || input.historyLoading()) return
 
@@ -141,10 +214,10 @@ export function createSessionHistoryWindow(input: Input) {
     const growth = afterVisible - beforeVisible
     if (state.prefetchNoGrowth) setState("prefetchNoGrowth", 0)
     if (growth <= 0) return
-    if (turnStart() !== 0) return
+    if (target !== undefined || turnStart() !== 0) return
 
-    const target = Math.min(afterVisible, Math.max(beforeVisible, renderedUserMessages().length) + turnBatch)
-    const nextStart = Math.max(0, afterVisible - target)
+    const nextTarget = Math.min(afterVisible, Math.max(beforeVisible, renderedUserMessages().length) + turnBatch)
+    const nextStart = Math.max(0, afterVisible - nextTarget)
     preserveScroll(() => setTurnStart(nextStart))
   }
 
@@ -197,6 +270,7 @@ export function createSessionHistoryWindow(input: Input) {
 
     const start = turnStart()
     if (start > 0) {
+      if (!autoFill()) return
       if (start <= turnPrefetchBuffer) {
         void fetchOlderMessages({ prefetch: true })
       }
@@ -245,7 +319,7 @@ export function createSessionHistoryWindow(input: Input) {
         // 0 while the list is short and becomes the real window the moment the
         // history lands. A stale committed value from a previous, longer list is
         // still handled by the memo's own `state.turnStart >= len` branch.
-        if (len <= turnInit) return
+        if (len <= turnInit()) return
         setTurnStart(initialTurnStart(len))
       },
       { defer: true },
@@ -255,6 +329,11 @@ export function createSessionHistoryWindow(input: Input) {
   return {
     turnStart,
     setTurnStart,
+    hiddenTurnCount,
+    collapseToLastTurn,
+    captureWindow,
+    restoreWindow,
+    resetToInitialWindow,
     renderedUserMessages,
     revealTurn,
     loadAndReveal,

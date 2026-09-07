@@ -4,7 +4,7 @@ import {
   shouldRetargetWorkspacePanelForFocusedPane,
   type WorkspacePanelPaneTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
-import type { useClaxedoState } from "../state/index"
+import type { ClaxedoStateApi } from "../state/provider"
 import { isWorkspaceReady } from "../../../features/workspaces/data/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
@@ -54,13 +54,14 @@ export function workspacePanelTopLevelOpenTarget(
 }
 
 export function useWorkspacePanelVisualState(input: {
-  claxedoState: ReturnType<typeof useClaxedoState>
+  claxedoState: Pick<ClaxedoStateApi, "workspacePanel">
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   focusedSplitPaneId: () => string | undefined
   focusedSurfaceWorkspaceToolsBlocked: () => boolean
   activeDirectory: Accessor<string | undefined>
   emptyDraftDirectory: Accessor<string | undefined>
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void
+  workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
 }) {
   const [workspacePanelHasRenderedOpen, setWorkspacePanelHasRenderedOpen] = createSignal(false)
@@ -79,6 +80,7 @@ export function useWorkspacePanelVisualState(input: {
   const initialWorkspacePanelOpen = workspacePanelOpen()
   const motion = createWorkspacePanelMotionState({
     initialOpen: initialWorkspacePanelOpen,
+    workspacePanelFullWidth: input.workspacePanelFullWidth,
     workspacePanelWidth: input.workspacePanelWidth,
   })
 

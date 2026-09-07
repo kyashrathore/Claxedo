@@ -645,7 +645,7 @@ describe("WorkspacePanel", () => {
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
   })
 
-  test("full-width prop drives panel width without remounting the body", async () => {
+  test("full-width prop drives panel width without a resize handle, without reporting a restore width, and without remounting the body", async () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
@@ -658,21 +658,33 @@ describe("WorkspacePanel", () => {
       return <div>workspace body</div>
     }
     const [fullWidth, setFullWidth] = createSignal(false)
+    const widths: number[] = []
 
     render(() => (
       <WorkspacePanel
         state={openState}
         fullWidth={fullWidth}
+        onRestingWidthChange={(width) => widths.push(width)}
         renderMode={() => <Body />}
       />
     ))
 
     await waitFor(() => expect(mounts).toBe(1))
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
+    expect(screen.getByRole("separator", { name: "Resize workspace panel" })).toBeInTheDocument()
+    expect(widths.at(-1)).toBe(716)
+
     setFullWidth(true)
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "1024px" })
+    expect(screen.queryByRole("separator", { name: "Resize workspace panel" })).not.toBeInTheDocument()
+    // The full-view width is the column's, not the panel's: the owner keeps
+    // the px width as the one to restore to.
+    expect(widths.at(-1)).toBe(716)
+
     setFullWidth(false)
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
+    expect(screen.getByRole("separator", { name: "Resize workspace panel" })).toBeInTheDocument()
+    expect(widths.at(-1)).toBe(716)
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
   })

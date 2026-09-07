@@ -18,7 +18,7 @@
 
 import { createSignal, lazy, onCleanup, onMount, Show, type ParentProps, type JSX } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
-import { useClaxedoState, type ContentMeta } from "./workbench/state/index"
+import { useClaxedoState, type ContentMeta, type ContentType } from "./workbench/state/index"
 import type { ProjectItem } from "./workbench/rail/domain-types"
 import { emitTerminalFit } from "../features/terminal/workbench/terminal-fit"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -48,6 +48,11 @@ import {
   workspacePanelFullWidthCommand,
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
+import {
+  PanePresentationProvider,
+  resolvePanePresentation,
+  type PanePresentationResolver,
+} from "./workbench/workbench/pane-presentation"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
 import { warmConversationMemorySnapshot } from "../features/session/conversation/conversation-registry"
 import {
@@ -191,6 +196,9 @@ export type AppShellLayoutProps = ParentProps<{
   topBarRight?: () => JSX.Element
 }>
 
+/** The content types that render `SessionContent`, the only content with a floating layout. */
+const FLOATING_CONTENT_TYPES: readonly ContentType[] = ["session", "draft-session"]
+
 function AppShellLayoutBody(props: AppShellLayoutProps) {
   const isolationStage = window.__CLAXEDO__?.startupIsolationStage
   const [sidebarMounted, setSidebarMounted] = createSignal(false)
@@ -288,6 +296,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     )),
     sidebarDir: sidebarSelection.sidebarDir,
     state: claxedoState,
+    workspacePanelFullWidth,
     workspacePanelWidth,
     worktreeInfo: projectSessionInfo.worktreeInfo,
   })
@@ -302,8 +311,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const sidebarExpanded = () => sidebarWidth() > 0
   const sidebarPinned = () => railRegion().docked !== false
   const sidebarHidden = () => !sidebarPinned() && sidebarWidth() === 0
-  const workspacePanelFullWidth = () =>
-    workspacePanelRegion().size.unit === "percent" && workspacePanelRegion().size.value === 100
   const workspacePanelOpen = () => workspacePanelRegion().visible
   const toggleWorkspacePanelFullWidth = () => {
     const command = workspacePanelFullWidthCommand(layoutConfig(), shellLayout.workspacePanelWidth())
@@ -311,6 +318,11 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
       next.regions.workspacePanel.size.value === 100
     shellLayout.dispatch("workspacePanelSize", fullWidth ? command : undefined)
+    // Full view has room for a navigator column; an unselected one leaves it empty.
+    const panel = claxedoState.workspacePanel.state()
+    if (fullWidth && panel.open && !panel.navigator) {
+      claxedoState.workspacePanel.retarget({ workspaceDir: panel.workspaceDir, targetPaneId: panel.targetPaneId, navigator: "changes" })
+    }
     emitTerminalFit()
   }
   const toggleWorkspacePanel = (button: HTMLButtonElement) => {
@@ -318,6 +330,21 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
       shellLayout.dispatch("workspacePanelSize", undefined)
     }
     workbenchController.toggleFocusedWorkspaceReview(button)
+  }
+  const paneContentFloats = (paneId: string) => {
+    const contentId = claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId
+    const type = contentId ? claxedoState.meta.get(contentId)?.type : undefined
+    return !!type && FLOATING_CONTENT_TYPES.includes(type)
+  }
+  const panePresentation: PanePresentationResolver = {
+    presentationFor: (paneId) => resolvePanePresentation({
+      paneId,
+      contentFloats: paneContentFloats(paneId),
+      panelOpen: workspacePanelOpen(),
+      panelFullWidth: workspacePanelFullWidth(),
+      targetPaneId: claxedoState.workspacePanel.state().targetPaneId,
+      focusedPaneId: claxedoState.wb.state.focusedPaneId,
+    }),
   }
   const toggleSidebar = () => {
     shellLayout.toggleRail()
@@ -375,6 +402,11 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
 
   function workspacePanelWidth() {
     return shellLayout.workspacePanelWidth()
+  }
+
+  function workspacePanelFullWidth() {
+    const size = shellLayout.config().regions.workspacePanel.size
+    return size.unit === "percent" && size.value === 100
   }
 
   const terminalWorkspaceProvisioning: TerminalWorkspaceProvisioning = {
@@ -473,6 +505,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
             class="flex flex-1 bg-background-stronger"
           />
         ) : (
+        <PanePresentationProvider value={panePresentation}>
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
           canUseDocuments={props.canUseDocuments}
@@ -529,6 +562,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
         >
           {props.children}
         </RailWorkbenchShell>
+        </PanePresentationProvider>
         )}
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { dict as en } from "./en"
+import { dict as baseEn } from "./en"
+import { dict as sourceControlEn } from "./source-control/en"
 import { cloudStrings } from "./cloud-strings"
 import { LOCALE_ENTRIES, type LocaleCode } from "./locales"
 import missingKeysBaseline from "./missing-keys-baseline.json"
@@ -9,6 +10,7 @@ import missingKeysBaseline from "./missing-keys-baseline.json"
 // mistranslated {{placeholder}}, or the locale manifest pointing at a file
 // that does not exist in this package or in @/ui.
 
+const en = { ...baseEn, ...sourceControlEn }
 const NON_EN_ENTRIES = LOCALE_ENTRIES.filter((entry) => entry.code !== "en")
 const BASELINE = missingKeysBaseline as Record<string, string[]>
 
@@ -22,11 +24,14 @@ async function loadAppDict(code: LocaleCode): Promise<Record<string, string>> {
   // src/platform/i18n/locales.ts's file header) — every other code matches its file 1:1.
   // Provider settings are a separate feature dictionary so the already-large
   // base locale files stay inside their size ratchets.
+  // Provider settings and source control are separate feature dictionaries so
+  // the already-large base locale files stay inside their size ratchets.
   const filename = code === "br" ? "pt-BR" : code
   const base = (await import(`./${filename}`)) as { dict: Record<string, string> }
-  if (code === "en") return base.dict
+  const sourceControl = (await import(`./source-control/${filename}`)) as { dict: Record<string, string> }
+  if (code === "en") return { ...base.dict, ...sourceControl.dict }
   const provider = (await import(`./provider-settings/${filename}`)) as { dict: Record<string, string> }
-  return { ...base.dict, ...provider.dict }
+  return { ...base.dict, ...provider.dict, ...sourceControl.dict }
 }
 
 describe("locale-parity: missing keys vs en.ts", () => {

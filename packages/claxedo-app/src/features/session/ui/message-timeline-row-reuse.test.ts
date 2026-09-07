@@ -108,6 +108,22 @@ describe("timeline row reuse", () => {
     expect(reused).toEqual([row])
   })
 
+  test("the PreviousMessages row is reused while its count and head turn hold, and replaced when the count moves", () => {
+    const row = TimelineRow.PreviousMessages({ userMessageID: "msg_head", count: 3 })
+    const sameCount = TimelineRow.PreviousMessages({ userMessageID: "msg_head", count: 3 })
+    const fewer = TimelineRow.PreviousMessages({ userMessageID: "msg_head", count: 2 })
+    const otherHead = TimelineRow.PreviousMessages({ userMessageID: "msg_other", count: 3 })
+
+    expect(TimelineRow.key(row)).toBe("previous-messages:msg_head")
+    expect(TimelineRow.equals(row, sameCount)).toBe(true)
+    expect(TimelineRow.equals(row, fewer)).toBe(false)
+    expect(TimelineRow.equals(row, otherHead)).toBe(false)
+    expect(TimelineRow.anchorsMessage(row)).toBe(false)
+
+    expect(TimelineRow.reuse([row], [sameCount])).toEqual([row])
+    expect(TimelineRow.reuse([row], [fewer])[0]).toBe(fewer)
+  })
+
   test("stale busy status does not hide a completed assistant response behind thinking", () => {
     const rows = Timeline.constructMessageRows(
       userMessage("msg_user"),

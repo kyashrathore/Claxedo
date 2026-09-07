@@ -149,7 +149,7 @@ function createLayoutContextValue() {
           opened: false,
         },
         review: {
-          diffStyle: "split" as ReviewDiffStyle,
+          diffStyle: "unified" as ReviewDiffStyle,
           panelOpened: true,
         },
         fileTree: {
@@ -503,7 +503,7 @@ function createLayoutContextValue() {
         },
       },
       review: {
-        diffStyle: createMemo(() => store.review?.diffStyle ?? "split"),
+        diffStyle: createMemo(() => store.review?.diffStyle ?? "unified"),
         setDiffStyle(diffStyle: ReviewDiffStyle) {
           if (!store.review) {
             setStore("review", { diffStyle })
@@ -515,7 +515,7 @@ function createLayoutContextValue() {
         togglePanel() {
           const current = store.review?.panelOpened ?? true
           if (!store.review) {
-            setStore("review", { diffStyle: "split" as ReviewDiffStyle, panelOpened: !current })
+            setStore("review", { panelOpened: !current })
             return
           }
           setStore("review", "panelOpened", !current)
@@ -703,7 +703,7 @@ function createLayoutContextValue() {
           }
           const current = store.review
           if (!current) {
-            setStore("review", { diffStyle: "split" as ReviewDiffStyle, panelOpened: next })
+            setStore("review", { panelOpened: next })
             return
           }
 

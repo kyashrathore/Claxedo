@@ -1,9 +1,11 @@
 import { render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-import { resetWorkspaceVcsCacheHonestyForTest, WorkspaceVcsCacheHonesty } from "./workspace-vcs-cache-honesty"
+import { invalidateWorkspaceVcs, resetWorkspaceVcsCacheHonestyForTest, WorkspaceVcsCacheHonesty } from "./workspace-vcs-cache-honesty"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { workspaceGitLogKey, workspaceGitStatusKey } from "@/platform/files/workspace-git-status-query"
+import { workspaceDiffSummaryKey } from "@/platform/files/workspace-diff-summary-query"
 import { reviewVcsDiffQueryKey } from "@/features/review/ui/review-vcs-cache"
 
 type Handler = (event: { details: { type: string; properties?: unknown } }) => void
@@ -32,6 +34,10 @@ const emit = (details: { type: string; properties?: unknown }) => {
 }
 
 const vcsKey = queryKeys.runtime.vcs("http://test.local", "/repo", "ws_a")
+const gitScope = { baseUrl: "http://test.local", directoryPath: "/repo", workspaceKey: "ws_a" }
+const gitStatusKey = workspaceGitStatusKey(gitScope)
+const gitLogKey = [...workspaceGitLogKey(gitScope), 50]
+const diffSummaryKey = [...workspaceDiffSummaryKey(gitScope), "to-from", "origin/main", "HEAD"]
 /** Invalidations of one key family, so counts stay per-cache and readable. */
 const invalidationsOf = (
   spy: { mock: { calls: unknown[][] } },
@@ -95,9 +101,11 @@ describe("WorkspaceVcsCacheHonesty", () => {
     expect(queryClient.getQueryData(diffKey)).toBeUndefined()
     await vi.advanceTimersByTimeAsync(300)
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true)
-    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(invalidationsOf(invalidate, statusKey)).toBe(1)
+    expect(invalidationsOf(invalidate, gitStatusKey)).toBe(1)
     // An index write never moves HEAD, so the branch summary stays fresh.
     expect(invalidationsOf(invalidate, vcsKey)).toBe(0)
+    expect(invalidationsOf(invalidate, gitLogKey)).toBe(0)
   })
 
   test("a HEAD write refetches the branch summary; a worktree write does not", async () => {
@@ -141,6 +149,49 @@ describe("WorkspaceVcsCacheHonesty", () => {
     expect(queryClient.getQueryState(unscoped)?.isInvalidated).toBe(true)
   })
 
+  test("git status follows worktree and index writes; the commit log follows HEAD", async () => {
+    vi.useFakeTimers()
+    queryClient.setQueryData(gitStatusKey, { staged: [], unstaged: [] })
+    queryClient.setQueryData(gitLogKey, [])
+    queryClient.setQueryData(diffSummaryKey, [])
+
+    render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
+
+    // `git add` in a terminal moves a file between the groups with no
+    // worktree event; the index write is the only signal, debounced like
+    // file status so the lock churn around it yields one refresh.
+    emit({ type: "file.watcher.updated", properties: { file: ".git/index" } })
+    expect(queryClient.getQueryState(gitStatusKey)?.isInvalidated).toBe(false)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(queryClient.getQueryState(gitStatusKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(gitLogKey)?.isInvalidated).toBe(false)
+    expect(queryClient.getQueryState(diffSummaryKey)?.isInvalidated).toBe(false)
+
+    // A commit from a terminal writes the branch ref: the graph and every
+    // ref-to-ref comparison (origin/main..HEAD) are stale now.
+    emit({ type: "file.watcher.updated", properties: { file: ".git/refs/heads/main" } })
+    expect(queryClient.getQueryState(gitLogKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(diffSummaryKey)?.isInvalidated).toBe(true)
+  })
+
+  test("invalidateWorkspaceVcs refreshes every event-owned cache for the worktree at once", async () => {
+    const diffKey = reviewVcsDiffQueryKey({ directory: "/repo", mode: "staged" })
+    const statusKey = queryKeys.directory.fileStatus("http://test.local", "/repo", "ws_a")
+    queryClient.setQueryData(diffKey, [])
+    queryClient.setQueryData(statusKey, [])
+    queryClient.setQueryData(vcsKey, { branch: "main" })
+    queryClient.setQueryData(gitStatusKey, { staged: [], unstaged: [] })
+    queryClient.setQueryData(gitLogKey, [])
+    queryClient.setQueryData(diffSummaryKey, [])
+
+    await invalidateWorkspaceVcs({ directory: "/repo", serverUrl: "http://test.local", workspaceId: "ws_a" })
+
+    expect(queryClient.getQueryData(diffKey)).toBeUndefined()
+    for (const key of [statusKey, vcsKey, gitStatusKey, gitLogKey, diffSummaryKey]) {
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+    }
+  })
+
   test("leaves both caches alone for unrelated events and noisy git internals", async () => {
     vi.useFakeTimers()
     const diffKey = reviewVcsDiffQueryKey({ directory: "/repo", mode: "uncommitted" })
@@ -173,15 +224,15 @@ describe("WorkspaceVcsCacheHonesty", () => {
     emit({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })
     await vi.advanceTimersByTimeAsync(300)
     expect(remove).toHaveBeenCalledTimes(1)
-    expect(invalidate).toHaveBeenCalledTimes(1)
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: statusKey })
+    expect(invalidationsOf(invalidate, statusKey)).toBe(1)
+    expect(invalidationsOf(invalidate, gitStatusKey)).toBe(1)
 
     // Disposing one pane keeps the owner alive for the other.
     first.unmount()
     expect(listeners).toHaveLength(1)
     emit({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })
     await vi.advanceTimersByTimeAsync(300)
-    expect(invalidate).toHaveBeenCalledTimes(2)
+    expect(invalidationsOf(invalidate, statusKey)).toBe(2)
 
     // Disposing the last pane releases the owner.
     second.unmount()
@@ -208,10 +259,14 @@ describe("WorkspaceVcsCacheHonesty", () => {
     queryClient.setQueryData(diffKey, [])
     queryClient.setQueryData(statusKey, [])
     queryClient.setQueryData(vcsKey, { branch: "before-the-gap" })
+    queryClient.setQueryData(gitStatusKey, { staged: [], unstaged: [] })
+    queryClient.setQueryData(gitLogKey, [])
 
     const first = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
     expect(queryClient.getQueryData(diffKey)).toBeUndefined()
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(gitStatusKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(gitLogKey)?.isInvalidated).toBe(true)
     // A branch change during the gap is unobservable, so the branch summary
     // has to be reconciled too -- otherwise infinite-stale means forever.
     expect(queryClient.getQueryState(vcsKey)?.isInvalidated).toBe(true)

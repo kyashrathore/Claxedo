@@ -252,6 +252,9 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   }
 
   createEffect(() => {
+    // Full view reports nothing: the owner keeps the px width as the width to
+    // restore to, and the column it overlays takes no margin from it.
+    if (props.fullWidth?.()) return
     props.onRestingWidthChange?.(restingPanelWidth())
   })
 
@@ -399,7 +402,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
         "--workspace-panel-width": restingPanelWidth() + "px",
       }}
     >
-      <Show when={open() && props.state.mode && !isMobile()}>
+      <Show when={open() && props.state.mode && !isMobile() && !props.fullWidth?.()}>
         <div
           role="separator"
           tabIndex={0}

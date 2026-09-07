@@ -22,6 +22,7 @@ import type { PromptRetryAction } from "@/features/session/composer/prompt-input
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { SessionGoalDock } from "./session-goal-dock"
+import type { PanePresentation } from "@/features/session/app-ports"
 
 /**
  * The rendered height of the composer container at rest, recorded from the
@@ -59,6 +60,13 @@ export function SessionComposerRegion(props: {
   ready: boolean
   centered: boolean
   placement?: "dock" | "inline"
+  /**
+   * Floating: the dock is the bottom of an overlay stack rather than a flex
+   * sibling under a bottom-anchored transcript, so nothing here needs to hold
+   * the transcript still — no lift, no resting-height bookkeeping, and the
+   * surface comes from session-presentation.css.
+   */
+  presentation?: PanePresentation
   inputRef: (el: HTMLDivElement) => void
   newSessionWorktree: string
   onNewSessionWorktreeChange?: (worktree: string) => void
@@ -202,7 +210,8 @@ export function SessionComposerRegion(props: {
   const value = createMemo(() => (open() ? 1 : 0))
   const dock = createMemo(() => (store.ready && props.state.dock()) || value() > 0.001)
   const rolled = createMemo(() => (props.revert?.items.length ? props.revert : undefined))
-  const lift = createMemo(() => (rolled() ? 18 : 36 * value()))
+  const floating = () => props.presentation === "floating"
+  const lift = createMemo(() => (floating() ? 0 : rolled() ? 18 : 36 * value()))
 
   const openParent = () => {
     if (!parentID()) return
@@ -216,7 +225,8 @@ export function SessionComposerRegion(props: {
       classList={{
         "ui-session-prompt-dock": true,
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
-        "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
+        "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline" && !floating(),
+        "shrink-0 session-floating-dock": floating(),
       }}
     >
       <div
@@ -355,7 +365,7 @@ export function SessionComposerRegion(props: {
                 // Record the settled resting height for the next placeholder.
                 // One rAF lets fonts/toolbar rows finish their first layout.
                 requestAnimationFrame(() => {
-                  if (el.isConnected) recordRestingComposerHeight(el.getBoundingClientRect().height)
+                  if (el.isConnected && !floating()) recordRestingComposerHeight(el.getBoundingClientRect().height)
                 })
               }}
             >
