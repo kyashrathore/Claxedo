@@ -18,7 +18,8 @@ import {
   settingsModelCatalogProviders,
   visibleModelsForProvider,
 } from "./models-settings-logic"
-import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
+import { CATALOG_HARNESS_IDS, isCatalogHarnessId, type NativeHarnessId } from "@/platform/identity/harness-selection"
+import { harnessDisplayLabel } from "@/ui/harness-display"
 
 type ModelItem = {
   id: string
@@ -149,9 +150,12 @@ export const SettingsModels: Component = () => {
   const language = useLanguage()
   const models = useModels()
   // The catalog of the (workspace, harness) this page is showing, read through
-  // the same hook instance the hydration below writes into.
+  // the same hook instance the hydration below writes into. A workspace with no
+  // remembered harness still has models to enable, so the catalog harness
+  // answers until the picker names another one.
   const scope = useSettingsScope()
-  const providers = useProviders(() => scope.nativeHarness() ?? "", scope.scopeRef)
+  const catalogHarness = (): NativeHarnessId => scope.nativeHarness() ?? CATALOG_HARNESS_IDS[0]
+  const providers = useProviders(catalogHarness, scope.scopeRef)
   const [hydrating, setHydrating] = createSignal(true)
   const [hydrateKey, setHydrateKey] = createSignal("")
 
@@ -225,7 +229,7 @@ export const SettingsModels: Component = () => {
   })
 
   const harnessLabel = () =>
-    scope.harnesses().find((item) => item.id === scope.harness())?.label ?? scope.harness()
+    scope.harnesses().find((item) => item.id === scope.harness())?.label ?? harnessDisplayLabel(catalogHarness())
 
   // useFilteredList's resource can settle on the boot index (one model per
   // connected provider) before detail hydration merges the full catalogs.

@@ -67,6 +67,9 @@ const DialogSettings = lazyDialog(() =>
 const DialogSelectDirectory = lazyDialog(() =>
   import("@/app/dialogs/select-directory").then((module) => ({ default: module.DialogSelectDirectory })),
 )
+const DialogSelectMcp = lazyDialog(() =>
+  import("@/app/dialogs/select-mcp").then((module) => ({ default: module.DialogSelectMcp })),
+)
 
 export function useOnboardingFunnel() {
   const platform = usePlatform()
@@ -86,6 +89,7 @@ configureSessionAppPorts({
   checkServerHealth: checkServerHealthCached,
   ProjectCreateForm,
   DialogSelectDirectory,
+  DialogSelectMcp,
   formatKeybind: Command.formatKeybind,
   useCommand: Command.useCommand,
   useFile: FileContext.useFile,

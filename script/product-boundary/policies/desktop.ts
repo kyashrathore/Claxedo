@@ -91,7 +91,13 @@ export const desktopMainComposition: Policy = {
   // in main. `string.ts` imports only `./guards` and touches no host API, so
   // the edge adds nothing this Electron main composition can execute. Module
   // count is unchanged because helpers sits outside `roots`. 90/24.
-  ceilings: { modules: 90, packages: 24 },
+  // +1 module (2026-09-08): `main/open-in-guard.ts` — the launch policy the
+  // `open-path` handler asks before it reaches `execFile`. Reviewed owner: the
+  // session header's Open in… menu (`@claxedo/app/open-in-targets`), which the
+  // guard imports so the allowlist and the menu cannot drift apart. That app
+  // subpath sits outside `roots` and `@claxedo/app` is already a package edge
+  // here, so the package count is unchanged. 91/24.
+  ceilings: { modules: 91, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -353,7 +359,6 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module / 0 packages (2026-09-07): the same app, so it also takes
   // app-local's rail session-activity owner verbatim — see that ledger.
   // Re-measured, no headroom.
-  ceilings: { modules: 1011, packages: 57 },
   // +30 modules (2026-09-07): the workspace panel's source-control Changes
   // column, its git client, status query and mutations, the 17 lazy
   // source-control locale dictionaries, the process-pane registry behind the
@@ -366,7 +371,23 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-07): the floating card's transcript peek reducer
   // `features/session/ui/transcript-peek.ts` (see app-local.ts for the owner).
   // Re-measured, no headroom.
-  ceilings: { modules: 1044, packages: 57 },
+  // +2 modules (2026-09-08): the session header's restored Open in… control
+  // and the target table it reads — `features/session/ui/components/
+  // session-header-open-in.tsx` and `open-in-targets.ts`. Reviewed owner: the
+  // session header (this product's own surface); the table is the same module
+  // Electron main's `open-in-guard.ts` imports, so the menu and the launch
+  // allowlist are one list. No new package edge. Re-measured, no headroom.
+  // +3 modules (2026-09-08): the same three Settings → Providers owners
+  // app-local reviews — the agents section, the harness catalog section, and
+  // the detection reader over the onboarding scan. No new package edge.
+  // Re-measured, no headroom.
+  // +2 modules (2026-09-08): the same restored custom-provider dialog and its
+  // validation module app-local reviews, reached through the shared provider
+  // picker. No new package edge. Re-measured, no headroom.
+  // +1 module (2026-09-08): the same `/mcp` catalog split app-local reviews —
+  // the feature-owned dialog body plus the app-owned rail picker. No new
+  // package edge. Re-measured, no headroom.
+  ceilings: { modules: 1055, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

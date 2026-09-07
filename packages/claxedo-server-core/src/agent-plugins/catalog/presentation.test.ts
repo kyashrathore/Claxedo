@@ -70,6 +70,40 @@ describe("agent plugin candidate presentation", () => {
     expect(icon("long")).toEqual({ kind: "monogram", text: "AB" })
   })
 
+  test("projects declared browse categories and the featured flag, dropping ids it does not serve", async () => {
+    const root = await collection()
+    await write(root, "docs/plugin.json", manifest("docs", {
+      claxedo: { categories: ["skills", "productivity", "skills", "made-up", 7], featured: true },
+    }))
+    await write(root, "plain/plugin.json", manifest("plain"))
+    await write(root, "loose/plugin.json", manifest("loose", { claxedo: { categories: "productivity", featured: "yes" } }))
+    const indexed = await candidates(root)
+    const view = (relativePath: string) => candidatePresentation({ candidate: indexed.get(relativePath)! })
+
+    expect(view("docs").categories).toEqual(["skills", "productivity"])
+    expect(view("docs").featured).toBe(true)
+    expect(view("plain").categories).toBeUndefined()
+    expect(view("plain").featured).toBeUndefined()
+    expect(view("loose").categories).toBeUndefined()
+    expect(view("loose").featured).toBeUndefined()
+  })
+
+  test("a plugin whose source is gone keeps the categories its retained manifest declares", async () => {
+    const retainedRoot = await collection()
+    await write(retainedRoot, "plugin.json", manifest("code-review", {
+      claxedo: { categories: ["agent-orchestration"], featured: true },
+    }))
+    const retained = (await inspectPluginDirectory(retainedRoot)).plugin
+
+    expect(retainedPresentation(retained)).toEqual({
+      icon: { kind: "monogram", text: "CR" },
+      categories: ["agent-orchestration"],
+      featured: true,
+      skills: [],
+      source: null,
+    })
+  })
+
   test("projects the validated skills of the candidate and the source it came from", async () => {
     const root = await collection()
     await write(root, "docs/plugin.json", manifest("docs"))

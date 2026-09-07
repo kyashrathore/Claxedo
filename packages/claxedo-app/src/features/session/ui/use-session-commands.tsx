@@ -4,7 +4,7 @@ import { createMemo, createRenderEffect, createRoot, onCleanup } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { useCommand, type CommandOption } from "@/features/session/app-ports"
+import { DialogSelectMcp, useCommand, type CommandOption } from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useFile } from "@/features/session/app-ports"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/platform/files/types"
@@ -237,6 +237,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
   const viewCommand = withCategory(language.t("command.category.view"))
   const terminalCommand = withCategory(language.t("command.category.terminal"))
   const modelCommand = withCategory(language.t("command.category.model"))
+  const mcpCommand = withCategory(language.t("command.category.mcp"))
   const agentCommand = withCategory(language.t("command.category.agent"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
 
@@ -405,9 +406,9 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       },
     }),
     terminalCommand({
-      // `terminal.toggle` is referenced by session-header's keybind badge,
-      // desktop-menu.ts, command-palette's EDITABLE_KEYBIND_IDS, and the xterm
-      // handler, which passes Ctrl+` through for it. Do not forward to
+      // `terminal.toggle` is referenced by the Electron menu, command-palette's
+      // EDITABLE_KEYBIND_IDS, and the xterm keyboard handler, which passes
+      // Ctrl+` through for it. Do not forward to
       // `view().terminal.toggle()`: that only flips upstream's vestigial
       // `store.terminal.opened` drawer flag, which no Claxedo component renders.
       // A Claxedo terminal is a Workbench pane (see `terminal.new`), so close the
@@ -484,6 +485,16 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "model",
       onSelect: () => {
         void dialog.show(() => <DialogSelectModel model={pickerModel()} surface="command_palette" />)
+      },
+    }),
+    mcpCommand({
+      id: "mcp.toggle",
+      title: language.t("command.mcp.toggle"),
+      description: language.t("command.mcp.toggle.description"),
+      keybind: "mod+;",
+      slash: "mcp",
+      onSelect: () => {
+        void dialog.show(() => <DialogSelectMcp />)
       },
     }),
     agentCommand({

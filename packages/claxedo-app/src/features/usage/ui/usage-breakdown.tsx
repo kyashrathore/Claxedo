@@ -13,7 +13,7 @@ function coverage(row: UsageBreakdownRow) {
   return row.status === "partial" ? "Partial turn coverage" : "All categories measured"
 }
 
-function categories(row: UsageBreakdownRow) {
+function tokenSplit(row: UsageBreakdownRow) {
   return `In ${row.input.toLocaleString()} · Out ${row.output.toLocaleString()} · Reason ${row.reasoning.toLocaleString()} · Cache ${(
     row.cacheRead + row.cacheWrite
   ).toLocaleString()}`
@@ -54,7 +54,7 @@ export function UsageBreakdown(props: {
                 <div
                   class={`usage-breakdown-row usage-brand-row-${usageBrand(`${row.value} ${row.label}`)}`}
                   role="row"
-                  title={`${categories(row)} · ${coverage(row)}`}
+                  title={`${tokenSplit(row)} · ${coverage(row)}`}
                 >
                   <span class="usage-breakdown-label" role="cell" title={row.label}>
                     <Show when={row.href} fallback={<UsageBrandLabel value={row.value} label={row.label} />} keyed>

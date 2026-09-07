@@ -2,7 +2,7 @@ import { oauthServers, type OAuthServer } from "../connections"
 export { oauthServers, type OAuthServer }
 import { AGENT_PLUGIN_HARNESSES, type AgentPluginHarness, type HarnessActivation, type PluginCandidate } from "../api"
 import type { AgentPluginConnectionSummary } from "../connections"
-import type { DirectorySource, MachineInstalled, MachineInstalledEntry } from "./data"
+import type { DirectorySource, MachineInstalled, MachineInstalledEntry, MachineInstalledHarness, MachineSkill } from "./data"
 
 /** What a card is titled: the manifest name, else whatever identifies the artifact. */
 export function pluginLabel(plugin: PluginCandidate) {
@@ -156,10 +156,49 @@ export function matchesQuery(plugin: PluginCandidate, query: string) {
 export type DirectorySection = {
   id: string
   title: string
+  /** A word under the heading, for a section whose membership is not self-evident. */
+  note?: string
   plugins: PluginCandidate[]
 }
 
-export type PersonalEntry = MachineInstalledEntry & { harnessId: MachineInstalled["harnesses"][number]["harnessId"] }
+/**
+ * The browse categories a plugin manifest may declare, in reading order.
+ *
+ * The ids come from the catalog; the labels are the Directory's, so a category
+ * the server starts serving that this table does not name simply earns no chip
+ * rather than a raw id.
+ */
+export const PLUGIN_CATEGORIES = [
+  { id: "skills", label: "Skills" },
+  { id: "mcp-servers", label: "MCP Servers" },
+  { id: "infrastructure", label: "Infrastructure" },
+  { id: "data-and-analytics", label: "Data & Analytics" },
+  { id: "productivity", label: "Productivity" },
+  { id: "agent-orchestration", label: "Agent Orchestration" },
+] as const
+
+export type PluginCategoryView = { id: string; label: string; count: number }
+
+/** True when the plugin declares the category, or when no category is asked for. */
+export function inCategory(plugin: PluginCandidate, category: string) {
+  return category === "all" || (plugin.categories ?? []).includes(category)
+}
+
+/** The chips the catalog earns: a category no candidate declares has nothing to filter to. */
+export function categoryChips(candidates: readonly PluginCandidate[]): PluginCategoryView[] {
+  return PLUGIN_CATEGORIES.flatMap((category) => {
+    const count = candidates.filter((plugin) => (plugin.categories ?? []).includes(category.id)).length
+    return count > 0 ? [{ id: category.id, label: category.label, count }] : []
+  })
+}
+
+/** A plugin another harness installed; Claxedo lists it and manages nothing about it. */
+export type PersonalPlugin = MachineInstalledEntry & { kind: "plugin"; harnessId: MachineInstalledHarness["harnessId"] }
+
+/** A `SKILL.md` folder found in a harness's machine-wide skills directory. */
+export type PersonalSkill = MachineSkill & { kind: "skill" }
+
+export type PersonalEntry = PersonalPlugin | PersonalSkill
 
 /** What a section needs from a source; the full row carries kind and removal state too. */
 export type DirectorySourceView = Pick<DirectorySource, "id" | "label">
@@ -177,11 +216,15 @@ export function sourcesFromCandidates(candidates: readonly PluginCandidate[]): D
 
 /**
  * Every section the Directory renders, in the order the user reads them:
- * what is broken, what is installed, what each source offers, and finally what
- * the user installed themselves in another harness.
+ * what is broken, what is installed, what is worth starting with, what each
+ * source offers, and finally what the user installed themselves in another
+ * harness.
  *
  * `filter` is the source chip: a source id narrows to that source (and drops
  * Personal), `"personal"` shows Personal alone, `"all"` shows everything.
+ * `category` is the second, independent axis: a category id keeps only the
+ * plugins that declare it, and Featured — an unfiltered browse aid — steps
+ * aside while one is chosen.
  */
 export function directorySections(input: {
   candidates: readonly PluginCandidate[]
@@ -190,10 +233,14 @@ export function directorySections(input: {
   connectionsKnown?: boolean
   query: string
   filter: string
+  /** A category chip id, or `"all"`. */
+  category?: string
 }): DirectorySection[] {
   const query = input.query.trim().toLowerCase()
   if (input.filter === "personal") return []
+  const category = input.category ?? "all"
   const visible = input.candidates.filter((plugin) => matchesQuery(plugin, query)
+    && inCategory(plugin, category)
     && (input.filter === "all" || plugin.source?.id === input.filter))
   const attention: PluginCandidate[] = []
   const installed: PluginCandidate[] = []
@@ -212,13 +259,22 @@ export function directorySections(input: {
     sections.push({ id: "needs-attention", title: "Needs attention", plugins: attention })
   }
   if (installed.length > 0) sections.push({ id: "installed", title: "Installed", plugins: installed })
+  // Only what is NOT installed can be featured: a featured card is an offer to
+  // start with, and pulling an installed plugin up here would take it out of
+  // the section that reports its runtime condition.
+  const featured = category === "all" ? offered.filter((plugin) => plugin.featured === true) : []
+  const featuredIds = new Set(featured.map((plugin) => plugin.pluginInstanceId))
+  if (featured.length > 0) {
+    sections.push({ id: "featured", title: "Featured", note: "Hand-picked to start with.", plugins: featured })
+  }
+  const rest = offered.filter((plugin) => !featuredIds.has(plugin.pluginInstanceId))
   for (const source of input.sources) {
-    const plugins = offered.filter((plugin) => plugin.source?.id === source.id)
+    const plugins = rest.filter((plugin) => plugin.source?.id === source.id)
     if (plugins.length === 0) continue
     sections.push({ id: `source:${source.id}`, title: source.label, plugins })
   }
   const known = new Set(input.sources.map((source) => source.id))
-  const orphans = offered.filter((plugin) => !plugin.source || !known.has(plugin.source.id))
+  const orphans = rest.filter((plugin) => !plugin.source || !known.has(plugin.source.id))
   if (orphans.length > 0) {
     sections.push({ id: "source:unknown", title: "No longer served by a source", plugins: orphans })
   }
@@ -230,12 +286,19 @@ export function personalEntries(input: {
   machine: MachineInstalled | undefined
   query: string
   filter: string
+  /** A category narrows the catalog only; nothing on this machine declares one. */
+  category?: string
 }): PersonalEntry[] {
   if (input.filter !== "all" && input.filter !== "personal") return []
+  if (input.category !== undefined && input.category !== "all") return []
   const query = input.query.trim().toLowerCase()
-  return (input.machine?.harnesses ?? []).flatMap((harness) => harness.entries
+  const plugins: PersonalEntry[] = (input.machine?.harnesses ?? []).flatMap((harness) => harness.entries
     .filter((entry) => !entry.ownedByClaxedo && entry.name.toLowerCase().includes(query))
-    .map((entry) => ({ ...entry, harnessId: harness.harnessId })))
+    .map((entry) => ({ ...entry, kind: "plugin" as const, harnessId: harness.harnessId })))
+  const skills: PersonalEntry[] = (input.machine?.skills ?? [])
+    .filter((skill) => skill.name.toLowerCase().includes(query))
+    .map((skill) => ({ ...skill, kind: "skill" as const }))
+  return [...plugins, ...skills]
 }
 
 /**

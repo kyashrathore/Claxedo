@@ -1,4 +1,9 @@
 import { Hono, type MiddlewareHandler } from "hono"
+import {
+  CustomProviderInvalidError,
+  putCustomProvider,
+  readCustomProvider,
+} from "@claxedo/server-core/credentials/custom-provider"
 import { opencodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-catalog"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
@@ -37,7 +42,7 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
         if (c.req.query("nativeHarness") === "opencode") {
           // An unavailable catalog is a different fact from "no providers", so
           // it surfaces as a failure rather than an empty picker.
-          return c.json(await opencodeProviderCatalog({ env }))
+          return c.json(await opencodeProviderCatalog({ env, org }))
         }
         return c.json(piProviderCatalog(env, org))
       } catch (error) {
@@ -46,4 +51,27 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       }
     })
     .get("/providers/auth", requireCatalogHarness, (c) => c.json(providerAuthMethods()))
+    /**
+     * Declare an OpenAI-compatible provider for the caller's org.
+     *
+     * Configuration only. The API key is a credential and goes to
+     * `/api/claxedo/credentials`; a body carrying secret material is rejected by
+     * `readCustomProvider`'s allowlist rather than quietly persisted here.
+     */
+    .put("/providers/custom", requireCatalogHarness, async (c) => {
+      if (c.req.query("nativeHarness") !== "opencode") {
+        return c.json({ error: { code: "provider_custom_unsupported", message: "Custom providers require nativeHarness=opencode" } }, 400)
+      }
+      try {
+        const org = await requestOrg(c.req.raw, authOptions)
+        const body = await c.req.json().catch(() => undefined)
+        return c.json(putCustomProvider(readCustomProvider(body), org))
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        if (error instanceof CustomProviderInvalidError) {
+          return c.json({ error: { code: error.code, message: error.message } }, 400)
+        }
+        throw error
+      }
+    })
 }

@@ -4,19 +4,23 @@ import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { withCurrentRevision, type AgentPluginApi, type AgentPluginHarness, type PluginCandidate, type PluginCatalog } from "../api"
-import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "../connections"
+import { oauthServers, type AgentPluginConnectionPort, type AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
+import { requestConfirm } from "./confirm"
 import { DirectoryCard, PersonalCard, personalEntryKey } from "./card"
 import { PersonalPane } from "./personal-pane"
 import { GHOST_ICON_BUTTON } from "./chrome"
 import type { DirectoryApi, DirectorySourceRegistration } from "./data"
 import { PluginDetailPane } from "./detail-pane"
 import {
+  categoryChips,
   directorySections,
   isInstalled,
   matchesQuery,
   personalEntries,
+  pluginLabel,
   pluginStatus,
   sourcesFromCandidates,
   type DirectorySourceView,
@@ -50,10 +54,12 @@ export function AgentPluginDirectory(props: {
    */
   onAdd: (plugin: PluginCandidate, catalog: PluginCatalog) => void | Promise<unknown>
 }) {
+  const dialog = useDialog()
   const signed = () => props.mode === "signed"
   const [projectId, setProjectId] = createSignal<string>()
   const [query, setQuery] = createSignal("")
   const [filter, setFilter] = createSignal(ALL)
+  const [category, setCategory] = createSignal(ALL)
   const [selectedId, setSelectedId] = createSignal<string>()
   const [selectedPersonalKey, setSelectedPersonalKey] = createSignal<string>()
   const [pending, setPending] = createSignal<string>()
@@ -119,8 +125,15 @@ export function AgentPluginDirectory(props: {
     connections: connectionRows(),
     query: query(),
     filter: filter(),
+    category: category(),
   }))
-  const personal = createMemo(() => personalEntries({ machine: machineInstalled(), query: query(), filter: filter() }))
+  const categories = createMemo(() => categoryChips(candidates()))
+  const personal = createMemo(() => personalEntries({
+    machine: machineInstalled(),
+    query: query(),
+    filter: filter(),
+    category: category(),
+  }))
 
   const sourceCount = (id: string) => candidates()
     .filter((plugin) => plugin.source?.id === id && matchesQuery(plugin, query().trim().toLowerCase())).length
@@ -130,10 +143,19 @@ export function AgentPluginDirectory(props: {
   const selectedPersonal = createMemo(() => personal().find((entry) => personalEntryKey(entry) === selectedPersonalKey()))
   const projectLabel = () => catalog()?.projects?.find((project) => project.id === projectId())?.label ?? CROSS_PROJECT
 
-  // ── Mutations, ported from the catalog article they replaced ──────────────
   const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
     const current = catalog()
     if (!current) return
+    if (choice === false) {
+      // What disabling costs is not recoverable from the button label: it
+      // deletes the materialized tree the harnesses read.
+      const ok = await requestConfirm(dialog, {
+        title: `Disable ${pluginLabel(plugin)}?`,
+        body: "This removes its config and materialized files.",
+        confirmLabel: "Disable",
+      })
+      if (!ok) return
+    }
     setPending(plugin.pluginInstanceId)
     try {
       // A signed choice names the projects it covers. A deployment that lists
@@ -234,7 +256,20 @@ export function AgentPluginDirectory(props: {
     })
   }
 
+  /** The MCP server the open plugin authenticates through this connection. */
+  const connectionLabel = (connection: AgentPluginConnectionSummary) => {
+    const plugin = selected()
+    const server = plugin ? oauthServers(plugin).find((entry) => entry.integrationId === connection.integrationId) : undefined
+    return server?.name ?? connection.integrationId
+  }
+
   const disconnect = async (connection: AgentPluginConnectionSummary) => {
+    const ok = await requestConfirm(dialog, {
+      title: `Disconnect ${connectionLabel(connection)}?`,
+      body: "Every plugin that authenticates through this connection stops working until it is connected again.",
+      confirmLabel: "Disconnect",
+    })
+    if (!ok) return
     try {
       await props.connections?.disconnect(connection.id)
       await refetchConnections()
@@ -259,6 +294,13 @@ export function AgentPluginDirectory(props: {
   const removableSource = () => listedSources().find((source) => source.id === filter() && source.canRemove)
 
   const removeSource = async (id: string) => {
+    const source = listedSources().find((entry) => entry.id === id)
+    const ok = await requestConfirm(dialog, {
+      title: `Remove ${source?.label ?? "this source"}?`,
+      body: "Claxedo stops listing the plugins it serves. Plugins you already installed from it stay installed until you disable them.",
+      confirmLabel: "Remove",
+    })
+    if (!ok) return
     try {
       await props.directory.sources.remove(id)
       setFilter(ALL)
@@ -386,6 +428,23 @@ export function AgentPluginDirectory(props: {
             </Show>
           </div>
 
+          <Show when={categories().length > 0}>
+            <div role="tablist" aria-label="Categories" class="flex flex-wrap items-center gap-2">
+              <SourceChip id={ALL} label="All categories" active={category() === ALL} onSelect={setCategory} />
+              <For each={categories()}>
+                {(entry) => (
+                  <SourceChip
+                    id={entry.id}
+                    label={entry.label}
+                    count={entry.count}
+                    active={category() === entry.id}
+                    onSelect={setCategory}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
+
           <Show when={adding()}>
             <AddSourceForm
               organizationAllowed={signed() && catalog()?.canManageOrganizationDefaults === true}
@@ -421,7 +480,7 @@ export function AgentPluginDirectory(props: {
             <For each={sections()}>
               {(section) => (
                 <section aria-label={section.title}>
-                  <SectionHeading title={section.title} count={section.plugins.length} />
+                  <SectionHeading title={section.title} count={section.plugins.length} note={section.note} />
                   <div class="grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]">
                     <For each={section.plugins}>
                       {(plugin) => (

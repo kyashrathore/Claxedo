@@ -26,6 +26,10 @@ function cfgFile() {
   return path.join(root, "user-agent-config.json")
 }
 
+function backupFile(legacyVersion: number) {
+  return path.join(root, `user-agent-config.legacy-v${legacyVersion}.json`)
+}
+
 function trustedConnection(overrides: Partial<HarnessConnectionDescriptor> = {}): HarnessConnectionDescriptor {
   return {
     connectionId: "conn-primary",
@@ -88,7 +92,7 @@ describe("agent config", () => {
     })).toEqual({ kind: "native", harnessId: "claude" })
   })
 
-  test("rejects legacy runner, harness, and ACP config instead of adopting it", async () => {
+  test("rejects a v3 file that carries legacy runner, harness, and ACP keys", async () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
@@ -130,18 +134,92 @@ describe("agent config", () => {
     expect(config).toEqual({ version: 3, connections: {}, mcp: {}, auth: {}, sandbox_driver: {} })
   })
 
-  test("rejects v1, v2, and unversioned files without compatibility decoding", async () => {
+  test("migrates the operator's unversioned file to v3, backs it up, and stays migrated", async () => {
     await fs.mkdir(root, { recursive: true })
-    for (const legacy of [
-      { mcp: {}, connections: {} },
-      { version: 1, mcp: {}, connections: {} },
-      { version: 2, mcp: {}, harnesses: [] },
-    ]) {
-      await fs.writeFile(cfgFile(), JSON.stringify(legacy))
-      await expect(mod.loadUserConfig()).rejects.toMatchObject({
-        code: "user_agent_config_invalid_schema",
-      })
+    const legacy = JSON.stringify({
+      mcp: {},
+      auth: {},
+      harness: { id: "opencode", access: "native" },
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
+      sandbox_driver: { default_driver: "daytona" },
+    })
+    await fs.writeFile(cfgFile(), legacy)
+
+    const expected = {
+      version: 3,
+      mcp: {},
+      connections: {},
+      defaultHarness: { kind: "native", harnessId: "opencode" },
+      auth: {},
+      sandbox_driver: { default_driver: "daytona" },
     }
+    expect(await mod.loadUserConfig()).toEqual(expected)
+    expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
+    expect(JSON.parse(await fs.readFile(cfgFile(), "utf-8"))).toEqual(expected)
+
+    expect(await mod.loadUserConfig()).toEqual(expected)
+    expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
+  })
+
+  test("migrates declared v1 and v2 files, keeping mcp, auth, and sandbox driver", async () => {
+    await fs.mkdir(root, { recursive: true })
+    for (const version of [1, 2]) {
+      await fs.rm(backupFile(version), { force: true })
+      await fs.writeFile(cfgFile(), JSON.stringify({
+        version,
+        mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
+        auth: { openai: "sk-legacy" },
+        sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
+        harnesses: [],
+      }))
+
+      expect(await mod.loadUserConfig()).toEqual({
+        version: 3,
+        mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
+        connections: {},
+        auth: { openai: "sk-legacy" },
+        sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
+      })
+      expect(JSON.parse(await fs.readFile(backupFile(version), "utf-8")).version).toBe(version)
+    }
+  })
+
+  test("drops legacy ACP and runner selections that have no v3 equivalent", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      mcp: {},
+      auth: {},
+      harness: { id: "openclaw", access: "acp" },
+      model: "some-model",
+      runner: { type: "claude-sdk" },
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
+    }))
+
+    const migrated = await mod.loadUserConfig()
+    expect(migrated).toEqual({ version: 3, mcp: {}, connections: {}, auth: {}, sandbox_driver: {} })
+    expect(migrated.defaultHarness).toBeUndefined()
+    expect(await fs.readFile(cfgFile(), "utf-8")).not.toContain("openclaw")
+    expect(await fs.readFile(backupFile(2), "utf-8")).toContain("openclaw")
+  })
+
+  test("fails closed on a malformed legacy file without backing it up or rewriting it", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const malformed = JSON.stringify({ mcp: "not-a-map", harness: { id: "opencode", access: "native" } })
+    await fs.writeFile(cfgFile(), malformed)
+
+    await expect(mod.loadUserConfig()).rejects.toMatchObject({
+      code: "user_agent_config_invalid_schema",
+    })
+    expect(await fs.readFile(cfgFile(), "utf-8")).toBe(malformed)
+    await expect(fs.stat(backupFile(2))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  test("rejects a file declaring a version that is neither legacy nor current", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({ version: 4, mcp: {}, connections: {} }))
+    await expect(mod.loadUserConfig()).rejects.toMatchObject({
+      code: "user_agent_config_invalid_schema",
+    })
   })
 
   test("rejects malformed config without exposing or overwriting its contents", async () => {

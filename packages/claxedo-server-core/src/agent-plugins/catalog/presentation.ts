@@ -10,6 +10,18 @@ export type AgentPluginIcon =
   | { kind: "url"; url: string }
   | { kind: "monogram"; text: string }
 
+/** The browse categories a directory groups plugins under. */
+export const AGENT_PLUGIN_CATEGORIES = [
+  "skills",
+  "mcp-servers",
+  "infrastructure",
+  "data-and-analytics",
+  "productivity",
+  "agent-orchestration",
+] as const
+
+export type AgentPluginCategoryId = (typeof AGENT_PLUGIN_CATEGORIES)[number]
+
 export type AgentPluginSourceView = {
   id: string
   kind: AgentPluginSourceKind
@@ -21,18 +33,21 @@ export type AgentPluginSourceView = {
 /** The presentation fields every catalog view projects, produced here and nowhere else. */
 export type AgentPluginCandidatePresentation = {
   icon?: AgentPluginIcon
+  categories?: AgentPluginCategoryId[]
+  featured?: boolean
   skills: AgentPluginSkill[]
   source: AgentPluginSourceView | null
 }
 
 /**
- * Reverse-domain-free product namespace inside the open `extensions` record.
+ * Reverse-domain-free product namespace inside the open `extensions` record,
+ * holding the icon, browse categories and featured flag a directory renders.
  * The manifest schema is unchanged: `extensions` already accepts any namespace.
  */
-const ICON_NAMESPACE = "claxedo"
+const CLAXEDO_NAMESPACE = "claxedo"
 
 function iconUrl(manifest: AgentPluginManifest): string | undefined {
-  const declared = manifest.extensions?.[ICON_NAMESPACE]?.icon
+  const declared = manifest.extensions?.[CLAXEDO_NAMESPACE]?.icon
   if (typeof declared !== "string") return undefined
   try {
     // An icon is fetched by the renderer, so only https is a usable source.
@@ -53,6 +68,18 @@ function monogram(name: string) {
     .toUpperCase()
 }
 
+function categories(manifest: AgentPluginManifest | null | undefined): AgentPluginCategoryId[] {
+  const declared = manifest?.extensions?.[CLAXEDO_NAMESPACE]?.categories
+  if (!Array.isArray(declared)) return []
+  const known = declared.filter((value): value is AgentPluginCategoryId =>
+    AGENT_PLUGIN_CATEGORIES.some((category) => category === value))
+  return [...new Set(known)]
+}
+
+function featured(manifest: AgentPluginManifest | null | undefined): boolean {
+  return manifest?.extensions?.[CLAXEDO_NAMESPACE]?.featured === true
+}
+
 function icon(manifest: AgentPluginManifest | null | undefined): AgentPluginIcon | undefined {
   if (!manifest) return undefined
   const declared = iconUrl(manifest)
@@ -71,8 +98,11 @@ export function candidatePresentation(input: {
   retained?: ValidatedAgentPlugin | undefined
 }): AgentPluginCandidatePresentation {
   const glyph = icon(input.candidate.manifest)
+  const browse = categories(input.candidate.manifest)
   return {
     ...(glyph ? { icon: glyph } : {}),
+    ...(browse.length ? { categories: browse } : {}),
+    ...(featured(input.candidate.manifest) ? { featured: true } : {}),
     skills: [...(input.retained?.skills ?? input.candidate.skills)],
     source: {
       id: input.candidate.sourceId,
@@ -91,8 +121,11 @@ export function candidatePresentation(input: {
  */
 export function retainedPresentation(retained: ValidatedAgentPlugin | undefined): AgentPluginCandidatePresentation {
   const glyph = icon(retained?.manifest)
+  const browse = categories(retained?.manifest)
   return {
     ...(glyph ? { icon: glyph } : {}),
+    ...(browse.length ? { categories: browse } : {}),
+    ...(featured(retained?.manifest) ? { featured: true } : {}),
     skills: [...(retained?.skills ?? [])],
     source: null,
   }

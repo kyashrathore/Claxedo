@@ -4,9 +4,10 @@
  * workspace driver is `registryNode({})`, an empty provider registry
  * (`docs/architecture/opencode-embedded-sdk-contract.md`).
  *
- * Source: models.dev, the same catalog the engine reads. The offline
- * `piModelCatalog` would be cheaper but carries 31 providers against
- * models.dev's 203, so it would silently shrink the model picker.
+ * Source: models.dev, the same catalog the engine reads, overlaid with the
+ * caller's org-scoped custom providers. The offline `piModelCatalog` would be
+ * cheaper but carries 31 providers against models.dev's 203, so it would
+ * silently shrink the model picker.
  *
  * With neither a live fetch nor a cached copy this throws rather than returning
  * an empty catalog: an unavailable catalog is not "there are no providers", and
@@ -16,7 +17,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isJsonRecord, jsonRecord, parseJsonRecord } from "../platform/runtime/lib/json"
 import { dataDir } from "../platform/runtime/lib/paths"
-import { requireCredentialRegistryLookup } from "./registry"
+import { listCustomProviders } from "./custom-provider"
+import { credentialOrg, requireCredentialRegistryLookup, type CredentialOrgScope } from "./registry"
 
 const MODELS_DEV_URL = "https://models.dev/api.json"
 
@@ -41,8 +43,18 @@ export type OpenCodeCatalogModel = {
   cost?: unknown
 }
 
+export type OpenCodeCatalogProvider = {
+  id: string
+  name: string
+  env: string[]
+  source: string
+  models: Record<string, OpenCodeCatalogModel>
+  /** Present on operator-declared providers: `baseURL` and non-secret headers. */
+  options?: Record<string, unknown>
+}
+
 export type OpenCodeCatalog = {
-  all: Array<{ id: string; name: string; env: string[]; source: string; models: Record<string, OpenCodeCatalogModel> }>
+  all: OpenCodeCatalogProvider[]
   connected: string[]
   default: Record<string, string>
 }
@@ -168,8 +180,13 @@ export async function resolveModelsDevCatalog(
   }
 }
 
-function providerConnected(provider: ModelsDevProvider, id: string, env: NodeJS.ProcessEnv): boolean {
-  if (requireCredentialRegistryLookup(id)?.status === "available") return true
+function providerConnected(
+  provider: Pick<ModelsDevProvider, "env">,
+  id: string,
+  env: NodeJS.ProcessEnv,
+  org: string,
+): boolean {
+  if (requireCredentialRegistryLookup(id, org)?.status === "available") return true
   // models.dev names the environment variables a provider authenticates with;
   // an operator-supplied key counts as connected exactly as it does for the
   // harness-binding catalog.
@@ -191,9 +208,10 @@ function toModel(raw: Record<string, unknown>, id: string): OpenCodeCatalogModel
 
 /** Build the catalog `providerBody` serves for the OpenCode harness. */
 export async function opencodeProviderCatalog(
-  options: { env?: NodeJS.ProcessEnv; fetchImpl?: CatalogFetch; now?: number } = {},
+  options: { env?: NodeJS.ProcessEnv; fetchImpl?: CatalogFetch; now?: number; org?: CredentialOrgScope } = {},
 ): Promise<OpenCodeCatalog> {
   const env = options.env ?? process.env
+  const org = credentialOrg(options.org)
   const raw = await resolveModelsDevCatalog({ ...options, env })
 
   const all: OpenCodeCatalog["all"] = []
@@ -220,12 +238,47 @@ export async function opencodeProviderCatalog(
     // than trusting whichever key happened to come first.
     const first = entries.map(([modelId]) => modelId).sort()[0]
     if (first) defaults[id] = first
-    if (providerConnected(provider, id, env)) connected.push(id)
+    if (providerConnected(provider, id, env, org)) connected.push(id)
   }
 
   if (all.length === 0) {
     throw new OpenCodeCatalogUnavailableError("the OpenCode model catalog contained no providers")
   }
 
-  return { all, connected, default: defaults }
+  return mergeCustomProviders({ all, connected, default: defaults }, env, org)
+}
+
+/**
+ * Overlay the org's operator-declared providers.
+ *
+ * A custom provider REPLACES a models.dev row of the same id: the operator
+ * pointed that id at their own base URL, and serving both would leave the
+ * picker showing one name for two different endpoints.
+ */
+function mergeCustomProviders(catalog: OpenCodeCatalog, env: NodeJS.ProcessEnv, org: string): OpenCodeCatalog {
+  const custom = listCustomProviders(org)
+  if (custom.length === 0) return catalog
+
+  const byId = new Map(catalog.all.map((provider) => [provider.id, provider]))
+  const connected = new Set(catalog.connected)
+  const defaults = { ...catalog.default }
+
+  for (const provider of custom) {
+    byId.set(provider.providerID, {
+      id: provider.providerID,
+      name: provider.name,
+      env: provider.env,
+      source: "custom",
+      models: Object.fromEntries(
+        Object.entries(provider.models).map(([id, model]) => [id, { id, name: model.name, tool_call: true }]),
+      ),
+      options: { baseURL: provider.baseURL, ...(Object.keys(provider.headers).length ? { headers: provider.headers } : {}) },
+    })
+    const first = Object.keys(provider.models).sort()[0]
+    if (first) defaults[provider.providerID] = first
+    if (providerConnected(provider, provider.providerID, env, org)) connected.add(provider.providerID)
+    else connected.delete(provider.providerID)
+  }
+
+  return { all: [...byId.values()], connected: [...connected], default: defaults }
 }

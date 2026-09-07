@@ -20,6 +20,8 @@ import * as Navigation from "@/app/workbench/navigation/navigation-row"
 import * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
 import * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
 import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
+import * as AIConnectApi from "@/features/onboarding/ai-connect-api"
+import * as AIConnectState from "@/features/onboarding/ai-connect-state"
 import * as SessionModels from "@/features/session/providers/models"
 import * as LinkModule from "@/app/controls/link"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
@@ -36,6 +38,9 @@ const DialogAIConnect = lazyDialog(() =>
 )
 const DialogSelectProvider = lazyDialog(() =>
   import("@/app/dialogs/select-provider").then((module) => ({ default: module.DialogSelectProvider })),
+)
+const DialogCustomProvider = lazyDialog(() =>
+  import("@/app/dialogs/custom-provider").then((module) => ({ default: module.DialogCustomProvider })),
 )
 const ProviderList = lazy(() =>
   import("@/app/dialogs/provider-list").then((module) => ({ default: module.ProviderList })),
@@ -71,6 +76,11 @@ configureSettingsAppPorts({
   DialogConnectProvider,
   DialogAIConnect,
   DialogSelectProvider,
+  DialogCustomProvider,
+  discoverAIConnections: AIConnectApi.discoverAIConnections,
+  groupDiscoveryItems: AIConnectState.groupDiscoveryItems,
+  localHarnessStatuses: AIConnectState.localHarnessStatuses,
+  localHarnessChecks: AIConnectState.localHarnessChecks,
   useModels: SessionModels.useModels,
   formatKeybind: Command.formatKeybind,
   parseKeybind: Command.parseKeybind,

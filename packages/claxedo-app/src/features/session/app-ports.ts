@@ -5,6 +5,7 @@ import type * as Server from "@/app/connection/server"
 import type * as ServerHealth from "@/app/connection/server-health"
 import type * as ProjectCreateFormModule from "@/features/workspaces/ui/project-create-form"
 import type * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
+import type * as DialogSelectMcpModule from "@/app/dialogs/select-mcp"
 import type * as Command from "@/app/providers/command"
 import type * as FileContext from "@/app/providers/file"
 import type * as Providers from "@/app/providers/use-providers"
@@ -46,6 +47,7 @@ export type SessionAppPorts = {
   checkServerHealth: typeof ServerHealth.checkServerHealthCached
   ProjectCreateForm: typeof ProjectCreateFormModule.ProjectCreateForm
   DialogSelectDirectory: typeof DialogSelectDirectoryModule.DialogSelectDirectory
+  DialogSelectMcp: typeof DialogSelectMcpModule.DialogSelectMcp
   formatKeybind: typeof Command.formatKeybind
   useCommand: typeof Command.useCommand
   useFile: typeof FileContext.useFile
@@ -122,6 +124,7 @@ export const useServer = bind((ports) => ports.useServer)
 export const checkServerHealth = bind((ports) => ports.checkServerHealth)
 export const ProjectCreateForm = bind((ports) => ports.ProjectCreateForm)
 export const DialogSelectDirectory = bind((ports) => ports.DialogSelectDirectory)
+export const DialogSelectMcp = bind((ports) => ports.DialogSelectMcp)
 export const formatKeybind = bind((ports) => ports.formatKeybind)
 export const useCommand = bind((ports) => ports.useCommand)
 export type CommandOption = Command.CommandOption

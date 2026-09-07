@@ -51,6 +51,12 @@ vi.mock("./provider-connect-form", () => ({
   ProviderConnectForm: () => <div data-component="provider-connect-form" />,
 }))
 
+// The custom-provider dialog owns a mutation and a credential write of its own,
+// tested with it. Here only the hand-off is contract.
+vi.mock("./custom-provider", () => ({
+  DialogCustomProvider: () => <div data-component="custom-provider-dialog" />,
+}))
+
 const dialogState = vi.hoisted(() => ({ shown: [] as unknown[] }))
 
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
@@ -94,6 +100,15 @@ describe("ProviderList renderer", () => {
     expect((await renderedProviderIdsWhenSettled(container)).sort()).toEqual([...PI_PROVIDER_IDS].sort())
     expect(container.querySelector('[data-key="_custom"]')).toBeNull()
   })
+
+  test("adds the custom entry to the OpenCode catalog, ahead of the rest of its group", async () => {
+    const { container } = render(() => <ProviderList harness="opencode" onSelect={() => undefined} />)
+    const ids = await renderedProviderIdsWhenSettled(container)
+    expect([...ids].sort()).toEqual(["_custom", ...PI_PROVIDER_IDS].sort())
+    // "anthropic" and "openai" are popular, so the custom entry's neighbours
+    // are the rest; it leads them.
+    expect(ids.indexOf("_custom")).toBeLessThan(ids.indexOf("openai-codex"))
+  })
 })
 
 describe("the connect dialog inherits the harness it was opened with", () => {
@@ -117,6 +132,16 @@ describe("the connect dialog inherits the harness it was opened with", () => {
 
     await waitFor(() => expect(dialogState.shown.length).toBe(1))
     expect(requestedScopes.at(-1)).toBe("workspace:ws_1")
+  })
+
+  test("selecting the custom entry opens the custom-provider dialog, not the connect form", async () => {
+    const { container } = render(() => <DialogSelectProvider harness="opencode" scope="workspace:ws_1" />)
+    await renderedProviderIdsWhenSettled(container)
+
+    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="_custom"]')!.click()
+
+    await waitFor(() => expect(dialogState.shown.length).toBe(1))
+    expect(document.body.querySelector('[data-component="provider-connect-form"]')).toBeNull()
   })
 
   test("selecting a provider carries the harness into the connect dialog", async () => {

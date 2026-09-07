@@ -1,6 +1,6 @@
 import { createContext, createMemo, createSignal, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { NATIVE_HARNESS_IDS, harnessSelectionKey, nativeHarness, connectionHarness, type HarnessSelection, type NativeHarnessId } from "@/platform/identity/harness-selection"
+import { NATIVE_HARNESS_IDS, harnessSelectionKey, isCatalogHarnessId, nativeHarness, connectionHarness, type HarnessSelection, type NativeHarnessId } from "@/platform/identity/harness-selection"
 import { harnessDisplayLabel } from "@/ui/harness-display"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import {
@@ -61,9 +61,9 @@ function focusedWorkspace() {
 /**
  * Settings' explicit (workspace, harness) selection.
  *
- * Providers, provider auth, the connect flows, the custom-provider dialog and
- * the model store all read under it, so the two pickers are the only place the
- * question "which machine, which harness" is answered on these surfaces.
+ * The catalog reads, the provider-auth writes and the dialogs these surfaces
+ * open all carry `scopeRef` and the selected harness, so the two pickers are
+ * the only place the question "which machine, which harness" is answered here.
  */
 export function SettingsScopeProvider(props: ParentProps) {
   const queryOptions = useShellQueryOptions()
@@ -96,7 +96,16 @@ export function SettingsScopeProvider(props: ParentProps) {
     const remembered = current
       ? readWorkspaceHarnessDefault({ serverUrl: getClaxedoServerUrl(), workspaceKey: current.key })
       : undefined
-    return remembered ? harnesses().find((option) => option.id === harnessSelectionKey(remembered)) : undefined
+    // A remembered harness that is no longer offered stays unselected: pointing
+    // these surfaces at a different harness would write credentials somewhere
+    // the workspace never chose.
+    if (remembered) return harnesses().find((option) => option.id === harnessSelectionKey(remembered))
+    // With nothing remembered the question is unanswered, not answered blank,
+    // and both surfaces plus the picker naming them would render empty. A
+    // catalog harness is the one with a provider list to show.
+    const offered = harnesses()
+    return offered.find((option) => option.selection.kind === "native" && isCatalogHarnessId(option.selection.harnessId))
+      ?? offered[0]
   })
   const harnessSelection = () => selectedOption()?.selection
 

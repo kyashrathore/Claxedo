@@ -1,0 +1,49 @@
+import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+import {
+  discoverAIConnections,
+  groupDiscoveryItems,
+  localHarnessStatuses,
+  type LocalHarnessCheck,
+  type LocalHarnessStatus,
+} from "@/features/settings/app-ports"
+import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
+import { readArray, readString } from "@/lib/record"
+
+export async function listStoredCredentialProviders() {
+  const res = await claxedoCredentialRequest(undefined)
+  const credentials = readArray(await res.json(), "credentials") ?? []
+  return new Set(credentials.flatMap((value) => {
+    const providerId = readString(value, "provider_id")
+    return providerId === undefined ? [] : [providerId]
+  }))
+}
+
+/**
+ * What one harness row says, from the two things that can be known about it: a
+ * credential Claxedo already holds, and what the last scan of this machine found.
+ *
+ * A stored credential outranks a scan because it is the thing a session will
+ * actually run with. `unverifiable` reports as `detected` rather than
+ * `connected`: the server has no verifier for it, so a tick would claim a proof
+ * nothing performed.
+ */
+export function agentSetupStatus(
+  check: LocalHarnessCheck,
+  stored: ReadonlySet<string>,
+  discovered: readonly LocalHarnessStatus[],
+): { status: ProviderSetupStatus; detail?: string } {
+  if (check.providerIds.some((id) => stored.has(id))) return { status: "connected" }
+  const row = discovered.find((item) => item.id === check.id)
+  if (!row || row.state === "missing") return { status: "missing" }
+  if (row.state === "broken") return { status: "broken", detail: row.detail }
+  return { status: "detected", detail: row.detail }
+}
+
+/** One scan of this machine, reduced to the two inputs `agentSetupStatus` reads. */
+export async function runProviderDetect() {
+  const [discovery, stored] = await Promise.all([
+    discoverAIConnections({}),
+    listStoredCredentialProviders(),
+  ])
+  return { stored, agents: localHarnessStatuses(groupDiscoveryItems(discovery.items)) }
+}

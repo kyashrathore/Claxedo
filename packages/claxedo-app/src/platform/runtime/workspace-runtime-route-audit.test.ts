@@ -1845,15 +1845,19 @@ describe("workspace runtime route audit", () => {
     const backend = await Bun.file(path.join(root, "platform/runtime/http-backend.ts")).text()
     const sessionPortsText = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
     const claxedoSessionHeader = await Bun.file(path.join(root, sessionHeader)).text()
+    const selectMcp = await Bun.file(path.join(root, "features/agent-plugins/mcp/catalog-dialog.tsx")).text()
 
-    // None of the override copies, `app/connection/status-popover.tsx`, or the
-    // select-mcp dialog and its marketplace API may exist, and session app-ports
-    // must not pin a type to any of them.
+    // Neither override copy nor `app/connection/status-popover.tsx` may exist,
+    // and session app-ports must not pin a type to any of them.
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/status-popover.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "app/connection/status-popover.tsx")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "features/session/ui/dialogs/select-mcp.tsx")).exists()).toBe(false)
+    // The `/mcp` dialog browses the Agent Plugins catalog and posts the same
+    // revision-guarded activation the Directory does; it owns no install state.
+    expect(selectMcp).toMatch(/from "@\/features\/agent-plugins\/api"/)
+    expect(selectMcp).toMatch(/props\.api\.activation\(/)
+    expect(selectMcp).toMatch(/withCurrentRevision\(/)
     expect(sessionPortsText).not.toMatch(/StatusPopover/)
     expect(sessionPortsText).not.toMatch(/marketplace/)
     expect(claxedoSessionHeader).not.toMatch(/StatusPopover/)

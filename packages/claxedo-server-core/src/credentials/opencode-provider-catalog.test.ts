@@ -1,14 +1,24 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { afterEach, describe, expect, test } from "vitest"
-import {
-  opencodeProviderCatalog,
-  OpenCodeCatalogUnavailableError,
-  resolveModelsDevCatalog,
-  type CatalogFetch,
-} from "./opencode-provider-catalog"
+import { afterAll, afterEach, describe, expect, test } from "vitest"
+import type { CatalogFetch } from "./opencode-provider-catalog"
 
+// The catalog reads the credential registry, so importing it opens a database.
+// Point that at a scratch directory BEFORE the import or the suite migrates and
+// writes the developer's real `~/.claxedo/claxedo.db`.
+const dataDir = mkdtempSync(path.join(os.tmpdir(), "claxedo-catalog-data-"))
+const previousDataDir = process.env.CLAXEDO_DATA_DIR
+process.env.CLAXEDO_DATA_DIR = dataDir
+const [
+  { opencodeProviderCatalog, OpenCodeCatalogUnavailableError, resolveModelsDevCatalog },
+  { putCustomProvider },
+  { ClaxedoDB },
+] = await Promise.all([
+  import("./opencode-provider-catalog"),
+  import("./custom-provider"),
+  import("../platform/db/index"),
+])
 const dirs: string[] = []
 
 function cacheFile(name = "catalog.json") {
@@ -44,6 +54,13 @@ function fetchFails(): CatalogFetch {
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+afterAll(() => {
+  ClaxedoDB.close()
+  if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  rmSync(dataDir, { recursive: true, force: true })
 })
 
 describe("opencodeProviderCatalog", () => {
@@ -118,5 +135,60 @@ describe("opencodeProviderCatalog", () => {
     writeFileSync(cache, "{ not json")
     const catalog = await opencodeProviderCatalog({ env: env(cache), fetchImpl: fetchOk() })
     expect(catalog.all.length).toBeGreaterThan(0)
+  })
+})
+
+describe("operator-declared providers in the OpenCode catalog", () => {
+  const acme = {
+    providerID: "acme",
+    name: "Acme",
+    baseURL: "https://api.acme.test/v1",
+    env: ["ACME_API_KEY"],
+    headers: { "X-Acme-Tenant": "prod" },
+    models: { "acme-b": { name: "Acme B" }, "acme-a": { name: "Acme A" } },
+  }
+
+  test("a custom provider joins models.dev's rows with its base URL, headers and models", async () => {
+    putCustomProvider(acme, "org_custom")
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
+
+    const entry = catalog.all.find((provider) => provider.id === "acme")
+    expect(entry).toMatchObject({ name: "Acme", source: "custom", options: { baseURL: acme.baseURL, headers: acme.headers } })
+    expect(Object.keys(entry!.models).sort()).toEqual(["acme-a", "acme-b"])
+    expect(catalog.default.acme).toBe("acme-a")
+    expect(catalog.all.some((provider) => provider.id === "anthropic")).toBe(true)
+  })
+
+  test("another org's catalog does not carry it", async () => {
+    putCustomProvider(acme, "org_custom")
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_other" })
+    expect(catalog.all.some((provider) => provider.id === "acme")).toBe(false)
+  })
+
+  test("it is connected exactly when its environment key is set", async () => {
+    putCustomProvider(acme, "org_custom")
+    const without = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
+    expect(without.connected).not.toContain("acme")
+
+    const with_ = await opencodeProviderCatalog({
+      env: env(cacheFile(), { ACME_API_KEY: "sk-test" }),
+      fetchImpl: fetchOk(),
+      org: "org_custom",
+    })
+    expect(with_.connected).toContain("acme")
+  })
+
+  test("a custom provider replaces the models.dev row it shadows", async () => {
+    putCustomProvider({ ...acme, providerID: "anthropic", name: "Local Anthropic" }, "org_shadow")
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_shadow" })
+    const rows = catalog.all.filter((provider) => provider.id === "anthropic")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ name: "Local Anthropic", source: "custom" })
+  })
+
+  test("no configured secret reaches the served catalog", async () => {
+    putCustomProvider(acme, "org_custom")
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
+    expect(JSON.stringify(catalog)).not.toContain("sk-")
   })
 })

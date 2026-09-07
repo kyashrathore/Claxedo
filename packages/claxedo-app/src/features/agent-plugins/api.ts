@@ -44,6 +44,9 @@ export type PluginCandidate = {
   sourceKind: AgentPluginSourceKind | null
   source: PluginSource | null
   icon?: PluginIcon
+  /** Browse category ids the plugin's manifest declares; the Directory labels the ones it knows. */
+  categories?: string[]
+  featured?: boolean
   skills: PluginSkill[]
   sourceRevision: string | null
   relativePath: string | null
@@ -131,6 +134,10 @@ function pluginSource(value: unknown): value is PluginSource | null {
     && optionalString(value.repository)
 }
 
+function pluginCategories(value: unknown): value is string[] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every(isString))
+}
+
 function pluginSkills(value: unknown): value is PluginSkill[] {
   return Array.isArray(value) && value.every((skill) => isRecord(skill)
     && typeof skill.name === "string"
@@ -145,6 +152,8 @@ function pluginCandidate(value: unknown): value is PluginCandidate {
     || !(value.sourceKind === null || isAgentPluginSourceKind(value.sourceKind))
     || !pluginSource(value.source)
     || !pluginIcon(value.icon)
+    || !pluginCategories(value.categories)
+    || !(value.featured === undefined || typeof value.featured === "boolean")
     || !pluginSkills(value.skills)
     || !optionalString(value.sourceRevision)
     || !optionalString(value.relativePath)

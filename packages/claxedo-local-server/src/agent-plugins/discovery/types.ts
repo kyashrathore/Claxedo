@@ -15,6 +15,17 @@ export type MachineInstalledHarness = {
   entries: MachineInstalledEntry[]
 }
 
+/** A harness whose machine-wide skills directory discovery reads. */
+export type MachineSkillHarnessId = "claude" | "opencode" | "codex" | "cursor" | "agents"
+
+/** One `SKILL.md` folder a user installed for a harness outside Claxedo. */
+export type MachineSkill = {
+  name: string
+  harnessId: MachineSkillHarnessId
+  root: string
+}
+
 export type MachineInstalledResult = {
   harnesses: MachineInstalledHarness[]
+  skills: MachineSkill[]
 }

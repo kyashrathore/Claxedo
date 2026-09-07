@@ -108,6 +108,36 @@ describe("Agent Plugins client", () => {
     await reject({ source: { id: "claxedo", kind: "machine", label: "This machine" } })
   })
 
+  test("keeps the browse categories and the featured flag a candidate declares", async () => {
+    const api = agentPluginApi({
+      baseUrl: "https://claxedo.test",
+      request: async () => Response.json(catalogBody(
+        candidate({ categories: ["skills", "productivity"], featured: true }),
+        candidate(),
+      )),
+    })
+
+    const catalog = await api.catalog()
+
+    expect(catalog.candidates[0]).toMatchObject({ categories: ["skills", "productivity"], featured: true })
+    expect(catalog.candidates[1].categories).toBeUndefined()
+    expect(catalog.candidates[1].featured).toBeUndefined()
+  })
+
+  test("rejects a candidate whose categories or featured flag break the contract", async () => {
+    const reject = async (overrides: Record<string, unknown>) => {
+      const api = agentPluginApi({
+        baseUrl: "https://claxedo.test",
+        request: async () => Response.json(catalogBody(candidate(overrides))),
+      })
+      await expect(api.catalog()).rejects.toThrow("did not match its API contract")
+    }
+
+    await reject({ categories: "skills" })
+    await reject({ categories: ["skills", 7] })
+    await reject({ featured: "yes" })
+  })
+
   test("reads one skill from the plugin's own route under the same project scope as the catalog", async () => {
     const calls: string[] = []
     const api = agentPluginApi({

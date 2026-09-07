@@ -70,7 +70,7 @@
     "features/workspaces/actions/project-actions.tsx",
     "features/review/ui/review-vcs-cache.ts",
     "features/terminal/workbench/pane-terminal-recovery.ts",
-    "features/settings/ui/providers.tsx",
+    "features/settings/ui/harness-providers-section.tsx",
     "app/providers/global-sync/provider.tsx",
     "platform/sync/global-sync/queue.ts",
     "features/session/providers/permission-auto-response-cache.ts",

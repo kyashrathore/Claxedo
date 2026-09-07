@@ -943,7 +943,7 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      const harnessSection = page.locator('[data-component="pi-providers-section"]')
       await page.locator('[data-action="settings-scope-harness"]').click()
       await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(harnessSection.getByText("Anthropic")).toBeVisible()
@@ -977,7 +977,7 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      const harnessSection = page.locator('[data-component="pi-providers-section"]')
       await page.locator('[data-action="settings-scope-harness"]').click()
       await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       const envRow = harnessSection.locator('[data-provider="anthropic"]')
@@ -1010,7 +1010,7 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
-      const row = page.locator('[data-component="harness-providers-section"] [data-provider="clinepass-2"]')
+      const row = page.locator('[data-component="pi-providers-section"] [data-provider="clinepass-2"]')
       await page.locator('[data-action="settings-scope-harness"]').click()
       await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(row.getByText("Config", { exact: true })).toBeVisible()

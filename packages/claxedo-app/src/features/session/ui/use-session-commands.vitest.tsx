@@ -334,19 +334,25 @@ describe("session command contracts", () => {
     return commands
   }
 
-  // `mcp.toggle` is deliberately NOT here. Its dialog read the retired
-  // marketplace's install state, so retiring that subsystem retired the command
-  // with it; plugin-contributed MCP servers are governed from the Agent Plugins
-  // catalog instead. This is a knowing divergence from upstream.
   test("keeps upstream model, file, fork, and navigation commands registered", () => {
     const ids = collectCommands().map((command) => command.id)
 
     expect(ids).toContain("model.choose")
     expect(ids).toContain("file.open")
-    expect(ids).not.toContain("mcp.toggle")
+    expect(ids).toContain("mcp.toggle")
     expect(ids).toContain("session.fork")
     expect(ids).toContain("message.previous")
     expect(ids).toContain("message.next")
+  })
+
+  test("the MCP command answers to /mcp and mod+;", () => {
+    const mcp = collectCommands().find((command) => command.id === "mcp.toggle")
+
+    expect(mcp).toMatchObject({
+      keybind: "mod+;",
+      slash: "mcp",
+      category: "command.category.mcp",
+    })
   })
 
   test("scopes Open File to files while the command palette keeps the combined mode", async () => {

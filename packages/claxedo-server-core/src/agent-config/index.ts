@@ -220,6 +220,9 @@ export async function loadUserConfig(): Promise<UserAgentConfig> {
       "User agent config contains invalid JSON",
     )
   }
+  const row = asRecord(parsed)
+  const legacyVersion = row ? legacyConfigVersion(row) : undefined
+  if (row && legacyVersion !== undefined) return migrateLegacyUserConfig(row, raw, legacyVersion)
   return validateUserAgentConfig(parsed)
 }
 
@@ -234,20 +237,86 @@ export async function saveUserConfig(config: UserAgentConfig): Promise<void> {
   if (revisionProblems.length > 0) {
     throw invalidSchema(revisionProblems.map((problem) => `${problem.connectionId}: ${problem.problem}`).join("; "))
   }
+  await writeUserConfigFile(next)
+  log.info("Saved user agent config", {
+    mcpServers: Object.keys(next.mcp),
+    connections: Object.keys(next.connections),
+  })
+}
+
+async function writeUserConfigFile(config: UserAgentConfig): Promise<void> {
   await fs.promises.mkdir(claxedoDir(), { recursive: true, mode: 0o755 })
   const target = userConfigFile()
   const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`
   try {
-    await fs.promises.writeFile(temporary, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 })
+    await fs.promises.writeFile(temporary, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 })
     await fs.promises.rename(temporary, target)
   } catch (error) {
     await fs.promises.unlink(temporary).catch(() => undefined)
     throw error
   }
-  log.info("Saved user agent config", {
-    mcpServers: Object.keys(next.mcp),
-    connections: Object.keys(next.connections),
+}
+
+// ── Forward migration of pre-v3 files ──────────────────────────────────────
+
+/**
+ * The legacy schema version a file is written in, or undefined when it is not
+ * legacy. The v2-era loader persisted no `version` field at all, so a file
+ * without one is a v2 file.
+ */
+function legacyConfigVersion(row: Record<string, unknown>): number | undefined {
+  if (row.version === undefined) return 2
+  if (row.version === 1 || row.version === 2) return row.version
+  return undefined
+}
+
+async function migrateLegacyUserConfig(
+  row: Record<string, unknown>,
+  raw: string,
+  legacyVersion: number,
+): Promise<UserAgentConfig> {
+  const defaultHarness = legacyNativeDefault(row.harness)
+  const migrated = validateUserAgentConfig({
+    version: 3,
+    mcp: row.mcp ?? {},
+    connections: {},
+    ...(defaultHarness ? { defaultHarness } : {}),
+    auth: row.auth ?? {},
+    sandbox_driver: row.sandbox_driver,
   })
+  const carried = new Set(["version", "mcp", "auth", "sandbox_driver", ...(defaultHarness ? ["harness"] : [])])
+  const dropped = Object.keys(row).filter((key) => !carried.has(key))
+
+  const backup = path.join(claxedoDir(), `user-agent-config.legacy-v${legacyVersion}.json`)
+  await fs.promises.writeFile(backup, raw, { flag: "wx", mode: 0o600 }).catch((error: unknown) => {
+    if (isNodeError(error, "EEXIST")) return
+    throw error
+  })
+  await writeUserConfigFile(migrated)
+
+  log.info("Migrated user agent config to v3", {
+    from: legacyVersion,
+    backup,
+    defaultHarness: migrated.defaultHarness?.harnessId,
+  })
+  if (dropped.length > 0) {
+    log.warn("Dropped legacy user agent config fields with no v3 equivalent", {
+      dropped,
+      backup,
+    })
+  }
+  return migrated
+}
+
+/**
+ * A legacy `harness` survives only as an explicit native selection. Legacy ACP
+ * identities carry a bare command, not the provider-validated descriptor a v3
+ * connection requires, so they are dropped rather than half-translated.
+ */
+function legacyNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, { kind: "native" }> | undefined {
+  const row = asRecord(input)
+  if (!row || row.access !== "native" || typeof row.id !== "string" || !isNativeHarnessId(row.id)) return undefined
+  return { kind: "native", harnessId: row.id }
 }
 
 function emptyUserAgentConfig(): UserAgentConfig {

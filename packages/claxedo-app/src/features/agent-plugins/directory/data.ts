@@ -7,7 +7,7 @@ import { isAgentPluginSourceKind, type AgentPluginHarness, type AgentPluginSourc
  * on their own.
  *
  * `machineInstalled` is a LOCAL-rail read: only the machine's own sidecar can
- * see `~/.claude`, `~/.cursor` and `$CODEX_HOME`. Composition passes a signed
+ * see the harness directories under the user's home. Composition passes a signed
  * `sources` half and a local `machineInstalled` half; nothing here decides
  * that, so the account-backed desktop implementation (WP6) can replace the
  * signed half alone.
@@ -63,7 +63,17 @@ export type MachineInstalledHarness = {
   entries: MachineInstalledEntry[]
 }
 
-export type MachineInstalled = { harnesses: MachineInstalledHarness[] }
+/** A harness that keeps a machine-wide skills directory the sidecar scans. */
+export type MachineSkillHarnessId = Extract<AgentPluginHarness, "claude" | "cursor" | "codex" | "opencode"> | "agents"
+
+/** One `SKILL.md` folder a harness carries, discovered on this machine. */
+export type MachineSkill = {
+  name: string
+  harnessId: MachineSkillHarnessId
+  root: string
+}
+
+export type MachineInstalled = { harnesses: MachineInstalledHarness[]; skills: MachineSkill[] }
 
 /**
  * A failed source registration, carrying the probe diagnostics the 422 body
@@ -144,6 +154,14 @@ export function directorySourceFailure(status: number, body: unknown, fallback: 
   return new DirectorySourceError(code, message, diagnostics(readField(error, "diagnostics")))
 }
 
+const MACHINE_SKILL_HARNESSES: readonly MachineSkillHarnessId[] = ["claude", "cursor", "codex", "opencode", "agents"]
+
+function machineSkill(value: unknown): MachineSkill | undefined {
+  if (!isRecord(value) || typeof value.name !== "string" || typeof value.root !== "string") return undefined
+  const harnessId = MACHINE_SKILL_HARNESSES.find((id) => id === value.harnessId)
+  return harnessId ? { name: value.name, harnessId, root: value.root } : undefined
+}
+
 export function parseDirectorySourceList(body: unknown): { sources: DirectorySource[] } {
   const rows = readArray(body, "sources") ?? []
   return { sources: rows.flatMap((row) => {
@@ -193,10 +211,15 @@ export function directoryApi(input: { baseUrl: string; request: RequestFn }): Di
       if (!response.ok) throw await failure(response, "Could not read this machine's harness installs")
       const body: unknown = await response.json().catch(() => undefined)
       const rows = readArray(body, "harnesses") ?? []
+      const skillRows = readArray(body, "skills") ?? []
       return {
         harnesses: rows.flatMap((row) => {
           const harness = machineHarness(row)
           return harness ? [harness] : []
+        }),
+        skills: skillRows.flatMap((row) => {
+          const skill = machineSkill(row)
+          return skill ? [skill] : []
         }),
       }
     },

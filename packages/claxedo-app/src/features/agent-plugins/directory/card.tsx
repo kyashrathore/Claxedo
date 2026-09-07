@@ -67,14 +67,17 @@ export function DirectoryCard(props: {
 }
 
 /**
- * A Personal row: what another harness installed. Informational, no actions.
+ * A Personal row: a plugin or a skill another harness installed. Informational,
+ * no actions.
  *
  * The section title already says these are the user's own installs, so the row
- * carries only what distinguishes one from another — the harness it lives in
- * and the marketplace it came from. Its path is the row's `title`.
+ * carries only what distinguishes one from another — the harness it lives in,
+ * whether it is a skill, and the marketplace a plugin came from. Its path is
+ * the row's `title`.
  */
 export function personalEntryKey(entry: PersonalEntry) {
-  return `${entry.harnessId}:${entry.marketplace ?? ""}:${entry.name}`
+  const marketplace = entry.kind === "plugin" ? entry.marketplace ?? "" : ""
+  return `${entry.kind}:${entry.harnessId}:${marketplace}:${entry.name}`
 }
 
 export function PersonalCard(props: { entry: PersonalEntry; selected?: boolean; onOpen: () => void }) {
@@ -94,7 +97,12 @@ export function PersonalCard(props: { entry: PersonalEntry; selected?: boolean; 
         <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weak">
           {props.entry.harnessId}
         </span>
-        <Show when={props.entry.marketplace}>
+        <Show when={props.entry.kind === "skill"}>
+          <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weaker">
+            skill
+          </span>
+        </Show>
+        <Show when={props.entry.kind === "plugin" ? props.entry.marketplace : undefined}>
           {(marketplace) => (
             <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weaker">
               {marketplace()}

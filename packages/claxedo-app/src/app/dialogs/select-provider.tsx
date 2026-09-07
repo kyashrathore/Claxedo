@@ -7,7 +7,8 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DialogConnectProvider } from "@/app/dialogs/connect-provider"
 import { useLanguage } from "@/platform/i18n/provider"
-import { ProviderList } from "./provider-list"
+import { DialogCustomProvider } from "@/app/dialogs/custom-provider"
+import { CUSTOM_PROVIDER_ID, ProviderList } from "./provider-list"
 
 export const DialogSelectProvider: Component<{ harness: string; scope?: string }> = (props) => {
   const dialog = useDialog()
@@ -19,6 +20,10 @@ export const DialogSelectProvider: Component<{ harness: string; scope?: string }
         harness={props.harness}
         scope={props.scope}
         onSelect={(providerId) => {
+          if (providerId === CUSTOM_PROVIDER_ID) {
+            void dialog.show(() => <DialogCustomProvider scope={props.scope} />)
+            return
+          }
           void dialog.show(() => (
             <DialogConnectProvider provider={providerId} harness={props.harness} scope={props.scope} />
           ))

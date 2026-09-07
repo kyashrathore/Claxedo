@@ -65,6 +65,8 @@ async function catalog(app: Hono, suffix = "") {
       updateAvailable: boolean
       sourceAvailable: boolean
       icon?: { kind: string; url?: string; text?: string }
+      categories?: string[]
+      featured?: boolean
       skills: Array<{ name: string; description: string; path: string }>
       source: { id: string; kind: string; label: string; repository?: string } | null
       harnesses: Record<string, { explicit: boolean | null }>
@@ -141,6 +143,23 @@ describe("unsigned Agent Plugins public route contribution", () => {
       source: { id: "claxedo-public", kind: "claxedo", label: "Claxedo" },
     })
     expect(first.candidates[0]).not.toHaveProperty("sourceLabel")
+  })
+
+  test("serves the browse categories and featured flag the manifest declares, and omits both when it declares none", async () => {
+    const subject = await fixture()
+    expect(await catalog(subject.app).then((body) => body.candidates[0])).not.toHaveProperty("categories")
+
+    await fs.writeFile(path.join(subject.plugin, "plugin.json"), JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: "review",
+      version: "1.0.0",
+      extensions: { claxedo: { categories: ["agent-orchestration", "not-a-category"], featured: true } },
+    }))
+
+    const candidate = (await catalog(subject.app, "/refresh")).candidates[0]
+
+    expect(candidate.categories).toEqual(["agent-orchestration"])
+    expect(candidate.featured).toBe(true)
   })
 
   test("serves a skill's catalog markdown before install and the retained copy after the source disappears", async () => {

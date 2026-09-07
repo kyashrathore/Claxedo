@@ -15,6 +15,7 @@ import type { BrowserRegistry } from "./browser/registry"
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { IS_PACKAGED } from "./constants"
 import { isSafeExternalUrl } from "./navigation-guard"
+import { openInVerdict } from "./open-in-guard"
 import { runRestart } from "../shared/restart-policy"
 import { registerProcessDiagnosticsIpc } from "./diagnostics/ipc"
 import type { Profiler } from "./diagnostics/profiler"
@@ -167,6 +168,10 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
+    const verdict = await openInVerdict({ path, app }, { platform: process.platform, resolveAppPath: deps.resolveAppPath })
+    // Thrown rather than dropped, for the reason `installIpcCallerGuard` gives:
+    // a rejection reaches the renderer as a failed `invoke` with a stack.
+    if (!verdict.allowed) throw new Error(`ipc "open-path" rejected: ${verdict.reason}`)
     // Answers nothing on either branch — `ElectronAPI.openPath` is
     // `Promise<void>`, so `shell.openPath`'s error string was already dropped.
     if (!app) {

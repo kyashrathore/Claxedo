@@ -10,4 +10,6 @@ export {
   type MachineInstalled,
   type MachineInstalledEntry,
   type MachineInstalledHarness,
+  type MachineSkill,
+  type MachineSkillHarnessId,
 } from "./data"

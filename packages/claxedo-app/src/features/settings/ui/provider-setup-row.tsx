@@ -4,8 +4,7 @@ import { Tag } from "@opencode-ai/ui/tag"
 import { createSignal, Show, type Component } from "solid-js"
 import { ProviderConnectForm } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
-
-export type ProviderSetupStatus = "connected" | "detected" | "broken" | "missing"
+import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
 
 export function providerSetupStatusLabel(status: ProviderSetupStatus, language: ReturnType<typeof useLanguage>) {
   if (status === "connected") return language.t("settings.providers.status.connected")
@@ -25,12 +24,21 @@ export const ProviderSetupRow: Component<{
   /** The workspace-or-directory scope those credentials belong to. */
   scope?: string
   note?: string
+  /**
+   * Connect through the harness's own flow instead of the inline API-key form —
+   * a machine login is not a key this row could take.
+   */
+  onConnect?: () => void
   onConnected?: () => void | Promise<void>
 }> = (props) => {
   const language = useLanguage()
   const [expanded, setExpanded] = createSignal(false)
   const connected = () => props.status === "connected"
   const showStatus = () => props.status !== "missing"
+  const toggle = () => {
+    if (props.onConnect) return props.onConnect()
+    setExpanded((value) => !value)
+  }
 
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
@@ -41,7 +49,7 @@ export const ProviderSetupRow: Component<{
           disabled={connected()}
           onClick={() => {
             if (connected()) return
-            setExpanded((value) => !value)
+            toggle()
           }}
         >
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
@@ -50,7 +58,7 @@ export const ProviderSetupRow: Component<{
             <Show when={props.note}>
               {(note) => <span class="text-12-regular text-text-weak">{note()}</span>}
             </Show>
-            <Show when={props.detail && !expanded()}>
+            <Show when={!expanded() && props.detail}>
               {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
             </Show>
           </div>
@@ -60,11 +68,7 @@ export const ProviderSetupRow: Component<{
             <Tag>{providerSetupStatusLabel(props.status, language)}</Tag>
           </Show>
           <Show when={!connected()}>
-            <Button
-              size="large"
-              variant="ghost"
-              onClick={() => setExpanded((value) => !value)}
-            >
+            <Button size="large" variant="ghost" onClick={toggle}>
               {expanded() ? language.t("common.cancel") : language.t("common.connect")}
             </Button>
           </Show>

@@ -1,7 +1,8 @@
-import { activationSummary, defaultOutcome, pluginStatus, skillBody } from "./view"
+import { activationSummary, categoryChips, defaultOutcome, directorySections, pluginStatus, skillBody } from "./view"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 
 const clients = new Set<QueryClient>()
 import type { JSX } from "solid-js"
@@ -73,6 +74,8 @@ function candidate(input: {
   mcpServers?: PluginCandidate["mcpServers"]
   skills?: PluginSkill[]
   description?: string
+  categories?: string[]
+  featured?: boolean
 }): PluginCandidate {
   return {
     pluginInstanceId: `["${input.source.id}","${input.name}"]`,
@@ -80,6 +83,8 @@ function candidate(input: {
     sourceKind: input.source.kind,
     source: input.source,
     icon: { kind: "monogram", text: input.name.slice(0, 2).toUpperCase() },
+    ...(input.categories ? { categories: input.categories } : {}),
+    ...(input.featured ? { featured: true } : {}),
     skills: input.skills ?? [],
     sourceRevision: "main",
     relativePath: `catalog/${input.name}/plugin.json`,
@@ -149,6 +154,10 @@ const MACHINE = {
       ],
     },
   ],
+  skills: [
+    { name: "pdf", harnessId: "claude", root: "~/.claude/skills/pdf" },
+    { name: "review", harnessId: "agents", root: "~/.agents/skills/review" },
+  ],
 }
 
 type Recorded = { url: string; method: string; body?: unknown }
@@ -211,13 +220,15 @@ async function renderDirectory(options: Parameters<typeof harness>[0] & {
   const { AgentPluginDirectory } = await import("./directory")
   render(() => (
     <QueryClientProvider client={client}>
-      <AgentPluginDirectory
-        mode={options.mode ?? "signed"}
-        api={agentPluginApi({ baseUrl: BASE, request: context.fetchMock })}
-        directory={directoryApi({ baseUrl: BASE, request: context.fetchMock })}
-        connections={context.port}
-        onAdd={onAdd}
-      />
+      <DialogProvider>
+        <AgentPluginDirectory
+          mode={options.mode ?? "signed"}
+          api={agentPluginApi({ baseUrl: BASE, request: context.fetchMock })}
+          directory={directoryApi({ baseUrl: BASE, request: context.fetchMock })}
+          connections={context.port}
+          onAdd={onAdd}
+        />
+      </DialogProvider>
     </QueryClientProvider>
   ))
   await screen.findByRole("button", { name: "composio" })
@@ -235,6 +246,19 @@ function catalogRefreshes(recorded: Recorded[]) {
 async function openPane(name: string) {
   await fireEvent.click(screen.getByRole("button", { name }))
   return await screen.findByRole("complementary", { name: `${name} details` })
+}
+
+/**
+ * Answer the confirm the Directory raises before a destructive action.
+ *
+ * The dialog host disposes a closed dialog on a timer, and its element lives in
+ * a portal under `document.body` that `cleanup()` does not reach — so every
+ * answer waits the dialog out rather than leaving it for the next test to find.
+ */
+async function answerConfirm(label: string) {
+  const dialog = await screen.findByRole("dialog")
+  await fireEvent.click(within(dialog).getByRole("button", { name: label }))
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
 }
 
 const posted = (recorded: Recorded[], path: string) => recorded.filter((entry) => entry.url === path && entry.method === "POST")
@@ -324,6 +348,68 @@ describe("Agent Plugin Directory sections", () => {
     expect(screen.queryByRole("form", { name: "Add source" })).toBeNull()
     await fireEvent.click(screen.getByRole("button", { name: "+ Add source" }))
     expect(screen.getByRole("form", { name: "Add source" })).toBeVisible()
+  })
+})
+
+const CATEGORIZED = {
+  candidates: [
+    candidate({ name: "composio", installed: true, source: CLAXEDO, categories: ["mcp-servers"] }),
+    candidate({ name: "posthog", installed: false, source: CLAXEDO, categories: ["data-and-analytics"], featured: true }),
+    candidate({ name: "granola", installed: false, source: ACME, categories: ["productivity"] }),
+    candidate({ name: "clangd", installed: false, source: CLAXEDO }),
+  ],
+}
+
+describe("Agent Plugin Directory categories and Featured", () => {
+  test("a catalog with no declared category earns no chip row", async () => {
+    await renderDirectory()
+
+    expect(screen.queryByRole("tablist", { name: "Categories" })).toBeNull()
+  })
+
+  test("only the categories the catalog declares become chips", async () => {
+    await renderDirectory({ catalog: CATEGORIZED })
+
+    const chips = within(await screen.findByRole("tablist", { name: "Categories" }))
+      .getAllByRole("tab").map((tab) => tab.textContent)
+    expect(chips).toEqual(["All categories", "MCP Servers1", "Data & Analytics1", "Productivity1"])
+  })
+
+  test("a category chip narrows the catalog and stands the Featured section down", async () => {
+    await renderDirectory({ catalog: CATEGORIZED })
+    expect(await screen.findByRole("region", { name: "Featured" })).toBeVisible()
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Productivity/ }))
+
+    expect(screen.getByRole("button", { name: "granola" })).toBeVisible()
+    expect(screen.queryByRole("button", { name: "composio" })).toBeNull()
+    expect(screen.queryByRole("region", { name: "Featured" })).toBeNull()
+    expect(screen.queryByRole("region", { name: "Personal" })).toBeNull()
+  })
+
+  test("a featured offer is listed once, under Featured rather than its source", async () => {
+    await renderDirectory({ catalog: CATEGORIZED })
+
+    const featured = await screen.findByRole("region", { name: "Featured" })
+    expect(within(featured).getByRole("button", { name: "posthog" })).toBeVisible()
+    expect(screen.getAllByRole("button", { name: "posthog" })).toHaveLength(1)
+    expect(within(screen.getByRole("region", { name: "Claxedo" })).queryByRole("button", { name: "posthog" })).toBeNull()
+  })
+
+  test("an installed plugin is never pulled into Featured", () => {
+    const sections = directorySections({
+      candidates: [candidate({ name: "composio", installed: true, source: CLAXEDO, featured: true })],
+      sources: [{ id: CLAXEDO.id, label: CLAXEDO.label }],
+      query: "",
+      filter: "all",
+    })
+
+    expect(sections.map((section) => section.id)).toEqual(["installed"])
+  })
+
+  test("a category no candidate declares earns no chip", () => {
+    expect(categoryChips(CATEGORIZED.candidates).map((chip) => chip.id))
+      .toEqual(["mcp-servers", "data-and-analytics", "productivity"])
   })
 })
 
@@ -482,6 +568,7 @@ describe("Agent Plugin Directory actions", () => {
     const pane = await openPane("context7")
 
     await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
+    await answerConfirm("Disable")
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
     expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
@@ -569,8 +656,61 @@ describe("Agent Plugin Directory actions", () => {
     const pane = await openPane("composio")
 
     await fireEvent.click(await within(pane).findByRole("menuitem", { name: "Disconnect" }))
+    await answerConfirm("Disconnect")
 
     await waitFor(() => expect(disconnect).toHaveBeenCalledWith("conn-1"))
+  })
+})
+
+describe("Agent Plugin Directory destructive confirmation", () => {
+  test("Disable names what it removes and posts nothing until it is confirmed", async () => {
+    const { recorded } = await renderDirectory()
+    const pane = await openPane("context7")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Disable context7?")).toBeVisible()
+    expect(within(dialog).getByText("This removes its config and materialized files.")).toBeVisible()
+
+    await answerConfirm("Cancel")
+
+    expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(0)
+  })
+
+  test("Enable is not destructive, so it never raises a confirm", async () => {
+    const { recorded } = await renderDirectory()
+    const pane = await openPane("clangd")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  test("cancelling Disconnect leaves the connection alone", async () => {
+    const { disconnect } = await renderDirectory({
+      connections: [{ id: "conn-1", integrationId: "mcp-knowledge", scope: "personal", status: "connected" }],
+    })
+    const pane = await openPane("composio")
+
+    await fireEvent.click(await within(pane).findByRole("menuitem", { name: "Disconnect" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Disconnect knowledge?")).toBeVisible()
+    await answerConfirm("Cancel")
+
+    expect(disconnect).not.toHaveBeenCalled()
+  })
+
+  test("cancelling Remove source deletes nothing", async () => {
+    const { recorded } = await renderDirectory()
+
+    await fireEvent.click(screen.getByRole("tab", { name: /acme\/agent-plugins/ }))
+    await fireEvent.click(screen.getByRole("button", { name: "Remove acme/agent-plugins" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Remove acme/agent-plugins?")).toBeVisible()
+    await answerConfirm("Cancel")
+
+    expect(recorded.some((entry) => entry.method === "DELETE")).toBe(false)
   })
 })
 
@@ -592,6 +732,7 @@ describe("Agent Plugin Directory unsigned mode", () => {
     const pane = await screen.findByRole("complementary", { name: "context7 details" })
 
     await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
+    await answerConfirm("Disable")
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
     expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toEqual({
@@ -614,6 +755,7 @@ describe("Agent Plugin Directory sources", () => {
 
     await fireEvent.click(screen.getByRole("tab", { name: /acme\/agent-plugins/ }))
     await fireEvent.click(screen.getByRole("button", { name: "Remove acme/agent-plugins" }))
+    await answerConfirm("Remove")
 
     await waitFor(() => expect(recorded.some((entry) =>
       entry.method === "DELETE" && entry.url === "/api/claxedo/plugins/sources/src-acme")).toBe(true))
@@ -797,6 +939,38 @@ describe("Personal entries", () => {
     expect(within(pane).getByText(/\.cursor\/plugins\/local/)).toBeTruthy()
     await fireEvent.click(within(pane).getByRole("button", { name: "Close" }))
     expect(screen.queryByRole("complementary", { name: "figma details" })).toBeNull()
+  })
+
+  test("a skill the machine scan found is a Personal row alongside the plugins", async () => {
+    await renderDirectory()
+    const personal = within(await screen.findByRole("region", { name: "Personal" }))
+
+    const pdf = personal.getByRole("button", { name: /pdf/ })
+    expect(within(pdf).getByText("claude")).toBeVisible()
+    expect(within(pdf).getByText("skill")).toBeVisible()
+    expect(personal.getByRole("button", { name: /review/ })).toBeVisible()
+    expect(personal.getByRole("button", { name: /figma/ })).toBeVisible()
+  })
+
+  test("a skill's pane reports where it lives and offers nothing that touches the disk", async () => {
+    await renderDirectory()
+
+    await fireEvent.click(await screen.findByRole("button", { name: /pdf/ }))
+    const pane = await screen.findByRole("complementary", { name: "pdf details" })
+
+    expect(within(pane).getByText("Claude Code", { selector: "dd" })).toBeVisible()
+    expect(within(pane).getByText("skill", { selector: "dd" })).toBeVisible()
+    expect(within(pane).getByText("~/.claude/skills/pdf")).toBeVisible()
+    expect(within(pane).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(["Close"])
+  })
+
+  test("a harness with no plugin adapter still names its skills", async () => {
+    await renderDirectory()
+
+    await fireEvent.click(await screen.findByRole("button", { name: /review/ }))
+    const pane = await screen.findByRole("complementary", { name: "review details" })
+
+    expect(within(pane).getByText("AGENTS.md harnesses", { selector: "dd" })).toBeVisible()
   })
 })
 

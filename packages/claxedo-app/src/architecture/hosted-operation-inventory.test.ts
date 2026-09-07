@@ -51,8 +51,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
   "features/workspaces/data/project-api.ts":
     "Projects live on servers with a filesystem (`/api/claxedo/projects` on the local and self-hosted servers); the hosted plane has no such route, so this is not a Hosted Server AccountPort surface.",
-  "features/settings/ui/providers.tsx":
-    "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest; hosted account identity stays on account-section.",
+  "features/settings/ui/harness-providers-section.tsx":
+    "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest, and the harness auth entry is dropped through the local server's own `/auth/:providerId`; hosted account identity stays on account-section.",
   "features/settings/ui/sandbox-section.tsx":
     "Sandbox driver settings talk only to the local sidecar `/api/workspace/drivers*`; not a Hosted Server AccountPort surface.",
   "features/onboarding/sandbox-provider-query.ts":

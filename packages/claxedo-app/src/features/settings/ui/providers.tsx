@@ -1,146 +1,29 @@
-// Claxedo adds mobile settings navigation and Claxedo-owned terminal and sandbox tabs.
-import { Button } from "@opencode-ai/ui/button"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Tag } from "@opencode-ai/ui/tag"
-import { TextField } from "@opencode-ai/ui/text-field"
-import { showToast } from "@opencode-ai/ui/toast"
-import { useProviders } from "@/features/settings/app-ports"
-import { createEffect, createMemo, createSignal, type Component, For, Show } from "solid-js"
-import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
-import { popularProviders } from "@/platform/query/provider-list"
-import { SettingsList } from "@/features/settings/ui/list"
+import { For, Show, type Component } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
-import { claxedoCredentialRequest } from "@/platform/api/credential-request"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { queryClient } from "@/platform/query/query-client"
-import { hasManagedProviderCredentials } from "@/platform/identity/harness-selection"
-import {
-  canDisconnectProvider,
-  disconnectProvider,
-  providerSourceTagKey,
-  removeProviderAuthEntry,
-} from "@/features/settings/provider-settings-logic"
-import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
-import { SettingsScopeSelector } from "@/features/settings/ui/scope-selector"
+import { hasManagedProviderCredentials, type NativeHarnessId } from "@/platform/identity/harness-selection"
 import { useSettingsScope } from "@/features/settings/scope/settings-scope"
-
-type ProviderSource = "env" | "api" | "config" | "custom"
-type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
+import { SettingsAgentsSection } from "@/features/settings/ui/agents-section"
+import { HarnessProvidersSection } from "@/features/settings/ui/harness-providers-section"
+import { SettingsScopeSelector } from "@/features/settings/ui/scope-selector"
 
 /**
- * Above this size a catalog is the models.dev registry (~179 entries) rather
- * than a harness's own binding set, and the unsearched page shows the popular
- * and connected rows instead of all of it.
+ * The harnesses whose provider credentials Claxedo holds. Both are shown at
+ * once rather than one at a time: a workspace can run either, and a login
+ * connected under one of them is not a login under the other.
  */
-const FULL_CATALOG_LIMIT = 24
-
-const PROVIDER_NOTES = [
-  { match: (id: string) => id === "opencode", key: "dialog.provider.opencode.note" },
-  { match: (id: string) => id === "opencode-go", key: "dialog.provider.opencodeGo.tagline" },
-  { match: (id: string) => id === "anthropic", key: "dialog.provider.anthropic.note" },
-  { match: (id: string) => id.startsWith("github-copilot"), key: "dialog.provider.copilot.note" },
-  { match: (id: string) => id === "openai", key: "dialog.provider.openai.note" },
-  { match: (id: string) => id === "google", key: "dialog.provider.google.note" },
-  { match: (id: string) => id === "openrouter", key: "dialog.provider.openrouter.note" },
-  { match: (id: string) => id === "vercel", key: "dialog.provider.vercel.note" },
-] as const
+const CATALOG_SECTIONS: ReadonlyArray<{
+  harness: NativeHarnessId
+  titleKey: string
+  descriptionKey?: string
+}> = [
+  { harness: "pi", titleKey: "settings.providers.section.pi", descriptionKey: "settings.providers.pi.description" },
+  { harness: "opencode", titleKey: "settings.providers.section.opencode" },
+]
 
 export const SettingsProviders: Component = () => {
   const language = useLanguage()
   const scope = useSettingsScope()
-  const providers = useProviders(() => scope.nativeHarness() ?? "", scope.scopeRef)
-  const providerList = createMemo(() => providers.state())
-  const providerItems = createMemo(() => Array.from(providerList().all.values()))
-
-  const source = (item: ProviderItem): ProviderSource | undefined => {
-    if (!("source" in item)) return undefined
-    const value = item.source
-    if (value === "env" || value === "api" || value === "config" || value === "custom") return value
-    return undefined
-  }
-
-  const [search, setSearch] = createSignal("")
-
-  createEffect(() => {
-    const ids = providerList().connected.filter((id) => {
-      const provider = providerList().all.get(id)
-      return provider && source(provider) === undefined
-    })
-    if (ids.length === 0) return
-    // Hydrate connected rows in the background; some env-only providers are listed
-    // as connected but have no runtime catalog entry.
-    void Promise.allSettled(ids.map((id) => providers.load(id)))
-  })
-
-  const rows = createMemo(() => {
-    const query = search().trim().toLowerCase()
-    const connected = new Set(providerList().connected)
-    const items = providerItems()
-    return items
-      .filter((item) => {
-        if (query) {
-          return item.id.toLowerCase().includes(query) || item.name.toLowerCase().includes(query)
-        }
-        if (items.length <= FULL_CATALOG_LIMIT) return true
-        return popularProviders.includes(item.id) || connected.has(item.id)
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-  })
-
-  const type = (item: ProviderItem) => language.t(providerSourceTagKey(source(item)))
-  const canDisconnect = (item: ProviderItem) => canDisconnectProvider(source(item))
-  const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
-  const connectedIds = createMemo(() => new Set(providerList().connected))
   const harnessLabel = () => scope.harnesses().find((item) => item.id === scope.harness())?.label ?? scope.harness()
-  const workspaceLabel = () => scope.workspace()?.label ?? ""
-
-  const markDisconnected = (providerID: string) => {
-    const patch = (cached: NormalizedProviderListResponse | undefined) => {
-      if (!cached) return cached
-      return {
-        ...cached,
-        connected: cached.connected.filter((item) => item !== providerID),
-      }
-    }
-    queryClient.setQueryData<NormalizedProviderListResponse | undefined>(providers.queryKey(), patch)
-  }
-
-  const disconnect = async (item: ProviderItem) => {
-    await disconnectProvider({
-      providerId: item.id,
-      name: item.name,
-      source: source(item),
-      deleteCredential: async (id) => {
-        await claxedoCredentialRequest({ providerId: id }, { method: "DELETE" })
-      },
-      removeAuth: async (id) => {
-        const harness = scope.nativeHarness()
-        if (!harness) throw new Error("External connection credentials are not managed by Claxedo")
-        await removeProviderAuthEntry({
-          serverUrl: getClaxedoServerUrl(),
-          providerId: id,
-          harness,
-          directory: scope.scopeRef(),
-          request: authFetch,
-        })
-      },
-      markDisconnected,
-      refresh: async () => {
-        await providers.refresh()
-      },
-      onSuccess: (providerName) => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("provider.disconnect.toast.disconnected.title", { provider: providerName }),
-          description: language.t("provider.disconnect.toast.disconnected.description", { provider: providerName }),
-        })
-      },
-      onError: (message) => {
-        showToast({ title: language.t("common.requestFailed"), description: message })
-      },
-    })
-  }
 
   return (
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
@@ -153,6 +36,8 @@ export const SettingsProviders: Component = () => {
       </div>
 
       <div class="flex flex-col gap-8 max-w-[720px]">
+        <SettingsAgentsSection />
+
         <Show
           when={scope.workspace()}
           fallback={(
@@ -163,96 +48,21 @@ export const SettingsProviders: Component = () => {
             </p>
           )}
         >
-          <Show when={providers.error()}>
-            {(message) => (
-              <p class="text-12-regular text-text-weak" data-component="providers-catalog-error">
-                {language.t("settings.providers.catalog.error", {
-                  harness: harnessLabel(),
-                  workspace: workspaceLabel(),
-                  reason: message(),
-                })}
-              </p>
-            )}
-          </Show>
-
           <Show when={scope.harnessSelection() && !hasManagedProviderCredentials(scope.nativeHarness())}>
             <p class="text-12-regular text-text-weak" data-component="providers-externally-managed">
               {language.t("settings.providers.externallyManaged", { harness: harnessLabel() })}
             </p>
           </Show>
 
-          <Show when={hasManagedProviderCredentials(scope.nativeHarness()) && !providers.error() && !providers.loading() && providerItems().length === 0}>
-            <p class="text-12-regular text-text-weak" data-component="providers-catalog-empty">
-              {language.t("settings.providers.catalog.empty", {
-                harness: harnessLabel(),
-                workspace: workspaceLabel(),
-              })}
-            </p>
-          </Show>
-
-          <Show when={providerItems().length > 0}>
-            <div class="flex flex-col gap-3" data-component="harness-providers-section">
-              <h3 class="text-14-medium text-text-strong">
-                {language.t("settings.providers.section.harness", { harness: harnessLabel() })}
-              </h3>
-              <Show when={providerItems().length > FULL_CATALOG_LIMIT}>
-                <TextField
-                  label={language.t("settings.providers.search.label")}
-                  placeholder={language.t("settings.providers.search.placeholder")}
-                  value={search()}
-                  onChange={setSearch}
-                />
-              </Show>
-              <SettingsList>
-                <For each={rows()}>
-                  {(item) => {
-                    const connected = () => connectedIds().has(item.id)
-                    return (
-                      <Show
-                        when={connected()}
-                        fallback={(
-                          <ProviderSetupRow
-                            id={item.id}
-                            name={item.name}
-                            status="missing"
-                            providerId={item.id}
-                            harness={scope.nativeHarness() ?? ""}
-                            scope={scope.scopeRef()}
-                            note={note(item.id) ? language.t(note(item.id)!) : undefined}
-                            onConnected={async () => { await providers.refresh() }}
-                          />
-                        )}
-                      >
-                        <div
-                          class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none"
-                          data-provider={item.id}
-                        >
-                          <div class="flex min-w-0 items-center gap-3">
-                            <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
-                            <div class="flex min-w-0 flex-col gap-0.5">
-                              <span class="text-14-medium text-text-strong">{item.name}</span>
-                              <Show when={note(item.id)}>
-                                {(key) => <span class="text-12-regular text-text-weak">{language.t(key())}</span>}
-                              </Show>
-                            </div>
-                          </div>
-                          <div class="flex shrink-0 items-center gap-2">
-                            <Tag>{type(item)}</Tag>
-                            <Show when={canDisconnect(item)}>
-                              <Button size="large" variant="ghost" onClick={() => void disconnect(item)}>
-                                {language.t("common.disconnect")}
-                              </Button>
-                            </Show>
-                          </div>
-                        </div>
-                      </Show>
-                    )
-                  }}
-                </For>
-
-              </SettingsList>
-            </div>
-          </Show>
+          <For each={CATALOG_SECTIONS}>
+            {(section) => (
+              <HarnessProvidersSection
+                harness={section.harness}
+                titleKey={section.titleKey}
+                descriptionKey={section.descriptionKey}
+              />
+            )}
+          </For>
         </Show>
       </div>
     </div>

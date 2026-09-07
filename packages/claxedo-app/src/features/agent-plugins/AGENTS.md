@@ -10,8 +10,12 @@ feature is present in a build.
 - `directory/` — the browse surface: sections, source chips, search, and the
   detail pane. `directory/data.ts` owns the sources and machine-installed reads
   that live beside the catalog; `directory/view.ts` holds the pure derivations
-  (section membership, status lines, search) the surface and its tests share.
+  (section membership, category chips, status lines, search) the surface and its
+  tests share; `directory/confirm.tsx` is the one confirm every destructive
+  action goes through.
 - `install/` — the install sheet the Directory opens on `Add`.
+- `mcp/` — `catalog-dialog.tsx`, the MCP half of the same catalog in a dialog:
+  the composer's `/mcp` surface, composed by `app/dialogs/select-mcp.tsx`.
 
 ```json
 {
