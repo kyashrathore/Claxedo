@@ -1,7 +1,7 @@
 // Composed state types for the claxedo state layer.
 //
 // `ClaxedoState` wraps Workbench state and adds the slices the rest of the app needs
-// (metadata, terminal, workspace, rail, workspace-panel, process-pane).
+// (metadata, terminal, workspace, rail, navigator, workspace-panel, process-pane).
 //
 // `ContentMeta` is the registry entry for one Workbench `contentId`, carrying
 // display/identity information (type, directory, sessionId, terminalId, title,
@@ -9,6 +9,7 @@
 
 import type { WorkbenchState } from "../workbench/index"
 import type {
+  WorkspacePanelNavigator,
   WorkspacePanelState,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -156,6 +157,11 @@ export type RailSlice = {
   width?: number
 }
 
+export type NavigatorSlice = {
+  width: number
+  tab: WorkspacePanelNavigator
+}
+
 export type TerminalAgentStatus = "idle" | "working" | "permission"
 export type TerminalLifecycleState = "creating" | "attaching" | "attached" | "closing" | "closed"
 
@@ -190,6 +196,7 @@ export type ClaxedoState = {
   /** Per-content registry keyed by contentId (== Workbench contentId). */
   meta: Record<string, ContentMeta>
   rail: RailSlice
+  navigator: NavigatorSlice
   workspace: WorkspaceSlice
   workspacePanel: WorkspacePanelState
   terminal: TerminalSlice

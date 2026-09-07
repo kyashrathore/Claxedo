@@ -24,6 +24,7 @@ import { markRendererPhase, measureRendererPhase } from "@/platform/performance/
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { createWorkspaceSlice, type WorkspaceSliceApi } from "./workspace"
 import { createRailSlice, type RailSliceApi } from "./rail"
+import { createNavigatorSlice, type NavigatorSliceApi } from "./navigator"
 import { createWorkspacePanelSlice, syncFocusedSessionPanel, type WorkspacePanelSliceApi } from "./workspace-panel"
 import { createProcessPaneSlice, type ProcessPaneSliceApi } from "@/features/processes/state"
 import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orchestration"
@@ -215,6 +216,7 @@ export type ClaxedoStateApi = {
   terminal: TerminalSliceApi
   workspace: WorkspaceSliceApi
   rail: RailSliceApi
+  navigator: NavigatorSliceApi
   workspacePanel: WorkspacePanelSliceApi
   processPane: ProcessPaneSliceApi
   layout: LayoutOrchestrationApi
@@ -261,6 +263,7 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
   const terminal = createTerminalSlice({ state, setState })
   const workspace = createWorkspaceSlice({ state, setState })
   const rail = createRailSlice({ state, setState })
+  const navigator = createNavigatorSlice({ state, setState })
   const processPane = createProcessPaneSlice({ state, setState })
 
   const defaultPanelTarget = (): WorkspacePanelTarget => {
@@ -314,6 +317,7 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
     terminal,
     workspace,
     rail,
+    navigator,
     workspacePanel,
     processPane,
     layout,

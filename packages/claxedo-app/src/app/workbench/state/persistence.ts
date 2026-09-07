@@ -12,11 +12,13 @@ import {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
+import { clampNavigatorWidth, NAVIGATOR_DEFAULT_WIDTH } from "./navigator"
 import type {
   ClaxedoState,
   ContentMeta,
   ContentPayload,
   ContentType,
+  NavigatorSlice,
   ProcessPaneSlice,
   RailSlice,
   TerminalSlice,
@@ -29,6 +31,10 @@ const contentTypes = new Set<string>(CONTENT_TYPES)
 // ── default factories ─────────────────────────────────────────────────────
 function defaultRail(): RailSlice {
   return { collapsed: false, hovered: false, pinned: true, locked: false, width: 260 }
+}
+
+function defaultNavigator(): NavigatorSlice {
+  return { width: NAVIGATOR_DEFAULT_WIDTH, tab: "changes" }
 }
 
 function defaultTerminal(): TerminalSlice {
@@ -51,6 +57,7 @@ export function emptyClaxedoState(): ClaxedoState {
     workbench: constructWorkbenchState.empty(),
     meta: {},
     rail: defaultRail(),
+    navigator: defaultNavigator(),
     workspace: defaultWorkspace(),
     workspacePanel: createWorkspacePanel(),
     terminal: defaultTerminal(),
@@ -146,6 +153,15 @@ function validateRail(input: unknown): RailSlice {
     pinned: typeof o.pinned === "boolean" ? o.pinned : true,
     locked: typeof o.locked === "boolean" ? o.locked : false,
     width,
+  }
+}
+
+function validateNavigator(input: unknown): NavigatorSlice {
+  const o = asRecordOrEmpty(input)
+  const tab = o.tab
+  return {
+    width: clampNavigatorWidth(o.width),
+    tab: tab === "files" || tab === "changes" || tab === "processes" ? tab : "changes",
   }
 }
 
@@ -404,13 +420,14 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   }
 
   const rail = validateRail(input.rail)
+  const navigator = validateNavigator(input.navigator)
   const workspace = validateWorkspace(input.workspace)
   const workspacePanel = validateWorkspacePanel(input.workspacePanel)
   const terminal = validateTerminal(input.terminal)
   const processPane = validateProcessPane(input.processPane)
 
   return {
-    state: { workbench, meta, rail, workspace, workspacePanel, terminal, processPane },
+    state: { workbench, meta, rail, navigator, workspace, workspacePanel, terminal, processPane },
     dirty,
   }
 }
