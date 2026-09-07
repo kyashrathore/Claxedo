@@ -161,7 +161,13 @@ export const desktopAccountComposition: Policy = {
   // `packages/claxedo-helpers/src/string.ts`) instead of a local copy that
   // shadowed the canonical two-arg `stringClaim` in `/guards`. No host API
   // behind that subpath; module count unchanged. 19/7.
-  ceilings: { modules: 19, packages: 7 },
+  // +1 module / 0 packages (2026-09-07): reviewed owner
+  // `account/cli-credential-file.ts`, the account's opt-in mirror into the
+  // `claxedo` CLI's credential file. It belongs here because the credential it
+  // mirrors never leaves this composition, and its only import beyond siblings
+  // is `@claxedo/helpers/claxedo-credentials`, the file's shape and path —
+  // already a package edge of this closure. Re-measured, no headroom: 20/7.
+  ceilings: { modules: 20, packages: 7 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
     minModules: 10,
@@ -353,7 +359,10 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module / 0 packages (2026-09-07): the same app, so it also takes
   // app-local's rail session-activity owner verbatim — see that ledger.
   // Re-measured, no headroom.
-  ceilings: { modules: 1011, packages: 57 },
+  // +3 modules / 0 packages (2026-09-07): the same app, so it also takes
+  // app-local's connected-applications surface verbatim — see that ledger.
+  // Re-measured, no headroom.
+  ceilings: { modules: 1014, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

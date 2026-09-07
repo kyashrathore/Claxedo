@@ -1,10 +1,16 @@
 import path from "node:path"
 import { config, url } from "../config"
 import { requestJson } from "../http"
-import { object, readOptionalJsonFile, writePrivateJson } from "../json"
+import { object } from "../json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asFiniteNumber } from "@claxedo/helpers/guards"
+import {
+  clearClaxedoCredentials,
+  loadClaxedoCredentials,
+  storeClaxedoCredentials,
+} from "@claxedo/helpers/claxedo-credentials"
 
+/** The file's credential once this CLI's own control-plane default has filled in the origin. */
 export type Credentials = {
   controlPlaneUrl: string
   accessToken: string
@@ -18,27 +24,9 @@ function credentialsPath() {
   return path.join(config().stateDir, "credentials.json")
 }
 
-function credentials(input: unknown): Credentials | undefined {
-  const row = object(input)
-  const accessToken = trimToUndefined(row.accessToken) ?? trimToUndefined(row.access_token)
-  if (!accessToken) return undefined
-  return {
-    controlPlaneUrl: trimToUndefined(row.controlPlaneUrl) ?? config().controlPlaneUrl,
-    accessToken,
-    ...((trimToUndefined(row.refreshToken) ?? trimToUndefined(row.refresh_token))
-      ? { refreshToken: trimToUndefined(row.refreshToken) ?? trimToUndefined(row.refresh_token) }
-      : {}),
-    ...((trimToUndefined(row.tokenType) ?? trimToUndefined(row.token_type))
-      ? { tokenType: trimToUndefined(row.tokenType) ?? trimToUndefined(row.token_type) }
-      : {}),
-    ...(asFiniteNumber(row.expiresAt) ? { expiresAt: asFiniteNumber(row.expiresAt) } : {}),
-    ...(trimToUndefined(row.identity) ? { identity: trimToUndefined(row.identity) } : {}),
-  }
-}
-
 export async function readCredentials(): Promise<Credentials | undefined> {
-  const fromFile = credentials(await readOptionalJsonFile(credentialsPath()))
-  if (fromFile) return fromFile
+  const fromFile = await loadClaxedoCredentials(credentialsPath())
+  if (fromFile) return { ...fromFile, controlPlaneUrl: fromFile.controlPlaneUrl ?? config().controlPlaneUrl }
   const token = trimToUndefined(process.env.CLAXEDO_DEV_TOKEN) ?? trimToUndefined(process.env.CLAXEDO_ACCESS_TOKEN)
   if (!token) return undefined
   return {
@@ -49,11 +37,11 @@ export async function readCredentials(): Promise<Credentials | undefined> {
 }
 
 export async function writeCredentials(input: Credentials) {
-  await writePrivateJson(credentialsPath(), input)
+  await storeClaxedoCredentials(input, credentialsPath())
 }
 
 export async function removeCredentials() {
-  await writePrivateJson(credentialsPath(), {})
+  await clearClaxedoCredentials(credentialsPath())
 }
 
 function needsRefresh(input: Credentials) {

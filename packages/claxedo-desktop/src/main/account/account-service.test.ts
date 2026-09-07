@@ -104,6 +104,7 @@ function harness(
     fetch?: Parameters<typeof createAccountService>[0]["fetch"]
     onStateChange?: Parameters<typeof createAccountService>[0]["onStateChange"]
     scheduleRevalidation?: Parameters<typeof createAccountService>[0]["scheduleRevalidation"]
+    cliCredentialFile?: Parameters<typeof createAccountService>[0]["cliCredentialFile"]
   } = {},
 ) {
   const store = input.store ?? memoryStore()
@@ -115,6 +116,7 @@ function harness(
     now: () => input.now ?? 1_000,
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
     ...(input.scheduleRevalidation ? { scheduleRevalidation: input.scheduleRevalidation } : {}),
+    ...(input.cliCredentialFile ? { cliCredentialFile: input.cliCredentialFile } : {}),
     fetch:
       input.fetch ??
       (async (url, init) => {
@@ -838,5 +840,53 @@ describe("bound desktop account lifecycle", () => {
     expect(await result).toBeInstanceOf(Error)
     expect(h.service.state()).toMatchObject({ status: "signed" })
     expect(h.store.held()).toBeDefined()
+  })
+})
+
+describe("mirroring the account into the CLI's credential file", () => {
+  function recorder() {
+    const published: string[] = []
+    let revoked = 0
+    return {
+      port: {
+        publish: async (credential: BoundDesktopCredential) => {
+          published.push(credential.tokens.accessToken)
+        },
+        revoke: async () => {
+          revoked++
+        },
+      },
+      published,
+      revoked: () => revoked,
+    }
+  }
+
+  test("publishes the credential a sign-in and a renewal each store, and revokes on sign-out", async () => {
+    const cli = recorder()
+    const h = harness({ store: memoryStore(), cliCredentialFile: cli.port })
+
+    await h.service.signIn()
+    expect(cli.published).toEqual(["at_1"])
+
+    // A stored credential past its refresh window renews before the call.
+    const renewing = harness({
+      store: memoryStore(CREDENTIAL),
+      now: 100_000,
+      cliCredentialFile: cli.port,
+    })
+    await renewing.service.restore()
+    await renewing.service.run("account.mode")
+    expect(cli.published).toContain("at_2")
+
+    await h.service.signOut()
+    expect(cli.revoked()).toBe(1)
+  })
+
+  test("an account with no mirror configured still signs in and out", async () => {
+    const h = harness({ store: memoryStore() })
+
+    expect(await h.service.signIn()).toMatchObject({ ok: true })
+    await h.service.signOut()
+    expect(h.service.state()).toMatchObject({ status: "unsigned" })
   })
 })

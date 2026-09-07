@@ -33,6 +33,7 @@ export function setupLazyAccount(input: {
   env?: AccountConfigEnv
   onError?: AccountAssemblyInput["onError"]
   onStateChange?: AccountAssemblyInput["onStateChange"]
+  cliSignInMode?: AccountAssemblyInput["cliSignInMode"]
   /** Observes every completed operation by name; the value never crosses. */
   onOperation?: (name: HostedOperationName) => void
   load?: () => Promise<AccountModule>
@@ -49,6 +50,7 @@ export function setupLazyAccount(input: {
           ...(input.env ? { env: input.env } : {}),
           ...(input.onError ? { onError: input.onError } : {}),
           ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
+          ...(input.cliSignInMode ? { cliSignInMode: input.cliSignInMode } : {}),
         })
         await assembly.ready
         return assembly

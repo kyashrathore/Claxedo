@@ -39,6 +39,20 @@
       "import": "./dist/string.mjs",
       "default": "./dist/string.mjs"
     },
+    "./claxedo-document": {
+      "development": "./src/claxedo-document.ts",
+      "bun": "./src/claxedo-document.ts",
+      "types": "./dist/claxedo-document.d.ts",
+      "import": "./dist/claxedo-document.mjs",
+      "default": "./dist/claxedo-document.mjs"
+    },
+    "./claxedo-credentials": {
+      "development": "./src/claxedo-credentials.ts",
+      "bun": "./src/claxedo-credentials.ts",
+      "types": "./dist/claxedo-credentials.d.ts",
+      "import": "./dist/claxedo-credentials.mjs",
+      "default": "./dist/claxedo-credentials.mjs"
+    },
     "./fs": {
       "development": "./src/fs.ts",
       "bun": "./src/fs.ts",
