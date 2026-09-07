@@ -155,6 +155,20 @@ describe("embedded MCP OAuth", () => {
     expect(client.scope?.split(" ")).toEqual(expect.arrayContaining([...CLAXEDO_MCP_OAUTH_SCOPES]))
     expect(client.scope?.split(" ")).not.toContain("workspace:write")
   })
+
+  test("introspects with a client of its own, so an unknown token is inactive rather than an auth failure", async () => {
+    await expect(embedded.introspectAccessToken("not-a-token")).resolves.toEqual({ active: false })
+  })
+
+  test("refuses introspection to anyone without the box's own client secret", async () => {
+    const res = await app.request("/api/auth/oauth2/introspect", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: "claxedo-control-plane", client_secret: "guessed", token: "t" }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "invalid_client" })
+  })
 })
 
 describe("signed-mode boot composition with embedded auth", () => {

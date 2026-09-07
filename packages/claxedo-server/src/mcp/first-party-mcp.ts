@@ -29,6 +29,8 @@ export type FirstPartyMcpContributionInput = Readonly<{
   signedAuth: (request: Request) => Promise<SignedControlPlaneAuth | undefined>
   /** A caller this deployment admits with no identity at all: the node's unsigned loopback. */
   anonymousCredential?: (request: Request) => McpCredential | undefined
+  /** A consented OAuth access token, resolved by `resolveOAuthMcpCredential`. */
+  oauthCredential?: (request: Request) => Promise<McpCredential | undefined>
   /** The runtimes this process serves, for a credential that may reach them; absent on the hosted worker. */
   local?: (credential: McpCredential) => McpClientInputs["local"]
   /** Where a write is recorded when no authority can attribute it. */
@@ -47,7 +49,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
     ...(input.options.verifyRuntimeCredential ? { verifyRuntimeCredential: input.options.verifyRuntimeCredential } : {}),
     resolveUserCredential: async (request) => {
       const auth = await input.signedAuth(request)
-      if (!auth) return input.anonymousCredential?.(request)
+      if (!auth) return await input.oauthCredential?.(request) ?? input.anonymousCredential?.(request)
       const credential = fullUserCredential({ actorId: signedActorId(auth), clientId: "cli" })
       auths.set(credential, auth)
       return credential

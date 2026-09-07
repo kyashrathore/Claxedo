@@ -67,6 +67,7 @@ import {
 import { contentfulStatus } from "../../platform/http/status"
 import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
+import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "../../platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
@@ -423,6 +424,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
   if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)
+  const introspectAccessToken = options.authentication.introspectAccessToken?.bind(options.authentication)
   const firstPartyMcp = options.firstPartyMcp
     ? firstPartyMcpContribution({
         mount: "hosted",
@@ -433,6 +435,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
           const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
           return "error" in result ? undefined : result.auth
         },
+        ...(introspectAccessToken
+          ? {
+              oauthCredential: (request) =>
+                resolveOAuthMcpCredential(request, {
+                  verifyAccessToken: async (token) => readIntrospectedAccessToken(await introspectAccessToken(token)),
+                  controlPlaneOrigin: () => options.authentication.descriptor.native.cli.controlPlaneOrigin,
+                }),
+            }
+          : {}),
         auditFallback: (record) => console.warn("[claxedo-server] mcp.audit unattributed", record),
       })
     : undefined

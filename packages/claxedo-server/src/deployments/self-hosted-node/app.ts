@@ -43,6 +43,7 @@ import { CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, inProcessFetch, type First
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { bearerToken } from "@claxedo/helpers/string"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
+import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -95,7 +96,7 @@ import {
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
 import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
-import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
+import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, embeddedAuthPublicOrigin, getEmbeddedAuth } from "./embedded-auth"
 import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
@@ -1252,6 +1253,16 @@ export function createSelfHostedApp(
           !services.auth.config.enabled && isLoopbackLocalRequest(request) && !bearerToken(request.headers.get("authorization"))
             ? fullUserCredential({ actorId: "loopback", clientId: "loopback" })
             : undefined,
+        ...(embeddedAuthEnabled(process.env)
+          ? {
+              oauthCredential: (request: Request) =>
+                resolveOAuthMcpCredential(request, {
+                  verifyAccessToken: async (token) =>
+                    readIntrospectedAccessToken(await getEmbeddedAuth().introspectAccessToken(token)),
+                  controlPlaneOrigin: () => embeddedAuthPublicOrigin(),
+                }),
+            }
+          : {}),
         // This box runs its own workspaces behind the runtime proxy, which
         // picks the workspace from `x-workspace-id`: stamped for a runtime
         // credential, named per call by the client for an account.
@@ -1267,10 +1278,13 @@ export function createSelfHostedApp(
     : undefined
   if (firstPartyMcp && embeddedAuthEnabled(process.env)) {
     // This box's OAuth server is its own embedded Better Auth, mounted at
-    // `/api/auth` on whichever origin the request reached it through.
+    // `/api/auth` under its public origin. That origin, not the request's, is
+    // what the provider registered the MCP resource and its own issuer under,
+    // so a box reached on a second hostname still tells a client the
+    // identifier its token will actually carry.
     app.route("/", OAuthProtectedResourceRoutes({
-      controlPlaneOrigin: (requestOrigin) => requestOrigin,
-      authorizationServer: (requestOrigin) => `${requestOrigin}/api/auth`,
+      controlPlaneOrigin: () => embeddedAuthPublicOrigin(),
+      authorizationServer: () => `${embeddedAuthPublicOrigin()}/api/auth`,
     }))
   }
   mountControlPlaneRouteContributions({

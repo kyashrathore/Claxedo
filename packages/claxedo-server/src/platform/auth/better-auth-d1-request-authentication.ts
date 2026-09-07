@@ -221,14 +221,7 @@ async function verifyNative(
   input: BetterAuthD1RequestAuthenticationInput,
   accessToken: string,
 ): Promise<VerifiedAuthSession> {
-  const providerResult = await input.auth.api.oauth2Introspect({
-    body: {
-      client_id: input.nativeIntrospectionClient.clientId,
-      client_secret: input.nativeIntrospectionClient.clientSecret,
-      token: accessToken,
-      token_type_hint: "access_token",
-    },
-  })
+  const providerResult = await introspectAccessToken(input, accessToken)
   const result = record(providerResult)
   if (result.active !== true || result.iss !== input.descriptor.issuer || result.token_type !== "Bearer") {
     throw invalidCredentials()
@@ -279,6 +272,20 @@ async function verifyNative(
   }
 }
 
+function introspectAccessToken(
+  input: BetterAuthD1RequestAuthenticationInput,
+  accessToken: string,
+): Promise<unknown> {
+  return input.auth.api.oauth2Introspect({
+    body: {
+      client_id: input.nativeIntrospectionClient.clientId,
+      client_secret: input.nativeIntrospectionClient.clientSecret,
+      token: accessToken,
+      token_type_hint: "access_token",
+    },
+  })
+}
+
 function assertComposition(input: BetterAuthD1RequestAuthenticationInput) {
   if (!present(input.nativeIntrospectionClient.clientId) || !present(input.nativeIntrospectionClient.clientSecret)) {
     throw new AuthenticationError(
@@ -298,17 +305,20 @@ export function createBetterAuthD1RequestAuthenticationAdapter(
   input: BetterAuthD1RequestAuthenticationInput,
 ): RequestAuthenticationAdapter & RequestIdentityVerificationAdapter {
   assertComposition(input)
-  return createControlPlaneAuthenticationAdapter({
-    descriptor: input.descriptor,
-    resolveIdentity: input.resolveIdentity,
-    now: input.now,
-    maxFutureSkewMs: input.maxFutureSkewMs,
-    async verify(request) {
-      const cookie = exactCookiePresent(request, input.descriptor.browser.cookie.name)
-      const bearer = opaqueBearer(request)
-      if (cookie) return verifyBrowser(input, request)
-      if (bearer) return verifyNative(input, bearer)
-      throw invalidCredentials()
-    },
-  })
+  return {
+    ...createControlPlaneAuthenticationAdapter({
+      descriptor: input.descriptor,
+      resolveIdentity: input.resolveIdentity,
+      now: input.now,
+      maxFutureSkewMs: input.maxFutureSkewMs,
+      async verify(request) {
+        const cookie = exactCookiePresent(request, input.descriptor.browser.cookie.name)
+        const bearer = opaqueBearer(request)
+        if (cookie) return verifyBrowser(input, request)
+        if (bearer) return verifyNative(input, bearer)
+        throw invalidCredentials()
+      },
+    }),
+    introspectAccessToken: (token) => introspectAccessToken(input, token),
+  }
 }

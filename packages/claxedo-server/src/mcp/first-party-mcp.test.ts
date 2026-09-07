@@ -5,8 +5,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
-import { CLAXEDO_MCP_SERVER_INFO, fullUserCredential, type McpClientInputs, type McpToolGroup } from "@claxedo/mcp"
+import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, type McpClientInputs, type McpToolGroup } from "@claxedo/mcp"
+import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { firstPartyMcpContribution, signedActorId, type FirstPartyMcpContributionInput } from "./first-party-mcp"
+import { resolveOAuthMcpCredential, type OAuthAccessTokenClaims } from "./oauth-credential"
 
 const stubClient: ClaxedoMcpClient = {
   deployment: "hosted",
@@ -144,5 +146,94 @@ describe("firstPartyMcpContribution", () => {
     await client.callTool({ name: "session_send", arguments: { session: "ses_2" } })
     expect(auditAllow).not.toHaveBeenCalled()
     expect(auditFallback).toHaveBeenCalledWith({ tool: "session_send", actor: "loopback", client: "loopback", sessionId: "ses_2" })
+  })
+})
+
+const CONTROL_PLANE_ORIGIN = "https://api.claxedo.test"
+
+/** Enough of the runtime for the attention tools: an empty board, and a permission they can answer. */
+function attentionRuntime() {
+  const answered: Array<{ sessionID: string; permissionID: string; response: string }> = []
+  const server = {
+    permission: { list: async () => ({ data: [] }), respond: async (input: typeof answered[number]) => { answered.push(input) } },
+    question: { list: async () => ({ data: [] }) },
+    session: { status: async () => ({ data: {} }), list: async () => ({ data: [] }) },
+  } as unknown as WorkspaceRuntimeClient
+  return { answered, server }
+}
+
+function oauthComposed(tokens: Readonly<Record<string, readonly string[]>>) {
+  const app = new Hono()
+  const { answered, server } = attentionRuntime()
+  const claims = (token: string): OAuthAccessTokenClaims | undefined =>
+    tokens[token] ? { subject: "user_7", clientId: "mcp-host-1", scopes: tokens[token] } : undefined
+  const contribution = firstPartyMcpContribution({
+    mount: "hosted",
+    app,
+    authority: undefined,
+    options: {
+      createClient: () => ({
+        deployment: "hosted",
+        ownWorkspace: { workspaceId: "ws_1" },
+        runtime: async () => async () => new Response(null, { status: 204 }),
+        resolveTarget: async () => ({ kind: "relay", baseUrl: "", headers: {} }),
+        server: async () => server,
+        workspaces: async () => [],
+      }),
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+    },
+    signedAuth: async () => undefined,
+    oauthCredential: (request) =>
+      resolveOAuthMcpCredential(request, {
+        verifyAccessToken: (token) => claims(token),
+        controlPlaneOrigin: () => CONTROL_PLANE_ORIGIN,
+      }),
+    auditFallback: () => undefined,
+  })
+  app.route(contribution.path, contribution.routes)
+  return { app, answered }
+}
+
+const toolNames = async (client: Client) => (await client.listTools()).tools.map((tool) => tool.name).sort()
+
+const writeTools = async (client: Client) =>
+  (await client.listTools()).tools.filter((tool) => tool.annotations?.readOnlyHint !== true).map((tool) => tool.name)
+
+describe("a consented OAuth access token", () => {
+  test("with claxedo:read is listed the reads and refused every write", async () => {
+    const { app, answered } = oauthComposed({ "read-only": ["claxedo:read"] })
+    const client = await connect(app, { authorization: "Bearer read-only" })
+
+    expect(await toolNames(client)).toContain("sessions_board")
+    expect(await writeTools(client)).toEqual([])
+    expect(await client.callTool({ name: "permission_reply", arguments: { session: "ses_1", permission: "p1", response: "once" } }))
+      .toMatchObject({ isError: true })
+    expect(answered).toEqual([])
+  })
+
+  test("with claxedo:approve answers a permission, and one without it never sees the tool", async () => {
+    const { app, answered } = oauthComposed({
+      approver: ["claxedo:read", "claxedo:approve"],
+      actor: ["claxedo:read", "claxedo:act"],
+    })
+
+    const approver = await connect(app, { authorization: "Bearer approver" })
+    expect(await toolNames(approver)).toContain("permission_reply")
+    expect(await approver.callTool({ name: "permission_reply", arguments: { session: "ses_1", permission: "p1", response: "once" } }))
+      .toMatchObject({ content: [{ type: "text", text: 'Answered permission p1 on session ses_1 with "once".' }] })
+    expect(answered).toEqual([{ sessionID: "ses_1", permissionID: "p1", response: "once" }])
+
+    const actor = await connect(app, { authorization: "Bearer actor" })
+    expect(await toolNames(actor)).not.toContain("permission_reply")
+  })
+
+  test("is refused when the token is not one this deployment issued", async () => {
+    const { app } = oauthComposed({ known: ["claxedo:read"] })
+    const refused = await app.request("http://127.0.0.1/api/claxedo/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer forged" },
+      body: "{}",
+    })
+    expect(refused.status).toBe(401)
   })
 })
