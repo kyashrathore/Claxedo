@@ -133,6 +133,14 @@ export function createEmbeddedAuth(
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const db = new Database(dbPath)
 
+  const mcpResource = {
+    identifier: claxedoMcpResource(embeddedAuthPublicOrigin(env)),
+    name: "Claxedo MCP",
+    allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+    accessTokenTtl: 300,
+    refreshTokenTtl: 30 * 24 * 60 * 60,
+  }
+
   const options = {
     database: db,
     secret: resolveSecret(env, path.dirname(dbPath)),
@@ -164,16 +172,8 @@ export function createEmbeddedAuth(
         loginPage: `${embeddedAuthPublicOrigin(env)}/login`,
         consentPage: `${embeddedAuthPublicOrigin(env)}/oauth/consent`,
         scopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
-        resources: [
-          {
-            identifier: claxedoMcpResource(embeddedAuthPublicOrigin(env)),
-            name: "Claxedo MCP",
-            allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
-            accessTokenTtl: 300,
-            refreshTokenTtl: 30 * 24 * 60 * 60,
-          },
-        ],
-        clientRegistrationDefaultResources: [claxedoMcpResource(embeddedAuthPublicOrigin(env))],
+        resources: [mcpResource],
+        clientRegistrationDefaultResources: [mcpResource.identifier],
         // Without this Better Auth writes the provider's whole scope list onto
         // every dynamically registered client; this box offers no other
         // resource, and its clients should not claim otherwise.
@@ -213,6 +213,15 @@ export function createEmbeddedAuth(
    *
    * `storeClientSecret: "encrypted"` decides the stored shape, so the row
    * carries the ciphertext, not the secret.
+   *
+   * It is also linked to the MCP resource in `oauthClientResource`. RFC 7662 §4
+   * lets an authorization server answer `active: false` rather than reveal a
+   * token to a caller with no claim on it, and Better Auth authorizes an
+   * introspection only from the client that issued the token or one linked to
+   * a resource in the token's audience. Every MCP token here is issued to a
+   * dynamically registered host, so without the link this box reports every
+   * token it has just minted as inactive — indistinguishable from garbage, and
+   * `/api/claxedo/mcp` refuses all of them.
    */
   const seedIntrospectionClient = async () => {
     const { adapter } = await auth.$context
@@ -233,9 +242,22 @@ export function createEmbeddedAuth(
     const where = [{ field: "clientId", value: BETTER_AUTH_INTROSPECTION_CLIENT_ID }]
     if (await adapter.findOne({ model: "oauthClient", where })) {
       await adapter.update({ model: "oauthClient", where, update: row })
-      return
+    } else {
+      await adapter.create({ model: "oauthClient", data: row })
     }
-    await adapter.create({ model: "oauthClient", data: row })
+    // The join row references `oauthResource.identifier`, and a resource named
+    // only in the plugin options has no row to reference.
+    const resourceWhere = [{ field: "identifier", value: mcpResource.identifier }]
+    if (!(await adapter.findOne({ model: "oauthResource", where: resourceWhere }))) {
+      await adapter.create({ model: "oauthResource", data: { ...mcpResource, disabled: false, createdAt: new Date(), updatedAt: new Date() } })
+    }
+    const link = [{ field: "clientId", value: BETTER_AUTH_INTROSPECTION_CLIENT_ID }, { field: "resourceId", value: mcpResource.identifier }]
+    if (!(await adapter.findOne({ model: "oauthClientResource", where: link }))) {
+      await adapter.create({
+        model: "oauthClientResource",
+        data: { clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID, resourceId: mcpResource.identifier, createdAt: new Date() },
+      })
+    }
   }
 
   // better-auth normally migrates via its CLI; an embedded self-host issuer has
