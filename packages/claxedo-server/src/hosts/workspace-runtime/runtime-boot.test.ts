@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
 import {
   claxedoCorsOrigin,
   claxedoRuntimeHarnessFromEnv,
@@ -86,13 +87,15 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.hostTunnel).toBeUndefined()
   })
 
-  test("forwards the host entry's route contributions into the server options", async () => {
+  test("forwards the host entry's route contributions and always mounts the first-party MCP beside them", async () => {
     const contribution = { id: "agent-plugins", mount: () => ({ path: "/", routes: {} as never, dispose() {} }) }
     const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() }
     const boot = await claxedoWorkspaceRuntimeBootFromEnv(env, { routeContributions: [contribution as never] })
-    expect(boot.options.routeContributions).toEqual([contribution])
+    expect(boot.options.routeContributions?.map((entry) => entry.id))
+      .toEqual(["agent-plugins", FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
     const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
-    expect(plain.options.routeContributions).toBeUndefined()
+    expect(plain.options.routeContributions?.map((entry) => entry.id))
+      .toEqual([FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
   })
 
   test("owns a public embedded-SDK runtime only when the native OpenCode harness is selected", async () => {

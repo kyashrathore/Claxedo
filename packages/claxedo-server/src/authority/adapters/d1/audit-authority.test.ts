@@ -23,7 +23,12 @@ const userCredential: McpCredential = {
 
 describe("the D1 audit metadata allowlist", () => {
   test("keeps every field an MCP write records for a runtime caller", () => {
-    const record = mcpAuditRecord({ tool: "session_send", credential: runtimeCredential, sessionId: "ses_child" })
+    const record = mcpAuditRecord({
+      tool: "session_send",
+      credential: runtimeCredential,
+      args: { prompt: "secret" },
+      sessionId: "ses_child",
+    })
     expect(JSON.parse(safeMetadata(record) ?? "null")).toEqual({
       actor: "user_1",
       callerSessionId: "ses_parent",
@@ -35,7 +40,7 @@ describe("the D1 audit metadata allowlist", () => {
   })
 
   test("keeps every field an MCP write records for a signed account caller", () => {
-    const record = mcpAuditRecord({ tool: "workspace_create", credential: userCredential })
+    const record = mcpAuditRecord({ tool: "workspace_create", credential: userCredential, args: { name: "secret" } })
     expect(JSON.parse(safeMetadata(record) ?? "null")).toEqual({
       actor: "actor_9",
       client: "cli",
