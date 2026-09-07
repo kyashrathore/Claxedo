@@ -45,10 +45,11 @@
  *     (`src/app/workbench/rail/rail-workbench-canvas.tsx`); its absence is the
  *     zero-workspace state. That state has TWO settled surfaces: the "No projects
  *     yet. Create one to get started." onboarding placeholder on routes that own no
- *     workbench content (e.g. `/`), and `[data-testid="central-session-content"]`
- *     ("No workspace backing", `src/features/session/ui/content/session-content.tsx`)
+ *     workbench content (e.g. `/`), and `[data-testid="session-content-missing-workspace"]`
+ *     ("Missing workspace", `src/features/session/ui/content/session-content.tsx`)
  *     on routes that DO own one (e.g. `/s/new`, whose unresolvable session id the
- *     route intent settles into a central session content). Neither offers a composer.
+ *     route intent opens as a session content with no directory behind it). Neither
+ *     offers a composer.
  *
  * BEHAVIORS —
  *   1. Opening a fresh local worktree route renders a draft composer the user can type
@@ -65,13 +66,13 @@
  *      as a fallback), no route offers a composer and zero sessions are created:
  *      submission is impossible, not merely rejected. A route that owns no workbench
  *      content (`/`) settles on the "No projects yet" onboarding placeholder; the
- *      directory-less draft route (`/s/new`) settles on the central "No workspace
- *      backing" surface. Each surface is asserted on the route where it is the
+ *      directory-less draft route (`/s/new`) settles on the session pane's "Missing
+ *      workspace" surface. Each surface is asserted on the route where it is the
  *      SETTLED render — the placeholder is only transiently reachable on `/s/new`
  *      (it survives just until the session inventory loads), so asserting it there
  *      passes only on a slow runner. (The code-level reactive guard is
  *      `resolveSubmitDirectory`'s `showMissingWorkspace()` toast in
- *      `src/session/submit/resolve.ts`, gated on `draftId && !projectDirectory`; every
+ *      `src/features/session/submit/resolve.ts`, gated on `draftId && !projectDirectory`; every
  *      composer surface this app can currently render — including the
  *      workbench-empty `EmptyDraftSessionComposer` — always carries at least a
  *      fallback directory, so that reactive toast is not independently e2e-reachable
@@ -371,7 +372,7 @@ test.describe("core first prompt (local) @core", () => {
     // render `EmptyDraftSessionComposer`. This is the only app state with no fallback
     // directory anywhere; every other draft surface carries one, which is why
     // `resolveSubmitDirectory`'s `draftId && !projectDirectory` toast
-    // (`src/session/submit/resolve.ts`) is not reachable from a browser at all. The
+    // (`src/features/session/submit/resolve.ts`) is not reachable from a browser at all. The
     // observable contract asserted here is stronger anyway: no compose surface, so no
     // session can be created.
     //
@@ -416,16 +417,20 @@ test.describe("core first prompt (local) @core", () => {
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
 
-    // (b) Route intent resolves "new" far enough to own a surface, but `fallbackDirectory()`
-    // rejects the "/workspace" placeholder, so nothing backs the pane with a real directory.
+    // (b) Route intent opens "new" as a session content that owns the pane
+    // (`openSessionById` in `route-intent.ts`), but the content carries no directory, so
+    // `paneDirectory()` in `session-content.tsx` is undefined and the pane settles on its
+    // missing-workspace surface instead of a `SessionPaneScope`.
     await page.goto("/s/new")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    const missingWorkspace = page.getByTestId("session-content-missing-workspace")
     await expect(
-      page.getByTestId("central-session-content"),
+      missingWorkspace,
       "directory-less route never settled on a zero-workspace surface",
     ).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText("No workspace backing")).toBeVisible()
+    await expect(missingWorkspace).toHaveText("Missing workspace")
+    await expect(missingWorkspace).toHaveAttribute("data-session-id", "new")
     await expect(page.getByRole("button", { name: "New Project" }).first()).toBeVisible()
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)

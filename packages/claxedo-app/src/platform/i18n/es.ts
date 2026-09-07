@@ -550,10 +550,21 @@ export const dict = {
   "settings.providers.tag.other": "Otro",
   "settings.models.title": "Modelos",
   "settings.models.description": "La configuración de modelos estará disponible aquí.",
-
-
-
-
+  "settings.permissions.tool.read.description": "Leer un archivo (coincide con la ruta del archivo)",
+  "settings.permissions.tool.edit.description":
+    "Modificar archivos, incluyendo ediciones, escrituras, parches y multi-ediciones",
+  "settings.permissions.tool.glob.description": "Coincidir archivos usando patrones glob",
+  "settings.permissions.tool.grep.description": "Buscar contenidos de archivo usando expresiones regulares",
+  "settings.permissions.tool.list.description": "Listar archivos dentro de un directorio",
+  "settings.permissions.tool.bash.description": "Ejecutar comandos de shell",
+  "settings.permissions.tool.task.description": "Lanzar sub-agentes",
+  "settings.permissions.tool.skill.description": "Cargar una habilidad por nombre",
+  "settings.permissions.tool.lsp.description": "Ejecutar consultas de servidor de lenguaje",
+  "settings.permissions.tool.todowrite.description": "Actualizar la lista de tareas",
+  "settings.permissions.tool.webfetch.description": "Obtener contenido de una URL",
+  "settings.permissions.tool.websearch.description": "Buscar en la web",
+  "settings.permissions.tool.external_directory.description": "Acceder a archivos fuera del directorio del proyecto",
+  "settings.permissions.tool.doom_loop.description": "Detectar llamadas a herramientas repetidas con entrada idéntica",
   "session.delete.failed.title": "Fallo al eliminar sesión",
   "session.delete.title": "Eliminar sesión",
   "session.delete.confirm": '¿Eliminar sesión "{{name}}"?',

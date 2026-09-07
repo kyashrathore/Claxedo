@@ -93,14 +93,15 @@ describe("hosted production Pi and connection discovery", () => {
   const catalogPath = "/api/claxedo/agent-config/providers?nativeHarness=pi"
   const headers = (subject = "alice") => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
 
-  test("credentials disabled still exposes canonical disconnected models and refuses writes", async () => {
+  test("credentials disabled still exposes canonical disconnected providers, defers models to the runtime, and refuses writes", async () => {
     const app = createHostedCoreApp(plane(), options) as unknown as Hono
     expect((await app.request(catalogPath)).status).toBe(401)
     const response = await app.request(catalogPath, { headers: headers() })
     expect(response.status).toBe(200)
     const catalog = await response.json()
     expect(catalog.all.map((provider: { id: string }) => provider.id).sort()).toEqual(["anthropic", "openai", "openai-codex"])
-    expect(catalog.all.every((provider: { models: object }) => Object.keys(provider.models).length > 0)).toBe(true)
+    expect(catalog.all.every((provider: { models: object }) => Object.keys(provider.models).length === 0)).toBe(true)
+    expect(catalog.modelAvailability).toBe("runtime_required")
     expect(catalog.connected).toEqual([])
     expect((await app.request("/auth/openai?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "secret" } }) })).status).toBe(503)
     const connections = "/api/claxedo/agent-config/connections"

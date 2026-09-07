@@ -148,7 +148,13 @@ export default function SessionPage() {
     if (!surfaceId) return undefined
     return claxedoState.meta.get(surfaceId)
   })
-  const activeContentMeta = createActivePaneProjection({ active: paneActive, read: contentMetaSource, initial: undefined as ReturnType<typeof contentMetaSource> })
+  // The pane's own tab record exists before the pane mounts, and a pane that
+  // opens in the background stays inactive through its first render, so the
+  // projection is seeded from that record: an existing session's ref is what
+  // the composer mode resolves from, and an undefined seed leaves a cloud
+  // session with no resolvable identity. Component setup runs untracked, so
+  // this read subscribes nothing.
+  const activeContentMeta = createActivePaneProjection({ active: paneActive, read: contentMetaSource, initial: contentMetaSource() })
   const activeSessionRef = () => activeContentMeta()?.content?.sessionRef
   const contentIntent = createMemo(() => activeContentMeta()?.content?.intent)
   const contentIntentDefaults = createMemo(() => contentIntent()?.defaults)

@@ -636,7 +636,14 @@ jobs:
           set -euo pipefail
           # The step above builds once. Each isolated Playwright invocation
           # starts a preview of that same verified artifact without rebuilding.
-          for scenario in "behaviors 1,6,9" "behaviors 3,6,8,9" "behaviors 5,6,8,9" "behavior 7"; do
+          # Each pattern is a title fragment of a `real harness journeys` test in
+          # e2e/playwright/real-harness-local.spec.ts; `e2e/discovery.test.ts` pins
+          # the titles, so a rename fails there before it silently empties this gate.
+          for scenario in \
+            "pi-workspace harness completes exact turns|local new-worktree session receives its first reply" \
+            "claude native SDK harness completes exact turns" \
+            "codex native SDK harness completes exact turns" \
+            "cursor harness materializes without silently routing"; do
             echo "=== Tier R gate scenario: ${scenario} ==="
             bun run test:e2e:real -- --grep "${scenario}"
           done

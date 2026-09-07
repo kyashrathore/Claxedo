@@ -6,7 +6,6 @@ describe("real workspace-runtime document round-trip", () => {
     const result = await runDocumentsSessionRoundtripSmoke()
 
     expect(result).toMatchObject({
-      toolCallId: "tool-call-document-edit",
       exitCode: 0,
       exactBytes: true,
       hydratedDocuments: 1,

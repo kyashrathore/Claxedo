@@ -543,10 +543,21 @@ export const dict = {
   "settings.providers.tag.other": "Annet",
   "settings.models.title": "Modeller",
   "settings.models.description": "Modellinnstillinger vil kunne konfigureres her.",
-
-
-
-
+  "settings.permissions.tool.read.description": "Lesing av en fil (matcher filbanen)",
+  "settings.permissions.tool.edit.description":
+    "Endre filer, inkludert redigeringer, skriving, patcher og multi-redigeringer",
+  "settings.permissions.tool.glob.description": "Match filer ved hjelp av glob-mønstre",
+  "settings.permissions.tool.grep.description": "Søk i filinnhold ved hjelp av regulære uttrykk",
+  "settings.permissions.tool.list.description": "List filer i en mappe",
+  "settings.permissions.tool.bash.description": "Kjør shell-kommandoer",
+  "settings.permissions.tool.task.description": "Start underagenter",
+  "settings.permissions.tool.skill.description": "Last en ferdighet etter navn",
+  "settings.permissions.tool.lsp.description": "Kjør språkserverforespørsler",
+  "settings.permissions.tool.todowrite.description": "Oppdater gjøremålslisten",
+  "settings.permissions.tool.webfetch.description": "Hent innhold fra en URL",
+  "settings.permissions.tool.websearch.description": "Søk på nettet",
+  "settings.permissions.tool.external_directory.description": "Få tilgang til filer utenfor prosjektmappen",
+  "settings.permissions.tool.doom_loop.description": "Oppdager gjentatte verktøykall med identisk input",
   "session.delete.failed.title": "Kunne ikke slette sesjon",
   "session.delete.title": "Slett sesjon",
   "session.delete.confirm": 'Slette sesjonen "{{name}}"?',

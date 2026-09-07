@@ -67,7 +67,7 @@ export async function createCloudWorkspace(
     params.repoFullName = input.repo.fullName
   }
 
-  return CreateCloudWorkspaceResultSchema.parse(await hostedControlCall(
+  const raw = await hostedControlCall(
     "workspace.create",
     params,
     async () => {
@@ -88,5 +88,11 @@ export async function createCloudWorkspace(
         body,
       )
     },
-  ))
+  )
+  const parsed = CreateCloudWorkspaceResultSchema.safeParse(raw)
+  if (parsed.success) return parsed.data
+  // The rejection reaches a toast, so it says what was wrong with the response
+  // instead of carrying the issue list as serialized JSON.
+  const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`)
+  throw new Error(`Workspace create returned an invalid response (${issues.join("; ")})`)
 }

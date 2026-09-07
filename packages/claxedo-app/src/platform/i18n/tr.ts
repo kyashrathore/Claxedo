@@ -553,10 +553,20 @@ export const dict = {
   "settings.providers.tag.other": "Diğer",
   "settings.models.title": "Modeller",
   "settings.models.description": "Model ayarları burada yapılandırılabilecek.",
-
-
-
-
+  "settings.permissions.tool.read.description": "Bir dosyayı okuma (dosya yoluyla eşleşir)",
+  "settings.permissions.tool.edit.description": "Düzenleme, yazma, yama ve çoklu düzenleme dahil dosyaları değiştir",
+  "settings.permissions.tool.glob.description": "Glob kalıpları kullanarak dosyaları eşle",
+  "settings.permissions.tool.grep.description": "Düzenli ifadeler kullanarak dosya içerikleri ara",
+  "settings.permissions.tool.list.description": "Bir dizindeki dosyaları listele",
+  "settings.permissions.tool.bash.description": "Kabuk komutları çalıştır",
+  "settings.permissions.tool.task.description": "Alt ajanlar başlat",
+  "settings.permissions.tool.skill.description": "Ada göre bir beceri yükle",
+  "settings.permissions.tool.lsp.description": "Dil sunucusu sorguları çalıştır",
+  "settings.permissions.tool.todowrite.description": "Görev listesini güncelle",
+  "settings.permissions.tool.webfetch.description": "Bir URL'den içerik getir",
+  "settings.permissions.tool.websearch.description": "Web'de ara",
+  "settings.permissions.tool.external_directory.description": "Proje dizini dışındaki dosyalara eriş",
+  "settings.permissions.tool.doom_loop.description": "Aynı girdiyle tekrarlanan araç çağrılarını algıla",
   "session.delete.failed.title": "Oturum silinemedi",
   "session.delete.title": "Oturumu sil",
   "session.delete.confirm": '"{{name}}" oturumu silinsin mi?',

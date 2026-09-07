@@ -534,10 +534,20 @@ export const dict = {
   "settings.providers.tag.other": "其他",
   "settings.models.title": "模型",
   "settings.models.description": "模型設定將在此處可設定。",
-
-
-
-
+  "settings.permissions.tool.read.description": "讀取檔案（符合檔案路徑）",
+  "settings.permissions.tool.edit.description": "修改檔案，包括編輯、寫入、修補和多重編輯",
+  "settings.permissions.tool.glob.description": "使用 glob 模式符合檔案",
+  "settings.permissions.tool.grep.description": "使用正規表示式搜尋檔案內容",
+  "settings.permissions.tool.list.description": "列出目錄中的檔案",
+  "settings.permissions.tool.bash.description": "執行 shell 命令",
+  "settings.permissions.tool.task.description": "啟動子代理程式",
+  "settings.permissions.tool.skill.description": "按名稱載入技能",
+  "settings.permissions.tool.lsp.description": "執行語言伺服器查詢",
+  "settings.permissions.tool.todowrite.description": "更新待辦清單",
+  "settings.permissions.tool.webfetch.description": "從 URL 取得內容",
+  "settings.permissions.tool.websearch.description": "搜尋網頁",
+  "settings.permissions.tool.external_directory.description": "存取專案目錄之外的檔案",
+  "settings.permissions.tool.doom_loop.description": "偵測具有相同輸入的重複工具呼叫",
   "session.delete.failed.title": "刪除工作階段失敗",
   "session.delete.title": "刪除工作階段",
   "session.delete.confirm": '刪除工作階段 "{{name}}"?',

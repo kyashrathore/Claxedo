@@ -83,10 +83,18 @@ test("registry projection keeps refresh secrets out of Pi and rejects expired/ma
     }),
   ).toEqual({ "openai-codex": { type: "api_key", key: "access" }, anthropic: { type: "api_key", key: "key" } })
   expect(() => piAuthProjection({ "codex-app-server": "null" })).toThrow("credential object")
-  expect(() => piAuthProjection({ "codex-app-server": "invalid" })).toThrow("credential JSON")
   expect(() => piAuthProjection({ "codex-app-server": JSON.stringify({ access: "expired", expires: 1 }) })).toThrow(
     "expired",
   )
+})
+
+test("a bare API key aliased into codex-app-server is OpenAI auth, never a Codex OAuth entry", () => {
+  expect(piAuthProjection({ openai: "sk-registry", "codex-app-server": "sk-registry" })).toEqual({
+    openai: { type: "api_key", key: "sk-registry" },
+  })
+  expect(piAuthProjection({ "codex-app-server": "sk-config-only" })).toEqual({
+    openai: { type: "api_key", key: "sk-config-only" },
+  })
 })
 
 test("first empty registry sync revokes stale credentials; rotation replaces the private projection", async () => {

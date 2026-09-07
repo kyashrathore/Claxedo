@@ -31,6 +31,7 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
+import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { getCredential, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
@@ -159,10 +160,12 @@ function options(
     exists(sessionId: string): boolean
     parentSessionIdFor(sessionId: string): string | undefined
   },
+  harness: WorkspaceRuntimeServerOptions["harness"],
 ): WorkspaceRuntimeServerOptions & {
   exposure: WorkspaceRuntimeExposure
 } {
   return {
+    ...(harness ? { harness } : {}),
     ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
@@ -299,11 +302,22 @@ export async function ensureEmbeddedWorkspaceRuntime(
     }
   }
 
+  // A read creates the runtime without applying a config snapshot (`config`
+  // "skip"), and a runtime has no default harness until one is applied. The
+  // configured default is selection policy, not launch state, so it is handed
+  // to the runtime at creation the way a standalone runtime receives
+  // `WORKSPACE_RUNTIME_NATIVE_HARNESS`; the first sync still applies the full
+  // snapshot and may replace it.
+  const harness = defaultHarness(await loadUserConfig())
+  assertCurrent()
+  // The read above yielded; a concurrent acquisition may have created the
+  // runtime meanwhile, and one workspace id owns exactly one runtime.
+  if (hosts.get(ws.id)) return ensureEmbeddedWorkspaceRuntime(ws, input)
   let activeHost: EmbeddedRuntime["host"] | undefined
   const created = createWorkspaceRuntimeApp(options(ws, {
     exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
     parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
-  }))
+  }, harness))
   const runtime: EmbeddedRuntime = {
     ...created,
     workspace: ws,

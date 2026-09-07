@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 
+const originalFetch = globalThis.fetch
+
 afterEach(() => {
   delete (globalThis as { api?: unknown }).api
+  globalThis.fetch = originalFetch
 })
 
 describe("createCloudWorkspace", () => {
@@ -37,5 +40,17 @@ describe("createCloudWorkspace", () => {
       connectionId: "conn_1",
       repoFullName: "acme/demo",
     })
+  })
+
+  test("a 200 without a workspaceId rejects with a readable message, not the validator's issue list", async () => {
+    globalThis.fetch = mock(async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } }))
+
+    const { createCloudWorkspace } = await import("./workspace-create-api")
+    const failure = await createCloudWorkspace({ projectId: "prj_1", baseUrl: "http://127.0.0.1:2593" }).catch((err: unknown) => err)
+
+    expect(failure).toBeInstanceOf(Error)
+    const message = (failure as Error).message
+    expect(message).toBe("Workspace create returned an invalid response (workspaceId: Invalid input: expected string, received undefined)")
+    expect(message).not.toContain("{")
   })
 })

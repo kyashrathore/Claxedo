@@ -484,7 +484,12 @@ export async function composeText(page: Page, input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
-/** Selects the real Pi harness and its OpenAI model, whose HTTP endpoint the fixture redirects. */
+/**
+ * Selects the real Pi harness and its OpenAI model, whose HTTP endpoint the
+ * fixture redirects. Pi models are keyed under the `pi` harness namespace with
+ * the provider folded into the model id, so the provider Pi routes to is the
+ * prefix of `data-model`, not `data-provider`.
+ */
 export async function selectScriptedModel(page: Page) {
   await selectSignedHarness(page, "Pi", "pi")
   const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
@@ -495,8 +500,8 @@ export async function selectScriptedModel(page: Page) {
   await search.fill("GPT-4")
   await picker.locator('[data-slot="list-item-name"]').filter({ hasText: /^GPT-4$/ }).click()
   await expect(control).toHaveAttribute("data-harness", "pi")
-  await expect(control).toHaveAttribute("data-provider", "openai")
-  await expect(control).toHaveAttribute("data-model", "gpt-4")
+  await expect(control).toHaveAttribute("data-provider", "pi")
+  await expect(control).toHaveAttribute("data-model", "openai/gpt-4")
 }
 
 export async function selectSignedHarness(page: Page, label: string, id: string) {

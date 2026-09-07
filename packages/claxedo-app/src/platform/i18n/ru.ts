@@ -544,10 +544,22 @@ export const dict = {
   "settings.providers.tag.other": "Другое",
   "settings.models.title": "Модели",
   "settings.models.description": "Настройки моделей будут доступны здесь.",
-
-
-
-
+  "settings.permissions.tool.read.description": "Чтение файла (по совпадению пути)",
+  "settings.permissions.tool.edit.description":
+    "Изменение файлов, включая редактирование, запись, патчи и мульти-редактирование",
+  "settings.permissions.tool.glob.description": "Сопоставление файлов по паттернам glob",
+  "settings.permissions.tool.grep.description": "Поиск по содержимому файлов с использованием регулярных выражений",
+  "settings.permissions.tool.list.description": "Список файлов в директории",
+  "settings.permissions.tool.bash.description": "Запуск команд оболочки",
+  "settings.permissions.tool.task.description": "Запуск подагентов",
+  "settings.permissions.tool.skill.description": "Загрузка навыка по имени",
+  "settings.permissions.tool.lsp.description": "Запросы к языковому серверу",
+  "settings.permissions.tool.todowrite.description": "Обновление списка задач",
+  "settings.permissions.tool.webfetch.description": "Получение контента по URL",
+  "settings.permissions.tool.websearch.description": "Поиск в интернете",
+  "settings.permissions.tool.external_directory.description": "Доступ к файлам вне директории проекта",
+  "settings.permissions.tool.doom_loop.description":
+    "Обнаружение повторяющихся вызовов инструментов с одинаковыми входными данными",
   "session.delete.failed.title": "Не удалось удалить сессию",
   "session.delete.title": "Удалить сессию",
   "session.delete.confirm": 'Удалить сессию "{{name}}"?',

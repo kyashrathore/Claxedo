@@ -1296,13 +1296,14 @@ test.describe("core user-hosted workspace @core", () => {
     // exists on another machine.
     await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]:visible`))
       .toHaveAttribute("data-session-directory", WORKSPACE_REF, { timeout: CONTENTION_TIMEOUT })
-    // The workbench keeps the surfaces it stashed on the way here mounted and
-    // hidden, so `:visible` above names exactly one. None of the stashed ones
-    // may carry the host's path either — an address the user cannot see is
-    // still the address its pane's requests would be scoped by.
-    expect(await page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]`)
-      .evaluateAll((nodes) => [...new Set(nodes.map((node) => node.getAttribute("data-session-directory")))]))
-      .toEqual([WORKSPACE_REF])
+    // And it is the ONLY surface for this session. The rail wrote the workspace
+    // id into the URL and opened the surface under that same id, so the route
+    // layer mirroring the URL finds that surface instead of opening a second
+    // one beside it. A second surface stashes the click's own before its page
+    // is built, and a page built hidden has no pane identity to address its
+    // composer by: the whole app falls to the error boundary.
+    await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]`))
+      .toHaveCount(1, { timeout: CONTENTION_TIMEOUT })
     expect(mock.requests.hostPathScopes).toEqual([])
   })
 

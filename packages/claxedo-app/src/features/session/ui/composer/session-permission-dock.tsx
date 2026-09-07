@@ -5,6 +5,30 @@ import { DockPrompt } from "@/ui/session-kit"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 
+type DictionaryKey = Parameters<ReturnType<typeof useLanguage>["t"]>[0]
+
+/**
+ * Listed per permission rather than assembled from the id, so every key is a
+ * literal the dictionary audit can find a reader for. Permissions outside this
+ * table (MCP tools, ACP kinds, subagent ids) show no hint.
+ */
+const TOOL_DESCRIPTION_KEYS: Partial<Record<string, DictionaryKey>> = {
+  read: "settings.permissions.tool.read.description",
+  edit: "settings.permissions.tool.edit.description",
+  glob: "settings.permissions.tool.glob.description",
+  grep: "settings.permissions.tool.grep.description",
+  list: "settings.permissions.tool.list.description",
+  bash: "settings.permissions.tool.bash.description",
+  task: "settings.permissions.tool.task.description",
+  skill: "settings.permissions.tool.skill.description",
+  lsp: "settings.permissions.tool.lsp.description",
+  todowrite: "settings.permissions.tool.todowrite.description",
+  webfetch: "settings.permissions.tool.webfetch.description",
+  websearch: "settings.permissions.tool.websearch.description",
+  external_directory: "settings.permissions.tool.external_directory.description",
+  doom_loop: "settings.permissions.tool.doom_loop.description",
+}
+
 export function SessionPermissionDock(props: {
   request: PermissionRequest
   responding: boolean
@@ -14,10 +38,8 @@ export function SessionPermissionDock(props: {
   const patterns = () => Array.isArray(props.request.patterns) ? props.request.patterns : []
 
   const toolDescription = () => {
-    const key = `settings.permissions.tool.${props.request.permission}.description`
-    const value = language.t(key as Parameters<typeof language.t>[0])
-    if (value === key) return ""
-    return value
+    const key = TOOL_DESCRIPTION_KEYS[props.request.permission]
+    return key ? language.t(key) : ""
   }
 
   return (

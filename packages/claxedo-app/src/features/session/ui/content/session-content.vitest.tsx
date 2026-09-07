@@ -117,6 +117,23 @@ describe("SessionContent", () => {
     expect(calls.workspaceId).toBe("ws_cloud_route")
   })
 
+  test("a directory-less draft settles on the missing-workspace surface without a session page", () => {
+    render(() => (
+      <SessionContent
+        meta={{ id: "directory-less-draft", type: "session", scope: "global", sessionId: "new", content: { type: "session", sessionId: "new" } }}
+        ctx={{ paneId: "pane-1", isVisible: () => true }}
+      />
+    ))
+
+    const surface = screen.getByTestId("session-content-missing-workspace")
+    expect(surface.textContent).toBe("Missing workspace")
+    expect(surface.getAttribute("data-session-id")).toBe("new")
+    expect(screen.queryByTestId("session-pane-scope")).toBeNull()
+    expect(screen.queryByTestId("session-page")).toBeNull()
+    expect(calls.directoryScope).not.toHaveBeenCalled()
+    expect(calls.sessionPage).not.toHaveBeenCalled()
+  })
+
   test("does not execute an unresolved session in the fallback project", () => {
     render(() => <SessionContent meta={{ id: "unresolved", type: "session", scope: "global", sessionId: "ses_pi", content: { type: "session", sessionId: "ses_pi" } }} ctx={{ paneId: "pane-1", isVisible: () => true }} fallbackDirectory={() => "/work/repo"} />)
     expect(screen.getByText("Missing session identity")).toBeTruthy()

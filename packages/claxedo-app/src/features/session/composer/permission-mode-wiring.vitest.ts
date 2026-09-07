@@ -115,17 +115,34 @@ describe("permission-mode wiring resource key", () => {
     dispose()
   })
 
-  test("local permission mode reads omit signed transport scope", async () => {
+  test("local permission mode reads carry the session ref but no workspace scope", async () => {
     fetchModes.mockClear()
     setMode.mockClear()
     const { wiring, dispose } = wiringHarness({ signed: false })
     await flush()
     await wiring.writer().setPermissionMode({ sessionID: "ses_1", modeId: "auto" })
     for (const call of [fetchModes.mock.calls[0]?.[0], setMode.mock.calls[0]?.[0]]) {
-      expect(call).not.toHaveProperty("signedControlPlane")
+      expect(call).toMatchObject({ signedControlPlane: false })
       expect(call).not.toHaveProperty("workspaceId")
-      expect(call).not.toHaveProperty("sessionRef")
+      expect(call).not.toHaveProperty("workspaceKind")
+      // The ref's local tool sandbox is what places the request on the loopback
+      // runtime; without it a draft has nothing to route by and the fetch throws.
+      expect(call).toMatchObject({ sessionRef: { toolSandbox: { kind: "local", cwd: "/repo" } } })
     }
+    dispose()
+  })
+
+  test("a local draft asks for the harness's modes with its session ref", async () => {
+    fetchModes.mockClear()
+    const { setSessionId, dispose } = wiringHarness({ signed: false })
+    setSessionId("")
+    await flush()
+    const draftCall = fetchModes.mock.calls.find((call) => call[0]?.sessionID === "")?.[0]
+    expect(draftCall).toMatchObject({
+      sessionID: "",
+      harness: { kind: "connection", connectionId: "opencode" },
+      sessionRef: { toolSandbox: { kind: "local", cwd: "/repo" } },
+    })
     dispose()
   })
 

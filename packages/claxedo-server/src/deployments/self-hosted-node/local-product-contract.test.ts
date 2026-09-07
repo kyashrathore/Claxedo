@@ -21,6 +21,10 @@ import {
  * that matters is omission: a dropped `/api/wr/pty/:ptyID/connect` still
  * typechecks and builds, and surfaces only as a dead terminal in a packaged
  * desktop build.
+ *
+ * Runtime-owned paths such as `/api/wr/runtime-events` are dispatched by the
+ * `workspaceRuntimeProxy` middleware, which registers no route, so they are
+ * absent from the inventory by design rather than missing from the product.
  */
 
 let dataDir: string
@@ -128,8 +132,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/track",
       "/api/claxedo/workspace",
       "/api/claxedo/workspace/resolve",
-      "/api/control",
-      "/api/control/*",
       "/api/control/orgs",
       "/api/control/orgs/:orgId/ensure-default-team",
       "/api/control/orgs/:orgId/teams",
@@ -137,7 +139,6 @@ describe("desktop-local product contract", () => {
       "/api/control/runtime/register",
       "/api/control/session-list",
       "/api/control/session-registrations/reserve",
-      "/api/control/session/:id/runtime-events",
       "/api/control/sessions",
       "/api/control/sessions/:sessionId/capabilities",
       "/api/control/sessions/:sessionId/gateway",
@@ -151,7 +152,6 @@ describe("desktop-local product contract", () => {
       "/api/control/workspaces/:workspaceId/sessions/:sessionId/repair",
       "/api/wr/events",
       "/api/wr/pty/:ptyID/connect",
-      "/api/wr/runtime-events",
       "/command",
       "/experimental/worktree",
       "/experimental/worktree/reset",

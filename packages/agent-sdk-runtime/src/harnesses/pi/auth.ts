@@ -3,7 +3,14 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 
-/** Project registry credentials without giving Pi a second refresh-token owner. */
+/**
+ * Project registry credentials without giving Pi a second refresh-token owner.
+ *
+ * `codex-app-server` carries either a Codex OAuth bundle (JSON) or, when the
+ * registry aliases the plain `openai` key into it, a bare API key. The bundle's
+ * access token becomes Pi's `openai-codex` entry; a bare key is an OpenAI API
+ * key, as the Codex harness reads it.
+ */
 export function piAuthProjection(auth: Record<string, unknown>) {
   const entries: Record<string, { type: "api_key"; key: string }> = {}
   for (const provider of ["anthropic", "openai"] as const) {
@@ -12,11 +19,12 @@ export function piAuthProjection(auth: Record<string, unknown>) {
   }
   const source = auth["codex-app-server"]
   if (typeof source === "string" && source) {
-    let value: Record<string, unknown>
+    let value: unknown
     try {
       value = JSON.parse(source)
     } catch {
-      throw new Error("Invalid Pi Codex credential JSON")
+      entries.openai ??= { type: "api_key", key: source }
+      return entries
     }
     const row = asRecord(value)
     if (!row) throw new Error("Invalid Pi Codex credential object")

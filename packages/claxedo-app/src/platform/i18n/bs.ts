@@ -544,10 +544,21 @@ export const dict = {
   "settings.providers.tag.other": "Ostalo",
   "settings.models.title": "Modeli",
   "settings.models.description": "Postavke modela će se ovdje moći podešavati.",
-
-
-
-
+  "settings.permissions.tool.read.description": "Čitanje datoteke (podudara se s putanjom datoteke)",
+  "settings.permissions.tool.edit.description":
+    "Mijenjanje datoteka, uključujući izmjene, pisanja, patch-eve i multi-izmjene",
+  "settings.permissions.tool.glob.description": "Podudaranje datoteka pomoću glob šablona",
+  "settings.permissions.tool.grep.description": "Pretraživanje sadržaja datoteka pomoću regularnih izraza",
+  "settings.permissions.tool.list.description": "Listanje datoteka unutar direktorija",
+  "settings.permissions.tool.bash.description": "Pokretanje shell komandi",
+  "settings.permissions.tool.task.description": "Pokretanje pod-agenta",
+  "settings.permissions.tool.skill.description": "Učitaj vještinu po nazivu",
+  "settings.permissions.tool.lsp.description": "Pokreni upite jezičnog servera",
+  "settings.permissions.tool.todowrite.description": "Ažuriraj listu zadataka",
+  "settings.permissions.tool.webfetch.description": "Preuzmi sadržaj sa URL-a",
+  "settings.permissions.tool.websearch.description": "Pretražuj web",
+  "settings.permissions.tool.external_directory.description": "Pristup datotekama izvan direktorija projekta",
+  "settings.permissions.tool.doom_loop.description": "Otkriva ponovljene pozive alata sa identičnim unosom",
   "session.delete.failed.title": "Neuspjelo brisanje sesije",
   "session.delete.title": "Izbriši sesiju",
   "session.delete.confirm": 'Izbriši sesiju "{{name}}"?',

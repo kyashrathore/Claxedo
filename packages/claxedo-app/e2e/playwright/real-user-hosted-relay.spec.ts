@@ -47,7 +47,7 @@ async function mintRole(role: "viewer" | "editor" | "owner" | "admin") {
   return (await res.json()) as { runtimeAccessToken: string; relayUrl: string }
 }
 
-const SCRIPTED_MODEL = { providerID: "openai", modelID: "gpt-4" } as const
+const SCRIPTED_MODEL = { providerID: "pi", modelID: "openai/gpt-4" } as const
 
 /**
  * Creates a session host-side through the real two-halves private-session protocol:

@@ -42,12 +42,12 @@ function hostFiles(includeTests = false) {
 
 describe("hosts boundary", () => {
   test("the check is not vacuous — hosts/ exists and holds production files", () => {
-    // Re-measured after the retired hosted work-ledger service took its host
-    // directory with it: `hosts/workspace-runtime/` is the one that remains,
-    // at 8 files.
+    // `hosts/workspace-runtime/` is the only host directory. Its production
+    // files are host-entry.ts, host-entry.agent-plugins.ts, runtime-boot.ts,
+    // startup.ts, and workspace-session-admission.ts.
     // The floor is only here so an empty or moved directory cannot make every
     // assertion below pass by scanning nothing.
-    expect(hostFiles().length).toBeGreaterThan(5)
+    expect(hostFiles().length).toBeGreaterThanOrEqual(5)
   })
 
   test("no production file under hosts/ imports a deployment", () => {

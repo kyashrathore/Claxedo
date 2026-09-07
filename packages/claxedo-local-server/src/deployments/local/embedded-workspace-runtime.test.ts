@@ -11,7 +11,7 @@ import {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
-import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -418,6 +418,30 @@ describe("embedded workspace runtime", () => {
     } finally {
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(skip.root, sync.root)
+    }
+  })
+
+  test("a runtime created for a read selects the configured default harness before any config sync", async () => {
+    const configured = await makeWorkspaceRoot("claxedo-embedded-default-harness-")
+    const unconfigured = await makeWorkspaceRoot("claxedo-embedded-no-default-harness-")
+
+    try {
+      process.env.CLAXEDO_DATA_DIR = path.join(configured.root, "data")
+      await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "native", harnessId: "pi" } })
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_default_harness", configured.project), { config: "skip" })
+      expect(runtime.host.detail()).toMatchObject({
+        harness: { kind: "native", harnessId: "pi" },
+        configApply: { state: "idle", revision: 0 },
+      })
+
+      // No implicit fallback: a data dir without a configured default leaves the runtime without a harness.
+      await shutdownTestRuntimes()
+      process.env.CLAXEDO_DATA_DIR = path.join(unconfigured.root, "data")
+      const bare = await ensureEmbeddedWorkspaceRuntime(workspace("ws_no_default_harness", unconfigured.project), { config: "skip" })
+      expect(bare.host.detail().harness).toBeUndefined()
+    } finally {
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(configured.root, unconfigured.root)
     }
   })
 

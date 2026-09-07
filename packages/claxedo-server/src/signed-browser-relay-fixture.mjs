@@ -12,6 +12,7 @@ import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "../../workspace-runtime/src/remote-session-authority.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/self-hosted-execution"
+import { loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { putCredential } from "@claxedo/server-core/credentials/registry"
 import {
   createSelfHostedApp,
@@ -87,6 +88,14 @@ if (scriptedModelUrl) {
   // Scripted runs use only the fixture's encrypted credential store.
   delete process.env.CLAXEDO_CF_KV_URL
 }
+// The product has no implicit default harness: a fresh data dir leaves the
+// embedded runtime with no runner, and every route that names no harness
+// (`GET /command`, `GET /agent`) fails with `workspace_harness_not_configured`.
+// This is the write `POST /api/claxedo/agent-config/harness` performs, made
+// before the user-hosted tunnel below creates the embedded runtime that reads
+// it. The cloud runtime receives no config snapshot from this fixture, so
+// `startCloudRuntime` selects the same harness directly.
+await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "native", harnessId: "pi" } })
 
 // A user-hosted tunnel and the control-plane Local Host Link are two views of
 // the same machine identity. Use the product's canonical persisted identity
@@ -161,6 +170,7 @@ async function startCloudRuntime(input) {
     },
     relayHostAuth,
     configToken: runtimeConfigToken,
+    harness: { kind: "native", harnessId: "pi" },
     runtimeEventAuthorization: {
       authorizeParent: (_context, parentSessionId) => runtime.host.hasSession(parentSessionId),
       resolveParentSessionId: (event) => runtime.host.parentSessionIdFor(event.sessionId),

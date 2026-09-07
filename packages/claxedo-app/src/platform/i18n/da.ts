@@ -536,10 +536,21 @@ export const dict = {
   "settings.providers.tag.other": "Andet",
   "settings.models.title": "Modeller",
   "settings.models.description": "Modelindstillinger vil kunne konfigureres her.",
-
-
-
-
+  "settings.permissions.tool.read.description": "Læsning af en fil (matcher filstien)",
+  "settings.permissions.tool.edit.description":
+    "Ændre filer, herunder redigeringer, skrivninger, patches og multi-redigeringer",
+  "settings.permissions.tool.glob.description": "Match filer ved hjælp af glob-mønstre",
+  "settings.permissions.tool.grep.description": "Søg i filindhold ved hjælp af regulære udtryk",
+  "settings.permissions.tool.list.description": "List filer i en mappe",
+  "settings.permissions.tool.bash.description": "Kør shell-kommandoer",
+  "settings.permissions.tool.task.description": "Start underagenter",
+  "settings.permissions.tool.skill.description": "Indlæs en færdighed efter navn",
+  "settings.permissions.tool.lsp.description": "Kør sprogserverforespørgsler",
+  "settings.permissions.tool.todowrite.description": "Opdater to-do listen",
+  "settings.permissions.tool.webfetch.description": "Hent indhold fra en URL",
+  "settings.permissions.tool.websearch.description": "Søg på nettet",
+  "settings.permissions.tool.external_directory.description": "Få adgang til filer uden for projektmappen",
+  "settings.permissions.tool.doom_loop.description": "Opdag gentagne værktøjskald med identisk input",
   "session.delete.failed.title": "Kunne ikke slette session",
   "session.delete.title": "Slet session",
   "session.delete.confirm": 'Slet session "{{name}}"?',

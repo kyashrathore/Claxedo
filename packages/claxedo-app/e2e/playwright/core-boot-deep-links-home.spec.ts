@@ -80,8 +80,8 @@
  *     the shell root are mutually exclusive by construction.
  *   `[data-testid="session-content"][data-session-id]` — a workspace-backed session
  *     pane (`src/claxedo-ui/content-renderers/session-content.tsx`).
- *   `[data-testid="central-session-content"][data-session-id]` — a session pane with
- *     no resolvable workspace backing ("No workspace backing" / "Session unavailable").
+ *   `[data-testid="session-content-missing-workspace"][data-session-id]` — a session pane with
+ *     no resolvable workspace backing ("Missing workspace").
  *   `[data-testid="session-unavailable"][data-session-id]` — INSIDE a resolved
  *     `session-content` pane, rendered by `src/pages/session.tsx` when the session's
  *     own message/detail fetch 404s ("Session unavailable").

@@ -166,7 +166,15 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
         >
           <Show
             when={paneDirectory()}
-            fallback={<div class="flex items-center justify-center h-full text-text-weak">Missing workspace</div>}
+            fallback={
+              <div
+                class="flex items-center justify-center h-full text-text-weak"
+                data-testid="session-content-missing-workspace"
+                data-session-id={sessionId() ?? ""}
+              >
+                Missing workspace
+              </div>
+            }
           >
             {(dir) => (
               <SessionPaneScope

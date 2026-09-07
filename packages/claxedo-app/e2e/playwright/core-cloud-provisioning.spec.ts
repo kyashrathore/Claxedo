@@ -811,7 +811,9 @@ test.describe("core cloud provisioning @core", () => {
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud workspace", { timeout: 10_000 })
-    await expect(page.locator('[data-slot="toast-description"]')).toContainText("Request failed", { timeout: 10_000 })
+    // The response was rejected at the create API's schema boundary; the toast
+    // names the missing field rather than printing the validator's issue list.
+    await expect(page.locator('[data-slot="toast-description"]')).toContainText("Workspace create returned an invalid response (workspaceId:", { timeout: 10_000 })
 
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
     expect(mock.requests.createSessionCount).toBe(0)

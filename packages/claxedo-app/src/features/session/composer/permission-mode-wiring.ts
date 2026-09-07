@@ -57,14 +57,18 @@ export function createComposerPermissionModeWiring(input: {
   sessionRef: () => SessionRef | undefined
   requestFailedTitle: () => string
 }) {
+  /**
+   * The session ref travels on every path, local included: a draft has no
+   * session id for the runtime to resolve an adapter from, so the ref's tool
+   * sandbox is the only thing that places `GET /permission/modes` on the
+   * loopback runtime. Workspace scope is added only where a workspace exists.
+   */
   const transportScope = () => {
     const workspace = input.workspace()
-    if (!input.signedControlPlane() && !workspace) return {}
     return {
       claxedoServerUrl: input.claxedoServerUrl(),
       signedControlPlane: input.signedControlPlane(),
-      workspaceId: workspace?.workspaceId,
-      workspaceKind: workspace?.kind,
+      ...(workspace ? { workspaceId: workspace.workspaceId, workspaceKind: workspace.kind } : {}),
       sessionRef: input.sessionRef(),
     }
   }

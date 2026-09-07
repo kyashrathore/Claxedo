@@ -538,10 +538,20 @@ export const dict = {
   "settings.providers.tag.other": "อื่น ๆ",
   "settings.models.title": "โมเดล",
   "settings.models.description": "การตั้งค่าโมเดลจะสามารถกำหนดค่าได้ที่นี่",
-
-
-
-
+  "settings.permissions.tool.read.description": "อ่านไฟล์ (ตรงกับเส้นทางไฟล์)",
+  "settings.permissions.tool.edit.description": "แก้ไขไฟล์ รวมถึงการแก้ไข เขียน แพตช์ และแก้ไขหลายรายการ",
+  "settings.permissions.tool.glob.description": "จับคู่ไฟล์โดยใช้รูปแบบ glob",
+  "settings.permissions.tool.grep.description": "ค้นหาเนื้อหาไฟล์โดยใช้นิพจน์ทั่วไป",
+  "settings.permissions.tool.list.description": "แสดงรายการไฟล์ภายในไดเรกทอรี",
+  "settings.permissions.tool.bash.description": "เรียกใช้คำสั่งเชลล์",
+  "settings.permissions.tool.task.description": "เปิดเอเจนต์ย่อย",
+  "settings.permissions.tool.skill.description": "โหลดทักษะตามชื่อ",
+  "settings.permissions.tool.lsp.description": "เรียกใช้การสืบค้นเซิร์ฟเวอร์ภาษา",
+  "settings.permissions.tool.todowrite.description": "อัปเดตรายการงาน",
+  "settings.permissions.tool.webfetch.description": "ดึงเนื้อหาจาก URL",
+  "settings.permissions.tool.websearch.description": "ค้นหาบนเว็บ",
+  "settings.permissions.tool.external_directory.description": "เข้าถึงไฟล์นอกไดเรกทอรีโปรเจกต์",
+  "settings.permissions.tool.doom_loop.description": "ตรวจจับการเรียกเครื่องมือซ้ำด้วยข้อมูลนำเข้าเหมือนกัน",
   "session.delete.failed.title": "ไม่สามารถลบเซสชัน",
   "session.delete.title": "ลบเซสชัน",
   "session.delete.confirm": 'ลบเซสชัน "{{name}}" หรือไม่?',

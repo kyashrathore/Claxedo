@@ -537,11 +537,20 @@ export const dict = {
 
   "settings.models.title": "模型",
   "settings.models.description": "模型设置将在此处可配置。",
-
-
-
-
-
+  "settings.permissions.tool.read.description": "读取文件（匹配文件路径）",
+  "settings.permissions.tool.edit.description": "修改文件，包括编辑、写入、补丁和多重编辑",
+  "settings.permissions.tool.glob.description": "使用 glob 模式匹配文件",
+  "settings.permissions.tool.grep.description": "使用正则表达式搜索文件内容",
+  "settings.permissions.tool.list.description": "列出目录中的文件",
+  "settings.permissions.tool.bash.description": "运行 shell 命令",
+  "settings.permissions.tool.task.description": "启动子智能体",
+  "settings.permissions.tool.skill.description": "按名称加载技能",
+  "settings.permissions.tool.lsp.description": "运行语言服务器查询",
+  "settings.permissions.tool.todowrite.description": "更新待办列表",
+  "settings.permissions.tool.webfetch.description": "从 URL 获取内容",
+  "settings.permissions.tool.websearch.description": "搜索网页",
+  "settings.permissions.tool.external_directory.description": "访问项目目录之外的文件",
+  "settings.permissions.tool.doom_loop.description": "检测具有相同输入的重复工具调用",
   "session.delete.failed.title": "删除会话失败",
   "session.delete.title": "删除会话",
   "session.delete.confirm": '删除会话 "{{name}}"？',

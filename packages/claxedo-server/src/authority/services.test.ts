@@ -430,10 +430,11 @@ describe("control-plane services", () => {
     expect(text).toContain("BootstrapRoutes({")
     expect(text).toContain("env: process.env")
     expect(text).toContain("app.route(\"/api/control\", ControlPlaneHttpRoutes(services, authRouteOptions(services)))")
-    expect(text).toContain("const centralControl = createCentralControlApp(services, {")
+    expect(text).toContain("const machineSessions = createMachineSessionDispatch(services, runtimeProxyOptions)")
+    expect(text).toContain("const controlPlane = createControlPlaneApp(services, {")
     expect(text).toContain("...authRouteOptions(services),")
-    expect(text).toContain("createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),")
-    expect(text).toContain("app.route(\"/\", centralControl.app)")
+    expect(text).toContain("createMachineSession: machineSessions.create,")
+    expect(text).toContain("app.route(\"/\", controlPlane.app)")
   })
 
   test("local composition ignores ambient signed-auth env without embedded auth", async () => {
@@ -719,7 +720,6 @@ describe("control-plane services", () => {
     expect(routeText).toContain("resolveSessionGateway(services, c.req.param(\"sessionId\"), auth)")
     expect(extensionText).toContain("resolveSessionUrl: (sessionId: string): Promise<string | null> => resolveSessionUrl(sessionId, config)")
     expect(sessionUrlText).toContain("suffix: \"/gateway\"")
-    expect(sessionUrlText).toContain("if (body.harnessHost === \"central\") return base")
     expect(layoutText).toContain("void resolveSessionUrl(sessionId, config).then((gatewayUrl) => {")
     expect(layoutText).not.toContain("^https?:\\\\/\\\\/(localhost|127\\\\.0\\\\.0\\\\.1)")
   })

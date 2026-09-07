@@ -753,8 +753,8 @@ async function createPickerSession(dir: string) {
   return createHarnessSession(dir, {
     title: "Timeline turn picker",
     harness: "pi",
-    providerID: "openai",
-    modelID: "gpt-4",
+    providerID: "pi",
+    modelID: "openai/gpt-4",
   })
 }
 
@@ -792,12 +792,10 @@ async function createPiSession(dir: string) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      mode: "hybrid",
       title: "Pi subagent showcase",
       harness: "pi",
       workspaceId: workspace.workspaceId,
-      model: { providerID: "openai", modelID: "gpt-4" },
-      toolSandbox: { kind: "workspace-runtime", workspaceId: workspace.workspaceId },
+      model: { providerID: "pi", modelID: "openai/gpt-4" },
     }),
   })
   if (!response.ok)
@@ -855,7 +853,7 @@ async function seedPickerTurn(dir: string, sessionID: string, turn: number) {
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageID, model: { providerID: "openai", modelID: "gpt-4" }, parts: [{ type: "text", text: prompt }] }),
+      body: JSON.stringify({ messageID, model: { providerID: "pi", modelID: "openai/gpt-4" }, parts: [{ type: "text", text: prompt }] }),
       signal: AbortSignal.timeout(30_000),
     },
   )

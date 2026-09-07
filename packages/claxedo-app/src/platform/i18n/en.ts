@@ -594,10 +594,20 @@ export const dict = {
   "settings.models.providerSearch.hint": "Showing first {{shown}} of {{total}}. Search to find others.",
   "settings.models.providerSearch.empty": "No models match “{{query}}”.",
   "settings.providers.tag.apiKey": "API key",
-
-
-
-
+  "settings.permissions.tool.read.description": "Reading a file (matches the file path)",
+  "settings.permissions.tool.edit.description": "Modify files, including edits, writes, and patches",
+  "settings.permissions.tool.glob.description": "Match files using glob patterns",
+  "settings.permissions.tool.grep.description": "Search file contents using regular expressions",
+  "settings.permissions.tool.list.description": "List files within a directory",
+  "settings.permissions.tool.bash.description": "Run shell commands",
+  "settings.permissions.tool.task.description": "Launch sub-agents",
+  "settings.permissions.tool.skill.description": "Load a skill by name",
+  "settings.permissions.tool.lsp.description": "Run language server queries",
+  "settings.permissions.tool.todowrite.description": "Update the todo list",
+  "settings.permissions.tool.webfetch.description": "Fetch content from a URL",
+  "settings.permissions.tool.websearch.description": "Search the web",
+  "settings.permissions.tool.external_directory.description": "Access files outside the project directory",
+  "settings.permissions.tool.doom_loop.description": "Detect repeated tool calls with identical input",
   "session.delete.failed.title": "Failed to delete session",
   "session.delete.title": "Delete session",
   "session.delete.confirm": 'Delete session "{{name}}"?',

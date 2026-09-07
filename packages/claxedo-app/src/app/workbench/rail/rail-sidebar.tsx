@@ -1107,6 +1107,20 @@ export function RailSidebar(props: RailSidebarProps) {
       workspace: workspaceSessionBacking(session, directory),
     })
   }
+  // The identity a row's surface opens under. For a relay-backed row
+  // `replaceSessionUrl` writes the same workspace id into `/w/<id>/session/…`,
+  // and the route layer that mirrors that URL reuses a surface only when it
+  // carries that id (`sameWorkspaceSession`): opened without it, the surface is
+  // followed one pass later by a second one for the same session, and the
+  // first is stashed before its page is built.
+  const sessionOpenOptions = (session: Row) => {
+    const workspace = workspaceSessionBacking(session, sessionDirectory(session))
+    const sessionRef = sessionWorkbenchRef(session)
+    return {
+      ...(sessionRef ? { sessionRef } : {}),
+      ...(workspace ? { workspaceRouteId: workspace.workspaceId } : {}),
+    }
+  }
   const sessionSourceRow = (session: Row): SessionNavigationRow => {
     const directory = sessionDirectory(session)
     const time = session.time ?? 0
@@ -1262,9 +1276,7 @@ export function RailSidebar(props: RailSidebarProps) {
     }
     const serial = ++sessionActivationSerial
     measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), { networkQuiet }))
-    const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
-      sessionRef: sessionWorkbenchRef(session),
-    }))
+    const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), sessionOpenOptions(session)))
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
     focusComposerWhenReady({ origin: focusOrigin, sessionId: session.id })
     afterVisibleActivation(() => {
@@ -1274,15 +1286,13 @@ export function RailSidebar(props: RailSidebarProps) {
       if (meta) props.onTabSelect?.(meta)
     })
   }
-  const prepareSessionDrag = (session: Row) => {
-    const sessionRef = () => sessionWorkbenchRef(session)
-    return existingSessionContentId(session) ?? claxedoState.layout.openSession(
+  const prepareSessionDrag = (session: Row) =>
+    existingSessionContentId(session) ?? claxedoState.layout.openSession(
       sessionDirectory(session),
       session.id,
       sessionRowTitle(session.title),
-      { focus: false, sessionRef: sessionRef() },
+      { focus: false, ...sessionOpenOptions(session) },
     )
-  }
   const activateSessionFromRows = (rows: readonly Row[], item: SessionNavigationDisplayRow) => {
     const session = rowForNavigation(rows, item)
     if (session) activateSession(session)
