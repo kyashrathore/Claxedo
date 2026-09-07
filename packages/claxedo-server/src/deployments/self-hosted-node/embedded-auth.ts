@@ -157,6 +157,11 @@ export function createEmbeddedAuth(
           },
         ],
         clientRegistrationDefaultResources: [claxedoMcpResource(embeddedAuthPublicOrigin(env))],
+        // Without this Better Auth writes the provider's whole scope list onto
+        // every dynamically registered client; this box offers no other
+        // resource, and its clients should not claim otherwise.
+        clientRegistrationDefaultScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+        enforcePerClientResources: true,
         allowPublicClientPrelogin: true,
         // Same reasoning as the hosted foundation: MCP hosts arrive with no
         // client id and a loopback redirect on an ephemeral port. A self-host

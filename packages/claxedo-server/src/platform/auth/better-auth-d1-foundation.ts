@@ -187,6 +187,16 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
          * is what the MCP resource allows.
          */
         clientRegistrationDefaultResources: [claxedoMcpResource(input.configuration.public.apiOrigin)],
+        /**
+         * The ceiling on a registered client's own scope record too, not just
+         * on what its resource allows. Left unset, Better Auth writes the
+         * provider's whole scope list onto every dynamically registered
+         * client, so a client record read back from D1 claims
+         * `workspace:write` it can never spend — and one flipped
+         * `enforcePerClientResources` away from spending it.
+         */
+        clientRegistrationDefaultScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+        enforcePerClientResources: true,
         allowPublicClientPrelogin: true,
         /**
          * Every MCP host registers per server at RFC 7591 `/oauth2/register`
