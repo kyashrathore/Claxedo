@@ -34,6 +34,8 @@ export type WorkspaceRuntimeCaller = {
   /** The request sent and its 2xx response; anything else is thrown typed. */
   send(input: WorkspaceRuntimeCall): Promise<{ request: Request; response: Response }>
   call<T>(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<T>>
+  /** For a route whose success is `204 No Content`; a body where none was promised is a payload error. */
+  callNoContent(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<void>>
   url(path: string, query?: Record<string, unknown>): URL
 }
 
@@ -128,7 +130,18 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
     return { data: body as T, ...sent }
   }
 
-  return { send, call, url }
+  const callNoContent = async (input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<void>> => {
+    const sent = await send(input)
+    if (sent.response.status !== 204) {
+      throw new WorkspaceRuntimeClientPayloadError(
+        input.operation,
+        `Expected 204 No Content, got ${sent.response.status}`,
+      )
+    }
+    return { data: undefined, ...sent }
+  }
+
+  return { send, call, callNoContent, url }
 }
 
 /** The typed error for a non-2xx response whose body is a Claxedo `{ error: { code, message } }` envelope, or any other body. */

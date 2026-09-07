@@ -192,15 +192,13 @@ async function createChildSession(
 }
 
 /**
- * `POST /prompt_async` answers 204 with an empty body whenever it admits the
- * turn, and `session.promptAsync` parses every reply as JSON, so the typed
- * client rejects the success case. The message id is derived from the child so
- * a create retried under the same `clientRequestId` — which resolves to the
- * same child — is deduplicated by the runtime rather than starting a second
- * turn.
+ * The message id is derived from the child so a create retried under the same
+ * `clientRequestId` — which resolves to the same child — is deduplicated by
+ * the runtime rather than starting a second turn.
  */
 async function promptChild(ctx: McpToolContext, sessionId: string, prompt: string): Promise<void> {
-  await postRuntimeJson(ctx, `/session/${encodeURIComponent(sessionId)}/prompt_async`, {}, {
+  await (await ownRuntimeClient(ctx)).session.promptAsync({
+    sessionID: sessionId,
     messageID: `subagent:${sessionId}`,
     parts: [{ type: "text", text: prompt }],
   })

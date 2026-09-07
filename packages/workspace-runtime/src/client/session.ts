@@ -9,6 +9,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import type {
   AgentGoalMutationResult,
+  AgentRuntimeAbortResult,
   AgentPermissionModeState,
   GoalCapabilities,
   HarnessCapabilities,
@@ -21,6 +22,9 @@ import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRunti
 
 type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
+
+/** What the routes that only acknowledge a mutation answer with. */
+type Ok = { ok: true }
 
 export type SessionInput = WorkspaceScope & { sessionID: string }
 export type SessionCreateInput = WorkspaceScope & {
@@ -58,7 +62,7 @@ export type WorkspaceSessionClient = {
   summaries(input?: SessionSummaryListInput, options?: Options): Reply<Record<string, unknown>[]>
   create(input?: SessionCreateInput, options?: Options): Reply<AgentPresentationSession>
   get(input: SessionInput, options?: Options): Reply<AgentPresentationSession>
-  delete(input: SessionInput, options?: Options): Reply<boolean>
+  delete(input: SessionInput, options?: Options): Reply<Ok>
   update(input: SessionUpdateInput, options?: Options): Reply<AgentPresentationSession>
   status(input?: WorkspaceScope, options?: Options): Reply<Record<string, AgentRuntimeStatus>>
   harnessCapabilities(input?: WorkspaceScope, options?: Options): Reply<HarnessCapabilities>
@@ -67,10 +71,11 @@ export type WorkspaceSessionClient = {
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessagePage>
   todo(input: SessionInput, options?: Options): Reply<AgentTodo[]>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
-  abort(input: SessionInput, options?: Options): Reply<boolean>
-  summarize(input: SessionInput & { providerID: string; modelID: string; auto?: boolean }, options?: Options): Reply<boolean>
+  abort(input: SessionInput, options?: Options): Reply<AgentRuntimeAbortResult>
+  summarize(input: SessionInput & { providerID: string; modelID: string; auto?: boolean }, options?: Options): Reply<Ok>
   prompt(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
-  promptAsync(input: SessionMessageInput, options?: Options): Reply<boolean>
+  /** `204 No Content` on admission; the turn runs on after the response. */
+  promptAsync(input: SessionMessageInput, options?: Options): Reply<void>
   command(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
   shell(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
   revert(input: SessionInput & { messageID: string; partID?: string }, options?: Options): Reply<AgentPresentationSession>
@@ -98,13 +103,13 @@ export type WorkspaceSessionClient = {
 export type WorkspacePermissionClient = {
   list(input?: WorkspaceScope, options?: Options): Reply<AgentPermission[]>
   modes(input?: WorkspaceScope, options?: Options): Reply<AgentPermissionModeState>
-  respond(input: WorkspaceScope & { sessionID: string; permissionID: string; response?: "once" | "always" | "reject" }, options?: Options): Reply<boolean>
+  respond(input: WorkspaceScope & { sessionID: string; permissionID: string; response?: "once" | "always" | "reject" }, options?: Options): Reply<Ok>
 }
 
 export type WorkspaceQuestionClient = {
   list(input?: WorkspaceScope, options?: Options): Reply<AgentQuestion[]>
-  reply(input: WorkspaceScope & { requestID: string; answers?: AgentQuestionAnswer[] }, options?: Options): Reply<boolean>
-  reject(input: WorkspaceScope & { requestID: string }, options?: Options): Reply<boolean>
+  reply(input: WorkspaceScope & { requestID: string; answers?: AgentQuestionAnswer[] }, options?: Options): Reply<Ok>
+  reject(input: WorkspaceScope & { requestID: string }, options?: Options): Reply<Ok>
 }
 
 const SESSION_LIST_QUERY = ["scope", "path", "roots", "start", "search", "limit"] as const
@@ -139,7 +144,14 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     abort: (input, options) => write("session.abort", "POST", input, "/abort", options),
     summarize: (input, options) => write("session.summarize", "POST", input, "/summarize", options, without(input, ["sessionID"])),
     prompt: (input, options) => write("session.prompt", "POST", input, "/message", options, without(input, ["sessionID"])),
-    promptAsync: (input, options) => write("session.promptAsync", "POST", input, "/prompt_async", options, without(input, ["sessionID"])),
+    promptAsync: (input, options) => caller.callNoContent({
+      operation: "session.promptAsync",
+      method: "POST",
+      path: sessionPath(input, "/prompt_async"),
+      scope: input,
+      body: without(input, ["sessionID"]),
+      options,
+    }),
     command: (input, options) => write("session.command", "POST", input, "/command", options, without(input, ["sessionID"])),
     shell: (input, options) => write("session.shell", "POST", input, "/shell", options, without(input, ["sessionID"])),
     revert: (input, options) => write("session.revert", "POST", input, "/revert", options, without(input, ["sessionID"])),

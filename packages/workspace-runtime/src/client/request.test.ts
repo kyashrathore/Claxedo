@@ -68,6 +68,24 @@ describe("workspace runtime request path", () => {
     } satisfies Partial<WorkspaceRuntimeClientTransportError>)
   })
 
+  test("reads a 204 route as no body, and refuses one that answered with a body", async () => {
+    const responses: Response[] = [new Response(null, { status: 204 }), Response.json({ ok: true })]
+    const client = createWorkspaceRuntimeClient({
+      baseUrl: "https://server.example",
+      fetch: async () => responses.shift() ?? new Response(null, { status: 500 }),
+    })
+
+    const admitted = await client.session.promptAsync({ sessionID: "s1", parts: [{ type: "text", text: "go" }] })
+    expect(admitted.data).toBeUndefined()
+    expect(admitted.response.status).toBe(204)
+
+    await expect(client.session.promptAsync({ sessionID: "s1", parts: [] })).rejects.toMatchObject({
+      name: "WorkspaceRuntimeClientPayloadError",
+      operation: "session.promptAsync",
+      message: "Expected 204 No Content, got 200",
+    } satisfies Partial<WorkspaceRuntimeClientPayloadError>)
+  })
+
   test("forwards AbortSignal and preserves native AbortError cancellation", async () => {
     const controller = new AbortController()
     const aborted = new DOMException("cancelled", "AbortError")

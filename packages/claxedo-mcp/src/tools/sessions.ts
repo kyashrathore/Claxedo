@@ -266,21 +266,10 @@ async function createSession(
   return { id, session: body, ...(ceiling ? { permissionCeiling: ceiling } : {}) }
 }
 
-/**
- * `POST /session/:id/prompt_async` through the resolved runtime: the route
- * answers 204 with no body, which the typed client's `promptAsync` reads as
- * JSON and fails on. Admission is the status, which is all the route promises —
- * the turn itself runs on after the response.
- */
+/** The turn is admitted when the call returns; it runs on after the response. */
 async function promptSession(ctx: McpToolContext, target: WorkspaceTarget, sessionId: string, text: string) {
-  const runtime = await ctx.client.runtime(target)
-  const query = new URLSearchParams(targetScope(target))
-  const response = await runtime(`/session/${encodeURIComponent(sessionId)}/prompt_async?${query}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parts: [{ type: "text", text }] }),
-  })
-  if (!response.ok) throw await workspaceRuntimeClientError("session.promptAsync", response)
+  const server = await ctx.client.server(target)
+  await server.session.promptAsync({ sessionID: sessionId, ...targetScope(target), parts: [{ type: "text", text }] })
   return true
 }
 
