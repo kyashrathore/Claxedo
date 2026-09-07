@@ -326,12 +326,14 @@ export function registerAttentionTools(registry: ToolRegistry): void {
       ...WORKSPACE_TARGET_SCHEMA,
     },
     access: QUESTION_REPLY_ACCESS,
-  }, async (args, ctx) => {
+    sessionIdFromHandler: true,
+  }, async (args, ctx, addressed) => {
     const target = attentionWriteTarget(ctx, "question_reply", args)
     if (!target) return mcpToolRefusal(NAME_A_WORKSPACE)
     const server = await ctx.client.server(target)
     const row = (await server.question.list()).data.find((question) => question.id === args.request)
     if (!row) return mcpToolRefusal(`No question ${args.request} is pending here`)
+    addressed?.(row.sessionID)
     if (ctx.credential.kind === "runtime") {
       const caller = ctx.credential.sessionId
       const session = await server.session.get({ sessionID: row.sessionID }).catch(() => undefined)
@@ -350,12 +352,16 @@ export function registerAttentionTools(registry: ToolRegistry): void {
       ...WORKSPACE_TARGET_SCHEMA,
     },
     access: APPROVE_ACCESS,
-  }, async (args, ctx) => {
+    sessionIdFromHandler: true,
+  }, async (args, ctx, addressed) => {
     const target = attentionWriteTarget(ctx, "question_reject", args)
     if (!target) return mcpToolRefusal(NAME_A_WORKSPACE)
     const server = await ctx.client.server(target)
+    const row = (await server.question.list()).data.find((question) => question.id === args.request)
+    if (!row) return mcpToolRefusal(`No question ${args.request} is pending here`)
+    addressed?.(row.sessionID)
     await server.question.reject({ requestID: args.request })
-    return toolText(`Rejected question ${args.request}.`)
+    return toolText(`Rejected question ${args.request} on session ${row.sessionID}.`)
   })
 
   registry.tool("wait_for_attention", {

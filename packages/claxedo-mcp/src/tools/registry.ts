@@ -7,13 +7,22 @@ export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
   description: string
   inputSchema: Shape
   access: McpToolAccess
-  /** The session a write addresses, for the audit line. */
+  /** The session a write addresses, read from the arguments before the handler runs. */
   sessionIdOf?: (args: ShapeOutput<Shape>) => string | undefined
+  /**
+   * For a write whose arguments do not name its session — a question is
+   * addressed by request id, and which session raised it is known only once
+   * the runtime has been read — the audit waits for the handler, which names
+   * the session through the `addressed` callback it is given.
+   */
+  sessionIdFromHandler?: true
 }>
 
 export type McpToolHandler<Shape extends McpToolShape> = (
   args: ShapeOutput<Shape>,
   ctx: McpToolContext,
+  /** Names the session this call turned out to address; only passed under `sessionIdFromHandler`. */
+  addressed?: (sessionId: string) => void,
 ) => Promise<McpToolResult>
 
 export type ToolRegistry = {
@@ -58,16 +67,23 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
               })
               if (answer.action !== "accept") return toCallToolResult(mcpToolRefusal(`${name} was not confirmed`))
             }
-            if (definition.access.write) {
-              const sessionId = definition.sessionIdOf?.(args)
-              await ctx.audit({
-                tool: name,
-                credential: ctx.credential,
-                args: args as Record<string, unknown>,
-                ...(sessionId ? { sessionId } : {}),
-              })
+            const record = (sessionId: string | undefined) => ctx.audit({
+              tool: name,
+              credential: ctx.credential,
+              args: args as Record<string, unknown>,
+              ...(sessionId ? { sessionId } : {}),
+            })
+            if (!definition.access.write) return toCallToolResult(await handler(args, ctx))
+            if (!definition.sessionIdFromHandler) {
+              await record(definition.sessionIdOf?.(args))
+              return toCallToolResult(await handler(args, ctx))
             }
-            return toCallToolResult(await handler(args, ctx))
+            let addressed: string | undefined
+            try {
+              return toCallToolResult(await handler(args, ctx, (sessionId) => { addressed = sessionId }))
+            } finally {
+              await record(addressed)
+            }
           } catch (error) {
             if (error instanceof McpAccessDenied) return toCallToolResult(mcpToolRefusal(error.message))
             throw error

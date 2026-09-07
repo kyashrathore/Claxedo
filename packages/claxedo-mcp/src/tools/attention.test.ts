@@ -318,24 +318,37 @@ describe("sessions_board", () => {
 })
 
 describe("answering", () => {
-  test("a person's reply reaches the runtime and is audited as the actor", async () => {
+  test("a person's reply reaches the runtime and is audited as the actor, against the session it addressed", async () => {
     const state = harness({
       sessions: [{ id: "ses_1", title: "Build" }],
       status: { ses_1: { type: "busy" } },
       pendingPermissions: [permission("perm_1", "ses_1", "Bash ls")],
-      pendingQuestions: [question("q_1", "ses_1", "Which port?")],
+      pendingQuestions: [question("q_1", "ses_1", "Which port?"), question("q_2", "ses_1", "Which host?")],
     })
     const { url, audits } = await listen({ state })
     const { client } = await connect(url, "cli-jwt")
     expect((await callText(client, "permission_reply", { session: "ses_1", permission: "perm_1", response: "always" })).text)
       .toContain("Answered permission perm_1")
     expect(state.answered).toEqual([{ id: "perm_1", decision: "allow_always" }])
+    expect((await callText(client, "question_reply", { request: "q_2", answers: [["8080"]] })).text)
+      .toContain("Answered question q_2")
     expect((await callText(client, "question_reject", { request: "q_1" })).text).toContain("Rejected question q_1")
     expect(state.rejected).toEqual(["q_1"])
+    // A question names a request id, not a session; the audit line still has
+    // to say which session was answered.
     expect(audits.map((event) => ({ tool: event.tool, sessionId: event.sessionId }))).toEqual([
       { tool: "permission_reply", sessionId: "ses_1" },
-      { tool: "question_reject", sessionId: undefined },
+      { tool: "question_reply", sessionId: "ses_1" },
+      { tool: "question_reject", sessionId: "ses_1" },
     ])
+  })
+
+  test("a question that is not pending is refused, and audited with no session because none was touched", async () => {
+    const { url, audits } = await listen({ state: harness({ sessions: [{ id: "ses_1", title: "Build" }] }) })
+    const { client } = await connect(url, "cli-jwt")
+    expect((await callText(client, "question_reject", { request: "q_gone" })).text).toContain("No question q_gone is pending here")
+    expect(audits.map((event) => ({ tool: event.tool, sessionId: event.sessionId })))
+      .toEqual([{ tool: "question_reject", sessionId: undefined }])
   })
 
   test("a session may answer its own child's question and nothing else", async () => {
