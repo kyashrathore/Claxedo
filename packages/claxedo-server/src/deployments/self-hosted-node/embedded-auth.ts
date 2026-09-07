@@ -4,10 +4,12 @@ import crypto from "node:crypto"
 import Database from "better-sqlite3"
 import { betterAuth, type BetterAuthOptions } from "better-auth"
 import { bearer } from "better-auth/plugins"
+import { oauthDeviceAuthorization, oauthProvider } from "@better-auth/oauth-provider"
 import { getMigrations } from "better-auth/db/migration"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { BetterAuthVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
+import { CLAXEDO_MCP_RESOURCE_SCOPES, claxedoMcpResource } from "../../platform/auth/mcp-oauth-scopes"
 
 /**
  * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity
@@ -139,7 +141,41 @@ export function createEmbeddedAuth(
     // `set-auth-token` response header and accepts `Authorization: Bearer`
     // on any endpoint — this is what non-cookie clients (CLI, extension,
     // control-plane bearer auth) use.
-    plugins: [bearer()],
+    plugins: [
+      bearer(),
+      oauthProvider({
+        loginPage: `${embeddedAuthPublicOrigin(env)}/login`,
+        consentPage: `${embeddedAuthPublicOrigin(env)}/oauth/consent`,
+        scopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+        resources: [
+          {
+            identifier: claxedoMcpResource(embeddedAuthPublicOrigin(env)),
+            name: "Claxedo MCP",
+            allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+            accessTokenTtl: 300,
+            refreshTokenTtl: 30 * 24 * 60 * 60,
+          },
+        ],
+        clientRegistrationDefaultResources: [claxedoMcpResource(embeddedAuthPublicOrigin(env))],
+        allowPublicClientPrelogin: true,
+        // Same reasoning as the hosted foundation: MCP hosts arrive with no
+        // client id and a loopback redirect on an ephemeral port. A self-host
+        // box has no install tooling to pre-register them at all.
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        // This box has no `jwt()` plugin, so ID tokens are signed with the
+        // client secret and Better Auth must be able to recover it.
+        disableJwtPlugin: true,
+        storeClientSecret: "encrypted",
+        accessTokenExpiresIn: 300,
+        refreshTokenExpiresIn: 30 * 24 * 60 * 60,
+      }),
+      oauthDeviceAuthorization({
+        verificationUri: `${embeddedAuthPublicOrigin(env)}/device`,
+        expiresIn: "10m",
+        interval: "5s",
+      }),
+    ],
     // Self-host boxes must not phone home.
     telemetry: { enabled: false },
   } satisfies BetterAuthOptions

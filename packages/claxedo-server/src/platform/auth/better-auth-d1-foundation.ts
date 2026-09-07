@@ -9,6 +9,11 @@ import { betterAuthD1Adapter } from "./better-auth-d1-adapter"
 import { betterAuthD1AuthenticationEvidenceHooks } from "./better-auth-d1-authentication-evidence"
 import type { BetterAuthConfiguration } from "./better-auth-configuration"
 import {
+  CLAXEDO_MCP_OAUTH_SCOPES,
+  CLAXEDO_MCP_RESOURCE_SCOPES,
+  claxedoMcpResource,
+} from "./mcp-oauth-scopes"
+import {
   BETTER_AUTH_ACCESS_TOKEN_PREFIX,
   BETTER_AUTH_REFRESH_TOKEN_PREFIX,
   betterAuthOAuthTokenHash,
@@ -160,18 +165,43 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
       oauthProvider({
         loginPage: `${input.configuration.public.appOrigin}/login`,
         consentPage: `${input.configuration.public.appOrigin}/oauth/consent`,
-        scopes: [...BETTER_AUTH_NATIVE_SCOPES],
+        scopes: [...BETTER_AUTH_NATIVE_SCOPES, ...CLAXEDO_MCP_OAUTH_SCOPES],
         resources: [
           {
             identifier: input.resource,
             allowedScopes: [...BETTER_AUTH_NATIVE_SCOPES],
             accessTokenTtl: 300,
           },
+          {
+            identifier: claxedoMcpResource(input.configuration.public.apiOrigin),
+            name: "Claxedo MCP",
+            allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+            accessTokenTtl: 300,
+            refreshTokenTtl: 30 * 24 * 60 * 60,
+          },
         ],
-        clientRegistrationDefaultResources: [input.resource],
+        /**
+         * The ONLY resource a registered client reaches by default, so a
+         * dynamically registered MCP client can never ask the control-plane
+         * resource for `workspace:write` — the account-wide scope. Its ceiling
+         * is what the MCP resource allows.
+         */
+        clientRegistrationDefaultResources: [claxedoMcpResource(input.configuration.public.apiOrigin)],
         allowPublicClientPrelogin: true,
-        allowDynamicClientRegistration: false,
-        allowUnauthenticatedClientRegistration: false,
+        /**
+         * Every MCP host registers per server at RFC 7591 `/oauth2/register`
+         * with an unauthenticated request and a loopback redirect URI on an
+         * ephemeral port, so there is nothing to pre-register and no
+         * credential to register with; refusing it makes MCP OAuth
+         * unreachable from Claude, Cursor, Codex and VS Code alike.
+         *
+         * What contains it: Better Auth requires PKCE from every public
+         * client, a registered client's only resource is the MCP one above,
+         * and `resolveOAuthMcpCredential` refuses `claxedo:admin` to any
+         * client this deployment did not register itself.
+         */
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
         // Native access tokens are D1-backed opaque credentials. Better Auth's
         // resource JWTs are self-contained and cannot satisfy remote revoke.
         disableJwtPlugin: true,
