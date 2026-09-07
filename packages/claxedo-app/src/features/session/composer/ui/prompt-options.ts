@@ -70,9 +70,16 @@ export function comparePromptAtGroups(a: { category: string }, b: { category: st
   return promptAtGroupRank(a.category) - promptAtGroupRank(b.category)
 }
 
+// `mode` is optional on the wire, so an absent one is unclassified rather than
+// delegable: reading it as non-primary put the harness's own primary agent in
+// the `@` list.
+function delegableAgent(mode: string | undefined) {
+  return mode === "subagent" || mode === "all"
+}
+
 export function promptAgentOptions(agents: PromptAgentRow[]) {
   return agents
-    .filter((agent) => !agent.hidden && agent.mode !== "primary")
+    .filter((agent) => !agent.hidden && delegableAgent(agent.mode))
     .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.name }))
 }
 

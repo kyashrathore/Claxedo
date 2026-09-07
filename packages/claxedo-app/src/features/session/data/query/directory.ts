@@ -1,5 +1,5 @@
-import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
-export type { ClaxedoAgentProfile as Agent } from "@/platform/api/claxedo-api-types"
+import type { AgentAgent } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
@@ -24,10 +24,46 @@ type PathClient = {
   }
 }
 
-function agentListFromUnknown(data: unknown) {
-  return Array.isArray(data)
-    ? data.filter((item): item is Agent => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
-    : []
+/**
+ * `GET /agent` answers `AgentAgent`: `name` is the only guaranteed member, and
+ * `mode` is absent whenever the harness does not classify the agent. The three
+ * extra members are what the session selector reads off a row; the OpenCode and
+ * ACP adapters send none of them, so those reads answer undefined today.
+ */
+export type Agent = AgentAgent & {
+  hidden?: boolean
+  model?: { providerID: string; modelID: string }
+  variant?: string
+}
+
+function agentModelRef(value: unknown) {
+  if (typeof value !== "object" || value === null) return undefined
+  const providerID = "providerID" in value ? value.providerID : undefined
+  const modelID = "modelID" in value ? value.modelID : undefined
+  return typeof providerID === "string" && typeof modelID === "string" ? { providerID, modelID } : undefined
+}
+
+function agentRow(value: unknown): Agent | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  const name = "name" in value ? value.name : undefined
+  if (typeof name !== "string") return undefined
+  const description = "description" in value ? value.description : undefined
+  const mode = "mode" in value ? value.mode : undefined
+  const model = "model" in value ? agentModelRef(value.model) : undefined
+  const variant = "variant" in value ? value.variant : undefined
+  const hidden = "hidden" in value ? value.hidden : undefined
+  return {
+    name,
+    ...(typeof description === "string" ? { description } : {}),
+    ...(typeof mode === "string" ? { mode } : {}),
+    ...(model === undefined ? {} : { model }),
+    ...(typeof variant === "string" ? { variant } : {}),
+    ...(typeof hidden === "boolean" ? { hidden } : {}),
+  }
+}
+
+function agentListFromUnknown(data: unknown): Agent[] {
+  return Array.isArray(data) ? data.flatMap((item) => agentRow(item) ?? []) : []
 }
 
 export function projectCurrentQuery(input: {

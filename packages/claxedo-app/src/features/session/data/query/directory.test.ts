@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
+  type Agent,
   agentListQuery,
   pathQuery,
   projectCurrentQuery,
@@ -21,12 +22,7 @@ describe("directory query factories", () => {
   }
 
   function agent(name: string): Agent {
-    return {
-      name,
-      mode: "primary",
-      permission: [],
-      options: {},
-    }
+    return { name, mode: "primary" }
   }
 
   test("projectCurrentQuery returns the current project id", async () => {
@@ -88,6 +84,30 @@ describe("directory query factories", () => {
     expect(query.staleTime).toBe(30 * 1000)
     expect(await query.queryFn()).toMatchObject([{ name: "build" }])
     expect(calls).toEqual([{ directory: "/tmp/ws" }])
+  })
+
+  test("agentListQuery answers the members the agent route declares and drops the rest", async () => {
+    const query = agentListQuery({
+      baseUrl: "http://example.test",
+      directory: "/tmp/ws",
+      harnessType: "opencode",
+      client: {
+        agent: {
+          list: async () => ({
+            data: [
+              { name: "build", description: "Builds", mode: "primary", permission: ["edit"], options: { steps: 3 } },
+              { name: "loose", mode: 3 },
+              { mode: "subagent" },
+            ],
+          }),
+        },
+      },
+    })
+
+    expect(await query.queryFn()).toEqual([
+      { name: "build", description: "Builds", mode: "primary" },
+      { name: "loose" },
+    ])
   })
 
   test("agentListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {

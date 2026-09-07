@@ -14,8 +14,8 @@ describe("prompt popover controller", () => {
   test("builds at-options as agents, recent files, then searched files", async () => {
     const options = await promptAtOptions({
       agents: promptAgentOptions([
-        { name: "build" },
-        { name: "hidden", hidden: true },
+        { name: "build", mode: "subagent" },
+        { name: "hidden", mode: "subagent", hidden: true },
         { name: "primary", mode: "primary" },
       ]),
       recentFiles: ["src/a.ts", "src/b.ts"],
@@ -32,6 +32,20 @@ describe("prompt popover controller", () => {
     expect(["file", "recent", "agent"].sort((a, b) => comparePromptAtGroups({ category: a }, { category: b }))).toEqual(
       ["agent", "recent", "file"],
     )
+  })
+
+  test("offers only agents whose mode declares them delegable", () => {
+    expect(
+      promptAgentOptions([
+        { name: "reviewer", mode: "subagent" },
+        { name: "generalist", mode: "all" },
+        { name: "build", mode: "primary" },
+        { name: "unclassified" },
+      ]),
+    ).toEqual([
+      { type: "agent", name: "reviewer", display: "reviewer" },
+      { type: "agent", name: "generalist", display: "generalist" },
+    ])
   })
 
   test("builds slash commands as custom commands before enabled builtin commands", () => {

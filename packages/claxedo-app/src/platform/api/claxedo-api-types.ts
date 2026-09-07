@@ -59,23 +59,6 @@ export type ClaxedoCommand = {
   hints: string[]
 }
 
-export type ClaxedoAgentProfile = {
-  name: string
-  description?: string
-  mode: "subagent" | "primary" | "all"
-  native?: boolean
-  hidden?: boolean
-  topP?: number
-  temperature?: number
-  color?: string
-  permission: unknown
-  model?: { modelID: string; providerID: string }
-  variant?: string
-  prompt?: string
-  options: Record<string, unknown>
-  steps?: number
-}
-
 export type ClaxedoProviderAuthorization = {
   url: string
   method: "auto" | "code"
