@@ -59,7 +59,15 @@ describe("runtime client against the session-core route inventory", () => {
     // calls it.
     await invokeEvery(client, [], async (leaf, member) => {
       calling = member
-      return leaf(ids)
+      // The route is recorded in `fetch`, before any decoding. One fixture
+      // reply cannot satisfy every member's contract — `promptAsync` requires
+      // 204 and the rest require a body — and what a member makes of the reply
+      // is not what this test reads.
+      try {
+        return await leaf(ids)
+      } catch {
+        return undefined
+      }
     })
 
     const inventory = Object.entries(SESSION_CORE_ROUTE_ACCESS)

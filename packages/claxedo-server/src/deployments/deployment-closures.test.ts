@@ -84,8 +84,10 @@ const ENTRIES = [
   // `src/platform/auth/mcp-oauth-scopes.ts` holds the scope and resource names
   // it shares with the OAuth provider. The scope module stays dependency-free
   // on purpose — it is in every auth composition's closure, the Worker's
-  // included. Measured, not summed: 137/38.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 137, packages: 38 },
+  // included.
+  // +1 module: `src/mcp/oauth-credential.ts`, which turns a consented access
+  // token into an MCP credential. No package edge. Measured, not summed: 138/38.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 138, packages: 38 },
 ] as const
 
 /** The remaining cloud compositions. */

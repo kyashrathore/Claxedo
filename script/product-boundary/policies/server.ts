@@ -113,7 +113,14 @@ export const serverSelfHosted: Policy = {
   // composition's closure, including the Worker's, and reading the names from
   // `@claxedo/mcp` would drag the MCP SDK in behind them. No package edge.
   // Re-measured, no headroom: 137/38.
-  ceilings: { modules: 137, packages: 38 },
+  // +1 module: `src/mcp/oauth-credential.ts` reads the claims of an access
+  // token this box's own OAuth provider issued, so a host that completed
+  // consent is admitted at the MCP endpoint instead of answered 401. It is
+  // owned here rather than in `@claxedo/mcp` because the scope-to-credential
+  // rule is a deployment's policy over its own authorization server, and it
+  // reaches only `@claxedo/helpers/string` and the scope module already in
+  // this closure. No package edge. Re-measured, no headroom: 138/38.
+  ceilings: { modules: 138, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
