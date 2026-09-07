@@ -125,7 +125,14 @@ export function SourceControlView(props: {
   })
 
   const hasChanges = () => status().staged.length > 0 || status().unstaged.length > 0
-  const open = (entry: GitStatusEntry, mode: SourceControlReviewMode) => props.onFileClick(entry.path, mode)
+  // The tree owns its selection: the panel clears a file focus once it is
+  // consumed, so the highlight cannot follow that one-shot request.
+  const [selectedPath, setSelectedPath] = createSignal<string>()
+  const activePath = () => props.activePath ?? selectedPath()
+  const open = (entry: GitStatusEntry, mode: SourceControlReviewMode) => {
+    setSelectedPath(entry.path)
+    props.onFileClick(entry.path, mode)
+  }
 
   return (
     <div
@@ -204,7 +211,7 @@ export function SourceControlView(props: {
             entries={status().staged}
             collapsed={collapsed().staged}
             onToggle={() => toggle("staged")}
-            activePath={props.activePath}
+            activePath={activePath()}
             pending={pending()}
             onAction={(paths) => void run(() => mutations.unstage(paths))}
             onOpen={(entry) => open(entry, "staged")}
@@ -214,7 +221,7 @@ export function SourceControlView(props: {
             entries={status().unstaged}
             collapsed={collapsed().changes}
             onToggle={() => toggle("changes")}
-            activePath={props.activePath}
+            activePath={activePath()}
             pending={pending()}
             onAction={(paths) => void run(() => mutations.stage(paths))}
             onOpen={(entry) => open(entry, "unstaged")}
