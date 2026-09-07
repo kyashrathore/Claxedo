@@ -9,6 +9,7 @@
  */
 import path from "node:path"
 import { z } from "zod"
+import { claxedoDocumentReferenceId } from "@claxedo/helpers/claxedo-document"
 import { record, records, text } from "../json"
 import type { ClaxedoFetch } from "../client/contract"
 import type { McpToolContext } from "../context"
@@ -83,8 +84,8 @@ export function registerDocumentTools(registry: ToolRegistry) {
       const documents = await listDocuments(ctx, scope, "all")
       if ("refusal" in documents) return documents.refusal
 
-      const reference = documentReferenceId(args.document)
-      const match = resolve(documents.rows, reference)
+      const reference = claxedoDocumentReferenceId(args.document)
+      const match = resolveDocument(documents.rows, reference)
       if ("refusal" in match) return match.refusal
 
       const opened = record(
@@ -142,7 +143,7 @@ async function listDocuments(ctx: McpToolContext, scope: DocumentScope, archived
   return { rows: records(listed) }
 }
 
-function resolve(rows: readonly Record<string, unknown>[], reference: string): Readonly<{ id: string; row: Record<string, unknown> }> | Refusal {
+function resolveDocument(rows: readonly Record<string, unknown>[], reference: string): Readonly<{ id: string; row: Record<string, unknown> }> | Refusal {
   const exact = rows.find((row) => row.id === reference)
   const matches = exact
     ? [exact]
@@ -154,12 +155,6 @@ function resolve(rows: readonly Record<string, unknown>[], reference: string): R
   const id = text(row.id)
   if (!id) return { refusal: mcpToolRefusal("The documents index answered with an entry that has no id.") }
   return { id, row }
-}
-
-/** `claxedo://document/<id>` is the reference users paste; anything else is taken as an id or a name. */
-export function documentReferenceId(value: string) {
-  const match = /^claxedo:\/\/document\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(value.trim())
-  return match ? decodeURIComponent(match[1]) : value.trim()
 }
 
 function metadata(document: Record<string, unknown>) {

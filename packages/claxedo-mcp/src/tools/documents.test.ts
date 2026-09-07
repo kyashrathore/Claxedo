@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createClaxedoMcpClient } from "../client/index"
 import type { ClaxedoFetch } from "../client/contract"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential } from "../server"
-import { documentReferenceId, registerDocumentTools } from "./documents"
+import { registerDocumentTools } from "./documents"
 
 type DocumentRow = Record<string, unknown>
 
@@ -235,14 +235,5 @@ describe("a deployment that does not serve documents", () => {
     const noControlPlane = await listen()
     const local = await connect(noControlPlane.url, "cli-jwt")
     expect(await call(local, "documents_list", { project: "proj_1" })).toEqual({ text: message, isError: true })
-  })
-})
-
-describe("document references", () => {
-  test("reads the id out of a claxedo document url and leaves anything else alone", () => {
-    expect(documentReferenceId("claxedo://document/doc%20one")).toBe("doc one")
-    expect(documentReferenceId("claxedo://document/doc_plan/?view=split")).toBe("doc_plan")
-    expect(documentReferenceId("  Plan  ")).toBe("Plan")
-    expect(documentReferenceId("https://example.com/doc_plan")).toBe("https://example.com/doc_plan")
   })
 })

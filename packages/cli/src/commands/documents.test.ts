@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { documentReferenceId, documents } from "./documents"
+import { documents } from "./documents"
 
 type Call = { url: string; method: string; body?: unknown; token?: string }
 
@@ -105,10 +105,4 @@ test("documents refuses two scopes, an unknown subcommand and a flag with no val
   await expect(documents(["list", "--project", "proj_1", "--directory", "/w"])).rejects.toThrow("not both")
   await expect(documents(["archive", "--project", "proj_1"])).rejects.toThrow("Unknown documents command")
   await expect(documents(["list", "--project"])).rejects.toThrow("needs a value")
-})
-
-test("a document reference is read as its id, and anything else is left alone", () => {
-  expect(documentReferenceId("claxedo://document/doc%20one")).toBe("doc one")
-  expect(documentReferenceId("claxedo://document/doc_plan/?view=split")).toBe("doc_plan")
-  expect(documentReferenceId("  Plan  ")).toBe("Plan")
 })

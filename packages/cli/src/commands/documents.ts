@@ -1,3 +1,4 @@
+import { claxedoDocumentReferenceId } from "@claxedo/helpers/claxedo-document"
 import { config, url } from "../config"
 import { requestJson } from "../http"
 import { object } from "../json"
@@ -17,11 +18,11 @@ export async function documents(argv: string[]) {
     return
   }
   const flags = parseFlags(args)
-  const scope = documentScope(flags)
+  const scope = documentIndexQuery(flags)
   const token = await requireAccessToken()
 
   if (command === "list") {
-    console.log(JSON.stringify(await list(token, scope, "active"), null, 2))
+    console.log(JSON.stringify(await readDocumentIndex(token, scope, "active"), null, 2))
     return
   }
   if (command !== "open") throw new Error(`Unknown documents command '${command}'`)
@@ -31,8 +32,8 @@ export async function documents(argv: string[]) {
   const sessionId = flags.session ?? process.env.CLAXEDO_SESSION_ID?.trim()
   if (!sessionId) throw new Error("documents open needs --session <id> or CLAXEDO_SESSION_ID")
 
-  const wanted = documentReferenceId(reference)
-  const documentId = resolve(await list(token, scope, "all"), wanted)
+  const wanted = claxedoDocumentReferenceId(reference)
+  const documentId = resolveDocumentId(await readDocumentIndex(token, scope, "all"), wanted)
   const opened = object(
     await requestJson({
       url: url(config().controlPlaneUrl, `/documents/${encodeURIComponent(documentId)}/agent-open`),
@@ -46,19 +47,19 @@ export async function documents(argv: string[]) {
 }
 
 /** The scope the documents index takes; without either flag it is this directory. */
-function documentScope(flags: Flags): Record<string, string> {
+function documentIndexQuery(flags: Flags): Record<string, string> {
   if (flags.project && flags.directory) throw new Error("Use --project or --directory, not both")
   return flags.project ? { project_id: flags.project } : { directory: flags.directory ?? process.cwd() }
 }
 
-async function list(token: string, scope: Record<string, string>, archived: "active" | "all") {
+async function readDocumentIndex(token: string, scope: Record<string, string>, archived: "active" | "all") {
   const query = new URLSearchParams({ ...scope, archived })
   const listed = await requestJson({ url: url(config().controlPlaneUrl, `/documents?${query}`), token })
   if (!Array.isArray(listed)) throw new Error("The documents index did not answer with a list of documents")
   return listed.map((row: unknown) => object(row))
 }
 
-function resolve(rows: readonly Record<string, unknown>[], reference: string) {
+function resolveDocumentId(rows: readonly Record<string, unknown>[], reference: string) {
   const exact = rows.find((row) => row.id === reference)
   const matches = exact
     ? [exact]
@@ -69,12 +70,6 @@ function resolve(rows: readonly Record<string, unknown>[], reference: string) {
   const id = matches[0].id
   if (typeof id !== "string") throw new Error("The documents index answered with an entry that has no id")
   return id
-}
-
-/** `claxedo://document/<id>` is the reference the app copies; anything else is an id or a name. */
-export function documentReferenceId(value: string) {
-  const match = /^claxedo:\/\/document\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(value.trim())
-  return match ? decodeURIComponent(match[1]) : value.trim()
 }
 
 function parseFlags(args: string[]): Flags {

@@ -51,6 +51,14 @@ export function assertWritableTarget(ctx: McpToolContext, tool: string, target: 
   )
 }
 
+/** The per-call scope the typed client puts on the query string. */
+export function targetScope(target: WorkspaceTarget) {
+  return {
+    ...(target.workspaceId ? { workspace: target.workspaceId } : {}),
+    ...(target.directory ? { directory: target.directory } : {}),
+  }
+}
+
 export function toolJson(value: unknown): McpToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] }
 }

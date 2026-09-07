@@ -11,10 +11,9 @@
 import { z } from "zod"
 import { asRecord } from "@claxedo/helpers/guards"
 import { num, records, text } from "../json"
-import type { WorkspaceTarget } from "../client/contract"
 import type { ToolRegistry } from "./registry"
 import { declaredToolAccess } from "./inventory"
-import { toolTarget, toolText, WORKSPACE_TARGET_SCHEMA } from "./target"
+import { targetScope, toolTarget, toolText, WORKSPACE_TARGET_SCHEMA } from "./target"
 
 const DIFF_MODES = ["uncommitted", "staged", "unstaged"] as const
 
@@ -38,22 +37,15 @@ export function registerReviewTools(registry: ToolRegistry) {
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
       const server = await ctx.client.server(target)
-      const session = asRecord((await server.session.get({ sessionID: args.session, ...scope(target) })).data)
+      const session = asRecord((await server.session.get({ sessionID: args.session, ...targetScope(target) })).data)
       const directory = text(session?.directory)
       const mode = args.mode ?? "uncommitted"
       const changes = fileChanges(
         await server.diff.vcs({ content: "summary", mode, ...(directory ? { directory } : {}) }),
       )
-      return toolText(render(args.session, text(session?.title), directory, mode, changes))
+      return toolText(renderChanges(args.session, text(session?.title), directory, mode, changes))
     },
   )
-}
-
-function scope(target: WorkspaceTarget) {
-  return {
-    ...(target.workspaceId ? { workspace: target.workspaceId } : {}),
-    ...(target.directory ? { directory: target.directory } : {}),
-  }
 }
 
 function fileChanges(value: unknown): readonly FileChange[] {
@@ -64,7 +56,7 @@ function fileChanges(value: unknown): readonly FileChange[] {
   })
 }
 
-function render(sessionId: string, title: string | undefined, directory: string | undefined, mode: string, changes: readonly FileChange[]) {
+function renderChanges(sessionId: string, title: string | undefined, directory: string | undefined, mode: string, changes: readonly FileChange[]) {
   const named = title ? `${sessionId} "${title}"` : sessionId
   const where = directory ? ` in ${directory}` : ""
   if (changes.length === 0) return `${named} has no ${mode} changes${where}.`

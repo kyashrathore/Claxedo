@@ -14,7 +14,7 @@ import { McpAccessDenied, type McpToolContext } from "../context"
 import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
 import type { ToolRegistry } from "./registry"
 import { runtimeToolAccess } from "./inventory"
-import { assertWritableTarget, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
+import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
 /** The harnesses `?nativeHarness=` names; `satisfies` refuses one the runtime does not have. */
 const NATIVE_HARNESSES = ["claude", "codex", "cursor", "pi", "opencode"] as const satisfies readonly RuntimeNativeHarnessId[]
@@ -103,7 +103,7 @@ export function registerSessionTools(registry: ToolRegistry) {
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
       const server = await ctx.client.server(target)
-      const input = { sessionID: args.session, ...scope(target) }
+      const input = { sessionID: args.session, ...targetScope(target) }
       const [session, config] = await Promise.all([server.session.get(input), server.session.config.get(input)])
       return toolJson({ session: session.data, config: config.data })
     },
@@ -128,7 +128,7 @@ export function registerSessionTools(registry: ToolRegistry) {
       const page = args.limit === undefined && args.before === undefined
         ? { view: args.view ?? ("latest-turn" as const) }
         : { limit: args.limit ?? 50, ...(args.before ? { before: args.before } : {}) }
-      const read = await server.session.messages({ sessionID: args.session, ...scope(target), ...page })
+      const read = await server.session.messages({ sessionID: args.session, ...targetScope(target), ...page })
       // The route answers with the messages alone and puts the cursor on a
       // header, so a page read straight from the body cannot say how to ask
       // for the next one.
@@ -164,7 +164,7 @@ export function registerSessionTools(registry: ToolRegistry) {
       const target = toolTarget(ctx, args)
       assertWritableTarget(ctx, "session_abort", target)
       const server = await ctx.client.server(target)
-      const aborted = await server.session.abort({ sessionID: args.session, ...scope(target) })
+      const aborted = await server.session.abort({ sessionID: args.session, ...targetScope(target) })
       return toolJson({ session: args.session, aborted: aborted.data })
     },
   )
@@ -182,7 +182,7 @@ export function registerSessionTools(registry: ToolRegistry) {
       const server = await ctx.client.server(target)
       const config = await server.session.config.update({
         sessionID: args.session,
-        ...scope(target),
+        ...targetScope(target),
         harness: { id: args.harness, access: "native" },
       })
       return toolJson({ session: args.session, config: config.data })
@@ -200,7 +200,7 @@ export function registerSessionTools(registry: ToolRegistry) {
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
       const server = await ctx.client.server(target)
-      const session = await server.session.update({ sessionID: args.session, ...scope(target), title: args.title })
+      const session = await server.session.update({ sessionID: args.session, ...targetScope(target), title: args.title })
       return toolJson(session.data)
     },
   )
@@ -216,18 +216,10 @@ export function registerSessionTools(registry: ToolRegistry) {
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
       const server = await ctx.client.server(target)
-      const deleted = await server.session.delete({ sessionID: args.session, ...scope(target) })
+      const deleted = await server.session.delete({ sessionID: args.session, ...targetScope(target) })
       return toolJson({ session: args.session, deleted: deleted.data })
     },
   )
-}
-
-/** The per-call scope the typed client puts on the query string. */
-function scope(target: WorkspaceTarget) {
-  return {
-    ...(target.workspaceId ? { workspace: target.workspaceId } : {}),
-    ...(target.directory ? { directory: target.directory } : {}),
-  }
 }
 
 /**
@@ -282,7 +274,7 @@ async function createSession(
  */
 async function promptSession(ctx: McpToolContext, target: WorkspaceTarget, sessionId: string, text: string) {
   const runtime = await ctx.client.runtime(target)
-  const query = new URLSearchParams(scope(target))
+  const query = new URLSearchParams(targetScope(target))
   const response = await runtime(`/session/${encodeURIComponent(sessionId)}/prompt_async?${query}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
