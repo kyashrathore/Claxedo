@@ -1,15 +1,3 @@
-/**
- * What an MCP tool in this package is, and what it answers with.
- *
- * `browser-tools.ts`, `documents-tools.ts`, `cloud-workspace-tools.ts` and
- * `server.ts` each described this for themselves — two private `ToolResult`
- * types and three register ports, two of which gave up and typed the handler's
- * return as `Promise<unknown>`. Because the ports disagreed, the value handed
- * to the SDK could not be typed at all, and `server.registerTool` was reached
- * through a cast that resolved to `never`.
- *
- * One contract, declared here, turns that cast into a conversion.
- */
 import type { z } from "zod"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 

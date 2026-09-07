@@ -97,11 +97,10 @@ hops, because the control plane does not run agents:
 | Hosted control plane (Cloudflare Worker) | Worker | relay, per-workspace handshake above | Claxedo-native CLI JWT (device code), stored by the CLI at `~/.claxedo/credentials.json` with a refresh token |
 | Self-hosted node | the node | runtime + `DocumentsRoutes` mounted in-process | same as hosted |
 
-The app already has a Node-safe client that speaks this contract:
-[`createClaxedoServerClient`](../../packages/claxedo-app/src/platform/api/server-client-contract.ts#L161)
-has zero `window`/`document`/`localStorage` references. It moves to a shared
-package and the MCP reuses it plus the hosted connection handshake. One client,
-three deployments, every tool.
+The runtime owns a Node-safe client that speaks this contract:
+[`createWorkspaceRuntimeClient`](../../packages/workspace-runtime/src/client.ts)
+has zero `window`/`document`/`localStorage` references. The MCP reuses it plus
+the hosted connection handshake. One client, three deployments, every tool.
 
 ### Hosts: text everywhere, elicitation on terminals, no MCP App
 
