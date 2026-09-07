@@ -304,8 +304,8 @@ describe("desktop-local product contract", () => {
 
     const client = createClaxedoMcpClient({
       deployment: "node",
-      local: { fetch: (path, init) => app.request(path, init), workspace: { workspaceId: shared.id } },
-      controlPlane: { fetch: (path, init) => app.request(path, init) },
+      local: { fetch: async (path, init) => await app.request(path, init), workspace: { workspaceId: shared.id } },
+      controlPlane: { fetch: async (path, init) => await app.request(path, init) },
     })
     expect((await client.workspaces()).map((row) => ({ id: row.id, kind: row.kind, name: row.name })))
       .toEqual([{ id: shared.id, kind: "user-hosted", name: "shared box" }])

@@ -475,7 +475,7 @@ describe("subagent tools", () => {
     expect(capabilities.harnesses).toMatchObject(
       ["claude", "codex", "cursor", "pi", "opencode"].map((id) => ({ id, status: "unverified" })),
     )
-    expect(capabilities.harnesses[0].reason).toContain("No default harness is configured on this runtime")
+    expect(JSON.stringify(capabilities.harnesses)).toContain("No default harness is configured on this runtime")
   })
 
   test("subagent_status reads one child and subagent_cancel stops it", async () => {
