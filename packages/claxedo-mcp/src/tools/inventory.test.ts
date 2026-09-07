@@ -171,6 +171,11 @@ describe("the registered surface", () => {
       "sessions_board",
       "sessions_list",
       "wait_for_attention",
+      "workspace_checkpoint",
+      "workspace_lifecycle",
+      "workspace_restore",
+      "workspace_status",
+      "workspaces_list",
     ])
   })
 
@@ -188,6 +193,8 @@ describe("the registered surface", () => {
       "sessions_board",
       "sessions_list",
       "wait_for_attention",
+      "workspace_status",
+      "workspaces_list",
     ])
   })
 
@@ -195,7 +202,7 @@ describe("the registered surface", () => {
     const destructive = [...surface(userCredential()).declared]
       .flatMap(([name, access]) => (access.destructive ? [[name, access] as const] : []))
       .toSorted(([left], [right]) => left.localeCompare(right))
-    expect(destructive.map(([name]) => name)).toEqual(["session_delete"])
+    expect(destructive.map(([name]) => name)).toEqual(["session_delete", "workspace_lifecycle", "workspace_restore"])
     for (const [name, access] of destructive) {
       expect({ name, ...(access as McpToolAccess) }).toEqual({ name, audiences: ["user"], write: true, scope: "admin", destructive: true })
     }
