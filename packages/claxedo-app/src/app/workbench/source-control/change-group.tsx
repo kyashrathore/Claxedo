@@ -93,6 +93,7 @@ export function ChangeRow(props: {
       data-path={props.entry.path}
       data-status={props.entry.status}
       data-group={props.group}
+      data-active={props.active ? "true" : undefined}
       class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover"
       classList={{ "bg-surface-base-active": props.active }}
     >

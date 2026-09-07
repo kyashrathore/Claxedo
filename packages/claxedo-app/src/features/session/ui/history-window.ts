@@ -35,6 +35,9 @@ type Input = {
   autoFill?: Accessor<boolean> | boolean
 }
 
+/** A committed window, taken before a presentation flip so it can be put back after. */
+export type HistoryWindowSnapshot = { sessionID: string; turnStart: number }
+
 /**
  * Maintains the rendered history window for a session timeline.
  *
@@ -86,6 +89,29 @@ export function createSessionHistoryWindow(input: Input) {
 
   const collapseToLastTurn = () => {
     setTurnStart(Math.max(0, input.visibleUserMessages().length - 1))
+  }
+
+  /**
+   * The committed window for the current session, or undefined while the
+   * window is still derived from `turnInit` (nothing to restore then).
+   */
+  const captureWindow = (): HistoryWindowSnapshot | undefined => {
+    const id = input.sessionID()
+    if (!id || state.turnID !== id) return undefined
+    return { sessionID: id, turnStart: state.turnStart }
+  }
+
+  /**
+   * Puts back a window captured by `captureWindow` for the same session;
+   * anything else returns to the first-paint window. The memo above clamps a
+   * start the list has since shrunk below.
+   */
+  const restoreWindow = (snapshot: HistoryWindowSnapshot | undefined) => {
+    if (snapshot && snapshot.sessionID === input.sessionID()) {
+      setTurnStart(snapshot.turnStart)
+      return
+    }
+    resetToInitialWindow()
   }
 
   /**
@@ -305,6 +331,8 @@ export function createSessionHistoryWindow(input: Input) {
     setTurnStart,
     hiddenTurnCount,
     collapseToLastTurn,
+    captureWindow,
+    restoreWindow,
     resetToInitialWindow,
     renderedUserMessages,
     revealTurn,

@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "没有已暂存的内容。",
   "navigator.sourceControl.error.git_conflict": "请先解决正在进行的合并。",
   "navigator.sourceControl.error.git_push_rejected": "推送被拒绝：{{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git 超时：{{message}}",
 }

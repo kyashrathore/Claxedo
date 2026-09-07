@@ -324,6 +324,53 @@ describe("createSessionHistoryWindow", () => {
     root.dispose()
   })
 
+  test("restoreWindow puts back the window captured before a collapse; an uncommitted window resets", () => {
+    const root = createRoot((dispose) => {
+      const [messages, setMessages] = createSignal(userMessages(12))
+      const [sessionID, setSessionID] = createSignal("s-1")
+      return {
+        dispose,
+        setMessages,
+        setSessionID,
+        historyWindow: createSessionHistoryWindow({
+          sessionID,
+          messagesReady: () => true,
+          visibleUserMessages: messages,
+          historyMore: () => false,
+          historyLoading: () => false,
+          loadMore: async () => undefined,
+          userScrolled: () => false,
+          scroller: () => undefined,
+        }),
+      }
+    })
+
+    // Nothing committed yet: the first-paint window is derived, not captured.
+    expect(root.historyWindow.captureWindow()).toBeUndefined()
+    root.historyWindow.collapseToLastTurn()
+    root.historyWindow.restoreWindow(undefined)
+    expect(root.historyWindow.turnStart()).toBe(8)
+
+    // The user revealed everything, floated, and came back.
+    root.historyWindow.setTurnStart(0)
+    const revealed = root.historyWindow.captureWindow()
+    expect(revealed).toEqual({ sessionID: "s-1", turnStart: 0 })
+    root.historyWindow.collapseToLastTurn()
+    expect(root.historyWindow.turnStart()).toBe(11)
+    root.historyWindow.restoreWindow(revealed)
+    expect(root.historyWindow.turnStart()).toBe(0)
+    expect(ids(root.historyWindow.renderedUserMessages())).toHaveLength(12)
+
+    // A window from another session is not this session's to restore.
+    root.historyWindow.setTurnStart(5)
+    const other = root.historyWindow.captureWindow()
+    root.setSessionID("s-2")
+    root.historyWindow.restoreWindow(other)
+    expect(root.historyWindow.turnStart()).toBe(8)
+
+    root.dispose()
+  })
+
   test("resetToInitialWindow leaves a short list uncommitted so later history still windows", () => {
     const root = createRoot((dispose) => {
       const [messages, setMessages] = createSignal(userMessages(2))

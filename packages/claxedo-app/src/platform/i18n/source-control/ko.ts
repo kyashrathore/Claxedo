@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "스테이징된 항목이 없습니다.",
   "navigator.sourceControl.error.git_conflict": "먼저 진행 중인 병합을 해결하세요.",
   "navigator.sourceControl.error.git_push_rejected": "푸시가 거부되었습니다: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git 시간 초과: {{message}}",
 }

@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Intet er klargjort.",
   "navigator.sourceControl.error.git_conflict": "Løs først den igangværende fletning.",
   "navigator.sourceControl.error.git_push_rejected": "Push afvist: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git fik timeout: {{message}}",
 }

@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "No hay nada preparado.",
   "navigator.sourceControl.error.git_conflict": "Resuelve primero la fusión en curso.",
   "navigator.sourceControl.error.git_push_rejected": "Envío rechazado: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git agotó el tiempo de espera: {{message}}",
 }

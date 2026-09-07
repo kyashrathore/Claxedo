@@ -8,6 +8,7 @@ import { promisify } from "node:util"
 import { createWorkspaceRuntimeClient, WorkspaceRuntimeClientError } from "../client"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
+import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
 import { GitWorktreeRoutes } from "./git-worktree"
 
 const execFileAsync = promisify(execFile)
@@ -254,6 +255,24 @@ describe("GitWorktreeRoutes stage and unstage", () => {
       await expect(escape.json()).resolves.toMatchObject({ error: { code: "git_invalid_path" } })
     })
   })
+
+  test("rejects entries that resolve to the workspace root instead of staging everything", async () => {
+    await withWorkspace(async (directory) => {
+      await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
+      await writeFile(path.join(directory, "new.md"), "new\n")
+      await unlink(path.join(directory, "del.md"))
+      for (const root of [" ", "\t", ".", "./"]) {
+        const response = await post(app(), "stage", { paths: [root] })
+        expect(response.status).toBe(400)
+        await expect(response.json()).resolves.toMatchObject({ error: { code: "git_invalid_path" } })
+      }
+      const unstage = await post(app(), "unstage", { paths: [" "] })
+      expect(unstage.status).toBe(400)
+      const body = await status()
+      expect(body.staged).toEqual([])
+      expect(body.unstaged.map((entry) => entry.path).sort()).toEqual(["del.md", "mod.md", "new.md"])
+    })
+  })
 })
 
 describe("GitWorktreeRoutes commit-staged", () => {
@@ -410,6 +429,33 @@ describe("workspace runtime client git namespace", () => {
       expect(pushFailure).toBeInstanceOf(WorkspaceRuntimeClientError)
       expect((pushFailure as WorkspaceRuntimeClientError).status).toBe(502)
       expect(JSON.parse((pushFailure as WorkspaceRuntimeClientError).body)).toMatchObject({ error: { code: "git_push_rejected" } })
+    })
+  })
+})
+
+describe("GitWorktreeRoutes workspace scoping", () => {
+  test("serves a registered sibling worktree by ?directory= and refuses a directory the runtime is not pinned to", async () => {
+    await withWorkspace(async (directory) => {
+      const elsewhere = await app().request("http://localhost/api/wr/git/status?directory=%2Fnowhere")
+      expect(elsewhere.status).toBe(400)
+      await expect(elsewhere.json()).resolves.toMatchObject({ error: { code: "git_invalid_path" } })
+
+      const sibling = await mkdtemp(path.join(tmpdir(), "workspace-runtime-git-sibling-"))
+      registerWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: "ses-sibling", directory: sibling })
+      try {
+        await git(sibling, ["init", "-b", "main"])
+        await writeFile(path.join(sibling, "sibling.md"), "hello\n")
+        const scoped = await app().request(`http://localhost/api/wr/git/status?directory=${encodeURIComponent(sibling)}`)
+        expect(scoped.status).toBe(200)
+        const body = await scoped.json() as GitWorktreeStatus
+        expect(body.unstaged.map((entry) => [entry.path, entry.status])).toEqual([["sibling.md", "untracked"]])
+        // The pinned worktree is untouched: its own status still describes `directory`.
+        expect((await status()).unstaged).toEqual([])
+        expect(directory).not.toBe(sibling)
+      } finally {
+        unregisterWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: "ses-sibling" })
+        await rm(sibling, { recursive: true, force: true })
+      }
     })
   })
 })

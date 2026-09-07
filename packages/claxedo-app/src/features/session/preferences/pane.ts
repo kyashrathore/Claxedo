@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js"
 
-type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
+/** What a pane's Review compares: the worktree against the index or HEAD, or two refs. */
+export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
 
 /** What a pane reviews: the diff mode and, in `to-from`, the two refs it compares. */
 export type ReviewSelection = { mode: ReviewMode; fromRef?: string; toRef?: string }

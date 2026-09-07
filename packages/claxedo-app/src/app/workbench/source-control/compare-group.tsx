@@ -1,3 +1,4 @@
+import { errorMessage } from "@claxedo/helpers"
 import { For, Show } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 import type { WorkspaceDiffSummaryEntry } from "@/platform/files/workspace-diff-summary-query"
@@ -8,6 +9,8 @@ export function CompareGroup(props: {
   label: string
   entries?: readonly WorkspaceDiffSummaryEntry[]
   loading: boolean
+  /** The summary read failed (a persisted ref that no longer resolves, say); shown in place of the rows. */
+  error?: unknown
   collapsed: boolean
   onToggle: () => void
   activePath?: string
@@ -36,20 +39,29 @@ export function CompareGroup(props: {
           }
         >
           <Show
-            when={(props.entries?.length ?? 0) > 0}
+            when={props.error === undefined || props.error === null}
             fallback={
-              <div data-testid="source-control-compare-empty" class="px-3 py-2 text-12-regular text-text-weak">
-                {language.t("navigator.sourceControl.empty")}
+              <div data-testid="source-control-compare-error" role="alert" class="px-3 py-2 text-11-regular text-icon-critical-base">
+                {errorMessage(props.error)}
               </div>
             }
           >
-            <div class="flex flex-col gap-px px-2 pb-1" role="list">
-              <For each={props.entries}>
-                {(entry) => (
-                  <ChangeRow entry={entry} group="compare" active={props.activePath === entry.path} onOpen={() => props.onOpen(entry)} />
-                )}
-              </For>
-            </div>
+            <Show
+              when={(props.entries?.length ?? 0) > 0}
+              fallback={
+                <div data-testid="source-control-compare-empty" class="px-3 py-2 text-12-regular text-text-weak">
+                  {language.t("navigator.sourceControl.empty")}
+                </div>
+              }
+            >
+              <div class="flex flex-col gap-px px-2 pb-1" role="list">
+                <For each={props.entries}>
+                  {(entry) => (
+                    <ChangeRow entry={entry} group="compare" active={props.activePath === entry.path} onOpen={() => props.onOpen(entry)} />
+                  )}
+                </For>
+              </div>
+            </Show>
           </Show>
         </Show>
       </Show>

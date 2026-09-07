@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Ingenting er klargjort.",
   "navigator.sourceControl.error.git_conflict": "Løs først den pågående sammenslåingen.",
   "navigator.sourceControl.error.git_push_rejected": "Push avvist: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git fikk tidsavbrudd: {{message}}",
 }

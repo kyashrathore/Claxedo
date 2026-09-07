@@ -363,7 +363,10 @@ export const desktopRendererUnsigned: Policy = {
   // +2 modules (2026-09-07): the Compared changes group and its diff summary
   // query, reached through the same Changes column (see app-local.ts for the
   // owner). Re-measured, no headroom.
-  ceilings: { modules: 1043, packages: 57 },
+  // +1 module (2026-09-07): the floating card's transcript peek reducer
+  // `features/session/ui/transcript-peek.ts` (see app-local.ts for the owner).
+  // Re-measured, no headroom.
+  ceilings: { modules: 1044, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

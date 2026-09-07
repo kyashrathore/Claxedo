@@ -74,11 +74,16 @@ function invalidateWorktreeChanges(identity: WorkspaceVcsIdentity) {
   ])
 }
 
-/** The caches that describe where HEAD is: the runtime branch summary and the commit log. */
+/**
+ * The caches that describe where the refs are: the runtime branch summary, the
+ * commit log, and every ref-to-ref diff summary (a comparison of two refs can
+ * only change when one of them moves).
+ */
 function invalidateBranchState(identity: WorkspaceVcsIdentity) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: runtimeVcsKey(identity) }),
     queryClient.invalidateQueries({ queryKey: workspaceGitLogKey(gitScope(identity)) }),
+    queryClient.invalidateQueries({ queryKey: workspaceDiffSummaryKey(gitScope(identity)) }),
   ])
 }
 
@@ -88,11 +93,7 @@ function invalidateBranchState(identity: WorkspaceVcsIdentity) {
  * after an ownerless gap: both are moments where anything may have changed.
  */
 export async function invalidateWorkspaceVcs(identity: WorkspaceVcsIdentity) {
-  await Promise.all([
-    invalidateWorktreeChanges(identity),
-    invalidateBranchState(identity),
-    queryClient.invalidateQueries({ queryKey: workspaceDiffSummaryKey(gitScope(identity)) }),
-  ])
+  await Promise.all([invalidateWorktreeChanges(identity), invalidateBranchState(identity)])
 }
 
 /**

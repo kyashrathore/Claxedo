@@ -1,3 +1,5 @@
+import type { ReviewMode } from "@/features/session/preferences/pane"
+
 export type WorkspacePanelNavigator = "files" | "changes" | "processes"
 /**
  * Mode the workspace panel is rendering in. The active mode picks the
@@ -14,12 +16,6 @@ export type WorkspacePanelMode =
 // tree is in. "tab" opens the file as a workspace tab; "review" scrolls
 // to the file's diff in the review tab.
 export type FileFocusIntent = "tab" | "review"
-/**
- * The review mode a `review` file focus asks the panel to switch into. Mirrors
- * `ReviewMode` in `features/review/review-intent.ts`; spelled out here because
- * features may not import each other.
- */
-export type FileFocusReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
 export type WorkspacePanelFocus =
   | { kind: "review"; version: number }
   | {
@@ -29,14 +25,14 @@ export type WorkspacePanelFocus =
       intent: FileFocusIntent
       line?: number
       col?: number
-      reviewMode?: FileFocusReviewMode
+      reviewMode?: ReviewMode
     }
   | { kind: "browser"; url: string; version: number }
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
 export type WorkspacePanelFocusTarget =
   | { kind: "review" }
-  | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number; reviewMode?: FileFocusReviewMode }
+  | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number; reviewMode?: ReviewMode }
   | { kind: "browser"; url: string }
   | { kind: "process"; processId: string }
   | { kind: "context"; sessionId: string }

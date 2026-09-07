@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Rien n'est indexé.",
   "navigator.sourceControl.error.git_conflict": "Résolvez d'abord la fusion en cours.",
   "navigator.sourceControl.error.git_push_rejected": "Push refusé : {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Délai Git dépassé : {{message}}",
 }

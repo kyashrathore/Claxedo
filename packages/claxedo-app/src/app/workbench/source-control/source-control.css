@@ -1,6 +1,10 @@
 .claxedo-source-control--busy > * {
   pointer-events: none;
 }
+/* Typing the next message while a push is in flight stays possible; the buttons stay off through `disabled`. */
+.claxedo-source-control--busy [data-testid="source-control-message"] {
+  pointer-events: auto;
+}
 
 .claxedo-source-control-chevron {
   transition: transform 100ms ease;

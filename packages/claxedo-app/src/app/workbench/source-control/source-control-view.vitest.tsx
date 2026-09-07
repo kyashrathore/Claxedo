@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   pending: undefined as undefined | [() => PendingAction, (next: PendingAction) => void],
   compare: {} as Record<string, Array<{ file: string; status?: string; additions: number; deletions: number }>>,
   compareRequests: [] as Array<{ mode: string; fromRef?: string; toRef?: string; content?: string }>,
+  compareError: undefined as Error | undefined,
 }))
 
 vi.mock("@/platform/i18n/provider", async () => {
@@ -120,6 +121,7 @@ vi.mock("@/features/review/ui/review-vcs-load", () => ({
   createReviewDiffClient: () => ({
     vcs: async (input: { mode: string; fromRef?: string; toRef?: string; content?: string }) => {
       h.compareRequests.push(input)
+      if (h.compareError) throw h.compareError
       return h.compare[`${input.fromRef}..${input.toRef}`] ?? []
     },
   }),
@@ -197,6 +199,7 @@ beforeEach(() => {
   setReviewSelection(undefined)
   h.compare = {}
   h.compareRequests = []
+  h.compareError = undefined
   h.status = fixture()
   h.commits = commitsFixture()
   h.logLimits = []
@@ -640,6 +643,17 @@ describe("SourceControlView compare selection", () => {
     fireEvent.click(within(group("compare")).getByRole("button", { expanded: true }))
     expect(group("compare").getAttribute("data-collapsed")).toBe("true")
     expect(screen.queryByTestId("source-control-compare-empty")).toBeNull()
+    expect(rows("staged")).toHaveLength(1)
+  })
+
+  test("a comparison whose ref no longer resolves shows the git error instead of No changes", async () => {
+    h.compareError = new Error("fatal: bad revision 'deadbeef'")
+    setReviewSelection({ mode: "to-from", fromRef: "deadbeef", toRef: "HEAD" })
+    renderView()
+    await loaded()
+    await waitFor(() => expect(screen.getByTestId("source-control-compare-error").textContent).toBe("fatal: bad revision 'deadbeef'"))
+    expect(screen.queryByTestId("source-control-compare-empty")).toBeNull()
+    expect(within(group("compare").parentElement!).queryAllByTestId("source-control-row")).toHaveLength(0)
     expect(rows("staged")).toHaveLength(1)
   })
 

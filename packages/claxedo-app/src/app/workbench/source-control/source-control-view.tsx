@@ -12,7 +12,7 @@ import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-k
 import { workspaceDiffSummaryQueryOptions } from "@/platform/files/workspace-diff-summary-query"
 import { workspaceGitLogQueryOptions, workspaceGitStatusQueryOptions } from "@/platform/files/workspace-git-status-query"
 import { isWorkspaceGitError, type GitCommitSummary, type GitWorktreeStatus } from "@/platform/runtime/workspace-git-client"
-import { commitReviewSelection, createReviewSelection, shortRef } from "@/features/review/review-intent"
+import { commitReviewSelection, createReviewSelection, shortRef, type ReviewMode } from "@/features/review/review-intent"
 import { createReviewDiffClient } from "@/features/review/ui/review-vcs-load"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { SemanticIcon } from "@/ui/semantic-icon"
@@ -24,7 +24,8 @@ import { CompareGroup } from "./compare-group"
 import { githubCompareUrl, githubOwnerRepo, useWorkspaceRemoteUrl } from "./workspace-remote"
 import "./source-control.css"
 
-export type SourceControlReviewMode = "staged" | "unstaged" | "to-from"
+/** The modes a Changes-column row opens: a worktree group, or the comparison above them. */
+export type SourceControlReviewMode = Exclude<ReviewMode, "uncommitted">
 
 const GRAPH_LIMIT = 50
 
@@ -33,6 +34,7 @@ const ERROR_KEY = {
   git_nothing_staged: "navigator.sourceControl.error.git_nothing_staged",
   git_conflict: "navigator.sourceControl.error.git_conflict",
   git_push_rejected: "navigator.sourceControl.error.git_push_rejected",
+  git_timeout: "navigator.sourceControl.error.git_timeout",
 } as const
 
 function errorKey(error: unknown) {
@@ -258,6 +260,7 @@ export function SourceControlView(props: {
                 label={compareLabel()}
                 entries={compareQuery.data}
                 loading={compareQuery.isPending}
+                error={compareQuery.error ?? undefined}
                 collapsed={collapsed().compare}
                 onToggle={() => toggle("compare")}
                 activePath={activePath()}

@@ -18,7 +18,7 @@
 
 import { createSignal, lazy, onCleanup, onMount, Show, type ParentProps, type JSX } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
-import { useClaxedoState, type ContentMeta } from "./workbench/state/index"
+import { useClaxedoState, type ContentMeta, type ContentType } from "./workbench/state/index"
 import type { ProjectItem } from "./workbench/rail/domain-types"
 import { emitTerminalFit } from "../features/terminal/workbench/terminal-fit"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -50,7 +50,7 @@ import {
 import { createShellLayoutState } from "./layout/state"
 import {
   PanePresentationProvider,
-  type PanePresentation,
+  resolvePanePresentation,
   type PanePresentationResolver,
 } from "./workbench/workbench/pane-presentation"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
@@ -196,24 +196,8 @@ export type AppShellLayoutProps = ParentProps<{
   topBarRight?: () => JSX.Element
 }>
 
-/**
- * A pane floats while the workspace panel covers it at full view. The panel
- * targets a pane by id; a targetless panel is attached to the focused pane,
- * the same rule `workspacePanelMatchesFocusedPane` applies.
- */
-export function panePresentationUnderWorkspacePanel(input: {
-  paneId: string
-  panelOpen: boolean
-  panelFullWidth: boolean
-  targetPaneId: string | undefined
-  focusedPaneId: string | null | undefined
-}): PanePresentation {
-  if (!input.panelOpen || !input.panelFullWidth) return "docked"
-  const targeted = input.targetPaneId === undefined
-    ? input.paneId === input.focusedPaneId
-    : input.targetPaneId === input.paneId
-  return targeted ? "floating" : "docked"
-}
+/** The content types that render `SessionContent`, the only content with a floating layout. */
+const FLOATING_CONTENT_TYPES: readonly ContentType[] = ["session", "draft-session"]
 
 function AppShellLayoutBody(props: AppShellLayoutProps) {
   const isolationStage = window.__CLAXEDO__?.startupIsolationStage
@@ -347,9 +331,15 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     }
     workbenchController.toggleFocusedWorkspaceReview(button)
   }
+  const paneContentFloats = (paneId: string) => {
+    const contentId = claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId
+    const type = contentId ? claxedoState.meta.get(contentId)?.type : undefined
+    return !!type && FLOATING_CONTENT_TYPES.includes(type)
+  }
   const panePresentation: PanePresentationResolver = {
-    presentationFor: (paneId) => panePresentationUnderWorkspacePanel({
+    presentationFor: (paneId) => resolvePanePresentation({
       paneId,
+      contentFloats: paneContentFloats(paneId),
       panelOpen: workspacePanelOpen(),
       panelFullWidth: workspacePanelFullWidth(),
       targetPaneId: claxedoState.workspacePanel.state().targetPaneId,

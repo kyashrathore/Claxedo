@@ -1,9 +1,7 @@
 import { createPanePreferences, reviewModePreferenceScope } from "@/features/review/app-ports"
-import type { ReviewSelection } from "@/features/session/preferences/pane"
+import type { ReviewMode, ReviewSelection } from "@/features/session/preferences/pane"
 
-export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
-
-export type { ReviewSelection }
+export type { ReviewMode, ReviewSelection }
 
 export const reviewModeLabel: Record<ReviewMode, string> = {
   uncommitted: "Uncommitted",
@@ -39,13 +37,24 @@ export function createReviewSelection(input: {
   return {
     selection: (): ReviewSelection => preferences.reviewSelection({ ...input.scope(), fallback: input.fallback?.() }),
     set: (selection: ReviewSelection) => {
-      const fromRef = selection.fromRef?.trim() || undefined
-      const toRef = selection.toRef?.trim() || undefined
-      preferences.set("reviewMode", reviewModePreferenceScope(input.scope()), {
-        mode: selection.mode,
-        ...(fromRef === undefined ? {} : { fromRef }),
-        ...(toRef === undefined ? {} : { toRef }),
-      })
+      preferences.set("reviewMode", reviewModePreferenceScope(input.scope()), persistedReviewSelection(selection))
     },
+  }
+}
+
+/**
+ * The selection as stored: trimmed refs, and refs only in `to-from`. A
+ * worktree mode carries whatever refs the pill last showed, and persisting
+ * those would pin a placeholder like `HEAD~1` over the default branch the
+ * next comparison should start from.
+ */
+export function persistedReviewSelection(selection: ReviewSelection): ReviewSelection {
+  if (selection.mode !== "to-from") return { mode: selection.mode }
+  const fromRef = selection.fromRef?.trim() || undefined
+  const toRef = selection.toRef?.trim() || undefined
+  return {
+    mode: selection.mode,
+    ...(fromRef === undefined ? {} : { fromRef }),
+    ...(toRef === undefined ? {} : { toRef }),
   }
 }

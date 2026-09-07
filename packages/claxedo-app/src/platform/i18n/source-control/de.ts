@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Es ist nichts vorgemerkt.",
   "navigator.sourceControl.error.git_conflict": "Lösen Sie zuerst den laufenden Merge auf.",
   "navigator.sourceControl.error.git_push_rejected": "Push abgelehnt: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git-Zeitüberschreitung: {{message}}",
 }

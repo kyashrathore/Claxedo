@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Ništa nije pripremljeno.",
   "navigator.sourceControl.error.git_conflict": "Prvo riješite spajanje u toku.",
   "navigator.sourceControl.error.git_push_rejected": "Push odbijen: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git je istekao: {{message}}",
 }

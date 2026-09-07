@@ -1,7 +1,7 @@
 import path from "node:path"
 import fs from "node:fs/promises"
 import { createBoundedGit, GitTimeoutError, runGit } from "../git"
-import { resolveWorkspacePath } from "../target"
+import { resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import { parseNumstat } from "./diff"
 
 export type GitStatusEntry = {
@@ -169,7 +169,11 @@ export async function gitWorktreeStatus(base: string): Promise<GitWorktreeStatus
 async function workspaceRelativePaths(base: string, paths: string[]) {
   return await Promise.all(paths.map(async (input) => {
     const resolved = await resolveWorkspacePath(base, input)
-    return path.relative(base, resolved) || "."
+    const relative = path.relative(base, resolved)
+    // The stage and unstage contract is a list of files; the workspace root
+    // ("", " ", "./") would silently turn one row's action into `git add -A .`.
+    if (!relative) throw new WorkspaceTargetError(`not a workspace file: ${JSON.stringify(input)}`)
+    return relative
   }))
 }
 

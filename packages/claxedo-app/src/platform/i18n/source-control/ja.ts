@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "ステージされた変更がありません。",
   "navigator.sourceControl.error.git_conflict": "先に進行中のマージを解決してください。",
   "navigator.sourceControl.error.git_push_rejected": "プッシュが拒否されました: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git がタイムアウトしました: {{message}}",
 }

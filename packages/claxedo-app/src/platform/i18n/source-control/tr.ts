@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Hazırlanmış bir şey yok.",
   "navigator.sourceControl.error.git_conflict": "Önce devam eden birleştirmeyi çözün.",
   "navigator.sourceControl.error.git_push_rejected": "Push reddedildi: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git zaman aşımına uğradı: {{message}}",
 }

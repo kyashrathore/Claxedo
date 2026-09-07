@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "ไม่มีสิ่งที่จัดเตรียมไว้",
   "navigator.sourceControl.error.git_conflict": "แก้ไขการผสานที่กำลังดำเนินอยู่ก่อน",
   "navigator.sourceControl.error.git_push_rejected": "การพุชถูกปฏิเสธ: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Git หมดเวลา: {{message}}",
 }

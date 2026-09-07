@@ -47,8 +47,9 @@ import { PreviousMessagesRow } from "./message-timeline-turn-rows"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
 import { same } from "@/lib/same"
 import { isRuntimeAgentMessage } from "@/features/session/conversation/agent-conversation-codec"
-import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
+import { createSessionHistoryWindow, emptyUserMessages, type HistoryWindowSnapshot } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
+import { transcriptPeekStep, type TranscriptPeekState } from "@/features/session/ui/transcript-peek"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
@@ -1035,36 +1036,44 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
     autoFill: () => !floating(),
   })
 
-  // A window that has already committed does not follow `turnInit`, so the
-  // presentation flip moves it explicitly. A list of one turn is left alone:
-  // there is nothing to collapse, and committing it would pin a zero window
-  // over history that is still arriving.
   // The floating card keeps its transcript collapsed until the user peeks or
   // sends a new prompt; a reply the user just asked for must not land hidden.
   // Derived from the previous snapshot rather than written by effects.
   const [peekToggles, setPeekToggles] = createSignal(0)
-  const transcriptPeek = createMemo<{ floating: boolean; toggles: number; turns: number; peeked: boolean }>(
-    (previous) => {
-      const next = { floating: floating(), toggles: peekToggles(), turns: visibleUserMessages().length, peeked: false }
-      if (!previous) return next
-      let peeked = previous.peeked
-      if (next.floating && !previous.floating) peeked = false
-      if (next.toggles !== previous.toggles) peeked = !peeked
-      if (next.floating && next.turns > previous.turns) peeked = true
-      return { ...next, peeked }
-    },
+  const [promptSends, setPromptSends] = createSignal(0)
+  const onPromptSubmit = () => {
+    setPromptSends((count) => count + 1)
+    comments.clear()
+    resumeScroll()
+  }
+  const transcriptPeek = createMemo<TranscriptPeekState>((previous) =>
+    transcriptPeekStep(previous, {
+      floating: floating(),
+      toggles: peekToggles(),
+      sends: promptSends(),
+      sessionId: sessionID(),
+      loaded: messageState()?.value !== undefined,
+      turns: visibleUserMessages().length,
+    }),
   )
   const transcriptPeeked = () => transcriptPeek().peeked
   const transcriptCollapsed = createMemo(() => floating() && !transcriptPeeked())
+  // A window that has already committed does not follow `turnInit`, so the
+  // presentation flip moves it explicitly: floating collapses to the last turn
+  // and docking again restores the window the user had. A list of one turn is
+  // left alone: there is nothing to collapse, and committing it would pin a
+  // zero window over history that is still arriving.
+  let dockedWindow: HistoryWindowSnapshot | undefined
   createEffect(
     on(
       () => props.presentation(),
       (presentation, previous) => {
         if (presentation === "floating") {
+          dockedWindow = historyWindow.captureWindow()
           if (visibleUserMessages().length > 1) historyWindow.collapseToLastTurn()
           return
         }
-        if (previous === "floating") historyWindow.resetToInitialWindow()
+        if (previous === "floating") historyWindow.restoreWindow(dockedWindow)
       },
       { defer: true },
     ),
@@ -1437,10 +1446,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
                     signedControlPlane={signedControlPlane}
                     workspaceId={signedWorkspaceId}
                     workspaceKind={resolvedWorkspaceKind}
-                    onSubmit={() => {
-                      comments.clear()
-                      resumeScroll()
-                    }}
+                    onSubmit={onPromptSubmit}
                   />
                 </NewSessionDesignView>
               </Match>
@@ -1494,10 +1500,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
               }}
               newSessionWorktree={newSessionWorktree()}
               onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
-              onSubmit={() => {
-                comments.clear()
-                resumeScroll()
-              }}
+              onSubmit={onPromptSubmit}
               onResponseSubmit={() => {
                 resumeScroll()
               }}

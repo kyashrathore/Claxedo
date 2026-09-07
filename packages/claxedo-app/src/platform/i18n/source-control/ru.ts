@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "В индексе ничего нет.",
   "navigator.sourceControl.error.git_conflict": "Сначала завершите текущее слияние.",
   "navigator.sourceControl.error.git_push_rejected": "Push отклонён: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Время ожидания Git истекло: {{message}}",
 }

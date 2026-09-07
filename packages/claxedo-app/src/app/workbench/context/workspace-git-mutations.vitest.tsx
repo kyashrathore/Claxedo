@@ -6,6 +6,7 @@ import { resetWorkspaceVcsCacheHonestyForTest } from "./workspace-vcs-cache-hone
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceGitLogKey, workspaceGitStatusKey } from "@/platform/files/workspace-git-status-query"
+import { workspaceDiffSummaryKey } from "@/platform/files/workspace-diff-summary-query"
 import { reviewVcsDiffQueryKey } from "@/features/review/ui/review-vcs-cache"
 import { isWorkspaceGitError, WorkspaceGitError, type WorkspaceGitClient } from "@/platform/runtime/workspace-git-client"
 
@@ -33,6 +34,7 @@ const logKey = [...workspaceGitLogKey(scope), 50]
 const fileStatusKey = queryKeys.directory.fileStatus("http://test.local", "/repo", "ws_a")
 const branchKey = queryKeys.runtime.vcs("http://test.local", "/repo", "ws_a")
 const diffKey = reviewVcsDiffQueryKey({ directory: "/repo", mode: "staged" })
+const diffSummaryKey = [...workspaceDiffSummaryKey(scope), "to-from", "origin/main", "HEAD"]
 
 function seedCaches() {
   queryClient.setQueryData(statusKey, { branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [] })
@@ -40,6 +42,7 @@ function seedCaches() {
   queryClient.setQueryData(fileStatusKey, [])
   queryClient.setQueryData(branchKey, { branch: "main" })
   queryClient.setQueryData(diffKey, [])
+  queryClient.setQueryData(diffSummaryKey, [])
 }
 
 function invalidated(key: readonly unknown[]) {
@@ -68,6 +71,7 @@ describe("useWorkspaceGitMutations", () => {
     expect(invalidated(logKey)).toBe(true)
     expect(invalidated(fileStatusKey)).toBe(true)
     expect(invalidated(branchKey)).toBe(true)
+    expect(invalidated(diffSummaryKey)).toBe(true)
     expect(queryClient.getQueryData(diffKey)).toBeUndefined()
     dispose()
   })

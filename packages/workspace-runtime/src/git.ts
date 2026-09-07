@@ -31,9 +31,16 @@ export class GitTimeoutError extends Error {
   }
 }
 
+/**
+ * Nobody is at the runtime's terminal to answer a credential prompt: a push to
+ * a remote that wants a username would otherwise hang until the network
+ * timeout. With prompts disabled git fails at once with a readable stderr.
+ */
+const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+
 function defaultGit(args: string[], cwd: string, options: GitOptions) {
   return new Promise<{ stdout: string; stderr?: string }>((resolve, reject) => {
-    execFile("git", args, { cwd, maxBuffer: options.maxBuffer, timeout: options.timeoutMs }, (err, stdout, stderr) => {
+    execFile("git", args, { cwd, env: GIT_ENV, maxBuffer: options.maxBuffer, timeout: options.timeoutMs }, (err, stdout, stderr) => {
       if (err) {
         const hit = err as Error & { killed?: boolean; signal?: NodeJS.Signals; stderr?: string }
         hit.stderr = stderr

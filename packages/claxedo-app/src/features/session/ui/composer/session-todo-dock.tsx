@@ -185,7 +185,9 @@ export function SessionTodoDock(props: {
             "pointer-events-none": hide() > 0.1,
           }}
           style={{
-            visibility: off() ? "hidden" : "visible",
+            // Unset, not "visible": an explicit value would override the
+            // hidden a docked pane inherits under the full-view panel.
+            visibility: off() ? "hidden" : undefined,
             opacity: `${Math.max(0, Math.min(1, 1 - hide()))}`,
           }}
         >

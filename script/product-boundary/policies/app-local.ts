@@ -256,7 +256,12 @@ export const appLocal: Policy = {
   // `to-from` file list the pane's review selection names). Reviewed owner:
   // app/workbench/source-control; both edges stay inside packages already in
   // the closure. Re-measured, no headroom.
-  ceilings: { modules: 992, packages: 38 },
+  // +1 module / 0 packages (2026-09-07): `features/session/ui/transcript-peek.ts`,
+  // the floating card's peek reducer split out of session-screen so its rules
+  // (a sent prompt opens the transcript, loading history does not) are unit
+  // tested. Reviewed owner: features/session/ui; no new package edge.
+  // Re-measured, no headroom.
+  ceilings: { modules: 993, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

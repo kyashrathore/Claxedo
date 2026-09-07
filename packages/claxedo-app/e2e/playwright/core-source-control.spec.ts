@@ -852,14 +852,12 @@ test.describe("core source control @core", () => {
   })
 
   test("every git request names the worktree it is scoped to", async ({ page }, testInfo) => {
-    // `sdk.tsx` builds the git client over `runtimeClient(directory)`, whose fetch adds
-    // neither `?directory=` nor `x-claxedo-directory` (`transport.ts` → `unsignedFetchWith`),
-    // and the workspace-runtime client's `git` namespace takes no directory, unlike its
-    // `file` namespace. The real server resolves the workspace from exactly those two
-    // (`runtime-dispatch/internals.ts` requestWorkspace → `resolveWorkspace`, which returns
-    // undefined without a directory), so against a real runtime every Changes read and
-    // write is unscoped. The fixture answers regardless, which is why this is its own
-    // scenario: it turns green the moment the client scopes its requests.
+    // The workspace-runtime client's `git` namespace takes no directory, so the
+    // scope rides on the URL: `sdk.tsx` stamps `?directory=` onto every runtime
+    // request through `scopeRuntimeRequestUrl`, and the real server resolves the
+    // workspace from that query (`runtime-dispatch/internals.ts` requestWorkspace).
+    // The fixture answers unscoped requests too, which is why the scope is its
+    // own scenario: nothing else here fails if the client stops stamping it.
     const { git } = await installSeededWorkspace(page)
     await gotoSession(page)
     await openSourceControl(page)

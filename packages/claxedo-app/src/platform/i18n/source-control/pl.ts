@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "Poczekalnia jest pusta.",
   "navigator.sourceControl.error.git_conflict": "Najpierw rozwiąż trwające scalanie.",
   "navigator.sourceControl.error.git_push_rejected": "Wypchnięcie odrzucone: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "Przekroczono limit czasu Git: {{message}}",
 }

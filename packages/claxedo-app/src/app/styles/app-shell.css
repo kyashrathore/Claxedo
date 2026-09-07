@@ -842,6 +842,8 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-ov
   background-color: transparent !important;
 }
 [data-floating-host] [data-testid="workbench-shell-header"],
-[data-floating-host] [data-pane-presentation="docked"] {
+[data-floating-host] [data-pane-presentation="docked"],
+[data-floating-host] [data-testid^="pane-handle-zone-"],
+[data-floating-host] [data-testid^="pane-close-zone-"] {
   visibility: hidden;
 }

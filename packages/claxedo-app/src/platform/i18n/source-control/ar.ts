@@ -31,4 +31,5 @@ export const dict = {
   "navigator.sourceControl.error.git_nothing_staged": "لا يوجد شيء مُجهّز.",
   "navigator.sourceControl.error.git_conflict": "حلّ الدمج الجاري أولًا.",
   "navigator.sourceControl.error.git_push_rejected": "رُفض الدفع: {{message}}",
+  "navigator.sourceControl.error.git_timeout": "انتهت مهلة Git: {{message}}",
 }
