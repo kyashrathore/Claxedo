@@ -57,6 +57,7 @@ import {
   mountWorkspacePty,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import { firstPartyMcpAdapterConfig, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
@@ -190,6 +191,13 @@ export type WorkspaceHostOptions = {
    * serialization and active-turn drain regardless of the registry (R2).
    */
   harnesses?: WorkspaceHarnessRegistry
+  /**
+   * The first-party MCP entry every launched session receives: the loopback
+   * origin serving `/api/claxedo/mcp` and this runtime's credential issuer.
+   * Absent, no harness receives the entry — the host that mounts the route is
+   * the one that enables injection.
+   */
+  firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
 }
 
 const RUNNER_REPLACEMENT_DRAIN_TIMEOUT_MS = 1_000
@@ -788,6 +796,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       auth: adapterAuth,
       harness: nextRunner,
       launch,
+      ...firstPartyMcpAdapterConfig(options.firstPartyMcpLaunch),
     })
     await (next as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
     adapterConfigStamps.set(next, stamp)
@@ -1342,6 +1351,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           auth: configuredConnection(nextRunner) ? {} : next.auth,
           harness: nextRunner,
           launch,
+          ...firstPartyMcpAdapterConfig(options.firstPartyMcpLaunch),
         })
         await (adapter as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
         adapterConfigStamps.set(
@@ -1728,6 +1738,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     parentSessionIdFor(sessionId: string) {
       const session = store().getSession(sessionId) as { parentID?: string | null } | null
       return session?.parentID ?? undefined
+    },
+    runtimeCredentialIssuer() {
+      return options.firstPartyMcpLaunch?.issuer
     },
     apply,
     applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {
