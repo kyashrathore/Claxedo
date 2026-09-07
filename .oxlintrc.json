@@ -116,6 +116,32 @@
       }
     },
     {
+      // The workspace-runtime client's single HTTP trust boundary, and nothing
+      // else. `call<T>` hands back a parsed JSON body as the type its operation
+      // declares. `T` is pinned by the client contracts that name it, so no call
+      // site invents a shape, but nothing checks that the server sent one, and
+      // at an HTTP boundary nothing can without a validator.
+      //
+      // This exception is WEAKER than the brand and constructor ones above and
+      // is admitted on different grounds. A brand has no runtime shadow and the
+      // relay's constructor is genuinely inexpressible; this claim IS checkable
+      // — it needs a per-operation decoder, the way
+      // `claxedo-app/src/platform/account/hosted-operations.ts` already writes
+      // them. That is real work with real safety value, not a lint concern, and
+      // it is the recorded follow-up.
+      //
+      // What was rejected: widening the read to `unknown` and narrowing at each
+      // call site. It satisfies the rule while adding zero validation and
+      // collapses the concrete types every reader depends on. Keeping it on one
+      // named line is honest about where untrusted data enters.
+      //
+      // Scoped to the exact file so every other module stays fully enforced.
+      "files": ["packages/workspace-runtime/src/client/request.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
       // Building a total `Record<Key, Value>` by iteration, and nothing else.
       // The object is partial on every line until the loop ends, and TypeScript
       // has no way to observe that the loop covered the key union. Neither

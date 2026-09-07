@@ -84,6 +84,7 @@ describe("pre-push architecture ratchet", () => {
       "packages/claxedo-channels/src/transport/chat-sdk-memory-state.ts",
       "packages/claxedo-server-core/src/platform/auth/branded-id.ts",
       "packages/workspace-relay/src/upstream-websocket.ts",
+      "packages/workspace-runtime/src/client/request.ts",
     ])
 
     // Only these three type rules may be relaxed anywhere. `no-floating-promises`,

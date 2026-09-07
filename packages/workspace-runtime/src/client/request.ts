@@ -33,7 +33,6 @@ export type WorkspaceRuntimeCall = {
 export type WorkspaceRuntimeCaller = {
   /** The request sent and its 2xx response; anything else is thrown typed. */
   send(input: WorkspaceRuntimeCall): Promise<{ request: Request; response: Response }>
-  /** `send` with the response body read as JSON. */
   call<T>(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<T>>
   url(path: string, query?: Record<string, unknown>): URL
 }
@@ -103,20 +102,30 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
   }
 
   /**
-   * `T` is a DECLARED view of the body, the same contract `RuntimeStore` uses
-   * for its JSON columns: the routes this client calls are defined in this
-   * package, so a read here is the other end of a serialization this
-   * repository owns — not a parse of foreign input. It is not a validation,
-   * and callers that must survive an older runtime should narrow what they
-   * read.
+   * `data` is `T` because the operation says so, not because anything checked:
+   * at an HTTP boundary nothing can without a validator. `T` is not even
+   * pinned to routes this package serves — `createWorkspaceRuntimeCaller` is
+   * exported, and the app's `createServerRoutesClient` sends it at `/project`,
+   * `/path`, provider OAuth and `/experimental/worktree`, which claxedo-server
+   * answers.
+   *
+   * Unlike a brand or an inexpressible constructor type, the claim IS
+   * checkable: it needs a per-operation decoder, the way
+   * `claxedo-app/src/platform/account/hosted-operations.ts` writes them. That
+   * is the recorded follow-up, and until then the unchecked read stays on this
+   * one line so no call site carries it. Narrowing at each call site instead
+   * satisfies the lint rule, validates nothing, and collapses the concrete
+   * types every reader depends on.
    */
   const call = async <T>(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<T>> => {
     const sent = await send(input)
+    let body: unknown
     try {
-      return { data: await sent.response.json(), ...sent }
+      body = await sent.response.json()
     } catch (error) {
       throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "Response was not valid JSON")
     }
+    return { data: body as T, ...sent }
   }
 
   return { send, call, url }
@@ -139,8 +148,8 @@ export async function workspaceRuntimeClientError(operation: string, response: R
 
 function appendQuery(url: URL, key: string, value: unknown) {
   if (value === undefined) return
-  // A query value is a scalar. Anything else used to reach the wire as
-  // "[object Object]", which no endpoint can read back; JSON at least is.
+  // No route reads a structured query value, so a non-scalar is encoded as JSON
+  // rather than left to `String(value)`, which yields "[object Object]".
   if (typeof value === "string") url.searchParams.set(key, value)
   else if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     url.searchParams.set(key, value.toString())
@@ -156,12 +165,10 @@ function mergeHeaders(...values: Array<HeadersInit | undefined>) {
   return headers
 }
 
-/** The members of `input` named by `keys`, for a query string. */
 export function namedMembers(input: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
   return Object.fromEntries(keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]]))
 }
 
-/** Everything in `input` except the scope, the named keys, and undefined members, for a request body or query. */
 export function without(input: Record<string, unknown>, keys: readonly string[] = []): Record<string, unknown> {
   const omitted = new Set([...keys, "directory", "workspace"])
   return Object.fromEntries(Object.entries(input).filter(([key, value]) => !omitted.has(key) && value !== undefined))
