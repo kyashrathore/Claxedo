@@ -89,8 +89,6 @@ describe("agent-facing env keeps what children actually need", () => {
       CLAXEDO_SERVER_URL: "http://127.0.0.1:3001",
       CLAXEDO_WORKSPACE_ID: "ws_1",
       CLAXEDO_SESSION_ID: "ses_1",
-      CLAXEDO_MCP_READ_ONLY: "1",
-      CLAXEDO_DESKTOP_URL: "http://127.0.0.1:51234",
     }
     expect(buildSafeEnv(env, { platform: "linux", customPrefix: "CLAXEDO" })).toEqual(env)
   })

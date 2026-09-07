@@ -4525,16 +4525,15 @@
       "category": "url",
       "description": "Joins a base URL and pathname into one normalized absolute URL string, trimming duplicate slashes.",
       "generic": true,
-      "demand": 4,
-      "distinctImpls": 3,
-      "files": 4,
+      "demand": 3,
+      "distinctImpls": 2,
+      "files": 3,
       "packages": [
-        "claxedo-mcp",
         "claxedo-server",
         "cli"
       ],
       "movability": {
-        "pure": 4
+        "pure": 3
       },
       "sites": [
         {
@@ -4551,11 +4550,6 @@
           "name": "route",
           "at": "packages/claxedo-server/scripts/smoke/smoke-central.ts:14",
           "loc": 5
-        },
-        {
-          "name": "joinUrl",
-          "at": "packages/claxedo-mcp/src/desktop-request.ts:105",
-          "loc": 8
         }
       ],
       "notes": [
@@ -12933,30 +12927,23 @@
       "category": "domain-specific",
       "description": "Builds an MCP ToolResult with isError:true wrapping a text message.",
       "generic": false,
-      "demand": 2,
-      "distinctImpls": 2,
-      "files": 2,
+      "demand": 1,
+      "distinctImpls": 1,
+      "files": 1,
       "packages": [
         "claxedo-mcp"
       ],
       "movability": {
-        "pure": 2
+        "pure": 1
       },
       "sites": [
         {
           "name": "errorResult",
           "at": "packages/claxedo-mcp/src/process-handler.ts:154",
           "loc": 4
-        },
-        {
-          "name": "errorResult",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:81",
-          "loc": 4
         }
       ],
-      "notes": [
-        "Functionally identical to process-handler.ts's errorResult (minor 'as const' difference) — duplicate."
-      ]
+      "notes": []
     },
     {
       "slug": "build-tool-text-result",
@@ -12964,30 +12951,23 @@
       "category": "domain-specific",
       "description": "Builds an MCP ToolResult wrapping a plain text content block.",
       "generic": false,
-      "demand": 2,
-      "distinctImpls": 2,
-      "files": 2,
+      "demand": 1,
+      "distinctImpls": 1,
+      "files": 1,
       "packages": [
         "claxedo-mcp"
       ],
       "movability": {
-        "pure": 2
+        "pure": 1
       },
       "sites": [
         {
           "name": "textResult",
           "at": "packages/claxedo-mcp/src/process-handler.ts:159",
           "loc": 3
-        },
-        {
-          "name": "textResult",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:86",
-          "loc": 3
         }
       ],
-      "notes": [
-        "Identical to process-handler.ts's textResult — duplicate."
-      ]
+      "notes": []
     },
     {
       "slug": "build-tunnel-ping-message",
@@ -71330,30 +71310,6 @@
       ]
     },
     {
-      "slug": "capture-browser-pane-screenshot-via-bridge",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Requests a screenshot from the desktop bridge and returns it as inline image content.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "handleBrowserScreenshot",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:138",
-          "loc": 34
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "capture-cold-start-performance-diagnostics",
       "aliases": [],
       "category": "domain-specific",
@@ -90225,30 +90181,6 @@
           "name": "closeAll",
           "at": "packages/claxedo-app/e2e/helpers/scripted-model-server.ts:762",
           "loc": 7
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "close-http-server-as-promise",
-      "aliases": [],
-      "category": "async-concurrency",
-      "description": "Promisifies Server.close(), rejecting with any close error.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "portable-deps": 1
-      },
-      "sites": [
-        {
-          "name": "closeServer",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:117",
-          "loc": 9
         }
       ],
       "notes": []
@@ -119512,30 +119444,6 @@
       "notes": []
     },
     {
-      "slug": "describe-screenshot-options-as-string",
-      "aliases": [],
-      "category": "format-display",
-      "description": "Formats a screenshot clip rectangle into a description string, or 'viewport' if no clip given.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "describeScreenshot",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:433",
-          "loc": 8
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "describe-usage-provider-issue-status",
       "aliases": [],
       "category": "domain-specific",
@@ -125128,30 +125036,6 @@
       "notes": []
     },
     {
-      "slug": "estimate-data-url-byte-size",
-      "aliases": [],
-      "category": "format-display",
-      "description": "Estimates decoded byte size of a data URL from its base64 payload length (approximate, ignores padding).",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "approxDataUrlBytes",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:426",
-          "loc": 7
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "estimate-file-content-byte-size",
       "aliases": [],
       "category": "domain-specific",
@@ -125413,30 +125297,6 @@
           "name": "evaluatePiGoal",
           "at": "packages/agent-sdk-runtime/src/harnesses/pi/model-backend.ts:255",
           "loc": 27
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "evaluate-js-in-remote-browser-pane-via-bridge",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Validates pane_id/expression, posts to the desktop bridge, and turns eval-denied into a user-facing hint.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "handleBrowserEvaluateJs",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:258",
-          "loc": 36
         }
       ],
       "notes": []
@@ -126869,30 +126729,6 @@
           "name": "balancedCall",
           "at": "packages/claxedo-app/src/architecture/mock-route-shadowing.ts:232",
           "loc": 24
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "extract-base64-payload-from-data-url",
-      "aliases": [],
-      "category": "string",
-      "description": "Returns the substring after the first comma in a data URL, or undefined if not a string or malformed.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "extractBase64",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:420",
-          "loc": 7
         }
       ],
       "notes": []
@@ -134048,30 +133884,6 @@
       "notes": []
     },
     {
-      "slug": "fetch-and-format-browser-pane-console-logs",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Builds query params from since/level/limit and fetches console entries for a browser pane.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "handleBrowserGetConsoleLogs",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:197",
-          "loc": 30
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "fetch-and-manage-provider-connection-state",
       "aliases": [],
       "category": "dom-react",
@@ -134695,30 +134507,6 @@
           "name": "getCredential",
           "at": "packages/claxedo-server-core/src/credentials/registry.ts:296",
           "loc": 16
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "fetch-desktop-bridge-endpoint-with-auth-and-timeout",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Adds auth token/origin headers, applies a timeout via AbortController, and normalizes the JSON/error response.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "desktopRequest",
-          "at": "packages/claxedo-mcp/src/desktop-request.ts:60",
-          "loc": 45
         }
       ],
       "notes": []
@@ -141406,30 +141194,6 @@
       "notes": []
     },
     {
-      "slug": "format-console-log-entries-as-readable-text-block",
-      "aliases": [],
-      "category": "format-display",
-      "description": "Renders console entries with timestamp/level/source header, message body, and up to 5 stack frames.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "formatConsoleEntries",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:227",
-          "loc": 18
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "format-contract-version-mismatch-message",
       "aliases": [],
       "category": "format-display",
@@ -145310,30 +145074,6 @@
       "notes": []
     },
     {
-      "slug": "get-cached-desktop-bridge-url",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Returns the module-cached desktop bridge URL, or undefined if unset.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "getDesktopUrl",
-          "at": "packages/claxedo-desktop/src/main/browser/token.ts:60",
-          "loc": 4
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "get-cached-markdown-entry",
       "aliases": [],
       "category": "domain-specific",
@@ -146182,30 +145922,6 @@
       "notes": []
     },
     {
-      "slug": "get-desktop-bridge-token",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Thin alias returning the (lazily created) desktop bridge token.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "getDesktopToken",
-          "at": "packages/claxedo-desktop/src/main/browser/token.ts:41",
-          "loc": 4
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "get-diff-side-from-dataset-attributes",
       "aliases": [],
       "category": "domain-specific",
@@ -146470,32 +146186,6 @@
         }
       ],
       "notes": []
-    },
-    {
-      "slug": "get-first-header-value-from-request",
-      "aliases": [],
-      "category": "misc",
-      "description": "Reads a header from an IncomingMessage, returning the first element if it's an array.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "portable-deps": 1
-      },
-      "sites": [
-        {
-          "name": "lowercaseHeader",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:364",
-          "loc": 6
-        }
-      ],
-      "notes": [
-        "Named 'lowercase' but never lowercases anything; likely misnamed or vestigial."
-      ]
     },
     {
       "slug": "get-first-letter-uppercase-or-fallback",
@@ -147219,30 +146909,6 @@
           "name": "regionValue",
           "at": "packages/claxedo-server-core/src/platform/runtime/region/index.ts:45",
           "loc": 4
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "get-or-create-cached-desktop-bridge-token",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Lazily generates and caches a random UUID token for the desktop bridge on first call.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "ensureDesktopToken",
-          "at": "packages/claxedo-desktop/src/main/browser/token.ts:35",
-          "loc": 5
         }
       ],
       "notes": []
@@ -155122,30 +154788,6 @@
       "notes": []
     },
     {
-      "slug": "list-agent-browser-tab-summaries",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Builds a summary list of open browser panes (url, title, group, agent-allowed), swallowing per-pane errors.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "enumerateTabs",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:304",
-          "loc": 32
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "list-all-files-git-or-walk-fallback",
       "aliases": [],
       "category": "path",
@@ -156225,30 +155867,6 @@
           "name": "listPolicies",
           "at": "packages/claxedo-server-core/src/sandbox/network/policy.ts:131",
           "loc": 11
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "list-open-browser-tabs-as-readable-text",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Fetches open browser tabs from the desktop bridge and renders one summary line per tab.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "handleBrowserListTabs",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:98",
-          "loc": 22
         }
       ],
       "notes": []
@@ -173164,30 +172782,6 @@
       "notes": []
     },
     {
-      "slug": "navigate-browser-pane-to-url-via-bridge",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Validates pane_id/url, posts a navigate request to the desktop bridge, and reports success or failure.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "handleBrowserNavigate",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:309",
-          "loc": 27
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "navigate-on-notification-click-with-fallback",
       "aliases": [],
       "category": "dom-react",
@@ -181290,30 +180884,6 @@
       "notes": []
     },
     {
-      "slug": "parse-json-request-body-capturing-error",
-      "aliases": [],
-      "category": "json-serialization",
-      "description": "Parses an HTTP request body as JSON, returning a {value, error} result instead of throwing.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "portable-deps": 1
-      },
-      "sites": [
-        {
-          "name": "readJson",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:382",
-          "loc": 1
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "parse-json-response-or-throw-domain-error",
       "aliases": [],
       "category": "json-serialization",
@@ -183033,32 +182603,6 @@
       ],
       "notes": [
         "Different input than the projection-side questions(): takes an arbitrary raw row, not a typed event chunk."
-      ]
-    },
-    {
-      "slug": "parse-raw-url-to-pathname",
-      "aliases": [],
-      "category": "url",
-      "description": "Parses a raw URL string and extracts its pathname.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "parseUrl",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:372",
-          "loc": 1
-        }
-      ],
-      "notes": [
-        "Body truncated to signature only; exact parsing/error behavior unverified. Same name as an unrelated deep-link parser (id 4233)."
       ]
     },
     {
@@ -194244,30 +193788,6 @@
       "notes": []
     },
     {
-      "slug": "read-connection-url-and-token-from-env",
-      "aliases": [],
-      "category": "env-config",
-      "description": "Reads CLAXEDO_DESKTOP_URL and CLAXEDO_DESKTOP_TOKEN from the given env object.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "readDesktopEnv",
-          "at": "packages/claxedo-mcp/src/desktop-request.ts:34",
-          "loc": 7
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "read-content-length-header-as-number",
       "aliases": [],
       "category": "domain-specific",
@@ -200025,30 +199545,6 @@
           "name": "observeAgentProcess",
           "at": "packages/agent-sdk-runtime/src/process-observer.ts:90",
           "loc": 31
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "register-browser-bridge-mcp-tools",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Registers list-tabs/screenshot/navigate/etc. MCP tools with schemas and handlers on a server instance.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "registerBrowserTools",
-          "at": "packages/claxedo-mcp/src/browser-tools.ts:348",
-          "loc": 68
         }
       ],
       "notes": []
@@ -216326,30 +215822,6 @@
       "notes": []
     },
     {
-      "slug": "reset-cached-desktop-auth-token-for-tests",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Test-only helper clearing cached desktop auth token and url module state.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "__resetDesktopAuthForTests",
-          "at": "packages/claxedo-desktop/src/main/browser/token.ts:65",
-          "loc": 5
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "reset-configured-flag-for-tests",
       "aliases": [],
       "category": "domain-specific",
@@ -228824,30 +228296,6 @@
       "notes": []
     },
     {
-      "slug": "route-http-bridge-requests-to-browser-actions",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "178-line HTTP router authenticating and dispatching /browser/* requests to pane actions.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "handleRequest",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:126",
-          "loc": 178
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "route-integrations-fetch-through-hosted-operations",
       "aliases": [],
       "category": "domain-specific",
@@ -232066,32 +231514,6 @@
       "notes": []
     },
     {
-      "slug": "safe-json-parse-returning-original-text-on-error",
-      "aliases": [],
-      "category": "json-serialization",
-      "description": "Parses JSON text and returns the original string unchanged on failure, rather than throwing.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-mcp"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "safeJsonParse",
-          "at": "packages/claxedo-mcp/src/desktop-request.ts:113",
-          "loc": 8
-        }
-      ],
-      "notes": [
-        "Diverges from parseHttpErrorBody (id 6984), which returns undefined instead of the raw text on failure."
-      ]
-    },
-    {
       "slug": "safe-json-parse-returning-undefined-on-error",
       "aliases": [],
       "category": "json-serialization",
@@ -235254,30 +234676,6 @@
       "notes": []
     },
     {
-      "slug": "send-json-http-response",
-      "aliases": [],
-      "category": "misc",
-      "description": "Writes a JSON body to an HTTP response with status, content-type and no-store headers if not already sent.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "portable-deps": 1
-      },
-      "sites": [
-        {
-          "name": "sendJson",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:416",
-          "loc": 10
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "send-json-message-over-open-websocket",
       "aliases": [],
       "category": "misc",
@@ -236243,30 +235641,6 @@
           "name": "tunnelHeaders",
           "at": "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts:262",
           "loc": 9
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "set-cached-module-level-url",
-      "aliases": [],
-      "category": "misc",
-      "description": "Stores a URL string into a module-level cache variable.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "setDesktopUrl",
-          "at": "packages/claxedo-desktop/src/main/browser/token.ts:51",
-          "loc": 4
         }
       ],
       "notes": []
@@ -239951,30 +239325,6 @@
           "name": "startRecorder",
           "at": "packages/claxedo-app/perf-harness/src/frame-sampler.ts:146",
           "loc": 270
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "start-local-http-server-and-return-handle",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Starts an HTTP server on an ephemeral loopback port, wiring request handling and token auth, returns its URL/handle.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "startDesktopHttpBridge",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:84",
-          "loc": 33
         }
       ],
       "notes": []
@@ -255627,30 +254977,6 @@
           "name": "verifyStateIdentity",
           "at": "packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-release-state.cf.ts:1053",
           "loc": 22
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "verify-request-token-and-origin-timing-safe",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Timing-safely compares a request header token against an expected value and checks the request origin.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-desktop"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "authenticate",
-          "at": "packages/claxedo-desktop/src/main/browser/http-bridge.ts:340",
-          "loc": 24
         }
       ],
       "notes": []

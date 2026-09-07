@@ -3,13 +3,12 @@
 `@claxedo/mcp` is a bridge between an MCP client and a Claxedo runtime/server.
 It lets an agent running inside any MCP-compatible client call Claxedo runtime
 and control-plane APIs as tools: managed processes, logs, session messages,
-background session dispatch, documents, and — when hosted inside the
-Claxedo desktop app — browser panes.
+background session dispatch, and documents.
 
 It does not run the workspace, start the agent harness, or replace
 `workspace-runtime`. The workspace still lives behind a Claxedo runtime/server
 URL. `@claxedo/mcp` only translates MCP tool calls into HTTP requests to that
-URL (and, for browser tools, to the desktop app's local bridge).
+URL.
 
 It is a local operator tool. Run it on the same machine as the Claxedo
 desktop/server loopback endpoint, or against an intentionally configured signed
@@ -108,7 +107,7 @@ Tools use one of two request scopes:
 
 Local use needs none of these — the server URL defaults to loopback
 (`http://127.0.0.1:2593`). These knobs exist for non-default directories,
-workspaces, signed remote servers, and desktop-hosted browser tools.
+workspaces, and signed remote servers.
 
 | Env var | Purpose |
 | --- | --- |
@@ -120,41 +119,19 @@ workspaces, signed remote servers, and desktop-hosted browser tools.
 | `CLAXEDO_TERMINAL_ID` | Default terminal id for `get_logs`, `session_messages`, and `summarize_logs` when no id is passed. Set automatically inside a Claxedo terminal. |
 | `CLAXEDO_TAB_ID` | Fallback tab id for `session_messages` when a terminal id is unavailable. |
 | `CLAXEDO_MCP_MODE` / `CLAXEDO_MCP_READ_ONLY` | Select read-only mode (see [Modes](#modes)). |
-| `CLAXEDO_DESKTOP_URL` | Loopback URL of the Claxedo desktop app's local bridge. **Injected by the desktop app** at subprocess spawn time — do not set it by hand. |
-| `CLAXEDO_DESKTOP_TOKEN` | Per-launch shared secret for the desktop bridge. **Injected by the desktop app** — do not set it by hand. |
 
 Local Claxedo usage relies on the app's loopback trust boundary. The curated
 marketplace install does not receive a Claxedo user token, JIT token, or broker
 token. Set `CLAXEDO_AUTH_TOKEN` only when intentionally pointing the MCP server
 at a signed remote Claxedo server, and treat remote `CLAXEDO_SERVER_URL` values
-as privileged: the MCP sends log, process, session, document, and
-browser-control requests to that origin, plus any configured bearer token.
-
-### Browser tools require the desktop app
-
-The `browser_*` tools do not go through `CLAXEDO_SERVER_URL`. They call the
-Claxedo desktop app's own local HTTP bridge, addressed by `CLAXEDO_DESKTOP_URL`
-and authenticated with `CLAXEDO_DESKTOP_TOKEN`.
-
-The Electron main process binds that bridge to `127.0.0.1` on an ephemeral
-port, mints the per-launch secret, and pushes both values into this MCP
-subprocess's environment **at spawn time**. A standalone MCP client (Claude
-Desktop, Codex, a terminal) cannot supply these values, so its browser tools
-have no bridge to reach. When the pair is absent, every browser tool returns a
-legible message:
-
-> Browser tabs require the Claxedo desktop app.
-
-In short: `browser_*` tools work only when the MCP subprocess is spawned by the
-Claxedo desktop app. Everywhere else they are present in the tool list but
-always report the desktop bridge as unavailable.
+as privileged: the MCP sends log, process, session, and document requests to
+that origin, plus any configured bearer token.
 
 ## Modes
 
 Full-control mode is the default. It registers every tool, including process
-mutation, background session dispatch, log summarization through a temporary
-agent session, browser navigation, and browser JavaScript
-evaluation.
+mutation, background session dispatch, and log summarization through a
+temporary agent session.
 
 Read-only mode is selected with either of:
 
@@ -170,8 +147,6 @@ Read-only mode omits every mutating tool:
 - `process`
 - `spawn_session`
 - `summarize_logs`
-- `browser_evaluate_js`
-- `browser_navigate`
 
 Read-only mode keeps the non-mutating surface:
 
@@ -179,9 +154,6 @@ Read-only mode keeps the non-mutating surface:
 - `session_messages`
 - `documents_list`
 - `documents_open`
-- `browser_list_tabs`
-- `browser_screenshot`
-- `browser_get_console_logs`
 
 Note that `documents_open` stays available in read-only mode even though it
 performs a single side effect on the server (granting a session-scoped file
@@ -190,7 +162,7 @@ path); it is an observation tool, not a workspace mutation.
 ## Tool Surface
 
 The server registers the following tools (mutating tools omitted in read-only
-mode, browser tools functional only under the desktop app).
+mode).
 
 ### Runtime and control-plane tools
 
@@ -212,20 +184,6 @@ mode, browser tools functional only under the desktop app).
 `documents_open` requires a session id — from the `session_id` argument or the
 `CLAXEDO_SESSION_ID` default — because it grants a session-owned path.
 
-### Browser tools (desktop-hosted only)
-
-All five route through the desktop bridge (see
-[Browser tools require the desktop app](#browser-tools-require-the-desktop-app)).
-Bridge paths are relative to `CLAXEDO_DESKTOP_URL`.
-
-| MCP tool | What it does | Bridge route |
-| --- | --- | --- |
-| `browser_list_tabs` | List open browser panes with `paneId`, title, URL, group, and the per-tab `agentAllowed` JS gate. | `GET /browser/tabs` |
-| `browser_screenshot` | Capture a PNG (JPEG if oversized) of a pane, returned as an inline image content part, capped at ~1 MB. | `POST /browser/{paneId}/screenshot` |
-| `browser_get_console_logs` | Pull console, exception, and log entries from a pane's ring buffer with `since`/`level`/`limit` filters. Read-only. | `GET /browser/{paneId}/console` |
-| `browser_evaluate_js` | Evaluate a JavaScript expression in a pane's top frame. Runs only when the user has opted the pane into agent JS; otherwise returns a legible denial. Omitted in read-only mode. | `POST /browser/{paneId}/evaluate` |
-| `browser_navigate` | Load an `http://`/`https://` URL in a pane. Agent-initiated; logged to the bound session's audit trail. Omitted in read-only mode. | `POST /browser/{paneId}/navigate` |
-
 ## Full-Control Risks
 
 `process` can create, update, or remove `.claxedo/processes.jsonc` entries and
@@ -233,9 +191,7 @@ start, stop, restart, or bulk-control long-running commands. `spawn_session`
 creates a background control-plane session and can dispatch an initial prompt.
 `summarize_logs` creates a temporary Claxedo session and sends log text to the
 configured runtime/model — logs can contain secrets or customer data.
-`browser_navigate` changes
-the page in a browser pane, and `browser_evaluate_js` runs arbitrary JS in a
-pane the user explicitly opted in. Treat all of these as active permissions:
+Treat all of these as active permissions:
 prefer an MCP client that shows tool calls before execution, and pair
 `CLAXEDO_AUTH_TOKEN` with server-side audit logging for hosted/remote use.
 
@@ -315,8 +271,6 @@ Implemented in:
 - `packages/claxedo-mcp/src/server.ts`
 - `packages/claxedo-mcp/src/documents-tools.ts`
 - `packages/claxedo-mcp/src/documents-cli.ts`
-- `packages/claxedo-mcp/src/desktop-request.ts`
-- `packages/claxedo-mcp/src/browser-tools.ts`
 - `packages/claxedo-mcp/src/cloud-workspace-tools.ts`
 - `packages/claxedo-mcp/src/process-handler.ts`
 - `packages/claxedo-mcp/src/tool-policy.ts`

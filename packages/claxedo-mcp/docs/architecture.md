@@ -13,8 +13,7 @@ is shared code; only how a call reaches Claxedo Server differs.
 subprocess. It builds a `McpServer` from `@modelcontextprotocol/sdk`, calls
 `registerDocumentTools` with an HTTP-backed
 transport (`httpRequest`, built on `fetch`), registers the process/logs/session
-tools inline, calls `registerBrowserTools` for the desktop-bridge tools, and
-connects a `StdioServerTransport`. Every call this process makes crosses an
+tools inline, and connects a `StdioServerTransport`. Every call this process makes crosses an
 HTTP boundary to `CLAXEDO_SERVER_URL` (default `http://127.0.0.1:2593`); there
 is no in-process access to Claxedo Server's services. `server.ts` also doubles
 as the `claxedo-mcp documents ...` CLI entry point: when `process.argv[2] ===
@@ -25,41 +24,19 @@ transport (see `src/documents-cli.ts`).
 the documents tools only run over the stdio server's HTTP transport
 today.
 
-## Desktop-bridge HTTP client and the `CLAXEDO_AUTH_TOKEN` trust boundary
+## HTTP client and the `CLAXEDO_AUTH_TOKEN` trust boundary
 
-Two distinct HTTP clients live in this package, with two distinct trust
-boundaries:
-
-- **`httpRequest`** (`src/server.ts`) talks to Claxedo Server itself
-  (`CLAXEDO_SERVER_URL`, default `http://127.0.0.1:2593`). It attaches
-  `Authorization: Bearer ${CLAXEDO_AUTH_TOKEN}` when that env var is set, plus
-  scope headers from `claxedoRequestScope` (`src/request-scope.ts`): a
-  `directory`/`workspaceId` query string and `x-claxedo-directory` /
-  `x-workspace-id` headers for workspace-scoped calls, or no scope headers at
-  all for `scope: "owner"` calls (used by the `cloud_workspace_*` tools and the
-  workspace-resolve lookup). `CLAXEDO_AUTH_TOKEN` is optional for local
-  loopback use — the local Claxedo app trusts loopback origin instead — and
-  required in practice once this MCP points at a signed remote Claxedo server,
-  per the README's Trust Model section.
-
-- **`desktopRequest`** (`src/desktop-request.ts`) talks to a *different*
-  server: the Claxedo desktop app's local HTTP bridge, reached via
-  `CLAXEDO_DESKTOP_URL` with a per-launch shared secret in
-  `CLAXEDO_DESKTOP_TOKEN`. Both are pushed into this MCP subprocess's
-  environment by the Electron main process at spawn time; they are not
-  user-configured like `CLAXEDO_SERVER_URL`/`CLAXEDO_AUTH_TOKEN`. Every
-  request sets the `x-claxedo-desktop-token` header to the secret and a fixed
-  synthetic `Origin: claxedo-agent-tools://local`, which the bridge checks as
-  a CSRF defense — a request missing either is rejected. If
-  `CLAXEDO_DESKTOP_URL`/`CLAXEDO_DESKTOP_TOKEN` are absent (no desktop app, or
-  the browser capability was explicitly disabled), `desktopRequest` short-circuits to a
-  legible `DESKTOP_UNAVAILABLE_MESSAGE` rather than attempting a request. All
-  five `browser_*` tools registered by `registerBrowserTools`
-  (`src/browser-tools.ts`) go through `desktopRequest`.
-
-So a single MCP process holds two independent trust contexts at once: an
-optional bearer token for the Claxedo Server API, and a bridge secret for the
-desktop app's browser-control surface.
+**`httpRequest`** (`src/server.ts`) talks to Claxedo Server
+(`CLAXEDO_SERVER_URL`, default `http://127.0.0.1:2593`). It attaches
+`Authorization: Bearer ${CLAXEDO_AUTH_TOKEN}` when that env var is set, plus
+scope headers from `claxedoRequestScope` (`src/request-scope.ts`): a
+`directory`/`workspaceId` query string and `x-claxedo-directory` /
+`x-workspace-id` headers for workspace-scoped calls, or no scope headers at
+all for `scope: "owner"` calls (used by the `cloud_workspace_*` tools and the
+workspace-resolve lookup). `CLAXEDO_AUTH_TOKEN` is optional for local
+loopback use — the local Claxedo app trusts loopback origin instead — and
+required in practice once this MCP points at a signed remote Claxedo server,
+per the README's Trust Model section.
 
 ## Read-only vs. full-control tool-policy gating
 
@@ -77,8 +54,7 @@ threads it into every registration call:
   directly, so the whole `process` tool (and by extension
   `.claxedo/processes.jsonc` mutation and process lifecycle control) is
   omitted in read-only mode.
-- `summarize_logs`, `browser_evaluate_js`, and `browser_navigate` are gated the
-  same way at their `registerTool`/`registerBrowserTools` call sites — the
+- `summarize_logs` is gated the same way at its `registerTool` call site — the
   README's "Read-only mode omits" list enumerates the exact set.
 - `registerDocumentTools` is unconditional: `documents_list` and
   `documents_open` are read-only by nature and register in both modes.
@@ -86,8 +62,7 @@ threads it into every registration call:
 ## How `documents-tools`/`cloud-workspace-tools` plug into `server.ts`
 
 `server.ts` imports both registration functions and calls them once at module
-load, before `registerBrowserTools` and before connecting the stdio
-transport:
+load, before connecting the stdio transport:
 
 ```ts
 registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), {

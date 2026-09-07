@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 
-import { AgentAuditLog } from "./agent-audit-log"
 import { MAX_CONSOLE_ENTRIES, sanitizeConsoleString } from "./console-buffer"
 import { BrowserHandle, type BrowserWc } from "./handle"
 
@@ -503,7 +502,7 @@ describe("BrowserHandle.screenshot", () => {
 describe("BrowserHandle.evaluate", () => {
   test("refuses when agentAllowed is false — no CDP call made", async () => {
     const fake = makeFakeWc({ initialUrl: "https://example.com" })
-    const handle = new BrowserHandle(fake.wc, { auditLog: new AgentAuditLog() })
+    const handle = new BrowserHandle(fake.wc)
     fake.emitWc("dom-ready")
     await new Promise((r) => setTimeout(r, 0))
 
@@ -519,7 +518,7 @@ describe("BrowserHandle.evaluate", () => {
   test("returns result when agentAllowed is true", async () => {
     const fake = makeFakeWc({ initialUrl: "https://example.com" })
     fake.responses.set("Runtime.evaluate", { result: { value: 2 } })
-    const handle = new BrowserHandle(fake.wc, { auditLog: new AgentAuditLog() })
+    const handle = new BrowserHandle(fake.wc)
     fake.emitWc("dom-ready")
     await new Promise((r) => setTimeout(r, 0))
     handle.setAgentAllowed(true)
@@ -537,7 +536,7 @@ describe("BrowserHandle.evaluate", () => {
         exception: { description: "ReferenceError: x is not defined" },
       },
     })
-    const handle = new BrowserHandle(fake.wc, { auditLog: new AgentAuditLog() })
+    const handle = new BrowserHandle(fake.wc)
     fake.emitWc("dom-ready")
     await new Promise((r) => setTimeout(r, 0))
     handle.setAgentAllowed(true)
@@ -548,23 +547,6 @@ describe("BrowserHandle.evaluate", () => {
       expect(r.error.code).toBe("script-error")
       expect(r.error.message).toBe("ReferenceError: x is not defined")
     }
-  })
-
-  test("audit log records denial and allowed calls", async () => {
-    const fake = makeFakeWc({ initialUrl: "https://example.com" })
-    fake.responses.set("Runtime.evaluate", { result: { value: 7 } })
-    const audit = new AgentAuditLog()
-    const handle = new BrowserHandle(fake.wc, { auditLog: audit })
-    fake.emitWc("dom-ready")
-    await new Promise((r) => setTimeout(r, 0))
-
-    await handle.evaluate("boom") // denied
-    handle.setAgentAllowed(true)
-    await handle.evaluate("ok") // allowed
-    const entries = audit.snapshot()
-    expect(entries.length).toBe(2)
-    expect(entries[0].result).toBe("denied")
-    expect(entries[1].result).toBe("allowed")
   })
 })
 

@@ -130,7 +130,6 @@ const loadingComplete = defer<void>()
 
 const browserTabSetup = setupBrowserTab()
 const browserRegistry: BrowserRegistry | undefined = browserTabSetup?.registry
-const browserBridgePromise = browserTabSetup?.bridge
 
 const pendingDeepLinks: string[] = []
 
@@ -871,14 +870,6 @@ async function shutdown() {
   await daemonExitLifecycle.release(lease)
   hostConnector?.dispose()
   diagnosticsSmokeFixtures.dispose()
-  if (browserBridgePromise) {
-    try {
-      const bridge = await browserBridgePromise
-      await bridge.close()
-    } catch (err) {
-      logger.warn("failed to close browser bridge on shutdown", { error: err })
-    }
-  }
   diagnosticsIpc.dispose()
   diagnosticsProfiler.dispose()
 }

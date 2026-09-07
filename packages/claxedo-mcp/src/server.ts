@@ -7,7 +7,6 @@
  *   - process/terminal log retrieval
  *   - session message retrieval for chats and terminal-tracked agents
  *   - log summarization
- *   - browser pane tools through the Claxedo desktop bridge
  *
  * Environment variables:
  *   CLAXEDO_SERVER_URL - Base URL of the Claxedo local control plane
@@ -21,7 +20,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import fsPromises from "node:fs/promises"
 import { z } from "zod"
-import { registerBrowserTools } from "./browser-tools"
 import { bool, num, oneOf, record, records, strings, text } from "./json"
 import { createControlPlaneClient } from "./control-plane-request"
 import { toCallToolResult, type McpToolConfig, type McpToolExtra, type McpToolResult, type McpToolShape } from "./mcp-tool"
@@ -762,8 +760,6 @@ if (!READ_ONLY) {
     },
   )
 }
-
-registerBrowserTools(registerTool, { readOnly: READ_ONLY })
 
 const transport = new StdioServerTransport()
 if (process.argv[2] === "documents") {

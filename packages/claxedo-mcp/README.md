@@ -1,6 +1,6 @@
 # Claxedo MCP
 
-Give any MCP-capable agent direct access to a running Claxedo server's documents, processes, logs, sessions, and browser tools over stdio.
+Give any MCP-capable agent direct access to a running Claxedo server's documents, processes, logs, and sessions over stdio.
 
 ## Quickstart
 
@@ -48,14 +48,14 @@ pointing this MCP at a signed remote Claxedo server.
 
 `CLAXEDO_SERVER_URL` should be a loopback URL such as
 `http://127.0.0.1:2593` for local use. Treat remote URLs as privileged: the MCP
-will send log, process, session, and browser-control requests to that origin,
+will send log, process, and session requests to that origin,
 plus any configured bearer token.
 
 ## Modes
 
 Full-control mode is the default for backwards compatibility. It registers all
-tools, including process mutation, log summarization through a temporary agent
-session, browser navigation, and browser JavaScript evaluation.
+tools, including process mutation and log summarization through a temporary
+agent session.
 
 Read-only mode is available with either:
 
@@ -69,16 +69,11 @@ Read-only mode registers:
 
 - `get_logs`
 - `session_messages`
-- `browser_list_tabs`
-- `browser_screenshot`
-- `browser_get_console_logs`
 
 Read-only mode omits:
 
 - `process`
 - `summarize_logs`
-- `browser_evaluate_js`
-- `browser_navigate`
 
 ## Full-Control Risks
 
@@ -91,18 +86,12 @@ bind ports and access local files through those commands.
 configured runtime/model. Logs can contain secrets or customer data; review MCP
 client prompts and model routing before enabling it for sensitive workspaces.
 
-Browser tools call the Claxedo desktop bridge. `browser_evaluate_js` only runs
-when the user has explicitly enabled agent JavaScript for that browser tab, and
-the bridge returns a denial otherwise. `browser_navigate` changes the page in a
-browser pane. Treat both as active browser-control permissions.
-
 ## Audit Expectations
 
 Run the MCP through a client that shows tool calls before execution when
 possible. For hosted/remote use, pair `CLAXEDO_AUTH_TOKEN` with server-side
-audit logging. Browser bridge mutations are logged by the desktop bridge; read
-tools are best-effort observability and should not be treated as a complete
-security audit trail.
+audit logging. Read tools are best-effort observability and should not be
+treated as a complete security audit trail.
 
 Supported environment:
 
@@ -122,11 +111,6 @@ Current tool surface:
 - `get_logs`
 - `session_messages`
 - `summarize_logs`
-- `browser_list_tabs`
-- `browser_screenshot`
-- `browser_get_console_logs`
-- `browser_evaluate_js`
-- `browser_navigate`
 
 ## Documents CLI and skill
 

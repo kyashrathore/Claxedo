@@ -33,12 +33,6 @@
 import type { Event, RenderProcessGoneDetails, WebContents } from "electron"
 
 import {
-  AgentAuditLog,
-  agentAuditLog as defaultAgentAuditLog,
-  type AgentAuditAction,
-  type AgentAuditResult,
-} from "./agent-audit-log"
-import {
   ConsoleBuffer,
   type ConsoleEntry,
   type ConsoleLevel,
@@ -118,7 +112,6 @@ export type BrowserWc = Pick<
   | "isDestroyed"
   | "loadURL"
   | "getURL"
-  | "getTitle"
   | "canGoBack"
   | "canGoForward"
   | "goBack"
@@ -173,7 +166,6 @@ export type BrowserDebugger = {
 }
 
 export type BrowserHandleOptions = {
-  auditLog?: AgentAuditLog
   /** Override for tests — default is an in-process PNG→JPEG recompressor no-op. */
   recompress?: RecompressFn
 }
@@ -198,7 +190,6 @@ export class BrowserHandle {
   #console = new ConsoleBuffer()
   #listeners: Set<ConsoleEntryListener> = new Set()
   #agentAllowed = false
-  #auditLog: AgentAuditLog
   #recompress: RecompressFn
 
   /** Child sessions discovered via Target.attachedToTarget (flat mode). */
@@ -215,7 +206,6 @@ export class BrowserHandle {
 
   constructor(wc: BrowserWc, opts: BrowserHandleOptions = {}) {
     this.#wc = wc
-    this.#auditLog = opts.auditLog ?? defaultAgentAuditLog
     this.#recompress = opts.recompress ?? passthroughRecompress
 
     this.#onDomReady = () => {
@@ -366,21 +356,6 @@ export class BrowserHandle {
     return { url, canGoBack, canGoForward }
   }
 
-  /**
-   * The guest's current document title, or `""` when the `webContents` has
-   * been destroyed. Paired with `getNavigationState().url` this is everything
-   * the HTTP bridge's tab listing needs, so callers never need the raw
-   * `WebContents`.
-   */
-  getTitle(): string {
-    try {
-      return this.#wc.getTitle() ?? ""
-    } catch {
-      // webContents may have been destroyed mid-call
-      return ""
-    }
-  }
-
   goBack(): { ok: true } | { ok: false; error: string } {
     if (this.#wc.isDestroyed()) return { ok: false, error: "destroyed" }
     try {
@@ -529,11 +504,9 @@ export class BrowserHandle {
 
   async evaluate(expression: string): Promise<EvaluateResult> {
     if (!this.#agentAllowed) {
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", "agent-not-allowed")
       return { ok: false, error: { code: "eval-denied", message: "pane has not opted into agent JS execution" } }
     }
     if (this.#state !== "attached") {
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", "not-attached")
       return { ok: false, error: { code: "not-attached" } }
     }
 
@@ -545,22 +518,18 @@ export class BrowserHandle {
         awaitPromise: true,
       })
     } catch (err) {
-      const message = errMsg(err)
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", message)
-      return { ok: false, error: { code: "cdp-error", message } }
+      return { ok: false, error: { code: "cdp-error", message: errMsg(err) } }
     }
 
     const exceptionDetails = readRecord(resp, "exceptionDetails")
     if (exceptionDetails) {
       const { message, stack } = parseExceptionDetails(exceptionDetails, "script error")
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "allowed", message)
       return {
         ok: false,
         error: { code: "script-error", message, stack: stack ? formatCallFrames(stack) : undefined },
       }
     }
 
-    this.#audit("evaluate", `eval (${expression.length} chars)`, "allowed")
     return { ok: true, result: readUnknown(readRecord(resp, "result"), "value") }
   }
 
@@ -712,20 +681,6 @@ export class BrowserHandle {
       } catch {
         // A single misbehaving consumer must not break the dispatch loop.
       }
-    }
-  }
-
-  #audit(action: AgentAuditAction, summary: string, result: AgentAuditResult, reason?: string): void {
-    try {
-      this.#auditLog.append({
-        paneId: `wc:${this.#wc.id}`,
-        action,
-        summary,
-        result,
-        reason,
-      })
-    } catch {
-      // Audit log must never break a tool call.
     }
   }
 }
