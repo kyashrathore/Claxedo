@@ -21,6 +21,7 @@ import {
   terminalFontFamily,
   terminalInput,
   useSettings,
+  type NavigatorPlacement,
 } from "@/platform/settings/provider"
 import { playSoundById, SOUND_OPTIONS } from "@/platform/notifications/sound"
 import { requestNotificationPermission } from "@/platform/notifications/notification-permission"
@@ -151,6 +152,11 @@ export const SettingsGeneral: Component = () => {
   const followupOptions = createMemo((): { value: "queue" | "steer"; label: string }[] => [
     { value: "queue", label: language.t("settings.general.row.followup.option.queue") },
     { value: "steer", label: language.t("settings.general.row.followup.option.steer") },
+  ])
+
+  const navigatorPlacementOptions = createMemo((): { value: NavigatorPlacement; label: string }[] => [
+    { value: "panel", label: language.t("settings.general.row.navigatorPlacement.option.panel") },
+    { value: "sidebar", label: language.t("settings.general.row.navigatorPlacement.option.sidebar") },
   ])
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
@@ -364,6 +370,29 @@ export const SettingsGeneral: Component = () => {
                 value={(o) => o.value}
                 label={(o) => o.label}
                 onSelect={(option) => option && settings.appearance.setNavigatorSide(option.value)}
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+                triggerStyle={{ "min-width": "220px" }}
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              title={language.t("settings.general.row.navigatorPlacement.title")}
+              description={language.t("settings.general.row.navigatorPlacement.description")}
+            >
+              <Select
+                data-action="settings-navigator-placement"
+                placeholder={language.t("settings.general.row.navigatorPlacement.title")}
+                options={navigatorPlacementOptions()}
+                current={navigatorPlacementOptions().find((o) => o.value === settings.appearance.navigatorPlacement())}
+                value={(o) => o.value}
+                label={(o) => o.label}
+                onSelect={(option) => {
+                  if (!option) return
+                  settings.appearance.setNavigatorPlacement(option.value)
+                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "navigator_placement", value: option.value })
+                }}
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"

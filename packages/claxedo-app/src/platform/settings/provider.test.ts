@@ -34,3 +34,20 @@ describe("settings sound migration", () => {
     expect(migrateSettings(value)).toEqual(value)
   })
 })
+
+describe("settings navigator placement migration", () => {
+  test("passes a persisted appearance.navigatorPlacement through unchanged", () => {
+    const value = {
+      appearance: { navigatorSide: "right", navigatorPlacement: "sidebar" },
+      sounds: { agent: DEFAULT_SOUND_ID, permissions: DEFAULT_SOUND_ID, errors: DEFAULT_SOUND_ID },
+    }
+
+    expect(migrateSettings(value)).toEqual(value)
+  })
+
+  test("does not invent appearance.navigatorPlacement for a blob that predates it", () => {
+    const value = { appearance: { navigatorSide: "left" } }
+
+    expect(migrateSettings(value)).toEqual(value)
+  })
+})

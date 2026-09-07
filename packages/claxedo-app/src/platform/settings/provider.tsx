@@ -20,6 +20,9 @@ export interface SoundSettings {
   errors: string
 }
 
+export const NAVIGATOR_PLACEMENTS = ["panel", "sidebar"] as const
+export type NavigatorPlacement = (typeof NAVIGATOR_PLACEMENTS)[number]
+
 export interface Settings {
   general: {
     autoSave: boolean
@@ -44,6 +47,8 @@ export interface Settings {
     terminal: string
     /** Which side of the workspace panel the files navigator docks on. */
     navigatorSide: "left" | "right"
+    /** Where the files/changes/processes navigator renders: inside the right workspace panel, or as a secondary sidebar beside the rail. */
+    navigatorPlacement: NavigatorPlacement
   }
   keybinds: Record<string, string>
   permissions: {
@@ -129,6 +134,7 @@ const defaultSettings: Settings = {
     sans: "",
     terminal: "",
     navigatorSide: "right",
+    navigatorPlacement: "panel",
   },
   keybinds: {},
   permissions: {
@@ -291,6 +297,13 @@ const settingsContextInput = {
         navigatorSide: withFallback(() => store.appearance?.navigatorSide, defaultSettings.appearance.navigatorSide),
         setNavigatorSide(value: "left" | "right") {
           setStore("appearance", "navigatorSide", value)
+        },
+        navigatorPlacement: withFallback(
+          () => store.appearance?.navigatorPlacement,
+          defaultSettings.appearance.navigatorPlacement,
+        ),
+        setNavigatorPlacement(value: NavigatorPlacement) {
+          setStore("appearance", "navigatorPlacement", value)
         },
       },
       keybinds: {
