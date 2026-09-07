@@ -610,6 +610,8 @@ function goalRoute(
   }
 }
 
+const rootsOnly = (c: Ctx) => c.req.query("roots") === "true" || c.req.query("roots") === "1"
+
 function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unknown {
   const r = rec(s)
   if (!r) return s
@@ -1177,18 +1179,21 @@ export function createSessionRoutes(opts: Opts) {
   app
     .get("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
+      const roots = rootsOnly(c)
       const sessions = opts.listSessions
         ? await opts.listSessions(c, directory)
         : []
       await after(opts.afterListSessions?.(c, directory, sessions))
       const visible = await filterSessionRows(opts, c, "session_list", sessions)
-      const data = (visible as unknown[]).map((session) => normalizeSession(session, directory))
+      const data = (visible as unknown[])
+        .map((session) => normalizeSession(session, directory))
+        .filter((session) => !roots || typeof rec(session)?.parentID !== "string")
       return c.json(data)
     })
     .get("/experimental/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
       const limit = Math.min(Number(c.req.query("limit") ?? "100") || 100, 500)
-      const roots = c.req.query("roots") === "true" || c.req.query("roots") === "1"
+      const roots = rootsOnly(c)
       const archived = c.req.query("archived") === "true" || c.req.query("archived") === "1"
       const sessions = opts.listSessions
         ? await opts.listSessions(c, directory)

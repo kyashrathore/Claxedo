@@ -224,12 +224,15 @@ export function SessionMetaRoutes(options: Options = {}) {
         })
       }
       if (resolved) await options.refreshSessionProjection?.(resolved)
+      const roots = c.req.query("roots") === "true" || c.req.query("roots") === "1"
       const sessions = await listSessionMetas({
         ...(resolved?.id ? { workspaceID: resolved.id } : {}),
         ...(c.req.query("directory") ? { directory: c.req.query("directory") } : {}),
       })
       return c.json({
-        sessions: sessions.map((item) => responseMeta(item, authResult.auth, item.sessionID)),
+        sessions: sessions
+          .filter((item) => !roots || !item.parentID)
+          .map((item) => responseMeta(item, authResult.auth, item.sessionID)),
       })
     })
     .get("/api/claxedo/session-list", async (c) => {

@@ -92,6 +92,16 @@ export async function startLiveFirstPartyMcp() {
     return id
   }
 
+  /** What the rail reads: the flat local inventory the desktop lists as its root sessions. */
+  const rootInventory = async () => {
+    const url = new URL("/api/claxedo/session", `http://127.0.0.1:${port}`)
+    url.searchParams.set("roots", "true")
+    url.searchParams.set("directory", workspace.directory)
+    const response = await fetch(url, { headers: { Accept: "application/json" } })
+    if (!response.ok) throw new Error(`the local inventory answered ${response.status}`)
+    return ((await response.json()) as { sessions?: Array<{ sessionID: string }> }).sessions ?? []
+  }
+
   const entryFor = (sessionId: string) => {
     const entry = runtime.host.firstPartyMcpServer(sessionId)
     if (!entry) throw new Error("the embedded runtime injects no first-party MCP entry")
@@ -112,6 +122,7 @@ export async function startLiveFirstPartyMcp() {
     server,
     runtime,
     runtimeRequest,
+    rootInventory,
     createSession,
     entryFor,
     connect,

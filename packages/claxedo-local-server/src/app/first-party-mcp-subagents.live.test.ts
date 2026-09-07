@@ -69,9 +69,15 @@ describe("a subagent started over the injected first-party MCP", () => {
 
     expect(await readSession(binding.sessionId)).toMatchObject({ id: binding.sessionId, parentID: sessionId })
 
-    const roots = (await (await live.runtimeRequest("/experimental/session?roots=true")).json()) as RuntimeSession[]
-    expect(roots.map((row) => row.id)).toContain(sessionId)
-    expect(roots.map((row) => row.id)).not.toContain(binding.sessionId)
+    for (const route of ["/session?roots=true", "/experimental/session?roots=true"]) {
+      const rows = (await (await live.runtimeRequest(route)).json()) as RuntimeSession[]
+      expect(rows.map((row) => row.id), route).toContain(sessionId)
+      expect(rows.map((row) => row.id), route).not.toContain(binding.sessionId)
+    }
+
+    const inventory = await live.rootInventory()
+    expect(inventory.map((row) => row.sessionID)).toContain(sessionId)
+    expect(inventory.map((row) => row.sessionID)).not.toContain(binding.sessionId)
 
     const board = (toolJson(await callTool(client, "sessions_list")) as { workspaces: Array<{ sessions?: RuntimeSession[] }> })
     const listed = board.workspaces.flatMap((row) => row.sessions ?? []).map((row) => row.id)

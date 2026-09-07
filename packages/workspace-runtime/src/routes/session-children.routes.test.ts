@@ -167,10 +167,12 @@ describe("POST /session with parentID", () => {
     }])
     expect(item.runtimeEvents).toMatchObject([{ sessionId: "parent", payload: { type: "subagent-updated", subagentKey: created.subagentKey, status: "pending" } }])
 
-    const roots = await (await item.app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(DIRECTORY)}&roots=true`)).json() as Array<{ id: string }>
-    expect(roots.map((row) => row.id)).toEqual(["parent"])
-    const all = await (await item.app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(DIRECTORY)}`)).json() as Array<{ id: string }>
-    expect(all.map((row) => row.id).sort()).toEqual(["parent", created.id].sort())
+    for (const route of ["/session", "/experimental/session"]) {
+      const roots = await (await item.app.request(`http://localhost${route}?directory=${encodeURIComponent(DIRECTORY)}&roots=true`)).json() as Array<{ id: string }>
+      expect(roots.map((row) => row.id), route).toEqual(["parent"])
+      const all = await (await item.app.request(`http://localhost${route}?directory=${encodeURIComponent(DIRECTORY)}`)).json() as Array<{ id: string }>
+      expect(all.map((row) => row.id).sort(), route).toEqual(["parent", created.id].sort())
+    }
   })
 
   test("refuses a child of a child and a fifth active child", async () => {

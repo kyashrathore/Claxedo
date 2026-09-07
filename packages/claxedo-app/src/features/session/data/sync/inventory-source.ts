@@ -442,6 +442,7 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       queryKey: ["shell", "local-control-sessions", serverUrl, directory ?? ""] as const,
       queryFn: async () => {
         const url = new URL("/api/claxedo/session", serverUrl)
+        url.searchParams.set("roots", "true")
         if (directory) url.searchParams.set("directory", directory)
         const res = await (input.platformFetch() ?? globalThis.fetch)(url, { headers: { Accept: "application/json" } })
         if (!res.ok) return []
