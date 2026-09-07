@@ -24,6 +24,7 @@ import {
   type SessionRef,
 } from "@/platform/identity/session-ref"
 import { markRouteIntentClosed } from "./route-bridge-resolution"
+import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 
 export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
@@ -201,7 +202,7 @@ export function createLayoutOrchestration(input: {
     if (m.type !== "session" || !m.directory || m.sessionId !== sessionId) return false
     if (workspaceRouteId && m.content?.workspaceRouteId !== workspaceRouteId) return false
     if (sessionId === "new") return m.directory === directory
-    if (m.directory === directory) return true
+    if (sameWorkspaceDirectory(m.directory, directory)) return true
     return !!sessionRef && !!m.content?.sessionRef && sameSessionRef(m.content.sessionRef, sessionRef)
   }
 

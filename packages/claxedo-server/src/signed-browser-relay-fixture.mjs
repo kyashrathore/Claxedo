@@ -238,12 +238,27 @@ async function stopChild(child) {
   })
 }
 
+// The relay admits browser WebSocket upgrades (PTY, event streams) only from
+// its origin allowlist, whose default is loopback plus the product domains.
+// A lane that serves the app from a front-door origin (`app.localhost:<port>`
+// behind the preview proxy) names that origin here, the way a self-hosted
+// deployment names its own with `CLAXEDO_RELAY_ALLOWED_ORIGINS`.
+function relayAllowedOrigins() {
+  const configured = process.env.CLAXEDO_RELAY_ALLOWED_ORIGINS?.trim()
+  if (configured) return configured
+  const publicUrl = process.env.CLAXEDO_E2E_RELAY_PUBLIC_URL?.trim()
+  if (!publicUrl) return undefined
+  return ["http://localhost:*", "http://127.0.0.1:*", new URL(publicUrl).origin].join(",")
+}
+
 async function startRelayFixture(input) {
   const logs = []
+  const allowedOrigins = relayAllowedOrigins()
   const child = spawn("bun", ["src/user-hosted-relay-fixture.mjs"], {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...(allowedOrigins ? { CLAXEDO_RELAY_ALLOWED_ORIGINS: allowedOrigins } : {}),
       CLAXEDO_RELAY_FIXTURE_WORKSPACE_ID: workspaceId,
       CLAXEDO_RELAY_FIXTURE_HOST_ID: hostId,
       CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(input.runtimePublicKeyJwk),
@@ -340,42 +355,6 @@ if (backendPort) configureRuntimeSessionAuthorityUrl(backendUrl)
 configureWorkspaceSupervisor({
   server_url: backendUrl,
 })
-
-const workspace = await ensureWorkspace({
-  workspaceId,
-  project_id: projectId,
-  directory: workspaceDir,
-  kind: "local",
-  workspace_name: "Signed Browser Relay",
-  // Cloud mode needs this on the row for the loopback relay proxy to mint a
-  // runtime access token (`proxy.ts:105` gates on `relayProvider && ws.org_id`).
-  // Set at CREATE time: `updateWorkspace`'s patch type does not include
-  // `org_id`, so patching it later type-checks as an unrelated key.
-  ...(access === "cloud" ? { org_id: "personal" } : {}),
-})
-if (!workspace) throw new Error("Signed browser relay workspace was not stored")
-
-let effectiveWorkspace = workspace
-if (access === "cloud") {
-  cloudRuntime = await startCloudRuntime({
-    relayHostPublicKey: relayHost.publicKey,
-    controlPlaneUrl: backendUrl,
-  })
-  const cloudWorkspace = await updateWorkspace(workspaceId, {
-    kind: "cloud",
-    status: "ready",
-    sandbox_id: hostId,
-  })
-  effectiveWorkspace = cloudWorkspace ?? workspace
-  recordSupervisorSandboxLeaseReady({
-    workspaceId,
-    driver: "cloudflare",
-    sandboxId: hostId,
-    driverResourceId: hostId,
-    url: cloudRuntime.url,
-  })
-  injectRuntime(effectiveWorkspace, cloudRuntime.url)
-}
 
 // --- Real control-plane auth + authority ----------------------------------
 //
@@ -480,16 +459,55 @@ const embeddedSessionPolicy = embeddedManagedPrivateSessionPolicy(authority)
 // `CLAXEDO_E2E_COLLABORATIVE_ORG_NAME` is set, create an application org with a
 // default team and attach the fixture workspace to that org (D17).
 const collaborativeOrgName = process.env.CLAXEDO_E2E_COLLABORATIVE_ORG_NAME?.trim() || ""
-let fixtureOrgId = "personal"
-let fixtureDefaultTeamId
 await authority.usersMe(browserAuth)
+// The org every token and row below names is the authority's own for this
+// user: `POST /api/workspace/cloud` stamps the local row with
+// `authority.resolveOrgId(auth)` (`workspace/routes/index.ts`), and
+// `workspaceForPull` (`authority/http/session-pull.ts`) refuses a session
+// register/checkpoint with 409 `workspace_tenant_conflict` when the local row's
+// `org_id` differs from the authority's workspace record.
+let fixtureOrgId = await authority.resolveOrgId(browserAuth)
+let fixtureDefaultTeamId
 if (collaborativeOrgName) {
   const org = await authority.createOrg(browserAuth, { name: collaborativeOrgName })
   fixtureOrgId = org.org_id
   fixtureDefaultTeamId = org.default_team_id
 }
 const collaborativeOrgArgs = collaborativeOrgName ? { orgId: fixtureOrgId } : {}
+const workspace = await ensureWorkspace({
+  workspaceId,
+  project_id: projectId,
+  directory: workspaceDir,
+  kind: "local",
+  workspace_name: "Signed Browser Relay",
+  // Cloud mode needs this on the row for the loopback relay proxy to mint a
+  // runtime access token (`runtime-dispatch/internals.ts`'s `ensureCloudRuntime`
+  // gates on `relayProvider && ws.org_id`). Set at CREATE time:
+  // `updateWorkspace`'s patch type does not include `org_id`.
+  ...(access === "cloud" ? { org_id: fixtureOrgId } : {}),
+})
+if (!workspace) throw new Error("Signed browser relay workspace was not stored")
+
+let effectiveWorkspace = workspace
 if (access === "cloud") {
+  cloudRuntime = await startCloudRuntime({
+    relayHostPublicKey: relayHost.publicKey,
+    controlPlaneUrl: backendUrl,
+  })
+  const cloudWorkspace = await updateWorkspace(workspaceId, {
+    kind: "cloud",
+    status: "ready",
+    sandbox_id: hostId,
+  })
+  effectiveWorkspace = cloudWorkspace ?? workspace
+  recordSupervisorSandboxLeaseReady({
+    workspaceId,
+    driver: "cloudflare",
+    sandboxId: hostId,
+    driverResourceId: hostId,
+    url: cloudRuntime.url,
+  })
+  injectRuntime(effectiveWorkspace, cloudRuntime.url)
   await authority.createCloudWorkspace(browserAuth, {
     workspaceId,
     projectId,
@@ -967,13 +985,20 @@ built.app.get("/__fixture/authority-identity", async (c) => {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
   }
   const tokenIdentifier = `${jwksIssuer.issuer}|${subject}`
-  await authority.grantWorkspaceShare(browserAuth, {
-    workspaceId,
-    role,
-    target: { kind: "actor", actorId: tokenIdentifier },
+  // `grantWorkspaceShare` refuses unknown targets (`requireExisting: true`).
+  // Upsert the teammate first so a fresh `sub` is a real user row, the same
+  // way the product invite flow resolves the collaborator before writing the grant.
+  await authority.usersMe({
+    mode: "signed",
+    token: "",
+    user: {
+      subject,
+      tokenIdentifier,
+      issuer: jwksIssuer.issuer,
+    },
   })
   if (joinOrg) {
-    if (!collaborativeOrgName || fixtureOrgId === "personal") {
+    if (!collaborativeOrgName) {
       return c.json({ error: "joinOrg requires a collaborative fixture organization" }, 400)
     }
     const now = Date.now()
@@ -999,7 +1024,7 @@ built.app.get("/__fixture/authority-identity", async (c) => {
     await authority.grantWorkspaceShare(browserAuth, {
       workspaceId,
       role,
-      grantedToTokenIdentifier: tokenIdentifier,
+      target: { kind: "actor", actorId: tokenIdentifier },
     })
   }
   const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })

@@ -119,8 +119,10 @@ function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
     if (!row.ok || typeof row.value.grant_id !== "string") {
       return { ok: false, reason: `expected grants[${index}].grant_id to be a string` }
     }
+    // A grant names exactly one target; the session authorities return the
+    // other two columns as SQL nulls.
     for (const field of ["granted_to_user_id", "granted_to_org_id", "granted_to_team_id"] as const) {
-      if (row.value[field] !== undefined && typeof row.value[field] !== "string") {
+      if (row.value[field] != null && typeof row.value[field] !== "string") {
         return { ok: false, reason: `expected grants[${index}].${field} to be a string when present` }
       }
     }

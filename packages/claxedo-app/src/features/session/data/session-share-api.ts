@@ -23,9 +23,9 @@ const SessionPeopleContextSchema = z.object({
   can_manage_shares: z.boolean(),
   grants: z.array(z.object({
     grant_id: z.string(),
-    granted_to_user_id: z.string().optional(),
-    granted_to_org_id: z.string().optional(),
-    granted_to_team_id: z.string().optional(),
+    granted_to_user_id: z.string().nullable().optional(),
+    granted_to_org_id: z.string().nullable().optional(),
+    granted_to_team_id: z.string().nullable().optional(),
   })),
   participants: z.array(z.object({ user_id: z.string() })),
   teams: z.array(z.object({ team_id: z.string(), name: z.string(), is_shared: z.boolean() })),

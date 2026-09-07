@@ -7,6 +7,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { localControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ensurePersonalOrg, ensureProject, openAuthorityDb, upsertUser } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import { asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 
 function signedAuth(subject: string): SignedControlPlaneAuth {
   return {
@@ -792,6 +793,36 @@ describe("sqlite workspace authority", () => {
     await authority.registerLocalForSharing(local, { workspaceId: "ws_home", displayName: "Home" })
     const listed = await authority.listWorkspaces(local) as Array<{ workspace_id: string; role: string }>
     expect(listed).toEqual([expect.objectContaining({ workspace_id: "ws_home", role: "owner" })])
+  })
+})
+
+describe("a folder project registered for sharing", () => {
+  test("keeps the local project id and reports the served directory", async () => {
+    const authority = memoryAuthority()
+    await authority.registerLocalForSharing(owner, {
+      workspaceId: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
+      projectId: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
+      displayName: "live-check",
+      remoteDirectory: "/srv/checkouts/live-check",
+    })
+
+    await expect(authority.authorizeProject(owner, {
+      projectId: asProjectId("6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f"),
+      action: "read",
+    })).resolves.toMatchObject({ ok: true })
+    await expect(authority.authorizeProject(other, {
+      projectId: asProjectId("6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f"),
+      action: "read",
+    })).resolves.toEqual({ ok: false })
+
+    const opened = await authority.openWorkspace(owner, { workspaceId: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f" })
+    expect(opened.workspace).toMatchObject({
+      workspace_id: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
+      project_id: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
+      backing: "local-worktree",
+      access: "user-hosted",
+      remote_directory: "/srv/checkouts/live-check",
+    })
   })
 })
 

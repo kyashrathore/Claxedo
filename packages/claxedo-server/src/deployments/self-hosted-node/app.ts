@@ -1074,6 +1074,8 @@ export function createSelfHostedApp(
   // A folder project on a signed server is a local worktree this server hosts:
   // the same authority row the desktop's sharing flow creates, in the caller's
   // org, so `resolveRelayActor` above can authorise engine calls against it.
+  // The row is filed under the local store's project id: the signed `/project`
+  // list and every project-scoped authorisation name the project by that id.
   // A private GitHub repository clones with the caller's connected GitHub
   // account — the same token `repositoryForAuth` hands the cloud clone — and
   // anonymously when they have none.
@@ -1096,6 +1098,7 @@ export function createSelfHostedApp(
               if (known?.allowed) return
               await projectAuthority.registerLocalForSharing(auth, {
                 workspaceId: workspace.workspaceId,
+                projectId: workspace.projectId,
                 displayName: workspace.displayName,
                 remoteDirectory: workspace.directory,
                 ...(workspace.repoUrl ? { repoUrl: workspace.repoUrl } : {}),

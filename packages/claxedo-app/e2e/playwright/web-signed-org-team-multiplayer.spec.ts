@@ -240,7 +240,11 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       })
 
       // People UI is the product share path (titlebar-right slot on workbench header).
-      await shareSessionWithTeamViaPeopleUi(aliceCtx.page, fixture!.info.defaultTeamId!)
+      const defaultTeam = (await listSessionShares(fixture!, webApp!, sessionId)).teams?.find(
+        (team) => team.team_id === fixture!.info.defaultTeamId,
+      )
+      expect(defaultTeam, "control-plane share list must offer the org's default team").toBeTruthy()
+      await shareSessionWithTeamViaPeopleUi(aliceCtx.page, defaultTeam!)
       const shares = await listSessionShares(fixture!, webApp!, sessionId)
       expect(
         (shares.grants ?? []).some((grant) => grant.granted_to_team_id === fixture!.info.defaultTeamId),

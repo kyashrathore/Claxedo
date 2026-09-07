@@ -380,6 +380,7 @@ function workspaceJson(workspace: WorkspaceRow) {
     repo_url: workspace.repo_url ?? undefined,
     repo_name: workspace.repo_name ?? undefined,
     git_branch: workspace.git_branch ?? undefined,
+    remote_directory: workspace.remote_directory ?? undefined,
   }
 }
 

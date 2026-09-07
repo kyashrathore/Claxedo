@@ -164,6 +164,7 @@ export async function listSessionShares(
   return JSON.parse(raw) as {
     grants?: Array<{ granted_to_team_id?: string | null; grant_id?: string }>
     participants?: unknown[]
+    teams?: Array<{ team_id: string; name: string; is_shared: boolean }>
   }
 }
 
@@ -247,18 +248,28 @@ export async function openRecordedPage(browser: Browser, dir: string) {
 }
 
 
-export async function shareSessionWithTeamViaPeopleUi(page: Page, teamId: string) {
+/**
+ * Drives `SessionPeopleControl`: the popover lists every team the workspace's
+ * org offers with a per-team "Share with <name>" button, and a shared team
+ * renders as "Shared" with a "Remove <name> from session" button.
+ */
+export async function shareSessionWithTeamViaPeopleUi(page: Page, team: { name: string }) {
   await expect(page.getByText("Reconnecting…")).toHaveCount(0, { timeout: 60_000 }).catch(() => undefined)
   // SessionHeader can remount across pane/layout updates, leaving more than one
   // share trigger in the DOM; click the last visible one in the live header.
   const people = page.getByRole("button", { name: "Share session", exact: true }).filter({ visible: true }).last()
   await expect(people, "People control never appeared in the session header").toBeVisible({ timeout: 30_000 })
   await people.click()
-  const select = page.locator("select").filter({ has: page.locator(`option[value="${teamId}"]`) }).first()
-  await expect(select, "People team select never listed the default team").toBeVisible({ timeout: 15_000 })
-  await select.selectOption(teamId)
-  await page.getByRole("button", { name: "Add team" }).filter({ visible: true }).last().click()
-  await expect(page.getByText(`Team ${teamId}`).first()).toBeVisible({ timeout: 15_000 })
+  const shareWithTeam = page
+    .getByRole("button", { name: `Share with ${team.name}`, exact: true })
+    .filter({ visible: true })
+    .last()
+  await expect(shareWithTeam, `People popover never listed the team "${team.name}"`).toBeVisible({ timeout: 15_000 })
+  await shareWithTeam.click()
+  await expect(
+    page.getByRole("button", { name: `Remove ${team.name} from session`, exact: true }).filter({ visible: true }).last(),
+    `People popover never showed "${team.name}" as shared`,
+  ).toBeVisible({ timeout: 15_000 })
 }
 
 /** Compose Alice|Bob side-by-side; fails if ffmpeg missing or output absent. */

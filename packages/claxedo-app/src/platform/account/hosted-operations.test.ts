@@ -34,6 +34,16 @@ describe("decodeHostedResult", () => {
     })).toThrow(/teams/)
   })
 
+  test("accepts the SQL nulls a grant carries for the targets it does not name", () => {
+    const grant = { grant_id: "ssg_1", granted_to_user_id: null, granted_to_org_id: null, granted_to_team_id: "team_1" }
+    expect(decodeHostedResult("session.shares.list", {
+      can_manage_shares: true,
+      grants: [grant],
+      participants: [],
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: true }],
+    })).toMatchObject({ grants: [grant] })
+  })
+
   test("rejects malformed nested session People rows through the named operation", () => {
     const valid = {
       can_manage_shares: true,

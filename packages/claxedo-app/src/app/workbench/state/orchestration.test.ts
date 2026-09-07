@@ -135,6 +135,17 @@ describe("state/orchestration", () => {
     expect(meta.get(a)?.content?.directory).toBe("/work/alias")
   })
 
+  test("openSession reuses the surface when the workspace is addressed by id and by workspace: route address", () => {
+    const { layout, meta, getState } = makeFixture()
+    const promoted = layout.openSession("ws_relay", "ses_1", "Session 1", {
+      sessionRef: cloudSessionRef("ses_1"),
+    })
+    const routed = layout.openSession("workspace:ws_relay", "ses_1", "Session 1 titled")
+    expect(routed).toBe(promoted)
+    expect(getState().contentIds.filter((id) => meta.get(id)?.sessionId === "ses_1")).toEqual([promoted])
+    expect(meta.get(promoted)?.content?.title).toBe("Session 1 titled")
+  })
+
   test("openSession keeps same ids separate when workspace backing differs", () => {
     const { layout, meta, getState } = makeFixture()
     const a = layout.openSession("/work/foo", "ses_1", "Session 1", {

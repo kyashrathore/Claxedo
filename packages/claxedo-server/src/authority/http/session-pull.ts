@@ -237,14 +237,20 @@ function relayRole(value: unknown): RelayRole | undefined {
   return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
+/**
+ * Only the update stamp travels to the authority: a session's creation time is
+ * owned by its registration (`registerRuntimeSession`), and both session
+ * authorities reject a visibility upsert whose `createdAt` disagrees with it.
+ * The runtime's own `time.created` is a different clock instant, so it never
+ * agrees.
+ */
 function sessionStamp(input: Record<string, unknown>) {
   const time = asRecord(input.time)
-  const createdAt = asFiniteNumber(time?.created) ?? asFiniteNumber(input.created_at)
-  const updatedAt = asFiniteNumber(time?.updated) ?? asFiniteNumber(input.updated_at) ?? createdAt
-  return {
-    ...(createdAt === undefined ? {} : { createdAt }),
-    ...(updatedAt === undefined ? {} : { updatedAt }),
-  }
+  const updatedAt = asFiniteNumber(time?.updated)
+    ?? asFiniteNumber(input.updated_at)
+    ?? asFiniteNumber(time?.created)
+    ?? asFiniteNumber(input.created_at)
+  return updatedAt === undefined ? {} : { updatedAt }
 }
 
 function sessionVisibility(_ws: Workspace, input: unknown) {

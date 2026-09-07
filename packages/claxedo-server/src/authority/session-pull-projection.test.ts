@@ -218,7 +218,7 @@ describe("central projection: pulled session metadata", () => {
       )
       expect(authority.upsertSessionVisibility).toHaveBeenCalledWith(signedAuth, {
         workspaceId: "ws_1",
-        sessions: [{ sessionId: "session-1", title: "Runtime auto-title", createdAt: 100, updatedAt: 200 }],
+        sessions: [{ sessionId: "session-1", title: "Runtime auto-title", updatedAt: 200 }],
       })
     },
   )

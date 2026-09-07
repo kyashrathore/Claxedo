@@ -132,9 +132,16 @@ async function projectView(id: string) {
  * signed server every engine call for a directory is authorised against the
  * authority's workspace membership (`resolveRelayActor` in the self-hosted
  * app), so a folder project must exist there too or it can never be opened.
+ *
+ * `projectId` is the local store's project id, and the authority must file the
+ * workspace under that same id: the signed `/project` list authorises each
+ * local project by its own id (`authorizeProject`), so a workspace registered
+ * under a freshly minted authority project leaves its project invisible to the
+ * caller who just created it.
  */
 export type LocalProjectWorkspaceRegistration = {
   workspaceId: string
+  projectId: string
   displayName: string
   directory: string
   repoUrl?: string
@@ -215,6 +222,7 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
         try {
           await deps.registerWorkspace(auth, {
             workspaceId: workspace.id,
+            projectId: workspace.project_id,
             displayName: body.name,
             directory,
             ...(repoUrl ? { repoUrl } : {}),

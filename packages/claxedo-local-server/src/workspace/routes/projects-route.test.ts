@@ -148,10 +148,13 @@ describe("local project routes on a signed server", () => {
       headers: { "content-type": "application/json", ...bearer },
     })
     expect(res.status).toBe(201)
+    const { project } = await res.json() as { project: { id: string } }
     expect(registerWorkspace).toHaveBeenCalledTimes(1)
-    const [auth, workspace] = registerWorkspace.mock.calls[0] as unknown as [typeof signed, { workspaceId: string; displayName: string; directory: string; repoUrl?: string }]
+    const [auth, workspace] = registerWorkspace.mock.calls[0] as unknown as [typeof signed, { workspaceId: string; projectId: string; displayName: string; directory: string; repoUrl?: string }]
     expect(auth).toMatchObject({ mode: "signed", user: { subject: "usr_1" } })
-    expect(workspace).toMatchObject({ displayName: "Signed Folder", directory })
+    // The authority files the workspace under the project id this server
+    // answers `/project` with; a different id hides the project from its creator.
+    expect(workspace).toMatchObject({ projectId: project.id, displayName: "Signed Folder", directory })
     expect(workspace.workspaceId).toBeTruthy()
     expect(workspace.repoUrl).toBeUndefined()
   })
