@@ -1,3 +1,5 @@
+import type { ClaxedoServerClient } from "@claxedo/agent-runtime-contract/server-client"
+
 /**
  * The one client every tool calls. No tool builds a URL: a tool names a
  * target and a runtime path, and the client decides whether that is an
@@ -14,7 +16,7 @@ export type ResolvedTarget = Readonly<{
   kind: "loopback" | "relay" | "node"
   workspaceId?: string
   directory?: string
-  /** Origin plus any path prefix (`/workspaces/:id` on the relay). Runtime paths append to it. */
+  /** What a runtime path appends to: `<relay origin>/workspaces/:id` on the relay, empty for the runtime in this process. */
   baseUrl: string
   headers: Readonly<Record<string, string>>
   /** Until when the cached handshake stays valid; loopback never expires. */
@@ -42,5 +44,7 @@ export interface ClaxedoMcpClient {
   /** Runtime routes (`/session*`, `/permission`, `/api/wr/*`) on the workspace that owns the target. */
   runtime(target: WorkspaceTarget): Promise<ClaxedoFetch>
   resolveTarget(target: WorkspaceTarget): Promise<ResolvedTarget>
+  /** The typed route surface (`session.*`, `permission.*`, `question.*`, ...) over `runtime(target)`. */
+  server(target: WorkspaceTarget): Promise<ClaxedoServerClient>
   workspaces(): Promise<readonly WorkspaceSummary[]>
 }

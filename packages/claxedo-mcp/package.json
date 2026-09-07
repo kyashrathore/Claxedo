@@ -48,6 +48,7 @@
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "8.20.0",
