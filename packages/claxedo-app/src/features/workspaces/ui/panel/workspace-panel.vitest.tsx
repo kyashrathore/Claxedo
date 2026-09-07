@@ -9,6 +9,10 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
 }))
 
+const settingsMock = vi.hoisted(() => ({
+  navigatorPlacement: "panel" as "panel" | "sidebar",
+}))
+
 vi.mock("@/platform/api/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/platform/api/api")>(),
   api: apiMocks,
@@ -19,11 +23,16 @@ vi.mock("@/features/workspaces/app-ports", () => ({
   emitTerminalFit: vi.fn(),
 }))
 
+vi.mock("@/platform/settings/provider", () => ({
+  useSettings: () => ({ appearance: { navigatorPlacement: () => settingsMock.navigatorPlacement } }),
+}))
+
 const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth")
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  settingsMock.navigatorPlacement = "panel"
   if (originalWidth) Object.defineProperty(window, "innerWidth", originalWidth)
   else Reflect.deleteProperty(window, "innerWidth")
   window.dispatchEvent(new Event("resize"))
@@ -220,6 +229,19 @@ describe("WorkspacePanel", () => {
 
     expect(screen.getByTestId("workspace-files-navigator")).toHaveAttribute("data-file-tree-shell-ready", "true")
     expect(screen.getByTestId("workspace-files-navigator")).not.toHaveAttribute("data-file-tree-data-ready")
+  })
+
+  test("sidebar placement shows the review-shaped pending skeleton for a files navigator", () => {
+    settingsMock.navigatorPlacement = "sidebar"
+    render(() => (
+      <WorkspacePanel
+        state={{ ...openState, navigator: "files" }}
+        renderMode={() => undefined}
+      />
+    ))
+
+    expect(screen.queryByTestId("workspace-files-navigator")).not.toBeInTheDocument()
+    expect(screen.getByTestId("workspace-review-pending")).toBeInTheDocument()
   })
 
   test("does not construct the workspace tool while closed; mounts it on open after settle", async () => {
@@ -645,7 +667,7 @@ describe("WorkspacePanel", () => {
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
   })
 
-  test("full-width prop drives panel width without remounting the body", async () => {
+  test("full-width prop drives panel width without a resize handle, without reporting a restore width, and without remounting the body", async () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
@@ -658,21 +680,33 @@ describe("WorkspacePanel", () => {
       return <div>workspace body</div>
     }
     const [fullWidth, setFullWidth] = createSignal(false)
+    const widths: number[] = []
 
     render(() => (
       <WorkspacePanel
         state={openState}
         fullWidth={fullWidth}
+        onRestingWidthChange={(width) => widths.push(width)}
         renderMode={() => <Body />}
       />
     ))
 
     await waitFor(() => expect(mounts).toBe(1))
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
+    expect(screen.getByRole("separator", { name: "Resize workspace panel" })).toBeInTheDocument()
+    expect(widths.at(-1)).toBe(716)
+
     setFullWidth(true)
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "1024px" })
+    expect(screen.queryByRole("separator", { name: "Resize workspace panel" })).not.toBeInTheDocument()
+    // The full-view width is the column's, not the panel's: the owner keeps
+    // the px width as the one to restore to.
+    expect(widths.at(-1)).toBe(716)
+
     setFullWidth(false)
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
+    expect(screen.getByRole("separator", { name: "Resize workspace panel" })).toBeInTheDocument()
+    expect(widths.at(-1)).toBe(716)
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
   })

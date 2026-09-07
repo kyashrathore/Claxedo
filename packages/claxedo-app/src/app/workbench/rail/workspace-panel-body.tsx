@@ -335,6 +335,7 @@ export function WorkspacePanelBody(props: {
   const filesNavigatorActive = () => props.active() && filesNavigatorSelected()
   const settings = useSettings()
   const navigatorSide = () => settings.appearance.navigatorSide()
+  const navigatorInSidebar = () => settings.appearance.navigatorPlacement() === "sidebar"
   const processesNavigatorSelected = () => panelNavigator() === "processes"
   const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorSelected())
   const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorSelected())
@@ -435,7 +436,7 @@ export function WorkspacePanelBody(props: {
                             sits beside the tab content instead of sliding over
                             the file the user just opened. Collapse animates
                             width; the column docks per the appearance setting. */}
-                          <Show when={filesNavigatorVisited()}>
+                          <Show when={!navigatorInSidebar() && filesNavigatorVisited()}>
                             <div
                               data-testid="workspace-navigator-overlay"
                               data-navigator="files"
@@ -515,7 +516,7 @@ export function WorkspacePanelBody(props: {
                               </Show>
                             </div>
                           </Show>
-                          <Show when={processesNavigatorVisited()}>
+                          <Show when={!navigatorInSidebar() && processesNavigatorVisited()}>
                             <div
                               data-testid="workspace-navigator-overlay"
                               data-navigator="processes"

@@ -1,8 +1,19 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js"
 import { WORKSPACE_PANEL_CLOSE_GRACE_MS } from "../../../features/workspaces/ui/panel/workspace-panel-lifecycle"
 
+/**
+ * The workbench column's `margin-right`, shared by the reactive style in
+ * `RailWorkbenchShell` and the click-time write in `applyWorkspacePanelMotionDom`.
+ * An open panel at full view overlays the column instead of squeezing it.
+ */
+export function workbenchColumnMargin(input: { open: boolean; fullWidth: boolean; width: number }): string {
+  if (!input.open || input.fullWidth) return "0px"
+  return `${input.width}px`
+}
+
 export function createWorkspacePanelMotionState(input: {
   initialOpen: boolean
+  workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
 }) {
   const [visualOpen, setVisualOpen] = createSignal(input.initialOpen)
@@ -116,6 +127,12 @@ export function createWorkspacePanelMotionState(input: {
       button.setAttribute("title", open ? "Close workspace panel" : "Open workspace panel")
       button.setAttribute("aria-pressed", String(open))
     }
-    if (workbenchColumn) workbenchColumn.style.marginRight = open ? `${input.workspacePanelWidth()}px` : "0px"
+    if (workbenchColumn) {
+      workbenchColumn.style.marginRight = workbenchColumnMargin({
+        open,
+        fullWidth: input.workspacePanelFullWidth(),
+        width: input.workspacePanelWidth(),
+      })
+    }
   }
 }

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { WORKSPACE_PANEL_CLOSE_GRACE_MS } from "@/features/workspaces/ui/panel/workspace-panel-lifecycle"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal } from "solid-js"
 
-import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
+import { createWorkspacePanelMotionState, workbenchColumnMargin } from "./workspace-panel-motion-state"
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -107,6 +107,37 @@ describe("createWorkspacePanelMotionState", () => {
       expect(motion.visualOpen()).toBe(true)
     })
   })
+
+  test("pins the column margin to 0px across open and close while the panel is at full view", async () => {
+    const [fullWidth, setFullWidth] = createSignal(true)
+    await withMotionDom(async ({ directToggle, motion, panel, workbench }) => {
+      motion.setVisualPhase(true, directToggle)
+      expect(panel.dataset.open).toBe("true")
+      expect(workbench.style.marginRight).toBe("0px")
+
+      motion.setVisualPhase(false, directToggle)
+      expect(workbench.style.marginRight).toBe("0px")
+
+      setFullWidth(false)
+      motion.setVisualPhase(true, directToggle)
+      expect(workbench.style.marginRight).toBe("444px")
+    }, { fullWidth })
+  })
+})
+
+describe("workbenchColumnMargin", () => {
+  test("a closed panel takes no margin", () => {
+    expect(workbenchColumnMargin({ open: false, fullWidth: false, width: 444 })).toBe("0px")
+    expect(workbenchColumnMargin({ open: false, fullWidth: true, width: 444 })).toBe("0px")
+  })
+
+  test("an open panel at full view overlays the column instead of squeezing it", () => {
+    expect(workbenchColumnMargin({ open: true, fullWidth: true, width: 444 })).toBe("0px")
+  })
+
+  test("an open panel at px width squeezes the column by that width", () => {
+    expect(workbenchColumnMargin({ open: true, fullWidth: false, width: 444 })).toBe("444px")
+  })
 })
 
 async function withMotionDom(
@@ -117,6 +148,7 @@ async function withMotionDom(
     panel: HTMLElement
     workbench: HTMLElement
   }) => void | Promise<void>,
+  options?: { fullWidth?: () => boolean },
 ) {
   const panel = document.createElement("aside")
   const floating = document.createElement("div")
@@ -131,6 +163,7 @@ async function withMotionDom(
     dispose,
     motion: createWorkspacePanelMotionState({
       initialOpen: false,
+      workspacePanelFullWidth: options?.fullWidth ?? (() => false),
       workspacePanelWidth: () => 444,
     }),
   }))

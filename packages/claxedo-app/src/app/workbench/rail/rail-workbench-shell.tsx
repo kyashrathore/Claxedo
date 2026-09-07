@@ -9,6 +9,7 @@ import type {
 import { RailWorkbenchCanvas } from "./rail-workbench-canvas"
 import { RailWorkspacePanelShell } from "./rail-workspace-panel-shell"
 import { warmWorkspacePanelReviewWhenIdle } from "./workspace-panel-review-load"
+import { workbenchColumnMargin } from "./workspace-panel-motion-state"
 import { warmIconSpritesWhenIdle } from "@opencode-ai/ui/icon-sprite-warm"
 import { WorkbenchShellHeader } from "./workbench-shell-header"
 
@@ -100,7 +101,11 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
         data-testid="workbench-column"
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{
-          "margin-right": props.workspacePanelVisualOpen() ? `${props.workspacePanelWidth()}px` : "0px",
+          "margin-right": workbenchColumnMargin({
+            open: props.workspacePanelVisualOpen(),
+            fullWidth: props.workspacePanelFullWidth(),
+            width: props.workspacePanelWidth(),
+          }),
         }}
       >
         <Show when={props.projectsCount() > 0}>

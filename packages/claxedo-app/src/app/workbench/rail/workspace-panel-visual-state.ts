@@ -4,9 +4,10 @@ import {
   shouldRetargetWorkspacePanelForFocusedPane,
   type WorkspacePanelPaneTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
-import type { useClaxedoState } from "../state/index"
+import type { ClaxedoStateApi } from "../state/provider"
 import { isWorkspaceReady } from "../../../features/workspaces/data/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import type { NavigatorPlacement } from "@/platform/settings/provider"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
 
 export function workspacePanelMatchesFocusedPane(input: {
@@ -54,13 +55,15 @@ export function workspacePanelTopLevelOpenTarget(
 }
 
 export function useWorkspacePanelVisualState(input: {
-  claxedoState: ReturnType<typeof useClaxedoState>
+  claxedoState: Pick<ClaxedoStateApi, "navigator" | "workspacePanel">
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   focusedSplitPaneId: () => string | undefined
   focusedSurfaceWorkspaceToolsBlocked: () => boolean
   activeDirectory: Accessor<string | undefined>
   emptyDraftDirectory: Accessor<string | undefined>
+  navigatorPlacement: Accessor<NavigatorPlacement>
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void
+  workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
 }) {
   const [workspacePanelHasRenderedOpen, setWorkspacePanelHasRenderedOpen] = createSignal(false)
@@ -79,6 +82,7 @@ export function useWorkspacePanelVisualState(input: {
   const initialWorkspacePanelOpen = workspacePanelOpen()
   const motion = createWorkspacePanelMotionState({
     initialOpen: initialWorkspacePanelOpen,
+    workspacePanelFullWidth: input.workspacePanelFullWidth,
     workspacePanelWidth: input.workspacePanelWidth,
   })
 
@@ -169,8 +173,14 @@ export function useWorkspacePanelVisualState(input: {
   }
 
   const toggleFocusedWorkspaceNavigator = (navigator: "files" | "changes" | "processes") => {
+    // In sidebar placement the Navigator sidebar's tab is the selection, so a
+    // repeat click keeps it and the panel open rather than toggling it off.
+    const sidebar = input.navigatorPlacement() === "sidebar"
+    if (sidebar) input.claxedoState.navigator.select(navigator)
     const opened = openFocusedWorkspacePanel({
-      navigator: workspacePanelForFocusedTarget() && workspacePanelNavigator() === navigator ? null : navigator,
+      navigator: !sidebar && workspacePanelForFocusedTarget() && workspacePanelNavigator() === navigator
+        ? null
+        : navigator,
     })
     if (opened && !motion.visualOpenValue()) motion.setVisualPhase(true)
   }

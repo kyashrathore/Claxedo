@@ -9,6 +9,7 @@ import { terminalSessionIdForWorkspace } from "@/features/terminal/core/terminal
 import { useRailHeaderSurfaces } from "./rail-header-surfaces"
 import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
 import { useWorkspacePanelVisualState } from "./workspace-panel-visual-state"
+import type { NavigatorPlacement } from "@/platform/settings/provider"
 
 type HeaderSurfaceInput = Parameters<typeof useRailHeaderSurfaces>[0]
 
@@ -22,6 +23,7 @@ export function useRailWorkbenchController(input: {
   /** Last-resort directory for the terminal creator when no workspace is focused. */
   fallbackWorkspaceDir?: () => string | undefined
   focusedPaneWorkspaceDir: (paneId: string | undefined) => string | undefined
+  navigatorPlacement: Accessor<NavigatorPlacement>
   onLastFocusedSurfaceClosed?: () => void
   onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
   onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
@@ -31,6 +33,7 @@ export function useRailWorkbenchController(input: {
   roleBlocksTerminal?: Accessor<boolean>
   sidebarDir: () => string | undefined
   state: ClaxedoStateApi
+  workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
   worktreeInfo: (workspaceDir: string) => RailWorktreeInfo | undefined
 }) {
@@ -96,7 +99,9 @@ export function useRailWorkbenchController(input: {
     focusedSurfaceWorkspaceToolsBlocked: panelTarget.focusedSurfaceWorkspaceToolsBlocked,
     activeDirectory: input.activeDirectory,
     emptyDraftDirectory: input.emptyDraftDirectory,
+    navigatorPlacement: input.navigatorPlacement,
     onWorkspacePanelVisibilityChange: input.onWorkspacePanelVisibilityChange,
+    workspacePanelFullWidth: input.workspacePanelFullWidth,
     workspacePanelWidth: input.workspacePanelWidth,
   })
 

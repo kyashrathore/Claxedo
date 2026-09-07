@@ -17,6 +17,10 @@ const processOwnership = vi.hoisted(() => ({
   providers: 0,
 }))
 
+const settingsMock = vi.hoisted(() => ({
+  navigatorPlacement: "panel" as "panel" | "sidebar",
+}))
+
 vi.mock("./rail-sidebar", async () => {
   const actual = await vi.importActual<typeof import("./rail-sidebar")>("./rail-sidebar")
   return {
@@ -110,11 +114,14 @@ vi.mock("../../../features/settings/ui/terminals", () => ({
 }))
 
 vi.mock("@/platform/settings/provider", () => ({
-  useSettings: () => ({ appearance: { navigatorSide: () => "right", navigatorPlacement: () => "panel" } }),
+  useSettings: () => ({
+    appearance: { navigatorSide: () => "right", navigatorPlacement: () => settingsMock.navigatorPlacement },
+  }),
 }))
 
 beforeEach(() => {
   processOwnership.providers = 0
+  settingsMock.navigatorPlacement = "panel"
 })
 
 afterEach(() => {
@@ -128,9 +135,10 @@ const project = {
   name: "Main",
 } satisfies ProjectItem
 
-function stateWithSurface(surface: ContentMeta): ClaxedoState {
+function stateWithSurface(surface: ContentMeta, workspacePanel?: ClaxedoState["workspacePanel"]): ClaxedoState {
   return {
     ...emptyClaxedoState(),
+    ...(workspacePanel ? { workspacePanel } : {}),
     workbench: {
       panes: [{ id: "pane-1", contentId: surface.id }],
       split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane-1" } },
@@ -145,12 +153,12 @@ function stateWithSurface(surface: ContentMeta): ClaxedoState {
   }
 }
 
-function renderRail(surface: ContentMeta) {
+function renderRail(surface: ContentMeta, workspacePanel?: ClaxedoState["workspacePanel"]) {
   const queryClient = new QueryClient()
   return render(() => (
     <QueryClientProvider client={queryClient}>
       <SessionTitleProjectionProvider>
-        <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
+        <ClaxedoStateProvider initialState={stateWithSurface(surface, workspacePanel)}>
           <AppShellLayout
             projects={[project]}
             activeProjectId={project.id}
@@ -342,4 +350,38 @@ describe("RailLayout workspace tool gates", () => {
     expect(processOwnership.providers).toBe(1)
 
   })
+
+  test.each(["files", "processes"] as const)(
+    "sidebar placement renders no workspace-navigator-overlay for %s while the panel still shows the review body",
+    async (navigator) => {
+      settingsMock.navigatorPlacement = "sidebar"
+      setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+      renderRail(
+        {
+          id: "surface-sidebar-placement",
+          type: "session",
+          scope: "directory",
+          directory: "/repo/main",
+          sessionId: "ses_sidebar_placement",
+          content: {
+            type: "session",
+            directory: "/repo/main",
+            sessionId: "ses_sidebar_placement",
+            sessionRef: {
+              sessionId: "ses_sidebar_placement",
+              host: "workspace",
+              cwd: "/repo/main",
+              toolSandbox: { kind: "local", cwd: "/repo/main" },
+            },
+          },
+        },
+        { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator },
+      )
+
+      expect(await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })).toBeTruthy()
+      expect(screen.queryAllByTestId("workspace-navigator-overlay")).toHaveLength(0)
+      expect(screen.queryByTestId("workspace-files-navigator")).toBeNull()
+      expect(screen.queryByTestId("workspace-processes-navigator")).toBeNull()
+    },
+  )
 })
