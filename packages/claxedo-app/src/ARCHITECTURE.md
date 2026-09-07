@@ -36,10 +36,14 @@ Application composition and product chrome:
 - `boot/`: bootstrap orchestration for the global data plane
 - `connection/`: server selection and health UI
 - `workbench/`: panes, rail, titlebar, layout state, navigation, and content assembly
-- `layout/`: layout configuration and chrome primitives consumed by the workbench
+- `layout/`: layout presets, regions, commands, and the shell layout state consumed by the shell
 - `review/`: review region policy and mount-retention rules for workbench panes
 - `dialogs/`, `controls/`, `styles/`, and `demo/`: app-owned presentation and alternate boot support
 - root `app-shell*.ts(x)` and `app-state-snapshot.ts`: the shell component itself — its layout composition, actions, commands, route sync, and state snapshot
+
+Inside `workbench/`, `rail/` owns the project/session rail and the workspace panel chrome (`rail/workspace-panel-body.tsx`, `rail/workspace-panel-visual-state.ts`), `workspace-panel/` owns the Files, Changes, and Processes navigators the panel body renders, `navigator-sidebar/` owns the column that hosts those same navigators when `settings.appearance.navigatorPlacement()` is `"sidebar"` (the shell mounts it from `app-shell-layout.tsx` under the `"claxedo.navigator-sidebar"` layout preset), `state/` owns `ClaxedoState` and its persisted slices (`state/navigator.ts` holds the sidebar's width and active tab), and `context/` owns pane-scoped contexts, including `context/process-pane-registry.ts`, which keeps one refcounted process pane per workspace directory so the sidebar and the panel body share a single instance through `context/process-pane.tsx`. "Navigator" throughout is `WorkspacePanelNavigator = "files" | "changes" | "processes"` from `features/workspaces/ui/panel/workspace-panel-state.ts`.
+
+`PaneCtx.presentation` (`workbench/workbench/workbench.tsx`, resolved through `workbench/workbench/pane-presentation.ts`) tells a pane's content whether it is `"docked"` or `"floating"`; the shell resolves it in `app-shell-layout.tsx` (`panePresentationUnderWorkspacePanel`), and a session pane floats while the workspace panel covers it at full view, keeping only its last turn and composer on top of the panel.
 
 Add a route in `app/routes`. Add a provider here only when it composes multiple owners or its lifetime is the entire application.
 
