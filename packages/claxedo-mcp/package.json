@@ -2,48 +2,59 @@
   "name": "@claxedo/mcp",
   "version": "0.5.0",
   "type": "module",
-  "description": "MCP server and CLI for Claxedo documents, processes, logs, sessions, and browser tools",
+  "private": true,
+  "description": "The first-party Claxedo MCP endpoint: the /api/claxedo/mcp route, its client, and the tools every mount serves",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kyashrathore/Claxedo.git",
     "directory": "packages/claxedo-mcp"
   },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "claxedo",
-    "agents"
-  ],
-  "bin": {
-    "claxedo-mcp": "dist/server.js"
-  },
   "exports": {
+    ".": {
+      "types": "./src/server.ts",
+      "bun": "./src/server.ts",
+      "development": "./src/server.ts",
+      "import": "./src/server.ts",
+      "default": "./src/server.ts"
+    },
+    "./client": {
+      "types": "./src/client/index.ts",
+      "bun": "./src/client/index.ts",
+      "development": "./src/client/index.ts",
+      "import": "./src/client/index.ts",
+      "default": "./src/client/index.ts"
+    },
+    "./context": {
+      "types": "./src/context.ts",
+      "bun": "./src/context.ts",
+      "development": "./src/context.ts",
+      "import": "./src/context.ts",
+      "default": "./src/context.ts"
+    },
+    "./tools/registry": {
+      "types": "./src/tools/registry.ts",
+      "bun": "./src/tools/registry.ts",
+      "development": "./src/tools/registry.ts",
+      "import": "./src/tools/registry.ts",
+      "default": "./src/tools/registry.ts"
+    },
     "./documents-tools": {
       "types": "./src/documents-tools.ts",
+      "bun": "./src/documents-tools.ts",
       "development": "./src/documents-tools.ts",
-      "default": "./dist/documents-tools.js"
+      "import": "./src/documents-tools.ts",
+      "default": "./src/documents-tools.ts"
     },
     "./cloud-workspace-tools": {
       "types": "./src/cloud-workspace-tools.ts",
+      "bun": "./src/cloud-workspace-tools.ts",
       "development": "./src/cloud-workspace-tools.ts",
-      "default": "./dist/cloud-workspace-tools.js"
+      "import": "./src/cloud-workspace-tools.ts",
+      "default": "./src/cloud-workspace-tools.ts"
     }
   },
-  "files": [
-    "dist",
-    "skills",
-    "mcp.json",
-    "README.md",
-    "LICENSE"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
-    "build": "bun build src/server.ts src/documents-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node",
-    "prepublishOnly": "bun run build",
-    "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
@@ -53,13 +64,14 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
+    "hono": "4.10.7",
     "zod-to-json-schema": "3.25.2",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@hono/node-server": "1.19.11",
     "@tsconfig/node-lts": "22.0.4",
     "@types/node": "24.12.2",
-    "tsx": "4.22.3",
     "typescript": "catalog:",
     "vitest": "2.1.9"
   }
