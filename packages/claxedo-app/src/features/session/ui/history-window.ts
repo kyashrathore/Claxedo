@@ -20,8 +20,13 @@ type Input = {
   onAfterLoad?: () => void
   onBeforeReveal?: () => void
   onAfterReveal?: () => void
-  /** Turns rendered on first paint; the window opens at `length - turnInit`. */
-  turnInit?: number
+  /**
+   * Turns rendered on first paint; the window opens at `length - turnInit`.
+   * Read live until the window commits (see the commit effect below), so a
+   * pane whose presentation changes before its history lands opens at the
+   * right size without a second pass.
+   */
+  turnInit?: Accessor<number> | number
   /**
    * Whether scrolling to the top reveals hidden turns. When false, hidden turns
    * are only revealed explicitly (`loadAndReveal`, `revealTurn`); once nothing
@@ -37,7 +42,8 @@ type Input = {
  * small batches while scrolling upward, and prefetches older history near top.
  */
 export function createSessionHistoryWindow(input: Input) {
-  const turnInit = input.turnInit ?? 4
+  const turnInitInput = input.turnInit
+  const turnInit: Accessor<number> = typeof turnInitInput === "function" ? turnInitInput : () => turnInitInput ?? 4
   const autoFill: Accessor<boolean> =
     typeof input.autoFill === "function" ? input.autoFill : () => input.autoFill !== false
   const turnBatch = 8
@@ -53,7 +59,7 @@ export function createSessionHistoryWindow(input: Input) {
     prefetchNoGrowth: 0,
   })
 
-  const initialTurnStart = (len: number) => (len > turnInit ? len - turnInit : 0)
+  const initialTurnStart = (len: number) => (len > turnInit() ? len - turnInit() : 0)
 
   const turnStart = createMemo(() => {
     const id = input.sessionID()
@@ -80,6 +86,21 @@ export function createSessionHistoryWindow(input: Input) {
 
   const collapseToLastTurn = () => {
     setTurnStart(Math.max(0, input.visibleUserMessages().length - 1))
+  }
+
+  /**
+   * Returns the window to what first paint would have opened for the current
+   * list, the way the commit effect below does: committed when the list is
+   * longer than `turnInit`, otherwise left uncommitted so the memo keeps
+   * deriving it while history is still arriving.
+   */
+  const resetToInitialWindow = () => {
+    const len = input.visibleUserMessages().length
+    if (len <= turnInit()) {
+      setState({ turnID: undefined, turnStart: 0 })
+      return
+    }
+    setTurnStart(initialTurnStart(len))
   }
 
   const renderedUserMessages = createMemo(
@@ -272,7 +293,7 @@ export function createSessionHistoryWindow(input: Input) {
         // 0 while the list is short and becomes the real window the moment the
         // history lands. A stale committed value from a previous, longer list is
         // still handled by the memo's own `state.turnStart >= len` branch.
-        if (len <= turnInit) return
+        if (len <= turnInit()) return
         setTurnStart(initialTurnStart(len))
       },
       { defer: true },
@@ -284,6 +305,7 @@ export function createSessionHistoryWindow(input: Input) {
     setTurnStart,
     hiddenTurnCount,
     collapseToLastTurn,
+    resetToInitialWindow,
     renderedUserMessages,
     revealTurn,
     loadAndReveal,

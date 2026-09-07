@@ -255,6 +255,107 @@ describe("createSessionHistoryWindow", () => {
     root.dispose()
   })
 
+  test("a live turnInit re-sizes the uncommitted window and the commit reads it", () => {
+    const root = createRoot((dispose) => {
+      const [messages, setMessages] = createSignal(userMessages(1))
+      const [ready, setReady] = createSignal(false)
+      const [turnInit, setTurnInit] = createSignal(4)
+      return {
+        dispose,
+        setMessages,
+        setReady,
+        setTurnInit,
+        historyWindow: createSessionHistoryWindow({
+          sessionID: () => "s-1",
+          messagesReady: ready,
+          visibleUserMessages: messages,
+          historyMore: () => false,
+          historyLoading: () => false,
+          loadMore: async () => undefined,
+          userScrolled: () => false,
+          scroller: () => undefined,
+          turnInit,
+        }),
+      }
+    })
+
+    // The pane floats before its history lands: the derived window follows.
+    root.setTurnInit(1)
+    root.setMessages(userMessages(12))
+    expect(root.historyWindow.turnStart()).toBe(11)
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-12"])
+
+    // The commit uses the live value, not the one the window was created with.
+    root.setReady(true)
+    expect(root.historyWindow.turnStart()).toBe(11)
+    root.setMessages(userMessages(13))
+    expect(root.historyWindow.turnStart()).toBe(11)
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-12", "m-13"])
+
+    root.dispose()
+  })
+
+  test("resetToInitialWindow returns a collapsed window to the first-paint window", () => {
+    const root = createRoot((dispose) => {
+      const [messages] = createSignal(userMessages(12))
+      return {
+        dispose,
+        historyWindow: createSessionHistoryWindow({
+          sessionID: () => "s-1",
+          messagesReady: () => true,
+          visibleUserMessages: messages,
+          historyMore: () => false,
+          historyLoading: () => false,
+          loadMore: async () => undefined,
+          userScrolled: () => false,
+          scroller: () => undefined,
+        }),
+      }
+    })
+
+    root.historyWindow.collapseToLastTurn()
+    expect(root.historyWindow.turnStart()).toBe(11)
+
+    root.historyWindow.resetToInitialWindow()
+
+    expect(root.historyWindow.turnStart()).toBe(8)
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-09", "m-10", "m-11", "m-12"])
+
+    root.dispose()
+  })
+
+  test("resetToInitialWindow leaves a short list uncommitted so later history still windows", () => {
+    const root = createRoot((dispose) => {
+      const [messages, setMessages] = createSignal(userMessages(2))
+      return {
+        dispose,
+        setMessages,
+        historyWindow: createSessionHistoryWindow({
+          sessionID: () => "s-1",
+          messagesReady: () => true,
+          visibleUserMessages: messages,
+          historyMore: () => false,
+          historyLoading: () => false,
+          loadMore: async () => undefined,
+          userScrolled: () => false,
+          scroller: () => undefined,
+        }),
+      }
+    })
+
+    root.historyWindow.collapseToLastTurn()
+    expect(root.historyWindow.turnStart()).toBe(1)
+
+    root.historyWindow.resetToInitialWindow()
+    expect(root.historyWindow.turnStart()).toBe(0)
+
+    // Had the reset committed a zero window, this history would render un-windowed.
+    root.setMessages(userMessages(12))
+    expect(root.historyWindow.turnStart()).toBe(8)
+
+    root.dispose()
+  })
+
   test("loadAndReveal(0) pages server history when the local list is shorter", async () => {
     const events: string[] = []
     const root = createRoot((dispose) => {

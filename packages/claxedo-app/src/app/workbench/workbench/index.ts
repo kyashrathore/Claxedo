@@ -23,6 +23,7 @@ export type { WorkbenchProviderProps, UseWorkbench } from "./provider"
 
 export { Workbench } from "./workbench"
 export type { WorkbenchProps, PaneCtx } from "./workbench"
+export type { PanePresentation, PanePresentationResolver } from "./pane-presentation"
 
 export { BP_MD, collapsePaneRects, isCollapsedWidth, isNarrowViewport } from "./collapse-projection"
 

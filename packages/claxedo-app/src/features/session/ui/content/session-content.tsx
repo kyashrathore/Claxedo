@@ -21,6 +21,7 @@ import {
 // the shell has no flex layout and the whole session page collapses to zero
 // height — present in the DOM, painted nowhere, clickable never.
 import "./session-environment-card.css"
+import "../session-presentation.css"
 
 const SessionEnvironmentCardMount = lazy(() =>
   import("./session-environment-card").then((module) => ({
@@ -69,8 +70,16 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
    * `:has` invalidation set. See that stylesheet for the measurement.
    */
   const [envcardGutter, setEnvcardGutter] = createSignal<SessionEnvironmentCardOccupancy>()
+  const presentation = props.ctx.presentation
+  /**
+   * Floating, the workspace panel covering this pane is already showing the
+   * changes, so the card is not mounted and the gutter it would reserve is
+   * released with it.
+   */
+  const floating = createMemo(() => presentation() === "floating")
   createEffect(() => {
     sessionId()
+    floating()
     setEnvcardGutter(undefined)
   })
   /**
@@ -86,7 +95,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
   const sessionVisible = props.ctx.isVisible
   const optimisticEnvcardOccupancy = createMemo(() =>
     reservedSessionEnvironmentOccupancy({
-      visible: sessionVisible() && !draftSession() && !state.workspacePanel.state().open,
+      visible: sessionVisible() && !draftSession() && !floating() && !state.workspacePanel.state().open,
       ready: collapse.ready(),
       collapsed: collapse.collapsed(sessionId()),
     }),
@@ -127,7 +136,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
   // `markRendererPhase`/`measureRendererPhase` are a flag read and a call.
   const sessionPage = () => {
     markRendererPhase("sessionActivate.pageConstruct.start")
-    return measureRendererPhase("sessionActivate.pageConstruct", () => <SessionPage />)
+    return measureRendererPhase("sessionActivate.pageConstruct", () => <SessionPage presentation={presentation} />)
   }
   const canRenderWorkspaceScope = createMemo(() => {
     const ref = effectiveSessionRef()
@@ -197,6 +206,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
               >
                 <div
                   class="size-full session-envcard-shell"
+                  data-session-presentation={presentation()}
                   data-session-envcard={envcardGutter() ?? optimisticEnvcardOccupancy()}
                   data-testid="session-content"
                   data-content-id={meta().id}
@@ -241,7 +251,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       merely disabled. It is also what the CSS expects: an
                       unmounted card reports no occupancy, so the shell drops
                       `data-session-envcard` and reclaims the width. */}
-                  <Show when={!draftSession()}>
+                  <Show when={!draftSession() && !floating()}>
                     <DeferredEnvironmentCard
                       active={activeForHydration}
                       sessionId={sessionId}

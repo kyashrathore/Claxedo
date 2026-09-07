@@ -5,6 +5,7 @@ import {
   focusIndexForTab,
   isAnswered,
   mergeCustomAnswer,
+  questionPromptMaxHeight,
 } from "./session-question-dock-nav"
 
 const opts = (...labels: string[]) => labels.map((label) => ({ label }))
@@ -124,5 +125,82 @@ describe("classifyQuestionKey", () => {
 
   test("unrelated keys are ignored", () => {
     expect(classifyQuestionKey({ key: "a" }, ctx)).toEqual({ type: "none" })
+  })
+})
+
+describe("questionPromptMaxHeight", () => {
+  test("docked: grows from the sticky head down to the prompt, leaving the chrome below it", () => {
+    expect(
+      questionPromptMaxHeight({
+        stickyHeadBottom: 100,
+        dock: { top: 600, bottom: 800 },
+        root: { top: 620, bottom: 700 },
+      }),
+    ).toBe(800 - 100 - 8 - 100)
+  })
+
+  test("docked: nothing bounds the prompt without a sticky head", () => {
+    expect(
+      questionPromptMaxHeight({
+        stickyHeadBottom: 0,
+        dock: { top: 600, bottom: 800 },
+        root: { top: 620, bottom: 700 },
+      }),
+    ).toBeUndefined()
+  })
+
+  test("docked: never shrinks below the floor", () => {
+    expect(
+      questionPromptMaxHeight({
+        stickyHeadBottom: 700,
+        dock: { top: 600, bottom: 800 },
+        root: { top: 620, bottom: 700 },
+      }),
+    ).toBe(240)
+  })
+
+  test("floating: the dock overlaps the timeline, so the bound is the pane minus the dock's other chrome", () => {
+    expect(
+      questionPromptMaxHeight({
+        stickyHeadBottom: 700,
+        dock: { top: 600, bottom: 800 },
+        root: { top: 620, bottom: 700 },
+        floatingArea: { top: 200, bottom: 800 },
+      }),
+    ).toBe(600 - (200 - 80) - 8)
+  })
+
+  test("floating: the sticky head is irrelevant, including when there is none", () => {
+    const withHead = questionPromptMaxHeight({
+      stickyHeadBottom: 300,
+      dock: { top: 600, bottom: 800 },
+      root: { top: 620, bottom: 700 },
+      floatingArea: { top: 200, bottom: 800 },
+    })
+    const withoutHead = questionPromptMaxHeight({
+      stickyHeadBottom: 0,
+      dock: { top: 600, bottom: 800 },
+      root: { top: 620, bottom: 700 },
+      floatingArea: { top: 200, bottom: 800 },
+    })
+    expect(withHead).toBe(withoutHead)
+    expect(withoutHead).toBe(472)
+  })
+
+  test("floating: stays stable as the prompt itself grows", () => {
+    const before = questionPromptMaxHeight({
+      stickyHeadBottom: 0,
+      dock: { top: 600, bottom: 800 },
+      root: { top: 620, bottom: 700 },
+      floatingArea: { top: 200, bottom: 800 },
+    })
+    // The prompt grew by 100px, which grew the dock by the same 100px.
+    const after = questionPromptMaxHeight({
+      stickyHeadBottom: 0,
+      dock: { top: 500, bottom: 800 },
+      root: { top: 520, bottom: 700 },
+      floatingArea: { top: 200, bottom: 800 },
+    })
+    expect(after).toBe(before)
   })
 })

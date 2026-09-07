@@ -110,3 +110,34 @@ export function classifyQuestionKey(
 
   return { type: "none" }
 }
+
+type Edges = { top: number; bottom: number }
+
+/**
+ * The tallest the question prompt may grow, in px, or undefined when nothing
+ * bounds it.
+ *
+ * Docked, the dock sits below the timeline, so the prompt may grow up to the
+ * sticky timeline head; without a head there is no bound. Floating, the whole
+ * stack is anchored to the bottom of `floatingArea` and grows upward over the
+ * timeline, so the bound is the area minus the dock's other chrome: the head
+ * no longer says anything about the room above the dock.
+ */
+export function questionPromptMaxHeight(input: {
+  stickyHeadBottom: number
+  dock: Edges
+  root: Edges
+  floatingArea?: Edges
+}): number | undefined {
+  const gap = 8
+  const floor = 240
+  if (input.floatingArea) {
+    const area = input.floatingArea.bottom - input.floatingArea.top
+    const dock = input.dock.bottom - input.dock.top
+    const root = input.root.bottom - input.root.top
+    return Math.max(floor, Math.floor(area - dock + root - gap))
+  }
+  if (!input.stickyHeadBottom) return undefined
+  const below = Math.max(0, input.dock.bottom - input.root.bottom)
+  return Math.max(floor, Math.floor(input.dock.bottom - input.stickyHeadBottom - gap - below))
+}

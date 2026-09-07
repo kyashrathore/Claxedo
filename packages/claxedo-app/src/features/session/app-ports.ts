@@ -151,6 +151,7 @@ export const createCloudWorkspace = bind((ports) => ports.createCloudWorkspace)
 export const WorkspaceGate = bind((ports) => ports.WorkspaceGate)
 export const useWorkspaceScopeRegistryOptional = bind((ports) => ports.useWorkspaceScopeRegistryOptional)
 export const DirectoryScope = bind((ports) => ports.DirectoryScope)
+export type PanePresentation = Workbench.PanePresentation
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
 export const terminalSurfaceStatus = bind((ports) => ports.terminalSurfaceStatus)
 export const NavigationRow = bind((ports) => ports.NavigationRow)

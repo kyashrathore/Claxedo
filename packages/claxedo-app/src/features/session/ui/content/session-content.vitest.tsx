@@ -77,9 +77,9 @@ vi.mock("../components/session-pane-scope", () => ({
 }))
 
 vi.mock("@/features/session/ui/session-screen", () => ({
-  default: () => {
+  default: (props: { presentation: () => string }) => {
     calls.sessionPage()
-    return <div data-testid="session-page" />
+    return <div data-testid="session-page" data-presentation={props.presentation()} />
   },
 }))
 
@@ -110,7 +110,7 @@ describe("SessionContent", () => {
             workspaceRouteId: "ws_cloud_route",
           },
         }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
       />
     ))
 
@@ -121,7 +121,7 @@ describe("SessionContent", () => {
     render(() => (
       <SessionContent
         meta={{ id: "directory-less-draft", type: "session", scope: "global", sessionId: "new", content: { type: "session", sessionId: "new" } }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
       />
     ))
 
@@ -135,7 +135,7 @@ describe("SessionContent", () => {
   })
 
   test("does not execute an unresolved session in the fallback project", () => {
-    render(() => <SessionContent meta={{ id: "unresolved", type: "session", scope: "global", sessionId: "ses_pi", content: { type: "session", sessionId: "ses_pi" } }} ctx={{ paneId: "pane-1", isVisible: () => true }} fallbackDirectory={() => "/work/repo"} />)
+    render(() => <SessionContent meta={{ id: "unresolved", type: "session", scope: "global", sessionId: "ses_pi", content: { type: "session", sessionId: "ses_pi" } }} ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }} fallbackDirectory={() => "/work/repo"} />)
     expect(screen.getByText("Missing session identity")).toBeTruthy()
     expect(screen.queryByTestId("session-page")).toBeNull()
     expect(calls.sessionPage).not.toHaveBeenCalled()
@@ -152,7 +152,7 @@ describe("SessionContent", () => {
           sessionId: "ses_legacy",
           content: { type: "session", directory: "/work/repo", sessionId: "ses_legacy" },
         }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
       />
     ))
 
@@ -175,7 +175,7 @@ describe("SessionContent", () => {
           sessionId: "ses_stashed",
           content: { type: "session", directory: "/work/repo", sessionId: "ses_stashed" },
         }}
-        ctx={{ paneId: "", isVisible: () => false }}
+        ctx={{ paneId: "", isVisible: () => false, presentation: () => "docked" }}
       />
     ))
 
@@ -199,7 +199,7 @@ describe("SessionContent", () => {
           sessionId: "ses_retained",
           content: { type: "session", directory: "/work/repo", sessionId: "ses_retained" },
         }}
-        ctx={{ paneId: "pane-1", isVisible: visible }}
+        ctx={{ paneId: "pane-1", isVisible: visible, presentation: () => "docked" }}
       />
     ))
 
@@ -233,7 +233,7 @@ describe("SessionContent", () => {
             },
           },
         }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
       />
     ))
 
@@ -241,6 +241,66 @@ describe("SessionContent", () => {
     expect(screen.getByTestId("session-page")).toBeTruthy()
     expect(calls.directoryScope).toHaveBeenCalledOnce()
     expect(calls.sessionPage).toHaveBeenCalledOnce()
+  })
+
+  test("floating presentation stamps data-session-presentation and hands the page the same accessor", () => {
+    const [presentation, setPresentation] = createSignal<"docked" | "floating">("floating")
+    render(() => (
+      <SessionContent
+        meta={{
+          id: "floating-surface",
+          type: "session",
+          scope: "directory",
+          directory: "/work/repo",
+          sessionId: "ses_float",
+          content: { type: "session", directory: "/work/repo", sessionId: "ses_float" },
+        }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation }}
+      />
+    ))
+
+    const shell = screen.getByTestId("session-content")
+    expect(shell).toHaveAttribute("data-session-presentation", "floating")
+    // The gutter reservation is for a card that is not there while floating.
+    expect(shell).not.toHaveAttribute("data-session-envcard")
+    expect(screen.getByTestId("session-page")).toHaveAttribute("data-presentation", "floating")
+
+    setPresentation("docked")
+    expect(shell).toHaveAttribute("data-session-presentation", "docked")
+    expect(shell).toHaveAttribute("data-session-envcard", "collapsed")
+    expect(screen.getByTestId("session-page")).toHaveAttribute("data-presentation", "docked")
+    // One page across the flip: presentation changes geometry, not identity.
+    expect(calls.sessionPage).toHaveBeenCalledOnce()
+  })
+
+  // Docked is the pre-existing layout; the presentation stamp is the only
+  // attribute this change adds to it.
+  test("docked presentation renders the shell with exactly the attributes it had before, plus the stamp", () => {
+    render(() => (
+      <SessionContent
+        meta={{
+          id: "docked-surface",
+          type: "session",
+          scope: "directory",
+          directory: "/work/repo",
+          sessionId: "ses_docked",
+          content: { type: "session", directory: "/work/repo", sessionId: "ses_docked" },
+        }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
+      />
+    ))
+
+    const shell = screen.getByTestId("session-content")
+    const attributes = Object.fromEntries(Array.from(shell.attributes, (attr) => [attr.name, attr.value]))
+    expect(attributes).toEqual({
+      class: "size-full session-envcard-shell",
+      "data-testid": "session-content",
+      "data-session-presentation": "docked",
+      "data-session-envcard": "collapsed",
+      "data-content-id": "docked-surface",
+      "data-session-id": "ses_docked",
+      "data-session-directory": "/work/repo",
+    })
   })
 
   test("holds the session page until the activating click's transcript read settles", async () => {
@@ -258,7 +318,7 @@ describe("SessionContent", () => {
           sessionId: "ses_cold",
           content: { type: "session", directory: "/work/repo", sessionId: "ses_cold", title: "Cold" },
         }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
       />
     ))
 
@@ -301,7 +361,7 @@ describe("SessionContent", () => {
             },
           },
         }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
+        ctx={{ paneId: "pane-1", isVisible: () => true, presentation: () => "docked" }}
       />
     ))
 

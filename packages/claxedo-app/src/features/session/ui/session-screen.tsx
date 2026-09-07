@@ -12,6 +12,7 @@ import {
   createComputed,
   on,
   untrack,
+  type Accessor,
 } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
@@ -20,6 +21,7 @@ import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import {
   isWorkspaceReady,
+  type PanePresentation,
   useClaxedoState,
   useConfigOptional,
   useGlobalSDK,
@@ -118,7 +120,7 @@ import {
   sessionMarkdownTimelineGate,
 } from "@/features/session/ui/content/session-markdown-preload"
 import { trackSessionOpen } from "@/features/session/ui/session-open-perf"
-export default function SessionPage() {
+export default function SessionPage(props: { presentation: Accessor<PanePresentation> }) {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
@@ -495,6 +497,7 @@ export default function SessionPage() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const centered = createMemo(() => isDesktop())
+  const floating = createMemo(() => props.presentation() === "floating")
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
@@ -1027,7 +1030,27 @@ export default function SessionPage() {
     onAfterLoad: () => restoreHistoryAnchor(),
     onBeforeReveal: () => captureHistoryAnchor(),
     onAfterReveal: () => restoreHistoryAnchor(),
+    turnInit: () => (floating() ? 1 : 4),
+    autoFill: () => !floating(),
   })
+
+  // A window that has already committed does not follow `turnInit`, so the
+  // presentation flip moves it explicitly. A list of one turn is left alone:
+  // there is nothing to collapse, and committing it would pin a zero window
+  // over history that is still arriving.
+  createEffect(
+    on(
+      () => props.presentation(),
+      (presentation, previous) => {
+        if (presentation === "floating") {
+          if (visibleUserMessages().length > 1) historyWindow.collapseToLastTurn()
+          return
+        }
+        if (previous === "floating") historyWindow.resetToInitialWindow()
+      },
+      { defer: true },
+    ),
+  )
 
   // See `createHistoryFill` for why the decision is confirmed across two frames.
   const historyFill = createHistoryFill({
@@ -1043,6 +1066,7 @@ export default function SessionPage() {
       return true
     },
     reveal: () => void historyWindow.loadAndReveal(),
+    autoFill: () => !floating(),
   })
 
   const scheduleHistoryFill = () => historyFill.schedule()
@@ -1177,6 +1201,7 @@ export default function SessionPage() {
   return (
     <div
       class="relative bg-background-base size-full overflow-hidden flex flex-col"
+      classList={{ "session-floating-root": floating() }}
       data-testid="session-page-root"
       data-session-id={sessionID() ?? ""}
       data-session-directory={dir()}
@@ -1190,8 +1215,11 @@ export default function SessionPage() {
     >
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3">
-          <div class="flex-1 min-h-0 overflow-hidden">
+        <div
+          class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3"
+          classList={{ "session-floating-overlay": floating() }}
+        >
+          <div class="flex-1 min-h-0 overflow-hidden" classList={{ "session-floating-timeline": floating() }}>
             <Switch>
               <Match when={gate.open}>
                 <NewSessionDesignView
@@ -1286,6 +1314,8 @@ export default function SessionPage() {
                         }}
                         historyShift={false}
                         userMessages={historyWindow.renderedUserMessages()}
+                        hiddenTurnCount={historyWindow.hiddenTurnCount}
+                        onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                         navMessages={visibleUserMessages()}
                         currentMessage={activeMessage()}
                         onMessageSelect={(message) => {
@@ -1379,11 +1409,21 @@ export default function SessionPage() {
           </div>
 
           <Show when={!gate.open && !newSession()}>
-            <Suspense fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}>
+            <Suspense
+              fallback={
+                <div
+                  aria-hidden="true"
+                  class="h-44 shrink-0"
+                  classList={{ "session-floating-dock": floating() }}
+                  data-component="session-prompt-dock-loading"
+                />
+              }
+            >
               <SessionComposerRegion
               state={composerState}
               ready={!store.deferRender && messagesReady()}
               centered={centered()}
+              presentation={props.presentation()}
               sessionID={sessionID()}
               parentID={info()?.parentID}
               onNavigateParent={navigateParent}

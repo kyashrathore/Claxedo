@@ -1,0 +1,64 @@
+/* Floating presentation of a session pane: the workspace panel covers the
+   pane at full view, and the session keeps only its last turn and composer as
+   a bottom-anchored stack over it. Keyed on the attribute SessionContent
+   stamps on `.session-envcard-shell`; the `session-floating-*` hook classes
+   exist only while floating, so docked markup carries nothing from here.
+
+   Specificity note: every rule below outranks the Tailwind utilities that stay
+   on the same elements (`relative`, `flex-1`, `bg-background-stronger`, ...),
+   which is what lets one classList toggle switch the geometry without
+   rewriting the docked class strings. */
+
+/* The pane itself stops painting and stops catching pointer events, so the
+   panel underneath shows through and stays clickable outside the stack. */
+[data-session-presentation="floating"] .session-floating-root {
+  background: transparent;
+  pointer-events: none;
+}
+
+/* The `@container` column becomes the stack: anchored to the pane's bottom
+   edge, centred at the composer's reading width, never taller than the pane. */
+[data-session-presentation="floating"] .session-floating-overlay {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  flex: none;
+  width: 100%;
+  max-width: 48rem;
+  height: auto;
+  max-height: 100%;
+  margin-inline: auto;
+  border: var(--surface-card-border, none);
+  border-radius: var(--surface-card-radius, var(--radius-lg)) var(--surface-card-radius, var(--radius-lg)) 0 0;
+  background: var(--overlay-surface);
+  box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
+  pointer-events: auto;
+}
+
+@media (min-width: 1536px) {
+  [data-session-presentation="floating"] .session-floating-overlay {
+    max-width: 880px;
+  }
+}
+
+/* The timeline slot sizes to its content up to the turn height and hands its
+   viewport a definite height once clamped, so the last turn scrolls instead
+   of clipping. A flex item cannot do this: with the stack's height indefinite
+   the viewport's `height: 100%` resolves to auto and the overflow is cut off.
+   A grid track is re-resolved against the clamped size, so `minmax(0, 1fr)`
+   is content-sized when short and exactly the clamp when tall. The slot also
+   yields first when a dock (question, permission) needs the room. */
+[data-session-presentation="floating"] .session-floating-timeline {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: var(--session-floating-turn-height, min(40vh, 28rem));
+}
+
+/* The dock keeps its place at the bottom of the stack; the stack owns the
+   surface, so the dock only keeps the docked bottom inset. */
+[data-session-presentation="floating"] .session-floating-dock {
+  padding-bottom: 0.75rem;
+}

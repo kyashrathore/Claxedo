@@ -57,6 +57,7 @@ const paneCtx: PaneCtx = {
   isVisible: () => true,
   requestClose: () => {},
   requestFocus: () => {},
+  presentation: () => "docked",
 }
 
 function mountRenderer(content: ContentMeta) {
