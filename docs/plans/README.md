@@ -8,6 +8,25 @@ explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
+- [Claxedo mobile (Expo)](./2026-09-07-004-feat-claxedo-mobile-expo-app-plan.md) — proposed; not started.
+  - Thin Expo 57 / RN 0.86 app for the attention loop only: card list, last
+    turn + composer + plain diff, push notifications with Allow/Deny from the
+    lock screen. Reuses the control-plane client and the three server
+    additions from the MCP redesign; adds push registration and an attention
+    notifier. Includes a stack survey of t3code, orca, superset, paseo and
+    synara. No terminal, editor, relay or pairing — Claxedo already has the
+    relay and account auth those apps had to build.
+
+- [claxedo-mcp redesign](./2026-09-07-003-feat-claxedo-mcp-redesign-plan.md) — proposed; not started.
+  - One streamable-HTTP MCP endpoint served by the running Claxedo (Worker,
+    local server, self-hosted node) and installed by URL like any remote MCP;
+    no stdio binary, no npm package; one client over the control plane with a
+    per-workspace relay hop; tools
+    derived from `SESSION_CORE_ROUTE_ACCESS`; attention tools with elicitation
+    on terminal hosts (no MCP App; the phone UI is the Expo app, plan 004);
+    `create_subagent` as the single cross-harness channel; one login per user.
+    Supersedes the current `@claxedo/mcp` package and its defects.
+
 - [Permissions, questions, and todos as transcript records](./2026-09-07-001-feat-transcript-interaction-records-plan.md) — proposed; not started.
   - Explains why the docks are transient today (pending tables deleted on
     reply; the transcript is parts only) and turns the three interactions into

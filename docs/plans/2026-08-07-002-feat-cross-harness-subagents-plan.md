@@ -13,9 +13,12 @@ execution: code
 > **Status (2026-09-07).** The per-rail adapter, driver, store, and capability
 > work landed in `425358fab3` ("feat(runtime): add native cross-harness
 > subagents"); the "Per-rail defects" table below is the record of what that
-> commit fixed, not a list of open bugs. The remaining work is the unchecked
-> Definition of Done entries (child-pane UX, transcript handles, reload and
-> crash semantics, fixture regeneration).
+> commit fixed, not a list of open bugs — with one exception: the ACP rows.
+> `c8bb14606f` ("make operator connections fully generic") removed
+> `acp/subagent.ts` and `acp/registry.ts` again, so ACP has no subagent rail
+> today and honestly declares `subagents: false`. The remaining work is that
+> ACP gap plus the unchecked Definition of Done entries (child-pane UX,
+> transcript handles, reload and crash semantics, fixture regeneration).
 
 ## Goal Capsule
 
