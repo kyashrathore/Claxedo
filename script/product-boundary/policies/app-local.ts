@@ -234,7 +234,16 @@ export const appLocal: Policy = {
   // what it writes: pruning is keyed on the target set, and unseen-done is a
   // memo rather than an effect. It imports only siblings already in this
   // closure, so the package count is unchanged at 38. Re-measured, no headroom.
-  ceilings: { modules: 960, packages: 38 },
+  // +3 modules / 0 packages (2026-09-07): the connected-applications surface
+  // in account settings — `features/settings/ui/connected-apps-section.tsx`,
+  // its `features/settings/data/connected-apps-api.ts`, and the Better Auth
+  // error reader both it and the OAuth routes share,
+  // `platform/auth/better-auth-api-error.ts`. Settings composes the section
+  // statically beside the account one, so it enters this closure the same way
+  // that one does; `<Can do="view.account">` is what keeps it off an unsigned
+  // local screen. All three import siblings already here, so the package count
+  // is unchanged at 38. Re-measured, no headroom.
+  ceilings: { modules: 963, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
