@@ -3,6 +3,9 @@ import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import type { WorkspaceCapabilities } from "./capabilities"
 import type { RuntimeSnapshot } from "./routes/config"
 import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
+import type { GitCommitSummary, GitStatusEntry, GitWorktreeStatus } from "./workspace-files/git-worktree"
+
+export type { GitCommitSummary, GitStatusEntry, GitWorktreeStatus }
 
 export type WorkspaceRuntimeClientOptions = {
   baseUrl: string | URL
@@ -82,6 +85,12 @@ export type WorkspaceRuntimeClient = {
   git: {
     snapshot: (path: string, options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
     commit: (body: { path: string; content: string; message: string; expected?: { baseCommit?: string; baseBlobSha?: string } }, options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
+    status: (options?: WorkspaceRuntimeRequestOptions) => Promise<GitWorktreeStatus>
+    stage: (input: { paths: string[] }, options?: WorkspaceRuntimeRequestOptions) => Promise<void>
+    unstage: (input: { paths: string[] }, options?: WorkspaceRuntimeRequestOptions) => Promise<void>
+    commitStaged: (input: { message: string; amend?: boolean }, options?: WorkspaceRuntimeRequestOptions) => Promise<{ commit: string }>
+    push: (input?: { setUpstream?: boolean }, options?: WorkspaceRuntimeRequestOptions) => Promise<{ remote: string; branch: string }>
+    log: (input?: { limit?: number }, options?: WorkspaceRuntimeRequestOptions) => Promise<{ commits: GitCommitSummary[] }>
   }
   pty: {
     list: (options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
@@ -145,6 +154,18 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
     git: {
       snapshot: (sourcePath, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.git + "/snapshot", { path: sourcePath }), requestOptions(options.headers, input)),
       commit: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/commit", jsonOptions(options.headers, input, body)),
+      status: (input = {}) => jsonRequest<GitWorktreeStatus>(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/status", requestOptions(options.headers, input)),
+      stage: async (body, input = {}) => {
+        await request(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/stage", jsonOptions(options.headers, input, body))
+      },
+      unstage: async (body, input = {}) => {
+        await request(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/unstage", jsonOptions(options.headers, input, body))
+      },
+      commitStaged: (body, input = {}) => jsonRequest<{ commit: string }>(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/commit-staged", jsonOptions(options.headers, input, body)),
+      push: (body = {}, input = {}) => jsonRequest<{ remote: string; branch: string }>(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/push", jsonOptions(options.headers, input, body)),
+      log: (query = {}, input = {}) => jsonRequest<{ commits: GitCommitSummary[] }>(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.git + "/log", {
+        limit: query.limit === undefined ? undefined : String(query.limit),
+      }), requestOptions(options.headers, input)),
     },
     pty: {
       list: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.pty, requestOptions(options.headers, input)),

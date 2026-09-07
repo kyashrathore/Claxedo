@@ -66,7 +66,7 @@ function parseNumstatValue(value: string | undefined) {
   return parseInt(value ?? "0", 10) || 0
 }
 
-function parseNumstat(output: string) {
+export function parseNumstat(output: string) {
   const stats = new Map<string, { additions: number; deletions: number }>()
   const parts = output.split("\0").filter(Boolean)
   for (let i = 0; i < parts.length; i++) {
