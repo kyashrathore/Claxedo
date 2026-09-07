@@ -71,7 +71,6 @@ export type FirstPartyMcpOptions = Readonly<{
   verifyRuntimeCredential?: VerifyRuntimeCredential
   createClient: (input: McpClientInputs) => ClaxedoMcpClient | Promise<ClaxedoMcpClient>
   registerTools?: ReadonlyArray<McpToolGroup>
-  readOnly?: (credential: McpCredential) => boolean
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
 }>
 
@@ -84,14 +83,14 @@ export type ClaxedoMcpMountOptions = Readonly<{
   /**
    * Returns undefined for a request that carries no valid user credential;
    * never throws for one. The object it returns is the credential handed to
-   * `createClient` and `audit`, so a mount may key per-credential state on it.
+   * `createClient` and `audit`, so a mount may key per-credential state on it,
+   * and it carries its own `readOnly`, which for an OAuth token is decided by
+   * the scopes the user consented to.
    */
   resolveUserCredential?: (request: Request) => Promise<McpCredential | undefined>
   createClient: (credential: McpCredential, request: Request) => ClaxedoMcpClient | Promise<ClaxedoMcpClient>
   registerTools: ReadonlyArray<McpToolGroup>
   audit: (event: McpAuditEvent) => void | Promise<void>
-  /** Read-only for a runtime credential; a user credential's read-only state is the resolver's to decide. */
-  readOnly?: (credential: McpCredential) => boolean
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
   maxInFlightPerCredential?: number
   maxSessions?: number
@@ -189,7 +188,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       crossMachineWrites: options.crossMachineWrites?.(claims) ?? false,
       readOnly: false,
     }
-    return options.readOnly?.(credential) ? { ...credential, readOnly: true } : credential
+    return credential
   }
 
   const resolveCredential = async (request: Request): Promise<McpCredential | undefined> => {

@@ -202,10 +202,12 @@ describe("the loopback mount", () => {
     expect(await client.callTool({ name: "workspace_destroy", arguments: { workspace: "ws_1" } })).toEqual(unknownTool("workspace_destroy"))
   })
 
-  test("read-only hides every write and refuses it when called anyway", async () => {
-    const { url, audits } = await loopback({ readOnly: () => true })
-    const { client } = await connect(url, { authorization: "Bearer rt-token" })
-    expect(await toolNames(client)).toEqual(["runtime_ping", "wait"])
+  test("a read-only credential is shown no write and refuses one called anyway", async () => {
+    const { url, audits } = await hosted({
+      resolveUserCredential: async () => ({ ...fullUserCredential({ actorId: "actor_1", clientId: "mcp-host" }), readOnly: true }),
+    })
+    const { client } = await connect(url, { authorization: "Bearer anything" })
+    expect(await toolNames(client)).toEqual(["user_ping", "wait"])
     expect(await client.callTool({ name: "session_send", arguments: { session: "s", text: "t" } })).toEqual(unknownTool("session_send"))
     expect(audits).toEqual([])
   })
@@ -350,17 +352,17 @@ describe("composition", () => {
     expect(await toolNames(client)).toEqual([])
   })
 
-  test("the read-only hook sees the resolved runtime credential and leaves user credentials to the resolver", async () => {
-    const seen: McpCredential[] = []
+  test("read-only is the credential's own state, so one connection is restricted and another is not", async () => {
     const { url } = await hosted({
-      verifyRuntimeCredential: () => runtimeClaims,
-      readOnly: (credential) => { seen.push(credential); return true },
+      resolveUserCredential: async (request) => {
+        const full = fullUserCredential({ actorId: "actor_1", clientId: "mcp-host" })
+        if (request.headers.get("authorization") === "Bearer reader") return { ...full, readOnly: true }
+        return request.headers.get("authorization") === "Bearer cli-jwt" ? full : undefined
+      },
     })
-    const user = await connect(url, { authorization: "Bearer cli-jwt" })
-    expect(await toolNames(user.client)).toContain("session_send")
-    const runtime = await connect(url, { authorization: "Bearer rt-token" })
-    expect(await toolNames(runtime.client)).toEqual(["runtime_ping", "wait"])
-    expect(seen.length).toBeGreaterThan(0)
-    expect(seen.every((credential) => credential.kind === "runtime" && credential.runtimeId === "rt_1" && !credential.readOnly)).toBe(true)
+    const writer = await connect(url, { authorization: "Bearer cli-jwt" })
+    expect(await toolNames(writer.client)).toContain("session_send")
+    const reader = await connect(url, { authorization: "Bearer reader" })
+    expect(await toolNames(reader.client)).toEqual(["user_ping", "wait"])
   })
 })

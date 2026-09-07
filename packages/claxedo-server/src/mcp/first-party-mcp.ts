@@ -78,7 +78,6 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
         metadata: record,
       })
     },
-    ...(input.options.readOnly ? { readOnly: input.options.readOnly } : {}),
     ...(input.options.crossMachineWrites ? { crossMachineWrites: input.options.crossMachineWrites } : {}),
   })
   return { id: FIRST_PARTY_MCP_CONTRIBUTION_ID, path: CLAXEDO_MCP_PATH, routes: mount.routes }
