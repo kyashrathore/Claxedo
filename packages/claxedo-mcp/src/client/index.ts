@@ -1,8 +1,4 @@
-import {
-  createClaxedoServerClient,
-  serverClientResponseError,
-  type ClaxedoServerClient,
-} from "@claxedo/agent-runtime-contract/server-client"
+import { createWorkspaceRuntimeClient, workspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, WorkspaceSummary, WorkspaceTarget } from "./contract"
 import { ClaxedoMcpClientError } from "./errors"
@@ -29,7 +25,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   Pick<WorkspaceConnectionOptions, "now" | "sleep" | "refreshWindowMs" | "provisioningMaxAttempts">
 
 /**
- * `createClaxedoServerClient` builds absolute URLs, but the in-process runtime
+ * `createWorkspaceRuntimeClient` builds absolute URLs, but the in-process runtime
  * fetch receives only a path. This origin is the scaffold those URLs are built
  * on; the adapter strips it before calling the runtime, so it is never dialled.
  */
@@ -122,14 +118,14 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
     return relayRuntime(relayWorkspaceId(target))
   }
 
-  const server = async (target: WorkspaceTarget): Promise<ClaxedoServerClient> => {
+  const server = async (target: WorkspaceTarget): Promise<WorkspaceRuntimeClient> => {
     const resolved = await resolveTarget(target)
     const runtimeFetch = await runtime(target)
     const baseUrl = resolved.kind === "relay" ? resolved.baseUrl : IN_PROCESS_ORIGIN
     const prefix = new URL(baseUrl).pathname.replace(/\/+$/, "")
-    return createClaxedoServerClient({
+    return createWorkspaceRuntimeClient({
       baseUrl,
-      request: (input, init) => {
+      fetch: (input, init) => {
         const url = new URL(input instanceof Request ? input.url : input)
         return runtimeFetch(`${url.pathname.slice(prefix.length)}${url.search}`, init)
       },
@@ -143,7 +139,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
     const rows = new Map<string, WorkspaceSummary>()
     for (const access of ["cloud", "user-hosted"] as const) {
       const response = await controlPlaneFetch(`/api/workspace?access=${access}`, { method: "GET" })
-      if (!response.ok) throw await serverClientResponseError(`workspace.list.${access}`, response)
+      if (!response.ok) throw await workspaceRuntimeClientError(`workspace.list.${access}`, response)
       const body: unknown = await response.json()
       const list = asRecord(body)?.workspaces
       if (!Array.isArray(list)) throw new ClaxedoMcpClientError("connection-invalid", `workspace.list.${access} returned no workspaces array`)

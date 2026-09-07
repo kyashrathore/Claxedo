@@ -1,4 +1,4 @@
-import type { ClaxedoServerClient } from "@claxedo/agent-runtime-contract/server-client"
+import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 
 /**
  * The one client every tool calls. No tool builds a URL: a tool names a
@@ -45,6 +45,6 @@ export interface ClaxedoMcpClient {
   runtime(target: WorkspaceTarget): Promise<ClaxedoFetch>
   resolveTarget(target: WorkspaceTarget): Promise<ResolvedTarget>
   /** The typed route surface (`session.*`, `permission.*`, `question.*`, ...) over `runtime(target)`. */
-  server(target: WorkspaceTarget): Promise<ClaxedoServerClient>
+  server(target: WorkspaceTarget): Promise<WorkspaceRuntimeClient>
   workspaces(): Promise<readonly WorkspaceSummary[]>
 }

@@ -1,4 +1,4 @@
-import { serverClientResponseError } from "@claxedo/agent-runtime-contract/server-client"
+import { workspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { ClaxedoFetch } from "./contract"
 import { ClaxedoMcpClientError } from "./errors"
@@ -91,7 +91,7 @@ async function handshake(workspaceId: string, options: WorkspaceConnectionOption
   const operation = refresh ? "workspace.connection.refresh" : "workspace.connection"
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const response = await options.controlPlane(path, refresh ?? { method: "GET" })
-    if (!response.ok) throw await serverClientResponseError(operation, response)
+    if (!response.ok) throw await workspaceRuntimeClientError(operation, response)
     const body: unknown = await response.json()
     const row = asRecord(body)
     if (row?.status === "provisioning") {

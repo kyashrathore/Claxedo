@@ -1,4 +1,4 @@
-import { ServerClientResponseError } from "@claxedo/agent-runtime-contract/server-client"
+import { WorkspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
 import { describe, expect, test } from "vitest"
 import type { ClaxedoFetch } from "./contract"
 import { ClaxedoMcpClientError, createClaxedoMcpClient } from "./index"
@@ -247,7 +247,7 @@ describe("hosted relay hop", () => {
       fetch: fixture.relay.fetch,
     })
     const error = await refusing.resolveTarget({ workspaceId: "ws-1" }).catch((cause: unknown) => cause)
-    expect(error).toBeInstanceOf(ServerClientResponseError)
+    expect(error).toBeInstanceOf(WorkspaceRuntimeClientError)
     expect(error).toMatchObject({ operation: "workspace.connection", status: 402, code: "billing_entitlement_required", message: "Subscribe first" })
 
     const stuck = createClaxedoMcpClient({
@@ -307,6 +307,6 @@ describe("workspaces()", () => {
       deployment: "hosted",
       controlPlane: { fetch: async () => Response.json({ error: { code: "rate_limited", message: "Slow down" } }, { status: 429 }) },
     })
-    await expect(refused.workspaces()).rejects.toMatchObject({ name: "ServerClientResponseError", operation: "workspace.list.cloud", status: 429, code: "rate_limited" })
+    await expect(refused.workspaces()).rejects.toMatchObject({ name: "WorkspaceRuntimeClientError", operation: "workspace.list.cloud", status: 429, code: "rate_limited" })
   })
 })
