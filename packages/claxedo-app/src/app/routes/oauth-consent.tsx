@@ -1,5 +1,6 @@
 import { createResource, createSignal, For, Show, Suspense } from "solid-js"
-import { readBoolean, readField, readString } from "@/lib/record"
+import { readBoolean, readString } from "@/lib/record"
+import { betterAuthApiError } from "@/platform/auth/better-auth-api-error"
 
 export type OAuthConsentSubmission = {
   accept: boolean
@@ -48,11 +49,7 @@ export async function readOAuthConsentClient(
   const response = await request(url.toString(), { credentials: "include", headers: { accept: "application/json" } })
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    throw new Error(
-      readString(body, "error_description")
-        ?? readString(readField(body, "error"), "message")
-        ?? `Could not identify the requesting application (${response.status})`,
-    )
+    throw betterAuthApiError(body, response.status, "Could not identify the requesting application")
   }
   const name = readString(body, "client_name")
   const uri = readString(body, "client_uri")
@@ -75,9 +72,7 @@ export async function submitOAuthConsent(
     }),
   })
   const body: unknown = await response.json().catch(() => undefined)
-  if (!response.ok) {
-    throw new Error(readString(readField(body, "error"), "message") ?? `Consent failed (${response.status})`)
-  }
+  if (!response.ok) throw betterAuthApiError(body, response.status, "Consent failed")
   const url = readString(body, "url")
   if (readBoolean(body, "redirect") !== true || url === undefined) {
     throw new Error("Authorization server did not return a consent redirect")

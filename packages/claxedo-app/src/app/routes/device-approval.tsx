@@ -1,6 +1,7 @@
 import { createResource, createSignal, For, Show, Suspense } from "solid-js"
-import { readField, readString } from "@/lib/record"
+import { readString } from "@/lib/record"
 import { useAuthSession } from "@/platform/auth/auth-session"
+import { betterAuthApiError } from "@/platform/auth/better-auth-api-error"
 
 export type DeviceAuthorizationRequest = {
   userCode: string
@@ -10,14 +11,6 @@ export type DeviceAuthorizationRequest = {
 }
 
 export const DEVICE_CODE_MISSING = "This link is missing its device code. Re-run the command and open the URL it prints."
-
-function failure(body: unknown, status: number) {
-  return new Error(
-    readString(body, "error_description")
-      ?? readString(readField(body, "error"), "message")
-      ?? `Device authorization failed (${status})`,
-  )
-}
 
 function grantStatus(value: unknown): DeviceAuthorizationRequest["status"] {
   const status = readString(value, "status")
@@ -34,7 +27,7 @@ export async function readDeviceAuthorization(
   url.searchParams.set("user_code", userCode)
   const response = await request(url.toString(), { credentials: "include", headers: { accept: "application/json" } })
   const body: unknown = await response.json().catch(() => undefined)
-  if (!response.ok) throw failure(body, response.status)
+  if (!response.ok) throw betterAuthApiError(body, response.status, "Device authorization failed")
   const clientId = readString(body, "client_id")
   return {
     userCode,
@@ -58,7 +51,9 @@ export async function submitDeviceDecision(
       body: JSON.stringify({ userCode: input.userCode }),
     },
   )
-  if (!response.ok) throw failure(await response.json().catch(() => undefined), response.status)
+  if (!response.ok) {
+    throw betterAuthApiError(await response.json().catch(() => undefined), response.status, "Device authorization failed")
+  }
 }
 
 /**
