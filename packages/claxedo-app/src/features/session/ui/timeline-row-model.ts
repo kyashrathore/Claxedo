@@ -9,6 +9,8 @@ import type { SessionErrorClass } from "../onboarding/first-turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"
 
 export type TimelineRowMap = {
+  /** Sits above the first rendered turn (`userMessageID`) while `count` older turns stay off-screen. */
+  PreviousMessages: { userMessageID: string; count: number }
   TurnGap: { userMessageID: string }
   CommentStrip: {
     userMessageID: string
@@ -113,6 +115,8 @@ function sameSummaryDiffs(a: SummaryDiff[], b: SummaryDiff[]) {
 }
 
 export namespace TimelineRow {
+  export const PreviousMessages = taggedRow<"PreviousMessages", TimelineRowMap["PreviousMessages"]>("PreviousMessages")
+  export type PreviousMessages = ReturnType<typeof PreviousMessages>
   export const TurnGap = taggedRow<"TurnGap", TimelineRowMap["TurnGap"]>("TurnGap")
   export type TurnGap = ReturnType<typeof TurnGap>
   export const CommentStrip = taggedRow<"CommentStrip", TimelineRowMap["CommentStrip"]>("CommentStrip")
@@ -135,6 +139,7 @@ export namespace TimelineRow {
   export type TurnFold = ReturnType<typeof TurnFold>
 
   export type TimelineRow =
+    | PreviousMessages
     | TurnGap
     | CommentStrip
     | UserMessage
@@ -148,6 +153,8 @@ export namespace TimelineRow {
 
   export const key = (row: TimelineRow) => {
     switch (row._tag) {
+      case "PreviousMessages":
+        return `previous-messages:${row.userMessageID}`
       case "TurnGap":
         return `turn-gap:${row.userMessageID}`
       case "CommentStrip":
@@ -178,6 +185,7 @@ export namespace TimelineRow {
   export function is(value: unknown): value is TimelineRow {
     if (!value || typeof value !== "object" || !("_tag" in value)) return false
     switch ((value as { _tag?: unknown })._tag) {
+      case "PreviousMessages":
       case "TurnGap":
       case "CommentStrip":
       case "UserMessage":
@@ -197,6 +205,8 @@ export namespace TimelineRow {
     if (a === b) return true
     if (a._tag !== b._tag || a.userMessageID !== b.userMessageID) return false
     switch (a._tag) {
+      case "PreviousMessages":
+        return b._tag === "PreviousMessages" && a.count === b.count
       case "TurnGap":
       case "CommentStrip":
       case "Retry":

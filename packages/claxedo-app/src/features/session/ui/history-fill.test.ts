@@ -125,4 +125,33 @@ describe("createHistoryFill", () => {
     expect(queue.idles.size).toBe(0)
     expect(loads).toBe(0)
   })
+
+  test("autoFill false never reveals, even when the accessor flips after scheduling", () => {
+    let currentTime = 0
+    let loads = 0
+    let autoFill = true
+    const queue = scheduler()
+    const fill = createHistoryFill({
+      eligible: () => true,
+      reveal: () => loads += 1,
+      autoFill: () => autoFill,
+      now: () => currentTime,
+      ...queue,
+    })
+
+    fill.activate("workspace-a/session-a")
+    fill.schedule()
+    expect(queue.timers.size).toBe(1)
+
+    autoFill = false
+    currentTime = HISTORY_FILL_EARLIEST_MS
+    queue.runTimer()
+    expect(queue.frames.size).toBe(0)
+    expect(queue.idles.size).toBe(0)
+    expect(loads).toBe(0)
+
+    fill.schedule()
+    expect(queue.timers.size).toBe(0)
+    expect(loads).toBe(0)
+  })
 })

@@ -24,6 +24,9 @@ export type MessageTimelineProps = {
   setContentRef: (el: HTMLDivElement) => void
   historyShift: boolean
   userMessages: UserMessage[]
+  /** Turns above `userMessages[0]` that the history window keeps off-screen; > 0 adds the reveal row. */
+  hiddenTurnCount?: Accessor<number>
+  onRevealPreviousMessages?: () => void
   navMessages?: UserMessage[]
   currentMessage?: UserMessage
   onMessageSelect?: (message: UserMessage) => void

@@ -73,7 +73,7 @@ import {
   Timeline,
 } from "./message-timeline.data"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
-import { TimelineDiffSummaryRow, TimelineThinkingRow, TurnFoldRow } from "./message-timeline-turn-rows"
+import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow, TurnFoldRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
 import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
@@ -586,9 +586,18 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (thinkingHoldTimer) clearTimeout(thinkingHoldTimer)
   })
 
+  const hiddenTurnsRow = () => {
+    const count = props.hiddenTurnCount?.() ?? 0
+    const head = props.userMessages[0]
+    if (count <= 0 || !head) return
+    return TimelineRow.PreviousMessages({ userMessageID: head.id, count })
+  }
+
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
     thinkingHoldRevision()
     const rows = messageRowMemos().flatMap((memo) => memo())
+    const hiddenTurns = hiddenTurnsRow()
+    if (hiddenTurns) rows.unshift(hiddenTurns)
     const wantThinking = rows.some((row) => row._tag === "Thinking")
     const hold = nextThinkingVisibilityHold({
       want: wantThinking,
@@ -1418,6 +1427,20 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
     const current = row()
     switch (current._tag) {
+      case "PreviousMessages": {
+        const previousMessagesRow = row as Accessor<TimelineRowByTag<"PreviousMessages">>
+        return (
+          <TimelineRowFrame row={previousMessagesRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <PreviousMessagesRow
+                count={previousMessagesRow().count}
+                onReveal={() => props.onRevealPreviousMessages?.()}
+              />
+            </div>
+          </TimelineRowFrame>
+        )
+      }
+
       case "TurnGap":
         return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
       case "CommentStrip": {

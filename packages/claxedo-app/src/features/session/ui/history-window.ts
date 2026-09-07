@@ -1,6 +1,7 @@
 import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 export type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
-import { createEffect, createMemo, on } from "solid-js"
+import { createEffect, createMemo, on, type Accessor } from "solid-js"
+
 import { createStore } from "solid-js/store"
 import { same } from "@/lib/same"
 
@@ -19,6 +20,14 @@ type Input = {
   onAfterLoad?: () => void
   onBeforeReveal?: () => void
   onAfterReveal?: () => void
+  /** Turns rendered on first paint; the window opens at `length - turnInit`. */
+  turnInit?: number
+  /**
+   * Whether scrolling to the top reveals hidden turns. When false, hidden turns
+   * are only revealed explicitly (`loadAndReveal`, `revealTurn`); once nothing
+   * is hidden the scroller still pages older server history.
+   */
+  autoFill?: Accessor<boolean> | boolean
 }
 
 /**
@@ -28,7 +37,9 @@ type Input = {
  * small batches while scrolling upward, and prefetches older history near top.
  */
 export function createSessionHistoryWindow(input: Input) {
-  const turnInit = 4
+  const turnInit = input.turnInit ?? 4
+  const autoFill: Accessor<boolean> =
+    typeof input.autoFill === "function" ? input.autoFill : () => input.autoFill !== false
   const turnBatch = 8
   const turnScrollThreshold = 200
   const turnPrefetchBuffer = 16
@@ -62,6 +73,13 @@ export function createSessionHistoryWindow(input: Input) {
       return
     }
     setState({ turnID: id, turnStart: next })
+  }
+
+  /** Turns above the window: `turnStart` is the index of the first rendered turn. */
+  const hiddenTurnCount: Accessor<number> = turnStart
+
+  const collapseToLastTurn = () => {
+    setTurnStart(Math.max(0, input.visibleUserMessages().length - 1))
   }
 
   const renderedUserMessages = createMemo(
@@ -121,14 +139,22 @@ export function createSessionHistoryWindow(input: Input) {
     preserveScroll(() => setTurnStart(nextStart))
   }
 
-  const loadAndReveal = async () => {
+  /**
+   * Reveals every cached turn, then pages one batch of older server history
+   * when the session has more. `target` is the turn index the window settles
+   * at after paging (`0` keeps everything the page delivered revealed); when
+   * omitted the window settles one batch above the turns rendered before the
+   * call, which is what the short-viewport fill wants.
+   */
+  const loadAndReveal = async (target?: number) => {
     const id = input.sessionID()
     if (!id) return
 
     const start = turnStart()
     const beforeVisible = input.visibleUserMessages().length
 
-    if (start > 0) setTurnStart(0)
+    if (target !== undefined) preserveScroll(() => setTurnStart(target))
+    else if (start > 0) setTurnStart(0)
 
     if (!input.historyMore() || input.historyLoading()) return
 
@@ -141,10 +167,10 @@ export function createSessionHistoryWindow(input: Input) {
     const growth = afterVisible - beforeVisible
     if (state.prefetchNoGrowth) setState("prefetchNoGrowth", 0)
     if (growth <= 0) return
-    if (turnStart() !== 0) return
+    if (target !== undefined || turnStart() !== 0) return
 
-    const target = Math.min(afterVisible, Math.max(beforeVisible, renderedUserMessages().length) + turnBatch)
-    const nextStart = Math.max(0, afterVisible - target)
+    const nextTarget = Math.min(afterVisible, Math.max(beforeVisible, renderedUserMessages().length) + turnBatch)
+    const nextStart = Math.max(0, afterVisible - nextTarget)
     preserveScroll(() => setTurnStart(nextStart))
   }
 
@@ -197,6 +223,7 @@ export function createSessionHistoryWindow(input: Input) {
 
     const start = turnStart()
     if (start > 0) {
+      if (!autoFill()) return
       if (start <= turnPrefetchBuffer) {
         void fetchOlderMessages({ prefetch: true })
       }
@@ -255,6 +282,8 @@ export function createSessionHistoryWindow(input: Input) {
   return {
     turnStart,
     setTurnStart,
+    hiddenTurnCount,
+    collapseToLastTurn,
     renderedUserMessages,
     revealTurn,
     loadAndReveal,
