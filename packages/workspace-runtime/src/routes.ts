@@ -4,6 +4,7 @@ export type { WorkspaceRuntimeRouteFamily }
   from "./routes/manifest"
 export { PtyRoutes } from "./routes/pty"
 export { ProcessRoutes } from "./routes/process"
+export { DiffRoutes } from "./routes/diff"
 export { runtimeEventsHandler } from "./routes/events"
 export type { RuntimeEventAuthorization } from "./routes/events"
 export { TranscriptRoutes } from "./routes/transcript"

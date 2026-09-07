@@ -160,6 +160,7 @@ describe("the registered surface", () => {
       "question_reject",
       "question_reply",
       "session_abort",
+      "session_changes",
       "session_create",
       "session_delete",
       "session_get",
@@ -181,6 +182,7 @@ describe("the registered surface", () => {
     expect(listed).toEqual([
       "process_logs",
       "processes",
+      "session_changes",
       "session_get",
       "session_transcript",
       "sessions_board",
