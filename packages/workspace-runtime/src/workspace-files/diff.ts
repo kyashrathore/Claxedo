@@ -117,7 +117,7 @@ async function numstatFiles(
 }
 
 async function existsRef(runtime: DiffRuntime, ref: string, directory: string): Promise<boolean> {
-  return optionalGit(runtime, ["rev-parse", "--verify", "--end-of-options", ref + "^{commit}"], directory).then((out) => !!out)
+  return optionalGit(runtime, ["rev-parse", "--verify", "--end-of-options", ref + "^{tree}"], directory).then((out) => !!out)
 }
 
 export async function diffBaseTargets(runtime: DiffRuntime, directory: string) {

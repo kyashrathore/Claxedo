@@ -190,6 +190,22 @@ describe("DiffRoutes", () => {
     })
   })
 
+  test("compares a root commit against the empty tree", async () => {
+    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+
+    await withGitRepo(async (directory) => {
+      const root = (await execFileAsync("git", ["rev-list", "--max-parents=0", "HEAD"], { cwd: directory })).stdout.trim()
+      const emptyTree = (await execFileAsync("git", ["hash-object", "-t", "tree", "/dev/null"], { cwd: directory })).stdout.trim()
+      const summary = await app.request(
+        `/api/wr/diff/vcs?${new URLSearchParams({ directory, mode: "to-from", fromRef: emptyTree, toRef: root, content: "summary" })}`,
+      )
+      expect(summary.status).toBe(200)
+      const diffs = (await summary.json()) as Array<{ file: string; status?: string }>
+      expect(diffs.length).toBeGreaterThan(0)
+      expect(diffs.every((diff) => diff.status === "added")).toBe(true)
+    })
+  })
+
   test("rejects unsafe or non-existent range refs before invoking diff", async () => {
     const app = new Hono().route("/api/wr/diff", DiffRoutes())
 

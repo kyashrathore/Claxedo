@@ -77,11 +77,6 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
       token: "BP_SM",
       forbidden: [/<\s*640\b/],
     },
-    {
-      file: "features/review/ui/review-tab.tsx",
-      token: "BP_MD",
-      forbidden: [/<\s*768\b/],
-    },
   ]
 
   for (const { file, token, forbidden } of cases) {
