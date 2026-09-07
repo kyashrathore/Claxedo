@@ -44,7 +44,9 @@ export function cancelPendingPermissions(
   sessionId: string,
   agentSessionId: string,
 ) {
-  for (const [permId, pending] of [...proc.pendingPermissions]) {
+  // A snapshot: `respondPermission` deletes from the map being walked.
+  const pendingNow = [...proc.pendingPermissions]
+  for (const [permId, pending] of pendingNow) {
     if (pending.aid !== agentSessionId) continue
     proc.respondPermission(permId, { outcome: { outcome: "cancelled" } })
     commitPermissionReply(port, {

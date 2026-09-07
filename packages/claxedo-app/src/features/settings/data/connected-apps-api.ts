@@ -12,10 +12,12 @@ export type ConnectedApp = {
 }
 
 async function authApi(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers)
+  if (!headers.has("accept")) headers.set("accept", "application/json")
   const response = await authFetch(new URL(`/api/auth${path}`, getClaxedoServerUrl()).toString(), {
     credentials: "include",
     ...init,
-    headers: { accept: "application/json", ...init?.headers },
+    headers,
   })
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) throw betterAuthApiError(body, response.status, "Connected applications are unavailable")

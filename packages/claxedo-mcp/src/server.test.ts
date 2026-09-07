@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 import type { ClaxedoMcpClient } from "./client/contract"
-import type { McpAuditEvent, McpCredential } from "./context"
+import type { McpAuditEvent } from "./context"
 import {
   CLAXEDO_MCP_PATH,
   CLAXEDO_MCP_SERVER_INFO,
@@ -121,15 +121,13 @@ const unknownTool = (name: string) => ({ isError: true, content: [{ type: "text"
 
 const toolNames = async (client: Client) => (await client.listTools()).tools.map((tool) => tool.name).toSorted()
 
-const initialize = (url: string, init: RequestInit = {}) =>
-  fetch(url, {
+const initialize = (url: string, init: RequestInit = {}) => {
+  const headers = new Headers({ "content-type": "application/json", accept: "application/json, text/event-stream" })
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value))
+  return fetch(url, {
     method: "POST",
     ...init,
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-      ...init.headers,
-    },
+    headers,
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -137,6 +135,7 @@ const initialize = (url: string, init: RequestInit = {}) =>
       params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "raw", version: "0" } },
     }),
   })
+}
 
 describe("the loopback mount", () => {
   test("answers 401 with a bearer challenge when no runtime credential is presented", async () => {

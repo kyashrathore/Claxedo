@@ -417,11 +417,13 @@ describe("sessions_list", () => {
     const client = await connect(url, "cli-jwt")
     const listed = (await json(client, "sessions_list")).workspaces as Array<Record<string, unknown>>
 
-    expect(listed.map((row) => row.workspace).toSorted()).toEqual(["ws_cloud", "ws_local"])
+    expect(listed.map((row) => String(row.workspace)).toSorted((left, right) => left.localeCompare(right)))
+      .toEqual(["ws_cloud", "ws_local"])
     const mac = listed.find((row) => row.workspace === "ws_local")
     expect(mac).toMatchObject({ name: "Mac", kind: "user-hosted" })
-    expect((mac?.sessions as Array<Record<string, unknown>>).map((row) => row.id)).toEqual(["ses_root"])
-    expect((mac?.sessions as Array<Record<string, unknown>>)[0]).toMatchObject({ status: { type: "busy" } })
+    const macSessions = (mac?.sessions ?? []) as Array<Record<string, unknown>>
+    expect(macSessions.map((row) => row.id)).toEqual(["ses_root"])
+    expect(macSessions[0]).toMatchObject({ status: { type: "busy" } })
   })
 
   test("says a machine is offline instead of answering from a stale copy", async () => {

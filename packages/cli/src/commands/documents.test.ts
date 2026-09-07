@@ -26,7 +26,7 @@ function serve(rows: readonly Record<string, unknown>[] = ROWS) {
   process.env.CLAXEDO_HOME = "/nonexistent-claxedo-home"
   console.log = (value: string) => { printed.push(value) }
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    const target = new URL(typeof input === "string" ? input : input.toString())
+    const target = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
     calls.push({
       url: `${target.pathname}${target.search}`,
       method: init?.method ?? "GET",

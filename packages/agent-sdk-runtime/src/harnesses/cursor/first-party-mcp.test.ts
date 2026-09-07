@@ -88,7 +88,7 @@ function turn(sessionId: string): SdkRuntimeTurnInput {
 describe("Cursor first-party MCP injection", () => {
   test("names the session on every send and leaves Agent.create with the user's servers only", async () => {
     const { driver, created, sent } = fixture()
-    driver.applyConfig({
+    await driver.applyConfig({
       mcp: { docs: { name: "docs", source: "user", transport: "remote", url: "http://docs.test/mcp", headers: {} } },
       [FIRST_PARTY_MCP_CONFIG_KEY]: firstPartyMcp(),
     })
@@ -114,7 +114,7 @@ describe("Cursor first-party MCP injection", () => {
 
   test("sends no mcpServers when neither the user nor the runtime supplies any", async () => {
     const { driver, sent } = fixture()
-    driver.applyConfig({ mcp: {} })
+    await driver.applyConfig({ mcp: {} })
     await driver.runTurn(turn("session-a"))
     expect(sent[0]?.mcpServers).toBeUndefined()
   })

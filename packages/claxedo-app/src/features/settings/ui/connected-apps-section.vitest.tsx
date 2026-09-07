@@ -30,7 +30,7 @@ test("lists what an account has consented to and revokes one", async () => {
   expect(screen.getByText("claxedo:read, claxedo:act")).toBeInTheDocument()
   expect(screen.getByText("Claxedo CLI")).toBeInTheDocument()
 
-  fireEvent.click(screen.getAllByRole("button", { name: "Disconnect" })[0]!)
+  fireEvent.click(screen.getAllByRole("button", { name: "Disconnect" })[0])
 
   await waitFor(() => expect(screen.queryByText("Cursor")).not.toBeInTheDocument())
   expect(revoke).toHaveBeenCalledTimes(1)

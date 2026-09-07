@@ -215,7 +215,7 @@ function narrower(parent: string | undefined, declared: string | undefined) {
 
 function widestUnder(ceiling: string | undefined) {
   if (!ceiling) return undefined
-  return [...Object.entries(MODE_LEVELS)]
+  return Object.entries(MODE_LEVELS)
     .filter(([, level]) => level && LEVEL_ORDER.indexOf(level) <= LEVEL_ORDER.indexOf(ceiling))
     .sort(([, left], [, right]) => LEVEL_ORDER.indexOf(right ?? "") - LEVEL_ORDER.indexOf(left ?? ""))[0]?.[0]
 }

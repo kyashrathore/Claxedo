@@ -26,7 +26,7 @@ describe("the route-contribution in-process fetch", () => {
     })
     try {
       expect((await runtime.app.request("http://127.0.0.1/api/wr/capabilities")).status).toBe(401)
-      expect((await calls[0]!()).status).toBe(200)
+      expect((await calls[0]()).status).toBe(200)
     } finally {
       await runtime.host.dispose()
     }
@@ -39,7 +39,7 @@ describe("the route-contribution in-process fetch", () => {
       routeContributions: [probe(calls)],
     })
     try {
-      expect((await calls[0]!()).status).toBe(200)
+      expect((await calls[0]()).status).toBe(200)
     } finally {
       await runtime.host.dispose()
     }

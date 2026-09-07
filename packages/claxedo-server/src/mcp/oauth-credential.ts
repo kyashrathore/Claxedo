@@ -1,7 +1,8 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { bearerToken } from "@claxedo/helpers/string"
 import type { McpCredential, McpScope } from "@claxedo/mcp/context"
 
-import { claxedoMcpResource, isClaxedoMcpOAuthScope } from "../platform/auth/mcp-oauth-scopes"
+import { claxedoMcpResource, type ClaxedoMcpOAuthScope, isClaxedoMcpOAuthScope } from "../platform/auth/mcp-oauth-scopes"
 
 /** What an authorization server says about a live access token (RFC 7662 §2.2, the fields this deployment reads). */
 export type OAuthAccessTokenClaims = Readonly<{
@@ -35,9 +36,8 @@ const DEPLOYMENT_REGISTERED_CLIENT_IDS: ReadonlySet<string> = new Set(["claxedo-
 
 /** Reads an RFC 7662 introspection body into the claims this endpoint needs, or undefined for an inactive token. */
 export function readIntrospectedAccessToken(body: unknown): OAuthAccessTokenClaims | undefined {
-  if (typeof body !== "object" || body === null) return undefined
-  const record = body as Record<string, unknown>
-  if (record.active !== true) return undefined
+  const record = asRecord(body)
+  if (!record || record.active !== true) return undefined
   const subject = typeof record.sub === "string" ? record.sub : undefined
   const clientId = typeof record.client_id === "string" ? record.client_id : undefined
   if (!subject || !clientId) return undefined
@@ -52,13 +52,21 @@ export function readIntrospectedAccessToken(body: unknown): OAuthAccessTokenClai
   }
 }
 
+/** The consent-page name of each scope, and the credential name the tools gate on. */
+const MCP_SCOPE_BY_OAUTH_SCOPE = {
+  "claxedo:read": "read",
+  "claxedo:act": "act",
+  "claxedo:approve": "approve",
+  "claxedo:admin": "admin",
+} as const satisfies Record<ClaxedoMcpOAuthScope, McpScope>
+
 function grantedScopes(claims: OAuthAccessTokenClaims): Set<McpScope> {
   const granted = new Set<McpScope>()
   const registered = DEPLOYMENT_REGISTERED_CLIENT_IDS.has(claims.clientId)
   for (const scope of claims.scopes) {
     if (!isClaxedoMcpOAuthScope(scope)) continue
     if (scope === "claxedo:admin" && !registered) continue
-    granted.add(scope.slice("claxedo:".length) as McpScope)
+    granted.add(MCP_SCOPE_BY_OAUTH_SCOPE[scope])
   }
   return granted
 }

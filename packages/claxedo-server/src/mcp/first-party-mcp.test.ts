@@ -109,7 +109,9 @@ describe("firstPartyMcpContribution", () => {
       credential: { kind: "user", actorId: "actor_9", clientId: "cli", readOnly: false },
     })
     expect(inputs[0]?.local).toBeUndefined()
-    expect(await (await inputs[0]!.controlPlane!.fetch("/api/echo")).json()).toEqual({ authorization: "Bearer jwt" })
+    const controlPlane = inputs[0]?.controlPlane
+    if (!controlPlane) throw new Error("the hosted mount composed no control-plane client")
+    expect(await (await controlPlane.fetch("/api/echo")).json()).toEqual({ authorization: "Bearer jwt" })
   })
 
   test("falls back to the token subject when the adapter resolved no principal", () => {

@@ -142,7 +142,9 @@ describe("the first-party MCP on the self-hosted node", () => {
       credential: { kind: "user", actorId: "loopback", clientId: "loopback", readOnly: false },
       local: { workspace: {} },
     })
-    expect(await (await inputs[0]!.controlPlane!.fetch("/api/claxedo/health")).json()).toMatchObject({ ok: true })
+    const controlPlane = inputs[0]?.controlPlane
+    if (!controlPlane) throw new Error("the node mount composed no control-plane client")
+    expect(await (await controlPlane.fetch("/api/claxedo/health")).json()).toMatchObject({ ok: true })
   })
 })
 

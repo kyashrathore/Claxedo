@@ -67,7 +67,9 @@ export function createMcpSessionStore<Session>(options: McpSessionStoreOptions) 
     },
     /** Close every live session; the mount's owner calls it when the process or the runtime it serves goes away. */
     closeAll() {
-      for (const id of [...records.keys()]) evict(id)
+      // A snapshot: `evict` deletes from the map being walked.
+      const live = [...records.keys()]
+      for (const id of live) evict(id)
     },
   }
 }

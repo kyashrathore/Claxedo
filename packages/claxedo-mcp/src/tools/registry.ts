@@ -56,6 +56,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
       // only for a concrete shape, so a callback written once for every shape
       // cannot be checked against it; the SDK rejects even a direct assertion,
       // so this is the one conversion through unknown in the package.
+      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- see above: `ToolCallback<Shape>` resolves only for a concrete shape.
       const callback = (async (args: ShapeOutput<Shape>) => {
           try {
             assertToolAccess(ctx.credential, name, definition.access)

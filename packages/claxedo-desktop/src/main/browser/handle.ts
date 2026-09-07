@@ -672,13 +672,6 @@ function parseExceptionDetails(
   return { message, stack: parseStackTrace(readRecord(details, "stackTrace")) }
 }
 
-/** The `stack` string `evaluate()` reports back to its caller. */
-function formatCallFrames(frames: ConsoleStackFrame[]): string {
-  return frames
-    .map((f) => `${f.function ?? "(anonymous)"} (${f.url ?? "?"}:${f.line ?? 0}:${f.column ?? 0})`)
-    .join("\n")
-}
-
 function mapConsoleType(t: string | undefined): ConsoleLevel {
   switch (t) {
     case "warning":

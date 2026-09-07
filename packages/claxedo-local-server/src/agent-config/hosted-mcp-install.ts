@@ -2,6 +2,7 @@ import crypto from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { asRecord } from "@claxedo/helpers/guards"
 
 /** What the entry is called in every harness's config, and how a user recognises it. */
 export const HOSTED_MCP_SERVER_NAME = "claxedo"
@@ -47,7 +48,7 @@ export function hostedMcpUrl(controlPlaneUrl: string) {
   // the `.localhost` suffix a dev proxy resolves. Broadening here is
   // fail-safe: the worst it does is refuse to write an entry.
   const host = origin.hostname.replace(/^\[|\]$/g, "").toLowerCase()
-  if (host === "localhost" || host === "::1" || host.endsWith(".localhost") || /^127\./.test(host)) {
+  if (host === "localhost" || host === "::1" || host.endsWith(".localhost") || host.startsWith("127.")) {
     throw new HostedMcpUrlError("A shared MCP entry must not name this machine's loopback endpoint")
   }
   return `${origin.origin}/api/claxedo/mcp`
@@ -88,14 +89,9 @@ async function updateJsonConfig(file: string, url: string | undefined): Promise<
   const current = await readIfPresent(file)
   // A config a harness cannot parse is a config the user is already fighting;
   // silently replacing it would take their servers with it.
-  const parsed: unknown = current === undefined || current.trim() === "" ? {} : JSON.parse(current)
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${file} is not a JSON object`)
-  }
-  const config = parsed as Record<string, unknown>
-  const servers = typeof config.mcpServers === "object" && config.mcpServers !== null && !Array.isArray(config.mcpServers)
-    ? { ...(config.mcpServers as Record<string, unknown>) }
-    : {}
+  const config = asRecord(current === undefined || current.trim() === "" ? {} : JSON.parse(current))
+  if (!config) throw new Error(`${file} is not a JSON object`)
+  const servers = { ...asRecord(config.mcpServers) }
   const entry = url === undefined ? undefined : { type: "http", url }
   const existing = servers[HOSTED_MCP_SERVER_NAME]
   if (JSON.stringify(existing) === JSON.stringify(entry)) return "unchanged"

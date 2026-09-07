@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto"
 import { base64UrlDecode, base64UrlEncode, timingSafeEqualStrings } from "@claxedo/helpers"
+import { rec } from "../json-value"
 
 export type RuntimeCredentialClaims = {
   runtimeId: string
@@ -37,8 +38,7 @@ function payloadClaims(token: string): Record<string, unknown> | undefined {
   const payload = token.split(".")[1]
   if (!payload) return undefined
   try {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)))
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined
+    return rec(JSON.parse(new TextDecoder().decode(base64UrlDecode(payload))))
   } catch {
     return undefined
   }
@@ -94,8 +94,8 @@ export function createRuntimeCredentialIssuer(options: RuntimeCredentialIssuerOp
 
   function verify(token: string): RuntimeCredentialClaims | undefined {
     const parts = token.split(".")
-    if (parts.length !== 3) return undefined
-    const [header, payload, signature] = parts as [string, string, string]
+    const [header, payload, signature] = parts
+    if (parts.length !== 3 || !header || !payload || !signature) return undefined
     if (!/^[A-Za-z0-9_-]+$/.test(signature) || !timingSafeEqualStrings(sign(`${header}.${payload}`), signature)) {
       return undefined
     }

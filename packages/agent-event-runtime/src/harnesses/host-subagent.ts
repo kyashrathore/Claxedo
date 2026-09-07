@@ -51,7 +51,7 @@ export function hostSubagentBinding(result: unknown): HostSubagentBinding | unde
   return undefined
 }
 
-function* candidates(value: unknown): Generator<unknown> {
+function* candidates(value: unknown): Generator {
   if (typeof value === "string") {
     let parsed: unknown
     try {
@@ -78,7 +78,7 @@ function* candidates(value: unknown): Generator<unknown> {
 const STATUSES: readonly SubagentStatus[] = ["pending", "running", "paused", "interrupted", "completed", "failed", "killed"]
 
 function hostBindingStatus(value: unknown): SubagentStatus | undefined {
-  return typeof value === "string" && (STATUSES as readonly string[]).includes(value) ? value as SubagentStatus : undefined
+  return STATUSES.find((status) => status === value)
 }
 
 export type HostSubagentObservation = {

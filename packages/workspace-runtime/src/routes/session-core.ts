@@ -261,7 +261,7 @@ async function cascadeToChildren(
 }
 
 function createdSessionBody(session: unknown, created: Record<string, unknown>) {
-  return { ...(rec(session) ?? {}), ...created }
+  return { ...rec(session), ...created }
 }
 
 async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {

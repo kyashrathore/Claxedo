@@ -92,7 +92,7 @@ describe("first-party MCP bearer never leaves the header", () => {
       })(), { close() {} }) as unknown as Query
     }) as ClaudeSdkDriverOptions["query"]
     const driver = createClaudeSdkDriver(host() as never, { query, executable: () => "/fake/claude" })
-    driver.applyConfig({ mcp: {}, [FIRST_PARTY_MCP_CONFIG_KEY]: provider })
+    await driver.applyConfig({ mcp: {}, [FIRST_PARTY_MCP_CONFIG_KEY]: provider })
     await driver.runTurn(turn("session-a", "claude"))
 
     expect(headers?.Authorization).toBe(`Bearer ${TOKEN}`)
@@ -110,7 +110,7 @@ describe("first-party MCP bearer never leaves the header", () => {
       [Symbol.asyncDispose]: async () => {},
     }
     const driver = createCursorSdkDriver(host() as never, { loadAgent: async () => ({ Agent: { resume: async () => agent } as never }) })
-    driver.applyConfig({ mcp: {}, [FIRST_PARTY_MCP_CONFIG_KEY]: provider })
+    await driver.applyConfig({ mcp: {}, [FIRST_PARTY_MCP_CONFIG_KEY]: provider })
     await driver.runTurn(turn("session-a", "cursor"))
 
     expect(sent?.mcpServers?.claxedo?.headers?.Authorization).toBe(`Bearer ${TOKEN}`)

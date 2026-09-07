@@ -94,7 +94,7 @@ describe("first-party MCP injection through the workspace runtime", () => {
         url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a",
         headers: { Authorization: f.issuer.header() },
       })
-      expect(f.issuer.verify(entry.headers.Authorization!.replace(/^Bearer /, ""))).toMatchObject({
+      expect(f.issuer.verify(entry.headers.Authorization.replace(/^Bearer /, ""))).toMatchObject({
         runtimeId: "rt-1", workspaceId: "ws-1", userId: "user-1",
       })
       expect(entry).toEqual(firstPartyMcpServerFor(f.launch, "session-a"))
@@ -110,8 +110,8 @@ describe("first-party MCP injection through the workspace runtime", () => {
     f.issuer.rotate()
     const after = provider.server("session-a").headers.Authorization
     expect(after).not.toBe(before)
-    expect(f.issuer.verify(before!.replace(/^Bearer /, ""))).toBeUndefined()
-    expect(f.issuer.verify(after!.replace(/^Bearer /, ""))).toBeDefined()
+    expect(f.issuer.verify(before.replace(/^Bearer /, ""))).toBeUndefined()
+    expect(f.issuer.verify(after.replace(/^Bearer /, ""))).toBeDefined()
   })
 
   test("a runtime composed without the launch option injects nothing and exposes no issuer", async () => {

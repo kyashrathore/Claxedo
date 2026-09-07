@@ -68,7 +68,7 @@ function turn(sessionId: string): SdkRuntimeTurnInput {
 describe("Claude first-party MCP injection", () => {
   test("hands the SDK one http entry named claxedo whose URL names the session, beside the user's servers", async () => {
     const { driver, calls } = fixture()
-    driver.applyConfig({
+    await driver.applyConfig({
       mcp: { docs: { name: "docs", source: "user", transport: "remote", url: "http://docs.test/mcp", headers: {} } },
       [FIRST_PARTY_MCP_CONFIG_KEY]: firstPartyMcp(),
     })
@@ -92,14 +92,14 @@ describe("Claude first-party MCP injection", () => {
 
   test("keeps the bearer out of the harness child environment", async () => {
     const { driver, calls } = fixture()
-    driver.applyConfig({ mcp: {}, [FIRST_PARTY_MCP_CONFIG_KEY]: firstPartyMcp() })
+    await driver.applyConfig({ mcp: {}, [FIRST_PARTY_MCP_CONFIG_KEY]: firstPartyMcp() })
     await driver.runTurn(turn("session-a"))
     expect(JSON.stringify(calls[0]?.options?.env)).not.toContain(TOKEN)
   })
 
   test("injects nothing when the runtime supplies no provider", async () => {
     const { driver, calls } = fixture()
-    driver.applyConfig({ mcp: {} })
+    await driver.applyConfig({ mcp: {} })
     await driver.runTurn(turn("session-a"))
     expect(calls[0]?.options?.mcpServers).toBeUndefined()
   })

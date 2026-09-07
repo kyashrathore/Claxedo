@@ -467,7 +467,9 @@ describe("local composition — first-party MCP", () => {
       local: { workspace: { workspaceId: "ws_1" } },
     })
     expect(inputs[0]?.controlPlane).toBeUndefined()
-    expect(await (await inputs[0]!.local!.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: "ws_1" })
+    const local = inputs[0]?.local
+    if (!local) throw new Error("the loopback mount composed no runtime client")
+    expect(await (await local.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: "ws_1" })
   })
 
   test("reflects no CORS origin on the MCP route even for an origin the shell admits", async () => {
