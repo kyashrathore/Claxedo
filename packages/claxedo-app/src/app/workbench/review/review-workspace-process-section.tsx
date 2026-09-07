@@ -1,6 +1,6 @@
 import { Show, createEffect, createMemo, on } from "solid-js"
 
-import { useProcessPane } from "@/app/workbench/context/process-pane"
+import { useWorkspaceProcessPane } from "@/app/workbench/context/process-pane"
 import { AddProcessDialog, ProcessPanePanel } from "@/features/processes/ui"
 import { RoleGuardedTerminal } from "@/features/terminal/core/role-guarded-terminal"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -12,7 +12,7 @@ export function ReviewWorkspaceProcessSection(props: {
   directory: string
   active: boolean
 }) {
-  const processPane = useProcessPane()
+  const processPane = useWorkspaceProcessPane()
   const platform = usePlatform()
   const dialog = useDialog()
   const config = createMemo(() => processPane.configs().find((item) => item.id === props.processId))

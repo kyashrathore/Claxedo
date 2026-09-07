@@ -481,6 +481,13 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "Shared with you",
   "sidebar.workspace.publishedByThisMachine": "Published by this machine",
 
+  "navigator.sidebar.tab.files": "Files",
+  "navigator.sidebar.tab.changes": "Changes",
+  "navigator.sidebar.tab.processes": "Processes",
+  "navigator.sidebar.empty": "Select a workspace to use the navigator.",
+  "navigator.sidebar.resize": "Resize navigator",
+
+
 
 
   "settings.section.desktop": "Desktop",

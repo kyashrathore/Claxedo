@@ -450,6 +450,13 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Bu makineden yayınlandı",
 
 
+  "navigator.sidebar.tab.files": "Dosyalar",
+  "navigator.sidebar.tab.changes": "Değişiklikler",
+  "navigator.sidebar.tab.processes": "İşlemler",
+  "navigator.sidebar.empty": "Gezgini kullanmak için bir çalışma alanı seçin.",
+  "navigator.sidebar.resize": "Gezgini yeniden boyutlandır",
+
+
   "settings.section.desktop": "Masaüstü",
   "settings.section.workspace": "Çalışma alanı",
   "settings.section.account": "Hesap",

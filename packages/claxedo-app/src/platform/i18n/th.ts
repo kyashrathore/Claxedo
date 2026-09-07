@@ -441,6 +441,13 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "เผยแพร่จากเครื่องนี้",
 
 
+  "navigator.sidebar.tab.files": "ไฟล์",
+  "navigator.sidebar.tab.changes": "การเปลี่ยนแปลง",
+  "navigator.sidebar.tab.processes": "โปรเซส",
+  "navigator.sidebar.empty": "เลือกพื้นที่ทำงานเพื่อใช้ตัวนำทาง",
+  "navigator.sidebar.resize": "ปรับขนาดตัวนำทาง",
+
+
   "settings.section.desktop": "เดสก์ท็อป",
   "settings.section.workspace": "พื้นที่ทำงาน",
   "settings.section.account": "บัญชี",

@@ -447,6 +447,13 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Publicado desde este equipo",
 
 
+  "navigator.sidebar.tab.files": "Archivos",
+  "navigator.sidebar.tab.changes": "Cambios",
+  "navigator.sidebar.tab.processes": "Procesos",
+  "navigator.sidebar.empty": "Selecciona un espacio de trabajo para usar el navegador.",
+  "navigator.sidebar.resize": "Cambiar el tamaño del navegador",
+
+
   "settings.section.desktop": "Escritorio",
   "settings.section.workspace": "Espacio de trabajo",
   "settings.section.account": "Cuenta",

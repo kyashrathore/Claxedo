@@ -20,7 +20,7 @@
   "setQueryDataCalls": 70,
   "setQueryDataFiles": 33,
   "signedControlPlaneAccess": 0,
-  "suppressionFlags": 7,
+  "suppressionFlags": 8,
   "timerDrivenDataPolls": 1,
   "untrackCalls": 21,
   "userHostedComparisons": 39

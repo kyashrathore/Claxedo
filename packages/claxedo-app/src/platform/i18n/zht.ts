@@ -439,6 +439,13 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "已與你共用",
   "sidebar.workspace.publishedByThisMachine": "由本機發布",
 
+
+  "navigator.sidebar.tab.files": "檔案",
+  "navigator.sidebar.tab.changes": "變更",
+  "navigator.sidebar.tab.processes": "處理程序",
+  "navigator.sidebar.empty": "選擇一個工作區以使用導覽器。",
+  "navigator.sidebar.resize": "調整導覽器大小",
+
   "settings.section.desktop": "桌面",
   "settings.section.workspace": "工作區",
   "settings.section.account": "帳戶",

@@ -69,7 +69,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 }))
 
 vi.mock("@/app/workbench/context/process-pane", () => ({
-  useProcessPane: () => ({ configs: () => [] }),
+  useWorkspaceProcessPane: () => ({ configs: () => [] }),
 }))
 
 vi.mock("@/app/workbench/state", () => ({

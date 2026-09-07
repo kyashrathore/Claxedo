@@ -445,6 +445,13 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Objavljeno s ovog uređaja",
 
 
+  "navigator.sidebar.tab.files": "Datoteke",
+  "navigator.sidebar.tab.changes": "Promjene",
+  "navigator.sidebar.tab.processes": "Procesi",
+  "navigator.sidebar.empty": "Odaberi radni prostor za korištenje navigatora.",
+  "navigator.sidebar.resize": "Promijeni veličinu navigatora",
+
+
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Radni prostor",
   "settings.section.account": "Račun",

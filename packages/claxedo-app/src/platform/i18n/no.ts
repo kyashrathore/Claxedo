@@ -447,6 +447,13 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "Publisert fra denne maskinen",
 
 
+  "navigator.sidebar.tab.files": "Filer",
+  "navigator.sidebar.tab.changes": "Endringer",
+  "navigator.sidebar.tab.processes": "Prosesser",
+  "navigator.sidebar.empty": "Velg et arbeidsområde for å bruke navigatoren.",
+  "navigator.sidebar.resize": "Endre størrelse på navigatoren",
+
+
   "settings.section.desktop": "Skrivebord",
   "settings.section.workspace": "Arbeidsområde",
   "settings.section.account": "Konto",

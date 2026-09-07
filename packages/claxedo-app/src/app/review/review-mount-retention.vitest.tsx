@@ -15,7 +15,7 @@ vi.mock("@/features/session/ui/components/session-pane-scope", () => ({
 }))
 vi.mock("@/app/workbench/context/process-pane", () => ({
   ProcessPaneProvider: (props: { children: JSX.Element }) => props.children,
-  useProcessPane: () => ({}),
+  useWorkspaceProcessPane: () => ({}),
 }))
 vi.mock("@/app/workbench/workspace-panel/files-navigator", () => ({ WorkspaceFilesNavigator: () => null }))
 vi.mock("@/features/processes/ui", () => ({ WorkspaceProcessesNavigator: () => null }))

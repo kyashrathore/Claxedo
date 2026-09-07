@@ -31,7 +31,7 @@ import { getFilename } from "@opencode-ai/ui/utils/path"
 import { SessionContextTab } from "@/features/session/ui/components/session-context-tab"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
-import { useProcessPane } from "@/app/workbench/context/process-pane"
+import { useWorkspaceProcessPane } from "@/app/workbench/context/process-pane"
 import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-panel"
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
@@ -107,7 +107,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const file = useFile()
   const language = useLanguage()
   const dialog = useDialog()
-  const processPane = useProcessPane()
+  const processPane = useWorkspaceProcessPane()
   const claxedoState = useClaxedoState()
   const sdk = useSDK()
   const queryOptions = useQueryOptions()

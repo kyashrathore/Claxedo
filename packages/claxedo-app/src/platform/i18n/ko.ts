@@ -378,6 +378,13 @@ export const dict = {
   "sidebar.workspace.hostOffline": "호스트 오프라인",
   "sidebar.workspace.sharedWithYou": "나에게 공유됨",
   "sidebar.workspace.publishedByThisMachine": "이 컴퓨터에서 게시됨",
+
+  "navigator.sidebar.tab.files": "파일",
+  "navigator.sidebar.tab.changes": "변경 사항",
+  "navigator.sidebar.tab.processes": "프로세스",
+  "navigator.sidebar.empty": "내비게이터를 사용하려면 작업 공간을 선택하세요.",
+  "navigator.sidebar.resize": "내비게이터 크기 조절",
+
   "settings.section.desktop": "데스크톱",
   "settings.section.workspace": "워크스페이스",
   "settings.section.account": "계정",

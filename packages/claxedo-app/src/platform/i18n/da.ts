@@ -439,6 +439,13 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "Delt med dig",
   "sidebar.workspace.publishedByThisMachine": "Udgivet fra denne maskine",
 
+
+  "navigator.sidebar.tab.files": "Filer",
+  "navigator.sidebar.tab.changes": "Ændringer",
+  "navigator.sidebar.tab.processes": "Processer",
+  "navigator.sidebar.empty": "Vælg et arbejdsområde for at bruge navigatoren.",
+  "navigator.sidebar.resize": "Tilpas navigatorens størrelse",
+
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Arbejdsområde",
   "settings.section.account": "Konto",

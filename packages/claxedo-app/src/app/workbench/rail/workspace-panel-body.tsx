@@ -14,9 +14,8 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useClaxedoState } from "../state/index"
 import { SessionPaneScope } from "../../../features/session/ui/components/session-pane-scope"
 import { ProcessPaneProvider } from "../context/process-pane"
-import { useProcessPane } from "../context/process-pane"
+import { ProcessesNavigator } from "../workspace-panel/processes-navigator"
 import { WorkspaceFilesNavigator } from "../workspace-panel/files-navigator"
-import { WorkspaceProcessesNavigator } from "@/features/processes/ui"
 import type {
   WorkspacePanelFocus,
   WorkspacePanelMode,
@@ -107,15 +106,6 @@ export function workingSetActiveFilePath(
   const active = snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId)
   if (!active || active.kind !== "file") return undefined
   return pathFromTab(active.tabId) ?? active.tabId
-}
-function ProcessesNavigator(props: {
-  directory: Parameters<typeof WorkspaceProcessesNavigator>[0]["directory"]
-  activeProcessId?: string
-  onProcessSelect: (processId: string) => void
-}) {
-  const processPane = useProcessPane()
-  const platform = usePlatform()
-  return <WorkspaceProcessesNavigator {...props} processPane={processPane} request={platform.fetch} />
 }
 
 export function WorkspacePanelBody(props: {

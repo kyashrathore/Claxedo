@@ -443,6 +443,13 @@ export const dict = {
   "sidebar.workspace.sharedWithYou": "Открыт вам доступ",
   "sidebar.workspace.publishedByThisMachine": "Опубликовано с этого компьютера",
 
+
+  "navigator.sidebar.tab.files": "Файлы",
+  "navigator.sidebar.tab.changes": "Изменения",
+  "navigator.sidebar.tab.processes": "Процессы",
+  "navigator.sidebar.empty": "Выберите рабочее пространство, чтобы использовать навигатор.",
+  "navigator.sidebar.resize": "Изменить размер навигатора",
+
   "settings.section.desktop": "Приложение",
   "settings.section.workspace": "Рабочее пространство",
   "settings.section.account": "Аккаунт",

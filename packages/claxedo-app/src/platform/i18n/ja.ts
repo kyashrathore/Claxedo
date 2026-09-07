@@ -380,6 +380,13 @@ export const dict = {
   "sidebar.workspace.hostOffline": "ホストはオフライン",
   "sidebar.workspace.sharedWithYou": "あなたに共有中",
   "sidebar.workspace.publishedByThisMachine": "このマシンから公開中",
+
+  "navigator.sidebar.tab.files": "ファイル",
+  "navigator.sidebar.tab.changes": "変更",
+  "navigator.sidebar.tab.processes": "プロセス",
+  "navigator.sidebar.empty": "ナビゲーターを使用するにはワークスペースを選択してください。",
+  "navigator.sidebar.resize": "ナビゲーターのサイズを変更",
+
   "settings.section.desktop": "デスクトップ",
   "settings.section.workspace": "ワークスペース",
   "settings.section.account": "アカウント",

@@ -389,6 +389,13 @@ export const dict = {
   "sidebar.workspace.hostOffline": "Host offline",
   "sidebar.workspace.sharedWithYou": "Für dich freigegeben",
   "sidebar.workspace.publishedByThisMachine": "Von diesem Gerät veröffentlicht",
+
+  "navigator.sidebar.tab.files": "Dateien",
+  "navigator.sidebar.tab.changes": "Änderungen",
+  "navigator.sidebar.tab.processes": "Prozesse",
+  "navigator.sidebar.empty": "Wählen Sie einen Arbeitsbereich, um den Navigator zu verwenden.",
+  "navigator.sidebar.resize": "Navigator-Größe ändern",
+
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Arbeitsbereich",
   "settings.section.account": "Konto",

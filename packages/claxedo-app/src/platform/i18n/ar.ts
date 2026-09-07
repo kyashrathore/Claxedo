@@ -377,6 +377,13 @@ export const dict = {
   "sidebar.workspace.hostOffline": "المضيف غير متصل",
   "sidebar.workspace.sharedWithYou": "تمت مشاركته معك",
   "sidebar.workspace.publishedByThisMachine": "منشور من هذا الجهاز",
+
+  "navigator.sidebar.tab.files": "الملفات",
+  "navigator.sidebar.tab.changes": "التغييرات",
+  "navigator.sidebar.tab.processes": "العمليات",
+  "navigator.sidebar.empty": "اختر مساحة عمل لاستخدام المستكشف.",
+  "navigator.sidebar.resize": "تغيير حجم المستكشف",
+
   "settings.section.desktop": "سطح المكتب",
   "settings.section.workspace": "مساحة العمل",
   "settings.section.account": "الحساب",

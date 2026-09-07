@@ -27,6 +27,7 @@ import { usePermission } from "@/features/session/providers/permission"
 import { useCommand } from "@/app/providers/command"
 import { useServer } from "@/app/connection/server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useSettings } from "@/platform/settings/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-controller"
 import {
@@ -48,6 +49,12 @@ import {
   workspacePanelFullWidthCommand,
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
+import type { LayoutPreset } from "./layout/config"
+import {
+  PanePresentationProvider,
+  type PanePresentation,
+  type PanePresentationResolver,
+} from "./workbench/workbench/pane-presentation"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
 import { warmConversationMemorySnapshot } from "../features/session/conversation/conversation-registry"
 import {
@@ -68,6 +75,11 @@ const RailSidebarShell = lazy(() =>
 const RailWorkbenchShell = lazy(() =>
   import("./workbench/rail/rail-workbench-shell").then((module) => ({
     default: module.RailWorkbenchShell,
+  })),
+)
+const NavigatorSidebar = lazy(() =>
+  import("./workbench/navigator-sidebar/navigator-sidebar").then((module) => ({
+    default: module.NavigatorSidebar,
   })),
 )
 const DialogProcessDiagnostics = lazyDialog(() =>
@@ -191,6 +203,25 @@ export type AppShellLayoutProps = ParentProps<{
   topBarRight?: () => JSX.Element
 }>
 
+/**
+ * A pane floats while the workspace panel covers it at full view. The panel
+ * targets a pane by id; a targetless panel is attached to the focused pane,
+ * the same rule `workspacePanelMatchesFocusedPane` applies.
+ */
+export function panePresentationUnderWorkspacePanel(input: {
+  paneId: string
+  panelOpen: boolean
+  panelFullWidth: boolean
+  targetPaneId: string | undefined
+  focusedPaneId: string | null | undefined
+}): PanePresentation {
+  if (!input.panelOpen || !input.panelFullWidth) return "docked"
+  const targeted = input.targetPaneId === undefined
+    ? input.paneId === input.focusedPaneId
+    : input.targetPaneId === input.paneId
+  return targeted ? "floating" : "docked"
+}
+
 function AppShellLayoutBody(props: AppShellLayoutProps) {
   const isolationStage = window.__CLAXEDO__?.startupIsolationStage
   const [sidebarMounted, setSidebarMounted] = createSignal(false)
@@ -256,14 +287,22 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     width: initialRailWidth,
   }
   const initialPanel = claxedoState.workspacePanel.state()
+  const settings = useSettings()
+  // `isNarrowViewport()` is a plain window read: the shell has no reactive
+  // viewport signal, so the preset re-derives on preference changes only.
+  const layoutPreset = (): LayoutPreset => {
+    if (isNarrowViewport()) return "claxedo.default"
+    return settings.appearance.navigatorPlacement() === "sidebar" ? "claxedo.navigator-sidebar" : "claxedo.default"
+  }
   const shellLayout = createShellLayoutState({
     target: () => platform.platform === "desktop" ? "desktop" : "web",
-    preset: () => "claxedo.default",
+    preset: layoutPreset,
     initialRail: initialRailLayoutState,
     initialWorkspacePanel: {
       open: initialPanel.open && !!initialPanel.mode,
       width: 520,
     },
+    initialNavigator: { width: claxedoState.navigator.width() },
   })
   const workbenchController = useRailWorkbenchController({
     activeDirectory: () => props.activeDirectory,
@@ -278,6 +317,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     // creator shows the choice as a chip and lets the user change it.
     fallbackWorkspaceDir: () => props.activeDirectory ?? props.projects[0]?.worktree,
     focusedPaneWorkspaceDir: sidebarSelection.focusedPaneWorkspaceDir,
+    navigatorPlacement: () => settings.appearance.navigatorPlacement(),
     onLastFocusedSurfaceClosed: emptyDraft.blockNextAutoOpen,
     onNewSession: props.onNewSession,
     onNewTerminal: props.onNewTerminal,
@@ -289,6 +329,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     )),
     sidebarDir: sidebarSelection.sidebarDir,
     state: claxedoState,
+    workspacePanelFullWidth,
     workspacePanelWidth,
     worktreeInfo: projectSessionInfo.worktreeInfo,
   })
@@ -303,22 +344,42 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const sidebarExpanded = () => sidebarWidth() > 0
   const sidebarPinned = () => railRegion().docked !== false
   const sidebarHidden = () => !sidebarPinned() && sidebarWidth() === 0
-  const workspacePanelFullWidth = () =>
-    workspacePanelRegion().size.unit === "percent" && workspacePanelRegion().size.value === 100
   const workspacePanelOpen = () => workspacePanelRegion().visible
+  // The size slot latches the state the preset's base config does not
+  // express: full view under the default preset, the px restore width under
+  // the navigator-sidebar preset (whose base is full view).
+  const workspacePanelSizeLatches = (fullWidth: boolean) =>
+    layoutConfig().presetId === "claxedo.navigator-sidebar" ? !fullWidth : fullWidth
   const toggleWorkspacePanelFullWidth = () => {
     const command = workspacePanelFullWidthCommand(layoutConfig(), shellLayout.workspacePanelWidth())
     const next = applyLayoutCommand(layoutConfig(), command)
     const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
       next.regions.workspacePanel.size.value === 100
-    shellLayout.dispatch("workspacePanelSize", fullWidth ? command : undefined)
+    shellLayout.dispatch("workspacePanelSize", workspacePanelSizeLatches(fullWidth) ? command : undefined)
     emitTerminalFit()
   }
   const toggleWorkspacePanel = (button: HTMLButtonElement) => {
-    if (workspacePanelFullWidth() && workspacePanelOpen()) {
+    if (workspacePanelOpen() && workspacePanelSizeLatches(workspacePanelFullWidth())) {
       shellLayout.dispatch("workspacePanelSize", undefined)
     }
     workbenchController.toggleFocusedWorkspaceReview(button)
+  }
+  const panePresentation: PanePresentationResolver = {
+    presentationFor: (paneId) => panePresentationUnderWorkspacePanel({
+      paneId,
+      panelOpen: workspacePanelOpen(),
+      panelFullWidth: workspacePanelFullWidth(),
+      targetPaneId: claxedoState.workspacePanel.state().targetPaneId,
+      focusedPaneId: claxedoState.wb.state.focusedPaneId,
+    }),
+  }
+  const navigatorVisible = () => layoutConfig().regions.navigator?.visible
+  const navigatorWidth = () => shellLayout.navigatorWidth()
+  const resizeNavigator = (width: number) => {
+    shellLayout.setNavigatorWidth(width)
+  }
+  const commitNavigatorResize = () => {
+    claxedoState.navigator.setWidth(shellLayout.committedNavigatorWidth())
   }
   const toggleSidebar = () => {
     shellLayout.toggleRail()
@@ -376,6 +437,11 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
 
   function workspacePanelWidth() {
     return shellLayout.workspacePanelWidth()
+  }
+
+  function workspacePanelFullWidth() {
+    const size = shellLayout.config().regions.workspacePanel.size
+    return size.unit === "percent" && size.value === 100
   }
 
   const terminalWorkspaceProvisioning: TerminalWorkspaceProvisioning = {
@@ -467,6 +533,14 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           trafficLightPad={chrome.trafficLightPad}
           />
         </Show>
+        <Show when={navigatorVisible() && emptyDraft.sidebarEligible()}>
+          <NavigatorSidebar
+            width={navigatorWidth}
+            onResize={resizeNavigator}
+            onResizeEnd={commitNavigatorResize}
+            target={workbenchController.focusedPanelTarget}
+          />
+        </Show>
         </nav>
         {isolationStage === "sidebar" ? (
           <main
@@ -474,6 +548,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
             class="flex flex-1 bg-background-stronger"
           />
         ) : (
+        <PanePresentationProvider value={panePresentation}>
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
           canUseDocuments={props.canUseDocuments}
@@ -530,6 +605,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
         >
           {props.children}
         </RailWorkbenchShell>
+        </PanePresentationProvider>
         )}
       </div>
     </div>

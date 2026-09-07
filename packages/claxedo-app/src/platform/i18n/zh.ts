@@ -443,6 +443,13 @@ export const dict = {
   "sidebar.workspace.publishedByThisMachine": "由本机发布",
 
 
+  "navigator.sidebar.tab.files": "文件",
+  "navigator.sidebar.tab.changes": "更改",
+  "navigator.sidebar.tab.processes": "进程",
+  "navigator.sidebar.empty": "选择一个工作区以使用导航器。",
+  "navigator.sidebar.resize": "调整导航器大小",
+
+
   "settings.section.desktop": "桌面",
   "settings.section.workspace": "工作区",
   "settings.section.account": "账户",

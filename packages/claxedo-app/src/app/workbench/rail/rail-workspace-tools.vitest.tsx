@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { type JSX } from "solid-js"
 import { ClaxedoStateProvider } from "../state/index"
@@ -12,6 +12,7 @@ import {
 import { AppShellLayout } from "../../app-shell-layout"
 import type { ProjectItem } from "./domain-types"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+import { LanguageProvider } from "@/platform/i18n/provider"
 
 const processOwnership = vi.hoisted(() => ({
   providers: 0,
@@ -42,7 +43,7 @@ vi.mock("../context/process-pane", () => ({
     processOwnership.providers += 1
     return <>{props.children}</>
   },
-  useProcessPane: () => ({}),
+  useWorkspaceProcessPane: () => ({}),
 }))
 
 vi.mock("@/app/workbench/review/review-workspace", () => ({
@@ -157,16 +158,18 @@ function renderRail(surface: ContentMeta, workspacePanel?: ClaxedoState["workspa
   const queryClient = new QueryClient()
   return render(() => (
     <QueryClientProvider client={queryClient}>
-      <SessionTitleProjectionProvider>
-        <ClaxedoStateProvider initialState={stateWithSurface(surface, workspacePanel)}>
-          <AppShellLayout
-            projects={[project]}
-            activeProjectId={project.id}
-            activeDirectory={project.worktree}
-            suppressEmptyDraftSession
-          />
-        </ClaxedoStateProvider>
-      </SessionTitleProjectionProvider>
+      <LanguageProvider locale="en">
+        <SessionTitleProjectionProvider>
+          <ClaxedoStateProvider initialState={stateWithSurface(surface, workspacePanel)}>
+            <AppShellLayout
+              projects={[project]}
+              activeProjectId={project.id}
+              activeDirectory={project.worktree}
+              suppressEmptyDraftSession
+            />
+          </ClaxedoStateProvider>
+        </SessionTitleProjectionProvider>
+      </LanguageProvider>
     </QueryClientProvider>
   ))
 }
@@ -379,9 +382,11 @@ describe("RailLayout workspace tool gates", () => {
       )
 
       expect(await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })).toBeTruthy()
-      expect(screen.queryAllByTestId("workspace-navigator-overlay")).toHaveLength(0)
-      expect(screen.queryByTestId("workspace-files-navigator")).toBeNull()
-      expect(screen.queryByTestId("workspace-processes-navigator")).toBeNull()
+      const panel = screen.getByTestId("workspace-panel-shell")
+      expect(within(panel).queryAllByTestId("workspace-navigator-overlay")).toHaveLength(0)
+      expect(within(panel).queryByTestId("workspace-files-navigator")).toBeNull()
+      expect(within(panel).queryByTestId("workspace-processes-navigator")).toBeNull()
+      expect(screen.getByTestId("navigator-sidebar")).toBeTruthy()
     },
   )
 })
