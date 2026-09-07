@@ -17,7 +17,7 @@ import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
-import type { ClaxedoProject } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoProject } from "@claxedo/agent-runtime-contract/server-client"
 
 /**
  * When a project was last touched, or `undefined` for one whose source carries

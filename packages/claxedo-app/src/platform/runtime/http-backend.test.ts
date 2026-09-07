@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
-import type { ClaxedoCommand as Command, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoCommand as Command, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
 import {
   createHttpSessionBackend,
   createHttpWorkspaceRuntimeBackend,

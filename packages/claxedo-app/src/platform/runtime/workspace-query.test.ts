@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoVcsInfo as VcsInfo } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoVcsInfo as VcsInfo } from "@claxedo/agent-runtime-contract/server-client"
 import { queryClient } from "@/platform/query/query-client"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 

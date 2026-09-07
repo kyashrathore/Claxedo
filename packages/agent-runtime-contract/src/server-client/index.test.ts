@@ -3,7 +3,7 @@ import {
   createClaxedoServerClient,
   ServerClientPayloadError,
   ServerClientResponseError,
-} from "./server-client-contract"
+} from "./index"
 
 describe("Claxedo server client", () => {
   test("preserves scoped file and find query parameters", async () => {

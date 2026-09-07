@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
 import {
   agentListQuery,
   pathQuery,

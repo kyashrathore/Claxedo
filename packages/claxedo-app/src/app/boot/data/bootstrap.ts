@@ -1,4 +1,4 @@
-import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@claxedo/agent-runtime-contract/server-client"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { asRecord, readBoolean, readString } from "@/lib/record"
 import { retry } from "@/lib/retry"

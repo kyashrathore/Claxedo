@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
 import { applyGlobalProjectEvent } from "./global-event-projector"
 
 // A real payload always carries the worktree: it is what the projector routes

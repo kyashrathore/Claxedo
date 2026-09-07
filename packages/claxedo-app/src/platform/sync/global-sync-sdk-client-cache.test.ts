@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createClaxedoServerClient } from "@/platform/api/server-client-contract"
+import { createClaxedoServerClient } from "@claxedo/agent-runtime-contract/server-client"
 import { queryClient } from "@/platform/query/query-client"
 import {
   cachedGlobalSyncServerClient,

@@ -1,7 +1,4 @@
-import {
-  createClaxedoServerClient,
-  type CreateClaxedoServerClientOptions,
-} from "@/platform/api/server-client-contract"
+import { createClaxedoServerClient, type CreateClaxedoServerClientOptions } from "@claxedo/agent-runtime-contract/server-client"
 import type { ServerConnection } from "@/platform/connection/server-connection"
 
 export function authTokenFromCredentials(input: { username?: string; password: string }) {

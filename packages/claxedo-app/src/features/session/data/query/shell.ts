@@ -1,4 +1,4 @@
-import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoCommand as Command } from "@claxedo/agent-runtime-contract/server-client"
 import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"

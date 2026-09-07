@@ -1,8 +1,4 @@
-import type {
-  ClaxedoLspStatus as LspStatus,
-  ClaxedoMcpStatus as McpStatus,
-  ClaxedoVcsInfo as VcsInfo,
-} from "@/platform/api/claxedo-api-types"
+import type { ClaxedoLspStatus as LspStatus, ClaxedoMcpStatus as McpStatus, ClaxedoVcsInfo as VcsInfo } from "@claxedo/agent-runtime-contract/server-client"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {

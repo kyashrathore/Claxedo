@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { type NormalizedProviderListResponse, normalizeProviderList } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

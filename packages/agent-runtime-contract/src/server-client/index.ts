@@ -1,15 +1,15 @@
-import { isAbortError } from "@/lib/abort-error"
+import { errorMessage } from "@claxedo/helpers"
+import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
+import type { AgentRuntimeStatus } from "../availability"
 import type {
   AgentPermission,
-  AgentPresentationSession,
   AgentPromptResponse,
   AgentQuestion,
   AgentQuestionAnswer,
-  AgentRuntimeStatus,
   AgentSnapshotFileDiff,
   AgentTodo,
-} from "@claxedo/agent-runtime-contract"
-import { asRecordOrEmpty } from "@claxedo/helpers/guards"
+} from "../content"
+import type { AgentPresentationSession } from "../sessions"
 import type {
   ClaxedoAgentProfile,
   ClaxedoCommand,
@@ -20,8 +20,9 @@ import type {
   ClaxedoProject,
   ClaxedoProviderAuthorization,
   ClaxedoVcsInfo,
-} from "./claxedo-api-types"
-import { errorMessage } from "@/lib/server-errors"
+} from "./api-types"
+
+export type * from "./api-types"
 
 export type ServerClientRequestOptions = { headers?: HeadersInit; signal?: AbortSignal }
 export type ServerClientResponse<T> = { data: T; error?: unknown; request: Request; response: Response }
@@ -133,9 +134,12 @@ export type ClaxedoServerClient = {
   lsp: { status(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoLspStatus[]>> }
 }
 
+/** The callable half of `fetch`; a bare `typeof fetch` differs per runtime lib (Bun's carries `preconnect`). */
+export type ServerClientTransport = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
 export type CreateClaxedoServerClientOptions = {
   baseUrl: string
-  request?: typeof fetch
+  request?: ServerClientTransport
   headers?: HeadersInit
   directory?: string
   workspace?: string
@@ -154,7 +158,7 @@ export class ServerClientPayloadError extends Error {
   }
 }
 export class ServerClientTransportError extends Error {
-  constructor(readonly operation: string, readonly cause: unknown) {
+  constructor(readonly operation: string, override readonly cause: unknown) {
     super(errorMessage(cause))
     this.name = "ServerClientTransportError"
   }
@@ -192,11 +196,11 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
     try {
       response = await transport(url, requestInit)
     } catch (error) {
-      if (isAbortError(error) || input.options?.signal?.aborted) throw error
+      if (asRecord(error)?.name === "AbortError" || input.options?.signal?.aborted) throw error
       throw new ServerClientTransportError(input.operation, error)
     }
     input.options?.signal?.throwIfAborted()
-    if (!response.ok) throw await responseError(input.operation, response)
+    if (!response.ok) throw await serverClientResponseError(input.operation, response)
     return { data: await responseJson(input.operation, response) as T, request, response }
   }
 
@@ -303,7 +307,8 @@ async function responseJson(operation: string, response: Response): Promise<unkn
     throw new ServerClientPayloadError(operation, error instanceof Error ? error.message : "Server response was not valid JSON", undefined)
   }
 }
-async function responseError(operation: string, response: Response) {
+/** The typed error for a non-2xx response whose body is a Claxedo `{ error: { code, message } }` envelope, or any other body. */
+export async function serverClientResponseError(operation: string, response: Response) {
   const body = await response.clone().json().catch(() => undefined)
   const row = asRecordOrEmpty(body)
   const nested = asRecordOrEmpty(row.error)

@@ -29,7 +29,7 @@ import {
   type DirectorySessionCacheRefreshOptions,
   type DirectorySessionLoadMeta,
 } from "../../../features/session/data/sync/directory-session-cache"
-import type { ClaxedoConfig as Config } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoConfig as Config } from "@claxedo/agent-runtime-contract/server-client"
 import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
 import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
 
