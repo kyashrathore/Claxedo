@@ -343,12 +343,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   })
 
   // The panel clears a file focus as soon as it is consumed, and the Review
-  // tab mounts lazily, so the request it acts on is held here.
-  const [reviewFocus, setReviewFocus] = createSignal<{
-    path: string
-    mode: typeof props.focusReviewMode
-    version: typeof props.focusVersion
-  }>()
+  // tab mounts lazily, so the last review-intent request is latched here.
+  const reviewFocus = createMemo<
+    { path: string; mode: typeof props.focusReviewMode; version: typeof props.focusVersion } | undefined
+  >((previous) => {
+    const path = props.focusPath
+    if (!path || props.focusFileIntent !== "review") return previous
+    return { path, mode: props.focusReviewMode, version: props.focusVersion }
+  })
   createEffect(on(
     () => props.focusReviewVersion,
     (version) => {
@@ -365,7 +367,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       // Consuming the request clears it upstream, so read the intent first.
       const intent = props.focusFileIntent
       const line = props.focusLine
-      if (intent === "review") setReviewFocus({ path, mode: props.focusReviewMode, version: props.focusVersion })
       props.onFocusConsumed?.()
       if (intent === "review") {
         activateTab(REVIEW_TAB_ID)
