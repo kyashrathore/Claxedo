@@ -88,6 +88,7 @@ import {
 } from "./session-turn-lease"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import { SessionRollbackError } from "../session-rollback-error"
+import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
@@ -608,6 +609,17 @@ function goalRoute(
       return goalRuntimeErrorResponse(c, error)
     }
   }
+}
+
+/**
+ * A runtime with no default harness, or a connection it cannot run, is a
+ * configuration state and not a fault. Left to escape it became a 500, which
+ * every caller reads as "the runtime broke" and the MCP tools surfaced as a
+ * bare `http_500`.
+ */
+function harnessUnavailableResponse(c: Ctx, error: unknown) {
+  if (!(error instanceof WorkspaceHarnessUnavailableError)) return undefined
+  return c.json(errorBody(error.code, error.message), 409)
 }
 
 const rootsOnly = (c: Ctx) => c.req.query("roots") === "true" || c.req.query("roots") === "1"
@@ -1421,19 +1433,29 @@ export function createSessionRoutes(opts: Opts) {
     // `/session/:id` so Hono doesn't interpret "capabilities" as a
     // session id.
     .get("/session/capabilities", async (c) => {
-      const adapter = await opts.resolveAdapter(c)
-      const directory = await opts.resolveDirectory(c)
-      const caps = await adapter.readHarnessCapabilities(directory)
-      return noStoreJson(c, caps)
+      try {
+        const adapter = await opts.resolveAdapter(c)
+        const directory = await opts.resolveDirectory(c)
+        return noStoreJson(c, await adapter.readHarnessCapabilities(directory))
+      } catch (error) {
+        const refusal = harnessUnavailableResponse(c, error)
+        if (refusal) return refusal
+        throw error
+      }
     })
     .get("/session/:id/capabilities", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "session_capabilities_read")
       if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const caps = await adapter.readHarnessCapabilities(directory, { sessionId })
-      return noStoreJson(c, caps)
+      try {
+        const directory = await opts.resolveDirectory(c, { sessionId })
+        const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+        return noStoreJson(c, await adapter.readHarnessCapabilities(directory, { sessionId }))
+      } catch (error) {
+        const refusal = harnessUnavailableResponse(c, error)
+        if (refusal) return refusal
+        throw error
+      }
     })
     // The combined Goal read. Session activation needs BOTH the adapter's Goal
     // capabilities and the session's current Goal; asking for them separately

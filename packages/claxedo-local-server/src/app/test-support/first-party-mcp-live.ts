@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -46,11 +46,6 @@ export async function startLiveFirstPartyMcp() {
   const workspaceRoot = mkdtempSync(path.join(tmpdir(), "claxedo-first-party-mcp-ws-"))
   const previousDataDir = process.env.CLAXEDO_DATA_DIR
   process.env.CLAXEDO_DATA_DIR = dataDir
-  // `GET /session/capabilities` reads the runtime's default harness, which the
-  // desktop writes at onboarding; without it the runtime answers 500 and every
-  // tool that asks what this runtime can do fails for a reason no product has.
-  writeFileSync(path.join(dataDir, "user-agent-config.json"), JSON.stringify({ version: 3, mcp: {}, connections: {}, auth: {}, sandbox_driver: {}, defaultHarness: { kind: "native", harnessId: "opencode" } }))
-
   const git = (args: readonly string[]) => execFileSync("git", [...args], { cwd: workspaceRoot, stdio: "pipe" })
   // The workspace store refuses a local directory that is not a git repository,
   // and the runtime proxy dispatches only to a workspace the store resolved.

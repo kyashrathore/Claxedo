@@ -168,7 +168,7 @@ describe("a subagent started over the injected first-party MCP", () => {
     expect(refusedParent.isError).toBe(true)
   })
 
-  test("reports the runtime's own harness, ceiling and wait bound to the session that may spawn", async () => {
+  test("reports the ceiling, wait bound and harness list to the session that may spawn", async () => {
     const { sessionId, client } = await parent("capabilities parent")
 
     const capabilities = (toolJson(await callTool(client, "subagent_capabilities")) as {
@@ -177,11 +177,30 @@ describe("a subagent started over the injected first-party MCP", () => {
       activeChildren: number
       maxActiveChildren: number
       waitTimeoutMaxMs: number
-      harnesses: Array<{ id: string; status: string }>
+      harnesses: Array<{ id: string; status: string; reason?: string }>
     })
 
     expect(capabilities).toMatchObject({ canSpawn: true, parentSessionId: sessionId, activeChildren: 0, maxActiveChildren: 4 })
     expect(capabilities.waitTimeoutMaxMs).toBeLessThanOrEqual(50_000)
     expect(capabilities.harnesses.map((row) => row.id)).toEqual(["claude", "codex", "cursor", "pi", "opencode"])
+  })
+
+  test("answers what this runtime can spawn when it declares no default harness", async () => {
+    const { client } = await parent("unconfigured harness parent")
+
+    const direct = await live.runtimeRequest("/session/capabilities")
+    expect(direct.status).toBe(409)
+    expect(await direct.json()).toMatchObject({ error: { code: "workspace_harness_not_configured" } })
+
+    const answered = await callTool(client, "subagent_capabilities")
+    expect(answered.isError).toBeFalsy()
+    const capabilities = toolJson(answered) as { canSpawn: boolean; runtimeHarness?: string; harnesses: Array<{ id: string; status: string; reason?: string }> }
+    expect(capabilities.canSpawn).toBe(true)
+    expect(capabilities.runtimeHarness).toBeUndefined()
+    expect(capabilities.harnesses.every((row) => row.status === "unverified")).toBe(true)
+    expect(capabilities.harnesses[0]?.reason).toContain("No default harness is configured on this runtime")
+
+    const spawned = await spawn(client)
+    expect(spawned.sessionId).toEqual(expect.any(String))
   })
 })

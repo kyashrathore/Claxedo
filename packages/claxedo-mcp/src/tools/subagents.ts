@@ -204,18 +204,42 @@ async function promptChild(ctx: McpToolContext, sessionId: string, prompt: strin
   })
 }
 
+/**
+ * A runtime that declares no default harness still starts a child on the
+ * harness `create_subagent` names, so the answer is the harness list with that
+ * state named on every row rather than a failed call.
+ */
+async function runtimeDefaultHarness(ctx: McpToolContext): Promise<{ harness: string } | { unconfigured: string }> {
+  try {
+    return { harness: (await (await ownRuntimeClient(ctx)).session.harnessCapabilities()).data.harness }
+  } catch (error) {
+    if (error instanceof WorkspaceRuntimeClientError && error.code === "workspace_harness_not_configured") {
+      return { unconfigured: error.message }
+    }
+    throw error
+  }
+}
+
 async function capabilities(ctx: McpToolContext) {
   const parent = ctx.credential.kind === "runtime" ? ctx.credential.sessionId : undefined
   const permissionCeiling = ctx.credential.kind === "runtime" ? ctx.credential.permissionMode : undefined
-  const runtimeHarness = (await (await ownRuntimeClient(ctx)).session.harnessCapabilities()).data.harness
+  const runtime = await runtimeDefaultHarness(ctx)
+  const runtimeHarness = "harness" in runtime ? runtime.harness : undefined
   const harnesses = RUNTIME_HARNESSES.map((id) => id === runtimeHarness
     ? { id, status: "ready" as const }
     : {
         id,
         status: "unverified" as const,
-        reason: `This runtime serves ${runtimeHarness}; whether it can start a ${id} child is answered by the create itself`,
+        reason: runtimeHarness
+          ? `This runtime serves ${runtimeHarness}; whether it can start a ${id} child is answered by the create itself`
+          : `${"unconfigured" in runtime ? runtime.unconfigured : ""}; whether it can start a ${id} child is answered by the create itself`,
       })
-  const shared = { runtimeHarness, harnesses, maxActiveChildren: MAX_ACTIVE_CHILDREN, waitTimeoutMaxMs: MAX_WAIT_MS }
+  const shared = {
+    ...(runtimeHarness ? { runtimeHarness } : {}),
+    harnesses,
+    maxActiveChildren: MAX_ACTIVE_CHILDREN,
+    waitTimeoutMaxMs: MAX_WAIT_MS,
+  }
 
   if (!parent) {
     return { canSpawn: false, reason: "This credential names no session, so a child would have no parent", ...shared }

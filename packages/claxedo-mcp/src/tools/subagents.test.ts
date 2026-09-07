@@ -53,7 +53,7 @@ const error = (code: string, message: string) => ({ error: { code, message } })
  * adapter and a store from `@claxedo/agent-sdk-runtime`, which is not a
  * dependency here.
  */
-function fakeRuntime(options: { turnMs?: number; parentMode?: string } = {}) {
+function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHarness?: string | null } = {}) {
   const sessions = new Map<string, FakeSession>()
   const rows = new Map<string, FakeRow[]>()
   const messages = new Map<string, Array<{ info: { id: string; role: string; sessionID: string }; parts: Array<{ id: string; sessionID: string; messageID: string; type: "text"; text: string }> }>>()
@@ -184,7 +184,9 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string } = {}) {
       if (child) scheduleTurn(child, "killed", 0)
       return c.json({ ok: true, status: "cancelled" })
     })
-    .get("/session/capabilities", (c) => c.json({ harness: "codex", subagents: true }))
+    .get("/session/capabilities", (c) => options.defaultHarness === null
+      ? c.json(error("workspace_harness_not_configured", "No default harness is configured on this runtime"), 409)
+      : c.json({ harness: options.defaultHarness ?? "codex", subagents: true }))
     .get("/session/:id/subagents", (c) => c.json(childrenOf(c.req.param("id"))))
     // `messagePageResponse` answers with the messages alone and puts the cursor
     // on `X-Next-Cursor`; a `{ messages }` envelope here is what let
@@ -457,6 +459,23 @@ describe("subagent tools", () => {
       { id: "pi", status: "unverified" },
       { id: "opencode", status: "unverified" },
     ])
+  })
+
+  test("subagent_capabilities answers the reason instead of failing when the runtime declares no default harness", async () => {
+    const runtime = fakeRuntime({ defaultHarness: null })
+    const url = await mount(runtime)
+    runtime.seed("parent")
+    const client = await asRuntime(url, "parent")
+
+    const answered = await call(client, "subagent_capabilities")
+    expect(answered.isError).toBeFalsy()
+    const capabilities = jsonOf(answered)
+    expect(capabilities).toMatchObject({ canSpawn: true, parentSessionId: "parent" })
+    expect(capabilities.runtimeHarness).toBeUndefined()
+    expect(capabilities.harnesses).toMatchObject(
+      ["claude", "codex", "cursor", "pi", "opencode"].map((id) => ({ id, status: "unverified" })),
+    )
+    expect(capabilities.harnesses[0].reason).toContain("No default harness is configured on this runtime")
   })
 
   test("subagent_status reads one child and subagent_cancel stops it", async () => {
