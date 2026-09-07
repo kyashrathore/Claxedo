@@ -75,10 +75,9 @@ export async function startLiveFirstPartyMcp() {
   const runtimeRequest = (pathAndQuery: string, init?: RequestInit) => {
     const url = new URL(pathAndQuery, "http://embedded.local")
     if (!url.searchParams.has("directory")) url.searchParams.set("directory", workspace.directory)
-    return runtime.app.fetch(new Request(url, {
-      ...init,
-      headers: { "x-workspace-id": workspace.id, ...(init?.headers ?? {}) },
-    }))
+    const headers = new Headers(init?.headers)
+    headers.set("x-workspace-id", workspace.id)
+    return runtime.app.fetch(new Request(url, { ...init, headers }))
   }
 
   const createSession = async (title: string) => {
@@ -136,7 +135,10 @@ export function toolText(result: CallToolResult): string {
   return block.text
 }
 
-export const toolJson = <T>(result: CallToolResult): T => JSON.parse(toolText(result)) as T
+/** The tool's text block parsed; every caller names the shape it expects. */
+export function toolJson(result: CallToolResult): unknown {
+  return JSON.parse(toolText(result))
+}
 
 export const callTool = (client: Client, name: string, args: Record<string, unknown> = {}) =>
   client.callTool({ name, arguments: args }) as Promise<CallToolResult>

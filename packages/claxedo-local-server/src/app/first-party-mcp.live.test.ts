@@ -80,17 +80,17 @@ describe("the first-party MCP a local session is launched with", () => {
   test("reaches the runtime that injected it, so the tools answer about this workspace's own sessions", async () => {
     const client = await live.connect(sessionId)
 
-    const board = toolJson<{ workspaces: Array<{ workspace: string; unavailable?: string; sessions?: RuntimeSession[] }> }>(
+    const board = (toolJson(
       await callTool(client, "sessions_list"),
-    )
+    ) as { workspaces: Array<{ workspace: string; unavailable?: string; sessions?: RuntimeSession[] }> })
     expect(board.workspaces).toHaveLength(1)
     expect(board.workspaces[0]).toMatchObject({ workspace: live.workspace.id })
     expect(board.workspaces[0]?.unavailable).toBeUndefined()
     expect(board.workspaces[0]?.sessions?.map((row) => row.id)).toContain(sessionId)
 
-    expect(toolJson<{ session: { id: string; directory: string }; config: { harness: { id: string } } }>(
+    expect((toolJson(
       await callTool(client, "session_get", { session: sessionId }),
-    )).toMatchObject({
+    ) as { session: { id: string; directory: string }; config: { harness: { id: string } } })).toMatchObject({
       session: { id: sessionId, directory: live.workspace.directory },
       config: { harness: { id: "opencode" } },
     })
@@ -100,10 +100,10 @@ describe("the first-party MCP a local session is launched with", () => {
     const own = await live.createSession("turn round trip")
     const client = await live.connect(own)
 
-    expect(toolJson<{ session: string; admitted: boolean }>(await callTool(client, "session_send", { session: own, text: "hello from the model" })))
+    expect((toolJson(await callTool(client, "session_send", { session: own, text: "hello from the model" })) as { session: string; admitted: boolean }))
       .toEqual({ session: own, admitted: true })
 
-    const page = toolJson<{ messages: RuntimeMessage[] }>(await callTool(client, "session_transcript", { session: own }))
+    const page = (toolJson(await callTool(client, "session_transcript", { session: own })) as { messages: RuntimeMessage[] })
     const prompts = page.messages.filter((row) => row.info.role === "user").flatMap((row) => row.parts.map((part) => part.text ?? ""))
     expect(prompts).toContain("hello from the model")
 

@@ -236,9 +236,10 @@ describe("an MCP host that consents on this box's own OAuth server", () => {
     expect(document.authorization_servers).toEqual([`${ORIGIN}/api/auth`])
     expect(document.scopes_supported).toEqual([...CLAXEDO_MCP_OAUTH_SCOPES])
 
-    const server = await request(new URL(document.authorization_servers[0]!).pathname + "/.well-known/oauth-authorization-server")
+    const [authorizationServer] = document.authorization_servers
+    const server = await request(`${new URL(authorizationServer ?? "").pathname}/.well-known/oauth-authorization-server`)
     expect(server.status).toBe(200)
-    expect((await server.json()) as { registration_endpoint?: string }).toMatchObject({
+    expect(await server.json()).toMatchObject({
       registration_endpoint: expect.stringMatching(/\/oauth2\/register$/),
     })
   })

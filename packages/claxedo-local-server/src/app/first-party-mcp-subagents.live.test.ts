@@ -44,9 +44,9 @@ afterAll(async () => {
 })
 
 const spawn = async (client: Client, args: Record<string, unknown> = {}) =>
-  toolJson<Binding>(await callTool(client, "create_subagent", { harness: "opencode", prompt: "summarise the repository", mode: "async", ...args }))
+  (toolJson(await callTool(client, "create_subagent", { harness: "opencode", prompt: "summarise the repository", mode: "async", ...args })) as Binding)
 
-const listChildren = async (client: Client) => toolJson<ChildRow[]>(await callTool(client, "subagent_list"))
+const listChildren = async (client: Client) => (toolJson(await callTool(client, "subagent_list")) as ChildRow[])
 
 const readSession = async (sessionId: string) =>
   (await (await live.runtimeRequest(`/session/${sessionId}`)).json()) as RuntimeSession
@@ -73,7 +73,7 @@ describe("a subagent started over the injected first-party MCP", () => {
     expect(roots.map((row) => row.id)).toContain(sessionId)
     expect(roots.map((row) => row.id)).not.toContain(binding.sessionId)
 
-    const board = toolJson<{ workspaces: Array<{ sessions?: RuntimeSession[] }> }>(await callTool(client, "sessions_list"))
+    const board = (toolJson(await callTool(client, "sessions_list")) as { workspaces: Array<{ sessions?: RuntimeSession[] }> })
     const listed = board.workspaces.flatMap((row) => row.sessions ?? []).map((row) => row.id)
     expect(listed).toContain(sessionId)
     expect(listed).not.toContain(binding.sessionId)
@@ -112,8 +112,8 @@ describe("a subagent started over the injected first-party MCP", () => {
     const binding = await spawn(client)
     await until(async () => await listChildren(client), (rows) => rows[0]?.status === "failed", "the child to reach a terminal state")
 
-    const byKey = toolJson<Binding>(await callTool(client, "subagent_status", { subagentKey: binding.subagentKey }))
-    const bySession = toolJson<Binding>(await callTool(client, "subagent_status", { sessionId: binding.sessionId }))
+    const byKey = (toolJson(await callTool(client, "subagent_status", { subagentKey: binding.subagentKey })) as Binding)
+    const bySession = (toolJson(await callTool(client, "subagent_status", { sessionId: binding.sessionId })) as Binding)
     expect(byKey).toMatchObject({ subagentKey: binding.subagentKey, sessionId: binding.sessionId, status: "failed" })
     expect(bySession).toEqual(byKey)
   })
@@ -140,7 +140,7 @@ describe("a subagent started over the injected first-party MCP", () => {
     expect(refused.isError).toBe(true)
     expect(toolText(refused)).toContain("subagent_recursion_denied")
 
-    expect(toolJson<{ canSpawn: boolean; reason?: string }>(await callTool(asChild, "subagent_capabilities")))
+    expect((toolJson(await callTool(asChild, "subagent_capabilities")) as { canSpawn: boolean; reason?: string }))
       .toMatchObject({ canSpawn: false, reason: expect.stringContaining("subagent") })
   })
 
@@ -165,14 +165,14 @@ describe("a subagent started over the injected first-party MCP", () => {
   test("reports the runtime's own harness, ceiling and wait bound to the session that may spawn", async () => {
     const { sessionId, client } = await parent("capabilities parent")
 
-    const capabilities = toolJson<{
+    const capabilities = (toolJson(await callTool(client, "subagent_capabilities")) as {
       canSpawn: boolean
       parentSessionId?: string
       activeChildren: number
       maxActiveChildren: number
       waitTimeoutMaxMs: number
       harnesses: Array<{ id: string; status: string }>
-    }>(await callTool(client, "subagent_capabilities"))
+    })
 
     expect(capabilities).toMatchObject({ canSpawn: true, parentSessionId: sessionId, activeChildren: 0, maxActiveChildren: 4 })
     expect(capabilities.waitTimeoutMaxMs).toBeLessThanOrEqual(50_000)
