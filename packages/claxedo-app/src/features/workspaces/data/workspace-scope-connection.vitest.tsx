@@ -88,4 +88,34 @@ describe("workspace-scoped connection ownership", () => {
     mounted.unmount()
     expect(calls.release).toHaveBeenCalledOnce()
   })
+
+  /**
+   * A gate whose workspace the host does not own falls back to acquiring the
+   * connection itself. Deciding that reads the host's scope set, so the acquire
+   * effect used to depend on it: another workspace opening anywhere in the app
+   * re-ran this gate, which released and re-acquired, and the connection write
+   * that followed fed back into the same derivation. Solid nests a
+   * `runUpdates`/`completeUpdates` frame pair per generation, so the ping-pong
+   * ran the stack out — `RangeError: Maximum call stack size exceeded`, caught
+   * by the app ErrorBoundary, which took the composer's owner down with it.
+   * The acquire effect's dependency is its connection input, nothing else.
+   */
+  test("another workspace entering the host's scope set does not re-acquire an unowned gate's connection", () => {
+    const [scopeIds, setScopeIds] = createSignal<readonly string[]>(["ws_owned"])
+    const mounted = render(() => (
+      <WorkspaceScopeHost workspaceIds={scopeIds}>
+        <WorkspaceGate workspaceId="ws_unowned" kind="cloud" directory="/workspace">
+          <div />
+        </WorkspaceGate>
+      </WorkspaceScopeHost>
+    ))
+
+    expect(calls.acquire).toHaveBeenCalledOnce()
+
+    setScopeIds(["ws_owned", "ws_second"])
+
+    expect(calls.acquire).toHaveBeenCalledOnce()
+    expect(calls.release).not.toHaveBeenCalled()
+    mounted.unmount()
+  })
 })

@@ -175,6 +175,7 @@ describe("submitTransportForPlacement", () => {
       loopbackWorkspaceBridge: true,
       controlPlaneSession: false,
       workspaceRuntimeSession: false,
+      managedSessionRegistration: false,
     })
     expect(submitTransportForPlacement({
       serverUrl: "http://localhost:3001",
@@ -183,6 +184,7 @@ describe("submitTransportForPlacement", () => {
       loopbackWorkspaceBridge: false,
       controlPlaneSession: true,
       workspaceRuntimeSession: true,
+      managedSessionRegistration: true,
     })
     expect(submitTransportForPlacement({
       serverUrl: "https://control.example.com",
@@ -192,6 +194,7 @@ describe("submitTransportForPlacement", () => {
       loopbackWorkspaceBridge: false,
       controlPlaneSession: true,
       workspaceRuntimeSession: true,
+      managedSessionRegistration: true,
     })
     expect(submitTransportForPlacement({
       serverUrl: "https://control.example.com",
@@ -201,6 +204,33 @@ describe("submitTransportForPlacement", () => {
       loopbackWorkspaceBridge: false,
       controlPlaneSession: true,
       workspaceRuntimeSession: true,
+      managedSessionRegistration: true,
     })
+  })
+
+  test("a signed self-hosted server on loopback manages session registration for its own folder workspace", () => {
+    // The self-hosted server runs its embedded issuer on localhost, so the app
+    // reaches the workspace over the loopback bridge while the control plane
+    // still refuses `POST /session` without a reservation.
+    expect(submitTransportForPlacement({
+      serverUrl: "https://localhost:5178",
+      directory: "/repo/main",
+      authEnabled: true,
+    })).toEqual({
+      loopbackWorkspaceBridge: true,
+      controlPlaneSession: false,
+      workspaceRuntimeSession: false,
+      managedSessionRegistration: true,
+    })
+  })
+
+  test("the unsigned local product keeps unmanaged session creation on the same wire", () => {
+    // Desktop and the local web build reach the same loopback server with no
+    // control plane behind it; reserving there would call a route that does not exist.
+    expect(submitTransportForPlacement({
+      serverUrl: "https://localhost:5178",
+      directory: "/repo/main",
+      authEnabled: false,
+    }).managedSessionRegistration).toBe(false)
   })
 })

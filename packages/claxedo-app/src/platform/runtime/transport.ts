@@ -40,6 +40,7 @@ export function submitTransportForPlacement(input: {
   serverUrl?: string
   directory?: string
   signedControlPlane?: boolean
+  authEnabled?: boolean
   workspaceId?: string
   workspaceKind?: "local" | "cloud" | "user-hosted" | null
 }) {
@@ -52,6 +53,19 @@ export function submitTransportForPlacement(input: {
     loopbackWorkspaceBridge,
     controlPlaneSession,
     workspaceRuntimeSession: controlPlaneSession || !!input.workspaceId || !!directoryWorkspaceId,
+    // Which wire reaches the runtime and who owns the session's lifecycle are
+    // separate questions. A control plane that issues accounts records every
+    // session it serves and answers `POST /session` with
+    // `session_reservation_required` until the caller has reserved one — and
+    // that is true of a workspace this same machine serves over loopback,
+    // because the self-hosted server runs its embedded issuer on localhost.
+    // `centralTransportForDeployment` owns that distinction; the loopback
+    // bridge above answers only the wire.
+    managedSessionRegistration: controlPlaneSession ||
+      centralTransportForDeployment({
+        serverUrl: input.serverUrl,
+        authEnabled: input.authEnabled === true,
+      }) === "signed-web",
   }
 }
 

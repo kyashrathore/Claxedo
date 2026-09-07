@@ -28,6 +28,8 @@ let storage: ConversationStorage | undefined
 let principalNamespace: string | null = "anonymous"
 let principalGeneration = 0
 export const conversationPersistenceSchema = "claxedo-v2"
+/** IndexedDB database the messages store lives in; e2e proofs open it by this name. */
+export const conversationPersistenceDatabase = "claxedo-conversations-v2"
 function createPersistenceState() {
   return {
     pendingOperations: new Map<IDBValidKey, Promise<void>>(),
@@ -37,7 +39,7 @@ function createPersistenceState() {
 const persistenceState = createPersistenceState()
 try {
   if (typeof indexedDB !== "undefined") {
-    const store = createStore("claxedo-conversations-v2", "messages")
+    const store = createStore(conversationPersistenceDatabase, "messages")
     storage = {
       get: (key) => get<UIMessage[]>(key, store),
       set: (key, value) => set(key, value, store),

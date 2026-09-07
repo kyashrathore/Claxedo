@@ -1,4 +1,5 @@
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "./signed-workspace"
+import { signedWorkspaceFromProjects } from "./signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 
 type ProjectDirectory = string
 

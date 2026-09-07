@@ -220,7 +220,21 @@ export const appLocal: Policy = {
   // matter how many call sites migrate. Re-measured after the test-quality
   // audit merge, which retired the per-file readers those sites replaced:
   // 958 modules, 38 packages, no headroom.
-  ceilings: { modules: 958, packages: 38 },
+  // +1 module / 0 packages (2026-09-07): the rail's user-hosted rows now carry
+  // the session's creator, which only the control plane knows. Reviewed owner:
+  // features/session/data/sync/control-plane-sessions.ts — the one reader of
+  // `GET /api/control/sessions`, extracted from `inventory-source.ts` so the
+  // rail's owner join and the flat inventory share it instead of each spelling
+  // out the bridge/HTTP pair. Both callers were already in this closure and it
+  // reaches nothing new, so the package count is unchanged at 38. Re-measured,
+  // no headroom.
+  // +1 module / 0 packages (2026-09-07): reviewed owner
+  // app/workbench/rail/rail-session-activity.ts — the rail's per-row status
+  // projection, lifted out of `rail-sidebar.tsx` so that nothing in it reads
+  // what it writes: pruning is keyed on the target set, and unseen-done is a
+  // memo rather than an effect. It imports only siblings already in this
+  // closure, so the package count is unchanged at 38. Re-measured, no headroom.
+  ceilings: { modules: 960, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

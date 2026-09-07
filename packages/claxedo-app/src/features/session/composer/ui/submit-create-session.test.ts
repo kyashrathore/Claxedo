@@ -228,7 +228,7 @@ describe("acquireSubmitSessionTarget", () => {
     const creates: Array<{ input: Record<string, unknown>; headers?: Record<string, string> }> = []
     const target = await acquireSessionTarget({
       replaceSession: true,
-      signedControlPlane: true,
+      managedSessionRegistration: true,
       workspaceId: "ws_1",
       reserveManagedSession: async (input) => {
         order.push("reserve")
@@ -266,7 +266,7 @@ describe("acquireSubmitSessionTarget", () => {
     await expect(
       acquireSessionTarget({
         replaceSession: true,
-        signedControlPlane: true,
+        managedSessionRegistration: true,
         claimHarnessSession: async () => {
           creates += 1
           return { id: "unexpected" }
@@ -283,7 +283,7 @@ describe("acquireSubmitSessionTarget", () => {
       explicitSessionID: "existing-1",
       isNewSession: false,
       replaceSession: false,
-      signedControlPlane: true,
+      managedSessionRegistration: true,
       sessionClient: () =>
         submitSessionClient({
           get: async () => ({ data: undefined }),
@@ -507,7 +507,7 @@ function acquireSessionTarget(overrides: Partial<AcquireSessionTargetInput>) {
     explicitSessionID: undefined,
     isNewSession: true,
     replaceSession: false,
-    signedControlPlane: false,
+    managedSessionRegistration: false,
     sessionDirectory: "/repo/main",
     sessionClient: () => submitSessionClient(),
     scope: "scope-1",

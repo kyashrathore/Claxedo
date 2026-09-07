@@ -239,10 +239,37 @@ export function applyFetchedSessionListPage(input: {
 // (the product-specific session-list route) that actually feeds the rendered rail rows
 // does not — so the new session stays invisible until a full reload. Invalidate
 // every session-list query so the active section refetches and the row appears.
-export function invalidateSessionListQueries(input: { baseUrl?: string } = {}) {
+export async function invalidateSessionListQueries(input: { baseUrl?: string } = {}) {
   const base = input.baseUrl === undefined ? undefined : normalizedBase(input.baseUrl)
-  return queryClient.invalidateQueries({
+  // Dropped BEFORE the sections are told to refetch, because that refetch is
+  // what reads it: `invalidateQueries` marks every match synchronously, so by
+  // the time the second call starts a section's `queryFn` the runtime page it
+  // folds in is already known-stale and the relay is asked again.
+  const runtimeRows = invalidateWorkspaceRuntimeSessionRows(base)
+  const lists = queryClient.invalidateQueries({
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
+  })
+  await Promise.all([runtimeRows, lists])
+}
+
+/**
+ * The relay read a user-hosted section's rows are cut from
+ * (`data/sync/session-source.ts`).
+ *
+ * It is memoized per WORKSPACE so one relay hop answers that workspace's own
+ * section, its project's section and every page — which also means a section
+ * refetch on its own re-reads the memo and answers with exactly the rows the
+ * doorbell just said had changed. A freshly shared session stayed off the
+ * recipient's rail for the whole memo window because of that: the session-list
+ * refetch fired, and the runtime was never asked.
+ */
+function invalidateWorkspaceRuntimeSessionRows(base: string | undefined) {
+  return queryClient.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey
+      if (!Array.isArray(key) || key[0] !== "runtime" || key[2] !== "workspaceSessions") return false
+      return base === undefined || key[1] === base
+    },
   })
 }
 

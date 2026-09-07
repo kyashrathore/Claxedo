@@ -149,9 +149,27 @@ function sessionStatusIsActive(status: SessionStatus | undefined) {
   return !!status && status.type !== "idle"
 }
 
-/** Reject a stale batch poll that would regress an in-flight optimistic/SSE status. */
-export function shouldAcceptRailBatchStatus(sessionID: string, incoming: SessionStatus) {
-  if (promptSessionStatusMeta(sessionID)?.source !== "optimistic") return true
+/**
+ * Reject a batch poll that cannot have seen the turn the optimistic status
+ * describes.
+ *
+ * `readStartedAt` is when the batch request was ISSUED. A read that started
+ * before the optimistic dispatch answers a question asked before the turn
+ * existed, so its idle is stale and must not clear the prediction. A read
+ * issued after it did have the chance to observe the turn, so its answer —
+ * idle included — retires the prediction; without that, a background row that
+ * finished between two reads kept an optimistic busy the runtime had already
+ * contradicted. Omitting `readStartedAt` cannot prove freshness and therefore
+ * rejects, which is the pre-existing behaviour.
+ */
+export function shouldAcceptRailBatchStatus(
+  sessionID: string,
+  incoming: SessionStatus,
+  readStartedAt?: number,
+) {
+  const meta = promptSessionStatusMeta(sessionID)
+  if (meta?.source !== "optimistic") return true
+  if (readStartedAt !== undefined && readStartedAt > meta.started) return true
   const cached = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(sessionID, "status"))
   if (!sessionStatusIsActive(cached)) return true
   return sessionStatusIsActive(incoming)
@@ -162,12 +180,13 @@ export function syncUnfocusedRailBatchStatusToCache(input: {
   focusedSessionId?: string
   targets: readonly Pick<RailSessionStatusTarget, "sessionID">[]
   statuses?: Record<string, SessionStatus>
+  readStartedAt?: number
 }) {
   if (!input.statuses) return
   for (const target of input.targets) {
     if (target.sessionID === input.focusedSessionId) continue
     const status = input.statuses[target.sessionID] ?? { type: "idle" as const }
-    if (!shouldAcceptRailBatchStatus(target.sessionID, status)) continue
+    if (!shouldAcceptRailBatchStatus(target.sessionID, status, input.readStartedAt)) continue
     const cached = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))
     if (cached && JSON.stringify(cached) === JSON.stringify(status)) continue
     dispatchSessionStatusEvent({
@@ -210,6 +229,22 @@ export async function readRailBatchLeg<T>(
 export function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
   if (!previous || previous.length !== next.length) return false
   return previous.every((item, index) => item.id === next[index]?.id)
+}
+
+/**
+ * Stamp each target with the START time of the batch read that just answered
+ * for it. `railRowStatusType` compares this against an optimistic dispatch to
+ * decide which of the two is the newer authority for a background row.
+ */
+export function stampRailStatusRead(
+  current: Record<string, number | undefined>,
+  targets: readonly Pick<RailSessionStatusTarget, "key">[],
+  readStartedAt: number,
+) {
+  if (targets.every((target) => current[target.key] === readStartedAt)) return current
+  const next = { ...current }
+  for (const target of targets) next[target.key] = readStartedAt
+  return next
 }
 
 export function mergeRailStatusRead(

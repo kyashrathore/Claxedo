@@ -45,6 +45,7 @@ import {
   type SessionPrefetchPage,
 } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
+import { AgentRuntimeRequestError } from "@/platform/runtime/agent/agent-runtime-request-error"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
 import { queryClient } from "@/platform/query/query-client"
 import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
@@ -138,6 +139,47 @@ export function isSessionNotFoundError(error: unknown) {
       ? error.message
       : JSON.stringify(error)
   return value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
+}
+
+/**
+ * Whether the session authority refused this principal the read.
+ *
+ * The private-session authority answers a session it will not disclose with
+ * `403 workspace_authorization_denied`, and a share revoked while a pane is
+ * open produces exactly that on the pane's next read. The status is the whole
+ * contract: workspace authority, session authority and the relay all deny with
+ * 403, and every one of them means the same thing to a reader — this principal
+ * may not have the transcript.
+ */
+export function isSessionAccessDeniedError(error: unknown) {
+  return error instanceof AgentRuntimeRequestError && error.status === 403
+}
+
+export type SessionHistoryReadFailure =
+  | { kind: "denied" }
+  | { kind: "missing" }
+  | { kind: "page"; failedCursor: string }
+  | { kind: "unhandled" }
+
+/**
+ * How a rejected session-history read is answered.
+ *
+ * Denial is decided first. An older page the authority refuses is not a cursor
+ * to retry later, and a denial reported as `unhandled` escapes the activation
+ * path — which fires and forgets its first-fold read — as an unhandled
+ * rejection instead of reaching the pane's "session unavailable" surface.
+ * `unhandled` is reserved for what it names: a fault with no handled state,
+ * which the caller rethrows.
+ */
+export function classifySessionHistoryReadFailure(input: {
+  error: unknown
+  before?: string
+}): SessionHistoryReadFailure {
+  if (isSessionAccessDeniedError(input.error)) return { kind: "denied" }
+  const sessionNotFound = isSessionNotFoundError(input.error)
+  if (sessionNotFound) return { kind: "missing" }
+  const failedCursor = backfillFailedCursor({ before: input.before, sessionNotFound })
+  return failedCursor === undefined ? { kind: "unhandled" } : { kind: "page", failedCursor }
 }
 
 export function shouldHydrateSession(input: {
@@ -647,14 +689,17 @@ export function createSessionController(input: {
       })
       .catch((error) => {
         if (opts?.signal?.aborted) return false
-        const sessionNotFound = isSessionNotFoundError(error)
-        if (!sessionNotFound) {
-          const failedCursor = backfillFailedCursor({ before: opts?.before, sessionNotFound })
-          if (failedCursor !== undefined) {
-            setHistoryMetaValue("failedCursor", key, failedCursor)
-            return false
-          }
-          throw error
+        const failure = classifySessionHistoryReadFailure({ error, before: opts?.before })
+        if (failure.kind === "unhandled") throw error
+        if (failure.kind === "page") {
+          setHistoryMetaValue("failedCursor", key, failure.failedCursor)
+          return false
+        }
+        if (failure.kind === "denied") {
+          // Refused by the authority, not lost by the runtime, so no repair
+          // pull. Closing the pane stays with the revocation reconcile.
+          forgetUnavailableSession(directory, sessionID)
+          return false
         }
         removeMissingSession(directory, sessionID)
         return false
@@ -664,7 +709,13 @@ export function createSessionController(input: {
       })
   }
 
-  const removeMissingSession = (directory: string, sessionID: string) => {
+  /**
+   * Drop a session the pane can no longer read from every cache that would
+   * re-offer it, and settle the pane on its "session unavailable" surface.
+   * Shared by the two ways a read stops being answerable: the runtime no
+   * longer has the session, and the authority no longer grants it.
+   */
+  const forgetUnavailableSession = (directory: string, sessionID: string) => {
     removeDirectorySessionCacheRow(directory, sessionID)
     removeSessionInventoryQueryData({
       baseUrl: globalSDK.url,
@@ -676,6 +727,11 @@ export function createSessionController(input: {
       directory,
       workspaceId: input.workspaceId?.(),
     })
+    setMissingSession(directory, sessionID, true)
+  }
+
+  const removeMissingSession = (directory: string, sessionID: string) => {
+    forgetUnavailableSession(directory, sessionID)
     if (input.signedControlPlane?.()) {
       const workspaceId = input.workspaceId?.()
       void scheduleSessionProjectionPull({
@@ -686,7 +742,6 @@ export function createSessionController(input: {
         idempotencyKey: `missing-session:${workspaceId ?? ""}:${sessionID}`,
       })
     }
-    setMissingSession(directory, sessionID, true)
   }
 
   const setMissingSession = (directory: string, sessionID: string, missing: boolean) => {

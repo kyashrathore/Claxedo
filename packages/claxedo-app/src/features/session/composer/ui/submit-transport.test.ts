@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
-import { createSubmitTransportAdapter, submitWorkspaceBacking } from "./submit-transport"
+import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceBacking } from "./submit-transport"
 
 const CODEX = { kind: "native", harnessId: "codex" } as const
 const EXTERNAL_OPENCODE = { kind: "connection", connectionId: "external-opencode" } as const
@@ -25,6 +25,7 @@ describe("submit transport adapter", () => {
     createSubmitTransportAdapter({
       serverUrl: () => "https://control.example",
       signedControlPlane: () => false,
+      authEnabled: () => false,
       workspaceId: () => undefined,
       workspaceKind: () => undefined,
       request: fetch,
@@ -262,6 +263,7 @@ describe("submit transport adapter", () => {
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => false,
+      authEnabled: () => false,
       workspaceId: () => "ws_1",
       workspaceKind: () => undefined,
       sessionRef: () => ({
@@ -308,6 +310,7 @@ describe("submit transport adapter", () => {
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => false,
+      authEnabled: () => false,
       workspaceId: () => "ws_1",
       workspaceKind: () => "user-hosted",
       request: async (input, init) => {
@@ -347,6 +350,7 @@ describe("submit transport adapter", () => {
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:4527",
       signedControlPlane: () => true,
+      authEnabled: () => false,
       workspaceId: () => "ws_signed",
       workspaceKind: () => "user-hosted",
       request: async (input, init) => {
@@ -418,5 +422,55 @@ describe("submit transport adapter", () => {
       "POST https://relay.test/workspaces/ws_signed/session/session-signed/prompt_async",
       "GET https://relay.test/workspaces/ws_signed/session/status?connectionId=external-opencode",
     ])
+  })
+  test("a signed self-hosted deployment reserves for a folder workspace it also serves over loopback", () => {
+    // Live repro: the signed server's embedded issuer runs on localhost, so the
+    // loopback bridge stays on for the wire while `POST /session` still answers
+    // `session_reservation_required`.
+    const signed = createSubmitTransportAdapter({
+      serverUrl: () => "https://localhost:5178",
+      signedControlPlane: () => false,
+      authEnabled: () => true,
+      workspaceId: () => undefined,
+      workspaceKind: () => undefined,
+      request: fetch,
+      localRequest: fetch,
+      createClient: () => ({ session: { get: async () => ({}), prompt: async () => ({}), promptAsync: async () => ({}) } }),
+      showToast: () => {},
+      formatError: () => "Request failed",
+      text: { configSaveFailedTitle: "Could not save session config" },
+    })
+    expect(signed.usesLoopbackWorkspaceBridge("/repo/main")).toBe(true)
+    expect(signed.usesSignedControlPlane("/repo/main")).toBe(false)
+    expect(signed.usesManagedSessionRegistration("/repo/main")).toBe(true)
+
+    const local = createSubmitTransportAdapter({
+      serverUrl: () => "https://localhost:5178",
+      signedControlPlane: () => false,
+      authEnabled: () => false,
+      workspaceId: () => undefined,
+      workspaceKind: () => undefined,
+      request: fetch,
+      localRequest: fetch,
+      createClient: () => ({ session: { get: async () => ({}), prompt: async () => ({}), promptAsync: async () => ({}) } }),
+      showToast: () => {},
+      formatError: () => "Request failed",
+      text: { configSaveFailedTitle: "Could not save session config" },
+    })
+    expect(local.usesManagedSessionRegistration("/repo/main")).toBe(false)
+  })
+
+  test("the reservation workspace id falls back to the project catalog row for a locally served workspace", () => {
+    const projects = [{
+      id: "prj_1",
+      worktree: "/repo/main",
+      workspaces: {
+        "/repo/main": { id: "ws_local", kind: "local", directory: "/repo/main" },
+      },
+    }]
+    expect(signedSubmitWorkspaceId(undefined, "/repo/main", projects)).toBe("ws_local")
+    expect(signedSubmitWorkspaceId("ws_route", "/repo/main", projects)).toBe("ws_route")
+    expect(signedSubmitWorkspaceId(undefined, "/repo/other", projects)).toBeUndefined()
+    expect(signedSubmitWorkspaceId(undefined, "/repo/main")).toBeUndefined()
   })
 })

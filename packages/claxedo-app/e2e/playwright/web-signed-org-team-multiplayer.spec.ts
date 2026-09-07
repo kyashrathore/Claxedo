@@ -23,6 +23,7 @@
  */
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { mkdirSync } from "node:fs"
+import { conversationPersistenceDatabase } from "../../src/features/session/conversation/conversation-persistence"
 import path from "node:path"
 import {
   buildAndServeWebApp,
@@ -86,8 +87,8 @@ let bob: Teammate | undefined
 let casey: Teammate | undefined
 
 async function conversationPersistenceKeys(page: Page) {
-  return await page.evaluate(async () => await new Promise<string[]>((resolve, reject) => {
-    const request = indexedDB.open("claxedo-conversations")
+  return await page.evaluate(async (database) => await new Promise<string[]>((resolve, reject) => {
+    const request = indexedDB.open(database)
     request.onerror = () => reject(request.error ?? new Error("Unable to open conversation persistence"))
     request.onsuccess = () => {
       const db = request.result
@@ -104,7 +105,7 @@ async function conversationPersistenceKeys(page: Page) {
         resolve(keysRequest.result.filter((key): key is string => typeof key === "string"))
       }
     }
-  }))
+  }), conversationPersistenceDatabase)
 }
 
 test.describe("web signed org-team multiplayer @core @tier-real @surface-web", () => {
@@ -364,13 +365,13 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
         resolveReloadedList?.(JSON.parse(raw) as ReloadedList)
         await route.fulfill({ response, body: raw })
       }
-      await bobCtx.page.route("**/api/claxedo/session-list?**", inspectReloadedList)
+      await bobCtx.page.route("**/api/control/session-list?**", inspectReloadedList)
       let reloadedList: ReloadedList
       try {
         await bobCtx.page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 })
         reloadedList = await reloadedSessionList
       } finally {
-        await bobCtx.page.unroute("**/api/claxedo/session-list?**", inspectReloadedList)
+        await bobCtx.page.unroute("**/api/control/session-list?**", inspectReloadedList)
       }
       expect([
         ...(reloadedList.items ?? []),

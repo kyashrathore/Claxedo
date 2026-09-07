@@ -24,7 +24,7 @@ import {
   type SessionRef,
 } from "@/platform/identity/session-ref"
 import { markRouteIntentClosed } from "./route-bridge-resolution"
-import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 
 export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 

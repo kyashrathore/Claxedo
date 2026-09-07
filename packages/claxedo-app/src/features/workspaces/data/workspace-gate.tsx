@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
+import { Match, Show, Switch, createEffect, on, onCleanup, type JSX, type ParentProps } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
   CloudStartupView,
@@ -158,9 +158,20 @@ export function WorkspaceGate(
   // workspace check, or flash a connecting/offline screen over warm content.
   // Standalone gates (tests/embedded surfaces without a host) retain the old
   // component-scoped, ref-counted fallback.
-  createEffect(() => {
-    if (!props.workspaceId) return
-    const input = {
+  //
+  // The dependency is the connection input and only the connection input, which
+  // is why it is spelled out in `on()` — whose callback Solid runs untracked.
+  // Deciding between the two paths reads the host's scope set, and taking the
+  // standalone one releases and re-acquires, so a body that tracked its own
+  // reads made this effect answer its own writes: it re-ran, released,
+  // re-acquired, and wrote again. Solid nests a `runUpdates`/`completeUpdates`
+  // frame pair per generation, so that ping-pong grew the JS stack until it
+  // threw `RangeError: Maximum call stack size exceeded` — taken by the app
+  // ErrorBoundary, which disposed the composer's owner with the rest of the
+  // subtree. A gate re-acquires when its workspace, kind, directory, server URL
+  // or fetchers change; nothing else is a reason to touch the connection.
+  createEffect(on(
+    () => ({
       workspaceId: props.workspaceId,
       kind: props.kind,
       ...(props.directory ? { directory: props.directory } : {}),
@@ -168,11 +179,15 @@ export function WorkspaceGate(
       ...(props.request ? { request: props.request } : {}),
       ...(props.relayRequest ? { relayRequest: props.relayRequest } : {}),
       ...(events ? { events } : {}),
-    }
-    if (workspaceScopes?.retainConnection(input)) return
-    const handle = acquireWorkspaceConnection(input)
-    onCleanup(() => handle.release())
-  })
+    }),
+    (input) => {
+      const workspaceId = input.workspaceId
+      if (!workspaceId) return
+      if (workspaceScopes?.retainConnection({ ...input, workspaceId })) return
+      const handle = acquireWorkspaceConnection({ ...input, workspaceId })
+      onCleanup(() => handle.release())
+    },
+  ))
 
   const conn = () => workspaceConnection(props.workspaceId)
   const offline = () => workspaceOffline(props.workspaceId)

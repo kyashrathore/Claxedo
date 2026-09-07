@@ -612,7 +612,12 @@ upsertUser(authorityDb(), {
 })
 const browserActor = await authority.usersMe(browserAuth)
 const withRuntimeActor = (input) => {
-  const actorKind = input.actorKind ?? browserActor.actor_kind
+  // Profile fields default to the browser owner's only when the token is
+  // minted for that actor. Another actor's missing avatar stays missing; a
+  // teammate's message must never render under Alice's picture.
+  const own = !input.actorId || input.actorId === browserActor.actor_id
+  const profile = own ? browserActor : {}
+  const actorKind = input.actorKind ?? profile.actor_kind
   return {
     ...input,
     // `principal_kind` is a required Runtime Access Token claim: the relay
@@ -627,10 +632,10 @@ const withRuntimeActor = (input) => {
     principalKind: input.principalKind ?? (actorKind === "agent" ? "service" : "user"),
     actorId: input.actorId ?? browserActor.actor_id,
     actorKind,
-    actorPublicId: input.actorPublicId ?? browserActor.actor_public_id,
-    actorName: input.actorName ?? browserActor.actor_name,
-    ...((input.actorAvatarUrl ?? browserActor.actor_avatar_url)
-      ? { actorAvatarUrl: input.actorAvatarUrl ?? browserActor.actor_avatar_url }
+    actorPublicId: input.actorPublicId ?? profile.actor_public_id,
+    actorName: input.actorName ?? profile.actor_name,
+    ...((input.actorAvatarUrl ?? profile.actor_avatar_url)
+      ? { actorAvatarUrl: input.actorAvatarUrl ?? profile.actor_avatar_url }
       : {}),
   }
 }

@@ -71,7 +71,8 @@ import {
   visibleSessionUserMessages,
 } from "@/features/session/ui/view-state"
 import { createSessionController, createSessionInfoHydrationGetter } from "@/features/session/store/session-controller"
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"

@@ -10,7 +10,8 @@
  */
 
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import {
   accountStreamAvailable,

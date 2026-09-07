@@ -31,7 +31,13 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly explicitSessionID: string | undefined
   readonly isNewSession: boolean
   readonly replaceSession: boolean
-  readonly signedControlPlane: boolean
+  /**
+   * Whether this deployment's control plane owns session lifecycle. A managed
+   * control plane refuses `POST /session` until the caller holds a reservation,
+   * and it does so for every workspace it serves — including one reached over
+   * loopback, which is why this is not the transport flag.
+   */
+  readonly managedSessionRegistration: boolean
   readonly workspaceId?: string
   readonly serverUrl?: string
   readonly request?: typeof fetch
@@ -133,7 +139,7 @@ export async function acquireSubmitSessionTarget(
 }
 
 async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionInput) {
-  const reservation = input.signedControlPlane
+  const reservation = input.managedSessionRegistration
     ? await (input.reserveManagedSession ?? reservePrivateSession)({
         workspaceId: requiredWorkspaceId(input.workspaceId),
         kind: "create",
@@ -193,7 +199,7 @@ function openSessionEventStreams(sessionID: string) {
 
 function requiredWorkspaceId(value: string | undefined) {
   const workspaceId = value?.trim()
-  if (!workspaceId) throw new Error("Signed session creation requires an authoritative workspace id")
+  if (!workspaceId) throw new Error("Managed session creation requires an authoritative workspace id")
   return workspaceId
 }
 

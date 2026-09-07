@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { localWorkspaceInProjects, sameWorkspaceDirectory, signedWorkspaceFromProjects } from "./signed-workspace"
+import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "./signed-workspace"
 
 describe("signed workspace lookup", () => {
   test("matches raw workspace ids from cached project metadata", () => {
@@ -85,22 +85,5 @@ describe("signed workspace lookup", () => {
 
     expect(localWorkspaceInProjects(projects, projectId)).toBe(true)
     expect(localWorkspaceInProjects(projects, worktree)).toBe(true)
-  })
-})
-
-describe("sameWorkspaceDirectory", () => {
-  test("a bare workspace id and its workspace: route address name the same workspace", () => {
-    expect(sameWorkspaceDirectory("ws_signed_browser_relay", "workspace:ws_signed_browser_relay")).toBe(true)
-    expect(sameWorkspaceDirectory("workspace:ws_a", "workspace:ws_a")).toBe(true)
-  })
-
-  test("different workspace ids stay distinct in either shape", () => {
-    expect(sameWorkspaceDirectory("ws_a", "workspace:ws_b")).toBe(false)
-    expect(sameWorkspaceDirectory("ws_a", "ws_b")).toBe(false)
-  })
-
-  test("a filesystem directory never aliases a workspace id", () => {
-    expect(sameWorkspaceDirectory("/work/ws_a", "workspace:ws_a")).toBe(false)
-    expect(sameWorkspaceDirectory("/private/tmp/project", "/tmp/project")).toBe(true)
   })
 })

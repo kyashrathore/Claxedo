@@ -1,5 +1,5 @@
 import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
-import { isFilesystemDirectory, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { isFilesystemDirectory, sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { asRecord } from "@/lib/record"
 export type { SignedWorkspaceKind }
 
@@ -28,23 +28,6 @@ export type WorkspaceInventoryProject = {
 }
 
 const signedWorkspaceCache = new WeakMap<readonly WorkspaceInventoryProject[], Map<string, SignedWorkspaceInfo | null>>()
-
-function workspaceDirectoryAliasKey(input: string | undefined) {
-  if (!input) return ""
-  // A relay-backed workspace is addressed both by its bare id (session
-  // inventory, draft promotion) and by the `workspace:<id>` route address
-  // (`resolveWorkspaceRouteDirectory`). Both name the same workspace.
-  const workspaceId = workspaceIdFromRef(input)
-  if (workspaceId) return `workspace:${workspaceId}`
-  // macOS resolves /tmp, /var, /etc to /private/* symlinks, so the directory a
-  // runtime reports (/tmp/...) and the one the browser sees (/private/tmp/...)
-  // differ for the same worktree. Normalise the /private prefix so they match.
-  return input.startsWith("/private/") ? input.slice("/private".length) : input
-}
-
-export function sameWorkspaceDirectory(left: string | null | undefined, right: string | null | undefined) {
-  return !!left && !!right && workspaceDirectoryAliasKey(left) === workspaceDirectoryAliasKey(right)
-}
 
 function sameWorkspaceId(left: string | null | undefined, right: string | null | undefined) {
   return !!left && !!right && left === right

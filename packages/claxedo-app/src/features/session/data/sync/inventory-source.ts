@@ -15,7 +15,11 @@ import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { controlSessionListUrl, workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import {
+  controlPlaneSessionId,
+  requestControlPlaneSessions as controlPlaneSessions,
+} from "./control-plane-sessions"
 import { applySessionFilter, type SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
 import { mapInventoryToSessions, signedInventoryItems } from "../query/inventory"
@@ -161,7 +165,7 @@ export function controlPlaneSessionToItem(input: {
 }): SessionInventoryRow | undefined {
   const row = asRecord(input.session)
   const workspace = asRecord(input.workspace)
-  const id = asString(row?.session_id) ?? asString(row?.sessionID) ?? asString(row?.id)
+  const id = controlPlaneSessionId(input.session)
   if (!id) return undefined
   const created = typeof row?.created_at === "number"
     ? row.created_at
@@ -274,23 +278,11 @@ export function createSignedInventorySource(input: {
   }
 
   async function requestControlPlaneSessions(workspaceId: string) {
-    const run = await signedAccountRun()
-    if (run) {
-      const sessions = readArray(
-        decodeHostedResult("session.list", await run("session.list", { workspaceId })),
-        "sessions",
-      )
-      if (!sessions) throw new Error("session.list returned an invalid sessions payload")
-      return sessions
-    }
-    const res = await input.authFetch(controlSessionListUrl({
+    return await controlPlaneSessions({
       baseUrl: inventoryServerUrl(input.baseUrl()),
       workspaceId,
-    }), { headers: { Accept: "application/json" } })
-    if (!res.ok) throw new Error(`Control-plane session list failed with ${res.status}`)
-    const sessions = readArray(await res.json(), "sessions")
-    if (!sessions) throw new Error("Control-plane session list returned an invalid sessions payload")
-    return sessions
+      request: input.authFetch,
+    })
   }
 
   async function fetchControlPlaneSessions(workspaceId: string) {

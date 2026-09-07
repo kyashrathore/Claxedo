@@ -1,6 +1,6 @@
 import { queryKeys } from "@/platform/query/keys"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import type { ProjectCatalogItem } from "../workspace-resolver"
+import { workspaceForDirectory, type ProjectCatalogItem } from "../workspace-resolver"
 import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
 import { parseExistingSessionConfig } from "./submit-session-config"
 import { createTransport } from "@/platform/runtime/transport"
@@ -30,6 +30,8 @@ export type SubmitTransportClientFactoryInput = {
 export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient> = {
   readonly serverUrl: () => string
   readonly signedControlPlane: () => boolean | undefined
+  /** Whether this build talks to a control plane that issues accounts. */
+  readonly authEnabled: () => boolean
   readonly workspaceId: () => string | undefined
   readonly workspaceKind: () => "cloud" | "user-hosted" | undefined
   readonly sessionRef?: () => SessionRef | undefined
@@ -69,9 +71,24 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
  * it when the route did; a session created in a workspace the route has not
  * named yet (a fresh cloud workspace, a `ws_…` directory) takes it from the
  * directory's runtime ref — the same owner finalize and the transport read.
+ *
+ * A workspace the signed server also serves from this machine has neither: its
+ * catalog row is a plain local worktree at a filesystem directory, and only the
+ * project catalog carries the id the control plane registered it under. That
+ * row is the last resort, so a relay-backed workspace still resolves through
+ * the runtime ref exactly as before.
  */
-export function signedSubmitWorkspaceId(explicit: string | undefined, directory: SubmitDirectory | undefined) {
-  return explicit ?? workspaceRuntimeRef(directory)?.workspaceId
+export function signedSubmitWorkspaceId(
+  explicit: string | undefined,
+  directory: SubmitDirectory | undefined,
+  projects: readonly ProjectCatalogItem[] = [],
+) {
+  const catalogWorkspace = directory ? workspaceForDirectory(projects, directory) : undefined
+  return explicit
+    ?? workspaceRuntimeRef(directory)?.workspaceId
+    ?? catalogWorkspace?.workspaceId
+    ?? catalogWorkspace?.id
+    ?? undefined
 }
 
 export function submitWorkspaceBacking(input: {
@@ -97,6 +114,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
 ) {
   const runtimeTransport = (dir: SubmitDirectory) => submitTransportForPlacement({
     serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
+    authEnabled: input.authEnabled(),
     workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
   })
 
@@ -107,6 +125,9 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
 
   const usesSignedControlPlane = (dir: SubmitDirectory) =>
     runtimeTransport(dir).controlPlaneSession
+
+  const usesManagedSessionRegistration = (dir: SubmitDirectory) =>
+    runtimeTransport(dir).managedSessionRegistration
 
   const usesLoopbackWorkspaceBridge = (dir: SubmitDirectory) =>
     runtimeTransport(dir).loopbackWorkspaceBridge
@@ -251,6 +272,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   return {
     localSessionFetch,
     usesSignedControlPlane,
+    usesManagedSessionRegistration,
     usesLoopbackWorkspaceBridge,
     usesWorkspaceRuntimeSession,
     sessionClient,

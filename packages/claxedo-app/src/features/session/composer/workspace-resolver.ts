@@ -1,8 +1,5 @@
-import {
-  sameWorkspaceDirectory,
-  type WorkspaceInventoryEntry,
-  type WorkspaceInventoryProject,
-} from "@/platform/runtime/agent/signed-workspace"
+import { type WorkspaceInventoryEntry, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import {
   sessionRefForWorkspaceSession,
   type HarnessRef,

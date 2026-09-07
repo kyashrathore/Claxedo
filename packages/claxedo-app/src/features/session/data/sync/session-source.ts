@@ -12,6 +12,8 @@ import {
   type WorkspaceKind,
 } from "@/platform/runtime/agent/workspace-kind"
 import type { SessionNavigationRow } from "../../ui/navigation/session-navigation"
+import type { SessionOwner } from "../query/types"
+import { controlPlaneSessionOwners, requestControlPlaneSessions } from "./control-plane-sessions"
 import {
   applyFetchedSessionListPage,
   fetchSessionListPage,
@@ -32,6 +34,8 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
  * - `user-hosted`: the workspace's own runtime, over the relay connection the
  *   app already holds — one hop, role enforced by the relay token. Own and
  *   shared workspaces are the same source; the role only gates affordances.
+ *   Which sessions exist is the runtime's answer; who created one is the
+ *   control plane's, joined on by `userHostedSessionOwners` below.
  *
  * The registry holds only the user-hosted sessions that were created THROUGH
  * it, so asking it for that workspace's list answers a subset the client cannot
@@ -272,18 +276,56 @@ async function userHostedSessionRows(input: {
         ...(input.request ? { request: input.request, relayRequest: input.request } : {}),
       })
       const list = agentRuntimeSessionListUrl({ serverUrl, roots: true })
-      const rows = await runtime.json(`${list.pathname}${list.search}`)
+      const [rows, owners] = await Promise.all([
+        runtime.json(`${list.pathname}${list.search}`),
+        userHostedSessionOwners({
+          baseUrl: serverUrl,
+          workspaceId: input.source.workspaceId,
+          ...(input.request ? { request: input.request } : {}),
+        }),
+      ])
       return (Array.isArray(rows) ? rows : []).flatMap((row) => {
-        const item = userHostedNavigationRow(row, input.source)
+        const item = userHostedNavigationRow(row, input.source, owners)
         return item ? [item] : []
       })
     },
   })
 }
 
+/**
+ * Who created each of this workspace's sessions, from the control plane.
+ *
+ * The runtime knows no users: it answers with the sessions on that machine and
+ * nothing about who owns one, so a session Alice shared with Bob's team reaches
+ * Bob's rail as an anonymous row. Ownership is a control-plane fact — the same
+ * grant that let Bob see the session at all — so the creator is joined from the
+ * registry's record for that session id, which is the mapping the cloud lane's
+ * rows already arrive with. Records for sessions the runtime did not list are
+ * ignored: the runtime, not the registry, decides which rows exist.
+ *
+ * Read inside the workspace row memo so the share doorbell, which already drops
+ * that memo, re-reads ownership on the same beat it re-reads the rows.
+ *
+ * A refused or unreachable registry leaves the rows unowned rather than failing
+ * the section: the creator decorates a row, and a rail emptied because an
+ * avatar could not be resolved would report a reachable machine as empty.
+ */
+async function userHostedSessionOwners(input: {
+  baseUrl: string
+  workspaceId: string
+  request?: typeof fetch
+}) {
+  try {
+    return controlPlaneSessionOwners(await requestControlPlaneSessions(input))
+  } catch {
+    return new Map<string, SessionOwner>()
+  }
+}
+
 function userHostedNavigationRow(
   row: unknown,
   source: Extract<SessionSource, { kind: "user-hosted" }>,
+  owners: ReadonlyMap<string, SessionOwner>,
 ): SessionNavigationRow | undefined {
   const item = asRecord(row)
   const sessionId = txt(item?.id)
@@ -292,6 +334,7 @@ function userHostedNavigationRow(
   const createdAt = asFiniteNumber(time?.created) ?? 0
   const updatedAt = asFiniteNumber(time?.updated) ?? createdAt
   const archivedAt = asFiniteNumber(time?.archived)
+  const owner = owners.get(sessionId)
   return {
     type: "session",
     sessionRef: `workspace:${source.workspaceId}:session:${sessionId}`,
@@ -310,6 +353,7 @@ function userHostedNavigationRow(
     ...(archivedAt ? { archivedAt } : {}),
     tags: [],
     attachments: [],
+    ...(owner ? { owner } : {}),
   }
 }
 

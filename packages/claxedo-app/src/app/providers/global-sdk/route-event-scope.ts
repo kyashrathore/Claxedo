@@ -11,7 +11,8 @@
  * different owner — `platform/runtime/session-event-scope.ts`.
  */
 
-import { sameWorkspaceDirectory, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
+import { type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"

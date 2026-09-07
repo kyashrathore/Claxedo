@@ -97,9 +97,15 @@ describe("sessionRowDirectory", () => {
 })
 
 describe("a user-hosted workspace's list", () => {
-  test("is served by the workspace runtime over the relay, never by the control plane", async () => {
+  test("takes its rows from the workspace runtime, never from the control plane", async () => {
     const { requested, request } = recordingFetch({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
+      // The registry holds only the sessions created THROUGH it, so it knows a
+      // session this machine does not have. It contributes ownership, never a
+      // row: the runtime decides which sessions exist.
+      [`${CONTROL}/api/control/sessions`]: () => Response.json({
+        sessions: [{ session_id: "ses_registry_only", owner_name: "Alice" }],
+      }),
       "https://relay.test/workspaces/ws_1/session": () => Response.json([
         { id: "ses_new", title: "created on the laptop", directory: HOST_DIR, time: { created: 10, updated: 40 } },
         { id: "ses_old", title: "older", directory: HOST_DIR, time: { created: 1, updated: 2 } },
@@ -116,9 +122,9 @@ describe("a user-hosted workspace's list", () => {
     }).queryFn!({} as never) as SessionListResponse
 
     expect(requested.some((url) => url.includes("/api/control/session-list"))).toBe(false)
-    expect(requested.some((url) => url.includes("/api/control/sessions"))).toBe(false)
     expect(requested).toContain("https://relay.test/workspaces/ws_1/session?roots=true")
     expect(page.items?.map((item) => item.sessionId)).toEqual(["ses_new", "ses_old"])
+    expect(page.items?.every((item) => item.owner === undefined)).toBe(true)
     expect(page.items?.[0]).toMatchObject({
       sessionRef: "workspace:ws_1:session:ses_new",
       workspaceId: "ws_1",
@@ -199,6 +205,71 @@ describe("a user-hosted workspace's list", () => {
     // later read scoped by either one reaches the host over the relay.
     expect(items?.map((item) => item.directory)).toEqual(["workspace:ws_1", "workspace:ws_1"])
     expect(requested).toHaveLength(before)
+  })
+})
+
+describe("who owns a user-hosted row", () => {
+  const SHARED_ROWS = () => Response.json([
+    { id: "ses_alice", title: "Alice's session", directory: HOST_DIR, time: { created: 1, updated: 40 } },
+    { id: "ses_mine", title: "mine", directory: HOST_DIR, time: { created: 1, updated: 2 } },
+  ])
+
+  async function userHostedPage(routes: Record<string, () => Response>) {
+    const { requested, request } = recordingFetch(routes)
+    const page = await sessionSourceQueryOptions({
+      baseUrl: CONTROL,
+      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      query: railQuery(),
+      request,
+    }).queryFn!({} as never) as SessionListResponse
+    return { page, requested }
+  }
+
+  // The runtime knows no users, so a session Alice shared with Bob's team
+  // reached his rail anonymous. The registry's record for the same session id
+  // carries the creator, and only for a reader who is not that creator.
+  test("carries the creator the control plane names for that session", async () => {
+    const { page, requested } = await userHostedPage({
+      [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
+      [`${CONTROL}/api/control/sessions`]: () => Response.json({
+        sessions: [
+          {
+            session_id: "ses_alice",
+            owner_name: "Alice",
+            owner_avatar_url: "https://example.test/alice.png",
+            owner_public_id: "usr_alice",
+          },
+          // The reader's own session: the authority omits the creator, and the
+          // rail must not mark a row with the viewer's own face.
+          { session_id: "ses_mine" },
+        ],
+      }),
+      "https://relay.test/workspaces/ws_1/session": SHARED_ROWS,
+    })
+
+    expect(requested).toContain(`${CONTROL}/api/control/sessions?workspaceId=ws_1`)
+    expect(page.items?.map((item) => [item.sessionId, item.owner?.name])).toEqual([
+      ["ses_alice", "Alice"],
+      ["ses_mine", undefined],
+    ])
+    expect(page.items?.[0]?.owner).toEqual({
+      name: "Alice",
+      avatarUrl: "https://example.test/alice.png",
+      publicId: "usr_alice",
+    })
+  })
+
+  // The creator decorates a row; a rail emptied because an avatar could not be
+  // resolved would report a reachable machine as an empty one.
+  test("still lists the machine's sessions when the control plane refuses", async () => {
+    const { page } = await userHostedPage({
+      [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
+      [`${CONTROL}/api/control/sessions`]: () => new Response("forbidden", { status: 403 }),
+      "https://relay.test/workspaces/ws_1/session": SHARED_ROWS,
+    })
+
+    expect(page.items?.map((item) => item.sessionId)).toEqual(["ses_alice", "ses_mine"])
+    expect(page.items?.every((item) => item.owner === undefined)).toBe(true)
   })
 })
 

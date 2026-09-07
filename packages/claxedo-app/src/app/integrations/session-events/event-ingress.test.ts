@@ -1174,6 +1174,71 @@ describe("global sync event ingress", () => {
     dispose()
     clearConversationChatRegistryForTest()
   })
+
+  // The frame is the one a signed self-hosted control plane puts on the wire
+  // when Alice shares a session with a team Bob belongs to
+  // (`web-signed-org-team-multiplayer`). Bob's rail section refetched on it and
+  // still showed nothing: a user-hosted section's rows are cut from the
+  // per-workspace relay read `session-source.ts` memoizes, and the doorbell left
+  // that memo answering the pre-share list for its whole window.
+  test("a share grant sends the section back to the runtime instead of its memoized page", async () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const workspaceRows = queryKeys.runtime.workspaceSessions("http://test.local", "ws_signed_browser_relay")
+    let relayReads = 0
+    const readWorkspaceRows = () => queryClient.fetchQuery({
+      queryKey: workspaceRows,
+      staleTime: 30_000,
+      queryFn: () => {
+        relayReads++
+        return relayReads === 1 ? [] : ["ses_bc12c87075844357a10798b0899d0ba3"]
+      },
+    })
+
+    expect(await readWorkspaceRows()).toEqual([])
+    expect(await readWorkspaceRows()).toEqual([])
+    expect(relayReads).toBe(1)
+
+    const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+      onSessionAccessRevoked: () => undefined,
+    })
+
+    claxedoEvents.emit({
+      type: "session.share.changed",
+      phase: "granted",
+      ownerUserId: "user_bob",
+      sessionId: "ses_bc12c87075844357a10798b0899d0ba3",
+      workspaceId: "ws_signed_browser_relay",
+      orgId: "org_2325b616-1cc8-4456-8cd6-ec684f66f8d2",
+      ts: 1788768588186,
+    })
+    await settleUntil(() => queryClient.getQueryState(workspaceRows)?.isInvalidated === true)
+
+    expect(await readWorkspaceRows()).toEqual(["ses_bc12c87075844357a10798b0899d0ba3"])
+    expect(relayReads).toBe(2)
+    dispose()
+  })
 })
 
 describe("live session events reach the pane that registered the session", () => {

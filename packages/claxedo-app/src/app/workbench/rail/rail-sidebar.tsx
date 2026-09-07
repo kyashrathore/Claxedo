@@ -3,8 +3,6 @@ import {
   abortSidebarSessionStatusBatches,
   invalidateSidebarSessionStatusGroupsForSession,
   relativeTime,
-  mergeRailRequestRead,
-  mergeRailStatusRead,
   pruneSidebarSessionStatusBatches,
   publishFocusedRailSessionMeta,
   readRailBatchLeg,
@@ -76,7 +74,6 @@ import {
   shouldAutoOpenWorkspaceSection,
   workspaceRowId,
   workspaceRuntimeKind,
-  mergedSessionStatusType,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 import { queryClient } from "@/platform/query/query-client"
@@ -85,13 +82,13 @@ import {
   sessionInventoryQueryOptions,
 } from "../../../features/session/data/sync/queries"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
+import { createRailSessionActivity } from "./rail-session-activity"
 import {
-  pruneRailSessionActivityMap,
   railSessionStatusBatchKey,
   railSessionStatusTarget,
   railSessionStatusTargetChain,
 } from "./rail-session-status-target"
-import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
+import { promptSessionStatusMeta, subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 import { focusComposerWhenReady } from "@/features/session/composer/ui/composer-focus"
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
 import { useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
@@ -100,13 +97,9 @@ import { isWorkspaceReady, workspacePlacement } from "../../../features/workspac
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { isRelayBackedWorkspaceKind, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
-import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
-import {
-  nextUnseenDone,
-  sessionSurfaceActive as sessionRowActive,
-  sessionSurfaceStatus,
-} from "../compact-switcher/surface-status"
+import { sessionSurfaceStatus } from "../compact-switcher/surface-status"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { fastSessionSwitchAnyQuietDelay, markFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
@@ -487,11 +480,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const docked = createMemo(() => props.railDocked)
   const width = createMemo(() => props.railWidth)
   const [clock, setClock] = createSignal(Date.now())
-  const [sessionStatuses, setSessionStatuses] = createSignal<Record<string, string | undefined>>({})
   const [sessionActivityRevision, bumpSessionActivityRevision] = createSignal(0)
-  const [sessionRequests, setSessionRequests] = createSignal<
-    Record<string, { permissions?: PermissionRequest[]; questions?: QuestionRequest[] } | undefined>
-  >({})
   const prefetchSidebarSessionMessages = createRailSessionMessagePrefetch({
     claxedoServerUrl: globalSDK.url,
     workspaceReachable: isWorkspaceReady,
@@ -816,29 +805,16 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionStatusTargets = createMemo(statusChain.bounded)
   const sessionStatusTargetGroups = createMemo(statusChain.groups)
   const sessionStatusTargetSignature = createMemo(statusChain.signature)
-  const sidebarSessionStatusInputs = createMemo(() => {
-    sessionActivityRevision()
-    const statuses = sessionStatuses()
-    const requests = sessionRequests()
-    const focusedSessionId = focusedSessionStatusTarget()?.sessionID
-    return new Map(sessionStatusTargets().map((target) => [
-      target.key,
-      {
-        directory: target.directory,
-        statusType: mergedSessionStatusType(
-          statuses[target.key],
-          // Background rows must follow the rail batch read. The query cache
-          // keeps optimistic busy for the composer even after an unfocused turn
-          // finishes — especially on cloud runtimes where session.idle may not
-          // reconcile the cache before the batch reports idle.
-          focusedSessionId === target.sessionID
-            ? queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))?.type
-            : undefined,
-        ),
-        requests: requests[target.key],
-      },
-    ] as const))
+  const railSessionActivity = createRailSessionActivity({
+    targets: sessionStatusTargets,
+    focusedTarget: focusedSessionStatusTarget,
+    activityRevision: sessionActivityRevision,
+    liveStatusType: (sessionID) =>
+      queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(sessionID, "status"))?.type,
+    optimisticStartedAt: (sessionID) => promptSessionStatusMeta(sessionID)?.started,
+    autoResponds: (request, directory) => permission.autoResponds(request, directory),
   })
+  const sidebarSessionStatusInputs = railSessionActivity.rowInputs
   const primeSidebarStatusTarget = (sessionID: string) => {
     invalidateSidebarSessionStatusGroupsForSession(sessionStatusTargetGroups(), sessionID)
     refreshSidebarStatusTargets()
@@ -907,6 +883,9 @@ export function RailSidebar(props: RailSidebarProps) {
           })
           sidebarRequestDebug("fetch-group", group.directory, group.targets.length)
           const controller = new AbortController()
+          // Captured BEFORE the request so a read that was already in flight
+          // when a prompt was sent cannot pass itself off as having seen it.
+          const readStartedAt = Date.now()
           const request = Promise
             .all([
               readRailBatchLeg("session status", client.session.status(undefined, { signal: controller.signal })),
@@ -918,14 +897,18 @@ export function RailSidebar(props: RailSidebarProps) {
               const statuses = statusRead.ok ? statusRead.value : undefined
               const permissions = permissionRead.ok ? permissionRead.value : undefined
               const questions = questionRead.ok ? questionRead.value : undefined
-              if (statuses) setSessionStatuses((current) => mergeRailStatusRead(current, group.targets, statuses))
-              if (permissions || questions) {
-                setSessionRequests((current) => mergeRailRequestRead(current, group.targets, permissions, questions))
-              }
+              railSessionActivity.applyBatchRead({
+                targets: group.targets,
+                readStartedAt,
+                ...(statuses ? { statuses } : {}),
+                ...(permissions ? { permissions } : {}),
+                ...(questions ? { questions } : {}),
+              })
               syncUnfocusedRailBatchStatusToCache({
                 focusedSessionId: focusedSessionStatusTarget()?.sessionID,
                 targets: group.targets,
                 statuses,
+                readStartedAt,
               })
               publishFocusedRailSessionMeta({
                 focused: focusedSessionStatusTarget(),
@@ -983,53 +966,7 @@ export function RailSidebar(props: RailSidebarProps) {
     }),
   )
 
-  const sidebarSessionActivity = createMemo(() => {
-    const inputs = sidebarSessionStatusInputs()
-    return new Map(sessionStatusTargets().map((target) => [
-      target.key,
-      sessionRowActive({
-        statusType: inputs.get(target.key)?.statusType,
-        requests: inputs.get(target.key)?.requests,
-        directory: inputs.get(target.key)?.directory ?? target.directory,
-        autoResponds: (request, directory) => permission.autoResponds(request, directory),
-      }),
-    ] as const))
-  })
-  const [sidebarSessionUnseenDone, setSidebarSessionUnseenDone] = createSignal<Record<string, true | undefined>>({})
-  let previousSidebarSessionActivity = new Map<string, boolean>()
-  createEffect(() => {
-    const activity = sidebarSessionActivity()
-    const targets = sessionStatusTargets()
-    const targetKeys = new Set(targets.map((target) => target.key))
-    setSessionStatuses((current) => pruneRailSessionActivityMap(current, targets))
-    setSessionRequests((current) => pruneRailSessionActivityMap(current, targets))
-    const focusedKey = focusedSessionStatusTarget()?.key
-
-    setSidebarSessionUnseenDone((current) => {
-      const next: Record<string, true | undefined> = {}
-      let changed = false
-      for (const key of Object.keys(current)) {
-        if (!targetKeys.has(key)) {
-          changed = true
-          continue
-        }
-        next[key] = current[key]
-      }
-      for (const target of targets) {
-        const value = nextUnseenDone({
-          active: activity.get(target.key) ?? false,
-          previousActive: previousSidebarSessionActivity.get(target.key),
-          focused: target.key === focusedKey,
-          current: !!next[target.key],
-        })
-        if (value) next[target.key] = true
-        else delete next[target.key]
-        if (!!current[target.key] !== value) changed = true
-      }
-      return changed ? next : current
-    })
-    previousSidebarSessionActivity = new Map(activity)
-  })
+  const sidebarSessionUnseenDone = railSessionActivity.unseenDone
 
   const handleMouseMove = (e: MouseEvent) => {
     const element = railRef

@@ -1,7 +1,7 @@
 import { terminalSurfaceStatus } from "@/features/session/app-ports"
 import type { WORKBENCH_DRAG_MIME } from "@/features/session/app-ports"
 import type { ContentMeta, TerminalAgentStatus, TerminalLifecycleState } from "@/features/session/app-ports"
-import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import type { SessionOwner } from "@/features/session/data/query/types"
 
 type WorkspaceDirectory = string

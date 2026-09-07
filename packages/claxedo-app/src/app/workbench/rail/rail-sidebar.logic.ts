@@ -257,6 +257,41 @@ export function mergedSessionStatusType(
 }
 
 /**
+ * Which authority a rail row's status comes from.
+ *
+ * The focused pane owns a live status stream of its own, so its session-id
+ * cache entry always participates. A BACKGROUND row has no such stream — the
+ * workspace SSE is opened per focused session (`/api/wr/events?sessionID=`) —
+ * so it follows the rail's own `/session/status` batch read.
+ *
+ * The exception is the window this function exists for. The client's own send
+ * writes an OPTIMISTIC busy for the session it sent to; a background row used
+ * to discard that outright, so a turn that started and finished between two
+ * batch reads (they are ~10s apart) was never once rendered as working, and
+ * the unseen-done dot that depends on having observed the active state never
+ * appeared either. The optimistic dispatch is authoritative until a batch read
+ * that could actually have seen it comes back: the comparison is against the
+ * read's START time, since a read already in flight when the prompt was sent
+ * answers a question asked before the turn existed.
+ */
+export function railRowStatusType(input: {
+  batchType: string | undefined
+  liveType: string | undefined
+  focused: boolean
+  optimisticStartedAt?: number
+  batchReadStartedAt?: number
+}): string | undefined {
+  if (input.focused) return mergedSessionStatusType(input.batchType, input.liveType)
+  if (
+    input.optimisticStartedAt !== undefined &&
+    (input.batchReadStartedAt === undefined || input.optimisticStartedAt > input.batchReadStartedAt)
+  ) {
+    return mergedSessionStatusType(input.batchType, input.liveType)
+  }
+  return input.batchType
+}
+
+/**
  * The badges under a workspace row's name, in the order they are read.
  *
  * All of it comes from the CATALOG, so a workspace a teammate shares says what

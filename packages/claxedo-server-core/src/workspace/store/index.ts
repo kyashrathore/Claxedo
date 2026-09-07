@@ -326,7 +326,15 @@ async function save() {
 
 async function boot() {
   const target = file()
-  const fresh = await fs.access(target).then(() => true, () => false)
+  const exists = () => fs.access(target).then(() => true, () => false)
+  let fresh = await exists()
+  if (!fresh && ready && loaded === target) {
+    // A save lands through a temp-file rename, so the file is absent while the
+    // first save of a new store is in flight. Only a file still missing once
+    // every queued save has settled was deleted underneath a loaded store.
+    await saving.catch(() => undefined)
+    fresh = await exists()
+  }
   if (!ready || loaded !== target || !fresh) {
     loaded = target
     byId.clear()

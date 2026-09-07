@@ -347,7 +347,13 @@ export const desktopRendererUnsigned: Policy = {
   // +1 package (2026-09-06): @claxedo/helpers enters the closure through the
   // shared app surface (see app-local.ts for the owner). Re-measured after the
   // test-quality audit merge retired the per-file readers: 1009/57, no headroom.
-  ceilings: { modules: 1009, packages: 57 },
+  // +1 module / 0 packages (2026-09-07): this entry renders the same app, so it
+  // takes app-local's control-plane session-record owner verbatim — see the
+  // ledger in `app-local.ts`. Re-measured, no headroom.
+  // +1 module / 0 packages (2026-09-07): the same app, so it also takes
+  // app-local's rail session-activity owner verbatim — see that ledger.
+  // Re-measured, no headroom.
+  ceilings: { modules: 1011, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

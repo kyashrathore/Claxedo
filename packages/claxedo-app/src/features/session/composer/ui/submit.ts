@@ -2,7 +2,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { requestErrorMessage } from "../../lib/request-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
-  isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
+  isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
   useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
 } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -69,6 +69,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const layout = useLayout()
   const language = useLanguage()
   const platform = usePlatform()
+  const config = useConfigOptional()
   const events = useClaxedoEventsOptional()
 
   const harnessController = input.harnessController ?? createHarnessSubmitController(undefined)
@@ -90,6 +91,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const transport = createSubmitTransportAdapter({
     serverUrl: getClaxedoServerUrl,
     signedControlPlane: () => input.signedControlPlane?.(),
+    authEnabled: () => config?.authEnabled === true,
     workspaceId: () => input.workspaceId?.(),
     workspaceKind: () => input.workspaceKind?.(),
     sessionRef: () => input.sessionRef?.(),
@@ -109,6 +111,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   })
   const {
     usesSignedControlPlane,
+    usesManagedSessionRegistration,
     usesLoopbackWorkspaceBridge,
     usesWorkspaceRuntimeSession,
     readSessionConfig,
@@ -317,7 +320,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // provider catalog remains its picker/catalog source, but the selector
     // projects that choice into this same controller before Send is enabled.
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
+    const managedSessionRegistration = usesManagedSessionRegistration(sessionDirectory)
     const signedWorkspaceId = signedControlPlane ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory) : undefined
+    // The reservation is filed against the workspace the control plane knows,
+    // which for a locally served workspace only the project catalog names.
+    const reservationWorkspaceId = managedSessionRegistration
+      ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory, projectCatalog())
+      : undefined
     const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
     const goalWorkspaceKind = signedWorkspaceKind === "local" ? undefined : signedWorkspaceKind
     mode = resolveSubmitMode({ mode, setMode: input.setMode })
@@ -369,8 +378,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       explicitSessionID,
       isNewSession,
       replaceSession,
-      signedControlPlane,
-      workspaceId: signedWorkspaceId,
+      managedSessionRegistration,
+      workspaceId: reservationWorkspaceId,
       serverUrl: getClaxedoServerUrl(),
       request: authFetch,
       sessionDirectory,

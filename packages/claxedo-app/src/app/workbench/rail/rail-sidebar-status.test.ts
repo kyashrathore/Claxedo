@@ -17,6 +17,7 @@ import {
   readRailBatchLeg,
   shouldAcceptRailBatchStatus,
   sidebarSessionStatusBatches,
+  stampRailStatusRead,
   syncUnfocusedRailBatchStatusToCache,
 } from "./rail-sidebar-status"
 import {
@@ -27,6 +28,7 @@ import {
   sessionRowTitle,
   primedSessionStatusType,
   mergedSessionStatusType,
+  railRowStatusType,
   unambiguousSessionStatusTarget,
 } from "./rail-sidebar.logic"
 
@@ -76,6 +78,65 @@ describe("mergedSessionStatusType", () => {
 
   test("falls back to live idle when batch is absent", () => {
     expect(mergedSessionStatusType(undefined, "idle")).toBe("idle")
+  })
+})
+
+describe("railRowStatusType", () => {
+  test("a background row renders its own optimistic busy until a later batch read answers", () => {
+    // B7's shape: the send writes optimistic busy at t=100, the newest batch
+    // read was issued at t=50 and therefore never saw the turn.
+    expect(railRowStatusType({
+      batchType: undefined,
+      liveType: "busy",
+      focused: false,
+      optimisticStartedAt: 100,
+      batchReadStartedAt: 50,
+    })).toBe("busy")
+  })
+
+  test("a background row with no batch read yet still renders its optimistic busy", () => {
+    expect(railRowStatusType({
+      batchType: undefined,
+      liveType: "busy",
+      focused: false,
+      optimisticStartedAt: 100,
+    })).toBe("busy")
+  })
+
+  test("a batch read issued after the send retires the optimistic busy", () => {
+    // The unseen-done dot depends on this transition: the row must be allowed
+    // back to idle once an authority that could see the turn says so.
+    expect(railRowStatusType({
+      batchType: undefined,
+      liveType: "busy",
+      focused: false,
+      optimisticStartedAt: 100,
+      batchReadStartedAt: 150,
+    })).toBeUndefined()
+  })
+
+  test("a background row with no optimistic dispatch still follows the batch alone", () => {
+    expect(railRowStatusType({ batchType: undefined, liveType: "busy", focused: false })).toBeUndefined()
+    expect(railRowStatusType({ batchType: "busy", liveType: undefined, focused: false })).toBe("busy")
+  })
+
+  test("the focused row always merges its own live status", () => {
+    expect(railRowStatusType({
+      batchType: "idle",
+      liveType: "busy",
+      focused: true,
+      optimisticStartedAt: 100,
+      batchReadStartedAt: 150,
+    })).toBe("busy")
+  })
+})
+
+describe("stampRailStatusRead", () => {
+  test("stamps every target of the read and returns the same reference when nothing moved", () => {
+    const stamped = stampRailStatusRead({}, [{ key: "a" }, { key: "b" }], 42)
+    expect(stamped).toEqual({ a: 42, b: 42 })
+    expect(stampRailStatusRead(stamped, [{ key: "a" }, { key: "b" }], 42)).toBe(stamped)
+    expect(stampRailStatusRead(stamped, [{ key: "a" }], 99)).toEqual({ a: 99, b: 42 })
   })
 })
 
@@ -322,6 +383,42 @@ describe("syncUnfocusedRailBatchStatusToCache", () => {
     })
 
     expect(shouldAcceptRailBatchStatus("ses_a", { type: "retry", attempt: 1, message: "", next: 0 })).toBe(true)
+  })
+
+  test("accepts an idle read that was issued after the optimistic dispatch", () => {
+    dispatchSessionStatusEvent({
+      event: {
+        type: "session.status",
+        source: "optimistic",
+        sessionID: "ses_a",
+        status: { type: "busy" },
+        deadline: Date.now() + 20_000,
+      },
+    })
+
+    syncUnfocusedRailBatchStatusToCache({
+      targets: [{ key: "central:ses_a", sessionID: "ses_a" }],
+      statuses: { ses_a: { type: "idle" } },
+      readStartedAt: Date.now() + 1_000,
+    })
+
+    expect(queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId("ses_a", "status"))).toEqual({ type: "idle" })
+    expect(promptSessionStatusMeta("ses_a")).toBeUndefined()
+  })
+
+  test("still rejects an idle read that was already in flight when the prompt was sent", () => {
+    const before = Date.now() - 1_000
+    dispatchSessionStatusEvent({
+      event: {
+        type: "session.status",
+        source: "optimistic",
+        sessionID: "ses_a",
+        status: { type: "busy" },
+        deadline: Date.now() + 20_000,
+      },
+    })
+
+    expect(shouldAcceptRailBatchStatus("ses_a", { type: "idle" }, before)).toBe(false)
   })
 })
 
