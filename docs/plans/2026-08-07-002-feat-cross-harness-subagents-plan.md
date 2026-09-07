@@ -10,6 +10,13 @@ execution: code
 
 # Cross-Harness Subagents - Plan
 
+> **Status (2026-09-07).** The per-rail adapter, driver, store, and capability
+> work landed in `425358fab3` ("feat(runtime): add native cross-harness
+> subagents"); the "Per-rail defects" table below is the record of what that
+> commit fixed, not a list of open bugs. The remaining work is the unchecked
+> Definition of Done entries (child-pane UX, transcript handles, reload and
+> crash semantics, fixture regeneration).
+
 ## Goal Capsule
 
 | Field | Contract |
