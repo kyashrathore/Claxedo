@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ReviewMode } from "@/features/review/review-intent"
-import { ReviewToolbar } from "./review-toolbar"
+import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({ t: (key: string) => key }),
@@ -12,15 +12,29 @@ vi.mock("@/ui/controls/portal-slot", () => ({
   reviewToolbarSlot: () => null,
 }))
 
-const refs = { branches: ["main", "feat/x"], tags: [], recent: [] }
+const refs: VcsRefs = {
+  branches: ["main", "feat/x", "origin/main", "origin/release"],
+  tags: ["v1.0.0"],
+  recent: [{ hash: "abc1234", subject: "fix: the thing" }],
+}
 
-function renderToolbar(input: { mode?: ReviewMode; fromRef?: string; toRef?: string; onApplyMode?: (mode: ReviewMode, from: string, to: string) => void } = {}) {
+function renderToolbar(
+  input: {
+    mode?: ReviewMode
+    fromRef?: string
+    toRef?: string
+    currentBranch?: string
+    vcsRefs?: VcsRefs
+    onApplyMode?: (mode: ReviewMode, from: string, to: string) => void
+  } = {},
+) {
   return render(() => (
     <ReviewToolbar
       mode={input.mode ?? "uncommitted"}
       fromRef={input.fromRef ?? ""}
       toRef={input.toRef ?? ""}
-      vcsRefs={refs}
+      currentBranch={input.currentBranch}
+      vcsRefs={input.vcsRefs ?? refs}
       onApplyMode={input.onApplyMode ?? (() => undefined)}
       hasReview
       loading={false}
@@ -35,58 +49,89 @@ function renderToolbar(input: { mode?: ReviewMode; fromRef?: string; toRef?: str
   ))
 }
 
-const trigger = (label: string) => screen.getByRole("button", { name: new RegExp(label) })
+const pill = () => screen.getByTestId("review-compare-trigger")
+const pillText = () => [...pill().querySelectorAll(":scope > span")].map((span) => span.textContent).join(" ")
 
-async function openCompare(label: string) {
-  fireEvent.click(trigger(label))
-  return await screen.findByTestId("review-compare-popover")
+// jsdom has no PointerEvent, so the trigger opens from its keyboard path and the
+// items select from a MouseEvent carrying the button Kobalte checks.
+async function openMenu() {
+  fireEvent.keyDown(pill(), { key: "Enter" })
+  return await screen.findByTestId("review-compare-menu")
 }
 
-const apply = () => screen.getByTestId("review-compare-apply") as HTMLButtonElement
-const picker = (label: "From" | "To") => screen.getByPlaceholderText(label === "From" ? "HEAD~1" : "HEAD") as HTMLInputElement
+const menuItems = (menu: HTMLElement) => within(menu).getAllByRole("menuitem").map((item) => item.textContent?.trim())
+const choose = (menu: HTMLElement, label: string | RegExp) =>
+  within(menu).getByRole("menuitem", { name: label }).dispatchEvent(new MouseEvent("pointerup", { button: 0, bubbles: true }))
 
-describe("ReviewToolbar compare popover", () => {
+describe("ReviewToolbar compare pill", () => {
   afterEach(() => cleanup())
 
-  test("opens on the mode trigger with both ref pickers and Apply disabled until both are filled", async () => {
-    renderToolbar()
-    const popover = await openCompare("Uncommitted")
-    expect(popover.textContent).toContain("Compare against")
-    expect(picker("From").value).toBe("")
-    expect(picker("To").value).toBe("")
-    expect(apply().disabled).toBe(true)
-
-    fireEvent.input(picker("From"), { target: { value: "main" } })
-    expect(apply().disabled).toBe(true)
-    fireEvent.input(picker("To"), { target: { value: "HEAD" } })
-    expect(apply().disabled).toBe(false)
+  test("reads the mode and count outside to-from mode", () => {
+    renderToolbar({ mode: "uncommitted" })
+    expect(pillText()).toBe("Uncommitted 3")
+    cleanup()
+    renderToolbar({ mode: "staged" })
+    expect(pillText()).toBe("Staged 3")
+    cleanup()
+    renderToolbar({ mode: "unstaged" })
+    expect(pillText()).toBe("Unstaged 3")
   })
 
-  test("Apply applies the to-from range and closes", async () => {
+  test("reads base → head in to-from mode, naming HEAD after the checked-out branch", () => {
+    renderToolbar({ mode: "to-from", fromRef: "dev", toRef: "HEAD", currentBranch: "codex/claxedo-test-quality-audit" })
+    expect(pillText()).toBe("dev codex/claxedo-test-quality-audit")
+    expect(pill().querySelector('[data-slot="icon-svg"]')).not.toBeNull()
+    cleanup()
+    renderToolbar({ mode: "to-from", fromRef: "dev", toRef: "HEAD" })
+    expect(pillText()).toBe("dev HEAD")
+    cleanup()
+    renderToolbar({ mode: "to-from", fromRef: "main", toRef: "feat/x", currentBranch: "dev" })
+    expect(pillText()).toBe("main feat/x")
+  })
+
+  test("lists uncommitted, then local branches, remote branches, tags and recent commits", async () => {
+    renderToolbar()
+    const menu = await openMenu()
+    expect(menuItems(menu)).toEqual([
+      "Uncommitted changes",
+      "main",
+      "feat/x",
+      "origin/main",
+      "origin/release",
+      "v1.0.0",
+      "abc1234fix: the thing",
+    ])
+    expect(menu.textContent).toContain("Compare against")
+    const labels = [...menu.querySelectorAll('[data-slot="dropdown-menu-group-label"]')].map((el) => el.textContent)
+    expect(labels).toEqual(["Compare against", "Branches", "Remote branches", "Tags", "Commits"])
+  })
+
+  test("omits a group whose fixture is empty", async () => {
+    renderToolbar({ vcsRefs: { branches: ["main"], tags: [], recent: [] } })
+    const menu = await openMenu()
+    expect(menuItems(menu)).toEqual(["Uncommitted changes", "main"])
+    const labels = [...menu.querySelectorAll('[data-slot="dropdown-menu-group-label"]')].map((el) => el.textContent)
+    expect(labels).toEqual(["Compare against", "Branches"])
+  })
+
+  test("choosing a ref compares it against HEAD", async () => {
     const onApplyMode = vi.fn()
     renderToolbar({ onApplyMode })
-    await openCompare("Uncommitted")
-    fireEvent.input(picker("From"), { target: { value: "main" } })
-    fireEvent.input(picker("To"), { target: { value: "feat/x" } })
-    fireEvent.click(apply())
-    expect(onApplyMode).toHaveBeenCalledWith("to-from", "main", "feat/x")
-    await waitFor(() => expect(trigger("Uncommitted").getAttribute("aria-expanded")).toBe("false"))
-  })
-
-  test("the pickers start from the applied range and Back to uncommitted only exists in to-from mode", async () => {
-    const onApplyMode = vi.fn()
-    renderToolbar({ mode: "to-from", fromRef: "main", toRef: "HEAD", onApplyMode })
-    await openCompare("to / from")
-    expect(picker("From").value).toBe("main")
-    expect(picker("To").value).toBe("HEAD")
-    fireEvent.click(screen.getByTestId("review-compare-back"))
-    expect(onApplyMode).toHaveBeenCalledWith("uncommitted", "", "")
-    await waitFor(() => expect(trigger("to / from").getAttribute("aria-expanded")).toBe("false"))
+    choose(await openMenu(), "origin/release")
+    expect(onApplyMode).toHaveBeenCalledWith("to-from", "origin/release", "HEAD")
     cleanup()
 
-    renderToolbar({ mode: "staged" })
-    await openCompare("Staged")
-    expect(screen.queryByTestId("review-compare-back")).toBeNull()
+    onApplyMode.mockClear()
+    renderToolbar({ onApplyMode })
+    choose(await openMenu(), /fix: the thing/)
+    expect(onApplyMode).toHaveBeenCalledWith("to-from", "abc1234", "HEAD")
+  })
+
+  test("choosing Uncommitted changes leaves to-from mode", async () => {
+    const onApplyMode = vi.fn()
+    renderToolbar({ mode: "to-from", fromRef: "dev", toRef: "HEAD", currentBranch: "feat/x", onApplyMode })
+    choose(await openMenu(), "Uncommitted changes")
+    expect(onApplyMode).toHaveBeenCalledWith("uncommitted", "", "")
   })
 })
 

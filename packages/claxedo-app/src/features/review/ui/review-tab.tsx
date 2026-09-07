@@ -15,7 +15,6 @@ import { createStore } from "solid-js/store"
 
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { BP_MD } from "@/ui/controls/breakpoints"
 import { selectionFromLines } from "@/platform/files/types"
 import { createPanePreferences, reviewModePreferenceScope, useFile, usePrompt, useSDK } from "@/features/review/app-ports"
 import {
@@ -100,9 +99,8 @@ function hasDiffContent(diff: RawVcsFileDiff) {
   return typeof diff.patch === "string" || typeof diff.before === "string" || typeof diff.after === "string"
 }
 
-function initialDiffStyle() {
-  if (typeof window !== "undefined" && window.innerWidth < BP_MD) return "unified"
-  return "split"
+function initialDiffStyle(): "unified" | "split" {
+  return "unified"
 }
 
 // Stage-1 spike (build-time flag): render the review corpus through Pierre's
@@ -587,6 +585,7 @@ export function ReviewTab(props: ReviewTabProps) {
         mode={activeMode()}
         fromRef={activeFromRef()}
         toRef={activeToRef()}
+        currentBranch={vcsInfo()?.branch ?? undefined}
         vcsRefs={vcsRefs()}
         onApplyMode={setReviewMode}
         hasReview={hasReview()}

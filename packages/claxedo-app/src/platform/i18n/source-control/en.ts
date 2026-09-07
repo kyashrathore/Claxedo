@@ -8,7 +8,7 @@ export const dict = {
   "navigator.sourceControl.push": "Push",
   "navigator.sourceControl.upToDate": "Up to date",
   "navigator.sourceControl.createPr": "Create PR",
-  "navigator.sourceControl.group.staged": "Staged Changes",
+  "navigator.sourceControl.group.staged": "Staged changes",
   "navigator.sourceControl.group.changes": "Changes",
   "navigator.sourceControl.group.graph": "Graph",
   "navigator.sourceControl.stage": "Stage",

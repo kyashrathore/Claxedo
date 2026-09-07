@@ -1,20 +1,10 @@
-import {
-  Show,
-  For,
-  batch,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  untrack,
-} from "solid-js"
+import { Show, For, createMemo } from "solid-js"
 import { Portal } from "solid-js/web"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 
-import { Button } from "@opencode-ai/ui/button"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { Popover } from "@opencode-ai/ui/popover"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/platform/i18n/provider"
 import { reviewModeLabel, type ReviewMode } from "@/features/review/review-intent"
@@ -27,6 +17,7 @@ export type ReviewToolbarProps = {
   mode: ReviewMode
   fromRef: string
   toRef: string
+  currentBranch?: string
   vcsRefs: VcsRefs
   onApplyMode: (mode: ReviewMode, fromRef: string, toRef: string) => void
   hasReview: boolean
@@ -38,133 +29,6 @@ export type ReviewToolbarProps = {
   onToggleAllDiffs: () => void
   diffStyle: "unified" | "split"
   onSetDiffStyle: (style: "unified" | "split") => void
-}
-
-function RefPickerField(props: {
-  label: string
-  value: string
-  onInput: (value: string) => void
-  onSelect: (value: string) => void
-  placeholder: string
-  refs: VcsRefs
-}) {
-  const [open, setOpen] = createSignal(false)
-  const [filter, setFilter] = createSignal("")
-
-  const filtered = createMemo(() => {
-    const q = filter().toLowerCase()
-    const branches = props.refs.branches.filter((branch) => !q || branch.toLowerCase().includes(q))
-    const tags = props.refs.tags.filter((tag) => !q || tag.toLowerCase().includes(q))
-    const recent = props.refs.recent.filter(
-      (commit) => !q || commit.hash.toLowerCase().includes(q) || commit.subject.toLowerCase().includes(q),
-    )
-    return { branches, tags, recent }
-  })
-
-  const hasResults = createMemo(() => {
-    const refs = filtered()
-    return refs.branches.length > 0 || refs.tags.length > 0 || refs.recent.length > 0
-  })
-
-  const select = (value: string) => {
-    props.onSelect(value)
-    setOpen(false)
-    setFilter("")
-  }
-
-  return (
-    <div class="flex flex-col gap-1">
-      <div class="text-12-medium text-text-weak">{props.label}</div>
-      <div class="relative">
-        <input
-          class="h-8 w-full rounded-md border border-border-weak-base bg-background-base pl-2 pr-7 text-13-regular"
-          value={props.value}
-          onInput={(event) => {
-            props.onInput(event.currentTarget.value)
-            setFilter(event.currentTarget.value)
-            setOpen(true)
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder={props.placeholder}
-        />
-        <button
-          type="button"
-          class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-text-weak hover:text-text-base"
-          tabIndex={-1}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            setFilter("")
-            setOpen(!open())
-          }}
-        >
-          <svg class="w-3 h-3" viewBox="0 0 12 12">
-            <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <Show when={open() && hasResults()}>
-          <div
-            data-surface="overlay"
-            data-overlay-shell="raised-menu"
-            class="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto bg-background-base"
-          >
-            <Show when={filtered().branches.length > 0}>
-              <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Branches</div>
-              <For each={filtered().branches.slice(0, 15)}>
-                {(branch) => (
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-2 px-2 py-1 text-12-regular text-text-base hover:bg-surface-base-hover truncate"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => select(branch)}
-                  >
-                    <svg class="w-3 h-3 shrink-0 text-text-weak" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.5 2.5 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z" />
-                    </svg>
-                    <span class="truncate">{branch}</span>
-                  </button>
-                )}
-              </For>
-            </Show>
-            <Show when={filtered().tags.length > 0}>
-              <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Tags</div>
-              <For each={filtered().tags.slice(0, 10)}>
-                {(tag) => (
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-2 px-2 py-1 text-12-regular text-text-base hover:bg-surface-base-hover truncate"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => select(tag)}
-                  >
-                    <svg class="w-3 h-3 shrink-0 text-text-weak" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.75 1.75 0 0 1 1 7.775ZM6 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" />
-                    </svg>
-                    <span class="truncate">{tag}</span>
-                  </button>
-                )}
-              </For>
-            </Show>
-            <Show when={filtered().recent.length > 0}>
-              <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Commits</div>
-              <For each={filtered().recent}>
-                {(commit) => (
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-2 px-2 py-1 text-12-regular text-text-base hover:bg-surface-base-hover"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => select(commit.hash)}
-                  >
-                    <span class="shrink-0 font-mono text-11-regular text-text-weak">{commit.hash}</span>
-                    <span class="truncate">{commit.subject}</span>
-                  </button>
-                )}
-              </For>
-            </Show>
-          </div>
-        </Show>
-      </div>
-    </div>
-  )
 }
 
 export function ReviewToolbar(props: ReviewToolbarProps) {
@@ -240,101 +104,88 @@ function ReviewToolbarControls(props: {
   )
 }
 
-function ReviewToolbarBody(props: ReviewToolbarProps) {
-  const [compareOpen, setCompareOpen] = createSignal(false)
-  const [pendingFromRef, setPendingFromRef] = createSignal(props.fromRef)
-  const [pendingToRef, setPendingToRef] = createSignal(props.toRef)
+const menuItemClass = "min-w-0 [&_[data-slot=dropdown-menu-item-label]]:min-w-0 [&_[data-slot=dropdown-menu-item-label]]:truncate"
 
-  createEffect(
-    on(
-      () => compareOpen(),
-      (open) => {
-        if (!open) return
-        batch(() => {
-          setPendingFromRef(untrack(() => props.fromRef))
-          setPendingToRef(untrack(() => props.toRef))
-        })
-      },
-    ),
+function CompareGroup(props: { label: string; refs: string[]; onSelect: (ref: string) => void }) {
+  return (
+    <Show when={props.refs.length > 0}>
+      <DropdownMenu.Group>
+        <DropdownMenu.GroupLabel>{props.label}</DropdownMenu.GroupLabel>
+        <For each={props.refs}>
+          {(ref) => (
+            <DropdownMenu.Item class={menuItemClass} data-ref={ref} onSelect={() => props.onSelect(ref)}>
+              <DropdownMenu.ItemLabel>{ref}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          )}
+        </For>
+      </DropdownMenu.Group>
+    </Show>
   )
+}
 
-  const pendingCanApply = createMemo(() => pendingFromRef().trim().length > 0 && pendingToRef().trim().length > 0)
+function ReviewToolbarBody(props: ReviewToolbarProps) {
   const comparing = () => props.mode === "to-from"
+  const headLabel = () =>
+    props.toRef === "HEAD" && props.currentBranch && props.currentBranch !== "HEAD" ? props.currentBranch : props.toRef
+  const localBranches = createMemo(() => props.vcsRefs.branches.filter((branch) => !branch.startsWith("origin/")))
+  const remoteBranches = createMemo(() => props.vcsRefs.branches.filter((branch) => branch.startsWith("origin/")))
+  const compareTo = (ref: string) => props.onApplyMode("to-from", ref, "HEAD")
 
   return (
     <div class="contents">
       <div class="flex items-center gap-2 min-w-0">
-        <Popover
-          placement="bottom-start"
-          open={compareOpen()}
-          onOpenChange={setCompareOpen}
-          trigger={
-            <span class="flex items-center gap-1.5">
-              <span class="leading-none">{reviewModeLabel[props.mode]}</span>
-              <Show when={props.hasReview}>
-                <span class="text-xs tabular-nums font-medium leading-none text-text-weak">{props.reviewCount}</span>
-              </Show>
-              <svg class="w-2.5 h-2.5 shrink-0 text-text-weak -ml-0.5" viewBox="0 0 12 12" aria-hidden="true">
-                <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </span>
-          }
-          triggerAs="button"
-          triggerProps={{
-            class: "flex items-center gap-1.5 h-7 px-2 text-12-medium text-text-base hover:bg-surface-base-hover rounded-md transition-[background-color,color,transform] active:scale-[0.96]",
-            title: props.scopeLabel,
-          }}
-          class="w-[280px] [&_[data-slot=popover-body]]:p-2"
-        >
-          <div data-testid="review-compare-popover" class="flex flex-col gap-2">
-            <div class="px-1.5 pt-1 text-11-medium text-text-weak">Compare against</div>
-            <div class="grid grid-cols-2 gap-2">
-              <RefPickerField
-                label="From"
-                value={pendingFromRef()}
-                onInput={setPendingFromRef}
-                onSelect={setPendingFromRef}
-                placeholder="HEAD~1"
-                refs={props.vcsRefs}
-              />
-              <RefPickerField
-                label="To"
-                value={pendingToRef()}
-                onInput={setPendingToRef}
-                onSelect={setPendingToRef}
-                placeholder="HEAD"
-                refs={props.vcsRefs}
-              />
-            </div>
-            <div class="flex items-center justify-between gap-2">
-              <Show when={comparing()} fallback={<span />}>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  data-testid="review-compare-back"
-                  onClick={() => {
-                    props.onApplyMode("uncommitted", "", "")
-                    setCompareOpen(false)
-                  }}
-                >
-                  Back to uncommitted
-                </Button>
-              </Show>
-              <Button
-                variant="secondary"
-                size="small"
-                data-testid="review-compare-apply"
-                disabled={!pendingCanApply()}
-                onClick={() => {
-                  props.onApplyMode("to-from", pendingFromRef(), pendingToRef())
-                  setCompareOpen(false)
-                }}
-              >
-                Apply
-              </Button>
-            </div>
-          </div>
-        </Popover>
+        <DropdownMenu placement="bottom-start" gutter={4}>
+          <DropdownMenu.Trigger
+            data-testid="review-compare-trigger"
+            data-review-mode={props.mode}
+            title={props.scopeLabel}
+            class="flex min-w-0 max-w-full items-center gap-1.5 h-7 px-2 text-12-medium text-text-base bg-surface-base hover:bg-surface-base-hover rounded-md transition-[background-color,color,transform] active:scale-[0.96]"
+          >
+            <Show
+              when={comparing()}
+              fallback={
+                <>
+                  <span class="leading-none">{reviewModeLabel[props.mode]}</span>
+                  <Show when={props.hasReview}>
+                    <span class="text-xs tabular-nums font-medium leading-none text-text-weak">{props.reviewCount}</span>
+                  </Show>
+                </>
+              }
+            >
+              <span class="shrink-0 leading-none">{props.fromRef}</span>
+              <Icon name="arrow-right" size="small" class="shrink-0 text-text-weak [&_[data-slot=icon-svg]]:!size-3" />
+              <span class="min-w-0 truncate leading-none">{headLabel()}</span>
+            </Show>
+            <Icon name="chevron-down" size="small" class="shrink-0 -ml-0.5 text-text-weak [&_[data-slot=icon-svg]]:!size-3" />
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content data-testid="review-compare-menu" class="z-[200] max-h-96 w-[280px] overflow-y-auto">
+              <DropdownMenu.Item data-testid="review-compare-uncommitted" onSelect={() => props.onApplyMode("uncommitted", "", "")}>
+                <DropdownMenu.ItemLabel>Uncommitted changes</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Group>
+                <DropdownMenu.GroupLabel class="text-text-base">Compare against</DropdownMenu.GroupLabel>
+                <CompareGroup label="Branches" refs={localBranches()} onSelect={compareTo} />
+                <CompareGroup label="Remote branches" refs={remoteBranches()} onSelect={compareTo} />
+                <CompareGroup label="Tags" refs={props.vcsRefs.tags} onSelect={compareTo} />
+                <Show when={props.vcsRefs.recent.length > 0}>
+                  <DropdownMenu.Group>
+                    <DropdownMenu.GroupLabel>Commits</DropdownMenu.GroupLabel>
+                    <For each={props.vcsRefs.recent}>
+                      {(commit) => (
+                        <DropdownMenu.Item class={menuItemClass} data-ref={commit.hash} onSelect={() => compareTo(commit.hash)}>
+                          <span class="shrink-0 font-mono text-11-regular text-text-weak">{commit.hash}</span>
+                          <DropdownMenu.ItemLabel>{commit.subject}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                      )}
+                    </For>
+                  </DropdownMenu.Group>
+                </Show>
+              </DropdownMenu.Group>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu>
         <Show when={props.loading}>
           <Spinner class="h-3 w-3 shrink-0 text-text-weak" />
         </Show>

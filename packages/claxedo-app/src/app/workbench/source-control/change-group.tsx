@@ -52,7 +52,7 @@ export function SourceControlSectionHeader(props: {
       <button
         type="button"
         aria-expanded={!props.collapsed}
-        class="flex min-w-0 flex-1 items-center gap-1 text-left text-xs font-medium uppercase tracking-normal text-text-weaker hover:text-text-base"
+        class="flex min-w-0 flex-1 items-center gap-1 text-left text-xs font-medium text-text-weaker hover:text-text-base"
         onClick={() => props.onToggle()}
       >
         <Icon
