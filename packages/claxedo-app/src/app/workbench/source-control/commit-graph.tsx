@@ -9,6 +9,9 @@ export function CommitGraph(props: {
   loading: boolean
   collapsed: boolean
   onToggle: () => void
+  /** The commit whose changes the pane reviews, if the review is one commit. */
+  selectedHash?: string
+  onSelect: (commit: GitCommitSummary) => void
 }) {
   const language = useLanguage()
   return (
@@ -33,14 +36,24 @@ export function CommitGraph(props: {
           }
         >
           <div class="min-h-0 flex-1 overflow-auto">
-            <ol class="claxedo-source-control-graph flex flex-col px-2 pb-2">
+            <ol role="listbox" aria-label={language.t("navigator.sourceControl.group.graph")} class="claxedo-source-control-graph flex flex-col px-2 pb-2">
               <For each={props.commits}>
                 {(commit) => (
                   <li
+                    role="option"
+                    tabIndex={0}
+                    aria-selected={props.selectedHash === commit.hash}
                     data-testid="source-control-commit-row"
                     data-hash={commit.hash}
-                    class="claxedo-source-control-commit relative flex min-w-0 items-start gap-2 rounded-md py-1 pr-1.5 pl-1.5 text-12-regular text-text-weak hover:bg-surface-base-hover"
+                    class="claxedo-source-control-commit relative flex min-w-0 cursor-default items-start gap-2 rounded-md py-1 pr-1.5 pl-1.5 text-12-regular text-text-weak hover:bg-surface-base-hover"
+                    classList={{ "bg-surface-base-active": props.selectedHash === commit.hash }}
                     title={commit.hash}
+                    onClick={() => props.onSelect(commit)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return
+                      event.preventDefault()
+                      props.onSelect(commit)
+                    }}
                   >
                     <span class="claxedo-source-control-dot mt-[7px] size-1.5 shrink-0 rounded-full bg-icon-weak-base" aria-hidden="true" />
                     <span class="flex min-w-0 flex-1 flex-col gap-px">

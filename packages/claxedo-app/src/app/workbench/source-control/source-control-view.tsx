@@ -4,20 +4,27 @@ import { useQuery } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useSDK } from "@/app/providers/sdk/sdk"
+import { getClaxedoServerUrl } from "@/platform/api/api"
 import { useLanguage } from "@/platform/i18n/provider"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { workspaceDiffSummaryQueryOptions } from "@/platform/files/workspace-diff-summary-query"
 import { workspaceGitLogQueryOptions, workspaceGitStatusQueryOptions } from "@/platform/files/workspace-git-status-query"
-import { isWorkspaceGitError, type GitStatusEntry, type GitWorktreeStatus } from "@/platform/runtime/workspace-git-client"
+import { isWorkspaceGitError, type GitCommitSummary, type GitWorktreeStatus } from "@/platform/runtime/workspace-git-client"
+import { commitReviewSelection, createReviewSelection, shortRef } from "@/features/review/review-intent"
+import { createReviewDiffClient } from "@/features/review/ui/review-vcs-load"
+import { useSessionParams } from "@/features/session/providers/session-params"
 import { SemanticIcon } from "@/ui/semantic-icon"
 import { useWorkspaceGitMutations } from "../context/workspace-git-mutations"
-import { ChangeGroup } from "./change-group"
+import { ChangeGroup, type ChangeEntry } from "./change-group"
 import { CommitBox, type CommitVariant } from "./commit-box"
 import { CommitGraph } from "./commit-graph"
+import { CompareGroup } from "./compare-group"
 import { githubCompareUrl, githubOwnerRepo, useWorkspaceRemoteUrl } from "./workspace-remote"
 import "./source-control.css"
 
-export type SourceControlReviewMode = "staged" | "unstaged"
+export type SourceControlReviewMode = "staged" | "unstaged" | "to-from"
 
 const GRAPH_LIMIT = 50
 
@@ -42,8 +49,16 @@ export function SourceControlView(props: {
 }) {
   const sdk = useSDK()
   const language = useLanguage()
+  const platform = usePlatform()
+  const params = useSessionParams()
   const mutations = useWorkspaceGitMutations()
   const scope = () => ({ baseUrl: sdk.url, directoryPath: sdk.directory, workspaceKey: sdk.workspaceId })
+  const review = createReviewSelection({ scope: () => ({ directory: params.directory(), sessionId: params.sessionId() }) })
+  const compareTarget = createMemo(() => {
+    const selection = review.selection()
+    if (selection.mode !== "to-from" || !selection.fromRef || !selection.toRef) return undefined
+    return { mode: selection.mode, fromRef: selection.fromRef, toRef: selection.toRef }
+  })
 
   const statusQuery = useQuery(() => ({
     ...workspaceGitStatusQueryOptions({ git: sdk.git, scope: scope() }),
@@ -67,6 +82,20 @@ export function SourceControlView(props: {
       enabled: props.active,
     }
   })
+  const diffClient = createMemo(() => {
+    const workspace = sdk.workspace()
+    return createReviewDiffClient({
+      serverUrl: getClaxedoServerUrl(),
+      directory: sdk.directory,
+      request: platform.fetch,
+      workspaceId: workspace?.workspaceId,
+      workspace,
+    })
+  })
+  const compareQuery = useQuery(() => ({
+    ...workspaceDiffSummaryQueryOptions({ client: diffClient(), scope: scope(), target: compareTarget() ?? { mode: "to-from" } }),
+    enabled: props.active && compareTarget() !== undefined,
+  }))
   const remoteUrl = useWorkspaceRemoteUrl({
     baseUrl: () => sdk.url,
     directory: () => sdk.directory,
@@ -74,17 +103,19 @@ export function SourceControlView(props: {
   })
 
   const status = () => statusQuery.data ?? EMPTY_STATUS
+  const branch = () => status().branch ?? vcsQuery.data?.branch ?? undefined
   const commits = () => logQuery.data ?? []
   const pending = () => mutations.pending()
 
   const [message, setMessage] = createSignal("")
   const [error, setError] = createSignal<unknown>()
-  const [collapsed, setCollapsed] = createSignal<Record<"staged" | "changes" | "graph", boolean>>({
+  const [collapsed, setCollapsed] = createSignal<Record<"compare" | "staged" | "changes" | "graph", boolean>>({
+    compare: false,
     staged: false,
     changes: false,
-    graph: false,
+    graph: true,
   })
-  const toggle = (section: "staged" | "changes" | "graph") =>
+  const toggle = (section: "compare" | "staged" | "changes" | "graph") =>
     setCollapsed((current) => ({ ...current, [section]: !current[section] }))
 
   const errorText = createMemo(() => {
@@ -116,10 +147,10 @@ export function SourceControlView(props: {
 
   const compareUrl = createMemo(() => {
     const ownerRepo = githubOwnerRepo(remoteUrl())
-    const branch = status().branch ?? vcsQuery.data?.branch ?? undefined
+    const head = branch()
     const base = vcsQuery.data?.default_branch ?? undefined
-    if (!ownerRepo || !branch || !base || branch === base) return undefined
-    return githubCompareUrl({ ownerRepo, base, head: branch })
+    if (!ownerRepo || !head || !base || head === base) return undefined
+    return githubCompareUrl({ ownerRepo, base, head })
   })
 
   const hasChanges = () => status().staged.length > 0 || status().unstaged.length > 0
@@ -127,9 +158,19 @@ export function SourceControlView(props: {
   // consumed, so the highlight cannot follow that one-shot request.
   const [selectedPath, setSelectedPath] = createSignal<string>()
   const activePath = () => props.activePath ?? selectedPath()
-  const open = (entry: GitStatusEntry, mode: SourceControlReviewMode) => {
+  const open = (entry: ChangeEntry, mode: SourceControlReviewMode) => {
     setSelectedPath(entry.path)
     props.onFileClick(entry.path, mode)
+  }
+  const compareLabel = createMemo(() => {
+    const target = compareTarget()
+    if (!target) return ""
+    const head = target.toRef === "HEAD" ? branch() ?? "HEAD" : shortRef(target.toRef)
+    return `${shortRef(target.fromRef)} → ${head}`
+  })
+  const selectedCommitHash = () => compareTarget()?.toRef
+  const selectCommit = (commit: GitCommitSummary) => {
+    review.set(selectedCommitHash() === commit.hash ? { mode: "uncommitted" } : commitReviewSelection(commit))
   }
 
   return (
@@ -212,10 +253,22 @@ export function SourceControlView(props: {
               </div>
             }
           >
+            <Show when={compareTarget()}>
+              <CompareGroup
+                label={compareLabel()}
+                entries={compareQuery.data}
+                loading={compareQuery.isPending}
+                collapsed={collapsed().compare}
+                onToggle={() => toggle("compare")}
+                activePath={activePath()}
+                onOpen={(entry) => open(entry, "to-from")}
+              />
+            </Show>
             <ChangeGroup
               id="staged"
               entries={status().staged}
               collapsed={collapsed().staged}
+              active={review.selection().mode === "staged"}
               onToggle={() => toggle("staged")}
               activePath={activePath()}
               pending={pending()}
@@ -226,6 +279,7 @@ export function SourceControlView(props: {
               id="changes"
               entries={status().unstaged}
               collapsed={collapsed().changes}
+              active={review.selection().mode === "unstaged"}
               onToggle={() => toggle("changes")}
               activePath={activePath()}
               pending={pending()}
@@ -244,6 +298,8 @@ export function SourceControlView(props: {
           loading={logQuery.isPending}
           collapsed={collapsed().graph}
           onToggle={() => toggle("graph")}
+          selectedHash={selectedCommitHash()}
+          onSelect={selectCommit}
         />
       </div>
     </div>

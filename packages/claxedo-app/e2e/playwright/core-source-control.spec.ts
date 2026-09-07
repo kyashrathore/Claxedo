@@ -10,7 +10,11 @@
  * staged and unstaged lists, commits and upstream the writes mutate, the way `git` would.
  * The Review tab reads the workspace-runtime `/api/wr/diff/vcs` routes and the OpenCode
  * `/file/status` summary; both are seeded here from the same files so the file the user
- * clicks in Changes is the file the review focuses.
+ * clicks in Changes is the file the review focuses. A `to-from` read is answered from
+ * `COMPARE_DIFFS` by its `fromRef..toRef` pair: the seeded branch against HEAD, and each
+ * seeded commit against its parent (the empty tree for the root), which is what the
+ * compare pill, the Compared changes group and a graph commit click request. The pill's
+ * ref list comes from `/api/wr/diff/refs`, served here as `SEEDED_REFS`.
  *
  * Create PR reads the workspace's remote from the project catalog (`GET /project`,
  * `useWorkspaceRemoteUrl`), which the shared mock serves without a remote; the scenarios
@@ -69,6 +73,16 @@ const STAGED_FILE = FOCUS_FILE
 const UNSTAGED_FILE = "src/util.ts"
 const DELETED_FILE = "README.md"
 const UNTRACKED_FILE = "docs/notes.md"
+
+/** The branch the compare scenarios pick; `seeded` is in no branch name, so it matches only commit subjects. */
+const COMPARE_BRANCH = "feat/compare"
+const COMPARE_FILE = "src/compare.ts"
+/** In no worktree group, so a compare row's path never matches a Changes row. */
+const COMPARE_DOC = "docs/compare.md"
+const SECOND_COMMIT_FILE = "src/second.ts"
+const FIRST_COMMIT_FILE = "src/first.ts"
+/** git's hash of the empty tree, the base the app compares a root commit against. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 function seededHash(n: number) {
   return n.toString(16).padStart(2, "0").repeat(20)
@@ -148,6 +162,36 @@ const SEEDED_DIFFS = [
     patch: "--- /dev/null\n+++ b/docs/notes.md\n@@ -0,0 +1,3 @@\n+one\n+two\n+three\n",
   },
 ]
+
+const SEEDED_REFS = {
+  branches: [DEFAULT_BRANCH, COMPARE_BRANCH, `origin/${DEFAULT_BRANCH}`],
+  tags: ["v1.0.0"],
+  recent: SEEDED_GIT.commits.map((commit) => ({ hash: commit.hash, subject: commit.subject })),
+}
+
+function addedDiff(file: string, lines: string[]) {
+  return {
+    file,
+    status: "added",
+    additions: lines.length,
+    deletions: 0,
+    before: "",
+    after: `${lines.join("\n")}\n`,
+    patch: `--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join("\n")}\n`,
+  }
+}
+
+/** Every `to-from` summary the scenarios request, by `fromRef..toRef`. */
+const COMPARE_DIFFS: Record<string, ReturnType<typeof addedDiff>[]> = {
+  [`${COMPARE_BRANCH}..HEAD`]: [addedDiff(COMPARE_FILE, ["export const compared = true", "export const again = 2"]), addedDiff(COMPARE_DOC, ["one"])],
+  [`${seededHash(1)}..${seededHash(2)}`]: [addedDiff(SECOND_COMMIT_FILE, ["export const second = 2"])],
+  [`${EMPTY_TREE}..${seededHash(1)}`]: [addedDiff(FIRST_COMMIT_FILE, ["export const first = 1"])],
+}
+
+function seededDiffsFor(params: URLSearchParams) {
+  if (params.get("mode") !== "to-from") return SEEDED_DIFFS
+  return COMPARE_DIFFS[`${params.get("fromRef")}..${params.get("toRef")}`] ?? []
+}
 
 type GitFixtureSeed = {
   branch: string
@@ -461,13 +505,15 @@ async function installSeededWorkspace(
   })
 
   await page.route("**/file/status**", (route) => route.fulfill(json(JSON.stringify(SEEDED_STATUS))))
+  await page.route("**/api/wr/diff/refs**", (route) => (isApiRequest(route) ? route.fulfill(json(JSON.stringify(SEEDED_REFS))) : route.continue()))
   await page.route("**/api/wr/diff/vcs**", (route) => {
     const url = new URL(route.request().url())
     const pathname = url.pathname.replace(/^\/workspaces\/[^/]+/, "")
-    if (pathname === "/api/wr/diff/vcs") return route.fulfill(json(JSON.stringify(SEEDED_DIFFS)))
+    const diffs = seededDiffsFor(url.searchParams)
+    if (pathname === "/api/wr/diff/vcs") return route.fulfill(json(JSON.stringify(diffs)))
     if (pathname === "/api/wr/diff/vcs/file") {
       const file = url.searchParams.get("file")
-      const match = SEEDED_DIFFS.find((diff) => diff.file === file)
+      const match = diffs.find((diff) => diff.file === file)
       return match ? route.fulfill(json(JSON.stringify(match))) : route.fulfill({ status: 404, contentType: "application/json", body: "{}" })
     }
     return route.fallback()
@@ -562,6 +608,51 @@ function commitRows(page: Page) {
   return sourceControlView(page).locator('[data-testid="source-control-graph"] [data-testid="source-control-commit-row"]')
 }
 
+function graphHeader(page: Page) {
+  return sourceControlView(page).getByTestId("source-control-group-graph")
+}
+
+/** The Graph starts collapsed; its header opens it. */
+async function expandGraph(page: Page) {
+  await expect(graphHeader(page)).toHaveAttribute("data-collapsed", "true")
+  await expect(commitRows(page)).toHaveCount(0)
+  await graphHeader(page).getByRole("button", { expanded: false }).click()
+  await expect(graphHeader(page)).not.toHaveAttribute("data-collapsed", "true")
+}
+
+function compareGroup(page: Page) {
+  return sourceControlView(page).getByTestId("source-control-group-compare")
+}
+
+/** The Review tab's compare pill in the L2 toolbar slot. */
+function comparePill(page: Page) {
+  return page.locator('[data-testid="l2-review-toolbar-slot"] [data-testid="review-compare-trigger"]')
+}
+
+/** The picker the pill opens: portaled to the body, so located from the page. */
+function compareMenu(page: Page) {
+  return page.getByTestId("review-compare-menu")
+}
+
+async function openComparePicker(page: Page) {
+  await expect(comparePill(page)).toBeVisible({ timeout: 15_000 })
+  await comparePill(page).click()
+  const menu = compareMenu(page)
+  await expect(menu).toBeVisible({ timeout: 15_000 })
+  await expect(menu.getByTestId("review-compare-search")).toBeFocused()
+  return menu
+}
+
+function menuOptions(menu: Locator) {
+  return menu.getByRole("option")
+}
+
+async function expectUncommittedReview(page: Page) {
+  await expect(comparePill(page)).toHaveAttribute("data-review-mode", "uncommitted", { timeout: 15_000 })
+  await expect(comparePill(page)).toContainText("Uncommitted")
+  await expect(compareGroup(page)).toHaveCount(0)
+}
+
 function commitMessage(page: Page) {
   return sourceControlView(page).getByTestId("source-control-message")
 }
@@ -609,7 +700,7 @@ async function expectGroupCounts(page: Page, staged: number, changes: number) {
   await expect(sourceControlView(page)).not.toHaveAttribute("data-pending", /./)
 }
 
-async function expectRow(page: Page, path: string, group: "staged" | "changes", status: GitStatusEntry["status"], letter: string) {
+async function expectRow(page: Page, path: string, group: "staged" | "changes" | "compare", status: GitStatusEntry["status"], letter: string) {
   const row = changeRow(page, path)
   await expect(row).toHaveAttribute("data-group", group, { timeout: 15_000 })
   await expect(row).toHaveAttribute("data-status", status)
@@ -740,6 +831,7 @@ test.describe("core source control @core", () => {
     await expectRow(page, DELETED_FILE, "changes", "deleted", "D")
     await expectRow(page, UNTRACKED_FILE, "changes", "untracked", "U")
 
+    await expandGraph(page)
     const rows = commitRows(page)
     await expect(rows).toHaveCount(SEEDED_GIT.commits.length, { timeout: 15_000 })
     for (const [index, commit] of SEEDED_GIT.commits.entries()) {
@@ -829,6 +921,7 @@ test.describe("core source control @core", () => {
     await commitButton(page).click()
 
     await expectGroupCounts(page, 0, 3)
+    await expandGraph(page)
     const rows = commitRows(page)
     await expect(rows).toHaveCount(SEEDED_GIT.commits.length + 1, { timeout: 15_000 })
     await expect(rows.first()).toHaveAttribute("data-hash", git.commits()[0]!.hash)
@@ -854,6 +947,7 @@ test.describe("core source control @core", () => {
     await commitMessage(page).press("ControlOrMeta+Enter")
 
     await expectGroupCounts(page, 0, 3)
+    await expandGraph(page)
     await expect(commitRows(page).first()).toContainText(subject, { timeout: 15_000 })
     await expect(commitMessage(page)).toHaveValue("")
     expect(git.commits()[0]?.subject).toBe(subject)
@@ -876,6 +970,122 @@ test.describe("core source control @core", () => {
     await expect(changeRow(page, UNSTAGED_FILE)).toHaveClass(/bg-surface-base-active/)
     await expect(changeRow(page, STAGED_FILE)).not.toHaveClass(/bg-surface-base-active/)
     await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-unstaged" })
+  })
+
+  test("the compare picker filters branches, tags and commits by substring and closes on Escape", async ({ page }) => {
+    await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectUncommittedReview(page)
+
+    const menu = await openComparePicker(page)
+    await expect(menuOptions(menu)).toHaveText([
+      "Uncommitted changes",
+      DEFAULT_BRANCH,
+      COMPARE_BRANCH,
+      `origin/${DEFAULT_BRANCH}`,
+      "v1.0.0",
+      ...SEEDED_GIT.commits.map((commit) => `${commit.shortHash}${commit.subject}`),
+    ])
+
+    await page.keyboard.type("compare")
+    await expect(menuOptions(menu)).toHaveText(["Uncommitted changes", COMPARE_BRANCH])
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-search-branch" })
+
+    await menu.getByTestId("review-compare-search").fill("seeded")
+    await expect(menuOptions(menu)).toHaveText(["Uncommitted changes", ...SEEDED_GIT.commits.map((commit) => `${commit.shortHash}${commit.subject}`)])
+
+    await menu.getByTestId("review-compare-search").fill("nothing here")
+    await expect(menuOptions(menu)).toHaveText(["Uncommitted changes"])
+    await expect(menu.getByTestId("review-compare-no-matches")).toHaveText("No matching refs")
+
+    await page.keyboard.press("Escape")
+    await expect(compareMenu(page)).toHaveCount(0, { timeout: 15_000 })
+    await expect(comparePill(page)).toHaveAttribute("aria-expanded", "false")
+    await expectUncommittedReview(page)
+  })
+
+  test("picking a branch shows the Compared changes group with the branch's files, and Uncommitted changes removes it", async ({ page }) => {
+    await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+
+    const menu = await openComparePicker(page)
+    await menu.getByTestId("review-compare-search").fill("compare")
+    await menuOptions(menu).filter({ hasText: COMPARE_BRANCH }).click()
+    await expect(compareMenu(page)).toHaveCount(0, { timeout: 15_000 })
+
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "to-from", { timeout: 15_000 })
+    await expect(comparePill(page)).toContainText(COMPARE_BRANCH)
+    await expect(comparePill(page)).toContainText(DEFAULT_BRANCH)
+
+    const group = compareGroup(page)
+    await expect(group).toBeVisible({ timeout: 15_000 })
+    await expect(group).toHaveAttribute("data-count", "2", { timeout: 15_000 })
+    await expect(group).toHaveAttribute("data-active", "true")
+    await expect(group).toContainText(`${COMPARE_BRANCH} → ${DEFAULT_BRANCH}`)
+    await expect(sourceControlView(page).getByTestId("source-control-groups").locator("> section").first()).toHaveAttribute("data-testid", "source-control-section-compare")
+    await expectRow(page, COMPARE_FILE, "compare", "added", "A")
+    await expectRow(page, COMPARE_DOC, "compare", "added", "A")
+    await expect(changeRow(page, COMPARE_FILE).getByText("+2")).toBeVisible()
+    await expectGroupCounts(page, 1, 3)
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-branch-group" })
+
+    await changeRow(page, COMPARE_FILE).locator('[data-slot="open"]').click()
+    await expectPanelInReviewForChanges(page)
+    await expectReviewFocused(page, COMPARE_FILE)
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "to-from")
+    await expect(changeRow(page, COMPARE_FILE)).toHaveClass(/bg-surface-base-active/)
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-branch-file-focused" })
+
+    const reopened = await openComparePicker(page)
+    await reopened.getByTestId("review-compare-uncommitted").click()
+    await expectUncommittedReview(page)
+    await expectGroupCounts(page, 1, 3)
+  })
+
+  test("clicking a graph commit shows its files and the pill; clicking it again returns to Uncommitted", async ({ page }) => {
+    await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectUncommittedReview(page)
+    await expandGraph(page)
+
+    const [second, first] = SEEDED_GIT.commits
+    const secondRow = commitRows(page).filter({ has: page.locator(`[data-hash="${second!.hash}"]`) }).or(commitRows(page).nth(0))
+    await expect(secondRow).toHaveAttribute("aria-selected", "false")
+    await secondRow.click()
+
+    await expect(secondRow).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+    await expect(secondRow).toHaveClass(/bg-surface-base-active/)
+    await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "false")
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "to-from", { timeout: 15_000 })
+    await expect(comparePill(page)).toContainText(first!.shortHash)
+    await expect(comparePill(page)).toContainText(second!.shortHash)
+
+    const group = compareGroup(page)
+    await expect(group).toHaveAttribute("data-count", "1", { timeout: 15_000 })
+    await expect(group).toContainText(`${first!.shortHash} → ${second!.shortHash}`)
+    await expectRow(page, SECOND_COMMIT_FILE, "compare", "added", "A")
+    await expect(changeRow(page, FIRST_COMMIT_FILE)).toHaveCount(0)
+    await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${SECOND_COMMIT_FILE}"]`)).toBeVisible({ timeout: 15_000 })
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-graph-commit" })
+
+    // The root commit compares against the empty tree.
+    await commitRows(page).nth(1).click()
+    await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+    await expect(secondRow).toHaveAttribute("aria-selected", "false")
+    await expect(group).toHaveAttribute("data-count", "1", { timeout: 15_000 })
+    await expect(group).toContainText(`${EMPTY_TREE.slice(0, 7)} → ${first!.shortHash}`)
+    await expectRow(page, FIRST_COMMIT_FILE, "compare", "added", "A")
+    await expect(changeRow(page, SECOND_COMMIT_FILE)).toHaveCount(0)
+
+    await commitRows(page).nth(1).click()
+    await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "false", { timeout: 15_000 })
+    await expectUncommittedReview(page)
+    await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${FOCUS_FILE}"]`)).toBeVisible({ timeout: 15_000 })
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-graph-deselected" })
   })
 
   test("Create PR links to the GitHub compare page for a branch off the default", async ({ page }) => {

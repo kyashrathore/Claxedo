@@ -16,7 +16,7 @@ import { createStore } from "solid-js/store"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { selectionFromLines } from "@/platform/files/types"
-import { createPanePreferences, reviewModePreferenceScope, useFile, usePrompt, useSDK } from "@/features/review/app-ports"
+import { useFile, usePrompt, useSDK } from "@/features/review/app-ports"
 import {
   cloneReviewSurfaceState,
   restoredOpenDiffs,
@@ -43,7 +43,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { createReviewDiffClient, fetchReviewVcsDiffSummary, normalizeVcsStatus, type RawVcsFileDiff } from "./review-vcs-load"
-import { type ReviewMode } from "@/features/review/review-intent"
+import { createReviewSelection, type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import { reviewToggleAllAction } from "./review-toggle-all"
 import { reviewLoadedDiffIdentity } from "./review-loaded-diff-identity"
@@ -117,11 +117,6 @@ export function ReviewTab(props: ReviewTabProps) {
   const sdk = useSDK()
   const platform = usePlatform()
   const signedWorkspace = createMemo(() => sdk.workspace?.(props.directory))
-  const panePreferences = createMemo(() => createPanePreferences(localStorage))
-  const reviewModeScope = createMemo(() => reviewModePreferenceScope({
-    directory: props.directory,
-    sessionId: props.sessionId,
-  }))
   const [vcsInfo, setVcsInfo] = createSignal<{ branch?: string | null; default_branch?: string | null }>()
   const loadVcsInfo = (directory = props.directory) =>
     queryClient.fetchQuery(workspaceVcsQuery({
@@ -142,42 +137,29 @@ export function ReviewTab(props: ReviewTabProps) {
     onCleanup(stop)
   })
 
-  // Read once: this is where a reopened panel picks its review back up. Later
-  // prop changes still win through the effects below.
+  // Read once: this is where a reopened panel picks its review back up when
+  // the pane has no persisted selection yet.
   const retained = cloneReviewSurfaceState(props.retained ?? {})
-  const [activeMode, setActiveMode] = createSignal<ReviewMode>(retained.mode ?? props.initialMode)
-  const [activeFromRef, setActiveFromRef] = createSignal(retained.fromRef ?? props.initialFromRef ?? "HEAD~1")
-  const [activeToRef, setActiveToRef] = createSignal(retained.toRef ?? props.initialToRef ?? "HEAD")
+  const [defaultBranchRef, setDefaultBranchRef] = createSignal<string | undefined>()
+  const review = createReviewSelection({
+    scope: () => ({ directory: props.directory, sessionId: props.sessionId }),
+    fallback: () => ({
+      mode: retained.mode ?? props.initialMode,
+      fromRef: retained.fromRef ?? props.initialFromRef,
+      toRef: retained.toRef ?? props.initialToRef,
+    }),
+  })
+  const activeMode = () => review.selection().mode
+  const activeFromRef = () => review.selection().fromRef ?? defaultBranchRef() ?? "HEAD~1"
+  const activeToRef = () => review.selection().toRef ?? "HEAD"
+  const setReviewMode = (mode: ReviewMode, fromRef = activeFromRef(), toRef = activeToRef()) =>
+    review.set({ mode, fromRef, toRef })
 
-  // Deferred: the signals above already hold the initial props, and running
-  // these on mount would overwrite a retained mode with the opening one.
-  createEffect(on(() => props.initialMode, (mode) => setActiveMode(mode), { defer: true }))
-  createEffect(on(() => props.initialFromRef, (fromRef) => { if (fromRef) setActiveFromRef(fromRef) }, { defer: true }))
-  createEffect(on(() => props.initialToRef, (toRef) => { if (toRef) setActiveToRef(toRef) }, { defer: true }))
-
-  const syncReviewState = (mode = activeMode()) => {
-    panePreferences().set("reviewMode", reviewModeScope(), mode)
-  }
-
-  const setReviewMode = (mode: ReviewMode, fromRef = activeFromRef(), toRef = activeToRef()) => {
-    batch(() => {
-      setActiveFromRef(fromRef)
-      setActiveToRef(toRef)
-      setActiveMode(mode)
-    })
-    syncReviewState(mode)
-  }
-
-  createEffect(
-    on(
-      () => [activeMode(), activeFromRef(), activeToRef()] as const,
-      ([mode, fromRef, toRef], prev) => {
-        if (prev && prev[0] === mode && prev[1] === fromRef && prev[2] === toRef) return
-        syncReviewState(mode)
-      },
-      { defer: true },
-    ),
-  )
+  // Deferred: the selection already covers the opening props, and running
+  // these on mount would overwrite a persisted selection with the opening one.
+  createEffect(on(() => props.initialMode, (mode) => setReviewMode(mode), { defer: true }))
+  createEffect(on(() => props.initialFromRef, (fromRef) => { if (fromRef) setReviewMode(activeMode(), fromRef) }, { defer: true }))
+  createEffect(on(() => props.initialToRef, (toRef) => { if (toRef) setReviewMode(activeMode(), activeFromRef(), toRef) }, { defer: true }))
 
   const claxedoServerUrl = getClaxedoServerUrl()
   const diffClient = createMemo(() => createReviewDiffClient({
@@ -206,10 +188,6 @@ export function ReviewTab(props: ReviewTabProps) {
   }
 
   const [vcsRefs, setVcsRefs] = createSignal<VcsRefs>({ branches: [], tags: [], recent: [] })
-  // Cache the resolved default-ref so the empty-state
-  // CTA ("Show branch diff vs <ref>") can fire even before the
-  // dropdown is opened.
-  const [defaultBranchRef, setDefaultBranchRef] = createSignal<string | undefined>()
   createEffect(() => {
     if (!props.directory) return
     const stop = afterVisibleWork(() => {
@@ -224,10 +202,7 @@ export function ReviewTab(props: ReviewTabProps) {
         load: () => diffClient().targets(props.directory),
       })
         .then((data: { defaultRef?: string }) => {
-          if (data.defaultRef) {
-            setDefaultBranchRef(data.defaultRef)
-            if (untrack(activeFromRef) === "HEAD~1") setActiveFromRef(data.defaultRef)
-          }
+          if (data.defaultRef) setDefaultBranchRef(data.defaultRef)
         })
         .catch(() => {})
     })

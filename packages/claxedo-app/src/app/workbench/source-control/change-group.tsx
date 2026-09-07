@@ -9,6 +9,8 @@ import type { GitStatusEntry } from "@/platform/runtime/workspace-git-client"
 
 export type ChangeGroupId = "staged" | "changes"
 
+export type ChangeEntry = Pick<GitStatusEntry, "path" | "status" | "additions" | "deletions">
+
 const STATUS_LETTER: Record<GitStatusEntry["status"], string> = {
   added: "A",
   modified: "M",
@@ -37,8 +39,11 @@ function statusColor(status: GitStatusEntry["status"]) {
 export function SourceControlSectionHeader(props: {
   testId: string
   label: string
+  title?: string
   count?: number
   collapsed: boolean
+  /** The group the pane's review currently shows. */
+  active?: boolean
   onToggle: () => void
   children?: JSX.Element
 }) {
@@ -47,12 +52,14 @@ export function SourceControlSectionHeader(props: {
       data-testid={props.testId}
       data-count={props.count}
       data-collapsed={props.collapsed ? "true" : undefined}
+      data-active={props.active ? "true" : undefined}
       class="claxedo-source-control-header group flex h-7 shrink-0 items-center gap-1 pr-2 pl-3"
     >
       <button
         type="button"
         aria-expanded={!props.collapsed}
-        class="flex min-w-0 flex-1 items-center gap-1 text-left text-xs font-medium text-text-weaker hover:text-text-base"
+        class="flex min-w-0 flex-1 items-center gap-1 text-left text-xs font-medium hover:text-text-base"
+        classList={{ "text-text-base": props.active, "text-text-weaker": !props.active }}
         onClick={() => props.onToggle()}
       >
         <Icon
@@ -61,7 +68,7 @@ export function SourceControlSectionHeader(props: {
           class="claxedo-source-control-chevron shrink-0 text-icon-weak-base"
           classList={{ "-rotate-90": props.collapsed }}
         />
-        <span class="truncate">{props.label}</span>
+        <span class="truncate" title={props.title}>{props.label}</span>
         <Show when={props.count !== undefined}>
           <span class="text-text-weaker/80">({props.count})</span>
         </Show>
@@ -71,10 +78,51 @@ export function SourceControlSectionHeader(props: {
   )
 }
 
+export function ChangeRow(props: {
+  entry: ChangeEntry
+  group: string
+  active: boolean
+  onOpen: () => void
+  action?: JSX.Element
+}) {
+  const language = useLanguage()
+  return (
+    <div
+      role="listitem"
+      data-testid="source-control-row"
+      data-path={props.entry.path}
+      data-status={props.entry.status}
+      data-group={props.group}
+      class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover"
+      classList={{ "bg-surface-base-active": props.active }}
+    >
+      <button type="button" data-slot="open" class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left" onClick={() => props.onOpen()}>
+        <span
+          class="w-3.5 shrink-0 text-center text-12-medium"
+          style={statusColor(props.entry.status)}
+          aria-label={language.t(STATUS_LABEL_KEY[props.entry.status])}
+          title={language.t(STATUS_LABEL_KEY[props.entry.status])}
+        >
+          {STATUS_LETTER[props.entry.status]}
+        </span>
+        <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span class="min-w-0 truncate text-text-base">{getFilename(props.entry.path)}</span>
+          <Show when={getDirectory(props.entry.path).replace(/\/$/, "")}>
+            {(directory) => <span class="min-w-0 truncate text-11-regular text-text-weak/70">{directory()}</span>}
+          </Show>
+        </span>
+        <DiffChanges class="shrink-0 text-11-regular" changes={{ additions: props.entry.additions, deletions: props.entry.deletions }} />
+      </button>
+      {props.action}
+    </div>
+  )
+}
+
 export function ChangeGroup(props: {
   id: ChangeGroupId
   entries: readonly GitStatusEntry[]
   collapsed: boolean
+  active: boolean
   onToggle: () => void
   activePath?: string
   pending?: string
@@ -102,6 +150,7 @@ export function ChangeGroup(props: {
         }
         count={props.entries.length}
         collapsed={props.collapsed}
+        active={props.active}
         onToggle={props.onToggle}
       >
         <Show when={props.entries.length > 0}>
@@ -123,51 +172,24 @@ export function ChangeGroup(props: {
         <div class="flex flex-col gap-px px-2 pb-1" role="list">
           <For each={props.entries}>
             {(entry) => (
-              <div
-                role="listitem"
-                data-testid="source-control-row"
-                data-path={entry.path}
-                data-status={entry.status}
-                data-group={props.id}
-                class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover"
-                classList={{ "bg-surface-base-active": props.activePath === entry.path }}
-              >
-                <button
-                  type="button"
-                  data-slot="open"
-                  class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
-                  onClick={() => props.onOpen(entry)}
-                >
-                  <span
-                    class="w-3.5 shrink-0 text-center text-12-medium"
-                    style={statusColor(entry.status)}
-                    aria-label={language.t(STATUS_LABEL_KEY[entry.status])}
-                    title={language.t(STATUS_LABEL_KEY[entry.status])}
+              <ChangeRow
+                entry={entry}
+                group={props.id}
+                active={props.activePath === entry.path}
+                onOpen={() => props.onOpen(entry)}
+                action={
+                  <button
+                    type="button"
+                    data-action={action()}
+                    aria-label={`${actionLabel()} ${entry.path}`}
+                    title={actionLabel()}
+                    class="claxedo-source-control-action flex size-5 shrink-0 items-center justify-center rounded text-icon-weak-base hover:bg-surface-base-active hover:text-icon-base"
+                    onClick={() => props.onAction([entry.path])}
                   >
-                    {STATUS_LETTER[entry.status]}
-                  </span>
-                  <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-                    <span class="min-w-0 truncate text-text-base">{getFilename(entry.path)}</span>
-                    <Show when={getDirectory(entry.path).replace(/\/$/, "")}>
-                      {(directory) => <span class="min-w-0 truncate text-11-regular text-text-weak/70">{directory()}</span>}
-                    </Show>
-                  </span>
-                  <DiffChanges
-                    class="shrink-0 text-11-regular"
-                    changes={{ additions: entry.additions, deletions: entry.deletions }}
-                  />
-                </button>
-                <button
-                  type="button"
-                  data-action={action()}
-                  aria-label={`${actionLabel()} ${entry.path}`}
-                  title={actionLabel()}
-                  class="claxedo-source-control-action flex size-5 shrink-0 items-center justify-center rounded text-icon-weak-base hover:bg-surface-base-active hover:text-icon-base"
-                  onClick={() => props.onAction([entry.path])}
-                >
-                  <SemanticIcon concept={action()} size="small" />
-                </button>
-              </div>
+                    <SemanticIcon concept={action()} size="small" />
+                  </button>
+                }
+              />
             )}
           </For>
         </div>

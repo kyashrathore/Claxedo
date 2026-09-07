@@ -250,7 +250,13 @@ export const appLocal: Policy = {
   // `features/session/ui/session-presentation.css` (+2). Reviewed owner:
   // app/workbench/source-control (this product's own surface); every edge stays
   // inside packages already in the closure. Re-measured, no headroom.
-  ceilings: { modules: 990, packages: 38 },
+  // +2 modules / 0 packages (2026-09-07): the Changes column's Compared changes
+  // group, `app/workbench/source-control/compare-group.tsx`, over the diff
+  // summary query `platform/files/workspace-diff-summary-query.ts` (the
+  // `to-from` file list the pane's review selection names). Reviewed owner:
+  // app/workbench/source-control; both edges stay inside packages already in
+  // the closure. Re-measured, no headroom.
+  ceilings: { modules: 992, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

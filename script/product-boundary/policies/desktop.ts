@@ -360,7 +360,10 @@ export const desktopRendererUnsigned: Policy = {
   // Processes column, and the floating pane presentation, all reached through
   // the shared app surface (see app-local.ts for the owner). Re-measured, no
   // headroom.
-  ceilings: { modules: 1041, packages: 57 },
+  // +2 modules (2026-09-07): the Compared changes group and its diff summary
+  // query, reached through the same Changes column (see app-local.ts for the
+  // owner). Re-measured, no headroom.
+  ceilings: { modules: 1043, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

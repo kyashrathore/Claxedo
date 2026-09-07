@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { WorkspaceGitError, type GitCommitSummary, type GitWorktreeStatus } from "@/platform/runtime/workspace-git-client"
+import { createPanePreferences, type ReviewSelection } from "@/features/session/preferences/pane"
 
 type PendingAction = "stage" | "unstage" | "commit" | "push" | undefined
 
@@ -18,6 +19,8 @@ const h = vi.hoisted(() => ({
   commitStaged: vi.fn(async (_input: { message: string; amend?: boolean }) => ({ commit: "abc" })),
   push: vi.fn(async (_input: { setUpstream?: boolean }) => ({ remote: "origin", branch: "feat/x" })),
   pending: undefined as undefined | [() => PendingAction, (next: PendingAction) => void],
+  compare: {} as Record<string, Array<{ file: string; status?: string; additions: number; deletions: number }>>,
+  compareRequests: [] as Array<{ mode: string; fromRef?: string; toRef?: string; content?: string }>,
 }))
 
 vi.mock("@/platform/i18n/provider", async () => {
@@ -100,7 +103,33 @@ vi.mock("@/features/session/data/sync/queries", () => ({
   emptySessionInventory: () => ({ sessions: [] }),
 }))
 
+vi.mock("@/features/session/providers/session-params", () => ({
+  useSessionParams: () => ({ directory: () => "/repo/main", sessionId: () => "ses-1" }),
+}))
+
+vi.mock("@/features/review/app-ports", async () => {
+  const pane = await vi.importActual<typeof import("@/features/session/preferences/pane")>("@/features/session/preferences/pane")
+  return { createPanePreferences: pane.createPanePreferences, reviewModePreferenceScope: pane.reviewModePreferenceScope }
+})
+
+vi.mock("@/platform/runtime/platform-provider", () => ({
+  usePlatform: () => ({ fetch: globalThis.fetch }),
+}))
+
+vi.mock("@/features/review/ui/review-vcs-load", () => ({
+  createReviewDiffClient: () => ({
+    vcs: async (input: { mode: string; fromRef?: string; toRef?: string; content?: string }) => {
+      h.compareRequests.push(input)
+      return h.compare[`${input.fromRef}..${input.toRef}`] ?? []
+    },
+  }),
+}))
+
 import { SourceControlView } from "./source-control-view"
+
+const REVIEW_SCOPE = "session:ses-1"
+const reviewSelection = () => createPanePreferences(localStorage).get("reviewMode", REVIEW_SCOPE)
+const setReviewSelection = (selection?: ReviewSelection) => createPanePreferences(localStorage).set("reviewMode", REVIEW_SCOPE, selection)
 
 const fixture = (): GitWorktreeStatus => ({
   branch: "feat/x",
@@ -138,7 +167,7 @@ const commitsFixture = (): GitCommitSummary[] => [
 
 const clients: QueryClient[] = []
 
-function renderView(input: { onFileClick?: (path: string, mode: "staged" | "unstaged") => void; activePath?: string } = {}) {
+function renderView(input: { onFileClick?: (path: string, mode: "staged" | "unstaged" | "to-from") => void; activePath?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
   return render(() => (
@@ -148,8 +177,8 @@ function renderView(input: { onFileClick?: (path: string, mode: "staged" | "unst
   ))
 }
 
-const group = (id: "staged" | "changes") => screen.getByTestId(`source-control-group-${id}`)
-const rows = (id: "staged" | "changes") =>
+const group = (id: "staged" | "changes" | "compare") => screen.getByTestId(`source-control-group-${id}`)
+const rows = (id: "staged" | "changes" | "compare") =>
   within(screen.getByTestId(`source-control-section-${id}`)).getAllByTestId("source-control-row")
 const row = (path: string) => screen.getAllByTestId("source-control-row").find((el) => el.getAttribute("data-path") === path)!
 const message = () => screen.getByTestId("source-control-message") as HTMLTextAreaElement
@@ -160,7 +189,14 @@ async function loaded() {
   await waitFor(() => expect(screen.queryByTestId("source-control-loading")).toBeNull())
 }
 
+const commitRow = (hash: string) => screen.getAllByTestId("source-control-commit-row").find((el) => el.getAttribute("data-hash") === hash)!
+const expandGraph = () =>
+  fireEvent.click(within(screen.getByTestId("source-control-group-graph")).getByRole("button", { expanded: false }))
+
 beforeEach(() => {
+  setReviewSelection(undefined)
+  h.compare = {}
+  h.compareRequests = []
   h.status = fixture()
   h.commits = commitsFixture()
   h.logLimits = []
@@ -465,6 +501,7 @@ describe("SourceControlView graph", () => {
   test("renders one row per commit with hash, subject, ref chips, author, and relative time", async () => {
     renderView()
     await loaded()
+    expandGraph()
     const graph = screen.getByTestId("source-control-graph")
     const items = within(graph).getAllByTestId("source-control-commit-row")
     expect(items.map((el) => el.getAttribute("data-hash"))).toEqual([
@@ -481,18 +518,12 @@ describe("SourceControlView graph", () => {
     expect(within(items[1]!).getByText("1 day ago")).toBeTruthy()
   })
 
-  test("a collapsed Graph header sits at the bottom under the groups; expanded, it shares the column", async () => {
+  test("the Graph starts collapsed at the bottom under the groups; expanded, it shares the column", async () => {
     renderView()
     await loaded()
     const column = screen.getByTestId("source-control-groups").parentElement!
     const groups = screen.getByTestId("source-control-groups")
     const graph = screen.getByTestId("source-control-graph")
-    expect(column.lastElementChild).toBe(graph)
-    expect(graph.classList.contains("flex-1")).toBe(true)
-    expect(groups.classList.contains("max-h-[65%]")).toBe(true)
-    expect(groups.classList.contains("flex-1")).toBe(false)
-
-    fireEvent.click(within(screen.getByTestId("source-control-group-graph")).getByRole("button", { expanded: true }))
     expect(screen.getByTestId("source-control-group-graph").getAttribute("data-collapsed")).toBe("true")
     expect(column.lastElementChild).toBe(graph)
     expect(graph.classList.contains("shrink-0")).toBe(true)
@@ -500,15 +531,131 @@ describe("SourceControlView graph", () => {
     expect(groups.classList.contains("flex-1")).toBe(true)
     expect(groups.classList.contains("max-h-[65%]")).toBe(false)
     expect(within(graph).queryAllByTestId("source-control-commit-row")).toHaveLength(0)
+
+    fireEvent.click(within(screen.getByTestId("source-control-group-graph")).getByRole("button", { expanded: false }))
+    expect(screen.getByTestId("source-control-group-graph").getAttribute("data-collapsed")).toBeNull()
+    expect(column.lastElementChild).toBe(graph)
+    expect(graph.classList.contains("flex-1")).toBe(true)
+    expect(groups.classList.contains("max-h-[65%]")).toBe(true)
+    expect(groups.classList.contains("flex-1")).toBe(false)
+    expect(within(graph).getAllByTestId("source-control-commit-row")).toHaveLength(2)
   })
 
-  test("the graph section collapses and shows 'No commits' when the log is empty", async () => {
+  test("the expanded graph shows 'No commits' when the log is empty", async () => {
     h.commits = []
     renderView()
     await loaded()
+    expandGraph()
     await waitFor(() => expect(within(screen.getByTestId("source-control-graph")).getByText("No commits")).toBeTruthy())
     fireEvent.click(within(screen.getByTestId("source-control-group-graph")).getByRole("button"))
     expect(within(screen.getByTestId("source-control-graph")).queryByText("No commits")).toBeNull()
+  })
+
+  test("clicking a commit compares it against its first parent, selects the row, and lists its files", async () => {
+    h.compare["2222222222222222222222222222222222222222..1111111111111111111111111111111111111111"] = [
+      { file: "src/second.ts", status: "added", additions: 4, deletions: 0 },
+      { file: "src/a.ts", status: "modified", additions: 1, deletions: 2 },
+    ]
+    const onFileClick = vi.fn()
+    renderView({ onFileClick })
+    await loaded()
+    expandGraph()
+    expect(screen.queryByTestId("source-control-group-compare")).toBeNull()
+
+    fireEvent.click(commitRow("1111111111111111111111111111111111111111"))
+    expect(reviewSelection()).toEqual({
+      mode: "to-from",
+      fromRef: "2222222222222222222222222222222222222222",
+      toRef: "1111111111111111111111111111111111111111",
+    })
+    const row = commitRow("1111111111111111111111111111111111111111")
+    expect(row.getAttribute("aria-selected")).toBe("true")
+    expect(row.classList.contains("bg-surface-base-active")).toBe(true)
+    expect(commitRow("2222222222222222222222222222222222222222").getAttribute("aria-selected")).toBe("false")
+
+    await waitFor(() => expect(group("compare").getAttribute("data-count")).toBe("2"))
+    expect(group("compare").getAttribute("data-active")).toBe("true")
+    expect(within(group("compare")).getByText("2222222 → 1111111")).toBeTruthy()
+    expect(screen.getByTestId("source-control-groups").firstElementChild).toBe(screen.getByTestId("source-control-section-compare"))
+    expect(rows("compare").map((el) => el.getAttribute("data-path"))).toEqual(["src/second.ts", "src/a.ts"])
+    expect(rows("compare").map((el) => el.getAttribute("data-status"))).toEqual(["added", "modified"])
+    expect(rows("compare").map((el) => el.getAttribute("data-group"))).toEqual(["compare", "compare"])
+    expect(within(rows("compare")[1]!).getByText("+1")).toBeTruthy()
+    expect(within(rows("compare")[1]!).getByText("-2")).toBeTruthy()
+    expect(h.compareRequests).toEqual([
+      {
+        directory: "/repo/main",
+        mode: "to-from",
+        fromRef: "2222222222222222222222222222222222222222",
+        toRef: "1111111111111111111111111111111111111111",
+        content: "summary",
+      },
+    ])
+
+    fireEvent.click(within(rows("compare")[0]!).getByText("second.ts"))
+    expect(onFileClick).toHaveBeenLastCalledWith("src/second.ts", "to-from")
+    expect(rows("compare")[0]!.classList.contains("bg-surface-base-active")).toBe(true)
+
+    fireEvent.click(commitRow("1111111111111111111111111111111111111111"))
+    expect(reviewSelection()).toEqual({ mode: "uncommitted" })
+    expect(commitRow("1111111111111111111111111111111111111111").getAttribute("aria-selected")).toBe("false")
+    expect(screen.queryByTestId("source-control-group-compare")).toBeNull()
+  })
+
+  test("a root commit compares against the empty tree", async () => {
+    renderView()
+    await loaded()
+    expandGraph()
+    fireEvent.click(commitRow("2222222222222222222222222222222222222222"))
+    expect(reviewSelection()).toEqual({
+      mode: "to-from",
+      fromRef: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      toRef: "2222222222222222222222222222222222222222",
+    })
+    await waitFor(() => expect(within(group("compare")).getByText("4b825dc → 2222222")).toBeTruthy())
+  })
+})
+
+describe("SourceControlView compare selection", () => {
+  test("a persisted branch comparison lists its files under the branch → head label and no commit is selected", async () => {
+    h.compare["main..HEAD"] = [{ file: "src/b.ts", status: "modified", additions: 3, deletions: 1 }]
+    setReviewSelection({ mode: "to-from", fromRef: "main", toRef: "HEAD" })
+    renderView()
+    await loaded()
+    await waitFor(() => expect(group("compare").getAttribute("data-count")).toBe("1"))
+    expect(within(group("compare")).getByText("main → feat/x")).toBeTruthy()
+    expect(within(group("compare")).getByTitle("Compared changes")).toBeTruthy()
+    expect(rows("compare").map((el) => el.getAttribute("data-path"))).toEqual(["src/b.ts"])
+    expandGraph()
+    expect(screen.getAllByTestId("source-control-commit-row").every((el) => el.getAttribute("aria-selected") === "false")).toBe(true)
+    expect(group("staged").getAttribute("data-active")).toBeNull()
+    expect(group("changes").getAttribute("data-active")).toBeNull()
+  })
+
+  test("the empty comparison says No changes and the compare group collapses on its own", async () => {
+    setReviewSelection({ mode: "to-from", fromRef: "main", toRef: "HEAD" })
+    renderView()
+    await loaded()
+    await waitFor(() => expect(screen.getByTestId("source-control-compare-empty").textContent).toBe("No changes"))
+    fireEvent.click(within(group("compare")).getByRole("button", { expanded: true }))
+    expect(group("compare").getAttribute("data-collapsed")).toBe("true")
+    expect(screen.queryByTestId("source-control-compare-empty")).toBeNull()
+    expect(rows("staged")).toHaveLength(1)
+  })
+
+  test("the staged or unstaged review mode quietly highlights its group header", async () => {
+    setReviewSelection({ mode: "staged" })
+    renderView()
+    await loaded()
+    expect(group("staged").getAttribute("data-active")).toBe("true")
+    expect(within(group("staged")).getByRole("button", { expanded: true }).classList.contains("text-text-base")).toBe(true)
+    expect(group("changes").getAttribute("data-active")).toBeNull()
+    expect(within(group("changes")).getByRole("button", { expanded: true }).classList.contains("text-text-weaker")).toBe(true)
+    expect(screen.queryByTestId("source-control-group-compare")).toBeNull()
+
+    setReviewSelection({ mode: "unstaged" })
+    expect(group("staged").getAttribute("data-active")).toBeNull()
+    expect(group("changes").getAttribute("data-active")).toBe("true")
   })
 })
 

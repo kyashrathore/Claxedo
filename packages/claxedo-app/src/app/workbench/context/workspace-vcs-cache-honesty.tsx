@@ -3,6 +3,7 @@ import { createRenderEffect, onCleanup } from "solid-js"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { invalidateReviewVcsDirectory, type ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
 import { createReviewVcsDirectoryClassifier, type ReviewVcsEvent } from "@/features/review/ui/review-vcs-invalidation"
+import { workspaceDiffSummaryKey } from "@/platform/files/workspace-diff-summary-query"
 import { workspaceGitLogKey, workspaceGitStatusKey, type WorkspaceGitScope } from "@/platform/files/workspace-git-status-query"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -87,7 +88,11 @@ function invalidateBranchState(identity: WorkspaceVcsIdentity) {
  * after an ownerless gap: both are moments where anything may have changed.
  */
 export async function invalidateWorkspaceVcs(identity: WorkspaceVcsIdentity) {
-  await Promise.all([invalidateWorktreeChanges(identity), invalidateBranchState(identity)])
+  await Promise.all([
+    invalidateWorktreeChanges(identity),
+    invalidateBranchState(identity),
+    queryClient.invalidateQueries({ queryKey: workspaceDiffSummaryKey(gitScope(identity)) }),
+  ])
 }
 
 /**
