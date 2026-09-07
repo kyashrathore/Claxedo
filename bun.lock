@@ -297,6 +297,7 @@
       "dependencies": {
         "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/mcp": "workspace:*",
         "@claxedo/opencode-server-adapter": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@claxedo/server-core": "workspace:*",
@@ -320,21 +321,21 @@
     "packages/claxedo-mcp": {
       "name": "@claxedo/mcp",
       "version": "0.5.0",
-      "bin": {
-        "claxedo-mcp": "dist/server.js",
-      },
       "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/workspace-runtime": "workspace:*",
         "@modelcontextprotocol/sdk": "1.29.0",
         "ajv": "8.20.0",
         "ajv-formats": "3.0.1",
+        "hono": "4.10.7",
         "zod": "4.4.3",
         "zod-to-json-schema": "3.25.2",
       },
       "devDependencies": {
+        "@hono/node-server": "1.19.11",
         "@tsconfig/node-lts": "22.0.4",
         "@types/node": "24.12.2",
-        "tsx": "4.22.3",
         "typescript": "catalog:",
         "vitest": "2.1.9",
       },
