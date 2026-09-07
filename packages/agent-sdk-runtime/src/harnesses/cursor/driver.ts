@@ -100,6 +100,7 @@ export function cursorTurnPrompt(parts: unknown[], system?: string) {
 
 class CursorSdkDriver implements SdkRuntimeDriver {
   readonly type = "cursor" as const
+  readonly interactions = { permissions: false, questions: false } as const
   private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
     capabilities: () => {

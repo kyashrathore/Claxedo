@@ -122,6 +122,13 @@ export type SdkRuntimeTurnInput = {
 
 export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
+  /**
+   * Which interactive requests this driver actually raises through the host's
+   * `pendingPermissions` / `pendingQuestions` maps. The adapter advertises
+   * exactly these, so a harness whose SDK has no approval or question callback
+   * (Cursor) never offers the app a prompt surface that cannot fire.
+   */
+  readonly interactions: { permissions: boolean; questions: boolean }
   readonly goals?: AgentGoalResource
   readonly nativeGoal?: {
     capabilities(sessionId: string, directory: string): Promise<GoalCapabilities> | GoalCapabilities

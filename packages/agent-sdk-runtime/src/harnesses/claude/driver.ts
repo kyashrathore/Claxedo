@@ -165,6 +165,7 @@ export function createClaudeSdkDriver(
 
 class ClaudeSdkDriver implements SdkRuntimeDriver {
   readonly type = "claude" as const
+  readonly interactions = { permissions: true, questions: false } as const
   private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
     capabilities: () => goalCapabilities({

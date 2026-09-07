@@ -105,6 +105,7 @@ export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefine
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
+  readonly interactions = { permissions: true, questions: true } as const
   private auth: SdkRuntimeAuth = {}
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null

@@ -5,6 +5,10 @@ import { AcpHarnessAdapter } from "./acp/index"
 import { ClaudeHarnessAdapter } from "./claude/index"
 import { CodexHarnessAdapter } from "./codex/index"
 import { CursorHarnessAdapter } from "./cursor/index"
+import { createClaudeSdkDriver } from "./claude/driver"
+import { createCodexAppServerDriver } from "./codex/driver"
+import { createCursorSdkDriver } from "./cursor/driver"
+import type { SdkRuntimeDriver, SdkRuntimeDriverHost } from "./shared/sdk-runtime-driver"
 import { PiHarnessAdapter } from "./pi/index"
 import {
   harnessCapabilities as canonicalHarnessCapabilities,
@@ -54,12 +58,25 @@ function acpAdapterWithHarness<Extra extends object = Record<never, never>>(
   return adapter
 }
 
+/** The real driver, so the manifest reflects what each driver declares rather than a fixture's guess. */
+function sdkDriver(type: "claude" | "codex" | "cursor"): SdkRuntimeDriver {
+  const host = {
+    lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
+    pendingPermissions: new Map(),
+    pendingQuestions: new Map(),
+    bindSession() {},
+  } as unknown as SdkRuntimeDriverHost
+  if (type === "claude") return createClaudeSdkDriver(host)
+  if (type === "cursor") return createCursorSdkDriver(host)
+  return createCodexAppServerDriver(host)
+}
+
 function sdkAdapterWithDriver(type: "claude" | "codex" | "cursor") {
   const Adapter = type === "claude" ? ClaudeHarnessAdapter : type === "cursor" ? CursorHarnessAdapter : CodexHarnessAdapter
   const adapter = Object.create(Adapter.prototype) as WithInternals<(ClaudeHarnessAdapter | CodexHarnessAdapter | CursorHarnessAdapter), {
-    driver: { type: "claude" | "codex" | "cursor" }
+    driver: SdkRuntimeDriver
   }>
-  adapter.driver = { type }
+  adapter.driver = sdkDriver(type)
   return adapter
 }
 
@@ -95,6 +112,15 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     }
   })
 
+  test("SDK harnesses advertise only the interactions their driver raises", () => {
+    // Cursor's SDK has no approval or question callback, so its driver never
+    // fills the host's pending maps; Claude raises permissions through
+    // canUseTool but has no question channel; Codex raises both.
+    expect(sdkAdapterWithDriver("cursor").readHarnessCapabilities()).toMatchObject({ permissions: false, questions: false })
+    expect(sdkAdapterWithDriver("claude").readHarnessCapabilities()).toMatchObject({ permissions: true, questions: false })
+    expect(sdkAdapterWithDriver("codex").readHarnessCapabilities()).toMatchObject({ permissions: true, questions: true })
+  })
+
   test("native coding harnesses advertise subagents without assuming ACP extensions", () => {
     const adapters = (["claude", "codex", "cursor"] as const)
       .map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities())
@@ -103,12 +129,11 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
   })
 
   test("advertises Goal only when an adapter exposes the canonical resource", async () => {
-    const unsupported = [
-      acpAdapterWithHarness("openclaw").readHarnessCapabilities(),
-      ...(["claude", "codex", "cursor"] as const).map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities()),
-    ]
-
-    expect(unsupported.every((item) => ! item.goals)).toBe(true)
+    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().goals).toBe(false)
+    for (const type of ["claude", "codex", "cursor"] as const) {
+      const driver = sdkDriver(type)
+      expect(sdkAdapterWithDriver(type).readHarnessCapabilities().goals, type).toBe(!!driver.goals || !!driver.nativeGoal)
+    }
     expect((await new PiHarnessAdapter({ store: createMemoryRuntimeStore() }).readHarnessCapabilities()).goals).toBe(true)
   })
 
