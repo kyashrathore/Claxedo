@@ -110,7 +110,7 @@ describe("directory query factories", () => {
       directory: "/tmp/ws",
       harnessType: "opencode",
       request,
-      client: { app: { agents: async () => ({ data: [] }) } },
+      client: { agent: { list: async () => ({ data: [] }) } },
     })
 
     await query.queryFn()
@@ -137,8 +137,8 @@ describe("directory query factories", () => {
         return Response.json([])
       }) as typeof fetch,
       client: {
-        app: {
-          agents: async () => {
+        agent: {
+          list: async () => {
             throw new Error("sdk agent profile request should not run for an unknown harness")
           },
         },
@@ -162,8 +162,8 @@ describe("directory query factories", () => {
         return Response.json([agent("connection-profile")])
       }) as typeof fetch,
       client: {
-        app: {
-          agents: async () => {
+        agent: {
+          list: async () => {
             throw new Error("sdk agent profile request should not run for harness transports")
           },
         },
@@ -207,8 +207,8 @@ describe("directory query factories", () => {
         kind: "cloud",
       },
       client: {
-        app: {
-          agents: async () => {
+        agent: {
+          list: async () => {
             throw new Error("expected Workspace Relay")
           },
         },
@@ -259,8 +259,8 @@ describe("directory query factories", () => {
           throw new Error(`unexpected request: ${req.method} ${req.url}`)
         }) as typeof fetch,
         client: {
-          app: {
-            agents: async () => {
+          agent: {
+            list: async () => {
               throw new Error("expected Workspace Relay")
             },
           },
@@ -316,8 +316,8 @@ describe("directory query factories", () => {
           throw new Error(`unexpected request: ${req.method} ${req.url}`)
         }) as typeof fetch,
         client: {
-          app: {
-            agents: async () => {
+          agent: {
+            list: async () => {
               throw new Error("expected Workspace Relay")
             },
           },
@@ -378,8 +378,8 @@ describe("directory query factories", () => {
           throw new Error(`unexpected request: ${req.method} ${req.url}`)
         }) as typeof fetch,
         client: {
-          app: {
-            agents: async () => {
+          agent: {
+            list: async () => {
               throw new Error("expected Workspace Relay")
             },
           },
@@ -443,8 +443,8 @@ describe("directory query factories", () => {
           throw new Error(`unexpected signed request: ${req.method} ${req.url}`)
         }) as typeof fetch,
         client: {
-          app: {
-            agents: async () => {
+          agent: {
+            list: async () => {
               throw new Error("expected local agent-config route")
             },
           },
@@ -484,8 +484,8 @@ describe("directory query factories", () => {
         kind: "local",
       },
       client: {
-        app: {
-          agents: async () => {
+        agent: {
+          list: async () => {
             throw new Error("expected Claxedo agent config API")
           },
         },
@@ -518,8 +518,8 @@ describe("directory query factories", () => {
           kind: "local",
         },
         client: {
-          app: {
-            agents: async () => {
+          agent: {
+            list: async () => {
               throw new Error("expected Claxedo agent config API")
             },
           },

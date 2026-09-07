@@ -378,8 +378,8 @@ describe("override bootstrapDirectory", () => {
           return { data: project() }
         },
       },
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           await pending
           returned.agent++
           return { data: [] }
@@ -423,6 +423,7 @@ describe("override bootstrapDirectory", () => {
     release()
     await warmup()
     expect(directoryProject("https://app.claxedo.test", "/tmp/ws")).toBe("proj_1")
+    expect(returned).toEqual({ project: 1, agent: 0, path: 1, workspace: 1 })
   })
 
   test("keeps query-backed directory state renderable while refreshing", async () => {
@@ -557,8 +558,8 @@ describe("override bootstrapDirectory", () => {
     const urls: string[] = []
     const localUrls: string[] = []
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("unexpected runner agent profile client")
         },
       },
@@ -626,8 +627,8 @@ describe("override bootstrapDirectory", () => {
 
   test("loads native agent profiles into the harness-scoped cache", async () => {
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("unexpected runner agent profile client")
         },
       },
@@ -692,8 +693,8 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("expected relay agent fetch")
         },
       },
@@ -782,8 +783,8 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("expected relay agent fetch")
         },
       },
@@ -859,8 +860,8 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud bootstrap to skip path.get")
         },
       },
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("expected signed cloud bootstrap to fetch agents through relay")
         },
       },
@@ -929,8 +930,8 @@ describe("override bootstrapDirectory", () => {
   test("does not invent a harness for signed cloud workspace refs", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("expected relay agent fetch")
         },
       },
@@ -994,8 +995,8 @@ describe("override bootstrapDirectory", () => {
   test("raw workspace id bootstrap resolves identity before caching its native catalog", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
+      agent: {
+        list: async () => {
           throw new Error("expected relay agent fetch")
         },
       },

@@ -23,7 +23,7 @@ function session(input: Partial<Session> = {}): Session {
 function directorySdk(calls: string[]): DirectorySdk {
   return {
     project: { current: async () => (calls.push("project"), { data: { id: "proj_1", worktree: "/tmp/ws", time: { created: 1, updated: 1 }, sandboxes: [] } }) },
-    app: { agents: async () => (calls.push("agent"), { data: [] }) },
+    agent: { list: async () => (calls.push("agent"), { data: [] }) },
     path: { get: async () => (calls.push("path"), { data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }) },
     command: { list: async () => (calls.push("command"), { data: [] }) },
     vcs: { get: async () => (calls.push("vcs"), { data: undefined }) },
