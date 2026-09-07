@@ -7,6 +7,7 @@ import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapt
 import type { WorkspaceRuntimeExposure } from "../exposure"
 import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
+import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 
 export type RuntimeConfigApplyStatus = {
   state: "idle" | "applying" | "applied" | "failed"
@@ -68,6 +69,8 @@ export type WorkspaceHost = {
    * the runtime was composed without `firstPartyMcpLaunch`.
    */
   runtimeCredentialIssuer: () => RuntimeCredentialIssuer | undefined
+  /** The `claxedo` MCP entry this runtime injects into a session's harness config, absent for the same reason. */
+  firstPartyMcpServer: (sessionId: string) => FirstPartyMcpServerEntry | undefined
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
   /** Replace only host-composed launch metadata while preserving the accepted runtime configuration. */
   applyHarnessLaunch: (harnessLaunch: Record<string, Record<string, unknown>>) => Promise<void>

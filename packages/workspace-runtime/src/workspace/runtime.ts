@@ -57,7 +57,7 @@ import {
   mountWorkspacePty,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
-import { firstPartyMcpAdapterConfig, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
+import { firstPartyMcpAdapterConfig, firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
@@ -1741,6 +1741,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     runtimeCredentialIssuer() {
       return options.firstPartyMcpLaunch?.issuer
+    },
+    firstPartyMcpServer(sessionId) {
+      return options.firstPartyMcpLaunch ? firstPartyMcpServerFor(options.firstPartyMcpLaunch, sessionId) : undefined
     },
     apply,
     applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {
