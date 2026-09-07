@@ -48,3 +48,14 @@ export type {
   WorkspaceVcsClient,
   WorkspaceVcsInfo,
 } from "./client/workspace"
+/**
+ * The route inventory and write classification of the surface this client
+ * calls. A consumer that has to decide per operation — which tool to expose,
+ * which call a read-only credential may make — derives it from the runtime's
+ * own table instead of copying one, which is what
+ * `client/session-route-inventory.guard.test.ts` already pins the client
+ * itself against. `errorBody` is the only value this pulls in, so the subpath
+ * stays free of the runtime's server, pty and sqlite dependencies.
+ */
+export { SESSION_CORE_ROUTE_ACCESS, sessionAccessRequiresWrite } from "./session-access-policy"
+export type { SessionAccessOperation } from "./session-access-policy"
