@@ -9,6 +9,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
+import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, pathFields, text } from "../../value"
 
 type ClaudeBlockState = {
@@ -56,7 +57,9 @@ export type ClaudeSubagentObservation = {
   description?: string
   providerId?: string
   providerKind?: string
-  transcript?: { kind: "messages" }
+  subagentKey?: string
+  childSessionId?: string
+  transcript?: { kind: "messages" | "live" }
 }
 
 type ClaudeSdkSystemMessage = Extract<SDKMessage, { type: "system" }>
@@ -136,7 +139,7 @@ function isTodoTool(toolName: string) {
 }
 
 function isTaskTool(toolName: string) {
-  return ["agent", "task"].includes(toolName.toLowerCase())
+  return ["agent", "task"].includes(toolName.toLowerCase()) || isHostSubagentTool(toolName)
 }
 
 function todoStatus(value: unknown) {
@@ -295,6 +298,27 @@ function agentResultText(result: Record<string, unknown> | undefined, fallback: 
   return content.flatMap((item) => text(asRecord(item)?.text) ?? []).join("\n") || fallback
 }
 
+/**
+ * The user message carries no tool name, so a `create_subagent` result is
+ * recognised by its self-identifying shape rather than by the call it answers.
+ */
+function claudeHostSubagentObservations(
+  message: Record<string, unknown>,
+  wrapperId: string,
+  harnessExecutionId: string | undefined,
+): ClaudeSubagentObservation[] {
+  return toolResultBlocks(message).flatMap((tool) => {
+    const binding = hostSubagentBinding(message.tool_use_result) ?? hostSubagentBinding(tool.text)
+    if (!binding) return []
+    return [hostSubagentObservation({
+      observationId: `claude:host-subagent:${wrapperId}:${tool.toolCallId}`,
+      ...(harnessExecutionId ? { harnessExecutionId } : {}),
+      toolCallId: tool.toolCallId,
+      binding,
+    })]
+  })
+}
+
 export function claudeChildCorrelationKey(value: unknown) {
   return text(asRecord(value)?.parent_tool_use_id)
 }
@@ -307,7 +331,7 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
 
   if (message.type === "assistant" && !claudeChildCorrelationKey(message)) {
     return assistantToolBlocks(message).flatMap(({ tool }) => {
-      if (!isTaskTool(tool.toolName) || !tool.toolCallId) return []
+      if (!isTaskTool(tool.toolName) || isHostSubagentTool(tool.toolName) || !tool.toolCallId) return []
       return [{
         observationId: `claude:agent-tool:${wrapperId}:${tool.toolCallId}`,
         ...(harnessExecutionId ? { harnessExecutionId } : {}),
@@ -329,7 +353,7 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
   if (message.type === "user") {
     const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
-    if (!agentId) return []
+    if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId)
     return toolResultBlocks(message).map((tool) => ({
       observationId: `claude:agent-result:${wrapperId}:${tool.toolCallId}`,
       ...(harnessExecutionId ? { harnessExecutionId } : {}),

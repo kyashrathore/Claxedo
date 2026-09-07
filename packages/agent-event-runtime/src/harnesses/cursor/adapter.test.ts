@@ -410,4 +410,35 @@ describe("cursorSdkAdapter", () => {
       toolsByCallId: {},
     })
   })
+
+  test("binds a create_subagent result to the host-minted child and raises nothing while it runs", () => {
+    const running = {
+      type: "tool_call",
+      agent_id: "parent-agent",
+      run_id: "run-1",
+      call_id: "mcp-spawn-1",
+      name: "mcp__claxedo__create_subagent",
+      status: "running",
+      args: { harness: "codex", prompt: "Consult on the plan" },
+    }
+    expect(cursorSubagentObservations(running)).toEqual([])
+    expect(cursorSubagentObservations({
+      ...running,
+      status: "completed",
+      result: {
+        status: "success",
+        value: { kind: "claxedo.subagent", subagentKey: "subagent_host", sessionId: "child-9" },
+      },
+    })).toEqual([{
+      observationId: "cursor:host-subagent:run-1:mcp-spawn-1",
+      harnessExecutionId: "run-1",
+      subagentKey: "subagent_host",
+      toolCallId: "mcp-spawn-1",
+      toolCallRole: "spawn",
+      providerId: "child-9",
+      providerKind: "claxedo",
+      childSessionId: "child-9",
+      transcript: { kind: "live" },
+    }])
+  })
 })

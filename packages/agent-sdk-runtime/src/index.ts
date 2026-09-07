@@ -90,7 +90,9 @@ export type {
 export { requireGoalResource } from "./adapter-contract"
 export type {
   AgentConfigOptions,
+  AgentPermissionMode,
   AgentPermissionModeState,
+  AutoLevel,
   ResolvedHarnessModel,
   AgentGoalMutationFailure,
   AgentGoalMutationResult,
@@ -132,6 +134,17 @@ export type {
   SubagentAdmissionStore,
   SubagentObservation,
 } from "./subagent-admission"
+export {
+  AUTO_LEVEL_ORDER,
+  comparePermissionLevels,
+  isAutoLevel,
+  isPermissionCeilingError,
+  narrowerPermissionLevel,
+  permissionCeilingAdmits,
+  PermissionCeilingError,
+  permissionModeLevel,
+  widestPermissionModeUnder,
+} from "./permission-ceiling"
 export { chunk, live, recovering } from "./status"
 export type { StatusChunk, StatusCompat, StatusRecover } from "./status"
 export {

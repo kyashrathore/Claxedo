@@ -35,9 +35,15 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // naming the teardowns nothing waits on; the fifth imports the shared
       // `stringRecord` reader that replaced this file's config cast. Owner
       // unchanged.
+      // Re-measured for host-owned subagents: the codex driver raises the
+      // observation that binds a completed `create_subagent` MCP item to its
+      // child from the one place thread notifications are projected. The
+      // classification and the observation shape live in
+      // `harnesses/codex/host-subagent.ts`; the three lines here are its import
+      // and the call.
       "runtime.ts": 980,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 663,
+      "harnesses/codex/driver.ts": 666,
       "harnesses/shared/sdk-runtime-adapter.ts": 874,
       "harnesses/pi/index.ts": 12,
     }

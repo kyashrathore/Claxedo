@@ -16,7 +16,7 @@
           "state": {
             "status": "running",
             "input": {
-              "intent": "generic",
+              "intent": "task",
               "kind": "dynamic_tool_call"
             },
             "metadata": {
@@ -55,7 +55,7 @@
           "state": {
             "status": "completed",
             "input": {
-              "intent": "generic",
+              "intent": "task",
               "kind": "dynamic_tool_call"
             },
             "output": "",

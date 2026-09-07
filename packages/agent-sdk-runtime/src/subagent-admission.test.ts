@@ -361,4 +361,38 @@ describe("subagent host admission", () => {
       childSessionId: "child-other",
     })).rejects.toThrow("reused with conflicting content")
   })
+
+  test("attention and wake travel from the observation onto the published event", async () => {
+    const item = harness()
+    const created = await item.boundary.admit("parent", {
+      observationId: "host-create",
+      subagentKey: "subagent_host",
+      status: "pending",
+      providerKind: "claxedo",
+      providerId: "child-1",
+      childSessionId: "child-1",
+      transcript: { kind: "live" },
+    })
+    const attention = await item.boundary.admit("parent", {
+      observationId: "host-attention-1",
+      subagentKey: "subagent_host",
+      attention: 2,
+    })
+    const cleared = await item.boundary.admit("parent", {
+      observationId: "host-attention-2",
+      subagentKey: "subagent_host",
+      attention: 0,
+    })
+    const wake = await item.boundary.admit("parent", {
+      observationId: "host-wake",
+      subagentKey: "subagent_host",
+      status: "completed",
+      wake: "pending",
+    })
+
+    expect(created.attention).toBeUndefined()
+    expect(attention).toMatchObject({ subagentKey: "subagent_host", revision: 2, attention: 2 })
+    expect(cleared).toMatchObject({ revision: 3, attention: 0 })
+    expect(wake).toMatchObject({ revision: 4, status: "completed", wake: "pending" })
+  })
 })

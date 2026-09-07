@@ -9,6 +9,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
+import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { text } from "../../value"
 
 export type CursorSdkAdapterState = {
@@ -27,13 +28,15 @@ export type CursorSubagentObservation = {
   toolCallId: string
   toolCallRole: SubagentToolCallRole
   mode?: SubagentMode
-  status: SubagentStatus
+  status?: SubagentStatus
   label?: string
   subagentType?: string
   description?: string
   providerId?: string
   providerKind?: string
-  transcript: { kind: "none" }
+  subagentKey?: string
+  childSessionId?: string
+  transcript: { kind: "none" | "live" }
 }
 
 function createCursorSdkAdapterState(): CursorSdkAdapterState {
@@ -152,7 +155,7 @@ function todosFromInput(input: Record<string, unknown>) {
 
 function toolKind(toolName: string) {
   const normalized = toolName.toLowerCase()
-  if (isTaskTool(toolName)) return "collab_agent_tool_call"
+  if (isTaskTool(toolName) || isHostSubagentTool(toolName)) return "collab_agent_tool_call"
   if (normalized === "shell" || normalized.includes("shell") || normalized.includes("command")) return "command_execution"
   if (normalized === "write" || normalized === "edit" || normalized === "delete" || normalized.includes("patch")) return "file_change"
   if (normalized === "read" || normalized === "readlints") return "file_read"
@@ -283,9 +286,21 @@ function taskMetadata(value: unknown) {
 
 export function cursorSubagentObservations(value: unknown): CursorSubagentObservation[] {
   const message = asRecord(value)
-  if (!message || message.type !== "tool_call" || !isTaskTool(text(message.name) ?? "")) return []
+  if (!message || message.type !== "tool_call") return []
   const toolCallId = text(message.call_id)
   if (!toolCallId) return []
+  if (isHostSubagentTool(text(message.name) ?? "")) {
+    const binding = hostSubagentBinding(message.result)
+    return binding
+      ? [hostSubagentObservation({
+          observationId: `cursor:host-subagent:${text(message.run_id) ?? "unknown"}:${toolCallId}`,
+          ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
+          toolCallId,
+          binding,
+        })]
+      : []
+  }
+  if (!isTaskTool(text(message.name) ?? "")) return []
   const args = toolInput(message.args)
   const result = asRecord(message.result)
   const success = result?.status === "success" ? asRecord(result.value) : undefined

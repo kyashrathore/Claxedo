@@ -737,4 +737,66 @@ describe("claudeSdkAdapter", () => {
       }).events).toMatchObject([{ type: "session-status", status: "idle" }])
     }
   })
+
+  test("binds a create_subagent result to the host-minted child and classifies the call as task work", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "stream_event",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-mcp-spawn-1",
+            name: "mcp__claxedo__create_subagent",
+            input: { harness: "codex", prompt: "Consult on the plan" },
+          },
+        },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "tool-mcp-spawn-1", kind: "collab_agent_tool_call", display: { intent: "task" } },
+      { type: "tool-input", toolCallId: "tool-mcp-spawn-1" },
+    ])
+
+    const call = {
+      type: "assistant",
+      uuid: "assistant-mcp-1",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "tool-mcp-spawn-1",
+          name: "mcp__claxedo__create_subagent",
+          input: { harness: "codex", prompt: "Consult on the plan" },
+        }],
+      },
+    }
+    expect(claudeSubagentObservations(call)).toEqual([])
+
+    const binding = JSON.stringify({ kind: "claxedo.subagent", subagentKey: "subagent_host", sessionId: "child-9", status: "running" })
+    expect(claudeSubagentObservations({
+      type: "user",
+      uuid: "user-mcp-1",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "tool-mcp-spawn-1", content: [{ type: "text", text: binding }] }],
+      },
+      tool_use_result: [{ type: "text", text: binding }],
+    })).toEqual([{
+      observationId: "claude:host-subagent:user-mcp-1:tool-mcp-spawn-1",
+      harnessExecutionId: "sdk-session-1",
+      subagentKey: "subagent_host",
+      toolCallId: "tool-mcp-spawn-1",
+      toolCallRole: "spawn",
+      status: "running",
+      providerId: "child-9",
+      providerKind: "claxedo",
+      childSessionId: "child-9",
+      transcript: { kind: "live" },
+    }])
+  })
 })

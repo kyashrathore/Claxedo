@@ -10,6 +10,7 @@ import {
   codexCollabAgentCall,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { codexHostSubagentObservation } from "./host-subagent"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
@@ -437,6 +438,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         source: { dir: "in", method, frame },
       })))
     }
+    const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, asRecord(params.item)) : undefined
+    if (hostSpawn) await input.observeSubagent({ observation: hostSpawn, correlationKeys: [], source: { dir: "in", method, frame } })
     const eventThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
     const parentOwned = !eventThreadId || eventThreadId === threadId
     input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
