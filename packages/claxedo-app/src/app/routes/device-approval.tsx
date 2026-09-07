@@ -136,7 +136,7 @@ export default function DeviceApprovalPage(props: {
                 Approve only if you started this sign-in yourself, and only when the code below matches the one
                 the device is showing.
               </p>
-              <p class="mb-5 font-mono text-2xl tracking-[0.3em] text-text-strong" data-testid="device-user-code">
+              <p class="mb-5 font-mono text-2xl tracking-widest text-text-strong" data-testid="device-user-code">
                 {userCode() ?? "--------"}
               </p>
 

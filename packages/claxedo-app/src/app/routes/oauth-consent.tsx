@@ -29,7 +29,7 @@ const MCP_CONSENT_SCOPES = [
   { scope: "claxedo:admin", label: "Create and destroy workspaces" },
 ] as const
 
-const MCP_CONSENT_DEFAULTS: ReadonlySet<string> = new Set(["claxedo:read", "claxedo:act"])
+const MCP_CONSENT_DEFAULTS = ["claxedo:read", "claxedo:act"] as const
 
 /**
  * The client ids this deployment registers itself, in
@@ -37,7 +37,7 @@ const MCP_CONSENT_DEFAULTS: ReadonlySet<string> = new Set(["claxedo:read", "clax
  * dynamic registration, where the authorization server — not the registrant —
  * mints the id, so no MCP host can present itself as one of these.
  */
-const DEPLOYMENT_REGISTERED_CLIENT_IDS: ReadonlySet<string> = new Set(["claxedo-cli", "claxedo-desktop"])
+const DEPLOYMENT_REGISTERED_CLIENT_IDS = ["claxedo-cli", "claxedo-desktop"] as const
 
 export async function readOAuthConsentClient(
   clientId: string,
@@ -97,7 +97,7 @@ export function offeredMcpScopes(scopes: readonly string[], clientId: string | u
   return MCP_CONSENT_SCOPES.filter((entry) => {
     if (!requested.has(entry.scope)) return false
     if (entry.scope !== "claxedo:admin") return true
-    return clientId !== undefined && DEPLOYMENT_REGISTERED_CLIENT_IDS.has(clientId)
+    return clientId !== undefined && (DEPLOYMENT_REGISTERED_CLIENT_IDS as readonly string[]).includes(clientId)
   })
 }
 
@@ -121,7 +121,7 @@ export default function OAuthConsentPage(props: {
 
   const offered = () => offeredMcpScopes(scopes(), clientId())
   const carried = () => scopes().filter((scope) => !MCP_CONSENT_SCOPES.some((entry) => entry.scope === scope))
-  const [granted, setGranted] = createSignal<ReadonlySet<string>>(MCP_CONSENT_DEFAULTS)
+  const [granted, setGranted] = createSignal<ReadonlySet<string>>(new Set(MCP_CONSENT_DEFAULTS))
 
   const toggle = (scope: string, on: boolean) => {
     setGranted((current) => {
