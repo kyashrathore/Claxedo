@@ -38,13 +38,6 @@
       "development": "./src/tools/registry.ts",
       "import": "./src/tools/registry.ts",
       "default": "./src/tools/registry.ts"
-    },
-    "./documents-tools": {
-      "types": "./src/documents-tools.ts",
-      "bun": "./src/documents-tools.ts",
-      "development": "./src/documents-tools.ts",
-      "import": "./src/documents-tools.ts",
-      "default": "./src/documents-tools.ts"
     }
   },
   "scripts": {

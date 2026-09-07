@@ -132,6 +132,8 @@ describe("the registered surface", () => {
   test("lists the inside-session set for a runtime credential", () => {
     expect(surface(runtimeCredential).listed).toEqual([
       "create_subagent",
+      "documents_list",
+      "documents_open",
       "process_logs",
       "process_start",
       "process_stop",
@@ -152,6 +154,8 @@ describe("the registered surface", () => {
 
   test("lists the outside-in set for a user credential", () => {
     expect(surface(userCredential()).listed).toEqual([
+      "documents_list",
+      "documents_open",
       "permission_reply",
       "process_logs",
       "process_start",
@@ -185,6 +189,8 @@ describe("the registered surface", () => {
     expect(writes.length).toBeGreaterThan(0)
     expect(listed.filter((name) => writes.includes(name))).toEqual([])
     expect(listed).toEqual([
+      "documents_list",
+      "documents_open",
       "process_logs",
       "processes",
       "session_changes",
