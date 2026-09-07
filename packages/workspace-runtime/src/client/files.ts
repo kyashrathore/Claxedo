@@ -1,6 +1,6 @@
 import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
-import { pick, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
+import { namedMembers, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
@@ -59,13 +59,13 @@ export function fileClient(caller: WorkspaceRuntimeCaller): WorkspaceFileClient 
     read: (input, options) => caller.call({ operation: "file.read", path: `${WorkspaceRuntimeRoutes.file}/content`, scope: input, query: { path: input.path }, options }),
     raw: async (input, options) => (await caller.send({ operation: "file.raw", path: `${WorkspaceRuntimeRoutes.file}/raw`, scope: input, query: { path: input.path }, options })).response,
     status: (input = {}, options) => caller.call({ operation: "file.status", path: `${WorkspaceRuntimeRoutes.file}/status`, scope: input, options }),
-    all: (input = {}, options) => caller.call({ operation: "file.all", path: `${WorkspaceRuntimeRoutes.file}/all`, scope: input, query: pick(input, ["path"]), options }),
+    all: (input = {}, options) => caller.call({ operation: "file.all", path: `${WorkspaceRuntimeRoutes.file}/all`, scope: input, query: namedMembers(input, ["path"]), options }),
   }
 }
 
 export function findClient(caller: WorkspaceRuntimeCaller): WorkspaceFindClient {
   return {
-    files: (input, options) => caller.call({ operation: "find.files", path: WorkspaceRuntimeRoutes.fileSearch, scope: input, query: pick(input, SEARCH_QUERY), options }),
+    files: (input, options) => caller.call({ operation: "find.files", path: WorkspaceRuntimeRoutes.fileSearch, scope: input, query: namedMembers(input, SEARCH_QUERY), options }),
   }
 }
 

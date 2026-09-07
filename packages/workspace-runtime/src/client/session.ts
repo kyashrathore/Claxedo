@@ -17,7 +17,7 @@ import type {
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentMessagePage } from "@claxedo/agent-sdk-runtime/adapters"
-import { pick, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
+import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
@@ -123,8 +123,8 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     write<AgentGoalMutationResult>(operation, method, input, suffix, options)
 
   return {
-    list: (input = {}, options) => caller.call({ operation: "session.list", path: "/session", scope: input, query: pick(input, SESSION_LIST_QUERY), options }),
-    summaries: (input = {}, options) => caller.call({ operation: "session.summaries", path: "/experimental/session", scope: input, query: pick(input, SESSION_SUMMARY_QUERY), options }),
+    list: (input = {}, options) => caller.call({ operation: "session.list", path: "/session", scope: input, query: namedMembers(input, SESSION_LIST_QUERY), options }),
+    summaries: (input = {}, options) => caller.call({ operation: "session.summaries", path: "/experimental/session", scope: input, query: namedMembers(input, SESSION_SUMMARY_QUERY), options }),
     create: (input = {}, options) => caller.call({ operation: "session.create", method: "POST", path: "/session", scope: input, body: without(input), options }),
     get: (input, options) => read("session.get", input, "", options),
     delete: (input, options) => write("session.delete", "DELETE", input, "", options),

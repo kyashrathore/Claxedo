@@ -6,7 +6,7 @@ export {
   WorkspaceRuntimeClientPayloadError,
   WorkspaceRuntimeClientTransportError,
   workspaceRuntimeClientError,
-  pick,
+  namedMembers,
   without,
 } from "./client/request"
 export type {

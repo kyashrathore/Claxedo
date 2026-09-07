@@ -102,29 +102,24 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
     return { request, response }
   }
 
+  /**
+   * `T` is a DECLARED view of the body, the same contract `RuntimeStore` uses
+   * for its JSON columns: the routes this client calls are defined in this
+   * package, so a read here is the other end of a serialization this
+   * repository owns — not a parse of foreign input. It is not a validation,
+   * and callers that must survive an older runtime should narrow what they
+   * read.
+   */
   const call = async <T>(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<T>> => {
     const sent = await send(input)
-    return { data: await jsonBody<T>(input.operation, sent.response), ...sent }
+    try {
+      return { data: await sent.response.json(), ...sent }
+    } catch (error) {
+      throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "Response was not valid JSON")
+    }
   }
 
   return { send, call, url }
-}
-
-/**
- * A JSON body typed as the caller's `T`.
- *
- * `T` is a DECLARED view of the body, the same contract `RuntimeStore` uses for
- * its JSON columns: the routes this client calls are defined in this package,
- * so a read here is the other end of a serialization this repository owns —
- * not a parse of foreign input. It is not a validation, and callers that must
- * survive an older runtime should narrow what they read.
- */
-async function jsonBody<T>(operation: string, response: Response): Promise<T> {
-  try {
-    return await response.json()
-  } catch (error) {
-    throw new WorkspaceRuntimeClientPayloadError(operation, error instanceof Error ? error.message : "Response was not valid JSON")
-  }
 }
 
 /** The typed error for a non-2xx response whose body is a Claxedo `{ error: { code, message } }` envelope, or any other body. */
@@ -162,7 +157,7 @@ function mergeHeaders(...values: Array<HeadersInit | undefined>) {
 }
 
 /** The members of `input` named by `keys`, for a query string. */
-export function pick(input: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+export function namedMembers(input: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
   return Object.fromEntries(keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]]))
 }
 
