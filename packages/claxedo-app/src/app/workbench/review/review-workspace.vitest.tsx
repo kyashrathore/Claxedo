@@ -22,6 +22,8 @@ import { REVIEW_SCROLL_DIAGNOSTIC_PROPERTY } from "./review-scroll-restoration"
 import type { ReviewWorkspaceWorkingSetSnapshot } from "./review-workspace-working-set"
 
 type ReviewTabMount = {
+  focusedDiffPath: () => string | undefined
+  focusedDiffMode: () => string | undefined
   retained: Record<string, unknown> | undefined
   viewport: HTMLDivElement | undefined
   publishSurface: (surface: Record<string, unknown>) => void
@@ -31,11 +33,15 @@ const reviewTabMounts = vi.hoisted(() => ({ list: [] as unknown[] }))
 
 vi.mock("@/features/review/ui/review-tab", () => ({
   ReviewTab: (props: {
+    focusedDiffPath?: string
+    focusedDiffMode?: string
     retained?: Record<string, unknown>
     onRetainedChange?: (surface: Record<string, unknown>) => void
     scrollRef?: (element: HTMLDivElement) => void
   }) => {
     const mount: ReviewTabMount = {
+      focusedDiffPath: () => props.focusedDiffPath,
+      focusedDiffMode: () => props.focusedDiffMode,
       // The real ReviewTab reads `retained` once at setup — mirror that.
       retained: props.retained,
       viewport: undefined,
@@ -368,5 +374,32 @@ describe("review-intent focus", () => {
     flushFrames()
     expect(activeTabId(container)).toBe("review")
     expect(container.querySelector('[data-workspace-tab-id="file:src/new.ts"]')).toBeNull()
+    const tab = mounts().at(-1)
+    expect(tab?.focusedDiffPath()).toBe("src/new.ts")
+  })
+
+  test("hands the file and its review mode to the Review tab after the request was consumed", () => {
+    const [focus, setFocus] = createSignal<{ path?: string; mode?: "staged" | "unstaged"; intent?: "review" }>({
+      path: "src/new.ts",
+      mode: "staged",
+      intent: "review",
+    })
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_test"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusPath={focus().path}
+        focusVersion={1}
+        focusFileIntent={focus().intent}
+        focusReviewMode={focus().mode}
+        onFocusConsumed={() => setFocus({})}
+      />
+    ))
+    flushFrames()
+    expect(activeTabId(container)).toBe("review")
+    const tab = mounts().at(-1)
+    expect(tab?.focusedDiffPath()).toBe("src/new.ts")
+    expect(tab?.focusedDiffMode()).toBe("staged")
   })
 })

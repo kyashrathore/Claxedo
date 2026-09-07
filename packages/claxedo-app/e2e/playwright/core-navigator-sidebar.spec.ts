@@ -892,7 +892,6 @@ test.describe("core navigator sidebar placement @core", () => {
   test("a Changes click focuses the clicked file in the Review tab, from the sidebar and from the classic overlay alike", async ({ page }) => {
     // Same defect as the Staged / Unstaged scenario below: the focus is consumed before
     // `ReviewTab` reads its path, so the file is listed but never the selected diff.
-    test.fail(true, "review-workspace.tsx:351 consumes the file focus before ReviewTab reads its path and reviewMode")
     await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
     await gotoSession(page)
 
@@ -955,7 +954,6 @@ test.describe("core navigator sidebar placement @core", () => {
     // undefined without a directory), so against a real runtime every Changes-tab read and
     // write is unscoped. The fixture answers regardless, which is why this is its own
     // scenario: it turns green the moment the client scopes its requests.
-    test.fail(true, "sdk.tsx:207 git client sends no ?directory= / x-claxedo-directory; workspace-runtime client git namespace has no directory input")
     const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
     await gotoSession(page)
     await openSourceControl(page)
@@ -1053,7 +1051,6 @@ test.describe("core navigator sidebar placement @core", () => {
     // panel with `focus: null`, so `focusPath`, `focusFileIntent` and `focusReviewMode` are
     // already undefined when `ReviewTab` reads `focusedDiffPath` / `focusedDiffMode`. The
     // review therefore stays in its opening mode ("Uncommitted") with no selected diff.
-    test.fail(true, "review-workspace.tsx:351 consumes the file focus before ReviewTab reads its path and reviewMode")
     await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
     await gotoSession(page)
 
