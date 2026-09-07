@@ -109,6 +109,14 @@ export function createShellLayoutState(input: {
   const setWorkspacePanelWidth = (width: number) => {
     if (!Number.isFinite(width) || width < 0 || workspacePanel.width === width) return
     workspacePanel = { ...workspacePanel, width }
+    // A latched px size (the restore under the sidebar preset) follows the
+    // panel's resting width; otherwise a later resize would leave the column
+    // margin pinned at the width the restore happened to use.
+    const latched = commands.workspacePanelSize
+    if (latched?.type === "region.update" && latched.region.size?.unit === "px") {
+      dispatch("workspacePanelSize", { ...latched, region: { ...latched.region, size: { unit: "px", value: width } } })
+      return
+    }
     setVersion((version) => version + 1)
   }
   const collapseFloatingRail = () => {

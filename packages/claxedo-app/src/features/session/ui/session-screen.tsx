@@ -12,8 +12,7 @@ import {
   createComputed,
   on,
   untrack,
-  type Accessor,
-} from "solid-js"
+  type Accessor, createSignal } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/features/session/providers/session-selection"
@@ -43,6 +42,8 @@ import { useComments } from "@/platform/comments/provider"
 import { pickProjectFolderWith } from "./components/session-pick-project-folder"
 import { NewSessionDesignView, SessionHeader } from "@/features/session/ui/components"
 import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { PreviousMessagesRow } from "./message-timeline-turn-rows"
+
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
 import { same } from "@/lib/same"
 import { isRuntimeAgentMessage } from "@/features/session/conversation/agent-conversation-codec"
@@ -1038,15 +1039,30 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
   // presentation flip moves it explicitly. A list of one turn is left alone:
   // there is nothing to collapse, and committing it would pin a zero window
   // over history that is still arriving.
+  // The floating card keeps its transcript collapsed until the user peeks or
+  // sends a new prompt; a reply the user just asked for must not land hidden.
+  const [transcriptPeeked, setTranscriptPeeked] = createSignal(false)
+  const transcriptCollapsed = createMemo(() => floating() && !transcriptPeeked())
   createEffect(
     on(
       () => props.presentation(),
       (presentation, previous) => {
         if (presentation === "floating") {
+          setTranscriptPeeked(false)
           if (visibleUserMessages().length > 1) historyWindow.collapseToLastTurn()
           return
         }
         if (previous === "floating") historyWindow.resetToInitialWindow()
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => visibleUserMessages().length,
+      (length, previous) => {
+        if (floating() && previous !== undefined && length > previous) setTranscriptPeeked(true)
       },
       { defer: true },
     ),
@@ -1221,7 +1237,24 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
           class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3"
           classList={{ "session-floating-overlay": floating() }}
         >
-          <div class="flex-1 min-h-0 overflow-hidden" classList={{ "session-floating-timeline": floating() }}>
+          <Show when={floating()}>
+            <div class="session-floating-peek">
+              <PreviousMessagesRow
+                count={visibleUserMessages().length}
+                expanded={transcriptPeeked()}
+                testId="session-transcript-peek"
+                onReveal={() => setTranscriptPeeked((peeked: boolean) => !peeked)}
+              />
+            </div>
+          </Show>
+          <div
+            class="flex-1 min-h-0 overflow-hidden"
+            classList={{
+              "session-floating-timeline": floating(),
+              "session-floating-timeline-collapsed": transcriptCollapsed(),
+            }}
+            data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
+          >
             <Switch>
               <Match when={gate.open}>
                 <NewSessionDesignView

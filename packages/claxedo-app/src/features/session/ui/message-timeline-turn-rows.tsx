@@ -85,20 +85,28 @@ export function TurnFoldRow(props: {
   )
 }
 
-export function PreviousMessagesRow(props: { count: number; onReveal: () => void }) {
+export function PreviousMessagesRow(props: {
+  count: number
+  onReveal: () => void
+  /** When set, the row is a toggle: `true` shows the collapse label instead of the count. */
+  expanded?: boolean
+  testId?: string
+}) {
   const language = useLanguage()
   const label = () =>
-    language.t(
-      props.count === 1 ? "session.timeline.previousMessages.one" : "session.timeline.previousMessages.other",
-      { count: props.count },
-    )
+    props.expanded
+      ? language.t("session.timeline.collapseTranscript")
+      : language.t(
+          props.count === 1 ? "session.timeline.previousMessages.one" : "session.timeline.previousMessages.other",
+          { count: props.count },
+        )
   return (
     <div data-component="previous-messages" class="w-full">
       <button
         type="button"
-        data-testid="timeline-previous-messages"
+        data-testid={props.testId ?? "timeline-previous-messages"}
         data-count={props.count}
-        aria-expanded="false"
+        aria-expanded={props.expanded ? "true" : "false"}
         onClick={(event) => {
           event.stopPropagation()
           props.onReveal()
@@ -107,7 +115,7 @@ export function PreviousMessagesRow(props: { count: number; onReveal: () => void
       >
         <span class="text-14-medium tabular-nums">{label()}</span>
         <span class="inline-flex items-center opacity-60 group-hover/previous-messages:opacity-100">
-          <Icon name="chevron-right" size="small" />
+          <Icon name={props.expanded ? "chevron-down" : "chevron-right"} size="small" />
         </span>
       </button>
       <div class="h-px w-full bg-border-weak-base" aria-hidden="true" />

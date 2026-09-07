@@ -409,6 +409,7 @@ export const dict = {
   "session.question.progress": "{{current}} of {{total}} questions",
   "session.timeline.previousMessages.one": "{{count}} previous message",
   "session.timeline.previousMessages.other": "{{count}} previous messages",
+  "session.timeline.collapseTranscript": "Collapse transcript",
   "session.followupDock.summary.one": "{{count}} queued message",
   "session.followupDock.summary.other": "{{count}} queued messages",
   "session.followupDock.sendNow": "Send now",

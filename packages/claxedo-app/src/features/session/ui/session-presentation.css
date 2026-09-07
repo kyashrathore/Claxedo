@@ -62,3 +62,15 @@
 [data-session-presentation="floating"] .session-floating-dock {
   padding-bottom: 0.75rem;
 }
+
+/* Collapsed transcript: the slot keeps its timeline mounted at zero height so a
+   peek re-expands the same instance; the strip above it is the only thing shown. */
+[data-session-presentation="floating"] .session-floating-timeline-collapsed {
+  max-height: 0;
+  visibility: hidden;
+}
+
+[data-session-presentation="floating"] .session-floating-peek {
+  flex: none;
+  padding-inline: 1rem;
+}

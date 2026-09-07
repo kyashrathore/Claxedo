@@ -282,3 +282,19 @@ describe("shell layout state", () => {
     })
   })
 })
+
+test("a latched px restore follows later resting-width updates", () => {
+  const preset = () => "claxedo.navigator-sidebar" as const
+  const layout = createShellLayoutState({
+    target: () => "web",
+    preset,
+    initialRail: { collapsed: false, pinned: true, width: 260 },
+    initialWorkspacePanel: { open: true, width: 520 },
+  })
+  layout.dispatch("workspacePanelSize", workspacePanelFullWidthCommand(layout.config(), layout.workspacePanelWidth()))
+  expect(layout.config().regions.workspacePanel.size).toEqual({ unit: "px", value: 520 })
+  layout.setWorkspacePanelWidth(558)
+  expect(layout.config().regions.workspacePanel.size).toEqual({ unit: "px", value: 558 })
+  expect(layout.workspacePanelWidth()).toBe(558)
+})
+

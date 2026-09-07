@@ -387,6 +387,7 @@ export const dict = {
   "session.todo.expand": "Udvid",
   "session.timeline.previousMessages.one": "{{count}} tidligere besked",
   "session.timeline.previousMessages.other": "{{count}} tidligere beskeder",
+  "session.timeline.collapseTranscript": "Skjul udskrift",
   "session.followupDock.summary.one": "{{count}} besked i kø",
   "session.followupDock.summary.other": "{{count}} beskeder i kø",
   "session.followupDock.sendNow": "Send nu",

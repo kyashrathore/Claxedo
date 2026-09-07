@@ -393,6 +393,7 @@ export const dict = {
   "session.todo.expand": "Expandir",
   "session.timeline.previousMessages.one": "{{count}} mensaje anterior",
   "session.timeline.previousMessages.other": "{{count}} mensajes anteriores",
+  "session.timeline.collapseTranscript": "Contraer transcripción",
   "session.followupDock.summary.one": "{{count}} mensaje en cola",
   "session.followupDock.summary.other": "{{count}} mensajes en cola",
   "session.followupDock.sendNow": "Enviar ahora",

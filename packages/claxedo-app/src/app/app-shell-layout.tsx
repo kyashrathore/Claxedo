@@ -356,6 +356,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
       next.regions.workspacePanel.size.value === 100
     shellLayout.dispatch("workspacePanelSize", workspacePanelSizeLatches(fullWidth) ? command : undefined)
+    // At full view the panel has room for its navigator; in panel placement an
+    // unselected navigator would leave that room empty.
+    const panel = claxedoState.workspacePanel.state()
+    if (fullWidth && settings.appearance.navigatorPlacement() === "panel" && panel.open && !panel.navigator) {
+      claxedoState.workspacePanel.retarget({ workspaceDir: panel.workspaceDir, targetPaneId: panel.targetPaneId, navigator: "changes" })
+    }
     emitTerminalFit()
   }
   const toggleWorkspacePanel = (button: HTMLButtonElement) => {
