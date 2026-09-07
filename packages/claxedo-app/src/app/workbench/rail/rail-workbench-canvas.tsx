@@ -199,6 +199,7 @@ function EmptyDraftSessionComposer(props: {
             isVisible: () => true,
             requestClose: () => {},
             requestFocus: () => {},
+            presentation: () => "docked",
           }}
         />
       </Suspense>
