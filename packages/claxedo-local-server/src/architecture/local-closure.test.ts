@@ -208,12 +208,14 @@ describe("@claxedo/local-server closure", () => {
     // this package that every module reading untrusted JSON narrows through
     // instead of writing its own `record`/`text` pair. It adds no package edge,
     // and importing it from more modules cannot grow this set — it is already
-    // in it. The numbers below are
-    // the last MEASURED values (80 modules after the generic-harness + Agent
-    // Plugins merge and that consolidation) and must be re-run, never summed
-    // from increments.
+    // in it. The 23rd package is `@claxedo/mcp`, the first-party MCP endpoint
+    // the desktop composition mounts at `/api/claxedo/mcp` for the sessions it
+    // launches; it reaches only the MCP SDK, hono, zod, helpers and the runtime
+    // contract, all already present here. The numbers below are the last
+    // MEASURED values (80 modules, 23 packages) and must be re-run, never
+    // summed from increments.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(80)
-    expect(packages.size).toBeLessThanOrEqual(22)
+    expect(packages.size).toBeLessThanOrEqual(23)
   })
 })

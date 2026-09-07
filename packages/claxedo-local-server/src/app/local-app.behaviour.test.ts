@@ -7,6 +7,8 @@ import { Hono } from "hono"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
+import type { McpClientInputs } from "@claxedo/mcp"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
@@ -412,5 +414,71 @@ describe("local composition — session metadata recording", () => {
     expect(tap, "the composition must record local session metadata").toBeGreaterThan(-1)
     expect(proxy, "the composition must mount the workspace runtime proxy").toBeGreaterThan(-1)
     expect(tap, "the tap must be registered BEFORE the runtime proxy").toBeLessThan(proxy)
+  })
+})
+
+describe("local composition — first-party MCP", () => {
+  const claims = { runtimeId: "rt_1", workspaceId: "ws_1", expiresAt: Number.MAX_SAFE_INTEGER }
+  const stubClient: ClaxedoMcpClient = {
+    deployment: "loopback",
+    runtime: async () => async () => new Response(null, { status: 204 }),
+    resolveTarget: async () => ({ kind: "loopback", baseUrl: "", headers: {} }),
+    server: () => Promise.reject(new Error("unused")),
+    workspaces: async () => [],
+  }
+  const initialize = (built: Hono, headers: Record<string, string> = {}) =>
+    built.request("http://localhost/api/claxedo/mcp?session=ses_1", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "harness", version: "0" } },
+      }),
+    })
+
+  test("is absent unless the composition supplies the runtime credential verifier", async () => {
+    expect((await initialize(app(), { authorization: "Bearer rt" })).status).toBe(404)
+  })
+
+  test("admits the runtime credential and hands the client factory this app's fetch for that workspace", async () => {
+    const inputs: McpClientInputs[] = []
+    const echo = new Hono().get("/", (c) => c.json({ workspace: c.req.header("x-workspace-id") ?? null }))
+    const built = app({
+      routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: echo }],
+      firstPartyMcp: {
+        verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
+        createClient: (input) => {
+          inputs.push(input)
+          return stubClient
+        },
+      },
+    })
+
+    expect((await initialize(built)).status).toBe(401)
+    const response = await initialize(built, { authorization: "Bearer rt" })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("mcp-session-id")).toMatch(/\S/)
+    expect(inputs).toHaveLength(1)
+    expect(inputs[0]).toMatchObject({
+      deployment: "loopback",
+      credential: { kind: "runtime", runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_1" },
+      local: { workspace: { workspaceId: "ws_1" } },
+    })
+    expect(inputs[0]?.controlPlane).toBeUndefined()
+    expect(await (await inputs[0]!.local!.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: "ws_1" })
+  })
+
+  test("reflects no CORS origin on the MCP route even for an origin the shell admits", async () => {
+    const built = app({
+      firstPartyMcp: { verifyRuntimeCredential: () => claims, createClient: () => stubClient },
+    })
+    const headers = { origin: "http://localhost:5173", authorization: "Bearer rt" }
+    const shell = await built.request("http://localhost/api/claxedo/health", { headers })
+    expect(shell.headers.get("access-control-allow-origin")).toBe("http://localhost:5173")
+    const mcp = await initialize(built, headers)
+    expect(mcp.status).toBe(200)
+    expect(mcp.headers.get("access-control-allow-origin")).toBeNull()
   })
 })

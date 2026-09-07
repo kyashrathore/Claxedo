@@ -15,6 +15,7 @@ import {
   type ElicitRequestURLParams,
   type RequestId,
 } from "@modelcontextprotocol/sdk/types.js"
+import { bearerToken } from "@claxedo/helpers/string"
 import type { ClaxedoFetch, ClaxedoMcpClient, WorkspaceTarget } from "./client/contract"
 import { MCP_SCOPES, type McpAuditEvent, type McpCredential, type McpToolContext } from "./context"
 import { createToolRegistry, type ToolRegistry } from "./tools/registry"
@@ -66,11 +67,16 @@ export type LoopbackFirstPartyMcpOptions = FirstPartyMcpOptions & Readonly<{ ver
 export type ClaxedoMcpMountOptions = Readonly<{
   mount: ClaxedoMcpMount
   verifyRuntimeCredential?: VerifyRuntimeCredential
-  /** Returns undefined for a request that carries no valid user credential; never throws for one. */
+  /**
+   * Returns undefined for a request that carries no valid user credential;
+   * never throws for one. The object it returns is the credential handed to
+   * `createClient` and `audit`, so a mount may key per-credential state on it.
+   */
   resolveUserCredential?: (request: Request) => Promise<McpCredential | undefined>
   createClient: (credential: McpCredential, request: Request) => ClaxedoMcpClient | Promise<ClaxedoMcpClient>
   registerTools: ReadonlyArray<McpToolGroup>
   audit: (event: McpAuditEvent) => void | Promise<void>
+  /** Read-only for a runtime credential; a user credential's read-only state is the resolver's to decide. */
   readOnly?: (credential: McpCredential) => boolean
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
   serverInfo: Readonly<{ name: string; version: string }>
@@ -118,11 +124,6 @@ export function mcpAuditRecord(event: McpAuditEvent) {
   }
 }
 
-export function bearerToken(request: Request): string | undefined {
-  const match = /^Bearer\s+(\S+)$/i.exec(request.headers.get("authorization") ?? "")
-  return match?.[1]
-}
-
 /** One identity string per credential; sessions and the in-flight cap are keyed by it. */
 export function credentialKey(credential: McpCredential): string {
   return credential.kind === "runtime"
@@ -135,7 +136,7 @@ type McpSession = {
   close: () => Promise<void>
 }
 
-function errorResponse(status: number, code: string, message: string, headers: Record<string, string> = {}) {
+function mcpMountRefusal(status: number, code: string, message: string, headers: Record<string, string> = {}) {
   return Response.json({ error: { code, message } }, { status, headers })
 }
 
@@ -158,16 +159,11 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
   })
   const inFlight = createInFlightCounter(options.maxInFlightPerCredential ?? DEFAULT_MAX_IN_FLIGHT)
 
-  const withReadOnly = (credential: McpCredential): McpCredential => ({
-    ...credential,
-    readOnly: options.readOnly?.(credential) ?? credential.readOnly,
-  })
-
   const runtimeCredential = async (token: string, request: Request): Promise<McpCredential | undefined> => {
     const claims = await options.verifyRuntimeCredential?.(token)
     if (!claims || claims.expiresAt <= now()) return undefined
     const sessionId = new URL(request.url).searchParams.get("session")?.trim()
-    return withReadOnly({
+    const credential: McpCredential = {
       kind: "runtime",
       runtimeId: claims.runtimeId,
       workspaceId: claims.workspaceId,
@@ -176,14 +172,15 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
       ...(claims.permissionMode ? { permissionMode: claims.permissionMode } : {}),
       crossMachineWrites: options.crossMachineWrites?.(claims) ?? false,
       readOnly: false,
-    })
+    }
+    return options.readOnly?.(credential) ? { ...credential, readOnly: true } : credential
   }
 
   const resolveCredential = async (request: Request): Promise<McpCredential | undefined> => {
-    const token = bearerToken(request)
+    const token = bearerToken(request.headers.get("authorization"))
     if (options.mount === "loopback") return token ? runtimeCredential(token, request) : undefined
     const user = await options.resolveUserCredential?.(request)
-    if (user) return withReadOnly(user)
+    if (user) return user
     return token && options.verifyRuntimeCredential ? runtimeCredential(token, request) : undefined
   }
 
@@ -191,7 +188,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
     const challenge = options.mount === "loopback"
       ? 'Bearer realm="claxedo-mcp"'
       : `Bearer realm="claxedo-mcp", resource_metadata="${new URL(request.url).origin}${OAUTH_PROTECTED_RESOURCE_PATH}"`
-    return errorResponse(401, "mcp_unauthorized", "A bearer credential this mount accepts is required", {
+    return mcpMountRefusal(401, "mcp_unauthorized", "A bearer credential this mount accepts is required", {
       "www-authenticate": challenge,
     })
   }
@@ -266,14 +263,14 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Hono {
 
   const handle = async (request: Request): Promise<Response> => {
     if (options.mount === "loopback" && !isLoopbackRequest(request)) {
-      return errorResponse(403, "mcp_loopback_only", "The loopback MCP mount answers only loopback hosts and origins")
+      return mcpMountRefusal(403, "mcp_loopback_only", "The loopback MCP mount answers only loopback hosts and origins")
     }
     const credential = await resolveCredential(request)
     if (!credential) return unauthorized(request)
     const key = credentialKey(credential)
     const release = request.method === "POST" ? inFlight.acquire(key) : () => undefined
     if (!release) {
-      return errorResponse(429, "mcp_too_many_requests", "This credential already has the maximum number of requests open", {
+      return mcpMountRefusal(429, "mcp_too_many_requests", "This credential already has the maximum number of requests open", {
         "retry-after": "1",
       })
     }

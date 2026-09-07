@@ -74,7 +74,12 @@ const ENTRIES = [
   // `hosts/workspace-runtime/workspace-session-admission.ts` each used to
   // define privately. Its `/guards` subpath has zero imports and no host APIs,
   // so it adds one package name and no transitive edges.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 38 },
+  //
+  // `@claxedo/mcp` is the first-party MCP endpoint (`/api/claxedo/mcp`); the
+  // node mounts it through `src/mcp/first-party-mcp.ts`, the one module the
+  // hosted worker shares with it. The package reaches only the MCP SDK, hono,
+  // zod, helpers and the runtime contract. Measured, not summed: 135/38.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 135, packages: 38 },
 ] as const
 
 /** The remaining cloud compositions. */

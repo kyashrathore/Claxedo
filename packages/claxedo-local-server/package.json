@@ -44,6 +44,7 @@
   "dependencies": {
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/mcp": "workspace:*",
     "@claxedo/opencode-server-adapter": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/server-core": "workspace:*",

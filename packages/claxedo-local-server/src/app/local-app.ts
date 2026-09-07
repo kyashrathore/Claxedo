@@ -51,6 +51,13 @@ import { UserHostedServingRoutes } from "../workspace/user-hosted-serving-routes
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
+import {
+  CLAXEDO_MCP_PATH,
+  createClaxedoMcpRoutes,
+  inProcessFetch,
+  mcpAuditRecord,
+  type LoopbackFirstPartyMcpOptions,
+} from "@claxedo/mcp"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { raw, record } from "../platform/json"
@@ -92,6 +99,12 @@ export type LocalAppOptions = {
   usage?: Parameters<typeof LocalUsageRoutes>[0]
   /** Explicit build/composition contributions; absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
+  /**
+   * The first-party MCP endpoint for the sessions this server launches. The
+   * verifier is the runtime's own credential issuer; the client factory is
+   * handed this app's in-process fetch for the credential's workspace.
+   */
+  firstPartyMcp?: LoopbackFirstPartyMcpOptions
   /** Machine-local daemon control surface. Never exposed to the renderer. */
   daemon?: {
     identity: {
@@ -164,6 +177,9 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         // defense relies on the browser blocking the cross-origin READ, which
         // it only does when no ACAO comes back.
         if ((options.isCredentialPath ?? isLocalCredentialPath)(c.req.path)) return undefined
+        // The MCP route is reached by harness processes, never by a page; a
+        // loopback page granted an ACAO here could drive it from a browser.
+        if (c.req.path === CLAXEDO_MCP_PATH) return undefined
         return (options.corsOrigin ?? localCorsOrigin)(origin, c.req.path)
       },
       maxAge: 86400,
@@ -320,6 +336,31 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     contributions: options.routeContributions ?? [],
     mount: (contribution) => app.route(contribution.path, contribution.routes),
   })
+  if (options.firstPartyMcp) {
+    const { firstPartyMcp } = options
+    app.route(CLAXEDO_MCP_PATH, createClaxedoMcpRoutes({
+      mount: "loopback",
+      verifyRuntimeCredential: firstPartyMcp.verifyRuntimeCredential,
+      createClient: (credential, request) => firstPartyMcp.createClient({
+        deployment: "loopback",
+        credential,
+        request,
+        ...(credential.kind === "runtime"
+          ? {
+              local: {
+                fetch: inProcessFetch((runtimeRequest) => app.fetch(runtimeRequest), { "x-workspace-id": credential.workspaceId }),
+                workspace: { workspaceId: credential.workspaceId },
+              },
+            }
+          : {}),
+      }),
+      registerTools: firstPartyMcp.registerTools ?? [],
+      audit: (event) => console.info("[claxedo-local-server] mcp.audit", mcpAuditRecord(event)),
+      ...(firstPartyMcp.readOnly ? { readOnly: firstPartyMcp.readOnly } : {}),
+      ...(firstPartyMcp.crossMachineWrites ? { crossMachineWrites: firstPartyMcp.crossMachineWrites } : {}),
+      serverInfo: { name: "claxedo", version: env.npm_package_version || "unknown" },
+    }))
+  }
 
   return { injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => nodeWebSocket.injectWebSocket(server) }
 }

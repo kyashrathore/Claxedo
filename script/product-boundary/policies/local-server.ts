@@ -94,7 +94,12 @@ export const localServer: Policy = {
   // +1 package (2026-09-06): @claxedo/helpers, reached through the shared
   // server-core surface (see server.ts for the owner). Re-measured, not
   // summed: 54 modules, 22 packages.
-  ceilings: { modules: 54, packages: 22 },
+  // +1 package: @claxedo/mcp, the first-party MCP endpoint the desktop-local
+  // composition mounts at `/api/claxedo/mcp` for the sessions it launches
+  // (runtime credential only). It reaches only the MCP SDK, hono, zod, helpers
+  // and the runtime contract, all already in this closure. Re-measured, not
+  // summed: 54 modules, 23 packages.
+  ceilings: { modules: 54, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

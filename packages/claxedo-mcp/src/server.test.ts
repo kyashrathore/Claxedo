@@ -340,10 +340,17 @@ describe("composition", () => {
     expect(await toolNames(client)).toEqual([])
   })
 
-  test("the credential hook sees the resolved credential", async () => {
+  test("the read-only hook sees the resolved runtime credential and leaves user credentials to the resolver", async () => {
     const seen: McpCredential[] = []
-    const { url } = await hosted({ readOnly: (credential) => { seen.push(credential); return false } })
-    await connect(url, { authorization: "Bearer cli-jwt" })
-    expect(seen[0]).toMatchObject({ kind: "user", actorId: "actor_1" })
+    const { url } = await hosted({
+      verifyRuntimeCredential: () => runtimeClaims,
+      readOnly: (credential) => { seen.push(credential); return true },
+    })
+    const user = await connect(url, { authorization: "Bearer cli-jwt" })
+    expect(await toolNames(user.client)).toContain("session_send")
+    const runtime = await connect(url, { authorization: "Bearer rt-token" })
+    expect(await toolNames(runtime.client)).toEqual(["runtime_ping", "wait"])
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((credential) => credential.kind === "runtime" && credential.runtimeId === "rt_1" && !credential.readOnly)).toBe(true)
   })
 })

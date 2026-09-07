@@ -8,6 +8,8 @@ import { DuplicateRouteOwner, withRouteOwnership } from "../route-ownership"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
+import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
+import type { McpClientInputs } from "@claxedo/mcp"
 
 /**
  * Who owns what in the self-hosted composition.
@@ -41,7 +43,7 @@ afterEach(() => {
   rmSync(dataDir, { recursive: true, force: true })
 })
 
-function selfHosted() {
+function selfHosted(options: Parameters<typeof createSelfHostedApp>[1] = {}) {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
   return createSelfHostedApp(
     createControlPlaneServices(
@@ -51,6 +53,7 @@ function selfHosted() {
       },
       { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
+    options,
   )
 }
 
@@ -94,6 +97,52 @@ describe("the self-hosted route ledger", () => {
 
     expect(built.routeOwnership.owner("/api/workspace")).toBe("self-hosted-node")
     expect(built.routeOwnership.owner("/api/claxedo/never-mounted")).toBeUndefined()
+  })
+})
+
+describe("the first-party MCP on the self-hosted node", () => {
+  const stubClient: ClaxedoMcpClient = {
+    deployment: "node",
+    runtime: async () => async () => new Response(null, { status: 204 }),
+    resolveTarget: async () => ({ kind: "node", baseUrl: "", headers: {} }),
+    server: () => Promise.reject(new Error("unused")),
+    workspaces: async () => [],
+  }
+
+  test("is a contribution under its own owner, and only when the composition supplies it", async () => {
+    expect(selfHosted().routeOwnership.owner("/api/claxedo/mcp")).toBeUndefined()
+    const built = selfHosted({ firstPartyMcp: { createClient: () => stubClient } })
+    expect(built.routeOwnership.owner("/api/claxedo/mcp")).toBe("feature:claxedo-mcp")
+  })
+
+  test("admits the unsigned loopback caller as the box's anonymous account and serves this box's runtimes in-process", async () => {
+    const inputs: McpClientInputs[] = []
+    const built = selfHosted({
+      firstPartyMcp: {
+        createClient: (input) => {
+          inputs.push(input)
+          return stubClient
+        },
+      },
+    })
+    const response = await built.app.request("http://127.0.0.1/api/claxedo/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "cli", version: "0" } },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("mcp-session-id")).toMatch(/\S/)
+    expect(inputs[0]).toMatchObject({
+      deployment: "node",
+      credential: { kind: "user", actorId: "loopback", clientId: "loopback", readOnly: false },
+      local: { workspace: {} },
+    })
+    expect(await (await inputs[0]!.controlPlane!.fetch("/api/claxedo/health")).json()).toMatchObject({ ok: true })
   })
 })
 

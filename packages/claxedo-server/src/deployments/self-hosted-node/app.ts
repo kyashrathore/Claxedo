@@ -37,7 +37,11 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
-import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
+import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { fullUserCredential, inProcessFetch, type FirstPartyMcpOptions } from "@claxedo/mcp"
+import { bearerToken } from "@claxedo/helpers/string"
+import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -675,6 +679,12 @@ export function createSelfHostedApp(
     connectionRateLimiter?: ConnectionRateLimiter
     /** Explicit build/composition contributions; absent in the disabled product. */
     routeContributions?: readonly ControlPlaneRouteContribution[]
+    /**
+     * The first-party MCP endpoint (`/api/claxedo/mcp`). Signed: the CLI JWT
+     * as the whole account. Unsigned: a loopback caller with no identity,
+     * the same trust every other route on this box extends it.
+     */
+    firstPartyMcp?: FirstPartyMcpOptions
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -1220,8 +1230,41 @@ export function createSelfHostedApp(
     channels: controlPlaneChannels,
   })
 
+  const firstPartyMcp = options.firstPartyMcp
+    ? firstPartyMcpContribution({
+        mount: "node",
+        app,
+        authority: services.authority,
+        options: options.firstPartyMcp,
+        version: process.env.npm_package_version || "unknown",
+        signedAuth: async (request) => {
+          try {
+            const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
+            return auth.mode === "signed" ? auth : undefined
+          } catch (error) {
+            if (error instanceof ControlPlaneAuthError) return undefined
+            throw error
+          }
+        },
+        anonymousCredential: (request) =>
+          !services.auth.config.enabled && isLoopbackLocalRequest(request) && !bearerToken(request.headers.get("authorization"))
+            ? fullUserCredential({ actorId: "loopback", clientId: "loopback" })
+            : undefined,
+        // This box runs its own workspaces behind the runtime proxy, which
+        // picks the workspace from `x-workspace-id`: stamped for a runtime
+        // credential, named per call by the client for an account.
+        local: (credential) =>
+          credential.kind === "runtime"
+            ? {
+                fetch: inProcessFetch((call) => app.request(call), { "x-workspace-id": credential.workspaceId }),
+                workspace: { workspaceId: credential.workspaceId },
+              }
+            : { fetch: inProcessFetch((call) => app.request(call)), workspace: {} },
+        auditFallback: (record) => Log.create({ service: "claxedo-mcp" }).info("mcp.audit", record),
+      })
+    : undefined
   mountControlPlaneRouteContributions({
-    contributions: options.routeContributions ?? [],
+    contributions: [...(options.routeContributions ?? []), ...(firstPartyMcp ? [firstPartyMcp] : [])],
     mount: (contribution) => mountOwnedRoute(
       app,
       routeOwnership,
@@ -1283,6 +1326,7 @@ export type ControlPlaneStackOptions = {
   processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
+  firstPartyMcp?: FirstPartyMcpOptions
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1542,6 +1586,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
+    ...(options.firstPartyMcp ? { firstPartyMcp: options.firstPartyMcp } : {}),
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return
       localSessionProjectionReady = new Promise((resolve) => {
@@ -1594,6 +1639,7 @@ export function startServer(
   options: {
     processObserver?: ProcessObserver
     routeContributions?: readonly ControlPlaneRouteContribution[]
+    firstPartyMcp?: FirstPartyMcpOptions
   } = {},
 ) {
   return startControlPlaneStack({
@@ -1601,5 +1647,6 @@ export function startServer(
     port,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
+    ...(options.firstPartyMcp ? { firstPartyMcp: options.firstPartyMcp } : {}),
   })
 }
