@@ -140,6 +140,9 @@ describe("static hosted product roots", () => {
       bundle: true,
       format: "esm",
       platform: "neutral",
+      // The MCP SDK's `ajv` publishes only `main`; on `neutral` esbuild
+      // resolves no main field at all and the bundle fails to find it.
+      mainFields: ["module", "main"],
       target: "es2022",
       conditions: ["workerd", "worker", "import"],
       external: ["node:*"],
