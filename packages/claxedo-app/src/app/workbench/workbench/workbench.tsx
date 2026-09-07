@@ -624,6 +624,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               <div
                 data-workbench-content={contentId}
                 data-pane-id={paneId() ?? undefined}
+                data-pane-presentation={paneCtx.presentation()}
                 // Absence is the canonical exposed state. Avoid installing a
                 // redundant `aria-hidden="false"` attribute on every cold mount;
                 // hidden retained slots still carry the explicit true state.

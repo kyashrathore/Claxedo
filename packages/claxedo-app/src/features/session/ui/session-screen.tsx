@@ -1213,7 +1213,9 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
       data-session-rendered-user-count={String(historyWindow.renderedUserMessages().length)}
       data-session-info-title={resolvedTitle() ?? ""}
     >
-      <SessionHeader />
+      <Show when={!floating()}>
+        <SessionHeader />
+      </Show>
       <div class="flex-1 min-h-0 flex flex-col">
         <div
           class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3"

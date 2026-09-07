@@ -99,6 +99,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
           props.onWorkspacePanelWorkbenchColumnRef(element)
         }}
         data-testid="workbench-column"
+        data-floating-host={props.workspacePanelVisualOpen() && props.workspacePanelFullWidth() ? "" : undefined}
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{
           "margin-right": workbenchColumnMargin({
