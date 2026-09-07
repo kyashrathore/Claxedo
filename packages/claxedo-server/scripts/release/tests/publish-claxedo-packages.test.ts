@@ -42,8 +42,8 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
 }
 
 describe("publish-claxedo-packages", () => {
-  test("covers the 13 public packages, on four version tracks", () => {
-    expect(claxedoPackages).toHaveLength(13)
+  test("covers the 12 public packages, on four version tracks", () => {
+    expect(claxedoPackages).toHaveLength(12)
     expect(selectPackages("all")).toEqual(claxedoPackages)
     expect(selectPackages("helpers").map((item) => item.name)).toEqual(["@claxedo/helpers"])
     expect(selectPackages("runtime").map((item) => item.name).sort()).toEqual([
@@ -59,7 +59,6 @@ describe("publish-claxedo-packages", () => {
     expect(selectPackages("apps").map((item) => item.name).sort()).toEqual([
       "@claxedo/channels",
       "@claxedo/connections",
-      "@claxedo/mcp",
     ])
     expect(selectPackages("wakes").map((item) => item.name)).toEqual(["@claxedo/wakes"])
   })
@@ -88,30 +87,30 @@ describe("publish-claxedo-packages", () => {
   })
 
   test("flags any sibling pin that is not workspace:*", () => {
-    const publicNames = new Set(["@claxedo/wakes", "@claxedo/mcp"])
+    const publicNames = new Set(["@claxedo/wakes", "@claxedo/connections"])
     expect(crossPinViolations({
       dependencies: { "@claxedo/wakes": "0.3.0", hono: "4.12.32" },
-      devDependencies: { "@claxedo/mcp": "workspace:0.4.0" },
+      devDependencies: { "@claxedo/connections": "workspace:0.4.0" },
     }, publicNames)).toEqual([
       `dependencies.@claxedo/wakes=0.3.0 (expected ${WORKSPACE_PIN})`,
-      `devDependencies.@claxedo/mcp=workspace:0.4.0 (expected ${WORKSPACE_PIN})`,
+      `devDependencies.@claxedo/connections=workspace:0.4.0 (expected ${WORKSPACE_PIN})`,
     ])
     expect(crossPinViolations({ dependencies: { "@claxedo/wakes": WORKSPACE_PIN } }, publicNames)).toEqual([])
   })
 
   test("materializes workspace pins to the exact in-repo versions and leaves everything else alone", () => {
-    const versions = new Map([["@claxedo/wakes", "0.4.0"], ["@claxedo/mcp", "0.5.0"]])
+    const versions = new Map([["@claxedo/wakes", "0.4.0"], ["@claxedo/connections", "0.5.0"]])
     expect(materializeWorkspacePins({
-      name: "@claxedo/mcp",
+      name: "@claxedo/connections",
       dependencies: { "@claxedo/wakes": "workspace:*", hono: "4.12.32" },
       devDependencies: { typescript: "catalog:" },
     }, versions)).toEqual({
-      name: "@claxedo/mcp",
+      name: "@claxedo/connections",
       dependencies: { "@claxedo/wakes": "0.4.0", hono: "4.12.32" },
       devDependencies: { typescript: "catalog:" },
     })
     expect(() => materializeWorkspacePins({
-      name: "@claxedo/mcp",
+      name: "@claxedo/connections",
       dependencies: { "@claxedo/server": "workspace:*" },
     }, versions)).toThrow(/not published/)
   })
@@ -137,12 +136,12 @@ describe("publish-claxedo-packages", () => {
 
   test("packs materialized pins, restores the repo manifest, skips versions already on npm, and publishes nothing on --dry-run", async () => {
     const root = fixtureRepo("9.9.9", (name) =>
-      name === "@claxedo/mcp" ? { dependencies: { "@claxedo/wakes": "workspace:*" } } : {})
+      name === "@claxedo/connections" ? { dependencies: { "@claxedo/wakes": "workspace:*" } } : {})
     const targets = selectPackages("apps")
-    const mcpManifest = path.join(root, "packages/claxedo-mcp/package.json")
-    const originalMcp = fs.readFileSync(mcpManifest, "utf8")
+    const connectionsManifest = path.join(root, "packages/claxedo-connections/package.json")
+    const originalConnections = fs.readFileSync(connectionsManifest, "utf8")
 
-    const alreadyPublished = new Set(["@claxedo/connections@9.9.9"])
+    const alreadyPublished = new Set(["@claxedo/channels@9.9.9"])
     const packedManifests = new Map<string, Record<string, unknown>>()
     const makeRunner = (calls: string[][]) => (cmd: string, args: string[], cwd?: string) => {
       calls.push([cmd, ...args])
@@ -177,30 +176,30 @@ describe("publish-claxedo-packages", () => {
     const dryRun = await publishClaxedoPackages({ root, selector: "apps", dryRun: true, run: makeRunner(dryCalls), log: () => {} })
     expect(dryCalls.filter((call) => call[1] === "publish")).toHaveLength(0)
     expect(dryRun.filter((item) => item.action === "would-publish")).toHaveLength(targets.length - 1)
-    expect(dryRun.find((item) => item.name === "@claxedo/connections")?.action).toBe("skipped-already-published")
+    expect(dryRun.find((item) => item.name === "@claxedo/channels")?.action).toBe("skipped-already-published")
     // The tarball carried the exact version; the repo kept workspace:*.
-    expect(packedManifests.get("@claxedo/mcp")?.dependencies).toEqual({ "@claxedo/wakes": "9.9.9" })
-    expect(fs.readFileSync(mcpManifest, "utf8")).toBe(originalMcp)
+    expect(packedManifests.get("@claxedo/connections")?.dependencies).toEqual({ "@claxedo/wakes": "9.9.9" })
+    expect(fs.readFileSync(connectionsManifest, "utf8")).toBe(originalConnections)
 
     const calls: string[][] = []
     const result = await publishClaxedoPackages({ root, selector: "apps", run: makeRunner(calls), log: () => {} })
     expect(result.map((item) => item.name).sort()).toEqual(targets.map((item) => item.name).sort())
     expect(calls.filter((call) => call[1] === "publish")).toHaveLength(targets.length - 1)
     expect(calls).not.toContainEqual([
-      "npm", "publish", "--workspace", "@claxedo/connections",
+      "npm", "publish", "--workspace", "@claxedo/channels",
       "--access", "public", "--provenance", "--tag", "latest",
     ])
-    // Three apps packages plus wakes, which mcp depends on and so is built first.
+    // Two apps packages plus wakes, which connections depends on and so is built first.
     expect(calls.filter((call) => call[1] === "run" && call[2] === "build")).toHaveLength(targets.length + 1)
-    expect(fs.readFileSync(mcpManifest, "utf8")).toBe(originalMcp)
+    expect(fs.readFileSync(connectionsManifest, "utf8")).toBe(originalConnections)
   })
 
   test("refuses to publish when a sibling pin is not workspace:*", async () => {
     const root = fixtureRepo("9.9.9", (name) =>
-      name === "@claxedo/mcp" ? { dependencies: { "@claxedo/wakes": "0.3.0" } } : {})
+      name === "@claxedo/connections" ? { dependencies: { "@claxedo/wakes": "0.3.0" } } : {})
     await expect(publishClaxedoPackages({
       root,
-      only: ["@claxedo/mcp"],
+      only: ["@claxedo/connections"],
       dryRun: true,
       run: (cmd, args, cwd) => {
         if (cmd === "git" || cmd === "cat") return defaultCommandRunner(cmd, args, cwd)
@@ -215,7 +214,7 @@ describe("publish-claxedo-packages", () => {
     fs.writeFileSync(path.join(root, "packages/wakes/README.md"), "changed after the version was set\n")
     await expect(publishClaxedoPackages({
       root,
-      only: ["@claxedo/mcp"],
+      only: ["@claxedo/connections"],
       dryRun: true,
       run: (cmd, args, cwd) => {
         if (cmd === "git" || cmd === "cat") return defaultCommandRunner(cmd, args, cwd)
