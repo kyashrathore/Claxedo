@@ -1,0 +1,65 @@
+.claxedo-source-control--busy > * {
+  pointer-events: none;
+}
+
+.claxedo-source-control-chevron {
+  transition: transform 100ms ease;
+}
+
+.claxedo-source-control-action {
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.claxedo-source-control-row:hover .claxedo-source-control-action,
+.claxedo-source-control-row:focus-within .claxedo-source-control-action,
+.claxedo-source-control-header:hover .claxedo-source-control-action,
+.claxedo-source-control-header:focus-within .claxedo-source-control-action,
+.claxedo-source-control-action:focus-visible {
+  opacity: 1;
+}
+
+.claxedo-source-control-primary {
+  color: var(--text-on-interactive-base);
+  background: var(--surface-interactive-base);
+}
+
+.claxedo-source-control-primary:hover:not(:disabled) {
+  background: var(--surface-interactive-hover);
+}
+
+.claxedo-source-control-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.claxedo-source-control-error {
+  color: var(--icon-critical-base);
+}
+
+.claxedo-source-control-graph {
+  position: relative;
+}
+
+.claxedo-source-control-graph::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: calc(0.25rem + 0.375rem + 2px);
+  width: 1px;
+  background: var(--border-weak-base);
+}
+
+.claxedo-source-control-commit {
+  z-index: 0;
+}
+
+.claxedo-source-control-dot {
+  box-shadow: 0 0 0 2px var(--background-base);
+}
+
+.claxedo-source-control-chip {
+  background: var(--surface-raised-strong);
+  max-width: 9rem;
+}

@@ -222,6 +222,10 @@ export function WorkspacePanelBody(props: {
     const value = focus()
     return value?.kind === "file" ? value.line : undefined
   }
+  const focusReviewMode = () => {
+    const value = focus()
+    return value?.kind === "file" ? value.reviewMode : undefined
+  }
   const focusProcessId = () => {
     const value = focus()
     return value?.kind === "process" ? value.processId : undefined
@@ -479,6 +483,7 @@ export function WorkspacePanelBody(props: {
                                   focusVersion={focusVersion()}
                                   focusFileIntent={focusFileIntent()}
                                   focusLine={focusLine()}
+                                  focusReviewMode={focusReviewMode()}
                                   focusProcessId={focusProcessId()}
                                   focusProcessVersion={focusProcessVersion()}
                                   focusContextSessionId={focusContextSessionId()}

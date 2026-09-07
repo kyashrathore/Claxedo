@@ -8,14 +8,14 @@
 
 ## What it owns
 
-- `navigator-sidebar.tsx`: the `<aside data-testid="navigator-sidebar">` column, the resize handle, and `NavigatorWorkspace`, which is keyed on the focused pane's workspace. `target` is `workbenchController.focusedPanelTarget` (a `WorkspacePanelPaneTarget`); without one the column shows the empty message. Files and Changes render `WorkspaceFilesNavigator` (`../workspace-panel/files-navigator.tsx`); Processes renders `ProcessesNavigator` (`../workspace-panel/processes-navigator.tsx`). A navigator stays mounted once visited so its tree state survives tab switches.
+- `navigator-sidebar.tsx`: the `<aside data-testid="navigator-sidebar">` column, the resize handle, and `NavigatorWorkspace`, which is keyed on the focused pane's workspace. `target` is `workbenchController.focusedPanelTarget` (a `WorkspacePanelPaneTarget`); without one the column shows the empty message. Files renders `WorkspaceFilesNavigator` (`../workspace-panel/files-navigator.tsx`) in its `files` mode; Changes renders `SourceControlView` (`../source-control/source-control-view.tsx`); Processes renders `ProcessesNavigator` (`../workspace-panel/processes-navigator.tsx`). A navigator stays mounted once visited so its tree state survives tab switches.
 - `navigator-sidebar-tabs.tsx`: the `role="tablist"` strip over `NAVIGATOR_SIDEBAR_TABS`.
 - `paneSessionScope`: the session identity the column binds to, read the way the workspace panel body reads it (the pane's content, else the focused surface), so `SessionPaneScope` inside the column matches the panel's.
 
 ## State it reads and writes
 
 - Width and active tab are the `claxedoState.navigator` slice (`app/workbench/state/navigator.ts`, persisted by `app/workbench/state/persistence.ts`; defaults 320px and `"changes"`). The live width during a drag flows through `createShellLayoutState().navigatorWidth` (`app/layout/state.ts`); the shell commits `committedNavigatorWidth()` to the slice on drag end.
-- Selection drives the panel: a file or process click calls `claxedoState.workspacePanel.open("review", { workspaceDir, targetPaneId, navigator, focus })`, the same payloads the in-panel navigators send. The highlighted row comes back from `workspacePanel.state().focus` when that state's `workspaceDir` matches the column's.
+- Selection drives the panel: a file or process click calls `claxedoState.workspacePanel.open("review", { workspaceDir, targetPaneId, navigator, focus })`, the same payloads the in-panel navigators send. A source-control row adds `reviewMode` (`"staged"` / `"unstaged"`) to the file focus so the review opens in the matching mode. The highlighted row comes back from `workspacePanel.state().focus` when that state's `workspaceDir` matches the column's.
 - The panel side reacts to the placement, not to this directory: `rail/workspace-panel-body.tsx` skips its in-panel Files/Changes navigator under sidebar placement, and `rail/workspace-panel-visual-state.ts`'s `toggleFocusedWorkspaceNavigator` selects the sidebar tab instead of toggling the panel off.
 
 ## One process pane per workspace
@@ -24,7 +24,7 @@ The Processes tab mounts `ProcessPaneProvider` from `../context/process-pane.tsx
 
 ## Must not import
 
-Rail internals (`../rail/*`), routes, query infrastructure, and the processes feature's providers. It composes workspace-panel navigators and workbench context only.
+Rail internals (`../rail/*`), routes, query infrastructure, and the processes feature's providers. It composes the workspace-panel navigators, the source-control view, and workbench context only.
 
 ```json
 {

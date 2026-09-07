@@ -235,6 +235,16 @@ export const appLocal: Policy = {
   // memo rather than an effect. It imports only siblings already in this
   // closure, so the package count is unchanged at 38. Re-measured, no headroom.
   ceilings: { modules: 960, packages: 38 },
+  // +24 modules / 0 packages (2026-09-07): the navigator sidebar's Changes tab
+  // is the source-control view (`app/workbench/source-control/`: view, commit
+  // box, change groups, commit graph, remote lookup, stylesheet = 6), which is
+  // the first reader of `app/workbench/context/workspace-git-mutations.ts`
+  // (+1), and its strings are the 17 lazy `platform/i18n/source-control/`
+  // locale dictionaries (+17), split out like provider-settings so the base
+  // locale files stay inside their size ratchets. Reviewed owner:
+  // app/workbench/source-control (this product's own surface); every edge stays
+  // inside packages already in the closure. Re-measured, no headroom.
+  ceilings: { modules: 987, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

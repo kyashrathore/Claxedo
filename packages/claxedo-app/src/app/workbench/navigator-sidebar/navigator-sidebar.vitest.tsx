@@ -51,6 +51,20 @@ vi.mock("@/app/workbench/workspace-panel/files-navigator", () => ({
   },
 }))
 
+vi.mock("@/app/workbench/source-control/source-control-view", () => ({
+  SourceControlView: (props: {
+    active: boolean
+    activePath?: string
+    onFileClick: (path: string, mode: "staged" | "unstaged") => void
+  }) => {
+    return (
+      <div data-testid="source-control-view" data-active={String(props.active)} data-path={props.activePath ?? ""}>
+        <button type="button" onClick={() => props.onFileClick("src/staged.ts", "staged")}>src/staged.ts</button>
+      </div>
+    )
+  },
+}))
+
 vi.mock("@/features/processes/ui", () => ({
   WorkspaceProcessesNavigator: (props: {
     directory: string
@@ -154,16 +168,18 @@ describe("NavigatorSidebar", () => {
     expect(icons).toEqual(["files", "changes", "processes"])
   })
 
-  test("Files and Changes mount the files navigator in the matching mode; Processes mounts the processes navigator", () => {
+  test("Changes mounts the source-control view; Files mounts the files navigator; Processes mounts the processes navigator; each stays mounted once visited", () => {
     const { state } = renderSidebar({ state: stateWith({ tab: "changes", surface: sessionSurface }), target })
 
-    expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-mode")).toBe("changes")
-    expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-active")).toBe("true")
+    expect(screen.getByTestId("source-control-view").getAttribute("data-active")).toBe("true")
+    expect(screen.queryByTestId("workspace-files-navigator")).toBeNull()
     expect(screen.queryByTestId("workspace-processes-navigator")).toBeNull()
 
     fireEvent.click(screen.getByTestId("navigator-sidebar-tab-files"))
     expect(state().navigator.tab()).toBe("files")
     expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-mode")).toBe("files")
+    expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-active")).toBe("true")
+    expect(screen.getByTestId("source-control-view").getAttribute("data-active")).toBe("false")
 
     fireEvent.click(screen.getByTestId("navigator-sidebar-tab-processes"))
     expect(screen.getByTestId("navigator-sidebar").getAttribute("data-tab")).toBe("processes")
@@ -175,11 +191,12 @@ describe("NavigatorSidebar", () => {
 
     fireEvent.click(screen.getByTestId("navigator-sidebar-tab-changes"))
     expect(navigators.processProviders[0]?.isOpen?.()).toBe(false)
-    expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-mode")).toBe("changes")
+    expect(screen.getByTestId("source-control-view").getAttribute("data-active")).toBe("true")
+    expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-mode")).toBe("files")
   })
 
-  test("a file click opens the panel in review mode with a file focus for the target", () => {
-    const { state } = renderSidebar({ state: stateWith({ tab: "changes", surface: sessionSurface }), target })
+  test("a files-navigator click opens the panel with a file focus under the files navigator", () => {
+    const { state } = renderSidebar({ state: stateWith({ tab: "files", surface: sessionSurface }), target })
 
     fireEvent.click(screen.getByRole("button", { name: "src/app.ts" }))
 
@@ -189,10 +206,27 @@ describe("NavigatorSidebar", () => {
       mode: "review",
       workspaceDir: "/repo/main",
       targetPaneId: "pane-1",
-      navigator: "changes",
+      navigator: "files",
       focus: { kind: "file", path: "src/app.ts", intent: "review", version: 1 },
     })
     expect(screen.getByTestId("workspace-files-navigator").getAttribute("data-path")).toBe("src/app.ts")
+  })
+
+  test("a source-control row click opens the panel in review mode with the row's review mode on the file focus", () => {
+    const { state } = renderSidebar({ state: stateWith({ tab: "changes", surface: sessionSurface }), target })
+
+    fireEvent.click(screen.getByRole("button", { name: "src/staged.ts" }))
+
+    const panel = state().workspacePanel.state()
+    expect(panel).toMatchObject({
+      open: true,
+      mode: "review",
+      workspaceDir: "/repo/main",
+      targetPaneId: "pane-1",
+      navigator: "changes",
+      focus: { kind: "file", path: "src/staged.ts", intent: "review", reviewMode: "staged", version: 1 },
+    })
+    expect(screen.getByTestId("source-control-view").getAttribute("data-path")).toBe("src/staged.ts")
   })
 
   test("a process click opens the panel with a process focus", () => {
@@ -216,6 +250,7 @@ describe("NavigatorSidebar", () => {
 
     expect(screen.getByTestId("navigator-sidebar-empty").textContent).toBe("Select a workspace to use the navigator.")
     expect(screen.queryByTestId("workspace-files-navigator")).toBeNull()
+    expect(screen.queryByTestId("source-control-view")).toBeNull()
     expect(screen.queryByTestId("session-pane-scope")).toBeNull()
     expect(screen.getAllByRole("tab")).toHaveLength(3)
   })

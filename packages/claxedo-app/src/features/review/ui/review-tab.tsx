@@ -84,6 +84,8 @@ export type ReviewTabProps = {
   staleBranchVersion?: number
   focusedDiffPath?: string
   focusedDiffVersion?: number
+  /** Applied with the focus: the mode whose diff the focused file is revealed in. */
+  focusedDiffMode?: ReviewMode
   onOpenFile: (path: string) => void
   /** Forwarded verbatim to the review surfaces; see `ReviewSessionProps.scrollRef`. */
   scrollRef?: (el: HTMLElement) => void
@@ -549,6 +551,8 @@ export function ReviewTab(props: ReviewTabProps) {
       const resumed = resumedFocusPath
       resumedFocusPath = undefined
       if (!path || path === resumed) return
+      const mode = props.focusedDiffMode
+      if (mode && mode !== activeMode()) setReviewMode(mode)
       batch(() => {
         setStore("focusedFile", path)
         if (!store.openDiffs.includes(path)) setStore("openDiffs", [...store.openDiffs, path])

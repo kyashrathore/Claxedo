@@ -354,6 +354,11 @@ export const desktopRendererUnsigned: Policy = {
   // app-local's rail session-activity owner verbatim — see that ledger.
   // Re-measured, no headroom.
   ceilings: { modules: 1011, packages: 57 },
+  // +24 modules (2026-09-07): the source-control Changes tab, its git
+  // mutations owner, and the 17 lazy source-control locale dictionaries reached
+  // through the shared app surface (see app-local.ts for the owner).
+  // Re-measured, no headroom.
+  ceilings: { modules: 1037, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

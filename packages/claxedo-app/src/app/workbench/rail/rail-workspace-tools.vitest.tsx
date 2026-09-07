@@ -54,6 +54,10 @@ vi.mock("../workspace-panel/files-navigator", () => ({
   WorkspaceFilesNavigator: () => <div data-testid="workspace-files-navigator" />,
 }))
 
+vi.mock("../source-control/source-control-view", () => ({
+  SourceControlView: () => <div data-testid="source-control-view" />,
+}))
+
 vi.mock("@/features/processes/ui", () => ({
   WorkspaceProcessesNavigator: () => <div data-testid="workspace-processes-navigator" />,
 }))

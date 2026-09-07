@@ -11,6 +11,7 @@ import type {
 import { ProcessPaneProvider } from "../context/process-pane"
 import { ProcessesNavigator } from "../workspace-panel/processes-navigator"
 import { WorkspaceFilesNavigator } from "../workspace-panel/files-navigator"
+import { SourceControlView } from "../source-control/source-control-view"
 import { NavigatorSidebarTabs } from "./navigator-sidebar-tabs"
 import "./navigator-sidebar.css"
 
@@ -98,17 +99,13 @@ function NavigatorWorkspace(props: {
     const value = focus()
     return value?.kind === "process" ? value.processId : undefined
   }
-  const filesSelected = () => props.tab() !== "processes"
-  const filesModeOf = (tab: WorkspacePanelNavigator, previous: "files" | "changes") =>
-    tab === "processes" ? previous : tab
-  const filesMode = createMemo<"files" | "changes">(
-    (previous) => filesModeOf(props.tab(), previous),
-    filesModeOf(props.tab(), "files"),
-  )
+  const selected = (tab: WorkspacePanelNavigator) => props.tab() === tab
   // A navigator stays mounted once visited so switching back keeps its tree
   // state; only the visible one is active.
-  const filesVisited = createMemo<boolean>((visited) => visited || filesSelected(), false)
-  const processesVisited = createMemo<boolean>((visited) => visited || !filesSelected(), false)
+  const visited = (tab: WorkspacePanelNavigator) => createMemo<boolean>((seen) => seen || selected(tab), false)
+  const filesVisited = visited("files")
+  const changesVisited = visited("changes")
+  const processesVisited = visited("processes")
   const showInPanel = (navigator: WorkspacePanelNavigator, focus: WorkspacePanelFocusTarget) => {
     claxedoState.workspacePanel.open("review", {
       workspaceDir: props.directory,
@@ -130,18 +127,29 @@ function NavigatorWorkspace(props: {
     >
       <div class="relative size-full">
         <Show when={filesVisited()}>
-          <div class="absolute inset-0" classList={{ hidden: !filesSelected() }}>
+          <div class="absolute inset-0" classList={{ hidden: !selected("files") }}>
             <WorkspaceFilesNavigator
-              mode={filesMode()}
-              active={filesSelected()}
+              mode="files"
+              active={selected("files")}
               activePath={activePath()}
-              onFileClick={(path, intent) => showInPanel(filesMode(), { kind: "file", path, intent })}
+              onFileClick={(path, intent) => showInPanel("files", { kind: "file", path, intent })}
+            />
+          </div>
+        </Show>
+        <Show when={changesVisited()}>
+          <div class="absolute inset-0" classList={{ hidden: !selected("changes") }}>
+            <SourceControlView
+              active={selected("changes")}
+              activePath={activePath()}
+              onFileClick={(path, reviewMode) =>
+                showInPanel("changes", { kind: "file", path, intent: "review", reviewMode })
+              }
             />
           </div>
         </Show>
         <Show when={processesVisited()}>
-          <div class="absolute inset-0" classList={{ hidden: filesSelected() }}>
-            <ProcessPaneProvider directory={props.directory} isOpen={() => !filesSelected()}>
+          <div class="absolute inset-0" classList={{ hidden: !selected("processes") }}>
+            <ProcessPaneProvider directory={props.directory} isOpen={() => selected("processes")}>
               <ProcessesNavigator
                 directory={props.directory}
                 activeProcessId={activeProcessId()}

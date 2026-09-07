@@ -83,6 +83,8 @@ export type ReviewWorkspaceProps = {
   focusVersion?: number
   focusFileIntent?: "tab" | "review"
   focusLine?: number
+  /** With a `review` intent: the mode the review switches into before revealing the file. */
+  focusReviewMode?: ReviewMode
   focusProcessId?: string
   focusProcessVersion?: number
   focusContextSessionId?: string
@@ -626,6 +628,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           }
           focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
           focusedDiffVersion={props.focusVersion}
+          focusedDiffMode={props.focusFileIntent === "review" ? props.focusReviewMode : undefined}
           onOpenFile={openFileTab}
           scrollRef={reviewScroll.bind}
           onScroll={reviewScroll.remember}
