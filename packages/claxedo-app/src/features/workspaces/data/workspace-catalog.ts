@@ -1,4 +1,4 @@
-import type { ClaxedoProject as Project, ClaxedoWorkspaceInventoryEntry } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoProject as Project, ClaxedoWorkspaceInventoryEntry } from "@/platform/api/claxedo-api-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { normalizeProjectList, readProjectCatalog } from "@/platform/query/control-plane"

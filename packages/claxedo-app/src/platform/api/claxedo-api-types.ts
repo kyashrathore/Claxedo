@@ -1,7 +1,86 @@
-/** Browser-facing Claxedo DTOs that only the app reads; the ones the server client returns live in `@claxedo/agent-runtime-contract/server-client`. */
+/** Browser-facing Claxedo DTOs the app reads off claxedo-server routes; the workspace runtime's own live in `@claxedo/workspace-runtime/client`. */
 
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
-import type { ClaxedoProject } from "@claxedo/agent-runtime-contract/server-client"
+
+export type ClaxedoProject = {
+  id: string
+  worktree: string
+  vcs?: "git"
+  name?: string
+  icon?: { url?: string; override?: string; color?: string }
+  commands?: { start?: string }
+  // Optional because the embedded OpenCode engine's `project.updated` payload
+  // carries neither: it sends `{ id, worktree, vcs }`. Readers already wrote
+  // `project.sandboxes ?? []` and `project.time?.created` against that reality
+  // while the DTO claimed both were guaranteed.
+  time?: { created: number; updated: number; initialized?: number }
+  sandboxes?: string[]
+  git?: { remote?: string | null }
+  workspaces?: Record<string, ClaxedoWorkspaceInventoryEntry>
+}
+
+export type ClaxedoWorkspaceInventoryEntry = {
+  id?: string
+  workspaceId?: string
+  directory?: string
+  remote_directory?: string
+  remoteDirectory?: string
+  kind?: "cloud" | "local" | "user-hosted"
+  /**
+   * How the serving process composed the session access of the runtime behind
+   * this workspace, as that process declares it. `managed-private` means
+   * `POST /session` there requires a control-plane reservation first.
+   */
+  session_authority?: "local" | "managed-private"
+  status?: string
+  available?: boolean
+  workspace_name?: string
+  workspaceName?: string
+  git_remote?: string
+  repo_url?: string
+}
+
+export type ClaxedoPath = {
+  home: string
+  state: string
+  config: string
+  worktree: string
+  directory: string
+}
+
+export type ClaxedoCommand = {
+  name: string
+  description?: string
+  agent?: string
+  model?: string
+  source?: "command" | "mcp" | "skill"
+  template: string
+  subtask?: boolean
+  hints: string[]
+}
+
+export type ClaxedoAgentProfile = {
+  name: string
+  description?: string
+  mode: "subagent" | "primary" | "all"
+  native?: boolean
+  hidden?: boolean
+  topP?: number
+  temperature?: number
+  color?: string
+  permission: unknown
+  model?: { modelID: string; providerID: string }
+  variant?: string
+  prompt?: string
+  options: Record<string, unknown>
+  steps?: number
+}
+
+export type ClaxedoProviderAuthorization = {
+  url: string
+  method: "auto" | "code"
+  instructions: string
+}
 
 export type ClaxedoProviderModel = {
   id: string

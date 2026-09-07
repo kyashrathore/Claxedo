@@ -78,7 +78,6 @@ describe("pre-push architecture ratchet", () => {
     // the claim it excuses.
     expect(exact.flatMap((o: { files: string[] }) => o.files).sort(byCodePoint)).toEqual([
       "packages/claxedo-app/src/lib/total-record.ts",
-      "packages/claxedo-app/src/platform/api/server-client-contract.ts",
       "packages/claxedo-app/src/platform/identity/brand.ts",
       "packages/claxedo-app/src/platform/persistence/solid-store-erasure.ts",
       "packages/claxedo-app/vitest.config.ts",

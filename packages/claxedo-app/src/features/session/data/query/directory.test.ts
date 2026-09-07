@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
   agentListQuery,
   pathQuery,
@@ -75,8 +75,8 @@ describe("directory query factories", () => {
       directory: "/tmp/ws",
       harnessType: "opencode",
       client: {
-        app: {
-          agents: async (input?: { directory?: string }) => {
+        agent: {
+          list: async (input?: { directory?: string }) => {
             calls.push(input)
             return { data: [agent("build")] }
           },

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoCommand as Command } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
 import { commandListQuery, normalizeCommandList } from "./shell"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

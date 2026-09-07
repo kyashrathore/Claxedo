@@ -294,12 +294,12 @@
         }
       ],
       "notes": [
-        "Missing the Array.isArray() check most same-named siblings have — arrays pass through unnoticed.",
-        "Missing the Array.isArray() check most same-named siblings have — arrays pass through unnoticed.",
-        "Missing the Array.isArray() check most same-named siblings have — arrays pass through unnoticed.",
-        "Missing the Array.isArray() check most same-named siblings have — arrays pass through unnoticed.",
-        "Missing the Array.isArray() check most same-named siblings have — arrays pass through unnoticed.",
-        "Missing the Array.isArray() check most same-named siblings have — arrays pass through unnoticed."
+        "Missing the Array.isArray() check most same-named siblings have \u2014 arrays pass through unnoticed.",
+        "Missing the Array.isArray() check most same-named siblings have \u2014 arrays pass through unnoticed.",
+        "Missing the Array.isArray() check most same-named siblings have \u2014 arrays pass through unnoticed.",
+        "Missing the Array.isArray() check most same-named siblings have \u2014 arrays pass through unnoticed.",
+        "Missing the Array.isArray() check most same-named siblings have \u2014 arrays pass through unnoticed.",
+        "Missing the Array.isArray() check most same-named siblings have \u2014 arrays pass through unnoticed."
       ]
     },
     {
@@ -373,7 +373,7 @@
       "slug": "sleep-for-milliseconds",
       "aliases": [],
       "category": "async-concurrency",
-      "description": "Intended to sleep for ms, but only awaits when ms<=0 — for ms>0 it returns immediately.",
+      "description": "Intended to sleep for ms, but only awaits when ms<=0 \u2014 for ms>0 it returns immediately.",
       "generic": true,
       "demand": 19,
       "distinctImpls": 11,
@@ -877,7 +877,7 @@
         }
       ],
       "notes": [
-        "Same name as draft-defaults.ts decodeRecord but is a plain JSON.parse with no validation — much weaker guarantee."
+        "Same name as draft-defaults.ts decodeRecord but is a plain JSON.parse with no validation \u2014 much weaker guarantee."
       ]
     },
     {
@@ -1012,7 +1012,7 @@
         }
       ],
       "notes": [
-        "Duplicate of writers.ts:111 sameSessionStatus — identical logic in two files.",
+        "Duplicate of writers.ts:111 sameSessionStatus \u2014 identical logic in two files.",
         "Duplicate of session-status-dispatcher.ts:306 sameSessionStatus.",
         "JSON.stringify equality is key-order sensitive, so semantically equal objects with reordered keys compare unequal.",
         "Duplicates sameAcpEnv's exact approach (and its key-order fragility) for a different type.",
@@ -1592,8 +1592,8 @@
         }
       ],
       "notes": [
-        "Delegates to an unseen loopbackHttpUrl() rather than the inline check in test-support/mock-api.ts — equivalence unconfirmed.",
-        "Overlaps with localHost/localUrl (3352/3353) which skip the scheme check — inconsistent 'local' definitions.",
+        "Delegates to an unseen loopbackHttpUrl() rather than the inline check in test-support/mock-api.ts \u2014 equivalence unconfirmed.",
+        "Overlaps with localHost/localUrl (3352/3353) which skip the scheme check \u2014 inconsistent 'local' definitions.",
         "Thin renamed alias of loopbackHttpUrl (3375) with no added logic."
       ]
     },
@@ -1648,7 +1648,7 @@
         }
       ],
       "notes": [
-        "5 identical Date.now() wrappers across claxedo-server(-core) — trivial consolidation candidate."
+        "5 identical Date.now() wrappers across claxedo-server(-core) \u2014 trivial consolidation candidate."
       ]
     },
     {
@@ -2155,9 +2155,9 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of assertExpectedRevision (id 7248) in a different file — candidate for one shared helper.",
-        "Same name as siblings that parse/convert values — this one only validates, never converts.",
-        "Same validation as expectedRevision (id 7940) but throws instead of returning undefined — inconsistent failure mode."
+        "Byte-for-byte duplicate of assertExpectedRevision (id 7248) in a different file \u2014 candidate for one shared helper.",
+        "Same name as siblings that parse/convert values \u2014 this one only validates, never converts.",
+        "Same validation as expectedRevision (id 7940) but throws instead of returning undefined \u2014 inconsistent failure mode."
       ]
     },
     {
@@ -2257,7 +2257,7 @@
       ],
       "notes": [
         "Lacks the optional details field the claude/cursor versions support.",
-        "Duplicate of claude's diagnosticForEvent — identical body."
+        "Duplicate of claude's diagnosticForEvent \u2014 identical body."
       ]
     },
     {
@@ -2308,8 +2308,8 @@
       "notes": [
         "Sibling evidencePath (id 4901) also creates the directory and supports a filename suffix.",
         "Sibling (id 4827) is pure and has no suffix param; this one mutates the filesystem.",
-        "Different path scheme from goldenPath (id 4828), which builds the same concept via join(root,'e2e','goldens',...) — check for drift.",
-        "Duplicates goldenPathFor's (id 4733) concept with a different directory scheme (root/e2e/goldens vs GOLDEN_DIR) — check for drift."
+        "Different path scheme from goldenPath (id 4828), which builds the same concept via join(root,'e2e','goldens',...) \u2014 check for drift.",
+        "Duplicates goldenPathFor's (id 4733) concept with a different directory scheme (root/e2e/goldens vs GOLDEN_DIR) \u2014 check for drift."
       ]
     },
     {
@@ -2410,7 +2410,7 @@
       "notes": [
         "Does not recognize IPv6 loopback forms ('::1', '[::1]') that the server-core sibling (id 9435) checks.",
         "More complete than id 3338, which omits the IPv6 loopback forms.",
-        "loopbackHttpUrl (3375) re-implements this plus a scheme check — two divergent 'is local' definitions."
+        "loopbackHttpUrl (3375) re-implements this plus a scheme check \u2014 two divergent 'is local' definitions."
       ]
     },
     {
@@ -2561,7 +2561,7 @@
         }
       ],
       "notes": [
-        "Adds workingDirectory→cwd normalization the Claude sibling doesn't do — not equivalent, this one rewrites keys.",
+        "Adds workingDirectory\u2192cwd normalization the Claude sibling doesn't do \u2014 not equivalent, this one rewrites keys.",
         "Same capability as measure-idle-memory.ts's asObject, just generically typed."
       ]
     },
@@ -2759,8 +2759,8 @@
         }
       ],
       "notes": [
-        "Named 'input' — a collision-prone, non-descriptive name for a trivial default-to-empty helper.",
-        "Identical body to sansInput/terminalInput (id 3780, 3783) — pure aliasing with no distinct behavior."
+        "Named 'input' \u2014 a collision-prone, non-descriptive name for a trivial default-to-empty helper.",
+        "Identical body to sansInput/terminalInput (id 3780, 3783) \u2014 pure aliasing with no distinct behavior."
       ]
     },
     {
@@ -2850,10 +2850,10 @@
         }
       ],
       "notes": [
-        "Keyword set for 'transient' differs per driver copy in this cluster — no shared definition.",
+        "Keyword set for 'transient' differs per driver copy in this cluster \u2014 no shared definition.",
         "Unlike other drivers' copies, this one never inspects an HTTP status code.",
         "Different keyword set than sibling copies (pending/starting instead of unavailable/deadline).",
-        "Superset of keywords vs sibling copies — the five 'transient' definitions all disagree.",
+        "Superset of keywords vs sibling copies \u2014 the five 'transient' definitions all disagree.",
         "Yet another distinct keyword set than the other four sibling copies."
       ]
     },
@@ -2906,7 +2906,7 @@
         }
       ],
       "notes": [
-        "Identical to the workspace-relay and workspace-runtime copies of bearerToken() — good shared-helper candidate.",
+        "Identical to the workspace-relay and workspace-runtime copies of bearerToken() \u2014 good shared-helper candidate.",
         "Identical logic to the server-core and workspace-runtime copies; only the null|undefined param type differs.",
         "Identical logic to the other two bearerToken copies."
       ]
@@ -3166,7 +3166,7 @@
       ],
       "notes": [
         "Identical duplicate of id 2841 in a different package.",
-        "Identical to claxedo-mcp's boolean helper — duplicate, prime shared-helper candidate."
+        "Identical to claxedo-mcp's boolean helper \u2014 duplicate, prime shared-helper candidate."
       ]
     },
     {
@@ -3273,8 +3273,8 @@
         }
       ],
       "notes": [
-        "Duplicate of readPackageJsonFromDisk (8435) in the same package — identical read+parse logic.",
-        "Duplicate of readPackageJson (8480) in the same package — identical read+parse logic, different file.",
+        "Duplicate of readPackageJsonFromDisk (8435) in the same package \u2014 identical read+parse logic.",
+        "Duplicate of readPackageJson (8480) in the same package \u2014 identical read+parse logic, different file.",
         "Same read+parse+cast pattern as the sibling `pkg` helper in this shard; only the target type differs."
       ]
     },
@@ -3592,7 +3592,7 @@
       "notes": [
         "Verbatim duplicate of sandbox-manager's version.",
         "Verbatim duplicate of claxedo-server's version.",
-        "Throws a D1HostAccessAuthorityError rather than a generic error — needs abstraction to be reusable."
+        "Throws a D1HostAccessAuthorityError rather than a generic error \u2014 needs abstraction to be reusable."
       ]
     },
     {
@@ -3633,7 +3633,7 @@
         }
       ],
       "notes": [
-        "Same capability as sansFontFamily/terminalFontFamily (id 3782, 3784) — only the hardcoded base stack differs.",
+        "Same capability as sansFontFamily/terminalFontFamily (id 3782, 3784) \u2014 only the hardcoded base stack differs.",
         "General-purpose version of monoFontFamily/sansFontFamily/terminalFontFamily, which just fix the 'base' argument."
       ]
     },
@@ -3895,7 +3895,7 @@
       ],
       "notes": [
         "Uses itemType directly as kind, unlike claude/cursor which derive kind via toolKind(toolName).",
-        "Duplicate of claude's toolDisplay — identical body."
+        "Duplicate of claude's toolDisplay \u2014 identical body."
       ]
     },
     {
@@ -3937,8 +3937,8 @@
       ],
       "notes": [
         "Extraction artifact: one of four TS overload declarations for the single can() implementation at id3671.",
-        "Extraction artifact — see id3671 for the real implementation shared by all four entries.",
-        "Extraction artifact — see id3671 for the real implementation shared by all four entries.",
+        "Extraction artifact \u2014 see id3671 for the real implementation shared by all four entries.",
+        "Extraction artifact \u2014 see id3671 for the real implementation shared by all four entries.",
         "This is the real implementation; the three sibling entries are its TS overload signatures."
       ]
     },
@@ -4109,8 +4109,8 @@
       ],
       "notes": [
         "Identical triplicate across codex/claude/cursor adapters.",
-        "Duplicate of codex/cursor payload() — identical body.",
-        "Duplicate of codex/claude payload() — identical body."
+        "Duplicate of codex/cursor payload() \u2014 identical body.",
+        "Duplicate of codex/claude payload() \u2014 identical body."
       ]
     },
     {
@@ -4197,7 +4197,7 @@
         }
       ],
       "notes": [
-        "Reimplements what TextEncoder already does elsewhere in the codebase — extra surface for drift/bugs."
+        "Reimplements what TextEncoder already does elsewhere in the codebase \u2014 extra surface for drift/bugs."
       ]
     },
     {
@@ -4334,7 +4334,7 @@
       ],
       "notes": [
         "Uses encodeURIComponent+JSON, incompatible with the base64url format used by the other two encodeMessagePageCursor() copies.",
-        "Field name ord vs ordinal used by claxedo-server-core's cursor — cursors from one aren't decodable by the other's matching decoder alone.",
+        "Field name ord vs ordinal used by claxedo-server-core's cursor \u2014 cursors from one aren't decodable by the other's matching decoder alone.",
         "Shares the name \"encodeCursor\" with navigation-list.ts's session-list cursor above but a different shape/prefix scheme."
       ]
     },
@@ -4422,7 +4422,7 @@
       ],
       "notes": [
         "Duplicate of the generic pruneExpiringCache (10869) with a hardcoded constant instead of a parameter.",
-        "Third copy of the same eviction logic as pruneExpiringCache/pruneRelayHostTokenCache — should consolidate to one.",
+        "Third copy of the same eviction logic as pruneExpiringCache/pruneRelayHostTokenCache \u2014 should consolidate to one.",
         "Mutates module-level global state (closedRouteKeys); not a pure/reusable function as written."
       ]
     },
@@ -4642,8 +4642,8 @@
       ],
       "notes": [
         "Extraction captured overlapping overload signatures; the real body is one line: createMemo(() => can(...)).",
-        "Same underlying function as sibling useCan entries — extraction artifact from TS overloads.",
-        "Same underlying function as sibling useCan entries — extraction artifact from TS overloads.",
+        "Same underlying function as sibling useCan entries \u2014 extraction artifact from TS overloads.",
+        "Same underlying function as sibling useCan entries \u2014 extraction artifact from TS overloads.",
         "This is the real implementation shared by the three overload-only sibling entries."
       ]
     },
@@ -4693,7 +4693,7 @@
       ],
       "notes": [
         "Subtly different from 5756/5796: whitespace-only strings pass through here but not there.",
-        "Named isString but rejects empty strings — surprising for a generic type guard."
+        "Named isString but rejects empty strings \u2014 surprising for a generic type guard."
       ]
     },
     {
@@ -5169,7 +5169,7 @@
       ],
       "notes": [
         "No dedup for concurrent calls and no process-group support, unlike the more complete sibling copy.",
-        "The most complete of the four stopChild copies — dedup, process-group support, configurable timeout.",
+        "The most complete of the four stopChild copies \u2014 dedup, process-group support, configurable timeout.",
         "Uses Bun-specific sleep and skips the second wait-after-SIGKILL step the other copies have."
       ]
     },
@@ -5258,7 +5258,7 @@
       ],
       "notes": [
         "No wildcard-hostname check, unlike the desktop-package siblings of the same name",
-        "Returns the full URL object where every sibling exactHttpsOrigin returns a string origin — inconsistent return type"
+        "Returns the full URL object where every sibling exactHttpsOrigin returns a string origin \u2014 inconsistent return type"
       ]
     },
     {
@@ -5546,7 +5546,7 @@
         }
       ],
       "notes": [
-        "Same name as local-server's localSecurityHeaders but adds an SPA-response branch with a different header set — not identical behavior."
+        "Same name as local-server's localSecurityHeaders but adds an SPA-response branch with a different header set \u2014 not identical behavior."
       ]
     },
     {
@@ -5811,7 +5811,7 @@
         }
       ],
       "notes": [
-        "Same shape as two sibling invalidBody() helpers differing only in the hardcoded error code/message — a candidate to parameterize into one."
+        "Same shape as two sibling invalidBody() helpers differing only in the hardcoded error code/message \u2014 a candidate to parameterize into one."
       ]
     },
     {
@@ -5857,7 +5857,7 @@
       "slug": "build-project-caption-with-repo-and-folder",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Builds 'repo · folder' caption deriving repo from project name or a workspace's repo_url, else folder alone.",
+      "description": "Builds 'repo \u00b7 folder' caption deriving repo from project name or a workspace's repo_url, else folder alone.",
       "generic": false,
       "demand": 3,
       "distinctImpls": 3,
@@ -5925,7 +5925,7 @@
         }
       ],
       "notes": [
-        "Unlike the docker sibling, does not sanitize or bound length — could produce invalid names for some providers.",
+        "Unlike the docker sibling, does not sanitize or bound length \u2014 could produce invalid names for some providers.",
         "Diverges from the modal/vercel siblings, which pass workspaceId through unsanitized and untruncated.",
         "Identical to the modal sibling; both differ from the sanitizing/truncating docker version."
       ]
@@ -6039,7 +6039,7 @@
         }
       ],
       "notes": [
-        "Same skipToken/disabled shape repeated for status and todo (ids 1375, 1377) — one factory would remove the duplication."
+        "Same skipToken/disabled shape repeated for status and todo (ids 1375, 1377) \u2014 one factory would remove the duplication."
       ]
     },
     {
@@ -6119,7 +6119,7 @@
         }
       ],
       "notes": [
-        "Structurally identical to the Claude sibling except the code prefix — good candidate to parameterize into one helper."
+        "Structurally identical to the Claude sibling except the code prefix \u2014 good candidate to parameterize into one helper."
       ]
     },
     {
@@ -6146,18 +6146,13 @@
         },
         {
           "name": "isAbortError",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:308",
-          "loc": 4
-        },
-        {
-          "name": "isAbortError",
           "at": "packages/claxedo-app/src/lib/abort-error.ts:8",
           "loc": 9
         }
       ],
       "notes": [
         "Other two isAbortError copies require instanceof Error, missing non-Error abort-like values this catches.",
-        "Stricter than claxedo-app's abort-error.ts copy — misses non-Error AbortError-shaped values.",
+        "Stricter than claxedo-app's abort-error.ts copy \u2014 misses non-Error AbortError-shaped values.",
         "Duplicate of server-client-contract's isAbortError."
       ]
     },
@@ -6195,8 +6190,8 @@
         }
       ],
       "notes": [
-        "Thin renamed wrapper around missing() — same capability under a second name.",
-        "Same 'match error text' idiom as missing()/unrestorable() but a different regex — could share one parametrized helper."
+        "Thin renamed wrapper around missing() \u2014 same capability under a second name.",
+        "Same 'match error text' idiom as missing()/unrestorable() but a different regex \u2014 could share one parametrized helper."
       ]
     },
     {
@@ -6619,9 +6614,9 @@
         }
       ],
       "notes": [
-        "Nearly identical logic exists as editorCursor and promptInputV2Cursor, but only this one strips \\u200B — reconcile into one.",
-        "Duplicates cursorPosition/promptInputV2Cursor without the \\u200B stripping fix — inconsistent copies.",
-        "Third copy of the same cursor-offset algorithm as cursorPosition/editorCursor — only cursorPosition strips zero-width spaces."
+        "Nearly identical logic exists as editorCursor and promptInputV2Cursor, but only this one strips \\u200B \u2014 reconcile into one.",
+        "Duplicates cursorPosition/promptInputV2Cursor without the \\u200B stripping fix \u2014 inconsistent copies.",
+        "Third copy of the same cursor-offset algorithm as cursorPosition/editorCursor \u2014 only cursorPosition strips zero-width spaces."
       ]
     },
     {
@@ -6658,8 +6653,8 @@
       ],
       "notes": [
         "Likely the same source function captured 3x (with :9930/:9931) due to TS overload declarations, not 3 distinct impls.",
-        "Overlaps heavily with :9929 and :9931 — appears to be duplicate extraction of one implementation.",
-        "Overlaps with :9929/:9930 — treat as one implementation, not three."
+        "Overlaps heavily with :9929 and :9931 \u2014 appears to be duplicate extraction of one implementation.",
+        "Overlaps with :9929/:9930 \u2014 treat as one implementation, not three."
       ]
     },
     {
@@ -6850,8 +6845,8 @@
         }
       ],
       "notes": [
-        "Near-duplicate of connectCdp (6437) and createCdpClient (6535) — three separate CDP RPC client implementations.",
-        "Near-duplicate of connect (6369) and createCdpClient (6535) — same CDP RPC pattern reimplemented three times.",
+        "Near-duplicate of connectCdp (6437) and createCdpClient (6535) \u2014 three separate CDP RPC client implementations.",
+        "Near-duplicate of connect (6369) and createCdpClient (6535) \u2014 same CDP RPC pattern reimplemented three times.",
         "Third near-duplicate CDP RPC client alongside connect (6369) and connectCdp (6437)."
       ]
     },
@@ -7080,9 +7075,9 @@
         }
       ],
       "notes": [
-        "Ordering (idle→timeout) and delay source differ from the other two afterVisibleWork copies.",
+        "Ordering (idle\u2192timeout) and delay source differ from the other two afterVisibleWork copies.",
         "Schedules idle callback AFTER a timeout, the reverse order of review-deferred-work.ts's copy.",
-        "Simpler than the other two afterVisibleWork copies — omits requestIdleCallback entirely."
+        "Simpler than the other two afterVisibleWork copies \u2014 omits requestIdleCallback entirely."
       ]
     },
     {
@@ -7775,7 +7770,7 @@
         "generate-pkce-code-verifier-and-challenge"
       ],
       "category": "crypto",
-      "description": "Generates an OAuth state value as base64url(32 random bytes) — byte-identical logic to generateCodeVerifier.",
+      "description": "Generates an OAuth state value as base64url(32 random bytes) \u2014 byte-identical logic to generateCodeVerifier.",
       "generic": true,
       "demand": 3,
       "distinctImpls": 3,
@@ -7806,7 +7801,7 @@
         }
       ],
       "notes": [
-        "Identical implementation to generateState (5905) apart from name — same random-token-generation logic.",
+        "Identical implementation to generateState (5905) apart from name \u2014 same random-token-generation logic.",
         "Duplicate of generateCodeVerifier (5904); could collapse to one generate-random-base64url-token helper."
       ]
     },
@@ -7923,8 +7918,8 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of the avatar.tsx copy — candidate for extraction.",
-        "Byte-for-byte duplicate of the other two copies — candidate for extraction."
+        "Byte-for-byte duplicate of the avatar.tsx copy \u2014 candidate for extraction.",
+        "Byte-for-byte duplicate of the other two copies \u2014 candidate for extraction."
       ]
     },
     {
@@ -8260,7 +8255,7 @@
         }
       ],
       "notes": [
-        "Three errorResponse() implementations map disjoint sets of domain error types — no shared behavior beyond the pattern."
+        "Three errorResponse() implementations map disjoint sets of domain error types \u2014 no shared behavior beyond the pattern."
       ]
     },
     {
@@ -8375,7 +8370,7 @@
         }
       ],
       "notes": [
-        "Identical logic triplicated verbatim across three packages — a strong shared-helper candidate."
+        "Identical logic triplicated verbatim across three packages \u2014 a strong shared-helper candidate."
       ]
     },
     {
@@ -8411,7 +8406,7 @@
         }
       ],
       "notes": [
-        "Identical structure copy-pasted for each error name (see 769,770) — could be one generic name+data guard."
+        "Identical structure copy-pasted for each error name (see 769,770) \u2014 could be one generic name+data guard."
       ]
     },
     {
@@ -8454,7 +8449,7 @@
       "notes": [
         "Diverges from the other two asRecord copies which default to {} instead of undefined.",
         "Third differing fallback behavior among the three obj() copies (boolean vs {} vs undefined).",
-        "Weak type guard: `is Boot` is asserted from record-ness alone, no field checks — likely too permissive for its name."
+        "Weak type guard: `is Boot` is asserted from record-ness alone, no field checks \u2014 likely too permissive for its name."
       ]
     },
     {
@@ -8493,7 +8488,7 @@
         }
       ],
       "notes": [
-        "claxedo-server's asRecord instead returns undefined on failure — inconsistent fallback.",
+        "claxedo-server's asRecord instead returns undefined on failure \u2014 inconsistent fallback.",
         "Duplicate of agent-sdk-runtime's asRecord (both default to {}).",
         "Diverges from terminal/provider.tsx's boolean-returning obj() and manager.ts's undefined-fallback version."
       ]
@@ -9243,7 +9238,7 @@
         }
       ],
       "notes": [
-        "Same capability/name as submit-create-session.ts requiredWorkspaceId but throws a different, domain-specific error class — callers can't share catch logic."
+        "Same capability/name as submit-create-session.ts requiredWorkspaceId but throws a different, domain-specific error class \u2014 callers can't share catch logic."
       ]
     },
     {
@@ -9319,7 +9314,7 @@
       "notes": [
         "Identical copy in claxedo-server-core; workspace-runtime instead delegates elsewhere.",
         "Duplicate of agent-sdk-runtime's dataDir.",
-        "Thin wrapper, not a literal duplicate — indirection point differs from the other two copies."
+        "Thin wrapper, not a literal duplicate \u2014 indirection point differs from the other two copies."
       ]
     },
     {
@@ -9476,7 +9471,7 @@
       "notes": [
         "Byte-for-byte duplicate of routeAuth in network-policy-routes.ts:60.",
         "Byte-for-byte duplicate of routeAuth in meta-routes.ts:62.",
-        "More general/exported version of the two identical local-server routeAuth() copies — likely the canonical owner."
+        "More general/exported version of the two identical local-server routeAuth() copies \u2014 likely the canonical owner."
       ]
     },
     {
@@ -9522,7 +9517,7 @@
       "slug": "sanitize-websocket-close-code",
       "aliases": [],
       "category": "validation",
-      "description": "Clamps a close code to fallback(1011) unless it's 1000-4999 excluding 1004/1005/1006 — wider range than bun.ts.",
+      "description": "Clamps a close code to fallback(1011) unless it's 1000-4999 excluding 1004/1005/1006 \u2014 wider range than bun.ts.",
       "generic": true,
       "demand": 3,
       "distinctImpls": 3,
@@ -9552,7 +9547,7 @@
         }
       ],
       "notes": [
-        "Three safeCloseCode copies disagree on valid ranges and default fallback — see cloudflare/workspace-runtime siblings.",
+        "Three safeCloseCode copies disagree on valid ranges and default fallback \u2014 see cloudflare/workspace-runtime siblings.",
         "Accepts codes 1001-2999 that the bun.ts sibling would reject (bun only allows 1001-1014 in that band).",
         "Default fallback (1000) and rejected range differ sharply from the bun/cloudflare siblings (which default to 1011)."
       ]
@@ -9784,7 +9779,7 @@
       ],
       "notes": [
         "Rejects untrimmed input rather than trimming it, unlike the sibling that auto-trims (id8968).",
-        "Same strict semantics as id6564 (reject untrimmed) but a different exception type — good merge candidate."
+        "Same strict semantics as id6564 (reject untrimmed) but a different exception type \u2014 good merge candidate."
       ]
     },
     {
@@ -10036,7 +10031,7 @@
         }
       ],
       "notes": [
-        "Codex sibling short-circuits on undefined; this one short-circuits on null — merging them needs both checks."
+        "Codex sibling short-circuits on undefined; this one short-circuits on null \u2014 merging them needs both checks."
       ]
     },
     {
@@ -10165,7 +10160,7 @@
         }
       ],
       "notes": [
-        "Same capability as harness-config-routes.ts appendSelection in another package — consistent, but duplicated across packages."
+        "Same capability as harness-config-routes.ts appendSelection in another package \u2014 consistent, but duplicated across packages."
       ]
     },
     {
@@ -10260,7 +10255,7 @@
         }
       ],
       "notes": [
-        "Identical to locked-worker.cf's secure helper — duplicate."
+        "Identical to locked-worker.cf's secure helper \u2014 duplicate."
       ]
     },
     {
@@ -10294,7 +10289,7 @@
         }
       ],
       "notes": [
-        "More permissive than agent-sdk-runtime's assertTarget — accepts extra token/registered-dir forms."
+        "More permissive than agent-sdk-runtime's assertTarget \u2014 accepts extra token/registered-dir forms."
       ]
     },
     {
@@ -10325,7 +10320,7 @@
         }
       ],
       "notes": [
-        "Identical pattern to the Claude sibling except the SDK name in the message — could be one generic assertNever(label)."
+        "Identical pattern to the Claude sibling except the SDK name in the message \u2014 could be one generic assertNever(label)."
       ]
     },
     {
@@ -10768,7 +10763,7 @@
         }
       ],
       "notes": [
-        "Identical to local-server's authRouteOptions — duplicate."
+        "Identical to local-server's authRouteOptions \u2014 duplicate."
       ]
     },
     {
@@ -11179,8 +11174,8 @@
         }
       ],
       "notes": [
-        "Identical one-line body to codexSpawnEnv — both are pure pass-throughs to harnessSpawnEnv.",
-        "Byte-for-byte identical body to claudeSpawnEnv — redundant per-harness wrapper around the same shared helper."
+        "Identical one-line body to codexSpawnEnv \u2014 both are pure pass-throughs to harnessSpawnEnv.",
+        "Byte-for-byte identical body to claudeSpawnEnv \u2014 redundant per-harness wrapper around the same shared helper."
       ]
     },
     {
@@ -11307,7 +11302,7 @@
         }
       ],
       "notes": [
-        "Same shape/logic as channel-runtime-authority's inactive for a different status type — coincidental duplicate, safe to share generically."
+        "Same shape/logic as channel-runtime-authority's inactive for a different status type \u2014 coincidental duplicate, safe to share generically."
       ]
     },
     {
@@ -11465,8 +11460,8 @@
         }
       ],
       "notes": [
-        "Near-duplicate of `measurement` (id 5032) — identical shape and default unit, defined separately in another file.",
-        "Near-duplicate of `lower` (id 5402) — same fields/defaults, defined separately in another file."
+        "Near-duplicate of `measurement` (id 5032) \u2014 identical shape and default unit, defined separately in another file.",
+        "Near-duplicate of `lower` (id 5402) \u2014 same fields/defaults, defined separately in another file."
       ]
     },
     {
@@ -11564,7 +11559,7 @@
         }
       ],
       "notes": [
-        "Same name as workspace.ts's missingBearer but a differently-shaped error body ('unauthorized' vs 'missing_bearer_token', no status field) — inconsistent contract across routes."
+        "Same name as workspace.ts's missingBearer but a differently-shaped error body ('unauthorized' vs 'missing_bearer_token', no status field) \u2014 inconsistent contract across routes."
       ]
     },
     {
@@ -11851,7 +11846,7 @@
         }
       ],
       "notes": [
-        "Same name as d1's workspaceJson but a different row type/field set (missing git_branch, remote_directory) — outputs are not equivalent shapes."
+        "Same name as d1's workspaceJson but a different row type/field set (missing git_branch, remote_directory) \u2014 outputs are not equivalent shapes."
       ]
     },
     {
@@ -11982,7 +11977,7 @@
         }
       ],
       "notes": [
-        "No body available — can't confirm it matches the sdk-runtime implementation's added 'kind' field."
+        "No body available \u2014 can't confirm it matches the sdk-runtime implementation's added 'kind' field."
       ]
     },
     {
@@ -12757,7 +12752,7 @@
         }
       ],
       "notes": [
-        "Same logic as hosted-session-pull.ts's sessionVisibility, with an added unused _ws parameter — duplicate."
+        "Same logic as hosted-session-pull.ts's sessionVisibility, with an added unused _ws parameter \u2014 duplicate."
       ]
     },
     {
@@ -13032,7 +13027,7 @@
       ],
       "notes": [
         "Sibling targetUrl in workspace-runtime doesn't accept or apply a search param.",
-        "Sibling targetUrl in workspace-relay also threads a search param — narrower API here."
+        "Sibling targetUrl in workspace-relay also threads a search param \u2014 narrower API here."
       ]
     },
     {
@@ -13063,7 +13058,7 @@
         }
       ],
       "notes": [
-        "Identical to hosted-session-pull.ts's runtimePath — duplicate, this copy is exported while the other is module-private."
+        "Identical to hosted-session-pull.ts's runtimePath \u2014 duplicate, this copy is exported while the other is module-private."
       ]
     },
     {
@@ -13633,7 +13628,7 @@
         }
       ],
       "notes": [
-        "Same name as claxedo-server's isRegistrationAction but checks a different hardcoded string set instead of delegating to isTransitionAction — not guaranteed equivalent."
+        "Same name as claxedo-server's isRegistrationAction but checks a different hardcoded string set instead of delegating to isTransitionAction \u2014 not guaranteed equivalent."
       ]
     },
     {
@@ -13666,7 +13661,7 @@
         }
       ],
       "notes": [
-        "Same literal checks as claxedo-server's isTurnAction but lacks the type-predicate return type — behaviorally equivalent, weaker typing."
+        "Same literal checks as claxedo-server's isTurnAction but lacks the type-predicate return type \u2014 behaviorally equivalent, weaker typing."
       ]
     },
     {
@@ -13983,7 +13978,7 @@
         }
       ],
       "notes": [
-        "Same intent as channel-runtime-authority's isUniqueFailure but different/broader matching logic — could disagree on edge-case error strings."
+        "Same intent as channel-runtime-authority's isUniqueFailure but different/broader matching logic \u2014 could disagree on edge-case error strings."
       ]
     },
     {
@@ -14393,7 +14388,7 @@
         }
       ],
       "notes": [
-        "Body is byte-for-byte identical to pendingConversationMessage (id 929) under a different name — duplicate logic."
+        "Body is byte-for-byte identical to pendingConversationMessage (id 929) under a different name \u2014 duplicate logic."
       ]
     },
     {
@@ -14519,8 +14514,8 @@
         }
       ],
       "notes": [
-        "Duplicate of versionOnNpm (8477) in the same package — identical try/catch logic, different name/file.",
-        "Duplicate of npmVersionPublished (8491) in the same package — identical try/catch logic, different name/file."
+        "Duplicate of versionOnNpm (8477) in the same package \u2014 identical try/catch logic, different name/file.",
+        "Duplicate of npmVersionPublished (8491) in the same package \u2014 identical try/catch logic, different name/file."
       ]
     },
     {
@@ -14617,7 +14612,7 @@
         }
       ],
       "notes": [
-        "Same intent as local-server's contains but uses path.relative logic instead of a prefix string match — edge cases may diverge."
+        "Same intent as local-server's contains but uses path.relative logic instead of a prefix string match \u2014 edge cases may diverge."
       ]
     },
     {
@@ -14650,7 +14645,7 @@
         }
       ],
       "notes": [
-        "Similar-but-distinct detector from isClaudeGoalEvaluatorPrompt (id 4739) — two separate 'is this a goal-evaluator prompt' checks with different logic."
+        "Similar-but-distinct detector from isClaudeGoalEvaluatorPrompt (id 4739) \u2014 two separate 'is this a goal-evaluator prompt' checks with different logic."
       ]
     },
     {
@@ -14741,8 +14736,8 @@
         }
       ],
       "notes": [
-        "Byte-identical body to managedTurnAdmission (11462) — likely should be a single shared check.",
-        "Duplicate of managedRegistration (11461); same body, different name — candidate for dedup."
+        "Byte-identical body to managedTurnAdmission (11462) \u2014 likely should be a single shared check.",
+        "Duplicate of managedRegistration (11461); same body, different name \u2014 candidate for dedup."
       ]
     },
     {
@@ -15122,7 +15117,7 @@
         }
       ],
       "notes": [
-        "Overlaps localCallback (3830) but allows https and misses [::1] — two divergent loopback checks."
+        "Overlaps localCallback (3830) but allows https and misses [::1] \u2014 two divergent loopback checks."
       ]
     },
     {
@@ -15346,7 +15341,7 @@
         }
       ],
       "notes": [
-        "Identical logic to isUsableVerification (id 2281) on a differently-named type — candidate for consolidation.",
+        "Identical logic to isUsableVerification (id 2281) on a differently-named type \u2014 candidate for consolidation.",
         "Duplicate of isUsableResult (id 2356); identical body on a parallel type."
       ]
     },
@@ -15508,7 +15503,7 @@
         }
       ],
       "notes": [
-        "Same clamp-to-[0,1] shape as clampRate but opposite default for missing input (1 vs 0) — easy to mix up."
+        "Same clamp-to-[0,1] shape as clampRate but opposite default for missing input (1 vs 0) \u2014 easy to mix up."
       ]
     },
     {
@@ -15574,7 +15569,7 @@
         }
       ],
       "notes": [
-        "Both non-sandbox branches return \"api_key\" — the -acp suffix check is dead/no-op logic."
+        "Both non-sandbox branches return \"api_key\" \u2014 the -acp suffix check is dead/no-op logic."
       ]
     },
     {
@@ -15733,7 +15728,7 @@
         }
       ],
       "notes": [
-        "Silently defaulting an invalid role to 'viewer' could mask a bug — 3 siblings instead return undefined."
+        "Silently defaulting an invalid role to 'viewer' could mask a bug \u2014 3 siblings instead return undefined."
       ]
     },
     {
@@ -16470,7 +16465,7 @@
         }
       ],
       "notes": [
-        "Same name as shell.ts's authErrorResponse but takes a typed error directly (no rethrow branch) and returns a raw Response, not a Hono response — different contract."
+        "Same name as shell.ts's authErrorResponse but takes a typed error directly (no rethrow branch) and returns a raw Response, not a Hono response \u2014 different contract."
       ]
     },
     {
@@ -16594,8 +16589,8 @@
         }
       ],
       "notes": [
-        "Sibling in codex.ts writes a different manifest schema (.codex-plugin dir, includes version/skills) — not interchangeable despite same name.",
-        "Same name as claude.ts's projectPlugin but different manifest directory/schema — not interchangeable."
+        "Sibling in codex.ts writes a different manifest schema (.codex-plugin dir, includes version/skills) \u2014 not interchangeable despite same name.",
+        "Same name as claude.ts's projectPlugin but different manifest directory/schema \u2014 not interchangeable."
       ]
     },
     {
@@ -16817,7 +16812,7 @@
         }
       ],
       "notes": [
-        "Missing clear(), key(), and length compared to vitest.setup.ts's memoryStorage — not a drop-in Storage."
+        "Missing clear(), key(), and length compared to vitest.setup.ts's memoryStorage \u2014 not a drop-in Storage."
       ]
     },
     {
@@ -16978,7 +16973,7 @@
         }
       ],
       "notes": [
-        "Unbounded sibling of createRefCountedLruResourceCache (id 3304) — same concept, no max-size eviction."
+        "Unbounded sibling of createRefCountedLruResourceCache (id 3304) \u2014 same concept, no max-size eviction."
       ]
     },
     {
@@ -17041,7 +17036,7 @@
         }
       ],
       "notes": [
-        "Same capability slug as cloudflareDriver — both are provider-specific factories, not interchangeable."
+        "Same capability slug as cloudflareDriver \u2014 both are provider-specific factories, not interchangeable."
       ]
     },
     {
@@ -17104,7 +17099,7 @@
         }
       ],
       "notes": [
-        "Same decision shape as workspaceEventTransport (id 4466) but different signedAccess semantics — check they shouldn't diverge accidentally."
+        "Same decision shape as workspaceEventTransport (id 4466) but different signedAccess semantics \u2014 check they shouldn't diverge accidentally."
       ]
     },
     {
@@ -17196,7 +17191,7 @@
         }
       ],
       "notes": [
-        "Manually converts base64url to padded base64 instead of using base64url encoding directly — same end result."
+        "Manually converts base64url to padded base64 instead of using base64url encoding directly \u2014 same end result."
       ]
     },
     {
@@ -17699,7 +17694,7 @@
         }
       ],
       "notes": [
-        "Same capability as files.ts attachmentMime but uses a different binary-detection heuristic (null-byte/control-ratio) — results can differ on edge-case files."
+        "Same capability as files.ts attachmentMime but uses a different binary-detection heuristic (null-byte/control-ratio) \u2014 results can differ on edge-case files."
       ]
     },
     {
@@ -17730,7 +17725,7 @@
         }
       ],
       "notes": [
-        "Checks a different (Cursor-specific) sdkMessageTypes registry than the Claude sibling — not interchangeable."
+        "Checks a different (Cursor-specific) sdkMessageTypes registry than the Claude sibling \u2014 not interchangeable."
       ]
     },
     {
@@ -17763,7 +17758,7 @@
         }
       ],
       "notes": [
-        "Same capability as paste.ts largePaste but hardcodes thresholds instead of using shared constants — values could drift apart."
+        "Same capability as paste.ts largePaste but hardcodes thresholds instead of using shared constants \u2014 values could drift apart."
       ]
     },
     {
@@ -17795,7 +17790,7 @@
         }
       ],
       "notes": [
-        "Exact duplicate of noisyPromptText in workspace-runtime (id 11364) — good candidate for shared extraction.",
+        "Exact duplicate of noisyPromptText in workspace-runtime (id 11364) \u2014 good candidate for shared extraction.",
         "Exact duplicate of noisyPromptText in claxedo-app (id 4185)."
       ]
     },
@@ -17827,15 +17822,15 @@
         }
       ],
       "notes": [
-        "Byte-for-byte identical to batchAssertionFailed (id 7599) in a different file — duplicate logic.",
-        "Byte-for-byte identical to assertionFailed (id 8023) in a different file — duplicate logic that should be shared."
+        "Byte-for-byte identical to batchAssertionFailed (id 7599) in a different file \u2014 duplicate logic.",
+        "Byte-for-byte identical to assertionFailed (id 8023) in a different file \u2014 duplicate logic that should be shared."
       ]
     },
     {
       "slug": "detect-task-tool-by-name",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Returns true only if the lowercased tool name is exactly 'task' — narrower than the Claude sibling.",
+      "description": "Returns true only if the lowercased tool name is exactly 'task' \u2014 narrower than the Claude sibling.",
       "generic": false,
       "demand": 2,
       "distinctImpls": 2,
@@ -17859,14 +17854,14 @@
         }
       ],
       "notes": [
-        "Claude sibling also matches 'agent'; this one does not — behavioral divergence, not just a rename."
+        "Claude sibling also matches 'agent'; this one does not \u2014 behavioral divergence, not just a rename."
       ]
     },
     {
       "slug": "detect-todo-tool-by-name",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Returns true if the lowercased tool name contains 'todo' — a broader match than the Claude sibling.",
+      "description": "Returns true if the lowercased tool name contains 'todo' \u2014 a broader match than the Claude sibling.",
       "generic": false,
       "demand": 2,
       "distinctImpls": 2,
@@ -17890,7 +17885,7 @@
         }
       ],
       "notes": [
-        "Matches any name containing 'todo', not just 'todowrite' — meaningfully broader than the Claude sibling."
+        "Matches any name containing 'todo', not just 'todowrite' \u2014 meaningfully broader than the Claude sibling."
       ]
     },
     {
@@ -18113,7 +18108,7 @@
         }
       ],
       "notes": [
-        "Same byte-to-base64 behavior as standard-webhooks.ts's base64, just takes Uint8Array directly — candidate to dedupe."
+        "Same byte-to-base64 behavior as standard-webhooks.ts's base64, just takes Uint8Array directly \u2014 candidate to dedupe."
       ]
     },
     {
@@ -18209,7 +18204,7 @@
         }
       ],
       "notes": [
-        "Same name/capability as directory-session-cache.ts but a different, action-based implementation — two entry points for one behavior."
+        "Same name/capability as directory-session-cache.ts but a different, action-based implementation \u2014 two entry points for one behavior."
       ]
     },
     {
@@ -18335,7 +18330,7 @@
         }
       ],
       "notes": [
-        "Same purpose as channel-runtime-authority's changes but skips Number() coercion — could return a non-number if the driver returns a string."
+        "Same purpose as channel-runtime-authority's changes but skips Number() coercion \u2014 could return a non-number if the driver returns a string."
       ]
     },
     {
@@ -18401,7 +18396,7 @@
         }
       ],
       "notes": [
-        "Same name as release-state.cf's identityValues but a different subset/order of fields — not interchangeable, must stay manually in sync."
+        "Same name as release-state.cf's identityValues but a different subset/order of fields \u2014 not interchangeable, must stay manually in sync."
       ]
     },
     {
@@ -18592,7 +18587,7 @@
         }
       ],
       "notes": [
-        "Fewer fallback paths than agent-conversation.ts's messageIdFromEvent — missing messageId and part.messageID checks."
+        "Fewer fallback paths than agent-conversation.ts's messageIdFromEvent \u2014 missing messageId and part.messageID checks."
       ]
     },
     {
@@ -18816,7 +18811,7 @@
         }
       ],
       "notes": [
-        "Never returns an empty string like the Claude sibling can — falls back to JSON.stringify/String() instead."
+        "Never returns an empty string like the Claude sibling can \u2014 falls back to JSON.stringify/String() instead."
       ]
     },
     {
@@ -18878,8 +18873,8 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of workspaceIdFromRelayPath (10831) — identical regex duplicated in bun.ts and cloudflare.ts.",
-        "Byte-for-byte duplicate of workspaceIdFromPath (10777) — same regex duplicated across runtimes instead of shared."
+        "Byte-for-byte duplicate of workspaceIdFromRelayPath (10831) \u2014 identical regex duplicated in bun.ts and cloudflare.ts.",
+        "Byte-for-byte duplicate of workspaceIdFromPath (10777) \u2014 same regex duplicated across runtimes instead of shared."
       ]
     },
     {
@@ -19035,7 +19030,7 @@
         }
       ],
       "notes": [
-        "Logic nearly identical to getCredentialByProvider but omits the kind filter — check if one should call the other."
+        "Logic nearly identical to getCredentialByProvider but omits the kind filter \u2014 check if one should call the other."
       ]
     },
     {
@@ -19159,7 +19154,7 @@
         }
       ],
       "notes": [
-        "Same purpose as hosted-session-pull.ts's runtimeFetch but a superset (target resolution, override hook, init) — not a drop-in duplicate."
+        "Same purpose as hosted-session-pull.ts's runtimeFetch but a superset (target resolution, override hook, init) \u2014 not a drop-in duplicate."
       ]
     },
     {
@@ -19500,7 +19495,7 @@
         }
       ],
       "notes": [
-        "Extends workspace-resolver.ts's projectForDirectory with an extra signed-workspace fallback branch — behavior can diverge as one gets updated without the other."
+        "Extends workspace-resolver.ts's projectForDirectory with an extra signed-workspace fallback branch \u2014 behavior can diverge as one gets updated without the other."
       ]
     },
     {
@@ -19629,7 +19624,7 @@
       ],
       "notes": [
         "Same 'claxedo-<id>' logic as sandboxIdFor in cloudflare.ts, under a different name.",
-        "Identical logic to labelName in daytona.ts — same naming convention duplicated across drivers."
+        "Identical logic to labelName in daytona.ts \u2014 same naming convention duplicated across drivers."
       ]
     },
     {
@@ -19660,7 +19655,7 @@
         }
       ],
       "notes": [
-        "Pure passthrough wrapper around formatKeybindParts — likely redundant with it."
+        "Pure passthrough wrapper around formatKeybindParts \u2014 likely redundant with it."
       ]
     },
     {
@@ -19722,7 +19717,7 @@
         }
       ],
       "notes": [
-        "Identical implementation to formatCpuValue (id 3045) in another file — duplicate worth consolidating.",
+        "Identical implementation to formatCpuValue (id 3045) in another file \u2014 duplicate worth consolidating.",
         "Duplicate of formatCpu (id 3020); identical body in a different file."
       ]
     },
@@ -19786,7 +19781,7 @@
         }
       ],
       "notes": [
-        "Same logic as release-state's sqliteLiteral but additionally throws on non-finite numbers — stricter validation, not identical."
+        "Same logic as release-state's sqliteLiteral but additionally throws on non-finite numbers \u2014 stricter validation, not identical."
       ]
     },
     {
@@ -19849,7 +19844,7 @@
         }
       ],
       "notes": [
-        "Exact duplicate of process-handler.ts's workspaceRef within the same package — should be one shared const."
+        "Exact duplicate of process-handler.ts's workspaceRef within the same package \u2014 should be one shared const."
       ]
     },
     {
@@ -19915,7 +19910,7 @@
         }
       ],
       "notes": [
-        "Overlaps with canonicalId (id 5505) — both hash-derive prefixed ids but with different composition/lengths."
+        "Overlaps with canonicalId (id 5505) \u2014 both hash-derive prefixed ids but with different composition/lengths."
       ]
     },
     {
@@ -19946,7 +19941,7 @@
         }
       ],
       "notes": [
-        "Near-duplicate of echoServerSource in setup-multitunnel.ts — same echo-server generator copy-pasted per bench script.",
+        "Near-duplicate of echoServerSource in setup-multitunnel.ts \u2014 same echo-server generator copy-pasted per bench script.",
         "Near-duplicate of ECHO in setup-separate.ts; two independently maintained copies of the same echo-server generator."
       ]
     },
@@ -20423,7 +20418,7 @@
         }
       ],
       "notes": [
-        "Duplicates getNodeLength's br/zero-width-space logic inline instead of delegating to it — same capability, two implementations."
+        "Duplicates getNodeLength's br/zero-width-space logic inline instead of delegating to it \u2014 same capability, two implementations."
       ]
     },
     {
@@ -20521,7 +20516,7 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of agent-color.ts tone — good candidate to share."
+        "Byte-for-byte duplicate of agent-color.ts tone \u2014 good candidate to share."
       ]
     },
     {
@@ -20748,7 +20743,7 @@
       ],
       "notes": [
         "Different templating approach from mock-route-shadowing.ts's resolveTemplate: regex interpolation vs fixed-map replaceAll.",
-        "Same name 'render' as the SQL template renderer elsewhere but an unrelated mustache-style string interpolator — naming collision only."
+        "Same name 'render' as the SQL template renderer elsewhere but an unrelated mustache-style string interpolator \u2014 naming collision only."
       ]
     },
     {
@@ -20840,7 +20835,7 @@
         }
       ],
       "notes": [
-        "Same capability as mermaid-timeline.ts's getMermaid but initializes with different (fewer) options — the two mermaid instances can render differently."
+        "Same capability as mermaid-timeline.ts's getMermaid but initializes with different (fewer) options \u2014 the two mermaid instances can render differently."
       ]
     },
     {
@@ -20873,7 +20868,7 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of local-server's gitListAll — candidate to dedupe into a shared package."
+        "Byte-for-byte duplicate of local-server's gitListAll \u2014 candidate to dedupe into a shared package."
       ]
     },
     {
@@ -21034,7 +21029,7 @@
         }
       ],
       "notes": [
-        "Declaration only — the real implementation is the sibling at pi/catalog.ts:26."
+        "Declaration only \u2014 the real implementation is the sibling at pi/catalog.ts:26."
       ]
     },
     {
@@ -21065,8 +21060,8 @@
         }
       ],
       "notes": [
-        "Near-duplicate of loadRuntimeAccessKeyOrJwks (10748) — same JWKS-else-PEM logic implemented twice.",
-        "Duplicate of loadRuntimeAccessKey (10948) — same JWKS-else-PEM logic for worker vs main entrypoints."
+        "Near-duplicate of loadRuntimeAccessKeyOrJwks (10748) \u2014 same JWKS-else-PEM logic implemented twice.",
+        "Duplicate of loadRuntimeAccessKey (10948) \u2014 same JWKS-else-PEM logic for worker vs main entrypoints."
       ]
     },
     {
@@ -21129,7 +21124,7 @@
         }
       ],
       "notes": [
-        "Defaults are hardcoded to {} here vs a real defaults() call in agent-sdk-runtime — likely an incomplete port."
+        "Defaults are hardcoded to {} here vs a real defaults() call in agent-sdk-runtime \u2014 likely an incomplete port."
       ]
     },
     {
@@ -21224,7 +21219,7 @@
         }
       ],
       "notes": [
-        "Behaviourally identical to local-server's logTunnelEvent; only log message wording differs — good dedupe candidate."
+        "Behaviourally identical to local-server's logTunnelEvent; only log message wording differs \u2014 good dedupe candidate."
       ]
     },
     {
@@ -21323,7 +21318,7 @@
         }
       ],
       "notes": [
-        "Same status-mapping logic as submit-harness.ts's mock goalMutationResponse — keep both in sync if the status codes change."
+        "Same status-mapping logic as submit-harness.ts's mock goalMutationResponse \u2014 keep both in sync if the status codes change."
       ]
     },
     {
@@ -21679,7 +21674,7 @@
         }
       ],
       "notes": [
-        "Near-duplicate of createCachedRevocationClient — same TTL/dedup-cache pattern reimplemented with a different key/eviction rule."
+        "Near-duplicate of createCachedRevocationClient \u2014 same TTL/dedup-cache pattern reimplemented with a different key/eviction rule."
       ]
     },
     {
@@ -22224,7 +22219,7 @@
       ],
       "notes": [
         "Same name as session-list.ts normalizedBase but does actual URL string normalization, not a cache-key fallback.",
-        "Fallback for an empty/undefined URL is the literal string 'default', not '' or undefined — easy to misuse as a real host."
+        "Fallback for an empty/undefined URL is the literal string 'default', not '' or undefined \u2014 easy to misuse as a real host."
       ]
     },
     {
@@ -22726,8 +22721,8 @@
         }
       ],
       "notes": [
-        "Near-duplicate validation logic to snapshotRef — same id/sha256/size/actor/createdAt/pins checks, twice.",
-        "Near-duplicate validation logic to snapshotState — same id/sha256/size/actor/createdAt/pins checks, twice."
+        "Near-duplicate validation logic to snapshotRef \u2014 same id/sha256/size/actor/createdAt/pins checks, twice.",
+        "Near-duplicate validation logic to snapshotState \u2014 same id/sha256/size/actor/createdAt/pins checks, twice."
       ]
     },
     {
@@ -23327,7 +23322,7 @@
         }
       ],
       "notes": [
-        "Output objects have no priority field, unlike the Claude sibling — not the same shape."
+        "Output objects have no priority field, unlike the Claude sibling \u2014 not the same shape."
       ]
     },
     {
@@ -23578,7 +23573,7 @@
         }
       ],
       "notes": [
-        "Gives up silently after 20 tries with no error/timeout signal — can mask a real test failure."
+        "Gives up silently after 20 tries with no error/timeout signal \u2014 can mask a real test failure."
       ]
     },
     {
@@ -23795,7 +23790,7 @@
         }
       ],
       "notes": [
-        "Uses a 0-based scale, while the channel-runtime-authority.ts sibling uses a 1-based scale — mixing the two would corrupt comparisons.",
+        "Uses a 0-based scale, while the channel-runtime-authority.ts sibling uses a 1-based scale \u2014 mixing the two would corrupt comparisons.",
         "Uses a 1-based scale, disagreeing with runtime-session-authority.ts's 0-based roleRank()."
       ]
     },
@@ -23860,7 +23855,7 @@
         }
       ],
       "notes": [
-        "Takes a `directory` parameter but never uses it (`void directory`) — dead or misleading parameter."
+        "Takes a `directory` parameter but never uses it (`void directory`) \u2014 dead or misleading parameter."
       ]
     },
     {
@@ -23892,7 +23887,7 @@
         }
       ],
       "notes": [
-        "Pure alias for getDefaultServerUrl — redundant wrapper with identical capability."
+        "Pure alias for getDefaultServerUrl \u2014 redundant wrapper with identical capability."
       ]
     },
     {
@@ -24528,7 +24523,7 @@
         }
       ],
       "notes": [
-        "Near-duplicate of rebuildSessionAttachmentRefs for a different table — same pattern, no shared helper."
+        "Near-duplicate of rebuildSessionAttachmentRefs for a different table \u2014 same pattern, no shared helper."
       ]
     },
     {
@@ -24591,7 +24586,7 @@
         }
       ],
       "notes": [
-        "Adds input-change detection and a tool-input event the codex sibling doesn't have — not a drop-in replacement."
+        "Adds input-change detection and a tool-input event the codex sibling doesn't have \u2014 not a drop-in replacement."
       ]
     },
     {
@@ -24810,7 +24805,7 @@
         }
       ],
       "notes": [
-        "Unrelated to session-question-dock.tsx's Mark despite the identical name — a brand logo, not a selection indicator."
+        "Unrelated to session-question-dock.tsx's Mark despite the identical name \u2014 a brand logo, not a selection indicator."
       ]
     },
     {
@@ -25185,7 +25180,7 @@
         }
       ],
       "notes": [
-        "Same name 'ModelSelectorPopover' as select-model.tsx but a non-functional stub — fine for storybook, but not a real duplicate implementation."
+        "Same name 'ModelSelectorPopover' as select-model.tsx but a non-functional stub \u2014 fine for storybook, but not a real duplicate implementation."
       ]
     },
     {
@@ -25344,7 +25339,7 @@
       ],
       "notes": [
         "Identical SVG markup to CheckSmall (select-v2.tsx) defined again under a different name.",
-        "Duplicate of CheckMark (menu-v2.tsx) — same SVG path/attrs, two names for one icon."
+        "Duplicate of CheckMark (menu-v2.tsx) \u2014 same SVG path/attrs, two names for one icon."
       ]
     },
     {
@@ -26152,7 +26147,7 @@
       ],
       "notes": [
         "Same default-sentinel logic as codexAppServerModel/codexTurnModel, reimplemented per harness.",
-        "Same normalization as turnModel/codexTurnModel — three separate copies of the same default-sentinel logic."
+        "Same normalization as turnModel/codexTurnModel \u2014 three separate copies of the same default-sentinel logic."
       ]
     },
     {
@@ -26284,7 +26279,7 @@
       "slug": "resolve-fanout-eligible-secrets-for-org",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Resolves and returns provider→secret map for all available fan-out-eligible credentials in an org, deduped per provider.",
+      "description": "Resolves and returns provider\u2192secret map for all available fan-out-eligible credentials in an org, deduped per provider.",
       "generic": false,
       "demand": 2,
       "distinctImpls": 2,
@@ -26308,7 +26303,7 @@
         }
       ],
       "notes": [
-        "Nearly duplicates resolveAllSecrets's logic, differing only in the availability filter used — consider merging."
+        "Nearly duplicates resolveAllSecrets's logic, differing only in the availability filter used \u2014 consider merging."
       ]
     },
     {
@@ -26373,7 +26368,7 @@
         }
       ],
       "notes": [
-        "Named 'HarnessId' but returns the full harness ref object, not an id — likely a naming/behavior mismatch."
+        "Named 'HarnessId' but returns the full harness ref object, not an id \u2014 likely a naming/behavior mismatch."
       ]
     },
     {
@@ -26404,8 +26399,8 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of homeDir (id 8902) in the same package — should be a single shared helper.",
-        "Byte-for-byte duplicate of home (id 8865) in the same package — should be a single shared helper."
+        "Byte-for-byte duplicate of homeDir (id 8902) in the same package \u2014 should be a single shared helper.",
+        "Byte-for-byte duplicate of home (id 8865) in the same package \u2014 should be a single shared helper."
       ]
     },
     {
@@ -26910,7 +26905,7 @@
         }
       ],
       "notes": [
-        "Near-duplicate of recoverCandidateVersion (8630) — same tag-matching logic, returns only the id."
+        "Near-duplicate of recoverCandidateVersion (8630) \u2014 same tag-matching logic, returns only the id."
       ]
     },
     {
@@ -27444,7 +27439,7 @@
         }
       ],
       "notes": [
-        "Same purpose as d1's publicMessage but canonicalizes on author_kind (human/agent) rather than message role — produces different output for identical input."
+        "Same purpose as d1's publicMessage but canonicalizes on author_kind (human/agent) rather than message role \u2014 produces different output for identical input."
       ]
     },
     {
@@ -27698,7 +27693,7 @@
         }
       ],
       "notes": [
-        "Byte-for-byte duplicate of themeToCss (resolve.ts) — same generic serializer copied for v2 tokens."
+        "Byte-for-byte duplicate of themeToCss (resolve.ts) \u2014 same generic serializer copied for v2 tokens."
       ]
     },
     {
@@ -27790,8 +27785,8 @@
         }
       ],
       "notes": [
-        "Identical setter shape to configureSessionAppPorts (id 910) — repeated per-feature config pattern.",
-        "Identical setter shape to configureReviewAppPorts (id 2524) — repeated per-feature config pattern."
+        "Identical setter shape to configureSessionAppPorts (id 910) \u2014 repeated per-feature config pattern.",
+        "Identical setter shape to configureReviewAppPorts (id 2524) \u2014 repeated per-feature config pattern."
       ]
     },
     {
@@ -28136,7 +28131,7 @@
       ],
       "notes": [
         "Naive regex can corrupt code where // or /* appears inside a string, unlike import-graph.ts's tokenizer.",
-        "Different regex behavior than the other two stripComments — only removes // when it starts the line."
+        "Different regex behavior than the other two stripComments \u2014 only removes // when it starts the line."
       ]
     },
     {
@@ -28391,7 +28386,7 @@
         }
       ],
       "notes": [
-        "Same computation as totalTokens (2780) on a different shape — candidate for one shared summing helper.",
+        "Same computation as totalTokens (2780) on a different shape \u2014 candidate for one shared summing helper.",
         "Duplicates the same input+output+reasoning+cacheRead+cacheWrite sum as total() (2772)."
       ]
     },
@@ -28423,7 +28418,7 @@
         }
       ],
       "notes": [
-        "Same exported name as harness-query-cache.ts's thin wrapper — two modules export syncHarnessSessionModel, risk of import ambiguity."
+        "Same exported name as harness-query-cache.ts's thin wrapper \u2014 two modules export syncHarnessSessionModel, risk of import ambiguity."
       ]
     },
     {
@@ -28702,7 +28697,7 @@
         }
       ],
       "notes": [
-        "Unrelated to session-controller.ts's syncSessionMeta (client polling orchestrator) — this is a server-side row upsert."
+        "Unrelated to session-controller.ts's syncSessionMeta (client polling orchestrator) \u2014 this is a server-side row upsert."
       ]
     },
     {
@@ -29198,7 +29193,7 @@
         }
       ],
       "notes": [
-        "Same check as d1's positiveFence but throws a different error class/message — otherwise identical."
+        "Same check as d1's positiveFence but throws a different error class/message \u2014 otherwise identical."
       ]
     },
     {
@@ -29296,7 +29291,7 @@
         }
       ],
       "notes": [
-        "Same validation as hosted-session-pull.ts's messagesPayload but throws a different error class — callers must handle both types."
+        "Same validation as hosted-session-pull.ts's messagesPayload but throws a different error class \u2014 callers must handle both types."
       ]
     },
     {
@@ -29462,8 +29457,8 @@
         }
       ],
       "notes": [
-        "Nearly identical to publicHttpsUrl (id 7988), which additionally rejects a query string — inconsistent validation.",
-        "Nearly identical to gatewayBase (id 8000), which omits the query-string check — inconsistent validation."
+        "Nearly identical to publicHttpsUrl (id 7988), which additionally rejects a query string \u2014 inconsistent validation.",
+        "Nearly identical to gatewayBase (id 8000), which omits the query-string check \u2014 inconsistent validation."
       ]
     },
     {
@@ -29689,7 +29684,7 @@
         }
       ],
       "notes": [
-        "Same logic as local-server's walkAll but joins relative paths with path.join (OS separator) instead of forced '/' — output differs cross-platform."
+        "Same logic as local-server's walkAll but joins relative paths with path.join (OS separator) instead of forced '/' \u2014 output differs cross-platform."
       ]
     },
     {
@@ -29817,7 +29812,7 @@
       ],
       "notes": [
         "Delegates atomicity to writeFileAtomically; diverges from core/utils.ts's self-contained implementation.",
-        "Reimplements atomic write independently of materialize-status-hooks.ts's version — two divergent implementations."
+        "Reimplements atomic write independently of materialize-status-hooks.ts's version \u2014 two divergent implementations."
       ]
     },
     {
@@ -29914,7 +29909,7 @@
       ],
       "notes": [
         "Duplicate name/behavior with writers.ts:32 sameSessionStatus check; different write path (delegates vs direct setQueryData).",
-        "Same capability/name as session-status-dispatcher.ts:300 but implemented independently — risk of divergence."
+        "Same capability/name as session-status-dispatcher.ts:300 but implemented independently \u2014 risk of divergence."
       ]
     },
     {
@@ -30494,7 +30489,7 @@
         }
       ],
       "notes": [
-        "Body is only the function signature (loc:1) — no implementation visible in this shard."
+        "Body is only the function signature (loc:1) \u2014 no implementation visible in this shard."
       ]
     },
     {
@@ -31704,7 +31699,7 @@
         }
       ],
       "notes": [
-        "Looks like a stub/placeholder guard — always returns true, effectively no access control."
+        "Looks like a stub/placeholder guard \u2014 always returns true, effectively no access control."
       ]
     },
     {
@@ -32214,30 +32209,6 @@
       ]
     },
     {
-      "slug": "append-query-param-if-defined",
-      "aliases": [],
-      "category": "url",
-      "description": "Sets a URL search param to a stringified value, skipping it entirely when the value is undefined.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-app"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "appendQuery",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:276",
-          "loc": 4
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "append-query-params-to-url-skipping-undefined",
       "aliases": [],
       "category": "url",
@@ -32337,7 +32308,7 @@
       "slug": "append-status-suffix-to-terminal-title",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Appends a ' · working' / ' · needs input' / ' · done' suffix to a terminal title based on status.",
+      "description": "Appends a ' \u00b7 working' / ' \u00b7 needs input' / ' \u00b7 done' suffix to a terminal title based on status.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -34476,7 +34447,7 @@
         }
       ],
       "notes": [
-        "Only the type signature is shown — no body to verify behavior."
+        "Only the type signature is shown \u2014 no body to verify behavior."
       ]
     },
     {
@@ -35996,7 +35967,7 @@
         }
       ],
       "notes": [
-        "Same name as local-server's localOnly but throws instead of returning a response value — different error contract."
+        "Same name as local-server's localOnly but throws instead of returning a response value \u2014 different error contract."
       ]
     },
     {
@@ -36483,7 +36454,7 @@
       "slug": "assert-string-is-trimmed-bounded-identifier",
       "aliases": [],
       "category": "validation",
-      "description": "Throws if value isn't a trimmed non-empty string ≤256 chars; otherwise returns it unchanged.",
+      "description": "Throws if value isn't a trimmed non-empty string \u2264256 chars; otherwise returns it unchanged.",
       "generic": true,
       "demand": 1,
       "distinctImpls": 1,
@@ -37354,7 +37325,7 @@
         }
       ],
       "notes": [
-        "Simpler than atomicWriteFileSync (id 8932) — no fsync of file/dir, so durability guarantees differ."
+        "Simpler than atomicWriteFileSync (id 8932) \u2014 no fsync of file/dir, so durability guarantees differ."
       ]
     },
     {
@@ -38032,7 +38003,7 @@
         }
       ],
       "notes": [
-        "Same name 'authorized' as internal-relay's simple bearer/loopback check but a much larger signed-auth+role flow — naming collision only."
+        "Same name 'authorized' as internal-relay's simple bearer/loopback check but a much larger signed-auth+role flow \u2014 naming collision only."
       ]
     },
     {
@@ -38590,7 +38561,7 @@
         }
       ],
       "notes": [
-        "Body is identical to authorizeWorkspaceRead (calls openWorkspace, no write-scoped check) — likely unintended duplication or missing write authorization."
+        "Body is identical to authorizeWorkspaceRead (calls openWorkspace, no write-scoped check) \u2014 likely unintended duplication or missing write authorization."
       ]
     },
     {
@@ -41126,7 +41097,7 @@
         }
       ],
       "notes": [
-        "Same name 'artifactUnavailable' as directory/view.ts but returns/constructs an Error rather than a boolean check — opposite kind of function."
+        "Same name 'artifactUnavailable' as directory/view.ts but returns/constructs an Error rather than a boolean check \u2014 opposite kind of function."
       ]
     },
     {
@@ -42162,7 +42133,7 @@
         }
       ],
       "notes": [
-        "sandbox/telemetry services are empty-object stubs cast via `as unknown as` — spike-only composition."
+        "sandbox/telemetry services are empty-object stubs cast via `as unknown as` \u2014 spike-only composition."
       ]
     },
     {
@@ -44502,7 +44473,7 @@
         }
       ],
       "notes": [
-        "Overlaps with corsHeaders() — another near-duplicate CORS-header builder in the same module."
+        "Overlaps with corsHeaders() \u2014 another near-duplicate CORS-header builder in the same module."
       ]
     },
     {
@@ -46673,7 +46644,7 @@
       "slug": "build-discovery-row-description-text",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Joins a row's account id, origin, and multi-binding usage note into a display string separated by \" · \".",
+      "description": "Joins a row's account id, origin, and multi-binding usage note into a display string separated by \" \u00b7 \".",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -47937,30 +47908,6 @@
           "name": "claudeScriptedEnv",
           "at": "packages/claxedo-app/e2e/helpers/scripted-model-server.ts:345",
           "loc": 22
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "build-error-from-failed-server-response",
-      "aliases": [],
-      "category": "error",
-      "description": "Parses a failed response's JSON to build a typed ServerClientResponseError with code/message/body.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-app"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "responseError",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:300",
-          "loc": 9
         }
       ],
       "notes": []
@@ -50426,7 +50373,7 @@
         }
       ],
       "notes": [
-        "Body shown is only the function signature — implementation not visible in this shard."
+        "Body shown is only the function signature \u2014 implementation not visible in this shard."
       ]
     },
     {
@@ -50548,7 +50495,7 @@
         }
       ],
       "notes": [
-        "Different computation from agent-sdk-runtime's harnessKey (definition lookup) — just a template string here."
+        "Different computation from agent-sdk-runtime's harnessKey (definition lookup) \u2014 just a template string here."
       ]
     },
     {
@@ -52044,7 +51991,7 @@
         }
       ],
       "notes": [
-        "Unlike pty.ts's invalidPath, this takes no message parameter — always the same fixed text."
+        "Unlike pty.ts's invalidPath, this takes no message parameter \u2014 always the same fixed text."
       ]
     },
     {
@@ -55248,7 +55195,7 @@
         }
       ],
       "notes": [
-        "Vendored copy of arctic library logic — check for divergence from an actual arctic dependency."
+        "Vendored copy of arctic library logic \u2014 check for divergence from an actual arctic dependency."
       ]
     },
     {
@@ -55322,7 +55269,7 @@
         }
       ],
       "notes": [
-        "Discards the inner decoder's decoded value — only its ok/fail result is used, which looks like a bug."
+        "Discards the inner decoder's decoded value \u2014 only its ok/fail result is used, which looks like a bug."
       ]
     },
     {
@@ -55636,7 +55583,7 @@
         }
       ],
       "notes": [
-        "Same name 'optionalString' as agent-plugins/api.ts but returns a validator function/message string instead of a boolean — incompatible contract."
+        "Same name 'optionalString' as agent-plugins/api.ts but returns a validator function/message string instead of a boolean \u2014 incompatible contract."
       ]
     },
     {
@@ -56600,7 +56547,7 @@
         }
       ],
       "notes": [
-        "Hardcodes status to 'acquiring_sandbox' regardless of actual state — a guessed fallback, not derived."
+        "Hardcodes status to 'acquiring_sandbox' regardless of actual state \u2014 a guessed fallback, not derived."
       ]
     },
     {
@@ -56679,7 +56626,7 @@
       "slug": "build-plugin-activation-summary-text",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Builds an \"Enabled/Disabled · <authority>\" summary string from a plugin's per-harness activation state.",
+      "description": "Builds an \"Enabled/Disabled \u00b7 <authority>\" summary string from a plugin's per-harness activation state.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -59180,7 +59127,7 @@
         }
       ],
       "notes": [
-        "Same inlined-literal SQL pattern as pairedD1RecoveryControlPlaneVerificationSql — verify literal() is injection-safe."
+        "Same inlined-literal SQL pattern as pairedD1RecoveryControlPlaneVerificationSql \u2014 verify literal() is injection-safe."
       ]
     },
     {
@@ -59206,7 +59153,7 @@
         }
       ],
       "notes": [
-        "Inlines binding values as SQL literals instead of bound parameters — depends on literal() escaping correctly."
+        "Inlines binding values as SQL literals instead of bound parameters \u2014 depends on literal() escaping correctly."
       ]
     },
     {
@@ -59664,7 +59611,7 @@
         }
       ],
       "notes": [
-        "327 lines — large multi-responsibility factory, not a candidate for a shared helpers package."
+        "327 lines \u2014 large multi-responsibility factory, not a candidate for a shared helpers package."
       ]
     },
     {
@@ -60467,7 +60414,7 @@
       "slug": "build-runtime-diagnostic-event-without-id",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Builds an EventRuntimeDiagnostic with type and properties only — omits the 'id' field sibling copies set.",
+      "description": "Builds an EventRuntimeDiagnostic with type and properties only \u2014 omits the 'id' field sibling copies set.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -60486,7 +60433,7 @@
         }
       ],
       "notes": [
-        "Missing the synthesized 'id' field that the same-shaped helper in projection.ts always sets — likely bug."
+        "Missing the synthesized 'id' field that the same-shaped helper in projection.ts always sets \u2014 likely bug."
       ]
     },
     {
@@ -61664,7 +61611,7 @@
         }
       ],
       "notes": [
-        "639 lines — application composition root, not a shared helper."
+        "639 lines \u2014 application composition root, not a shared helper."
       ]
     },
     {
@@ -64070,7 +64017,7 @@
         }
       ],
       "notes": [
-        "Unrelated to the other two file() helpers (which build a fixed or sanitized filesystem path) — this one builds a shell command fragment."
+        "Unrelated to the other two file() helpers (which build a fixed or sanitized filesystem path) \u2014 this one builds a shell command fragment."
       ]
     },
     {
@@ -64652,7 +64599,7 @@
         }
       ],
       "notes": [
-        "Same name as cutover-gate.cf's exactIdentityPredicate but inlines literal values instead of parameterizing, and covers different columns — not interchangeable."
+        "Same name as cutover-gate.cf's exactIdentityPredicate but inlines literal values instead of parameterizing, and covers different columns \u2014 not interchangeable."
       ]
     },
     {
@@ -65334,7 +65281,7 @@
         }
       ],
       "notes": [
-        "Captured body is a ternary with no else/return for the undefined-selection case — likely a truncation artifact, verify source."
+        "Captured body is a ternary with no else/return for the undefined-selection case \u2014 likely a truncation artifact, verify source."
       ]
     },
     {
@@ -65602,7 +65549,7 @@
         }
       ],
       "notes": [
-        "Unrelated to lib/id.ts's create (ID generator) — this scaffolds a Storybook story, same name only."
+        "Unrelated to lib/id.ts's create (ID generator) \u2014 this scaffolds a Storybook story, same name only."
       ]
     },
     {
@@ -67146,7 +67093,7 @@
         }
       ],
       "notes": [
-        "Test/fixture builder only — not the same contract as the runtime toolPart(), don't conflate the two."
+        "Test/fixture builder only \u2014 not the same contract as the runtime toolPart(), don't conflate the two."
       ]
     },
     {
@@ -67292,7 +67239,7 @@
         }
       ],
       "notes": [
-        "6 'unavailable' helpers share only a name — each builds an unrelated shape (response, error, plugin state, source, exception, union tag)."
+        "6 'unavailable' helpers share only a name \u2014 each builds an unrelated shape (response, error, plugin state, source, exception, union tag)."
       ]
     },
     {
@@ -67486,7 +67433,7 @@
         }
       ],
       "notes": [
-        "Same name 'monogram' as install/sheet.tsx but produces up to 2-letter initials instead of a single first-character fallback — visually inconsistent avatars if both are used."
+        "Same name 'monogram' as install/sheet.tsx but produces up to 2-letter initials instead of a single first-character fallback \u2014 visually inconsistent avatars if both are used."
       ]
     },
     {
@@ -68114,7 +68061,7 @@
         }
       ],
       "notes": [
-        "Misleadingly named like local-server's authorizeWorkspace but does NOT check permissions — only validates id+directory. Naming collision."
+        "Misleadingly named like local-server's authorizeWorkspace but does NOT check permissions \u2014 only validates id+directory. Naming collision."
       ]
     },
     {
@@ -68480,7 +68427,7 @@
         }
       ],
       "notes": [
-        "Simpler than the cloudflare.ts upgradeResponse — no subprotocol header support."
+        "Simpler than the cloudflare.ts upgradeResponse \u2014 no subprotocol header support."
       ]
     },
     {
@@ -68506,7 +68453,7 @@
         }
       ],
       "notes": [
-        "Sibling fixture version drops the subprotocol header entirely — not behaviourally equivalent."
+        "Sibling fixture version drops the subprotocol header entirely \u2014 not behaviourally equivalent."
       ]
     },
     {
@@ -71184,7 +71131,7 @@
         }
       ],
       "notes": [
-        "Mutates the passed-in env object by deleting the key — a caller-visible side effect."
+        "Mutates the passed-in env object by deleting the key \u2014 a caller-visible side effect."
       ]
     },
     {
@@ -74372,7 +74319,7 @@
         }
       ],
       "notes": [
-        "Hardcodes a single literal path '/workspace' as the only rejected worktree — looks like a placeholder/stub."
+        "Hardcodes a single literal path '/workspace' as the only rejected worktree \u2014 looks like a placeholder/stub."
       ]
     },
     {
@@ -74472,7 +74419,7 @@
         }
       ],
       "notes": [
-        "Same ownership-marker-check pattern as ownedDirectory (id 6731) but different marker schema — duplicated logic."
+        "Same ownership-marker-check pattern as ownedDirectory (id 6731) but different marker schema \u2014 duplicated logic."
       ]
     },
     {
@@ -74810,7 +74757,7 @@
         }
       ],
       "notes": [
-        "Name collision only: unrelated to the status-computing live() sibling — this is a simple expiry check."
+        "Name collision only: unrelated to the status-computing live() sibling \u2014 this is a simple expiry check."
       ]
     },
     {
@@ -76358,7 +76305,7 @@
         }
       ],
       "notes": [
-        "Body is a no-op passthrough of input.hasHostedAccount — likely a placeholder for future logic."
+        "Body is a no-op passthrough of input.hasHostedAccount \u2014 likely a placeholder for future logic."
       ]
     },
     {
@@ -79660,7 +79607,7 @@
         }
       ],
       "notes": [
-        "Functionally overlaps with the sync \"contained\" helper (id 6710) but async and realpath-based — a second implementation of the same containment check."
+        "Functionally overlaps with the sync \"contained\" helper (id 6710) but async and realpath-based \u2014 a second implementation of the same containment check."
       ]
     },
     {
@@ -80172,7 +80119,7 @@
         }
       ],
       "notes": [
-        "Reported body (loc 172) appears to include sibling functions (scanEmbeddedCss, scanCssDesignDeclarations) rather than just isStyleContext — likely a shard-extraction artifact spanning multiple function boundaries."
+        "Reported body (loc 172) appears to include sibling functions (scanEmbeddedCss, scanCssDesignDeclarations) rather than just isStyleContext \u2014 likely a shard-extraction artifact spanning multiple function boundaries."
       ]
     },
     {
@@ -88832,7 +88779,7 @@
         }
       ],
       "notes": [
-        "Unlike clearRegisteredConversationMemory, never calls entry.unsubscribe() before clearing entries — overlapping but divergent cleanup."
+        "Unlike clearRegisteredConversationMemory, never calls entry.unsubscribe() before clearing entries \u2014 overlapping but divergent cleanup."
       ]
     },
     {
@@ -89794,7 +89741,7 @@
         }
       ],
       "notes": [
-        "Same name as prompt.tsx clonePart but never deep-clones the selection field — a storybook mock that silently drops that behavior."
+        "Same name as prompt.tsx clonePart but never deep-clones the selection field \u2014 a storybook mock that silently drops that behavior."
       ]
     },
     {
@@ -90498,7 +90445,7 @@
         }
       ],
       "notes": [
-        "Name 'close' is coincidental — this is layout logic, not a resource-cleanup helper like its siblings."
+        "Name 'close' is coincidental \u2014 this is layout logic, not a resource-cleanup helper like its siblings."
       ]
     },
     {
@@ -90790,7 +90737,7 @@
         }
       ],
       "notes": [
-        "Despite the name, returns '' rather than undefined for missing input — opposite of sibling optionalText()."
+        "Despite the name, returns '' rather than undefined for missing input \u2014 opposite of sibling optionalText()."
       ]
     },
     {
@@ -90888,7 +90835,7 @@
         }
       ],
       "notes": [
-        "Completely different capability from sibling mentions() copies — array coercion, not @mention parsing."
+        "Completely different capability from sibling mentions() copies \u2014 array coercion, not @mention parsing."
       ]
     },
     {
@@ -90914,7 +90861,7 @@
         }
       ],
       "notes": [
-        "Misleadingly named 'integer' — never calls Number.isInteger, so non-integer numbers pass through."
+        "Misleadingly named 'integer' \u2014 never calls Number.isInteger, so non-integer numbers pass through."
       ]
     },
     {
@@ -91206,7 +91153,7 @@
         }
       ],
       "notes": [
-        "Not an object merge despite the name — it's an async fan-out/flatten over adapters."
+        "Not an object merge despite the name \u2014 it's an async fan-out/flatten over adapters."
       ]
     },
     {
@@ -95404,7 +95351,7 @@
         }
       ],
       "notes": [
-        "Extracted body is only the function signature — verify the actual implementation before relying on it."
+        "Extracted body is only the function signature \u2014 verify the actual implementation before relying on it."
       ]
     },
     {
@@ -96276,7 +96223,7 @@
         }
       ],
       "notes": [
-        "Extracted body has no braces/implementation, only the function signature — likely truncated."
+        "Extracted body has no braces/implementation, only the function signature \u2014 likely truncated."
       ]
     },
     {
@@ -96910,7 +96857,7 @@
         }
       ],
       "notes": [
-        "Body appears elided without a truncation marker — only the type signature is visible, behavior unverified."
+        "Body appears elided without a truncation marker \u2014 only the type signature is visible, behavior unverified."
       ]
     },
     {
@@ -97200,7 +97147,7 @@
         }
       ],
       "notes": [
-        "Only hashes compute_class/prepare/runtime, not the whole contract — changes to other fields won't affect it."
+        "Only hashes compute_class/prepare/runtime, not the whole contract \u2014 changes to other fields won't affect it."
       ]
     },
     {
@@ -97562,7 +97509,7 @@
         }
       ],
       "notes": [
-        "Declaration only — implementation not present in this excerpt."
+        "Declaration only \u2014 implementation not present in this excerpt."
       ]
     },
     {
@@ -98406,7 +98353,7 @@
         }
       ],
       "notes": [
-        "Name collision only: unrelated to the diagnostics shape() — this restructures a domain event, not describes a value."
+        "Name collision only: unrelated to the diagnostics shape() \u2014 this restructures a domain event, not describes a value."
       ]
     },
     {
@@ -99572,7 +99519,7 @@
         }
       ],
       "notes": [
-        "Body is a type signature only — actual mapping logic is not visible in this shard."
+        "Body is a type signature only \u2014 actual mapping logic is not visible in this shard."
       ]
     },
     {
@@ -99890,7 +99837,7 @@
         }
       ],
       "notes": [
-        "Name implies memory statistics (mean/stddev/etc.) but the body only returns values.length — likely incomplete or misnamed."
+        "Name implies memory statistics (mean/stddev/etc.) but the body only returns values.length \u2014 likely incomplete or misnamed."
       ]
     },
     {
@@ -100204,7 +100151,7 @@
         }
       ],
       "notes": [
-        "Identical logic to tallyFailureReasons except for the field name — copy-pasted tally pattern."
+        "Identical logic to tallyFailureReasons except for the field name \u2014 copy-pasted tally pattern."
       ]
     },
     {
@@ -100230,7 +100177,7 @@
         }
       ],
       "notes": [
-        "Identical logic to tallyFailureCodes except for the field name — copy-pasted tally pattern."
+        "Identical logic to tallyFailureCodes except for the field name \u2014 copy-pasted tally pattern."
       ]
     },
     {
@@ -101438,7 +101385,7 @@
         }
       ],
       "notes": [
-        "310 LOC factory function producing a large stateful API — a prime application-logic case, not helper-package material."
+        "310 LOC factory function producing a large stateful API \u2014 a prime application-logic case, not helper-package material."
       ]
     },
     {
@@ -106340,7 +106287,7 @@
         }
       ],
       "notes": [
-        "loc:1 — only the function signature is captured, actual implementation not visible here."
+        "loc:1 \u2014 only the function signature is captured, actual implementation not visible here."
       ]
     },
     {
@@ -109060,7 +109007,7 @@
         }
       ],
       "notes": [
-        "Module-coupled to an outer `roots` array for cleanup — extract cleanup as a param to make it portable."
+        "Module-coupled to an outer `roots` array for cleanup \u2014 extract cleanup as a param to make it portable."
       ]
     },
     {
@@ -109232,30 +109179,6 @@
       "notes": [
         "emit() silently swallows every handler exception with an empty catch, which can hide bugs."
       ]
-    },
-    {
-      "slug": "create-typed-server-api-client",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Builds a typed client whose call() adds directory/workspace query params and parses JSON/error responses.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-app"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "createClaxedoServerClient",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:160",
-          "loc": 116
-        }
-      ],
-      "notes": []
     },
     {
       "slug": "create-unique-global-session-directory",
@@ -109522,7 +109445,7 @@
         }
       ],
       "notes": [
-        "Unrelated to the other two harness functions — this is a test-double factory, not a type guard."
+        "Unrelated to the other two harness functions \u2014 this is a test-double factory, not a type guard."
       ]
     },
     {
@@ -111036,7 +110959,7 @@
         }
       ],
       "notes": [
-        "Takes a 'visible' input field but never reads it — likely dead parameter or missing check."
+        "Takes a 'visible' input field but never reads it \u2014 likely dead parameter or missing check."
       ]
     },
     {
@@ -111304,7 +111227,7 @@
         }
       ],
       "notes": [
-        "Body shown is only the type signature — no implementation to verify actual behavior."
+        "Body shown is only the type signature \u2014 no implementation to verify actual behavior."
       ]
     },
     {
@@ -111402,7 +111325,7 @@
         }
       ],
       "notes": [
-        "One of 7 near-identical decode(name, Schema, input) wrappers — could collapse to one parameterized function."
+        "One of 7 near-identical decode(name, Schema, input) wrappers \u2014 could collapse to one parameterized function."
       ]
     },
     {
@@ -111912,7 +111835,7 @@
         }
       ],
       "notes": [
-        "Same name 'decodeChoice' as draft-defaults.ts but a different return shape — unrelated despite the name."
+        "Same name 'decodeChoice' as draft-defaults.ts but a different return shape \u2014 unrelated despite the name."
       ]
     },
     {
@@ -111986,7 +111909,7 @@
         }
       ],
       "notes": [
-        "Same name as three hex() helpers that instead encode bytes to hex or generate random hex — opposite direction."
+        "Same name as three hex() helpers that instead encode bytes to hex or generate random hex \u2014 opposite direction."
       ]
     },
     {
@@ -113272,7 +113195,7 @@
         }
       ],
       "notes": [
-        "Same capability as select-file.tsx uniqueEntries but keeps the last duplicate instead of the first — a real behavior difference."
+        "Same capability as select-file.tsx uniqueEntries but keeps the last duplicate instead of the first \u2014 a real behavior difference."
       ]
     },
     {
@@ -113638,7 +113561,7 @@
         }
       ],
       "notes": [
-        "Sibling uniq (id 8770) dedupes but does not sort — same name, different output order."
+        "Sibling uniq (id 8770) dedupes but does not sort \u2014 same name, different output order."
       ]
     },
     {
@@ -113960,7 +113883,7 @@
         }
       ],
       "notes": [
-        "JSON.stringify equality is key-order sensitive and ignores undefined-valued fields — can misfire."
+        "JSON.stringify equality is key-order sensitive and ignores undefined-valued fields \u2014 can misfire."
       ]
     },
     {
@@ -115190,7 +115113,7 @@
         }
       ],
       "notes": [
-        "Pure pass-through with no added logic — arguably unnecessary indirection."
+        "Pure pass-through with no added logic \u2014 arguably unnecessary indirection."
       ]
     },
     {
@@ -117201,7 +117124,7 @@
       "slug": "derive-harness-mode-label",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Returns 'harness' if a type is given, else 'unknown' — a two-state mode label.",
+      "description": "Returns 'harness' if a type is given, else 'unknown' \u2014 a two-state mode label.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -117390,7 +117313,7 @@
         }
       ],
       "notes": [
-        "Same core hashing logic as jwks.ts's deriveKid but takes a raw private key and exports its JWK internally — different input type."
+        "Same core hashing logic as jwks.ts's deriveKid but takes a raw private key and exports its JWK internally \u2014 different input type."
       ]
     },
     {
@@ -117464,7 +117387,7 @@
         }
       ],
       "notes": [
-        "Uses bare SHA-256 (not HKDF/PBKDF2) as the KDF — weaker than the envelope key derivation used elsewhere in this package."
+        "Uses bare SHA-256 (not HKDF/PBKDF2) as the KDF \u2014 weaker than the envelope key derivation used elsewhere in this package."
       ]
     },
     {
@@ -117922,7 +117845,7 @@
         }
       ],
       "notes": [
-        "Extracted body shows only the function signature with no implementation, likely a truncation artifact — verify against source."
+        "Extracted body shows only the function signature with no implementation, likely a truncation artifact \u2014 verify against source."
       ]
     },
     {
@@ -118140,7 +118063,7 @@
         }
       ],
       "notes": [
-        "Different gating predicate than workspace-resolver.ts's workspaceBacking — possible inconsistent remote detection."
+        "Different gating predicate than workspace-resolver.ts's workspaceBacking \u2014 possible inconsistent remote detection."
       ]
     },
     {
@@ -120075,7 +119998,7 @@
       "slug": "detect-generic-placeholder-terminal-title",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Returns true if the title is empty, \"Terminal[ N]\", or \"Provider[ N]\" — i.e. an unset/default title.",
+      "description": "Returns true if the title is empty, \"Terminal[ N]\", or \"Provider[ N]\" \u2014 i.e. an unset/default title.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -120262,7 +120185,7 @@
         }
       ],
       "notes": [
-        "Heuristic: any base64-shaped string over 256 chars counts as an image when imageContext is true — can misclassify."
+        "Heuristic: any base64-shaped string over 256 chars counts as an image when imageContext is true \u2014 can misclassify."
       ]
     },
     {
@@ -121504,7 +121427,7 @@
         }
       ],
       "notes": [
-        "calls deps.markDisconnected() twice, before and after refresh() — likely redundant or a bug."
+        "calls deps.markDisconnected() twice, before and after refresh() \u2014 likely redundant or a bug."
       ]
     },
     {
@@ -121602,7 +121525,7 @@
         }
       ],
       "notes": [
-        "Return value is inverted: true means the event WAS canceled/intercepted, not that opening succeeded — easy to misread."
+        "Return value is inverted: true means the event WAS canceled/intercepted, not that opening succeeded \u2014 easy to misread."
       ]
     },
     {
@@ -123530,7 +123453,7 @@
         }
       ],
       "notes": [
-        "Overlaps with relayWebSocketPayload/socketPayload — three separate payload-normalization implementations in this package."
+        "Overlaps with relayWebSocketPayload/socketPayload \u2014 three separate payload-normalization implementations in this package."
       ]
     },
     {
@@ -124086,7 +124009,7 @@
         }
       ],
       "notes": [
-        "Silently discards queued writes/resizes above the high watermark — a real data-loss risk for callers expecting delivery."
+        "Silently discards queued writes/resizes above the high watermark \u2014 a real data-loss risk for callers expecting delivery."
       ]
     },
     {
@@ -124934,7 +124857,7 @@
         }
       ],
       "notes": [
-        "Shares only the name fallback with the other two — unrelated capability (rendering vs value defaulting)."
+        "Shares only the name fallback with the other two \u2014 unrelated capability (rendering vs value defaulting)."
       ]
     },
     {
@@ -127622,7 +127545,7 @@
         }
       ],
       "notes": [
-        "Unlike siblings, whitelists a fixed enum rather than returning any string code — different contract."
+        "Unlike siblings, whitelists a fixed enum rather than returning any string code \u2014 different contract."
       ]
     },
     {
@@ -128742,7 +128665,7 @@
         }
       ],
       "notes": [
-        "Shares JWT-decode-and-JSON.parse logic with runtimeAccessTokenRole (id 3614) — duplicated, not reused."
+        "Shares JWT-decode-and-JSON.parse logic with runtimeAccessTokenRole (id 3614) \u2014 duplicated, not reused."
       ]
     },
     {
@@ -129782,7 +129705,7 @@
         }
       ],
       "notes": [
-        "Body truncated to bare signature only (loc:1) — implementation not visible."
+        "Body truncated to bare signature only (loc:1) \u2014 implementation not visible."
       ]
     },
     {
@@ -130105,7 +130028,7 @@
       "slug": "extract-payload-from-sdk-event",
       "aliases": [],
       "category": "object-record",
-      "description": "Returns payload(event) — the raw SDK message payload from an event wrapper.",
+      "description": "Returns payload(event) \u2014 the raw SDK message payload from an event wrapper.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -130460,7 +130383,7 @@
         }
       ],
       "notes": [
-        "Body truncated to bare signature only (loc:1) — implementation not visible."
+        "Body truncated to bare signature only (loc:1) \u2014 implementation not visible."
       ]
     },
     {
@@ -134218,7 +134141,7 @@
         }
       ],
       "notes": [
-        "Parallel fetch-wrapper implementation to documents-api.ts's request, with different error handling — not a shared helper."
+        "Parallel fetch-wrapper implementation to documents-api.ts's request, with different error handling \u2014 not a shared helper."
       ]
     },
     {
@@ -136974,7 +136897,7 @@
         }
       ],
       "notes": [
-        "Name says \"sort\" but the implementation only filters by id presence — no ordering occurs, likely misnamed."
+        "Name says \"sort\" but the implementation only filters by id presence \u2014 no ordering occurs, likely misnamed."
       ]
     },
     {
@@ -137600,7 +137523,7 @@
         }
       ],
       "notes": [
-        "Overlaps with directoryCyclesFromEdges (id 888), which only catches direct 2-node mutual cycles — inconsistent semantics."
+        "Overlaps with directoryCyclesFromEdges (id 888), which only catches direct 2-node mutual cycles \u2014 inconsistent semantics."
       ]
     },
     {
@@ -139218,7 +139141,7 @@
         }
       ],
       "notes": [
-        "Returns undefined for ALL matches if any single match is central-hosted — an all-or-nothing filter."
+        "Returns undefined for ALL matches if any single match is central-hosted \u2014 an all-or-nothing filter."
       ]
     },
     {
@@ -139510,7 +139433,7 @@
         }
       ],
       "notes": [
-        "Not an error-factory like its two same-named siblings — this one performs an async lookup and returns occupier info."
+        "Not an error-factory like its two same-named siblings \u2014 this one performs an async lookup and returns occupier info."
       ]
     },
     {
@@ -141245,7 +141168,7 @@
       "slug": "format-count-record-as-string",
       "aliases": [],
       "category": "format-display",
-      "description": "Formats a {label: count} record as 'label×count label×count', or 'none' if empty.",
+      "description": "Formats a {label: count} record as 'label\u00d7count label\u00d7count', or 'none' if empty.",
       "generic": true,
       "demand": 1,
       "distinctImpls": 1,
@@ -142018,7 +141941,7 @@
         }
       ],
       "notes": [
-        "Same name as session-config-selection.ts modelKey but does string formatting, not validation — unrelated behavior."
+        "Same name as session-config-selection.ts modelKey but does string formatting, not validation \u2014 unrelated behavior."
       ]
     },
     {
@@ -142288,7 +142211,7 @@
         }
       ],
       "notes": [
-        "Name collision with the LaunchResult-parsing launch() copies — this one formats, they parse."
+        "Name collision with the LaunchResult-parsing launch() copies \u2014 this one formats, they parse."
       ]
     },
     {
@@ -142338,7 +142261,7 @@
         }
       ],
       "notes": [
-        "Name collision only — unrelated to the error-detail-extraction detail() in the other two copies."
+        "Name collision only \u2014 unrelated to the error-detail-extraction detail() in the other two copies."
       ]
     },
     {
@@ -142709,7 +142632,7 @@
       "slug": "format-signed-byte-delta",
       "aliases": [],
       "category": "format-display",
-      "description": "Formats a numeric delta with a +/− sign and byte-formatted magnitude, or \"Unavailable\" if undefined.",
+      "description": "Formats a numeric delta with a +/\u2212 sign and byte-formatted magnitude, or \"Unavailable\" if undefined.",
       "generic": true,
       "demand": 1,
       "distinctImpls": 1,
@@ -142848,7 +142771,7 @@
         }
       ],
       "notes": [
-        "Same name 'formatTime' as fork.tsx but takes a number instead of a Date and includes seconds — not interchangeable."
+        "Same name 'formatTime' as fork.tsx but takes a number instead of a Date and includes seconds \u2014 not interchangeable."
       ]
     },
     {
@@ -144926,7 +144849,7 @@
         }
       ],
       "notes": [
-        "Ignores the passed target and always returns the same label — fine only while a single AppTarget value exists."
+        "Ignores the passed target and always returns the same label \u2014 fine only while a single AppTarget value exists."
       ]
     },
     {
@@ -147010,7 +146933,7 @@
         }
       ],
       "notes": [
-        "Same get-or-create-in-map pattern repeated ~5x in this file (audit sampler, origin matcher, token caches) — could be one generic helper."
+        "Same get-or-create-in-map pattern repeated ~5x in this file (audit sampler, origin matcher, token caches) \u2014 could be one generic helper."
       ]
     },
     {
@@ -149260,7 +149183,7 @@
         }
       ],
       "notes": [
-        "Same name 'groupParts' as message-timeline.data.ts but only implements the context grouping, missing its work/task grouping — likely an incomplete port."
+        "Same name 'groupParts' as message-timeline.data.ts but only implements the context grouping, missing its work/task grouping \u2014 likely an incomplete port."
       ]
     },
     {
@@ -150470,7 +150393,7 @@
         }
       ],
       "notes": [
-        "Named 'digest' like its SHA-256 siblings but is a non-cryptographic hand-rolled hash — flag for review."
+        "Named 'digest' like its SHA-256 siblings but is a non-cryptographic hand-rolled hash \u2014 flag for review."
       ]
     },
     {
@@ -150544,7 +150467,7 @@
         }
       ],
       "notes": [
-        "Trivial one-line alias for contentHash — likely unnecessary indirection."
+        "Trivial one-line alias for contentHash \u2014 likely unnecessary indirection."
       ]
     },
     {
@@ -150740,7 +150663,7 @@
         }
       ],
       "notes": [
-        "Pure passthrough alias — inline contentHash or drop this wrapper."
+        "Pure passthrough alias \u2014 inline contentHash or drop this wrapper."
       ]
     },
     {
@@ -150766,7 +150689,7 @@
         }
       ],
       "notes": [
-        "Most flexible sibling — algorithm is a parameter instead of fixed."
+        "Most flexible sibling \u2014 algorithm is a parameter instead of fixed."
       ]
     },
     {
@@ -151130,7 +151053,7 @@
         }
       ],
       "notes": [
-        "Pure identity function — appears to exist only to satisfy a call-site naming convention."
+        "Pure identity function \u2014 appears to exist only to satisfy a call-site naming convention."
       ]
     },
     {
@@ -151163,7 +151086,7 @@
       "slug": "identity-passthrough-string",
       "aliases": [],
       "category": "misc",
-      "description": "Returns its string argument unchanged — a no-op identity function.",
+      "description": "Returns its string argument unchanged \u2014 a no-op identity function.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -152268,7 +152191,7 @@
         }
       ],
       "notes": [
-        "On conflict sets kind = users.kind, so an updated kind value passed in is silently ignored — likely a bug."
+        "On conflict sets kind = users.kind, so an updated kind value passed in is silently ignored \u2014 likely a bug."
       ]
     },
     {
@@ -152414,7 +152337,7 @@
         }
       ],
       "notes": [
-        "Body appears cut off mid-type-signature in the shard without the usual truncation marker — verify against source."
+        "Body appears cut off mid-type-signature in the shard without the usual truncation marker \u2014 verify against source."
       ]
     },
     {
@@ -157176,7 +157099,7 @@
         }
       ],
       "notes": [
-        "Body truncated to just the signature — behavior could not be verified."
+        "Body truncated to just the signature \u2014 behavior could not be verified."
       ]
     },
     {
@@ -157396,7 +157319,7 @@
         }
       ],
       "notes": [
-        "Calls process.exit(2) in production if no PEM is configured — a fail-closed policy baked into a 'load' function."
+        "Calls process.exit(2) in production if no PEM is configured \u2014 a fail-closed policy baked into a 'load' function."
       ]
     },
     {
@@ -159012,7 +158935,7 @@
         }
       ],
       "notes": [
-        "Same name 'projectId' as workspace-resolver.ts but performs a lookup by repo key, not field extraction — unrelated logic."
+        "Same name 'projectId' as workspace-resolver.ts but performs a lookup by repo key, not field extraction \u2014 unrelated logic."
       ]
     },
     {
@@ -162428,7 +162351,7 @@
         }
       ],
       "notes": [
-        "Uses `(project as any).workspaces` cast — possible type-safety gap or missing field on LocalProject."
+        "Uses `(project as any).workspaces` cast \u2014 possible type-safety gap or missing field on LocalProject."
       ]
     },
     {
@@ -162576,7 +162499,7 @@
         }
       ],
       "notes": [
-        "Unrelated to the other two providerLabel functions — this maps auth method, not AI agent provider."
+        "Unrelated to the other two providerLabel functions \u2014 this maps auth method, not AI agent provider."
       ]
     },
     {
@@ -163058,7 +162981,7 @@
         }
       ],
       "notes": [
-        "Same name 'terminal' as subagent-registry.ts but maps events to outcomes rather than testing a status value — unrelated despite the name."
+        "Same name 'terminal' as subagent-registry.ts but maps events to outcomes rather than testing a status value \u2014 unrelated despite the name."
       ]
     },
     {
@@ -163132,7 +163055,7 @@
         }
       ],
       "notes": [
-        "Shares the name 'prompt' with session/service.ts's but does the opposite job (consume vs build) — not duplicates."
+        "Shares the name 'prompt' with session/service.ts's but does the opposite job (consume vs build) \u2014 not duplicates."
       ]
     },
     {
@@ -163182,7 +163105,7 @@
         }
       ],
       "notes": [
-        "Same name 'runtimeAuth' as claxedo-server's control-token verifier but this just maps provider keys — no verification at all, naming collision."
+        "Same name 'runtimeAuth' as claxedo-server's control-token verifier but this just maps provider keys \u2014 no verification at all, naming collision."
       ]
     },
     {
@@ -163520,7 +163443,7 @@
         }
       ],
       "notes": [
-        "Same name 'result' as claxedo-mcp's tool-result builder but completely different purpose (DB row to DTO) — pure naming collision."
+        "Same name 'result' as claxedo-mcp's tool-result builder but completely different purpose (DB row to DTO) \u2014 pure naming collision."
       ]
     },
     {
@@ -164970,7 +164893,7 @@
         }
       ],
       "notes": [
-        "Unrelated to mermaid-block.ts's icon() — this returns an icon name string, not markup."
+        "Unrelated to mermaid-block.ts's icon() \u2014 this returns an icon name string, not markup."
       ]
     },
     {
@@ -165679,7 +165602,7 @@
       "slug": "mask-identifier-with-hmac-hash-prefix",
       "aliases": [],
       "category": "crypto",
-      "description": "Masks an account ID as 'account…' plus a 10-char HMAC-SHA256 hash truncation, keyed by a mask key.",
+      "description": "Masks an account ID as 'account\u2026' plus a 10-char HMAC-SHA256 hash truncation, keyed by a mask key.",
       "generic": true,
       "demand": 1,
       "distinctImpls": 1,
@@ -167354,7 +167277,7 @@
         }
       ],
       "notes": [
-        "Calls before readiness resolves each trigger a fresh, undeduped build() call — only cached after success."
+        "Calls before readiness resolves each trigger a fresh, undeduped build() call \u2014 only cached after success."
       ]
     },
     {
@@ -168272,30 +168195,6 @@
       "notes": []
     },
     {
-      "slug": "merge-multiple-headers-into-one",
-      "aliases": [],
-      "category": "misc",
-      "description": "Merges any number of HeadersInit values into a single Headers object, later values overwriting earlier.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-app"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "mergeHeaders",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:279",
-          "loc": 9
-        }
-      ],
-      "notes": []
-    },
-    {
       "slug": "merge-oauth-tokens-into-codex-auth-object",
       "aliases": [],
       "category": "domain-specific",
@@ -168822,7 +168721,7 @@
         }
       ],
       "notes": [
-        "Cumulative observations fully replace prior totals rather than merging — a surprising branch worth double-checking at call sites."
+        "Cumulative observations fully replace prior totals rather than merging \u2014 a surprising branch worth double-checking at call sites."
       ]
     },
     {
@@ -169114,7 +169013,7 @@
         }
       ],
       "notes": [
-        "Name collision only — unrelated to the generic right-wins record merge; this is left-wins with custom per-field rules."
+        "Name collision only \u2014 unrelated to the generic right-wins record merge; this is left-wins with custom per-field rules."
       ]
     },
     {
@@ -169284,7 +169183,7 @@
         }
       ],
       "notes": [
-        "Shard body is only the function signature — no implementation visible to judge actual migration behavior."
+        "Shard body is only the function signature \u2014 no implementation visible to judge actual migration behavior."
       ]
     },
     {
@@ -170092,7 +169991,7 @@
         }
       ],
       "notes": [
-        "Parameter 'sub: never' looks like a typing mistake — no real value satisfies never, yet it's called with real apps."
+        "Parameter 'sub: never' looks like a typing mistake \u2014 no real value satisfies never, yet it's called with real apps."
       ]
     },
     {
@@ -171686,7 +171585,7 @@
         }
       ],
       "notes": [
-        "Shallow check — any object with name + object data passes, not just real InitErrors."
+        "Shallow check \u2014 any object with name + object data passes, not just real InitErrors."
       ]
     },
     {
@@ -173894,7 +173793,7 @@
         }
       ],
       "notes": [
-        "Shares only the name with the other two nullable — those are a decoder-wrapper and a string-or-null narrower."
+        "Shares only the name with the other two nullable \u2014 those are a decoder-wrapper and a string-or-null narrower."
       ]
     },
     {
@@ -174016,7 +173915,7 @@
         }
       ],
       "notes": [
-        "Same name as siblings that don't collapse slashes or handle UNC paths — not interchangeable."
+        "Same name as siblings that don't collapse slashes or handle UNC paths \u2014 not interchangeable."
       ]
     },
     {
@@ -174188,7 +174087,7 @@
         }
       ],
       "notes": [
-        "Same name 'stamp' as harness-hydrator.ts but builds timestamps, not a cache key — unrelated behavior."
+        "Same name 'stamp' as harness-hydrator.ts but builds timestamps, not a cache key \u2014 unrelated behavior."
       ]
     },
     {
@@ -174432,7 +174331,7 @@
         }
       ],
       "notes": [
-        "Fifth 'merge' with a distinct, unrelated behavior — no two of these five do the same thing."
+        "Fifth 'merge' with a distinct, unrelated behavior \u2014 no two of these five do the same thing."
       ]
     },
     {
@@ -174794,7 +174693,7 @@
         }
       ],
       "notes": [
-        "Always returns literal \"normal\" even when input.mode wasn't \"shell\" — relies on caller invariant."
+        "Always returns literal \"normal\" even when input.mode wasn't \"shell\" \u2014 relies on caller invariant."
       ]
     },
     {
@@ -175835,30 +175734,6 @@
           "name": "withoutConnection",
           "at": "packages/claxedo-local-server/src/agent-config/routes/connection-routes.ts:91",
           "loc": 7
-        }
-      ],
-      "notes": []
-    },
-    {
-      "slug": "omit-keys-and-undefined-values-from-object",
-      "aliases": [],
-      "category": "object-record",
-      "description": "Returns a shallow copy of an object dropping listed keys and any key whose value is undefined.",
-      "generic": true,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-app"
-      ],
-      "movability": {
-        "pure": 1
-      },
-      "sites": [
-        {
-          "name": "omit",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:290",
-          "loc": 4
         }
       ],
       "notes": []
@@ -179985,7 +179860,7 @@
       "slug": "parse-file-selection-from-file-url",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Signature-only entry with no visible implementation body (likely an overload declaration) — behavior can't be judged.",
+      "description": "Signature-only entry with no visible implementation body (likely an overload declaration) \u2014 behavior can't be judged.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -180004,7 +179879,7 @@
         }
       ],
       "notes": [
-        "Body shown is just a function signature/overload with no implementation — extraction may be incomplete."
+        "Body shown is just a function signature/overload with no implementation \u2014 extraction may be incomplete."
       ]
     },
     {
@@ -181316,7 +181191,7 @@
         }
       ],
       "notes": [
-        "Body not available (signature-only entry, 1 loc) — behavior can't be judged from this excerpt."
+        "Body not available (signature-only entry, 1 loc) \u2014 behavior can't be judged from this excerpt."
       ]
     },
     {
@@ -182310,7 +182185,7 @@
         }
       ],
       "notes": [
-        "Near-duplicate env-int-parsing pattern to TERMINAL_SESSION_MAX_ENTRIES (id 11358) with different clamp rules — candidate to consolidate."
+        "Near-duplicate env-int-parsing pattern to TERMINAL_SESSION_MAX_ENTRIES (id 11358) with different clamp rules \u2014 candidate to consolidate."
       ]
     },
     {
@@ -182992,32 +182867,6 @@
       "notes": []
     },
     {
-      "slug": "parse-response-json-or-throw-payload-error",
-      "aliases": [],
-      "category": "json-serialization",
-      "description": "Parses a Response as JSON, throwing a ServerClientPayloadError on failure instead of swallowing it.",
-      "generic": false,
-      "demand": 1,
-      "distinctImpls": 1,
-      "files": 1,
-      "packages": [
-        "claxedo-app"
-      ],
-      "movability": {
-        "module-coupled": 1
-      },
-      "sites": [
-        {
-          "name": "responseJson",
-          "at": "packages/claxedo-app/src/platform/api/server-client-contract.ts:293",
-          "loc": 8
-        }
-      ],
-      "notes": [
-        "Opposite failure behavior (throws) from the other responseJson copies, which swallow parse errors."
-      ]
-    },
-    {
       "slug": "parse-response-json-or-throw-runtime-error",
       "aliases": [],
       "category": "error",
@@ -183452,7 +183301,7 @@
         }
       ],
       "notes": [
-        "Body shown is only the function signature — implementation not visible in this shard."
+        "Body shown is only the function signature \u2014 implementation not visible in this shard."
       ]
     },
     {
@@ -183670,7 +183519,7 @@
         }
       ],
       "notes": [
-        "Only a signature is present (loc 1) — likely a type declaration, not an executable implementation."
+        "Only a signature is present (loc 1) \u2014 likely a type declaration, not an executable implementation."
       ]
     },
     {
@@ -184516,7 +184365,7 @@
         }
       ],
       "notes": [
-        "Similar to remoteUrl (9137) but stricter — rejects http even for loopback hosts; intentional per call site."
+        "Similar to remoteUrl (9137) but stricter \u2014 rejects http even for loopback hosts; intentional per call site."
       ]
     },
     {
@@ -185848,7 +185697,7 @@
         }
       ],
       "notes": [
-        "Third distinct capability sharing the label name — key-based extraction, not validation or lookup."
+        "Third distinct capability sharing the label name \u2014 key-based extraction, not validation or lookup."
       ]
     },
     {
@@ -187450,7 +187299,7 @@
         }
       ],
       "notes": [
-        "Same retry/fallback shape as sendWithFallback (5784) for a different channel — candidate to unify."
+        "Same retry/fallback shape as sendWithFallback (5784) for a different channel \u2014 candidate to unify."
       ]
     },
     {
@@ -196254,7 +196103,7 @@
         }
       ],
       "notes": [
-        "Body text is truncated to just the signature in this shard — behavior inferred from name/types only."
+        "Body text is truncated to just the signature in this shard \u2014 behavior inferred from name/types only."
       ]
     },
     {
@@ -197178,7 +197027,7 @@
         }
       ],
       "notes": [
-        "Return type mixes Uint8Array and the literal string 'too_large' — callers must check for that sentinel."
+        "Return type mixes Uint8Array and the literal string 'too_large' \u2014 callers must check for that sentinel."
       ]
     },
     {
@@ -198583,7 +198432,7 @@
       "slug": "record-id-alias-with-timestamp",
       "aliases": [],
       "category": "id-hash-random",
-      "description": "Stores oldId→{newId, now} in an alias map, no-op if either id is missing or they're equal.",
+      "description": "Stores oldId\u2192{newId, now} in an alias map, no-op if either id is missing or they're equal.",
       "generic": true,
       "demand": 1,
       "distinctImpls": 1,
@@ -199354,7 +199203,7 @@
         }
       ],
       "notes": [
-        "Body reads only `() => page`; likely truncated mid chained-call expression — judge with caution."
+        "Body reads only `() => page`; likely truncated mid chained-call expression \u2014 judge with caution."
       ]
     },
     {
@@ -200484,7 +200333,7 @@
         }
       ],
       "notes": [
-        "Same name as claxedo-mcp's MCP tool registrar but registers a UI render component in client state — unrelated despite the name."
+        "Same name as claxedo-mcp's MCP tool registrar but registers a UI render component in client state \u2014 unrelated despite the name."
       ]
     },
     {
@@ -200800,7 +200649,7 @@
         }
       ],
       "notes": [
-        "References an undeclared module-scope `claim` variable in this excerpt — tightly coupled to file state."
+        "References an undeclared module-scope `claim` variable in this excerpt \u2014 tightly coupled to file state."
       ]
     },
     {
@@ -202228,7 +202077,7 @@
         }
       ],
       "notes": [
-        "Unlike sibling cleanupCommittedReplacement, doesn't catch/log cleanup errors — they propagate uncaught."
+        "Unlike sibling cleanupCommittedReplacement, doesn't catch/log cleanup errors \u2014 they propagate uncaught."
       ]
     },
     {
@@ -206002,7 +205851,7 @@
         }
       ],
       "notes": [
-        "Different File component (id 4567) is just a lazy-load Suspense wrapper — same name, unrelated."
+        "Different File component (id 4567) is just a lazy-load Suspense wrapper \u2014 same name, unrelated."
       ]
     },
     {
@@ -207302,7 +207151,7 @@
         }
       ],
       "notes": [
-        "Different File component (id 10046) dispatches between text/diff viewers — same name, unrelated."
+        "Different File component (id 10046) dispatches between text/diff viewers \u2014 same name, unrelated."
       ]
     },
     {
@@ -207525,7 +207374,7 @@
       "slug": "render-loading-spinner-with-label",
       "aliases": [],
       "category": "dom-react",
-      "description": "Renders a centered spinner plus a status label, defaulting to 'Loading content'/'Loading…'.",
+      "description": "Renders a centered spinner plus a status label, defaulting to 'Loading content'/'Loading\u2026'.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -208336,7 +208185,7 @@
         }
       ],
       "notes": [
-        "Different NavigationRow (id 4274) adds drag-and-drop and hover engagement — same name, unrelated implementation."
+        "Different NavigationRow (id 4274) adds drag-and-drop and hover engagement \u2014 same name, unrelated implementation."
       ]
     },
     {
@@ -209951,7 +209800,7 @@
       "slug": "render-reconnecting-status-line",
       "aliases": [],
       "category": "dom-react",
-      "description": "Shows a 'Reconnecting…' spinner line when the stream-sync lifecycle for a workspace indicates it.",
+      "description": "Shows a 'Reconnecting\u2026' spinner line when the stream-sync lifecycle for a workspace indicates it.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -209994,7 +209843,7 @@
         }
       ],
       "notes": [
-        "Indexes definitions()[2] positionally — fragile coupling to that array's order/shape."
+        "Indexes definitions()[2] positionally \u2014 fragile coupling to that array's order/shape."
       ]
     },
     {
@@ -212933,7 +212782,7 @@
       "slug": "render-usage-provider-brand-label",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Renders a branded icon+label chip, renaming 'anthropic'→'Claude' and 'openai'→'Codex' for display.",
+      "description": "Renders a branded icon+label chip, renaming 'anthropic'\u2192'Claude' and 'openai'\u2192'Codex' for display.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -213672,7 +213521,7 @@
         }
       ],
       "notes": [
-        "Identical one-line body to generateZshenv/Zshlogin/Zshprofile — only the template name differs."
+        "Identical one-line body to generateZshenv/Zshlogin/Zshprofile \u2014 only the template name differs."
       ]
     },
     {
@@ -216998,7 +216847,7 @@
         }
       ],
       "notes": [
-        "Uses secrets[name]! non-null assertion — silently yields undefined at runtime if a bound secret is missing."
+        "Uses secrets[name]! non-null assertion \u2014 silently yields undefined at runtime if a bound secret is missing."
       ]
     },
     {
@@ -217632,7 +217481,7 @@
         }
       ],
       "notes": [
-        "Only the type signature is shown, no implementation body, despite loc:1 — extraction may be incomplete."
+        "Only the type signature is shown, no implementation body, despite loc:1 \u2014 extraction may be incomplete."
       ]
     },
     {
@@ -218742,7 +218591,7 @@
         }
       ],
       "notes": [
-        "Only copy of the four that actually resolves '..' segments — not interchangeable with the others."
+        "Only copy of the four that actually resolves '..' segments \u2014 not interchangeable with the others."
       ]
     },
     {
@@ -219176,7 +219025,7 @@
         }
       ],
       "notes": [
-        "Near-duplicate of existingRemoteWorkspaceDirectory (id 1660) with a different input shape — check for consolidation."
+        "Near-duplicate of existingRemoteWorkspaceDirectory (id 1660) with a different input shape \u2014 check for consolidation."
       ]
     },
     {
@@ -220072,7 +219921,7 @@
         }
       ],
       "notes": [
-        "Same name as id 4498 but skips its __CLAXEDO__ global-override check — behavior diverges before hydration."
+        "Same name as id 4498 but skips its __CLAXEDO__ global-override check \u2014 behavior diverges before hydration."
       ]
     },
     {
@@ -220321,7 +220170,7 @@
       "slug": "resolve-managed-mcp-server-stub",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Unconditionally throws — no managed MCP server resolver is actually registered.",
+      "description": "Unconditionally throws \u2014 no managed MCP server resolver is actually registered.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -220462,7 +220311,7 @@
         }
       ],
       "notes": [
-        "The image vs non-image branches are identical (after ?? before both ways) — mode has no actual effect."
+        "The image vs non-image branches are identical (after ?? before both ways) \u2014 mode has no actual effect."
       ]
     },
     {
@@ -222398,7 +222247,7 @@
         }
       ],
       "notes": [
-        "Same name 'real' as local-server's version but never returns undefined on failure — different failure contract."
+        "Same name 'real' as local-server's version but never returns undefined on failure \u2014 different failure contract."
       ]
     },
     {
@@ -222736,7 +222585,7 @@
         }
       ],
       "notes": [
-        "Same name as claxedo-mcp's requestDirectory but reads from an HTTP query context via assertTarget — different source/validation."
+        "Same name as claxedo-mcp's requestDirectory but reads from an HTTP query context via assertTarget \u2014 different source/validation."
       ]
     },
     {
@@ -223124,7 +222973,7 @@
         }
       ],
       "notes": [
-        "Body was not captured/truncated to just the type signature — behavior can't be verified from this shard."
+        "Body was not captured/truncated to just the type signature \u2014 behavior can't be verified from this shard."
       ]
     },
     {
@@ -223416,7 +223265,7 @@
         }
       ],
       "notes": [
-        "Same variant/selected/configured shape as cycleModelVariant (id 1672) — related logic worth consolidating."
+        "Same variant/selected/configured shape as cycleModelVariant (id 1672) \u2014 related logic worth consolidating."
       ]
     },
     {
@@ -223929,7 +223778,7 @@
       "slug": "resolve-session-scope-from-first-defined-field",
       "aliases": [],
       "category": "domain-specific",
-      "description": "Returns a session's sessionRef, else workspaceId, else directory — whichever is defined first.",
+      "description": "Returns a session's sessionRef, else workspaceId, else directory \u2014 whichever is defined first.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -224356,7 +224205,7 @@
         }
       ],
       "notes": [
-        "Same name as embedded-auth's resolveSecret but resolves a stored provider credential from a backend store — unrelated purpose, naming collision."
+        "Same name as embedded-auth's resolveSecret but resolves a stored provider credential from a backend store \u2014 unrelated purpose, naming collision."
       ]
     },
     {
@@ -224696,7 +224545,7 @@
         }
       ],
       "notes": [
-        "Same name 'agentColor' as agent-color.ts but has no hashing fallback and a different signature — not interchangeable."
+        "Same name 'agentColor' as agent-color.ts but has no hashing fallback and a different signature \u2014 not interchangeable."
       ]
     },
     {
@@ -224938,7 +224787,7 @@
         }
       ],
       "notes": [
-        "Same precedence pattern as signedSelection (9116) but with only two override levels — intentional per mode."
+        "Same precedence pattern as signedSelection (9116) but with only two override levels \u2014 intentional per mode."
       ]
     },
     {
@@ -229040,7 +228889,7 @@
         }
       ],
       "notes": [
-        "Only releases ownership on the error path; success path leaves release() to the caller — easy to leak."
+        "Only releases ownership on the error path; success path leaves release() to the caller \u2014 easy to leak."
       ]
     },
     {
@@ -232094,7 +231943,7 @@
         }
       ],
       "notes": [
-        "Silently returns '' (not raw HTML) when DOMPurify is unsupported — content is dropped, not passed through."
+        "Silently returns '' (not raw HTML) when DOMPurify is unsupported \u2014 content is dropped, not passed through."
       ]
     },
     {
@@ -236030,7 +235879,7 @@
         }
       ],
       "notes": [
-        "Mutates module-level global state (baseOriginAllowed) — order-of-call dependent, not a pure function."
+        "Mutates module-level global state (baseOriginAllowed) \u2014 order-of-call dependent, not a pure function."
       ]
     },
     {
@@ -237506,7 +237355,7 @@
         }
       ],
       "notes": [
-        "Different PRNG (FNV-1a/LCG) than clxSeededSequence's mulberry32 — the two seeded-shuffle helpers are not interchangeable."
+        "Different PRNG (FNV-1a/LCG) than clxSeededSequence's mulberry32 \u2014 the two seeded-shuffle helpers are not interchangeable."
       ]
     },
     {
@@ -237894,7 +237743,7 @@
         }
       ],
       "notes": [
-        "Rejects on abort, unlike promptRefreshDelay's similar sleep which resolves false instead — inconsistent convention."
+        "Rejects on abort, unlike promptRefreshDelay's similar sleep which resolves false instead \u2014 inconsistent convention."
       ]
     },
     {
@@ -238655,7 +238504,7 @@
       "slug": "split-label-on-last-middle-dot-separator",
       "aliases": [],
       "category": "string",
-      "description": "Splits a label into base text and binding suffix at the last \" · \" separator, if present.",
+      "description": "Splits a label into base text and binding suffix at the last \" \u00b7 \" separator, if present.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -240418,7 +240267,7 @@
         }
       ],
       "notes": [
-        "Body not visible (declaration only) — behavior inferred from signature."
+        "Body not visible (declaration only) \u2014 behavior inferred from signature."
       ]
     },
     {
@@ -242352,7 +242201,7 @@
         }
       ],
       "notes": [
-        "Same input (untracked file list) as untrackedDiffs but returns additions:0 instead of actual line counts — inconsistent stats between the two."
+        "Same input (untracked file list) as untrackedDiffs but returns additions:0 instead of actual line counts \u2014 inconsistent stats between the two."
       ]
     },
     {
@@ -242498,7 +242347,7 @@
         }
       ],
       "notes": [
-        "Unrelated to acp/session.ts's sync (config synchronization) — same name, different domain."
+        "Unrelated to acp/session.ts's sync (config synchronization) \u2014 same name, different domain."
       ]
     },
     {
@@ -242908,7 +242757,7 @@
         }
       ],
       "notes": [
-        "Extracted body is just the function signature — implementation not visible in this shard."
+        "Extracted body is just the function signature \u2014 implementation not visible in this shard."
       ]
     },
     {
@@ -243246,7 +243095,7 @@
         }
       ],
       "notes": [
-        "Guards against an empty incoming snapshot wiping all owned sessions — deliberate data-loss safeguard."
+        "Guards against an empty incoming snapshot wiping all owned sessions \u2014 deliberate data-loss safeguard."
       ]
     },
     {
@@ -243584,7 +243433,7 @@
         }
       ],
       "notes": [
-        "Much broader teardown than the other 'close' copies — a full test-harness shutdown, not one resource."
+        "Much broader teardown than the other 'close' copies \u2014 a full test-harness shutdown, not one resource."
       ]
     },
     {
@@ -244702,7 +244551,7 @@
         }
       ],
       "notes": [
-        "Silently swallows touchSandbox errors — failures are invisible to callers."
+        "Silently swallows touchSandbox errors \u2014 failures are invisible to callers."
       ]
     },
     {
@@ -245738,7 +245587,7 @@
         }
       ],
       "notes": [
-        "Unrelated to acp/session.ts's ids (model-id variant builder) despite sharing the name — plain string-array dedupe here."
+        "Unrelated to acp/session.ts's ids (model-id variant builder) despite sharing the name \u2014 plain string-array dedupe here."
       ]
     },
     {
@@ -245812,7 +245661,7 @@
         }
       ],
       "notes": [
-        "Mutates the input array in place rather than returning a new one — easy to misuse."
+        "Mutates the input array in place rather than returning a new one \u2014 easy to misuse."
       ]
     },
     {
@@ -246610,7 +246459,7 @@
         }
       ],
       "notes": [
-        "Unlike clearConversationChatRegistryForTest, never clears the query cache — overlapping but divergent cleanup."
+        "Unlike clearConversationChatRegistryForTest, never clears the query cache \u2014 overlapping but divergent cleanup."
       ]
     },
     {
@@ -247142,7 +246991,7 @@
         }
       ],
       "notes": [
-        "Body truncated to bare signature only — no implementation visible in this extract."
+        "Body truncated to bare signature only \u2014 no implementation visible in this extract."
       ]
     },
     {
@@ -248810,7 +248659,7 @@
         }
       ],
       "notes": [
-        "Overlaps heavily with pluginMcpServers (id 11344) but uses different field names/validation — worth reconciling."
+        "Overlaps heavily with pluginMcpServers (id 11344) but uses different field names/validation \u2014 worth reconciling."
       ]
     },
     {
@@ -250536,7 +250385,7 @@
         }
       ],
       "notes": [
-        "Throws on overlong input instead of truncating like agent-sdk-runtime's safeIdentifier — diverges in behavior."
+        "Throws on overlong input instead of truncating like agent-sdk-runtime's safeIdentifier \u2014 diverges in behavior."
       ]
     },
     {
@@ -251103,7 +250952,7 @@
       "slug": "validate-numeric-access-rank",
       "aliases": [],
       "category": "validation",
-      "description": "Validates that a value is a finite number, throwing otherwise, and returns it unchanged — not a role-to-rank mapper.",
+      "description": "Validates that a value is a finite number, throwing otherwise, and returns it unchanged \u2014 not a role-to-rank mapper.",
       "generic": false,
       "demand": 1,
       "distinctImpls": 1,
@@ -252098,7 +251947,7 @@
         }
       ],
       "notes": [
-        "Same purpose as claxedo-server's promptModel but returns undefined/null on invalid input instead of throwing — divergent error contract."
+        "Same purpose as claxedo-server's promptModel but returns undefined/null on invalid input instead of throwing \u2014 divergent error contract."
       ]
     },
     {
@@ -252222,7 +252071,7 @@
         }
       ],
       "notes": [
-        "Does not enforce object shape like safeRawInput/safeMeta — any non-function/symbol value passes through as-is."
+        "Does not enforce object shape like safeRawInput/safeMeta \u2014 any non-function/symbol value passes through as-is."
       ]
     },
     {
@@ -252658,7 +252507,7 @@
         }
       ],
       "notes": [
-        "Body truncated to a type signature only — behavior not verifiable from the shard."
+        "Body truncated to a type signature only \u2014 behavior not verifiable from the shard."
       ]
     },
     {
@@ -254544,7 +254393,7 @@
         }
       ],
       "notes": [
-        "Same capability as verifySha256 (5871) but via node:crypto instead of webcrypto — pick one."
+        "Same capability as verifySha256 (5871) but via node:crypto instead of webcrypto \u2014 pick one."
       ]
     },
     {
@@ -255414,7 +255263,7 @@
         }
       ],
       "notes": [
-        "diagnostics parameter is unused — function is a thin, arguably unnecessary wrapper around pick(state)."
+        "diagnostics parameter is unused \u2014 function is a thin, arguably unnecessary wrapper around pick(state)."
       ]
     },
     {
@@ -256308,7 +256157,7 @@
         }
       ],
       "notes": [
-        "Mutates fixture.requestCounts as a side effect before waiting — surprising for a 'wait' helper."
+        "Mutates fixture.requestCounts as a side effect before waiting \u2014 surprising for a 'wait' helper."
       ]
     },
     {
@@ -257270,7 +257119,7 @@
         }
       ],
       "notes": [
-        "Overlaps with mountOwnedRoute (id 7128) — two different mechanisms enforcing the same route-ownership invariant."
+        "Overlaps with mountOwnedRoute (id 7128) \u2014 two different mechanisms enforcing the same route-ownership invariant."
       ]
     },
     {
@@ -258406,7 +258255,7 @@
         }
       ],
       "notes": [
-        "Body was only the type signature — behavior inferred from name/types only."
+        "Body was only the type signature \u2014 behavior inferred from name/types only."
       ]
     },
     {

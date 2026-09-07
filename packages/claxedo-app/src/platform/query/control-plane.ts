@@ -1,4 +1,5 @@
-import type { ClaxedoCommand as Command, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { AgentCommand as Command } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { ClaxedoProviderAuth as ProviderAuthResponse, ClaxedoProviderAuthMethod, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

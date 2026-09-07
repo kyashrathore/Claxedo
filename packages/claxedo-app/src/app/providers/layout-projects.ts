@@ -1,6 +1,6 @@
 import { createSignal, type Accessor } from "solid-js"
 import type { useServer } from "@/app/connection/server"
-import type { ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 
 function isRejectedWorktree(dir: string) {
   if (dir === "/workspace") return true

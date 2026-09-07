@@ -29,20 +29,16 @@ import {
   type DirectorySessionCacheRefreshOptions,
   type DirectorySessionLoadMeta,
 } from "../../../features/session/data/sync/directory-session-cache"
-import type { ClaxedoConfig as Config } from "@claxedo/agent-runtime-contract/server-client"
 import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
 import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
 
 type DirectoryRef = string
 type SessionRow = SessionCacheValue["session"][number]
-type GlobalConfig = Config
 type QueryOptionsClient =
   Parameters<typeof workspaceCatalogQuery>[0]["client"] &
   Parameters<typeof pathQuery>[0]["client"] &
   Parameters<typeof agentListQuery>[0]["client"] & {
-    global: { config: { get: () => Promise<{ data?: GlobalConfig }> } }
     mcp: { status: () => Promise<{ data?: unknown }> }
-    lsp: { status: () => Promise<{ data?: unknown[] }> }
   }
 type SessionListClient = {
   session: {
@@ -127,12 +123,6 @@ export const loadMcpQuery = (directory: DirectoryRef, sdk?: QueryOptionsClient) 
     queryFn: sdk ? () => sdk.mcp.status().then((r) => r.data ?? {}) : skipToken,
   })
 
-export const loadLspQuery = (directory: DirectoryRef, sdk?: QueryOptionsClient) =>
-  queryOptions({
-    queryKey: [directory, "lsp"],
-    queryFn: sdk ? () => sdk.lsp.status().then((r) => r.data ?? []) : skipToken,
-  })
-
 export function workspaceScopedCacheKey(input: { directory: DirectoryRef; workspaceId?: string }) {
   return input.workspaceId ?? input.directory
 }
@@ -206,7 +196,6 @@ export function createQueryOptionsApi(input: {
         client: input.sdkFor(directory),
       }),
     mcp: (directory: DirectoryRef) => loadMcpQuery(directory, input.sdkFor(directory)),
-    lsp: (directory: DirectoryRef) => loadLspQuery(directory, input.sdkFor(directory)),
     sessions: (directory: DirectoryRef) => ({ queryKey: [directory, "loadSessions"] as const }),
   }
 }

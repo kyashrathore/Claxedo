@@ -1,4 +1,4 @@
-import type { ClaxedoLspStatus as LspStatus, ClaxedoMcpStatus as McpStatus, ClaxedoVcsInfo as VcsInfo } from "@claxedo/agent-runtime-contract/server-client"
+import type { WorkspaceMcpStatus as McpStatus, WorkspaceVcsInfo as VcsInfo } from "@claxedo/workspace-runtime/client"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
@@ -21,7 +21,6 @@ export type WorkspaceRuntimeBackend = {
   }) => Promise<WorkspaceRuntimeSnapshot>
   getVcs: (input?: { directory?: string }) => Promise<VcsInfo | undefined>
   getMcpStatus: (input?: { directory?: string }) => Promise<Record<string, McpStatus>>
-  getLspStatus: (input?: { directory?: string }) => Promise<LspStatus[]>
 }
 
 type VcsClient = {
@@ -32,11 +31,7 @@ type McpClient = {
   mcp: { status: () => Promise<{ data?: Record<string, McpStatus> }> }
 }
 
-type LspClient = {
-  lsp: { status: () => Promise<{ data?: LspStatus[] }> }
-}
-
-type WorkspaceRuntimeStatusResource = "vcs" | "mcp" | "lsp"
+type WorkspaceRuntimeStatusResource = "vcs" | "mcp"
 
 export const DEFAULT_SESSION_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
   transport: "runtime",
@@ -54,10 +49,10 @@ export const DEFAULT_SESSION_TRANSPORT_CAPABILITIES: SessionTransportCapabilitie
 }
 
 /**
- * The three status resources this backend reads off a workspace runtime,
+ * The two status resources this backend reads off a workspace runtime,
  * decoded from the wire.
  *
- * The relay path and the SDK-client path answer the SAME three shapes, and only
+ * The relay path and the SDK-client path answer the SAME two shapes, and only
  * the client path was typed by anything: the relay path used to name its DTO in
  * a type argument, which claimed the shape without checking it. These decode
  * what `claxedo-api-types` declares and drop rows that are not it, so a runtime
@@ -69,19 +64,6 @@ function vcsInfoFromWire(raw: unknown): VcsInfo {
     branch: readString(raw, "branch"),
     default_branch: readString(raw, "default_branch"),
   }
-}
-
-const LSP_STATUSES = ["connected", "error"] as const
-
-function lspStatusListFromWire(raw: unknown): LspStatus[] {
-  return (Array.isArray(raw) ? raw : []).flatMap((entry) => {
-    const id = readString(entry, "id")
-    const status = LSP_STATUSES.find((candidate) => candidate === readString(entry, "status"))
-    if (!id || !status) return []
-    const name = readString(entry, "name")
-    const root = readString(entry, "root")
-    return [{ id, status, ...(name === undefined ? {} : { name }), ...(root === undefined ? {} : { root }) }]
-  })
 }
 
 function mcpStatusFromWire(raw: unknown): McpStatus | undefined {
@@ -122,7 +104,7 @@ async function readWorkspaceRecord(input: { baseUrl: string; request: typeof fet
 export function createHttpWorkspaceRuntimeBackend(input: {
   baseUrl?: string
   request?: typeof fetch
-  client?: Partial<VcsClient & McpClient & LspClient>
+  client?: Partial<VcsClient & McpClient>
   workspaceId?: string
   workspace?: WorkspaceRuntimeSnapshot | null
   signedControlPlane?: boolean
@@ -194,13 +176,6 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       const client = input.client?.mcp
       if (!client) throw new Error("workspace runtime backend requires client for mcp")
       return (await client.status()).data ?? {}
-    },
-    getLspStatus: async (params) => {
-      const runtime = await runtimeJson(params?.directory, "lsp", "signed workspace LSP relay connection unavailable")
-      if (runtime) return lspStatusListFromWire(runtime)
-      const client = input.client?.lsp
-      if (!client) throw new Error("workspace runtime backend requires client for lsp")
-      return (await client.status()).data ?? []
     },
   }
 }

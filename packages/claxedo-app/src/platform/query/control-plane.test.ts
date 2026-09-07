@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { ClaxedoProviderModel as Model, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import {
   normalizeProjectList,

@@ -1,4 +1,4 @@
-import type { ClaxedoVcsInfo as VcsInfo } from "@claxedo/agent-runtime-contract/server-client"
+import type { WorkspaceVcsInfo as VcsInfo } from "@claxedo/workspace-runtime/client"
 import { queryKeys } from "@/platform/query/keys"
 import { createHttpWorkspaceRuntimeBackend } from "@/platform/runtime/http-backend"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"

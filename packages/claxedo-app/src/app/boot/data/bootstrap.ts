@@ -1,4 +1,6 @@
-import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@claxedo/agent-runtime-contract/server-client"
+import type { AgentCommand } from "@claxedo/agent-runtime-contract"
+import type { WorkspaceVcsInfo } from "@claxedo/workspace-runtime/client"
+import type { ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { asRecord, readBoolean, readString } from "@/lib/record"
 import { retry } from "@/lib/retry"
@@ -27,20 +29,17 @@ import {
 type DataResponse<T> = Promise<{ data?: T }>
 
 export type GlobalBootstrapSdk = {
-  global: {
-    health(): DataResponse<{ healthy: boolean; version?: string }>
-    config: { get(): DataResponse<Config> }
-  }
+  global: { health(): DataResponse<{ healthy: boolean; version?: string }> }
   path: { get(): DataResponse<Path> }
   project: { list(): DataResponse<Project[]> }
 }
 
 export type DirectoryBootstrapSdk = {
   project: { current(): DataResponse<Project> }
-  app: { agents(input?: { directory?: string }): DataResponse<ClaxedoAgentProfile[]> }
+  agent: { list(input?: { directory?: string }): DataResponse<unknown> }
   path: { get(): DataResponse<Path> }
-  command: { list(): DataResponse<ClaxedoCommand[]> }
-  vcs: { get(): DataResponse<ClaxedoVcsInfo> }
+  command: { list(): DataResponse<AgentCommand[]> }
+  vcs: { get(): DataResponse<WorkspaceVcsInfo> }
 }
 type BootstrapDirectory = string
 

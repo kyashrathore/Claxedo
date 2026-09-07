@@ -1,5 +1,5 @@
-import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
-export type { ClaxedoAgentProfile as Agent } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+export type { ClaxedoAgentProfile as Agent } from "@/platform/api/claxedo-api-types"
 import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
@@ -13,8 +13,8 @@ type ProjectClient = {
 }
 
 type AgentClient = {
-  app: {
-    agents: (input?: { directory?: string }) => Promise<{ data?: Agent[] }>
+  agent: {
+    list: (input?: { directory?: string }) => Promise<{ data?: unknown }>
   }
 }
 
@@ -77,9 +77,9 @@ export function agentListQuery(input: {
           parse: agentListFromUnknown,
         })
       }
-      const data = (await input.client.app.agents({ directory: input.directory })).data
+      const data = (await input.client.agent.list({ directory: input.directory })).data
       if (!data) throw new Error("Agent list response omitted agents")
-      return data
+      return agentListFromUnknown(data)
     },
   }
 }

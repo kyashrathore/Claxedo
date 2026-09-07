@@ -19,8 +19,6 @@ const allowed = new Set([
 ])
 
 const runtimeGatewayBoundary = new Set([
-  // Claxedo's explicit server HTTP client owns typed route construction.
-  "platform/api/server-client-contract.ts",
   "platform/runtime/agent/workspace-relay-connection.ts",
   "platform/runtime/agent/workspace-runtime-request.ts",
   "platform/runtime/agent/agent-runtime-urls.ts",
@@ -1862,7 +1860,6 @@ describe("workspace runtime route audit", () => {
     // The status itself still has an owner: the runtime backend reads it per
     // directory, so no UI surface grows its own directory-scoped query.
     expect(backend).toMatch(/getMcpStatus: async/)
-    expect(backend).toMatch(/getLspStatus: async/)
     expect(claxedoSessionHeader).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
   })
 

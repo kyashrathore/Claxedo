@@ -1,5 +1,5 @@
 import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
-import type { ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import type { InitError } from "@/app/routes/error"
 import { createContext, useContext, onCleanup, onMount, createSignal, type ParentProps } from "solid-js"

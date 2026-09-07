@@ -25,13 +25,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
-    },
-    "./server-client": {
-      "development": "./src/server-client/index.ts",
-      "bun": "./src/server-client/index.ts",
-      "types": "./dist/server-client/index.d.ts",
-      "import": "./dist/server-client.mjs",
-      "default": "./dist/server-client.mjs"
     }
   },
   "files": [
@@ -43,7 +36,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && bun build src/server-client/index.ts --target=browser --format=esm --outfile=dist/server-client.mjs && tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && tsc -p tsconfig.build.json",
     "test:node": "node --test scripts/package.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test src",

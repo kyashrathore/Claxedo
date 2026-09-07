@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project } from "@claxedo/agent-runtime-contract/server-client"
+import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { type NormalizedProviderListResponse, normalizeProviderList } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
@@ -18,7 +18,6 @@ type GlobalSdk = Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
 type DirectorySdk = Parameters<typeof bootstrapDirectory>[0]["sdk"]
 
 const defaultPath: Path = { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" }
-const emptyConfig: Config = {}
 
 function project(input: Partial<Project> = {}): Project {
   return {
@@ -54,8 +53,8 @@ function directorySdk(input: Partial<DirectorySdk> = {}): DirectorySdk {
     project: {
       current: async () => ({ data: project() }),
     },
-    app: {
-      agents: async () => ({ data: [] }),
+    agent: {
+      list: async () => ({ data: [] }),
     },
     path: {
       get: async () => ({ data: defaultPath }),
@@ -74,9 +73,6 @@ function globalSdk(input: Partial<GlobalSdk> = {}): GlobalSdk {
   return {
     global: {
       health: async () => ({ data: { healthy: true } }),
-      config: {
-        get: async () => ({ data: emptyConfig }),
-      },
     },
     path: {
       get: async () => ({ data: defaultPath }),
