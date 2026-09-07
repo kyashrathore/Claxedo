@@ -15,6 +15,7 @@ import {
 import type { FirstPartyServiceCatalog } from "@claxedo/service-contract"
 
 import { JwksRoutes } from "../../authority/routes/jwks"
+import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
@@ -435,6 +436,12 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         auditFallback: (record) => console.warn("[claxedo-server] mcp.audit unattributed", record),
       })
     : undefined
+  if (firstPartyMcp) {
+    app.route("/", OAuthProtectedResourceRoutes({
+      controlPlaneOrigin: () => options.authentication.descriptor.native.cli.controlPlaneOrigin,
+      authorizationServer: () => options.authentication.descriptor.issuer,
+    }))
+  }
   mountControlPlaneRouteContributions({
     contributions: [...(options.routeContributions ?? []), ...(firstPartyMcp ? [firstPartyMcp] : [])],
     mount: (contribution) => mountOwnedRoute(app, ownership, `contribution:${contribution.id}`, contribution.path, contribution.routes),

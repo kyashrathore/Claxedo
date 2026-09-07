@@ -103,6 +103,7 @@ import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
 import { createMachineSessionDispatch } from "../../session/machine-dispatch"
 import { JwksRoutes } from "../../authority/routes/jwks"
+import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
@@ -1264,6 +1265,14 @@ export function createSelfHostedApp(
         auditFallback: (record) => Log.create({ service: "claxedo-mcp" }).info("mcp.audit", record),
       })
     : undefined
+  if (firstPartyMcp && embeddedAuthEnabled(process.env)) {
+    // This box's OAuth server is its own embedded Better Auth, mounted at
+    // `/api/auth` on whichever origin the request reached it through.
+    app.route("/", OAuthProtectedResourceRoutes({
+      controlPlaneOrigin: (requestOrigin) => requestOrigin,
+      authorizationServer: (requestOrigin) => `${requestOrigin}/api/auth`,
+    }))
+  }
   mountControlPlaneRouteContributions({
     contributions: [...(options.routeContributions ?? []), ...(firstPartyMcp ? [firstPartyMcp] : [])],
     mount: (contribution) => mountOwnedRoute(

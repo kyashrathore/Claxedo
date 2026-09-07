@@ -237,6 +237,16 @@ describe("resource-closed hosted core app", () => {
     expect(anonymous.status).toBe(401)
     expect(anonymous.headers.get("www-authenticate")).toContain('resource_metadata="https://core.test/.well-known/oauth-protected-resource"')
 
+    const metadataUrl = /resource_metadata="([^"]+)"/.exec(anonymous.headers.get("www-authenticate") ?? "")?.[1]
+    const metadata = await app.fetch(new Request(metadataUrl!))
+    expect(metadata.status).toBe(200)
+    expect(await metadata.json()).toMatchObject({
+      resource: "https://core.test/api/claxedo/mcp",
+      authorization_servers: ["https://auth.test"],
+    })
+    // No endpoint, nothing to describe.
+    expect((await createHostedCoreApp(plane(), options).fetch(new Request(metadataUrl!))).status).toBe(404)
+
     const signed = await initialize({ authorization: "Bearer user-1" })
     expect(signed.status).toBe(200)
     expect(signed.headers.get("mcp-session-id")).toMatch(/\S/)

@@ -105,7 +105,15 @@ export const serverSelfHosted: Policy = {
   // admits the CLI JWT and its own unsigned loopback caller there. The package
   // reaches only the MCP SDK, hono, zod, helpers and the runtime contract.
   // Re-measured, no headroom: 135/38.
-  ceilings: { modules: 135, packages: 38 },
+  // +2 modules: `src/mcp/oauth-protected-resource.ts` and the scope/resource
+  // names it shares with the OAuth provider, `platform/auth/mcp-oauth-scopes.ts`.
+  // The MCP endpoint's own 401 challenge names the RFC 9728 document, so the
+  // deployment that mounts the endpoint is the one that must answer for it.
+  // The scope module is deliberately dependency-free — it is in every auth
+  // composition's closure, including the Worker's, and reading the names from
+  // `@claxedo/mcp` would drag the MCP SDK in behind them. No package edge.
+  // Re-measured, no headroom: 137/38.
+  ceilings: { modules: 137, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
