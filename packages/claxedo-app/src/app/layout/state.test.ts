@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal } from "solid-js"
 import { workspacePanelFullWidthCommand, workspacePanelVisibilityCommand } from "./commands"
+import type { LayoutPreset } from "./config"
 import { createShellLayoutState } from "./state"
 
 describe("shell layout state", () => {
@@ -8,6 +9,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({
         target: () => "web",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: true, pinned: false, width: 300 },
         initialWorkspacePanel: { open: false, width: 520 },
       })
@@ -36,6 +38,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({
         target: () => "web",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: true, pinned: false, width: 260 },
         initialWorkspacePanel: { open: false },
       })
@@ -58,6 +61,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({
         target: () => "web",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: false, pinned: true, width: 260 },
         initialWorkspacePanel: { open: false },
       })
@@ -76,6 +80,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const floating = createShellLayoutState({
         target: () => "web",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: true, pinned: false, width: 260 },
         initialWorkspacePanel: { open: false },
       })
@@ -100,6 +105,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({
         target: () => "desktop",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: false, pinned: true, width: 260 },
         initialWorkspacePanel: { open: false, width: 520 },
       })
@@ -124,6 +130,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({
         target: () => "desktop",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: false, pinned: true, width: 260 },
         initialWorkspacePanel: { open: false, width: 520 },
       })
@@ -155,6 +162,7 @@ describe("shell layout state", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({
         target: () => "web",
+        preset: () => "claxedo.default",
         initialRail: { collapsed: false, pinned: true, width: 260 },
         initialWorkspacePanel: { open: false, width: 520 },
       })
@@ -167,6 +175,109 @@ describe("shell layout state", () => {
         size: { unit: "px", value: 640 },
       })
       expect(layout.workspacePanelWidth()).toBe(640)
+      dispose()
+    })
+  })
+
+  test("switching the preset accessor re-derives the config and keeps the latched rail command", () => {
+    createRoot((dispose) => {
+      const [preset, setPreset] = createSignal<LayoutPreset>("claxedo.default")
+      const layout = createShellLayoutState({
+        target: () => "web",
+        preset,
+        initialRail: { collapsed: false, pinned: true, width: 260 },
+        initialWorkspacePanel: { open: false, width: 520 },
+        initialNavigator: { width: 300 },
+      })
+
+      layout.toggleRail()
+      expect(layout.config().regions.navigator).toBeUndefined()
+      expect(layout.config().regions.workspacePanel.size).toEqual({ unit: "px", value: 520 })
+
+      setPreset("claxedo.navigator-sidebar")
+      expect(layout.config().presetId).toBe("claxedo.navigator-sidebar")
+      expect(layout.config().regions.navigator).toMatchObject({
+        slot: "navigator",
+        side: "left",
+        size: { unit: "px", value: 300 },
+        order: 1,
+      })
+      expect(layout.config().regions.workspacePanel.size).toEqual({ unit: "percent", value: 100 })
+      expect(layout.config().regions.rail).toMatchObject({
+        size: { unit: "px", value: 0 },
+        docked: false,
+      })
+
+      setPreset("claxedo.default")
+      expect(layout.config().regions.navigator).toBeUndefined()
+      expect(layout.config().regions.rail.docked).toBe(false)
+      dispose()
+    })
+  })
+
+  test("resizes the navigator within its clamp and reports the committed width without a region", () => {
+    createRoot((dispose) => {
+      const [preset, setPreset] = createSignal<LayoutPreset>("claxedo.navigator-sidebar")
+      const layout = createShellLayoutState({
+        target: () => "web",
+        preset,
+        initialRail: { collapsed: false, pinned: true, width: 260 },
+        initialWorkspacePanel: { open: false, width: 520 },
+      })
+
+      expect(layout.navigatorWidth()).toBe(320)
+      expect(layout.committedNavigatorWidth()).toBe(320)
+
+      layout.setNavigatorWidth(400)
+      expect(layout.config().regions.navigator.size).toEqual({ unit: "px", value: 400 })
+      expect(layout.navigatorWidth()).toBe(400)
+
+      layout.setNavigatorWidth(100)
+      expect(layout.config().regions.navigator).toMatchObject({
+        size: { unit: "px", value: 260 },
+        visible: true,
+        docked: true,
+      })
+      expect(layout.committedNavigatorWidth()).toBe(260)
+
+      layout.setNavigatorWidth(Number.NaN)
+      expect(layout.navigatorWidth()).toBe(260)
+
+      setPreset("claxedo.default")
+      expect(layout.config().regions.navigator).toBeUndefined()
+      expect(layout.navigatorWidth()).toBe(260)
+      dispose()
+    })
+  })
+
+  test("closing the panel clears the size slot so the next open is full under the sidebar preset", () => {
+    createRoot((dispose) => {
+      const layout = createShellLayoutState({
+        target: () => "web",
+        preset: () => "claxedo.navigator-sidebar",
+        initialRail: { collapsed: false, pinned: true, width: 260 },
+        initialWorkspacePanel: { open: false, width: 520 },
+      })
+
+      layout.setWorkspacePanelOpen(true)
+      expect(layout.config().regions.workspacePanel).toMatchObject({
+        visible: true,
+        size: { unit: "percent", value: 100 },
+      })
+
+      layout.dispatch("workspacePanelSize", workspacePanelFullWidthCommand(layout.config(), layout.workspacePanelWidth()))
+      expect(layout.config().regions.workspacePanel.size).toEqual({ unit: "px", value: 520 })
+      expect(layout.workspacePanelWidth()).toBe(520)
+
+      layout.dispatch("workspacePanelSize", undefined)
+      layout.setWorkspacePanelOpen(false)
+      expect(layout.config().regions.workspacePanel.visible).toBe(false)
+
+      layout.setWorkspacePanelOpen(true)
+      expect(layout.config().regions.workspacePanel).toMatchObject({
+        visible: true,
+        size: { unit: "percent", value: 100 },
+      })
       dispose()
     })
   })

@@ -1,18 +1,22 @@
 import { createSignal, type Accessor } from "solid-js"
 import {
   applyLayoutCommand,
+  navigatorResizeCommand,
   railPeekCommand,
   railResizeCommand,
   railToggleCommand,
   workspacePanelVisibilityCommand,
   type LayoutCommand,
 } from "./commands"
-import { layoutConfigFromLiveChromeState, type LayoutTarget } from "./config"
+import { layoutConfigFromLiveChromeState, type LayoutPreset, type LayoutTarget } from "./config"
 
 const HOT_ZONE_WIDTH = 48
 const HOT_ZONE_HEIGHT = 48
 const RAIL_MIN_WIDTH = 220
 const RAIL_MAX_WIDTH = 520
+const NAVIGATOR_MIN_WIDTH = 260
+const NAVIGATOR_MAX_WIDTH = 520
+const NAVIGATOR_DEFAULT_WIDTH = 320
 
 type RailLayoutInput = {
   collapsed: boolean
@@ -25,12 +29,18 @@ type WorkspacePanelLayoutInput = {
   width?: number
 }
 
-type ShellLayoutCommandSlot = "rail" | "workspacePanelVisibility" | "workspacePanelSize"
+type NavigatorLayoutInput = {
+  width?: number
+}
+
+type ShellLayoutCommandSlot = "rail" | "navigator" | "workspacePanelVisibility" | "workspacePanelSize"
 
 export function createShellLayoutState(input: {
   target: Accessor<LayoutTarget>
+  preset: Accessor<LayoutPreset>
   initialRail: RailLayoutInput
   initialWorkspacePanel: WorkspacePanelLayoutInput
+  initialNavigator?: NavigatorLayoutInput
 }) {
   const [version, setVersion] = createSignal(0)
   let commands: Partial<Record<ShellLayoutCommandSlot, LayoutCommand>> = {}
@@ -39,17 +49,20 @@ export function createShellLayoutState(input: {
   let collapsePending = false
   let mutedUntilLeave = false
   let committedRailWidth = input.initialRail.width ?? 260
+  let committedNavigatorWidth = input.initialNavigator?.width ?? NAVIGATOR_DEFAULT_WIDTH
 
   const baseConfig = () => layoutConfigFromLiveChromeState({
     target: input.target(),
+    preset: input.preset(),
     rail: input.initialRail,
     workspacePanel,
+    navigator: input.initialNavigator,
   })
 
   const config = () => {
     version()
     return (
-      (["rail", "workspacePanelVisibility", "workspacePanelSize"] as const)
+      (["rail", "navigator", "workspacePanelVisibility", "workspacePanelSize"] as const)
         .map((slot) => commands[slot])
         .filter((command): command is LayoutCommand => !!command)
         .reduce((current, command) => applyLayoutCommand(current, command), baseConfig())
@@ -76,6 +89,15 @@ export function createShellLayoutState(input: {
   }
   const railPinned = () => config().regions.rail.docked !== false
   const railExpanded = () => railWidth() > 0
+  const navigatorWidth = () => {
+    const region = config().regions.navigator
+    return region?.size.unit === "px" ? region.size.value : committedNavigatorWidth
+  }
+  const setNavigatorWidth = (width: number) => {
+    if (!Number.isFinite(width)) return
+    committedNavigatorWidth = Math.min(Math.max(width, NAVIGATOR_MIN_WIDTH), NAVIGATOR_MAX_WIDTH)
+    dispatch("navigator", navigatorResizeCommand(width, { minWidth: NAVIGATOR_MIN_WIDTH, maxWidth: NAVIGATOR_MAX_WIDTH }))
+  }
   const workspacePanelWidth = () => {
     const region = config().regions.workspacePanel
     return region.size.unit === "px" ? region.size.value : workspacePanel.width ?? 520
@@ -106,6 +128,9 @@ export function createShellLayoutState(input: {
     setWorkspacePanelWidth,
     setRailWidth,
     committedRailWidth: () => committedRailWidth,
+    navigatorWidth,
+    setNavigatorWidth,
+    committedNavigatorWidth: () => committedNavigatorWidth,
     // A toggle-collapse mutes the hot-zone peek until the pointer leaves the
     // corner, so hiding the rail via the toggle doesn't instantly re-peek when
     // the Show-Sidebar affordance appears under the stationary cursor.

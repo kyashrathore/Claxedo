@@ -3,10 +3,12 @@ import { isRecord } from "@/lib/record"
 export const layoutConfigVersion = 1
 
 export type LayoutTarget = "web" | "desktop"
+export type LayoutPreset = "claxedo.default" | "claxedo.navigator-sidebar"
 export type RegionSide = "left" | "right" | "top" | "bottom" | "center"
 export type SessionMode = "tab" | "sidebar" | "full"
 export type BuiltinSlotKind =
   | "rail"
+  | "navigator"
   | "workspacePanel"
   | "workbench"
 export type ExtensionSlotKind = `ext:${string}`
@@ -41,7 +43,7 @@ export type LayoutConfig = {
   regions: Record<RegionId, RegionConfig>
   slots: SlotConfigMap
   sessionMode: SessionMode
-  presetId?: string
+  presetId?: LayoutPreset
 }
 
 export type LayoutMigrationResult = {
@@ -60,14 +62,27 @@ type FlatWorkspacePanel = {
   width?: unknown
 }
 
+type FlatNavigator = {
+  width?: unknown
+}
+
+type LayoutOptions = {
+  target?: LayoutTarget
+  preset?: LayoutPreset
+}
+
 const builtinSlots = new Set<BuiltinSlotKind>([
   "rail",
+  "navigator",
   "workspacePanel",
   "workbench",
 ])
 
 /** Membership test over the same set, without narrowing the question to its answer. */
 const builtinSlotNames: ReadonlySet<string> = builtinSlots
+
+export const isLayoutPreset = (value: unknown): value is LayoutPreset =>
+  value === "claxedo.default" || value === "claxedo.navigator-sidebar"
 
 const isSlotKind = (value: unknown): value is SlotKind =>
   typeof value === "string" && (builtinSlotNames.has(value) || value.startsWith("ext:"))
@@ -78,8 +93,10 @@ const isSide = (value: unknown): value is RegionSide =>
 const isSessionMode = (value: unknown): value is SessionMode =>
   value === "tab" || value === "sidebar" || value === "full"
 
-export function defaultLayoutConfig(input: { target?: LayoutTarget } = {}): LayoutConfig {
+export function defaultLayoutConfig(input: LayoutOptions = {}): LayoutConfig {
   const target = input.target ?? "web"
+  const preset = input.preset ?? "claxedo.default"
+  const navigatorSidebar = preset === "claxedo.navigator-sidebar"
   const regions: Record<RegionId, RegionConfig> = {
     rail: {
       slot: "rail",
@@ -90,6 +107,19 @@ export function defaultLayoutConfig(input: { target?: LayoutTarget } = {}): Layo
       docked: true,
       order: 0,
     },
+    ...(navigatorSidebar
+      ? {
+        navigator: {
+          slot: "navigator",
+          side: "left",
+          size: { unit: "px", value: 320 },
+          visible: true,
+          collapsible: true,
+          docked: true,
+          order: 1,
+        } satisfies RegionConfig,
+      }
+      : {}),
     workbench: {
       slot: "workbench",
       side: "center",
@@ -101,7 +131,7 @@ export function defaultLayoutConfig(input: { target?: LayoutTarget } = {}): Layo
     workspacePanel: {
       slot: "workspacePanel",
       side: "right",
-      size: { unit: "px", value: 520 },
+      size: navigatorSidebar ? { unit: "percent", value: 100 } : { unit: "px", value: 520 },
       visible: false,
       collapsible: true,
       order: 0,
@@ -113,11 +143,11 @@ export function defaultLayoutConfig(input: { target?: LayoutTarget } = {}): Layo
     regions,
     slots: slotMap(regions),
     sessionMode: "tab",
-    presetId: "claxedo.default",
+    presetId: preset,
   }
 }
 
-export function layoutMigrate(input: unknown, options: { target?: LayoutTarget } = {}): LayoutMigrationResult {
+export function layoutMigrate(input: unknown, options: LayoutOptions = {}): LayoutMigrationResult {
   if (isLayoutConfig(input)) return normalizeLayoutConfig(input, options)
   if (isRecord(input)) {
     const result = normalizeLayoutConfig(layoutConfigFromFlatState(input, options), options)
@@ -128,6 +158,7 @@ export function layoutMigrate(input: unknown, options: { target?: LayoutTarget }
 
 export function layoutConfigFromLiveChromeState(input: {
   target?: LayoutTarget
+  preset?: LayoutPreset
   rail: {
     collapsed: boolean
     pinned: boolean
@@ -137,11 +168,15 @@ export function layoutConfigFromLiveChromeState(input: {
     open: boolean
     width?: number
   }
+  navigator?: {
+    width?: number
+  }
 }) {
   return layoutConfigFromFlatState({
     rail: input.rail,
     workspacePanel: input.workspacePanel,
-  }, { target: input.target })
+    navigator: input.navigator,
+  }, { target: input.target, preset: input.preset })
 }
 
 export function sortedRegions(config: LayoutConfig) {
@@ -204,37 +239,37 @@ export function chromeRegionPlacement(config: LayoutConfig, regionId: RegionId) 
   }
 }
 
-function normalizeLayoutConfig(config: LayoutConfig, options: { target?: LayoutTarget }): LayoutMigrationResult {
-  const fallback = defaultLayoutConfig({ target: options.target ?? config.target })
+function normalizeLayoutConfig(config: LayoutConfig, options: LayoutOptions): LayoutMigrationResult {
+  const preset = options.preset ?? (isLayoutPreset(config.presetId) ? config.presetId : "claxedo.default")
+  const fallback = defaultLayoutConfig({ target: options.target ?? config.target, preset })
   const regions: Record<RegionId, RegionConfig> = {}
   for (const [id, raw] of Object.entries(isRecord(config.regions) ? config.regions : fallback.regions)) {
     const normalized = normalizeRegion(id, raw, fallback.regions[id])
     if (normalized) regions[normalized[0]] = normalized[1]
   }
-  const nextRegions = regions.workbench ? regions : { ...regions, workbench: fallback.regions.workbench }
+  if (!regions.workbench) regions.workbench = fallback.regions.workbench
+  if (fallback.regions.navigator && !regions.navigator) regions.navigator = fallback.regions.navigator
   const next: LayoutConfig = {
     version: layoutConfigVersion,
     target: options.target ?? (config.target === "desktop" ? "desktop" : "web"),
-    regions: nextRegions,
-    slots: slotMap(nextRegions, config.slots),
+    regions,
+    slots: slotMap(regions, config.slots),
     sessionMode: isSessionMode(config.sessionMode) ? config.sessionMode : "tab",
-    presetId: typeof config.presetId === "string" ? config.presetId : fallback.presetId,
+    presetId: preset,
   }
   return { config: next, dirty: JSON.stringify(next) !== JSON.stringify(config) }
 }
 
-function layoutConfigFromFlatState(input: Record<string, unknown>, options: { target?: LayoutTarget }): LayoutConfig {
+function layoutConfigFromFlatState(input: Record<string, unknown>, options: LayoutOptions): LayoutConfig {
   const config = defaultLayoutConfig(options)
   const rail = isRecord(input.rail) ? input.rail as FlatRail : {}
   const workspacePanel = isRecord(input.workspacePanel) ? input.workspacePanel as FlatWorkspacePanel : {}
+  const navigator = isRecord(input.navigator) ? input.navigator as FlatNavigator : {}
   const oldProcessPane = isRecord(input.processPane) ? input.processPane : {}
   const railCollapsed = rail.collapsed === true && rail.pinned !== true
-  const railWidth = typeof rail.width === "number" && Number.isFinite(rail.width) && rail.width >= 0
-    ? rail.width
-    : 260
-  const workspacePanelWidth = typeof workspacePanel.width === "number" && Number.isFinite(workspacePanel.width) && workspacePanel.width >= 0
-    ? workspacePanel.width
-    : config.regions.workspacePanel.size.value
+  const railWidth = finiteWidth(rail.width) ?? 260
+  const workspacePanelWidth = finiteWidth(workspacePanel.width) ?? 520
+  const navigatorRegion = config.regions.navigator
   return {
     ...config,
     regions: {
@@ -245,13 +280,20 @@ function layoutConfigFromFlatState(input: Record<string, unknown>, options: { ta
         visible: true,
         docked: rail.pinned === true,
       },
+      ...(navigatorRegion
+        ? { navigator: { ...navigatorRegion, size: { unit: "px", value: finiteWidth(navigator.width) ?? 320 } } }
+        : {}),
       workspacePanel: {
         ...config.regions.workspacePanel,
-        size: { unit: "px", value: workspacePanelWidth },
+        size: navigatorRegion ? config.regions.workspacePanel.size : { unit: "px", value: workspacePanelWidth },
         visible: workspacePanel.open === true || oldProcessPane.pendingOpen === true,
       },
     },
   }
+}
+
+function finiteWidth(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
 function normalizeRegion(regionId: RegionId, input: unknown, fallback?: RegionConfig) {

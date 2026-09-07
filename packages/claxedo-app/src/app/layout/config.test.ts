@@ -3,12 +3,146 @@ import {
   chromeGridDefinition,
   chromeRegionPlacement,
   defaultLayoutConfig,
+  isLayoutPreset,
   layoutConfigFromLiveChromeState,
   layoutMigrate,
   sizeToken,
+  sortedRegions,
 } from "./config"
 
 describe("LayoutConfig", () => {
+  test("default preset is byte-identical to today's config", () => {
+    const today = {
+      version: 1,
+      target: "web",
+      regions: {
+        rail: {
+          slot: "rail",
+          side: "left",
+          size: { unit: "px", value: 260 },
+          visible: true,
+          collapsible: true,
+          docked: true,
+          order: 0,
+        },
+        workbench: {
+          slot: "workbench",
+          side: "center",
+          size: { unit: "fr", value: 1 },
+          visible: true,
+          collapsible: false,
+          order: 0,
+        },
+        workspacePanel: {
+          slot: "workspacePanel",
+          side: "right",
+          size: { unit: "px", value: 520 },
+          visible: false,
+          collapsible: true,
+          order: 0,
+        },
+      },
+      slots: {
+        rail: { regionId: "rail", order: 0 },
+        workbench: { regionId: "workbench", order: 0 },
+        workspacePanel: { regionId: "workspacePanel", order: 0 },
+      },
+      sessionMode: "tab",
+      presetId: "claxedo.default",
+    }
+
+    expect(JSON.stringify(defaultLayoutConfig())).toBe(JSON.stringify(today))
+    expect(JSON.stringify(defaultLayoutConfig({ preset: "claxedo.default" }))).toBe(JSON.stringify(today))
+    expect(JSON.stringify(defaultLayoutConfig({ target: "desktop" }))).toBe(JSON.stringify({ ...today, target: "desktop" }))
+  })
+
+  test("navigator-sidebar preset adds a left navigator region at order 1 and bases the panel at percent 100", () => {
+    const config = defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" })
+    const classic = defaultLayoutConfig()
+
+    expect(config.presetId).toBe("claxedo.navigator-sidebar")
+    expect(config.regions.navigator).toEqual({
+      slot: "navigator",
+      side: "left",
+      size: { unit: "px", value: 320 },
+      visible: true,
+      collapsible: true,
+      docked: true,
+      order: 1,
+    })
+    expect(config.regions.rail).toEqual(classic.regions.rail)
+    expect(config.regions.workbench).toEqual(classic.regions.workbench)
+    expect(config.regions.workspacePanel).toEqual({
+      ...classic.regions.workspacePanel,
+      size: { unit: "percent", value: 100 },
+    })
+    expect(config.slots.navigator).toEqual({ regionId: "navigator", order: 1 })
+    expect(sortedRegions(config).map(([id]) => id)).toEqual(["rail", "navigator", "workbench", "workspacePanel"])
+    expect(isLayoutPreset("claxedo.navigator-sidebar")).toBe(true)
+    expect(isLayoutPreset("claxedo.banana")).toBe(false)
+  })
+
+  test("grid puts the navigator after the rail on the left under the sidebar preset", () => {
+    const config = defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" })
+
+    expect(chromeGridDefinition(config).columns).toBe("260px 320px minmax(0, 1fr)")
+    expect(chromeRegionPlacement(config, "navigator")).toEqual({ "grid-column": "2", "grid-row": "1" })
+    expect(chromeRegionPlacement(config, "workbench")).toEqual({ "grid-column": "3", "grid-row": "1" })
+    expect(chromeGridDefinition({
+      ...config,
+      regions: { ...config.regions, workspacePanel: { ...config.regions.workspacePanel, visible: true } },
+    }).columns).toBe("260px 320px minmax(0, 1fr) 100%")
+  })
+
+  test("migration keeps an unknown preset id as default", () => {
+    const stored = defaultLayoutConfig()
+    const unknown = layoutMigrate({ ...stored, presetId: "claxedo.banana" })
+    const missing = layoutMigrate({ ...stored, presetId: undefined })
+    const sidebar = layoutMigrate({ ...stored, presetId: "claxedo.navigator-sidebar" })
+
+    expect(unknown.dirty).toBe(true)
+    expect(unknown.config.presetId).toBe("claxedo.default")
+    expect(unknown.config.regions.navigator).toBeUndefined()
+    expect(missing.config.presetId).toBe("claxedo.default")
+    expect(sidebar.config.presetId).toBe("claxedo.navigator-sidebar")
+  })
+
+  test("migrating a sidebar-preset config without a navigator region re-adds it from the preset", () => {
+    const stored = { ...defaultLayoutConfig(), presetId: "claxedo.navigator-sidebar" }
+    const result = layoutMigrate(stored)
+
+    expect(result.dirty).toBe(true)
+    expect(result.config.regions.navigator).toEqual(defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" }).regions.navigator)
+    expect(result.config.slots.navigator).toEqual({ regionId: "navigator", order: 1 })
+    expect(result.config.regions.workspacePanel.size).toEqual({ unit: "px", value: 520 })
+    expect(layoutMigrate(defaultLayoutConfig(), { preset: "claxedo.navigator-sidebar" }).config.regions.navigator?.slot).toBe("navigator")
+    expect(layoutMigrate(defaultLayoutConfig({ preset: "claxedo.navigator-sidebar" })).dirty).toBe(false)
+  })
+
+  test("adapts live chrome state into the sidebar preset with a navigator width", () => {
+    const sized = layoutConfigFromLiveChromeState({
+      preset: "claxedo.navigator-sidebar",
+      rail: { collapsed: false, pinned: true, width: 260 },
+      workspacePanel: { open: true, width: 640 },
+      navigator: { width: 400 },
+    })
+    const unsized = layoutConfigFromLiveChromeState({
+      preset: "claxedo.navigator-sidebar",
+      rail: { collapsed: false, pinned: true, width: 260 },
+      navigator: { width: Number.NaN },
+    })
+    const classic = layoutConfigFromLiveChromeState({
+      rail: { collapsed: false, pinned: true, width: 260 },
+      navigator: { width: 400 },
+    })
+
+    expect(sized.regions.navigator.size).toEqual({ unit: "px", value: 400 })
+    expect(sized.regions.workspacePanel).toMatchObject({ visible: true, size: { unit: "percent", value: 100 } })
+    expect(unsized.regions.navigator.size).toEqual({ unit: "px", value: 320 })
+    expect(classic.regions.navigator).toBeUndefined()
+    expect(classic.presetId).toBe("claxedo.default")
+  })
+
   test("default config is serializable and keeps workbench as the center region", () => {
     const config = JSON.parse(JSON.stringify(defaultLayoutConfig({ target: "desktop" })))
 
