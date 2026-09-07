@@ -36,8 +36,10 @@ beforeAll(async () => {
   // catalog assertion below reads the same object, so the row the app trusts
   // cannot drift from the policy the runtimes are mounted with.
   const { configureEmbeddedWorkspaceRuntime } = await import("@claxedo/local-server/self-hosted-execution")
+  const authority = services.authority
+  if (!authority) throw new Error("signed self-hosted services expose a workspace authority")
   configureEmbeddedWorkspaceRuntime({
-    sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority),
+    sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority),
   })
 })
 
