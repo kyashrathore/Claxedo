@@ -11,26 +11,17 @@ import {
 import { Portal } from "solid-js/web"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 
+import { Button } from "@opencode-ai/ui/button"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/platform/i18n/provider"
-import {
-  REVIEW_POPOVER_MODES,
-  type ReviewMode,
-} from "@/features/review/review-intent"
+import { reviewModeLabel, type ReviewMode } from "@/features/review/review-intent"
 import { reviewControlsSlot, reviewToolbarSlot } from "@/ui/controls/portal-slot"
 
 export type { VcsRefs } from "@/platform/runtime/workspace-diff-client"
 import type { VcsRefs } from "@/platform/runtime/workspace-diff-client"
-
-export const reviewModeLabel: Record<ReviewMode, string> = {
-  uncommitted: "Uncommitted",
-  unstaged: "Unstaged",
-  staged: "Staged",
-  "to-from": "to / from",
-}
 
 export type ReviewToolbarProps = {
   mode: ReviewMode
@@ -250,18 +241,16 @@ function ReviewToolbarControls(props: {
 }
 
 function ReviewToolbarBody(props: ReviewToolbarProps) {
-  const [modeSelectorOpen, setModeSelectorOpen] = createSignal(false)
-  const [pendingMode, setPendingMode] = createSignal<ReviewMode>(props.mode)
+  const [compareOpen, setCompareOpen] = createSignal(false)
   const [pendingFromRef, setPendingFromRef] = createSignal(props.fromRef)
   const [pendingToRef, setPendingToRef] = createSignal(props.toRef)
 
   createEffect(
     on(
-      () => modeSelectorOpen(),
+      () => compareOpen(),
       (open) => {
         if (!open) return
         batch(() => {
-          setPendingMode(untrack(() => props.mode))
           setPendingFromRef(untrack(() => props.fromRef))
           setPendingToRef(untrack(() => props.toRef))
         })
@@ -269,18 +258,16 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
     ),
   )
 
-  const pendingCanApply = createMemo(() => {
-    if (pendingMode() !== "to-from") return true
-    return pendingFromRef().trim().length > 0 && pendingToRef().trim().length > 0
-  })
+  const pendingCanApply = createMemo(() => pendingFromRef().trim().length > 0 && pendingToRef().trim().length > 0)
+  const comparing = () => props.mode === "to-from"
 
   return (
     <div class="contents">
       <div class="flex items-center gap-2 min-w-0">
         <Popover
           placement="bottom-start"
-          open={modeSelectorOpen()}
-          onOpenChange={setModeSelectorOpen}
+          open={compareOpen()}
+          onOpenChange={setCompareOpen}
           trigger={
             <span class="flex items-center gap-1.5">
               <span class="leading-none">{reviewModeLabel[props.mode]}</span>
@@ -299,71 +286,52 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
           }}
           class="w-[280px] [&_[data-slot=popover-body]]:p-2"
         >
-          <div class="flex flex-col gap-2">
-            <div class="px-1.5 pt-1 text-11-medium text-text-weak">Review source</div>
-
-            <div class="flex flex-col">
-              <div class="flex flex-col gap-0.5">
-                <For each={REVIEW_POPOVER_MODES}>
-                  {(mode) => (
-                    <button
-                      type="button"
-                      class="flex min-h-8 w-full items-center justify-between gap-3 rounded-md px-2.5 py-1 text-left text-12-medium transition-[background-color,color,transform] active:scale-[0.96]"
-                      classList={{
-                        "bg-surface-base-hover text-text-strong": pendingMode() === mode,
-                        "text-text-base hover:bg-surface-base-hover": pendingMode() !== mode,
-                      }}
-                      onClick={() => setPendingMode(mode)}
-                    >
-                      <span class="truncate">{reviewModeLabel[mode]}</span>
-                      <span
-                        class="flex h-5 w-5 shrink-0 items-center justify-center text-text-strong transition-[opacity,transform,filter]"
-                        classList={{
-                          "scale-100 opacity-100 blur-0": pendingMode() === mode,
-                          "scale-[0.25] opacity-0 blur-sm": pendingMode() !== mode,
-                        }}
-                      >
-                        <Icon name="check" size="small" />
-                      </span>
-                    </button>
-                  )}
-                </For>
-              </div>
+          <div data-testid="review-compare-popover" class="flex flex-col gap-2">
+            <div class="px-1.5 pt-1 text-11-medium text-text-weak">Compare against</div>
+            <div class="grid grid-cols-2 gap-2">
+              <RefPickerField
+                label="From"
+                value={pendingFromRef()}
+                onInput={setPendingFromRef}
+                onSelect={setPendingFromRef}
+                placeholder="HEAD~1"
+                refs={props.vcsRefs}
+              />
+              <RefPickerField
+                label="To"
+                value={pendingToRef()}
+                onInput={setPendingToRef}
+                onSelect={setPendingToRef}
+                placeholder="HEAD"
+                refs={props.vcsRefs}
+              />
             </div>
-
-            <Show when={pendingMode() === "to-from"}>
-              <div class="grid grid-cols-2 gap-2">
-                <RefPickerField
-                  label="From"
-                  value={pendingFromRef()}
-                  onInput={setPendingFromRef}
-                  onSelect={setPendingFromRef}
-                  placeholder="HEAD~1"
-                  refs={props.vcsRefs}
-                />
-                <RefPickerField
-                  label="To"
-                  value={pendingToRef()}
-                  onInput={setPendingToRef}
-                  onSelect={setPendingToRef}
-                  placeholder="HEAD"
-                  refs={props.vcsRefs}
-                />
-              </div>
-            </Show>
-
-            <div class="flex justify-end">
-              <button
-                type="button"
-                class="h-8 rounded-md border border-border-weak-base bg-surface-base text-text-base text-12-medium px-4 hover:bg-surface-base-hover disabled:pointer-events-none disabled:opacity-50 transition-[background-color,border-color,color,opacity,transform] active:scale-[0.96]"
+            <div class="flex items-center justify-between gap-2">
+              <Show when={comparing()} fallback={<span />}>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  data-testid="review-compare-back"
+                  onClick={() => {
+                    props.onApplyMode("uncommitted", "", "")
+                    setCompareOpen(false)
+                  }}
+                >
+                  Back to uncommitted
+                </Button>
+              </Show>
+              <Button
+                variant="secondary"
+                size="small"
+                data-testid="review-compare-apply"
                 disabled={!pendingCanApply()}
                 onClick={() => {
-                  props.onApplyMode(pendingMode(), pendingFromRef(), pendingToRef())
-                  setModeSelectorOpen(false)
+                  props.onApplyMode("to-from", pendingFromRef(), pendingToRef())
+                  setCompareOpen(false)
                 }}
               >
                 Apply
-              </button>
+              </Button>
             </div>
           </div>
         </Popover>

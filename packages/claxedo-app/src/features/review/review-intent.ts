@@ -1,10 +1,8 @@
 export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
 
-export type ReviewPopoverMode = ReviewMode
-
-export const REVIEW_POPOVER_MODES = [
-  "uncommitted",
-  "unstaged",
-  "staged",
-  "to-from",
-] as const satisfies readonly ReviewPopoverMode[]
+export const reviewModeLabel: Record<ReviewMode, string> = {
+  uncommitted: "Uncommitted",
+  unstaged: "Unstaged",
+  staged: "Staged",
+  "to-from": "to / from",
+}

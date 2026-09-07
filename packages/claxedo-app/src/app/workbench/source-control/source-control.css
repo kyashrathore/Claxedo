@@ -19,24 +19,6 @@
   opacity: 1;
 }
 
-.claxedo-source-control-primary {
-  color: var(--text-on-interactive-base);
-  background: var(--surface-interactive-base);
-}
-
-.claxedo-source-control-primary:hover:not(:disabled) {
-  background: var(--surface-interactive-hover);
-}
-
-.claxedo-source-control-primary:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.claxedo-source-control-error {
-  color: var(--icon-critical-base);
-}
-
 .claxedo-source-control-graph {
   position: relative;
 }
@@ -46,7 +28,7 @@
   position: absolute;
   top: 12px;
   bottom: 12px;
-  left: calc(0.25rem + 0.375rem + 2px);
+  left: calc(0.5rem + 0.375rem + 2px);
   width: 1px;
   background: var(--border-weak-base);
 }

@@ -1,6 +1,7 @@
 import { errorMessage } from "@claxedo/helpers"
 import { Show, createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -163,7 +164,7 @@ export function SourceControlView(props: {
           <Show
             when={status().ahead > 0}
             fallback={
-              <span data-testid="source-control-up-to-date" class="text-11-regular text-text-weaker">
+              <span data-testid="source-control-up-to-date" class="px-2 text-12-regular text-text-weaker">
                 {language.t("navigator.sourceControl.upToDate")}
               </span>
             }
@@ -179,56 +180,65 @@ export function SourceControlView(props: {
         <span class="flex-1" />
         <Show when={compareUrl()}>
           {(url) => (
-            <a
+            <Button
+              as="a"
               data-testid="source-control-create-pr"
               href={url()}
               target="_blank"
               rel="noopener noreferrer"
-              class="claxedo-source-control-link flex h-6 items-center gap-1 rounded px-1.5 text-11-regular text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base"
+              variant="ghost"
+              size="small"
+              class="gap-1.5"
             >
               <SemanticIcon concept="pullRequest" size="small" />
               <span>{language.t("navigator.sourceControl.createPr")}</span>
-            </a>
+            </Button>
           )}
         </Show>
       </div>
-      <div class="min-h-0 flex-1 overflow-auto">
-        <Show
-          when={!statusQuery.isPending}
-          fallback={
-            <div data-testid="source-control-loading" aria-label={language.t("navigator.sourceControl.loading")} class="flex flex-col gap-1 p-2">
-              <div class="h-6 w-[82%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[69%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[54%] rounded-md bg-surface-base" />
-            </div>
-          }
+      <div class="flex min-h-0 flex-1 flex-col">
+        <div
+          data-testid="source-control-groups"
+          class="min-h-0 overflow-auto"
+          classList={{ "flex-1": collapsed().graph, "max-h-[65%] shrink": !collapsed().graph }}
         >
-          <ChangeGroup
-            id="staged"
-            entries={status().staged}
-            collapsed={collapsed().staged}
-            onToggle={() => toggle("staged")}
-            activePath={activePath()}
-            pending={pending()}
-            onAction={(paths) => void run(() => mutations.unstage(paths))}
-            onOpen={(entry) => open(entry, "staged")}
-          />
-          <ChangeGroup
-            id="changes"
-            entries={status().unstaged}
-            collapsed={collapsed().changes}
-            onToggle={() => toggle("changes")}
-            activePath={activePath()}
-            pending={pending()}
-            onAction={(paths) => void run(() => mutations.stage(paths))}
-            onOpen={(entry) => open(entry, "unstaged")}
-          />
-          <Show when={!hasChanges()}>
-            <div data-testid="source-control-empty" class="px-3 py-2 text-12-regular text-text-weak">
-              {language.t("navigator.sourceControl.empty")}
-            </div>
+          <Show
+            when={!statusQuery.isPending}
+            fallback={
+              <div data-testid="source-control-loading" aria-label={language.t("navigator.sourceControl.loading")} class="flex flex-col gap-1 p-2">
+                <div class="h-6 w-[82%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[69%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[54%] rounded-md bg-surface-base" />
+              </div>
+            }
+          >
+            <ChangeGroup
+              id="staged"
+              entries={status().staged}
+              collapsed={collapsed().staged}
+              onToggle={() => toggle("staged")}
+              activePath={activePath()}
+              pending={pending()}
+              onAction={(paths) => void run(() => mutations.unstage(paths))}
+              onOpen={(entry) => open(entry, "staged")}
+            />
+            <ChangeGroup
+              id="changes"
+              entries={status().unstaged}
+              collapsed={collapsed().changes}
+              onToggle={() => toggle("changes")}
+              activePath={activePath()}
+              pending={pending()}
+              onAction={(paths) => void run(() => mutations.stage(paths))}
+              onOpen={(entry) => open(entry, "unstaged")}
+            />
+            <Show when={!hasChanges()}>
+              <div data-testid="source-control-empty" class="px-3 py-2 text-12-regular text-text-weak">
+                {language.t("navigator.sourceControl.empty")}
+              </div>
+            </Show>
           </Show>
-        </Show>
+        </div>
         <CommitGraph
           commits={commits()}
           loading={logQuery.isPending}
@@ -242,16 +252,11 @@ export function SourceControlView(props: {
 
 function ActionButton(props: { testId: string; label: string; pending: boolean; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      data-testid={props.testId}
-      class="flex h-6 items-center gap-1 rounded px-1.5 text-11-regular text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base"
-      onClick={() => props.onClick()}
-    >
+    <Button data-testid={props.testId} variant="ghost" size="small" class="gap-1.5" onClick={() => props.onClick()}>
       <Show when={props.pending} fallback={<SemanticIcon concept="push" size="small" />}>
         <Spinner class="size-3" />
       </Show>
       <span>{props.label}</span>
-    </button>
+    </Button>
   )
 }

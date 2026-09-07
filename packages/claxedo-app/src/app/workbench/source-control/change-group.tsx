@@ -47,7 +47,7 @@ export function SourceControlSectionHeader(props: {
       data-testid={props.testId}
       data-count={props.count}
       data-collapsed={props.collapsed ? "true" : undefined}
-      class="claxedo-source-control-header group flex h-7 shrink-0 items-center gap-1 pr-1.5 pl-2"
+      class="claxedo-source-control-header group flex h-7 shrink-0 items-center gap-1 pr-2 pl-3"
     >
       <button
         type="button"
@@ -120,7 +120,7 @@ export function ChangeGroup(props: {
         </Show>
       </SourceControlSectionHeader>
       <Show when={!props.collapsed}>
-        <div class="flex flex-col gap-px px-1 pb-1" role="list">
+        <div class="flex flex-col gap-px px-2 pb-1" role="list">
           <For each={props.entries}>
             {(entry) => (
               <div
@@ -129,7 +129,7 @@ export function ChangeGroup(props: {
                 data-path={entry.path}
                 data-status={entry.status}
                 data-group={props.id}
-                class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-raised-base-hover"
+                class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover"
                 classList={{ "bg-surface-base-active": props.activePath === entry.path }}
               >
                 <button

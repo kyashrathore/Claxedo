@@ -481,6 +481,27 @@ describe("SourceControlView graph", () => {
     expect(within(items[1]!).getByText("1 day ago")).toBeTruthy()
   })
 
+  test("a collapsed Graph header sits at the bottom under the groups; expanded, it shares the column", async () => {
+    renderView()
+    await loaded()
+    const column = screen.getByTestId("source-control-groups").parentElement!
+    const groups = screen.getByTestId("source-control-groups")
+    const graph = screen.getByTestId("source-control-graph")
+    expect(column.lastElementChild).toBe(graph)
+    expect(graph.classList.contains("flex-1")).toBe(true)
+    expect(groups.classList.contains("max-h-[65%]")).toBe(true)
+    expect(groups.classList.contains("flex-1")).toBe(false)
+
+    fireEvent.click(within(screen.getByTestId("source-control-group-graph")).getByRole("button", { expanded: true }))
+    expect(screen.getByTestId("source-control-group-graph").getAttribute("data-collapsed")).toBe("true")
+    expect(column.lastElementChild).toBe(graph)
+    expect(graph.classList.contains("shrink-0")).toBe(true)
+    expect(graph.classList.contains("flex-1")).toBe(false)
+    expect(groups.classList.contains("flex-1")).toBe(true)
+    expect(groups.classList.contains("max-h-[65%]")).toBe(false)
+    expect(within(graph).queryAllByTestId("source-control-commit-row")).toHaveLength(0)
+  })
+
   test("the graph section collapses and shows 'No commits' when the log is empty", async () => {
     h.commits = []
     renderView()
