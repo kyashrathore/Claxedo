@@ -29,6 +29,7 @@ import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
+import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -189,6 +190,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPlugins: SdkPluginConfig[] = []
   private readonly modelSource = createLiveModelSource({
     harness: "claude",
@@ -233,6 +235,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
+    this.firstPartyMcp = firstPartyMcpProvider(config)
     this.currentPlugins = claudePluginConfigs(config.launch)
     if (this.auth.anthropic !== previous) this.modelSource.invalidate()
     // Held, not applied here: the SDK takes `effort` as a per-query option, so
@@ -242,6 +245,15 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     if ("effort" in config) {
       this.currentEffort = typeof config.effort === "string" ? config.effort : undefined
     }
+  }
+
+  private mcpServersFor(sessionId: string): { mcpServers?: Record<string, McpServerConfig> } {
+    const firstParty = this.firstPartyMcp?.server(sessionId)
+    const mcpServers = {
+      ...claudeMcpServers(this.currentMcp),
+      ...(firstParty ? { [firstParty.name]: { type: "http" as const, url: firstParty.url, headers: firstParty.headers } } : {}),
+    }
+    return Object.keys(mcpServers).length ? { mcpServers } : {}
   }
 
   /** Selected reasoning effort, echoed back through `configOptions`. */
@@ -388,7 +400,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         ...(input.getAgentSessionId().startsWith(CLAUDE_PENDING_PREFIX)
           ? {}
           : { resume: input.getAgentSessionId() }),
-        ...(Object.keys(this.currentMcp).length ? { mcpServers: claudeMcpServers(this.currentMcp) } : {}),
+        ...this.mcpServersFor(input.sessionId),
         ...(this.currentPlugins.length ? { plugins: this.currentPlugins } : {}),
         env: claudeSpawnEnv({
           ...process.env,

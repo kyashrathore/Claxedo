@@ -14,6 +14,7 @@ import { codexHostSubagentObservation } from "./host-subagent"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
+import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
 import {
@@ -127,6 +128,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private disposed = false
   private processError: string | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginLaunch: CodexPluginLaunch | undefined
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly goalController: CodexGoalController
@@ -178,12 +180,25 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       openai: sourceAuthValue(source),
     }
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
+    this.firstPartyMcp = firstPartyMcpProvider(config)
     if (this.authSignature() !== previous) {
       this.authRevision++
       this.modelSource.invalidate()
     }
     const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
     if (proc?.alive) await this.syncProcessAuth(proc)
+  }
+
+  /**
+   * The app-server reads MCP servers per thread from the `config` override on
+   * `thread/start` and `thread/resume` (0.153.4 opens the HTTP client with these
+   * headers as the thread comes up), so the session-scoped entry rides the
+   * request and never touches CODEX_HOME or the child environment.
+   */
+  private firstPartyThreadConfig(sessionId: string): { config?: JsonRecord } {
+    const server = this.firstPartyMcp?.server(sessionId)
+    if (!server) return {}
+    return { config: { mcp_servers: { [server.name]: { url: server.url, http_headers: server.headers } } } }
   }
 
   private async applyPluginLaunch(launch: CodexPluginLaunch | undefined) {
@@ -212,7 +227,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.set(sessionId, modeId)
   }
 
-  async createAgentSession(input: { directory: string; model: string; system?: string }) {
+  async createAgentSession(input: { directory: string; model: string; system?: string; sessionId?: string }) {
     const proc = await this.ensureProcess(input.directory)
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
@@ -226,6 +241,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
+      ...(input.sessionId ? this.firstPartyThreadConfig(input.sessionId) : {}),
     }).then((response) => asRecord(response) ?? {})
     const thread = asRecord(result.thread)
     const threadId = text(thread?.id)
@@ -366,7 +382,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
           startTurn,
           resumeThread: async () => {
             log.info("codex thread missing from app-server process; resuming from disk", { threadId })
-            await proc.request("thread/resume", { threadId, cwd: input.directory })
+            await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.firstPartyThreadConfig(input.sessionId) })
           },
         }),
         turnStartFailed,

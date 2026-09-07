@@ -17,6 +17,7 @@ import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
+import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
@@ -128,6 +129,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginRoots: string[] = []
   private agents = new Map<string, CursorEntry>()
   private processError: string | null = null
@@ -160,6 +162,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       cursor: auth?.["cursor-sdk"],
     }
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
+    this.firstPartyMcp = firstPartyMcpProvider(config)
     if (this.auth.cursor !== previous) this.modelSource.invalidate()
     // Plugin roots are read by `Agent.create`, so a changed set only reaches
     // Cursor through a new agent — the live ones are disposed to force it.
@@ -172,6 +175,20 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       this.agents.clear()
       this.currentPluginRoots = nextPluginRoots
     }
+  }
+
+  /**
+   * `Agent.create` runs before a Claxedo session id exists, so it carries the
+   * user's servers only; every `send` names the session and adds the
+   * first-party entry.
+   */
+  private mcpServersFor(sessionId: string): { mcpServers?: Record<string, CursorMcpServerConfig> } {
+    const firstParty = this.firstPartyMcp?.server(sessionId)
+    const mcpServers = {
+      ...cursorMcpServers(this.currentMcp),
+      ...(firstParty ? { [firstParty.name]: { type: "http" as const, url: firstParty.url, headers: firstParty.headers } } : {}),
+    }
+    return Object.keys(mcpServers).length ? { mcpServers } : {}
   }
 
   /**
@@ -235,7 +252,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
     const run = await agent.send(cursorTurnPrompt(input.input.parts, input.input.system), {
       ...(model ? { model } : {}),
-      ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
+      ...this.mcpServersFor(input.sessionId),
       ...(input.input.agent === "plan" ? { mode: "plan" as const } : {}),
       local: {
         force: false,
@@ -287,7 +304,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
     const run = await agent.send(nativeGoalCommand(objective), {
       ...(model ? { model } : {}),
-      ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
+      ...this.mcpServersFor(input.sessionId),
       local: { force: false },
     })
     const now = Date.now()
