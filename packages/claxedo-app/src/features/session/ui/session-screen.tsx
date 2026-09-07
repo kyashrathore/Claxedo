@@ -1041,14 +1041,26 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
   // over history that is still arriving.
   // The floating card keeps its transcript collapsed until the user peeks or
   // sends a new prompt; a reply the user just asked for must not land hidden.
-  const [transcriptPeeked, setTranscriptPeeked] = createSignal(false)
+  // Derived from the previous snapshot rather than written by effects.
+  const [peekToggles, setPeekToggles] = createSignal(0)
+  const transcriptPeek = createMemo<{ floating: boolean; toggles: number; turns: number; peeked: boolean }>(
+    (previous) => {
+      const next = { floating: floating(), toggles: peekToggles(), turns: visibleUserMessages().length, peeked: false }
+      if (!previous) return next
+      let peeked = previous.peeked
+      if (next.floating && !previous.floating) peeked = false
+      if (next.toggles !== previous.toggles) peeked = !peeked
+      if (next.floating && next.turns > previous.turns) peeked = true
+      return { ...next, peeked }
+    },
+  )
+  const transcriptPeeked = () => transcriptPeek().peeked
   const transcriptCollapsed = createMemo(() => floating() && !transcriptPeeked())
   createEffect(
     on(
       () => props.presentation(),
       (presentation, previous) => {
         if (presentation === "floating") {
-          setTranscriptPeeked(false)
           if (visibleUserMessages().length > 1) historyWindow.collapseToLastTurn()
           return
         }
@@ -1058,15 +1070,6 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
     ),
   )
 
-  createEffect(
-    on(
-      () => visibleUserMessages().length,
-      (length, previous) => {
-        if (floating() && previous !== undefined && length > previous) setTranscriptPeeked(true)
-      },
-      { defer: true },
-    ),
-  )
 
   // See `createHistoryFill` for why the decision is confirmed across two frames.
   const historyFill = createHistoryFill({
@@ -1243,7 +1246,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
                 count={visibleUserMessages().length}
                 expanded={transcriptPeeked()}
                 testId="session-transcript-peek"
-                onReveal={() => setTranscriptPeeked((peeked: boolean) => !peeked)}
+                onReveal={() => setPeekToggles((count) => count + 1)}
               />
             </div>
           </Show>
@@ -1350,6 +1353,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
                         historyShift={false}
                         userMessages={historyWindow.renderedUserMessages()}
                         hiddenTurnCount={historyWindow.hiddenTurnCount}
+                        hideTitle={floating}
                         onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                         navMessages={visibleUserMessages()}
                         currentMessage={activeMessage()}

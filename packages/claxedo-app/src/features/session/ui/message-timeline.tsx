@@ -511,7 +511,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (value) return value
     return language.t("command.session.new")
   })
-  const showHeader = createMemo(() => !!(titleValue() || parentID()))
+  const showHeader = createMemo(() => !props.hideTitle?.() && !!(titleValue() || parentID()))
 
   // Per-message inputs are equality-gated so a streaming part event (which
   // produces a new conversation snapshot + a new assistantMessagesByParent Map
