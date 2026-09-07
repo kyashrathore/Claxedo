@@ -1,3 +1,4 @@
+import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { Workspace } from "./store/index"
 
 /**
@@ -17,6 +18,18 @@ import type { Workspace } from "./store/index"
 export type LocalWorkspaceRuntimePort = {
   /** Dispatch a request into the workspace's embedded runtime. */
   fetch(ws: Workspace, request: Request): Promise<Response>
+  /**
+   * How this process composed the session access of the embedded runtimes it
+   * serves — the `SessionAccessPolicy.sessionAuthority` marker of the very
+   * policy they are mounted with.
+   *
+   * `managed-private` means those runtimes refuse `POST /session` without a
+   * control-plane reservation, so a client has to reserve before it creates.
+   * The client cannot derive that from its own build flags or from the wire it
+   * reaches the server on: the same loopback address serves an unsigned daemon
+   * (`local`) and a signed self-hosted server (`managed-private`).
+   */
+  sessionAuthority(): HostSessionAuthority
 }
 
 let installed: LocalWorkspaceRuntimePort | undefined
@@ -32,4 +45,16 @@ export function localWorkspaceRuntime(): LocalWorkspaceRuntimePort {
     )
   }
   return installed
+}
+
+/**
+ * The declared session authority of this process's embedded runtimes, or
+ * `undefined` where no composition installed a port.
+ *
+ * A read rather than a requirement: a Worker control plane serves no workspace
+ * from its own filesystem, so "nobody here runs one" is an answer, not the
+ * wiring bug `localWorkspaceRuntime()` throws for.
+ */
+export function localWorkspaceRuntimeSessionAuthority(): HostSessionAuthority | undefined {
+  return installed?.sessionAuthority()
 }

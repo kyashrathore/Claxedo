@@ -1,6 +1,6 @@
 import { queryKeys } from "@/platform/query/keys"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { workspaceForDirectory, type ProjectCatalogItem } from "../workspace-resolver"
+import { declaredSessionAuthority, workspaceForDirectory, type ProjectCatalogItem } from "../workspace-resolver"
 import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
 import { parseExistingSessionConfig } from "./submit-session-config"
 import { createTransport } from "@/platform/runtime/transport"
@@ -30,8 +30,12 @@ export type SubmitTransportClientFactoryInput = {
 export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient> = {
   readonly serverUrl: () => string
   readonly signedControlPlane: () => boolean | undefined
-  /** Whether this build talks to a control plane that issues accounts. */
-  readonly authEnabled: () => boolean
+  /**
+   * The project catalog this composer resolves against — the same rows that
+   * name the workspace a signed submit reserves against, so "must I reserve"
+   * and "reserve against what" are answered from one source.
+   */
+  readonly projects: () => readonly ProjectCatalogItem[]
   readonly workspaceId: () => string | undefined
   readonly workspaceKind: () => "cloud" | "user-hosted" | undefined
   readonly sessionRef?: () => SessionRef | undefined
@@ -112,11 +116,14 @@ export function submitWorkspaceBacking(input: {
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
   input: SubmitTransportPlacementInput<Client>,
 ) {
-  const runtimeTransport = (dir: SubmitDirectory) => submitTransportForPlacement({
-    serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
-    authEnabled: input.authEnabled(),
-    workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
-  })
+  const runtimeTransport = (dir: SubmitDirectory) => {
+    const sessionAuthority = declaredSessionAuthority(workspaceForDirectory(input.projects(), dir))
+    return submitTransportForPlacement({
+      serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
+      ...(sessionAuthority ? { sessionAuthority } : {}),
+      workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
+    })
+  }
 
   const localSessionFetch = (dir: SubmitDirectory) =>
     runtimeTransport(dir).loopbackWorkspaceBridge

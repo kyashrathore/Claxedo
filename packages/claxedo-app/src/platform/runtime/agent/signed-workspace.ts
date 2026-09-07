@@ -14,6 +14,13 @@ export type WorkspaceInventoryEntry = {
   id?: string | null
   workspaceId?: string | null
   kind?: string | null
+  /**
+   * Wire field: the serving process's own declaration of how the runtime
+   * behind this workspace composed session access. Read it through
+   * `declaredSessionAuthority`, which narrows an unknown value to "not
+   * declared" rather than defaulting.
+   */
+  session_authority?: string | null
   directory?: string | null
   workspace_name?: string | null
   workspaceName?: string | null

@@ -45,7 +45,6 @@ import {
   type SessionPrefetchPage,
 } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
-import { AgentRuntimeRequestError } from "@/platform/runtime/agent/agent-runtime-request-error"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
 import { queryClient } from "@/platform/query/query-client"
 import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
@@ -54,7 +53,7 @@ import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from
 import { directorySessionCacheOwnsSession, removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { assistantMessageIdForUserMessage } from "../data/session-types"
-import { backfillFailedCursor, createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
+import { createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
@@ -76,8 +75,10 @@ import { applyDirectorySessionMeta } from "./directory-session-meta"
 import { leasedQueryRequest } from "./leased-query-request"
 import { setDirectorySessionMetaQueryData } from "../data/sync/writers"
 import {
+  classifySessionHistoryReadFailure,
   createActivationSessionReadEpoch,
   firstFoldSessionHydrateDelay,
+  isSessionNotFoundError,
   shouldAcceptSessionTransportResult,
   shouldDeferSessionTransportHydrate,
   shouldSkipSessionTransportHydrate,
@@ -130,56 +131,6 @@ function metaKey(directory: string, includeRequests?: boolean) {
 
 export function removeDirectorySessionCacheRow(directory: string, sessionID: string) {
   removeDirectorySession(directory, sessionID)
-}
-
-export function isSessionNotFoundError(error: unknown) {
-  const value = typeof error === "string"
-    ? error
-    : error instanceof Error
-      ? error.message
-      : JSON.stringify(error)
-  return value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
-}
-
-/**
- * Whether the session authority refused this principal the read.
- *
- * The private-session authority answers a session it will not disclose with
- * `403 workspace_authorization_denied`, and a share revoked while a pane is
- * open produces exactly that on the pane's next read. The status is the whole
- * contract: workspace authority, session authority and the relay all deny with
- * 403, and every one of them means the same thing to a reader — this principal
- * may not have the transcript.
- */
-export function isSessionAccessDeniedError(error: unknown) {
-  return error instanceof AgentRuntimeRequestError && error.status === 403
-}
-
-export type SessionHistoryReadFailure =
-  | { kind: "denied" }
-  | { kind: "missing" }
-  | { kind: "page"; failedCursor: string }
-  | { kind: "unhandled" }
-
-/**
- * How a rejected session-history read is answered.
- *
- * Denial is decided first. An older page the authority refuses is not a cursor
- * to retry later, and a denial reported as `unhandled` escapes the activation
- * path — which fires and forgets its first-fold read — as an unhandled
- * rejection instead of reaching the pane's "session unavailable" surface.
- * `unhandled` is reserved for what it names: a fault with no handled state,
- * which the caller rethrows.
- */
-export function classifySessionHistoryReadFailure(input: {
-  error: unknown
-  before?: string
-}): SessionHistoryReadFailure {
-  if (isSessionAccessDeniedError(input.error)) return { kind: "denied" }
-  const sessionNotFound = isSessionNotFoundError(input.error)
-  if (sessionNotFound) return { kind: "missing" }
-  const failedCursor = backfillFailedCursor({ before: input.before, sessionNotFound })
-  return failedCursor === undefined ? { kind: "unhandled" } : { kind: "page", failedCursor }
 }
 
 export function shouldHydrateSession(input: {
@@ -647,7 +598,7 @@ export function createSessionController(input: {
       .then((result) => {
         if (opts?.signal?.aborted) return false
         if (result.session && "error" in result.session && isSessionNotFoundError(result.session.error)) {
-          removeMissingSession(directory, sessionID)
+          forgetUnavailableSession(directory, sessionID, "missing")
           return false
         }
         if (!shouldAcceptSessionTransportResult({
@@ -696,12 +647,12 @@ export function createSessionController(input: {
           return false
         }
         if (failure.kind === "denied") {
-          // Refused by the authority, not lost by the runtime, so no repair
-          // pull. Closing the pane stays with the revocation reconcile.
-          forgetUnavailableSession(directory, sessionID)
+          // Settling on "session unavailable" is all this read owes the pane;
+          // closing it stays with the revocation reconcile.
+          forgetUnavailableSession(directory, sessionID, "denied")
           return false
         }
-        removeMissingSession(directory, sessionID)
+        forgetUnavailableSession(directory, sessionID, "missing")
         return false
       })
       .finally(() => {
@@ -712,10 +663,14 @@ export function createSessionController(input: {
   /**
    * Drop a session the pane can no longer read from every cache that would
    * re-offer it, and settle the pane on its "session unavailable" surface.
-   * Shared by the two ways a read stops being answerable: the runtime no
-   * longer has the session, and the authority no longer grants it.
+   *
+   * `cause` is the reason the read stopped being answerable, and it decides
+   * whether a repair is worth attempting. A session the runtime no longer has
+   * may still be re-materializable from a signed control plane's projection, so
+   * "missing" schedules the repair pull. "denied" is the authority's own answer
+   * about this principal, so pulling again would only ask the same question.
    */
-  const forgetUnavailableSession = (directory: string, sessionID: string) => {
+  const forgetUnavailableSession = (directory: string, sessionID: string, cause: "missing" | "denied") => {
     removeDirectorySessionCacheRow(directory, sessionID)
     removeSessionInventoryQueryData({
       baseUrl: globalSDK.url,
@@ -728,20 +683,15 @@ export function createSessionController(input: {
       workspaceId: input.workspaceId?.(),
     })
     setMissingSession(directory, sessionID, true)
-  }
-
-  const removeMissingSession = (directory: string, sessionID: string) => {
-    forgetUnavailableSession(directory, sessionID)
-    if (input.signedControlPlane?.()) {
-      const workspaceId = input.workspaceId?.()
-      void scheduleSessionProjectionPull({
-        action: "repair",
-        reason: "repair",
-        workspaceId,
-        sessionId: sessionID,
-        idempotencyKey: `missing-session:${workspaceId ?? ""}:${sessionID}`,
-      })
-    }
+    if (cause !== "missing" || !input.signedControlPlane?.()) return
+    const workspaceId = input.workspaceId?.()
+    void scheduleSessionProjectionPull({
+      action: "repair",
+      reason: "repair",
+      workspaceId,
+      sessionId: sessionID,
+      idempotencyKey: `missing-session:${workspaceId ?? ""}:${sessionID}`,
+    })
   }
 
   const setMissingSession = (directory: string, sessionID: string, missing: boolean) => {

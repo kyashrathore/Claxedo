@@ -210,12 +210,13 @@ describe("submitTransportForPlacement", () => {
 
   test("a signed self-hosted server on loopback manages session registration for its own folder workspace", () => {
     // The self-hosted server runs its embedded issuer on localhost, so the app
-    // reaches the workspace over the loopback bridge while the control plane
-    // still refuses `POST /session` without a reservation.
+    // reaches the workspace over the loopback bridge while that same server
+    // still refuses `POST /session` without a reservation. It says so on the
+    // workspace's catalog row.
     expect(submitTransportForPlacement({
       serverUrl: "https://localhost:5178",
       directory: "/repo/main",
-      authEnabled: true,
+      sessionAuthority: "managed-private",
     })).toEqual({
       loopbackWorkspaceBridge: true,
       controlPlaneSession: false,
@@ -230,7 +231,31 @@ describe("submitTransportForPlacement", () => {
     expect(submitTransportForPlacement({
       serverUrl: "https://localhost:5178",
       directory: "/repo/main",
-      authEnabled: false,
+      sessionAuthority: "local",
     }).managedSessionRegistration).toBe(false)
+  })
+
+  test("a server that declared nothing gets no reservation on a directly served workspace", () => {
+    // The e2e test-user build is the case that made this a server answer: it
+    // is built with auth enabled and signs its requests through the test-user
+    // seam, but the local backend it talks to composes `local` runtimes and
+    // answers the reserve route with 401. Nothing the client knows about
+    // itself may turn that into a reserving submit.
+    expect(submitTransportForPlacement({
+      serverUrl: "http://127.0.0.1:4317",
+      directory: "/repo/main",
+    }).managedSessionRegistration).toBe(false)
+  })
+
+  test("a relay-backed workspace reserves whatever the local catalog says", () => {
+    // `controlPlaneSession` already settled this one: the workspace is served
+    // by a control plane, and a `local` declaration on some other row must not
+    // talk it out of reserving.
+    expect(submitTransportForPlacement({
+      serverUrl: "https://control.example.com",
+      directory: "/repo/main",
+      workspaceId: "ws_cloud",
+      sessionAuthority: "local",
+    }).managedSessionRegistration).toBe(true)
   })
 })

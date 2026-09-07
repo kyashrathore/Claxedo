@@ -13,6 +13,7 @@ import {
 } from "./embedded-workspace-runtime"
 import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
@@ -238,6 +239,10 @@ describe("embedded workspace runtime", () => {
     // an unsigned desktop leaves the unbound local policy in place, a signed
     // host injects an authority and becomes managed-private.
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
+    // Same answer through the port shared modules read it by: importing this
+    // module installs the declaration, so the project catalog this process
+    // publishes cannot describe a composition it did not mount.
+    expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
 
     configureEmbeddedWorkspaceRuntime({
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
@@ -268,10 +273,12 @@ describe("embedded workspace runtime", () => {
     })
     try {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
+      expect(localWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
     } finally {
       configureEmbeddedWorkspaceRuntime({})
     }
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
+    expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
   })
 
   test("uses the signed composition's managed-private session authority", async () => {

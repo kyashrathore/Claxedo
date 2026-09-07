@@ -32,10 +32,12 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly isNewSession: boolean
   readonly replaceSession: boolean
   /**
-   * Whether this deployment's control plane owns session lifecycle. A managed
-   * control plane refuses `POST /session` until the caller holds a reservation,
-   * and it does so for every workspace it serves — including one reached over
-   * loopback, which is why this is not the transport flag.
+   * Whether the runtime serving this session owns its lifecycle. A
+   * `managed-private` runtime refuses `POST /session` until the caller holds a
+   * reservation, and it does so for every workspace it serves — including one
+   * reached over loopback, which is why this is not the transport flag. The
+   * serving process declares it on the workspace's catalog row; see
+   * `submitTransportForPlacement`.
    */
   readonly managedSessionRegistration: boolean
   readonly workspaceId?: string

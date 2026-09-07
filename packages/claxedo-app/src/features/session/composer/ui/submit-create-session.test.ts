@@ -276,6 +276,32 @@ describe("acquireSubmitSessionTarget", () => {
     expect(creates).toBe(0)
   })
 
+  test("an unmanaged runtime is created with no reservation and no operation header", async () => {
+    // The regression this pins: a client that reserves against a deployment
+    // whose runtimes are `local` calls a route that answers 401, and no
+    // session is ever created. The runtime accepts a bare create, so the only
+    // correct request here is the create itself.
+    let reservations = 0
+    const creates: Array<Record<string, unknown> | undefined> = []
+    const target = await acquireSessionTarget({
+      replaceSession: true,
+      managedSessionRegistration: false,
+      workspaceId: "ws_local",
+      reserveManagedSession: async () => {
+        reservations += 1
+        throw new Error("Signed authentication is required")
+      },
+      claimHarnessSession: async ({ headers }) => {
+        creates.push(headers)
+        return { id: "created-unmanaged" }
+      },
+    })
+
+    expect(target.session).toEqual({ id: "created-unmanaged" })
+    expect(reservations).toBe(0)
+    expect(creates).toEqual([{}])
+  })
+
   test("preserves signed existing-session fallback without creating", async () => {
     const creates: unknown[] = []
 

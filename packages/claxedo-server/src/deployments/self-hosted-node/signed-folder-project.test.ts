@@ -27,12 +27,23 @@ beforeAll(async () => {
   process.env.CLAXEDO_EMBEDDED_AUTH = "1"
   const { resetEmbeddedAuthForTests } = await import("./embedded-auth")
   resetEmbeddedAuthForTests()
-  const { createDefaultLocalControlPlaneServices, createSelfHostedApp } = await import("./app")
+  const { createDefaultLocalControlPlaneServices, createSelfHostedApp, embeddedManagedPrivateSessionPolicy } =
+    await import("./app")
   services = createDefaultLocalControlPlaneServices()
   composed = createSelfHostedApp(services)
+  // What `startOwnedControlPlaneStack` injects on a signed deployment, and the
+  // reason `POST /session` there refuses a create without a reservation. The
+  // catalog assertion below reads the same object, so the row the app trusts
+  // cannot drift from the policy the runtimes are mounted with.
+  const { configureEmbeddedWorkspaceRuntime } = await import("@claxedo/local-server/self-hosted-execution")
+  configureEmbeddedWorkspaceRuntime({
+    sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority),
+  })
 })
 
 afterAll(async () => {
+  const { configureEmbeddedWorkspaceRuntime } = await import("@claxedo/local-server/self-hosted-execution")
+  configureEmbeddedWorkspaceRuntime({})
   await composed.dispose()
   services.close()
   const { closeAuthorityDatabases } = await import(
@@ -82,10 +93,20 @@ describe("a folder project on the signed self-hosted server", () => {
 
     const listed = await composed.app.request("/project", { headers })
     expect(listed.status).toBe(200)
-    const projects = await listed.json() as Array<{ id: string; worktree: string; workspaces: Record<string, { id: string; kind: string }> }>
+    const projects = await listed.json() as Array<{
+      id: string
+      worktree: string
+      workspaces: Record<string, { id: string; kind: string; session_authority?: string }>
+    }>
     expect(projects.map((item) => item.id)).toEqual([project.id])
     expect(projects[0]).toMatchObject({ worktree: directory })
     expect(Object.values(projects[0].workspaces).map((workspace) => workspace.kind)).toEqual(["local"])
+    // The app reaches this workspace over loopback but must still reserve
+    // before `POST /session`, because this composition injected a managed
+    // authority into its embedded runtimes. Nothing on the client can derive
+    // that, so the catalog row states it.
+    expect(Object.values(projects[0].workspaces).map((workspace) => workspace.session_authority))
+      .toEqual(["managed-private"])
 
     const resolved = await composed.app.request(
       `/api/workspace/resolve?directory=${encodeURIComponent(directory)}`,

@@ -9,6 +9,8 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { isJsonRecord, jsonRecord, jsonString, jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 
 const execFileAsync = promisify(execFile)
 
@@ -70,6 +72,13 @@ export type Workspace = {
   created_at: number
   updated_at: number
 }
+
+/**
+ * A workspace as the project catalog publishes it: the stored row plus the two
+ * facts only the serving process can answer — whether its directory is still
+ * there, and how the runtime that will serve it composed session access.
+ */
+export type CatalogWorkspace = Workspace & { session_authority?: HostSessionAuthority }
 
 /**
  * A project: a repository and a name. Where it executes is a workspace
@@ -747,14 +756,20 @@ export async function listProjects() {
         return true
       })
       const sandboxes = others.map(workspaceKey)
-      const workspaces: Record<string, Workspace> = {}
+      const workspaces: Record<string, CatalogWorkspace> = {}
       const status = new Map(await Promise.all(
         [root, ...others].map(async (row) => [workspaceKey(row), row.kind === "cloud" ? cloudAvailable(row) : await exists(row.directory)] as const),
       ))
+      const sessionAuthority = localWorkspaceRuntimeSessionAuthority()
       for (const row of [root, ...others]) {
         workspaces[workspaceKey(row)] = {
           ...row,
           available: status.get(workspaceKey(row)) ?? true,
+          // Declared only for the workspaces this process actually serves. A
+          // `cloud` row names a runtime on another machine, whose composition
+          // this server has no standing to state; its client learns that one
+          // from the connection mint instead.
+          ...(row.kind === "local" && sessionAuthority ? { session_authority: sessionAuthority } : {}),
         }
       }
 

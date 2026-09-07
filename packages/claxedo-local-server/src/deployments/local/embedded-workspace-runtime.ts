@@ -263,6 +263,7 @@ function disposeRuntime(runtime: EmbeddedRuntime): Promise<void> {
 // shared side back into this deployment.
 
 configureLocalWorkspaceRuntime({
+  sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
   async fetch(workspace: Workspace, request: Request) {
     // Same policy as the proxy path: a read never waits for a config sync.
     const runtime = await ensureEmbeddedWorkspaceRuntime(workspace, {

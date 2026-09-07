@@ -2,7 +2,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { requestErrorMessage } from "../../lib/request-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
-  isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
+  isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
   useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
 } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -69,7 +69,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const layout = useLayout()
   const language = useLanguage()
   const platform = usePlatform()
-  const config = useConfigOptional()
   const events = useClaxedoEventsOptional()
 
   const harnessController = input.harnessController ?? createHarnessSubmitController(undefined)
@@ -88,10 +87,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
   const commentActions = createSubmitCommentActions(prompt.context)
 
+  const globalProjects = () => {
+    const serverUrl = getClaxedoServerUrl()
+    return queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(serverUrl))
+      ?? queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey)
+      ?? (globalSDK
+        ? queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(globalSDK.url))
+        : undefined)
+      ?? []
+  }
+
+  const projectCatalog = () => globalProjects()
+
   const transport = createSubmitTransportAdapter({
     serverUrl: getClaxedoServerUrl,
     signedControlPlane: () => input.signedControlPlane?.(),
-    authEnabled: () => config?.authEnabled === true,
+    projects: projectCatalog,
     workspaceId: () => input.workspaceId?.(),
     workspaceKind: () => input.workspaceKind?.(),
     sessionRef: () => input.sessionRef?.(),
@@ -137,17 +148,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     showToast,
   })
 
-  const globalProjects = () => {
-    const serverUrl = getClaxedoServerUrl()
-    return queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(serverUrl))
-      ?? queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey)
-      ?? (globalSDK
-        ? queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(globalSDK.url))
-        : undefined)
-      ?? []
-  }
-
-  const projectCatalog = () => globalProjects()
   // Only `preventDefault` is read, and the retry path replays a submit without a
   // real DOM event — so the parameter states what it uses instead of demanding a
   // whole `Event` the caller has to fabricate.

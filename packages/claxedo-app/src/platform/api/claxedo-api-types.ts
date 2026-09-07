@@ -26,6 +26,12 @@ export type ClaxedoWorkspaceInventoryEntry = {
   remote_directory?: string
   remoteDirectory?: string
   kind?: "cloud" | "local" | "user-hosted"
+  /**
+   * How the serving process composed the session access of the runtime behind
+   * this workspace, as that process declares it. `managed-private` means
+   * `POST /session` there requires a control-plane reservation first.
+   */
+  session_authority?: "local" | "managed-private"
   status?: string
   available?: boolean
   workspace_name?: string

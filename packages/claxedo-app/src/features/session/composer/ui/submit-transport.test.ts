@@ -25,7 +25,7 @@ describe("submit transport adapter", () => {
     createSubmitTransportAdapter({
       serverUrl: () => "https://control.example",
       signedControlPlane: () => false,
-      authEnabled: () => false,
+      projects: () => [],
       workspaceId: () => undefined,
       workspaceKind: () => undefined,
       request: fetch,
@@ -263,7 +263,7 @@ describe("submit transport adapter", () => {
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => false,
-      authEnabled: () => false,
+      projects: () => [],
       workspaceId: () => "ws_1",
       workspaceKind: () => undefined,
       sessionRef: () => ({
@@ -310,7 +310,7 @@ describe("submit transport adapter", () => {
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => false,
-      authEnabled: () => false,
+      projects: () => [],
       workspaceId: () => "ws_1",
       workspaceKind: () => "user-hosted",
       request: async (input, init) => {
@@ -350,7 +350,7 @@ describe("submit transport adapter", () => {
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:4527",
       signedControlPlane: () => true,
-      authEnabled: () => false,
+      projects: () => [],
       workspaceId: () => "ws_signed",
       workspaceKind: () => "user-hosted",
       request: async (input, init) => {
@@ -423,14 +423,31 @@ describe("submit transport adapter", () => {
       "GET https://relay.test/workspaces/ws_signed/session/status?connectionId=external-opencode",
     ])
   })
-  test("a signed self-hosted deployment reserves for a folder workspace it also serves over loopback", () => {
-    // Live repro: the signed server's embedded issuer runs on localhost, so the
-    // loopback bridge stays on for the wire while `POST /session` still answers
-    // `session_reservation_required`.
-    const signed = createSubmitTransportAdapter({
+  test("the serving deployment's own declaration decides whether a loopback submit reserves", () => {
+    // All four rows reach the SAME loopback address with the same build flags.
+    // Only the catalog row differs, because only the serving process knows how
+    // it composed its runtimes:
+    //  - signed self-hosted: embedded issuer on localhost, `POST /session`
+    //    answers `session_reservation_required`;
+    //  - test-user e2e backend and the unsigned local product: no issuer, and
+    //    `/api/control/session-registrations/reserve` answers 401;
+    //  - a server that declared nothing: not a reason to reserve.
+    const catalog = (sessionAuthority?: string) => [{
+      id: "prj_1",
+      worktree: "/repo/main",
+      workspaces: {
+        "/repo/main": {
+          id: "ws_local",
+          kind: "local",
+          directory: "/repo/main",
+          ...(sessionAuthority ? { session_authority: sessionAuthority } : {}),
+        },
+      },
+    }]
+    const adapterFor = (sessionAuthority?: string) => createSubmitTransportAdapter({
       serverUrl: () => "https://localhost:5178",
       signedControlPlane: () => false,
-      authEnabled: () => true,
+      projects: () => catalog(sessionAuthority),
       workspaceId: () => undefined,
       workspaceKind: () => undefined,
       request: fetch,
@@ -440,24 +457,14 @@ describe("submit transport adapter", () => {
       formatError: () => "Request failed",
       text: { configSaveFailedTitle: "Could not save session config" },
     })
+
+    const signed = adapterFor("managed-private")
     expect(signed.usesLoopbackWorkspaceBridge("/repo/main")).toBe(true)
     expect(signed.usesSignedControlPlane("/repo/main")).toBe(false)
     expect(signed.usesManagedSessionRegistration("/repo/main")).toBe(true)
 
-    const local = createSubmitTransportAdapter({
-      serverUrl: () => "https://localhost:5178",
-      signedControlPlane: () => false,
-      authEnabled: () => false,
-      workspaceId: () => undefined,
-      workspaceKind: () => undefined,
-      request: fetch,
-      localRequest: fetch,
-      createClient: () => ({ session: { get: async () => ({}), prompt: async () => ({}), promptAsync: async () => ({}) } }),
-      showToast: () => {},
-      formatError: () => "Request failed",
-      text: { configSaveFailedTitle: "Could not save session config" },
-    })
-    expect(local.usesManagedSessionRegistration("/repo/main")).toBe(false)
+    expect(adapterFor("local").usesManagedSessionRegistration("/repo/main")).toBe(false)
+    expect(adapterFor().usesManagedSessionRegistration("/repo/main")).toBe(false)
   })
 
   test("the reservation workspace id falls back to the project catalog row for a locally served workspace", () => {

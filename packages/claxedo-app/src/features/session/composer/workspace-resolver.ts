@@ -130,6 +130,22 @@ export function signedWorkspaceForDirectory(input: {
   return input.sdkWorkspace ?? workspaceForDirectory(input.projects, input.directory)
 }
 
+/**
+ * The session composition a catalog row DECLARES, or `undefined` when it
+ * declares none.
+ *
+ * The one reader of the catalog's `session_authority`. It narrows rather than
+ * defaults on purpose: "this server said nothing" is a different answer from
+ * "this server said local", and only the first may be filled in by whatever
+ * else the caller knows about the workspace.
+ */
+export function declaredSessionAuthority(
+  workspace: WorkspaceCatalogEntry | undefined,
+): "local" | "managed-private" | undefined {
+  const declared = workspace?.session_authority
+  return declared === "local" || declared === "managed-private" ? declared : undefined
+}
+
 export function knownWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | undefined): WorkspaceCatalogKind | undefined {
   if (kind === localWorkspaceKind) return localWorkspaceKind
   if (kind === cloudWorkspaceKind) return cloudWorkspaceKind

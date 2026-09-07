@@ -12,6 +12,7 @@ import {
   isLocalPersonalScope,
 } from "@/platform/runtime/server-transport"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
 
 export {
   centralTransportForDeployment,
@@ -40,7 +41,12 @@ export function submitTransportForPlacement(input: {
   serverUrl?: string
   directory?: string
   signedControlPlane?: boolean
-  authEnabled?: boolean
+  /**
+   * How the server that will serve this directory composed its runtime's
+   * session access, IN ITS OWN WORDS — the `session_authority` the project
+   * catalog carries for the workspace. `undefined` means nothing declared one.
+   */
+  sessionAuthority?: WorkspaceSessionAuthority
   workspaceId?: string
   workspaceKind?: "local" | "cloud" | "user-hosted" | null
 }) {
@@ -54,18 +60,20 @@ export function submitTransportForPlacement(input: {
     controlPlaneSession,
     workspaceRuntimeSession: controlPlaneSession || !!input.workspaceId || !!directoryWorkspaceId,
     // Which wire reaches the runtime and who owns the session's lifecycle are
-    // separate questions. A control plane that issues accounts records every
-    // session it serves and answers `POST /session` with
-    // `session_reservation_required` until the caller has reserved one — and
-    // that is true of a workspace this same machine serves over loopback,
-    // because the self-hosted server runs its embedded issuer on localhost.
-    // `centralTransportForDeployment` owns that distinction; the loopback
-    // bridge above answers only the wire.
-    managedSessionRegistration: controlPlaneSession ||
-      centralTransportForDeployment({
-        serverUrl: input.serverUrl,
-        authEnabled: input.authEnabled === true,
-      }) === "signed-web",
+    // separate questions. A `managed-private` runtime records every session it
+    // serves and answers `POST /session` with `session_reservation_required`
+    // until the caller has reserved one — and that is true of a workspace this
+    // same machine serves over loopback, because a signed self-hosted server
+    // composes its embedded runtimes that way on localhost.
+    //
+    // So the answer comes from the server, never from this build: the
+    // catalog's `session_authority` is the serving process's own declaration
+    // of the policy it mounted. Two client-side derivations were tried and
+    // each was wrong for one deployment — the wire (loopback vs relay) missed
+    // the signed self-hosted server, and `VITE_AUTH_ENABLED` turned the
+    // test-user e2e build into a reserving client against a local backend
+    // that has no issuer to reserve at.
+    managedSessionRegistration: controlPlaneSession || input.sessionAuthority === "managed-private",
   }
 }
 
