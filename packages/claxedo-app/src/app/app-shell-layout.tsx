@@ -258,6 +258,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const initialPanel = claxedoState.workspacePanel.state()
   const shellLayout = createShellLayoutState({
     target: () => platform.platform === "desktop" ? "desktop" : "web",
+    preset: () => "claxedo.default",
     initialRail: initialRailLayoutState,
     initialWorkspacePanel: {
       open: initialPanel.open && !!initialPanel.mode,
